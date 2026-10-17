@@ -723,3 +723,31 @@ fn should_reject_the_unbounded_call_golden_directly() {
         .join("../spec/tests/compile-fail/E10307_unbounded_call.clo");
     assert_rejected_once_at("unbounded-call-golden", &golden, "E10307", &["'T'"], &[]);
 }
+
+/// A write through an `unsafe`-wrapped copy capture reports the capture rule.
+///
+/// The wrapper is transparent to the place it wraps, so the root is the
+/// captured binding and the write rule reports `E10402`; the read-only
+/// parameter rule must not fire for the same site.
+#[test]
+fn should_reject_a_wrapped_copy_capture_write() {
+    let source = r#"module spec.ci.wrappedwrite;
+
+struct P {
+    x: i32;
+}
+
+func main(): i32 {
+    let p: P = P { x: 1 };
+    ([p] () => { unsafe p.x = 2; })();
+    return p.x;
+}
+"#;
+    assert_rejected_once(
+        "wrapped-copy-write",
+        source,
+        "E10402",
+        &["'p'"],
+        &["error E10024:"],
+    );
+}

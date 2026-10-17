@@ -801,7 +801,7 @@ impl<'a> Emitter<'a> {
                     "__cl_ret",
                     self.array_param_bytes("__cl_ret", &ty),
                 );
-                self.emit_fixed_array_assign_to(&destination, &ty, value, false);
+                self.emit_fixed_array_assign_to(&destination, &ty, value, false, false);
             }
             ValueKind::Call {
                 callee,

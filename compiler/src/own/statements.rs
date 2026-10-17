@@ -447,6 +447,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // emptied.
         let owning = !self.sema.table.duplicable(ty) || self.maybe_owns(ty) || ty.is_unknown();
         if owning {
+            // A source element read keeps its run-time index and its bounds
+            // guard: the move must empty the slot the read selected, not
+            // element zero.
+            if let Some((source, _)) = self.pinned_element_place(value) {
+                return PreparedStore::Move { source };
+            }
             if let Some(source) = self.place_target(value) {
                 return PreparedStore::Move {
                     source: self.target_place(&source),

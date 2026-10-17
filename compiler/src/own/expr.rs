@@ -2384,7 +2384,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// index is read into a temporary where the target stands and an impure
     /// base is computed once. A member chain only recurses: copying a member's
     /// base would point the store at the copy instead of the storage.
-    fn pin_store_target(&mut self, value: Value) -> Value {
+    pub(super) fn pin_store_target(&mut self, value: Value) -> Value {
         let ty = value.ty.clone();
         match value.kind {
             ValueKind::Member { base, name } => {
@@ -2432,11 +2432,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The pinned value keeps each run-time index in a temporary, so the place
     /// records it as an `ElementTemp` and the emitter renders the same index it
     /// guarded. The root is the place the target started from.
-    fn store_target_place(&self, value: &Value, ty: Ty) -> Place {
+    pub(super) fn store_target_place(&self, value: &Value, ty: Ty) -> Place {
         let mut place = store_target_place_parts(value)
             .expect("an indexed store target must root in a place");
         place.ty = ty;
         place
+    }
+
+    /// Lowers a projected place with a run-time element into a pinned place.
+    ///
+    /// A move whose source is an element read must keep the index the read
+    /// evaluates: an element projection without an index would move element
+    /// zero. The index is materialized here, and its bounds guard is emitted
+    /// before the move exactly where the read's own guard would run.
+    pub(super) fn pinned_element_place(&mut self, expr: &'a Expr) -> Option<(Place, Ty)> {
+        let target = self.place_target(expr)?;
+        let projections = match &target {
+            PlaceTarget::Local(_, projections) | PlaceTarget::Global(_, projections) => {
+                projections
+            }
+        };
+        if !has_runtime_element(projections) {
+            return None;
+        }
+        let lowered = self.lower_value(expr);
+        let lowered = self.pin_store_target(lowered);
+        self.emit(Statement::Guards {
+            checks: vec![lowered.clone()],
+        });
+        let ty = self.ty(expr);
+        let place = self.store_target_place(&lowered, ty.clone());
+        Some((place, ty))
     }
 
     /// Lowers an indexed element target to its element read and its address.
@@ -2668,7 +2694,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 }
 
 /// True when a projection chain selects an element with a run-time index.
-fn has_runtime_element(projections: &[ir::Projection]) -> bool {
+pub(super) fn has_runtime_element(projections: &[ir::Projection]) -> bool {
     projections.iter().any(|projection| {
         matches!(
             projection,

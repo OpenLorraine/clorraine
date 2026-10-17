@@ -596,8 +596,33 @@ impl<'a> Emitter<'a> {
                     if matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().all(Option::is_some))
                     {
                         self.emit_line_directive(span);
-                        self.emit_reassigned_target_drop(target);
-                        self.emit_array_assign(target, &ty, elements, fill);
+                        // A literal that reads the destination through a view or
+                        // a loop alias keeps the old bytes alive until the fill
+                        // has run; the shared fixed-array core saves them.
+                        let reads_target = value_reads_base(value, target)
+                            || value_reads_named_binding(value)
+                            || value_reads_alias(value);
+                        if reads_target {
+                            let target_c = self.place(target);
+                            let array_target = self.array_target(target, &target_c);
+                            let element_target = target.projections.iter().any(|projection| {
+                                matches!(
+                                    projection,
+                                    ir::Projection::Element(_)
+                                        | ir::Projection::ElementTemp(_)
+                                )
+                            });
+                            self.emit_fixed_array_assign_to(
+                                &array_target,
+                                &ty,
+                                value,
+                                true,
+                                element_target,
+                            );
+                        } else {
+                            self.emit_reassigned_target_drop(target);
+                            self.emit_array_assign(target, &ty, elements, fill);
+                        }
                         return;
                     }
                 }
@@ -728,7 +753,7 @@ impl<'a> Emitter<'a> {
                     // the value, so the old bytes are always saved.
                     let target_c = format!("(*({pointer_c}))");
                     let target = ArrayTarget::object(&target_c);
-                    self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true);
+                    self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, true);
                 } else if self.needs_drop(&pointer_ty) {
                     // An owned conditional moves the chosen arm into the
                     // element per path, exactly as it does for a named
@@ -741,14 +766,15 @@ impl<'a> Emitter<'a> {
                     } = &value.kind
                     {
                         let target_c = format!("*({pointer_c})");
-                        self.emit_conditional_move_assign(
+                        self.emit_conditional_move_assign_for(
                             &target_c,
                             &pointer_ty,
                             condition,
                             then_value,
                             else_value,
+                            true,
                         );
-                    } else if value_reads_named_binding(value) {
+                    } else if value_reads_named_binding(value) || value_reads_alias(value) {
                         // The pointer addresses the container the element
                         // belongs to, so a right-hand side that reads a named
                         // binding can read the element itself through a
@@ -874,6 +900,7 @@ impl<'a> Emitter<'a> {
                             condition,
                             then_value,
                             else_value,
+                            false,
                         );
                         if self.needs_drop(&ty) {
                             self.emit_drop_expr(&dest, &ty);
@@ -1287,6 +1314,15 @@ impl<'a> Emitter<'a> {
                 return;
             }
         }
+        // An element target is reached through storage a view or a loop alias
+        // can read through another base, so a right-hand side that reads any
+        // named binding or aliased element may read the value being released.
+        let element_target = target.projections.iter().any(|projection| {
+            matches!(
+                projection,
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
+            )
+        });
         if self.needs_drop(&ty) {
             // An owned conditional moves the chosen arm into the destination
             // per path: a value expression would copy the handle and leave the
@@ -1298,12 +1334,13 @@ impl<'a> Emitter<'a> {
             } = &value.kind
             {
                 let target_c = self.place(target);
-                self.emit_conditional_move_assign(
+                self.emit_conditional_move_assign_for(
                     &target_c,
                     &ty,
                     condition,
                     then_value,
                     else_value,
+                    element_target,
                 );
                 return;
             }
@@ -1344,12 +1381,11 @@ impl<'a> Emitter<'a> {
         // duplicable pointee copies and stays intact.
         let moves_pointee = self.needs_drop(&ty)
             && matches!(value.kind, ValueKind::Unary { op: UnaryOp::Deref, .. });
-        // An element target is reached through a pointer into its container,
-        // so a right-hand side that reads a named binding can read the same
-        // storage through a different base; the release waits for it then.
         let reads_target = value_reads_base(value, target)
+            || (element_target
+                && (value_reads_named_binding(value) || value_reads_alias(value)))
             || (matches!(target.base, PlaceBase::DerefTemp { .. })
-                && value_reads_named_binding(value));
+                && (value_reads_named_binding(value) || value_reads_alias(value)));
         if !reads_target {
             // The right-hand side does not read the target, so the old value
             // is released before the right-hand side is evaluated.
@@ -1407,9 +1443,20 @@ impl<'a> Emitter<'a> {
     /// run.
     fn emit_fixed_array_assign(&mut self, target: &Place, ty: &Ty, value: &Value) {
         let target_c = self.place(target);
-        let reads_target = value_reads_base(value, target);
+        // An array target is storage a view binding or a loop alias can read
+        // through another base, so the release waits for any named or aliased
+        // read the right-hand side carries.
+        let reads_target = value_reads_base(value, target)
+            || value_reads_named_binding(value)
+            || value_reads_alias(value);
+        let element_target = target.projections.iter().any(|projection| {
+            matches!(
+                projection,
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
+            )
+        });
         let target = self.array_target(target, &target_c);
-        self.emit_fixed_array_assign_to(&target, ty, value, reads_target);
+        self.emit_fixed_array_assign_to(&target, ty, value, reads_target, element_target);
     }
 
     /// Emits a whole-array store into a rendered C lvalue.
@@ -1430,6 +1477,7 @@ impl<'a> Emitter<'a> {
         ty: &Ty,
         value: &Value,
         reads_target: bool,
+        element_target: bool,
     ) {
         if let ValueKind::Conditional {
             condition,
@@ -1443,6 +1491,7 @@ impl<'a> Emitter<'a> {
                 condition,
                 then_value,
                 else_value,
+                element_target,
             );
             return;
         }
@@ -1450,9 +1499,37 @@ impl<'a> Emitter<'a> {
             // An array literal has one initializer per element, so it is
             // stored element by element; a `memcpy` cannot name its braces.
             if self.needs_drop(ty) {
-                self.emit_drop_expr(&target.text, ty);
+                if reads_target {
+                    // The literal may read the destination through a view or a
+                    // loop alias, so the old bytes are saved first and the
+                    // destination is cleared. Each element store then sees an
+                    // empty slot, and the save releases the old owners once
+                    // after the fill.
+                    let save = self.unique_local("__cl_save");
+                    self.push("    {");
+                    self.push(&format!(
+                        "        {} = {};",
+                        declarator(ty, &save, &self.sema.table),
+                        self.empty_state(ty)
+                    ));
+                    self.push(&format!(
+                        "        memcpy(&({save}), {}, {});",
+                        target.address, target.bytes
+                    ));
+                    self.push(&format!(
+                        "        memset({}, 0, {});",
+                        target.address, target.bytes
+                    ));
+                    self.emit_array_assign_to(target, ty, elements, fill);
+                    self.emit_drop_expr(&save, ty);
+                    self.push("    }");
+                } else {
+                    self.emit_drop_expr(&target.text, ty);
+                    self.emit_array_assign_to(target, ty, elements, fill);
+                }
+            } else {
+                self.emit_array_assign_to(target, ty, elements, fill);
             }
-            self.emit_array_assign_to(target, ty, elements, fill);
             return;
         }
         if let ValueKind::Call {
@@ -1591,14 +1668,15 @@ impl<'a> Emitter<'a> {
         condition: &Value,
         then_value: &Value,
         else_value: &Value,
+        element_target: bool,
     ) {
         if !self.needs_drop(ty) {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("    if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(target, ty, then_value, None);
+            self.emit_fixed_array_assign_arm(target, ty, then_value, None, element_target);
             self.push("    } else {");
-            self.emit_fixed_array_assign_arm(target, ty, else_value, None);
+            self.emit_fixed_array_assign_arm(target, ty, else_value, None, element_target);
             self.push("    }");
             return;
         }
@@ -1621,9 +1699,9 @@ impl<'a> Emitter<'a> {
         self.emit_guards(condition);
         let condition_c = self.value(condition);
         self.push(&format!("        if ({condition_c}) {{"));
-        self.emit_fixed_array_assign_arm(target, ty, then_value, Some(&save));
+        self.emit_fixed_array_assign_arm(target, ty, then_value, Some(&save), element_target);
         self.push("        } else {");
-        self.emit_fixed_array_assign_arm(target, ty, else_value, Some(&save));
+        self.emit_fixed_array_assign_arm(target, ty, else_value, Some(&save), element_target);
         self.push("        }");
         self.emit_drop_expr(&save, ty);
         self.push("    }");
@@ -1642,6 +1720,7 @@ impl<'a> Emitter<'a> {
         ty: &Ty,
         arm: &Value,
         save: Option<&str>,
+        element_target: bool,
     ) {
         if let ValueKind::Conditional {
             condition,
@@ -1652,9 +1731,9 @@ impl<'a> Emitter<'a> {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("                if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(target, ty, then_value, save);
+            self.emit_fixed_array_assign_arm(target, ty, then_value, save, element_target);
             self.push("                } else {");
-            self.emit_fixed_array_assign_arm(target, ty, else_value, save);
+            self.emit_fixed_array_assign_arm(target, ty, else_value, save, element_target);
             self.push("                }");
             return;
         }
@@ -1669,6 +1748,31 @@ impl<'a> Emitter<'a> {
                 ));
                 self.emit_move_zero(save, ty);
             }
+            return;
+        }
+        if element_target && arm_is_projected_place(arm) {
+            // The arm may name the destination through another index spelling,
+            // so the branch compares the storage addresses before copying.
+            self.emit_guards(arm);
+            let arm_c = self.value(arm);
+            let arm_address = self.array_source_address(arm, &arm_c);
+            self.push(&format!(
+                "                if ({arm_address} == {}) {{",
+                target.address
+            ));
+            if let Some(save) = save {
+                self.push(&format!(
+                    "                    memcpy({}, &({save}), {});",
+                    target.address, target.bytes
+                ));
+                self.emit_move_zero(save, ty);
+            }
+            self.push("                } else {");
+            self.push(&format!(
+                "                    memcpy({}, {arm_address}, {});",
+                target.address, target.bytes
+            ));
+            self.push("                }");
             return;
         }
         match &arm.kind {
@@ -1967,7 +2071,7 @@ impl<'a> Emitter<'a> {
             let field_c = format!("{target_c}.{name}");
             if field_ty.is_fixed_array() {
                 let field_target = ArrayTarget::object(&field_c);
-                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false);
+                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
                 continue;
             }
             if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
@@ -2017,6 +2121,32 @@ impl<'a> Emitter<'a> {
         then_value: &Value,
         else_value: &Value,
     ) {
+        self.emit_conditional_move_assign_for(
+            target_c,
+            ty,
+            condition,
+            then_value,
+            else_value,
+            false,
+        );
+    }
+
+    /// Emits an owned conditional store whose destination is an element.
+    ///
+    /// A destination reached through an element projection may be named by an
+    /// arm through a different index spelling (`a[i].f` while the target pins
+    /// its index in a temporary). The arm is therefore matched by its storage
+    /// address, so an arm that resolves to the destination restores the saved
+    /// value instead of copying it onto itself and then emptying the slot.
+    fn emit_conditional_move_assign_for(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+        element_target: bool,
+    ) {
         let save = self.unique_local("__cl_save");
         self.push("    {");
         self.push(&format!(
@@ -2031,6 +2161,7 @@ impl<'a> Emitter<'a> {
             then_value,
             else_value,
             Some(&save),
+            element_target,
         );
         self.emit_drop_expr(&save, ty);
         self.push("    }");
@@ -2049,6 +2180,7 @@ impl<'a> Emitter<'a> {
         then_value: &Value,
         else_value: &Value,
         save: Option<&str>,
+        element_target: bool,
     ) {
         self.emit_guards(condition);
         // A condition whose evaluation consumed the destination already
@@ -2061,9 +2193,9 @@ impl<'a> Emitter<'a> {
         }
         let condition_c = self.value(condition);
         self.push(&format!("        if ({condition_c}) {{"));
-        self.emit_conditional_move_arm(target_c, ty, then_value, save);
+        self.emit_conditional_move_arm(target_c, ty, then_value, save, element_target);
         self.push("        } else {");
-        self.emit_conditional_move_arm(target_c, ty, else_value, save);
+        self.emit_conditional_move_arm(target_c, ty, else_value, save, element_target);
         self.push("        }");
     }
 
@@ -2073,13 +2205,16 @@ impl<'a> Emitter<'a> {
     /// fresh value. A deferred call temporary is moved into the destination and
     /// emptied, so the statement-end release is a no-op. A place arm is copied
     /// and then emptied, so only the chosen arm is moved. An arm that names the
-    /// destination restores the saved value when a save exists.
+    /// destination restores the saved value when a save exists; an element
+    /// destination matches a projected arm by its storage address, so a
+    /// different index spelling for the same slot is recognized too.
     fn emit_conditional_move_arm(
         &mut self,
         target_c: &str,
         ty: &Ty,
         arm: &Value,
         save: Option<&str>,
+        element_target: bool,
     ) {
         if let ValueKind::Conditional {
             condition,
@@ -2097,17 +2232,33 @@ impl<'a> Emitter<'a> {
             }
             let condition_c = self.value(condition);
             self.push(&format!("            if ({condition_c}) {{"));
-            self.emit_conditional_move_arm(target_c, ty, then_value, save);
+            self.emit_conditional_move_arm(target_c, ty, then_value, save, element_target);
             self.push("            } else {");
-            self.emit_conditional_move_arm(target_c, ty, else_value, save);
+            self.emit_conditional_move_arm(target_c, ty, else_value, save, element_target);
             self.push("            }");
             return;
         }
-        if self.value(arm) == target_c {
+        if self.value(arm) == target_c || self.value(arm) == target_object_text(target_c) {
             if let Some(save) = save {
                 self.push(&format!("            {target_c} = {save};"));
                 self.emit_move_zero(save, ty);
             }
+            return;
+        }
+        if element_target && arm_is_projected_place(arm) {
+            let arm_c = self.value(arm);
+            self.emit_guards(arm);
+            self.push(&format!(
+                "            if ((&({arm_c})) == (&({target_c}))) {{"
+            ));
+            if let Some(save) = save {
+                self.push(&format!("                {target_c} = {save};"));
+                self.emit_move_zero(save, ty);
+            }
+            self.push("            } else {");
+            self.push(&format!("                {target_c} = {arm_c};"));
+            self.emit_arm_source_moves(arm, ty);
+            self.push("            }");
             return;
         }
         // A struct-literal arm is built in a fresh local through per-field
@@ -2586,7 +2737,7 @@ impl<'a> Emitter<'a> {
                     // A whole row that is not a literal has no scalar form; it
                     // travels through the fixed-array store core, one dimension
                     // in.
-                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false),
+                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false, false),
                 }
                 continue;
             }
@@ -2658,7 +2809,7 @@ impl<'a> Emitter<'a> {
                 _ => {
                     for index in prefix..extent {
                         let sub = target.element(index);
-                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false);
+                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false, false);
                     }
                 }
             }
@@ -2968,6 +3119,49 @@ fn value_reads_named_binding(value: &Value) -> bool {
             PlaceBase::Local(_) | PlaceBase::Param(_) | PlaceBase::Global(_)
         )
     })
+}
+
+/// True when a value reads an element reached through a loop alias.
+///
+/// A `for (borrow e in xs)` binding has no storage of its own: it holds the
+/// addressed element of the iterable. A store into that iterable can overwrite
+/// the element the alias reads, so the release must wait for the right-hand
+/// side exactly as it does for a named view.
+fn value_reads_alias(value: &Value) -> bool {
+    value_reads_place(value, &|place| {
+        matches!(place.base, PlaceBase::DerefTemp { .. })
+    })
+}
+
+/// True when an owned conditional arm names projected storage.
+///
+/// A projected arm may reach the destination through another index or alias
+/// spelling, so the branch compares the two storage addresses instead of the
+/// rendered text.
+fn arm_is_projected_place(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Member { .. } | ValueKind::Index { .. } => true,
+        ValueKind::Place(place) => {
+            !place.projections.is_empty()
+                || matches!(place.base, PlaceBase::DerefTemp { .. })
+        }
+        _ => false,
+    }
+}
+
+/// The object a rendered target addresses when the target spells its address.
+///
+/// An element target rendered from its address (`*(&(a[i]))`) names the same
+/// object as the bare lvalue (`a[i]`), so the branch compares against the
+/// object instead of emitting an address comparison the C compiler folds to a
+/// tautology.
+fn target_object_text(target_c: &str) -> &str {
+    if let Some(rest) = target_c.strip_prefix("*(&(") {
+        if let Some(inner) = rest.strip_suffix("))") {
+            return inner;
+        }
+    }
+    target_c
 }
 
 /// Walks a value and reports whether any place it reads matches `matches`.

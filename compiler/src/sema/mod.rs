@@ -1065,6 +1065,9 @@ pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
         ExprKind::Name(name) => Some(name),
         ExprKind::Qualified(name) => name.segments.first().map(String::as_str),
         ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => place_root_name(base),
+        // The wrapper is transparent to the place it wraps, so a wrapped
+        // capture write is judged by the same root as the bare spelling.
+        ExprKind::Unsafe(inner) => place_root_name(inner),
         _ => None,
     }
 }

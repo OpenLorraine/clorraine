@@ -2901,6 +2901,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
                 self.projects_from_place(base)
             }
+            // A dereference names the storage its operand points at. The
+            // operand can itself be a fresh call (`(*mk()).f`), so the walk
+            // recurse rather than assume a place.
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => self.projects_from_place(operand),
             // A conditional whose arms both point into existing storage is a
             // forwarding value: whichever arm the condition chooses lends
             // storage the caller already owns, so binding an owning copy for

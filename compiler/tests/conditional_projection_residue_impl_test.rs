@@ -6730,3 +6730,406 @@ fn should_pin_the_indexed_slice_store_emission() {
         "{tag}: the slice store's value must run once; body:\n{body}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// overwrittenelement: a store that replaces an element a view or alias reads.
+//
+// The old owner is saved until the right-hand side has read it, and a fixed
+// array row is cleared after the save so the fill sees empty slots.
+// ---------------------------------------------------------------------------
+
+/// A member store over a run-time element saves the value a view reads.
+#[test]
+fn should_save_an_overwritten_member_until_its_view_has_read() {
+    let source = r#"module spec.cprimpl.implsaveview;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func set(borrow w: Holder, i: i32): i32 {
+    let v: str = w.items[1].name;
+    w.items[i].name = stringOf(v);
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return set(borrow h, 1) - 2;
+}
+"#;
+    let tag = "implsaveview";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implsaveview_set(ClHolder *w, i32 i)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "ClString __cl_save_1 = (*w).items[__cl_tmp0].name;",
+    );
+    assert_follows(
+        tag,
+        body,
+        "ClString __cl_save_1 = (*w).items[__cl_tmp0].name;",
+        "(*w).items[__cl_tmp0].name = cl_std_text_stringOf(v);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*w).items[__cl_tmp0].name = cl_std_text_stringOf(v);",
+        "if (__cl_save_1) { FreeString(__cl_save_1); }",
+    );
+}
+
+/// A fixed-array member fill saves and clears the row before the view is read.
+#[test]
+fn should_save_and_clear_a_fixed_array_row_before_its_view_fill() {
+    let source = r#"module spec.cprimpl.implsavefixed;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    let v: str = a[1].names[0];
+    a[i].names = [stringOf(v), stringOf("xx")];
+    return i32(len(a[i].names[0])) - 2;
+}
+"#;
+    let tag = "implsavefixed";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implsavefixed_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_save_1), &(a[__cl_tmp0].names), sizeof(a[__cl_tmp0].names));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memset(&(a[__cl_tmp0].names), 0, sizeof(a[__cl_tmp0].names));",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memset(&(a[__cl_tmp0].names), 0, sizeof(a[__cl_tmp0].names));",
+        "a[__cl_tmp0].names[0] = cl_std_text_stringOf(v);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "a[__cl_tmp0].names[1] = cl_std_text_stringOf(cl_str(\"xx\"));",
+        "if (__cl_save_1[0]) { FreeString(__cl_save_1[0]); }",
+    );
+}
+
+/// A moved source place keeps its run-time index and its bounds guard.
+#[test]
+fn should_pin_a_runtime_index_place_on_the_stored_value() {
+    let source = r#"module spec.cprimpl.implrhsindexpin;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i].name = w.items[j].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 0, 1) - 2;
+}
+"#;
+    let tag = "implrhsindexpin";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
+    assert_follows(tag, body, "__cl_tmp1 = j;", "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");");
+    assert_follows(
+        tag,
+        body,
+        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
+        "(*w).items[__cl_tmp1].name = NULL;",
+    );
+    assert_absent(tag, body, "(*w).items[0].name = (*w).items[__cl_tmp1].name;");
+}
+
+/// A conditional self-arm is matched by its storage address.
+#[test]
+fn should_match_a_conditional_self_arm_by_storage_address() {
+    let same_index = r#"module spec.cprimpl.implselfarm;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
+    let i: i32 = 1;
+    let c: bool = true;
+    a[i].inner = c ? a[i].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[i].inner.name)) - 2;
+}
+"#;
+    let tag = "implselfarm";
+    let (_scratch, emitted) = emit_host(tag, same_index);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implselfarm_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "if ((&(a[i].inner)) == (&(a[__cl_tmp0].inner))) {",
+    );
+    assert_follows(
+        tag,
+        body,
+        "if ((&(a[i].inner)) == (&(a[__cl_tmp0].inner))) {",
+        "a[__cl_tmp0].inner = __cl_save_1;",
+    );
+
+    let equal = r#"module spec.cprimpl.implselfequal;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
+    let i: i32 = 1;
+    let j: i32 = 1;
+    let c: bool = true;
+    a[i].inner = c ? a[j].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[i].inner.name)) - 2;
+}
+"#;
+    let tag = "implselfequal";
+    let (_scratch, emitted) = emit_host(tag, equal);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implselfequal_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "if ((&(a[j].inner)) == (&(a[__cl_tmp0].inner))) {",
+    );
+}
+
+/// A generic compound store and update carry the concrete wrap casts.
+#[test]
+fn should_wrap_a_generic_compound_and_update() {
+    let source = r#"module spec.cprimpl.implwrapgeneric;
+
+struct Box { value: i32; }
+struct Vec { values: i32[2]; }
+
+func inc<T>(borrow w: T): i32 {
+    w.value = 2147483647;
+    w.value++;
+    return w.value;
+}
+
+func addel<T>(borrow w: T, i: i32): i32 {
+    w.values[i] = 2147483647;
+    w.values[i] += 1;
+    return w.values[i];
+}
+
+func main(): i32 {
+    let b: Box = Box { value: 0 };
+    let v: Vec = Vec { values: [0, 0] };
+    let a: i32 = inc<Box>(borrow b);
+    let c: i32 = addel<Vec>(borrow v, 1);
+    return a + c;
+}
+"#;
+    let tag = "implwrapgeneric";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(tag, &emitted, "cl_inc__Box(ClBox w)\n{");
+    assert_contains(tag, body, "w.value = (i32)((u32)w.value + (u32)1);");
+    let body = function_body(tag, &emitted, "cl_addel__Vec(ClVec w, i32 i)\n{");
+    assert_contains(
+        tag,
+        body,
+        "*(&(w.values[i])) = (i32)((u32)w.values[i] + (u32)1);",
+    );
+}
+
+/// A bare generic row store copies the row instead of assigning the array.
+#[test]
+fn should_copy_a_bare_generic_row() {
+    let source = r#"module spec.cprimpl.implrowstore;
+
+import { String, stringOf } from std.text;
+
+struct Grid { rows: i32[2][2]; tag: String; }
+struct TextGrid { rows: String[2][2]; tag: String; }
+
+func setrow<T>(borrow g: T, i: i32, take v: i32[2]): void {
+    g.rows[i] = v;
+}
+
+func settext<T>(borrow g: T, i: i32, take v: String[2]): void {
+    g.rows[i] = v;
+}
+
+func main(): i32 {
+    let g: Grid = Grid { rows: [[1, 2], [3, 4]], tag: stringOf("g") };
+    setrow<Grid>(borrow g, 1, [5, 6]);
+    let t: TextGrid = TextGrid { rows: [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]], tag: stringOf("t") };
+    settext<TextGrid>(borrow t, 0, [stringOf("xx"), stringOf("yy")]);
+    return g.rows[1][0] + i32(len(t.rows[0][0])) - 7;
+}
+"#;
+    let tag = "implrowstore";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(tag, &emitted, "cl_setrow__Grid(ClGrid *g, i32 i, i32 v[2])\n{");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&((*g).rows[i])))), v, sizeof((*(&((*g).rows[i])))));",
+    );
+    assert_absent(tag, body, "*(&((*g).rows[i])) = v;");
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_settext__TextGrid(ClTextGrid *g, i32 i, ClString v[2])\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_save_1), &((*(&((*g).rows[i])))), sizeof((*(&((*g).rows[i])))));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&((*g).rows[i])))), &(__cl_tmp0), sizeof((*(&((*g).rows[i])))));",
+    );
+}
+
+/// A raw-deref member out-slot argument passes the member's address.
+#[test]
+fn should_store_through_a_raw_deref_member_out_slot() {
+    let source = r#"module spec.cprimpl.implrawoutslot;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String?; }
+
+func set(borrow slot: String?, pick: bool): void {
+    let other: String? = stringOf("bbbb");
+    slot = pick ? slot : other;
+}
+
+func main(): i32 {
+    let inner: Inner = Inner { name: stringOf("aaaa") };
+    unsafe {
+        let p: raw Inner = &inner;
+        set(unsafe (*p).name, true);
+    }
+    if (inner.name == null) { return 9; }
+    return i32(len(inner.name)) - 4;
+}
+"#;
+    let tag = "implrawoutslot";
+    let (_scratch, emitted) = emit_host(tag, source);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implrawoutslot_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_implrawoutslot_set(&((*(p)).name), 1);",
+    );
+    assert_absent(tag, body, "set(&(*(p).name)");
+}
+
+/// A conditional pointer or view value is not a store place.
+///
+/// The dereferenced conditional remains the accepted control: `*(c ? p : q)`
+/// names the selected pointer's pointee.
+#[test]
+fn should_reject_a_conditional_value_base_store() {
+    let raw = r#"module spec.cprimpl.implcondrawbase;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func use(c: bool, p: raw S, q: raw S): i32 {
+    (c ? p : q).f.x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: S = S { f: Inner { x: 0 } };
+    let b: S = S { f: Inner { x: 0 } };
+    unsafe {
+        return use(true, &a, &b);
+    }
+}
+"#;
+    assert_rejected_once_at("implcondrawbase", raw, "E10221", 7, 5, &["left side of an assignment must be a place"], &[]);
+
+    let view = r#"module spec.cprimpl.implcondviewbase;
+
+struct Elem { y: i32; }
+
+func use(c: bool, a: Elem[2], b: Elem[2], i: i32): i32 {
+    (c ? a : b)[i].y = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { y: 0 }, Elem { y: 0 }];
+    let b: Elem[2] = [Elem { y: 0 }, Elem { y: 0 }];
+    return use(true, a, b, 1);
+}
+"#;
+    assert_rejected_once_at("implcondviewbase", view, "E10221", 6, 5, &["left side of an assignment must be a place"], &[]);
+
+    let deref = r#"module spec.cprimpl.implcondderef;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let a: S = S { f: Inner { x: 0 } };
+    let b: S = S { f: Inner { x: 0 } };
+    let c: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        *(c ? p : q) = S { f: Inner { x: 7 } };
+    }
+    return a.f.x - 7;
+}
+"#;
+    let tag = "implcondderef";
+    let (_scratch, emitted) = emit_host(tag, deref);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implcondderef_main(void)\n{",
+    );
+    assert_contains(tag, body, "*(&(*((c ? p : q)))) = (ClS){ (ClInner){ 7 } };");
+}

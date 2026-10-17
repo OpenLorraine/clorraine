@@ -13801,3 +13801,551 @@ func main(): i32 {
     let output = run_host("condrawblock", raw_block);
     assert_exit("condrawblock", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// overwrittenview: a view or loop alias that reads the element being replaced.
+//
+// The overwritten owner must stay alive until the right-hand side has read it.
+// A view local and a loop alias reach the same storage through a different
+// base, so the store saves the old value instead of releasing it first.
+// The constant-index and whole-row spellings share the rule.
+// ---------------------------------------------------------------------------
+
+/// A view of the overwritten element keeps its backing alive through the store.
+///
+/// Each program stores a fresh value over an element that a view local or a
+/// loop alias still reads. The old owner is saved until the right-hand side has
+/// run, so every run exits 0 and the memory run reports no error.
+#[test]
+fn should_store_a_value_a_view_derived_from_the_overwritten_element_reads() {
+    let borrow_view = r#"module spec.cpr.overwrittenborrow;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func set(borrow w: Holder, i: i32): i32 {
+    let v: str = w.items[1].name;
+    w.items[i].name = stringOf(v);
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return set(borrow h, 1) - 2;
+}
+"#;
+    let output = run_memory("overwrittenborrow", borrow_view);
+    assert_no_asan("overwrittenborrow", &output);
+    assert_exit("overwrittenborrow", &output, 0);
+
+    let generic_view = r#"module spec.cpr.overwrittengeneric;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func set<T>(borrow w: T, i: i32): i32 {
+    let v: str = w.items[1].name;
+    w.items[i].name = stringOf(v);
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return set<Holder>(borrow h, 1) - 2;
+}
+"#;
+    let output = run_memory("overwrittengeneric", generic_view);
+    assert_no_asan("overwrittengeneric", &output);
+    assert_exit("overwrittengeneric", &output, 0);
+
+    let local_view = r#"module spec.cpr.overwrittenlocal;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    let i: i32 = 1;
+    let v: str = a[1].name;
+    a[i].name = stringOf(v);
+    return i32(len(a[i].name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittenlocal", local_view);
+    assert_no_asan("overwrittenlocal", &output);
+    assert_exit("overwrittenlocal", &output, 0);
+
+    let fixed_member = r#"module spec.cpr.overwrittenfixed;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    let v: str = a[1].names[0];
+    a[i].names = [stringOf(v), stringOf("xx")];
+    return i32(len(a[i].names[0])) - 2;
+}
+"#;
+    let output = run_memory("overwrittenfixed", fixed_member);
+    assert_no_asan("overwrittenfixed", &output);
+    assert_exit("overwrittenfixed", &output, 0);
+
+    let struct_member = r#"module spec.cpr.overwrittenstruct;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
+    let i: i32 = 1;
+    let v: str = a[1].inner.name;
+    a[i].inner = Inner { name: stringOf(v) };
+    return i32(len(a[i].inner.name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittenstruct", struct_member);
+    assert_no_asan("overwrittenstruct", &output);
+    assert_exit("overwrittenstruct", &output, 0);
+
+    let loop_write = r#"module spec.cpr.overwrittenloop;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    let j: i32 = 1;
+    for (borrow e in a) {
+        a[j].name = stringOf(e.name);
+    }
+    return i32(len(a[1].name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittenloop", loop_write);
+    assert_no_asan("overwrittenloop", &output);
+    assert_exit("overwrittenloop", &output, 0);
+
+    let loop_take = r#"module spec.cpr.overwrittenlooptake;
+
+import { String, clone, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    let j: i32 = 1;
+    for (borrow e in a) {
+        a[j].name = clone(e.name);
+    }
+    return i32(len(a[1].name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittenlooptake", loop_take);
+    assert_no_asan("overwrittenlooptake", &output);
+    assert_exit("overwrittenlooptake", &output, 0);
+
+    let nested_alias = r#"module spec.cpr.overwrittennested;
+
+import { String, stringOf } from std.text;
+
+struct Cell { name: String; }
+
+func main(): i32 {
+    let g: Cell[2][2] = [[Cell { name: stringOf("aa") }, Cell { name: stringOf("ab") }], [Cell { name: stringOf("ba") }, Cell { name: stringOf("bb") }]];
+    for (borrow row in g) {
+        let j: i32 = 0;
+        for (borrow e in row) {
+            row[j].name = stringOf(e.name);
+            j = j + 1;
+        }
+    }
+    return i32(len(g[0][0].name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittennested", nested_alias);
+    assert_no_asan("overwrittennested", &output);
+    assert_exit("overwrittennested", &output, 0);
+
+    let constant_view = r#"module spec.cpr.overwrittenconstant;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func set(borrow w: Holder): i32 {
+    let v: str = w.items[1].name;
+    w.items[1].name = stringOf(v);
+    return i32(len(w.items[1].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return set(borrow h) - 2;
+}
+"#;
+    let output = run_memory("overwrittenconstant", constant_view);
+    assert_no_asan("overwrittenconstant", &output);
+    assert_exit("overwrittenconstant", &output, 0);
+
+    let constant_loop = r#"module spec.cpr.overwrittenconstantloop;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    for (borrow e in a) {
+        a[1].name = stringOf(e.name);
+    }
+    return i32(len(a[1].name)) - 2;
+}
+"#;
+    let output = run_memory("overwrittenconstantloop", constant_loop);
+    assert_no_asan("overwrittenconstantloop", &output);
+    assert_exit("overwrittenconstantloop", &output, 0);
+
+    let fixed_generic = r#"module spec.cpr.overwrittenfixedgeneric;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> { rows: T[2]; }
+
+func setrow<T>(borrow w: Holder<T>, i: i32): i32 {
+    let v: str = w.rows[1][0];
+    w.rows[i] = [stringOf(v), stringOf("xx")];
+    return i32(len(w.rows[i][0]));
+}
+
+func main(): i32 {
+    let h: Holder<String[2]> = Holder<String[2]> { rows: [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]] };
+    return setrow<String[2]>(borrow h, 1) - 2;
+}
+"#;
+    let output = run_memory("overwrittenfixedgeneric", fixed_generic);
+    assert_no_asan("overwrittenfixedgeneric", &output);
+    assert_exit("overwrittenfixedgeneric", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rhsindex: an owned place store whose source element has a run-time index.
+//
+// The source keeps its index and its bounds guard, so the move empties the slot
+// the read selected instead of element zero.
+// ---------------------------------------------------------------------------
+
+/// A runtime-index source place moves the selected element and guards it.
+///
+/// The copy reads the slot the index selects, the side-effecting index runs
+/// once, and an out-of-range source traps before the store.
+#[test]
+fn should_copy_a_runtime_index_place_on_the_stored_value() {
+    let copy = r#"module spec.cpr.rhsindex;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+let cursor: i32 = 0;
+let calls: i32 = 0;
+
+func next_index(): i32 {
+    calls = calls + 1;
+    cursor = 1;
+    return cursor;
+}
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i].name = w.items[j].name;
+    return i32(len(w.items[i].name));
+}
+
+func side<T>(borrow w: T, i: i32): i32 {
+    w.items[i].name = w.items[next_index()].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h1: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    let h2: Holder = Holder { items: [Elem { name: stringOf("cc") }, Elem { name: stringOf("dd") }] };
+    let a: i32 = copy<Holder>(borrow h1, 0, 1) - 2;
+    let b: i32 = side<Holder>(borrow h2, 0) - 2;
+    return a + b + (calls - 1) * 100 + (cursor - 1) * 10;
+}
+"#;
+    let output = run_memory("rhsindex", copy);
+    assert_no_asan("rhsindex", &output);
+    assert_exit("rhsindex", &output, 0);
+
+    let bounds = r#"module spec.cpr.rhsindexbounds;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func oob<T>(borrow w: T, j: i32): void {
+    w.items[0].name = w.items[j].name;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    oob<Holder>(borrow h, 5);
+    return 0;
+}
+"#;
+    assert_traps("rhsindexbounds", bounds, "error E11211: index out of range");
+}
+
+// ---------------------------------------------------------------------------
+// conditional self-arm: a branch that names the destination through another
+// index spelling.
+//
+// The branch compares the destination's storage address, so the chosen arm
+// restores the saved value instead of copying it onto itself and emptying it.
+// ---------------------------------------------------------------------------
+
+/// A conditional self-arm over a run-time index keeps the stored value.
+///
+/// The member, whole-element, fixed-array member, and two-index-equal shapes
+/// each store the selected value back into the destination and read it back.
+#[test]
+fn should_update_a_conditional_self_arm_over_a_runtime_index() {
+    let member = r#"module spec.cpr.selfmember;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
+    let i: i32 = 1;
+    let c: bool = true;
+    a[i].inner = c ? a[i].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[i].inner.name)) - 2;
+}
+"#;
+    let output = run_memory("selfmember", member);
+    assert_no_asan("selfmember", &output);
+    assert_exit("selfmember", &output, 0);
+
+    let element = r#"module spec.cpr.selfelement;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    let i: i32 = 1;
+    let c: bool = true;
+    a[i] = c ? a[i] : Elem { name: stringOf("zz") };
+    return i32(len(a[i].name)) - 2;
+}
+"#;
+    let output = run_memory("selfelement", element);
+    assert_no_asan("selfelement", &output);
+    assert_exit("selfelement", &output, 0);
+
+    let fixed = r#"module spec.cpr.selffixed;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    let c: bool = true;
+    a[i].names = c ? a[i].names : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[i].names[0])) - 2;
+}
+"#;
+    let output = run_memory("selffixed", fixed);
+    assert_no_asan("selffixed", &output);
+    assert_exit("selffixed", &output, 0);
+
+    let equal_indices = r#"module spec.cpr.selfequal;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
+    let i: i32 = 1;
+    let j: i32 = 1;
+    let c: bool = true;
+    a[i].inner = c ? a[j].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[i].inner.name)) - 2;
+}
+"#;
+    let output = run_memory("selfequal", equal_indices);
+    assert_no_asan("selfequal", &output);
+    assert_exit("selfequal", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// genericwrap: a compound store or update in a generic body.
+//
+// The arithmetic type resolves from the destination place, so the generic
+// spelling uses the same signed wrap casts as the concrete twin.
+// ---------------------------------------------------------------------------
+
+/// A generic compound store and update wrap at the signed boundary.
+///
+/// `INT_MAX + 1` wraps to `INT_MIN` for the member, the whole element, and the
+/// update, with the concrete twin unchanged.
+#[test]
+fn should_wrap_a_generic_compound_and_update() {
+    let generic = r#"module spec.cpr.genericwrap;
+
+struct Box { value: i32; }
+struct Vec { values: i32[2]; }
+
+func inc<T>(borrow w: T): i32 {
+    w.value = 2147483647;
+    w.value++;
+    return w.value;
+}
+
+func add<T>(borrow w: T): i32 {
+    w.value = 2147483647;
+    w.value += 1;
+    return w.value;
+}
+
+func addel<T>(borrow w: T, i: i32): i32 {
+    w.values[i] = 2147483647;
+    w.values[i] += 1;
+    return w.values[i];
+}
+
+func main(): i32 {
+    let b: Box = Box { value: 0 };
+    let v: Vec = Vec { values: [0, 0] };
+    let a: i32 = inc<Box>(borrow b);
+    let c: i32 = add<Box>(borrow b);
+    let d: i32 = addel<Vec>(borrow v, 1);
+    if (a != -2147483648) { return 1; }
+    if (c != -2147483648) { return 2; }
+    if (d != -2147483648) { return 3; }
+    return 0;
+}
+"#;
+    let output = run_memory("genericwrap", generic);
+    assert_no_asan("genericwrap", &output);
+    assert_exit("genericwrap", &output, 0);
+
+    let concrete = r#"module spec.cpr.concretewrap;
+
+struct Box { value: i32; }
+struct Vec { values: i32[2]; }
+
+func main(): i32 {
+    let b: Box = Box { value: 2147483647 };
+    b.value++;
+    let c: Vec = Vec { values: [0, 2147483647] };
+    c.values[1] += 1;
+    if (b.value != -2147483648) { return 1; }
+    if (c.values[1] != -2147483648) { return 2; }
+    return 0;
+}
+"#;
+    let output = run_host("concretewrap", concrete);
+    assert_exit("concretewrap", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// genericrow: a bare type parameter's row store.
+//
+// The store type resolves per instance, so a row-typed value copies by bytes
+// instead of assigning a C array.
+// ---------------------------------------------------------------------------
+
+/// A bare generic row store copies a literal, a call, and an owned row.
+#[test]
+fn should_store_a_bare_generic_row() {
+    let rows = r#"module spec.cpr.genericrow;
+
+import { String, stringOf } from std.text;
+
+struct Grid { rows: i32[2][2]; tag: String; }
+struct TextGrid { rows: String[2][2]; tag: String; }
+
+func setrow<T>(borrow g: T, i: i32, take v: i32[2]): void {
+    g.rows[i] = v;
+}
+
+func settext<T>(borrow g: T, i: i32, take v: String[2]): void {
+    g.rows[i] = v;
+}
+
+func mkrow(): i32[2] {
+    return [7, 8];
+}
+
+func main(): i32 {
+    let g: Grid = Grid { rows: [[1, 2], [3, 4]], tag: stringOf("g") };
+    setrow<Grid>(borrow g, 1, [5, 6]);
+    setrow<Grid>(borrow g, 0, mkrow());
+    let t: TextGrid = TextGrid { rows: [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]], tag: stringOf("t") };
+    settext<TextGrid>(borrow t, 0, [stringOf("xx"), stringOf("yy")]);
+    return g.rows[1][0] + g.rows[0][0] + i32(len(t.rows[0][0])) - 14;
+}
+"#;
+    let output = run_memory("genericrow", rows);
+    assert_no_asan("genericrow", &output);
+    assert_exit("genericrow", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rawoutslot: a raw-deref member passed to a nullable out-slot.
+//
+// The argument is a writable place, so the call passes its address and the
+// callee writes through it.
+// ---------------------------------------------------------------------------
+
+/// A raw-deref member out-slot argument passes the member's address.
+#[test]
+fn should_store_through_a_raw_deref_member_out_slot() {
+    let source = r#"module spec.cpr.rawoutslot;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String?; }
+
+func set(borrow slot: String?, pick: bool): void {
+    let other: String? = stringOf("bbbb");
+    slot = pick ? slot : other;
+}
+
+func main(): i32 {
+    let inner: Inner = Inner { name: stringOf("aaaa") };
+    unsafe {
+        let p: raw Inner = &inner;
+        set(unsafe (*p).name, true);
+    }
+    if (inner.name == null) { return 9; }
+    return i32(len(inner.name)) - 4;
+}
+"#;
+    let output = run_memory("rawoutslot", source);
+    assert_no_asan("rawoutslot", &output);
+    assert_exit("rawoutslot", &output, 0);
+}

@@ -50,7 +50,7 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 }
-                let base_c = self.value(base);
+                let base_c = self.deref_base(base, self.value(base));
                 if matches!(self.substitute(&base.ty).kind, TyKind::Raw(_)) {
                     format!("{base_c}->{name}")
                 } else {
@@ -58,7 +58,7 @@ impl<'a> Emitter<'a> {
                 }
             }
             ValueKind::Index { base, index } => {
-                let base_c = self.value(base);
+                let base_c = self.deref_base(base, self.value(base));
                 let index_c = self.value(index);
                 index_text(&self.substitute(&base.ty), &base_c, &index_c)
             }
@@ -122,6 +122,25 @@ impl<'a> Emitter<'a> {
             // The temporary is written where the value's guards are emitted;
             // reading it here reuses the single evaluation.
             ValueKind::Materialize { temp, .. } => format!("__cl_tmp{temp}"),
+        }
+    }
+
+    /// Renders a base expression, parenthesizing a dereference.
+    ///
+    /// C binds `*` below a member or element selection, so `*(p).f` reads a
+    /// member of the pointer and `*(p)[i]` indexes the pointer. The selection
+    /// belongs to the pointee, so the dereference text is grouped first.
+    fn deref_base(&self, base: &Value, base_c: String) -> String {
+        if matches!(
+            base.kind,
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            }
+        ) {
+            format!("({base_c})")
+        } else {
+            base_c
         }
     }
 
@@ -813,6 +832,20 @@ impl<'a> Emitter<'a> {
         let left_c = self.value(left);
         let right_c = self.value(right);
         let ty = self.substitute(&whole.ty);
+        // A compound store recorded in a generic body carries the opaque
+        // destination type. The left operand names the destination place, whose
+        // per-instance type resolves the arithmetic shape, so the signed wrap
+        // and shift masks match the concrete spelling.
+        let ty = if ty.is_unknown() {
+            let resolved = self.resolved_value_ty(left);
+            if resolved.is_unknown() {
+                self.resolved_value_ty(right)
+            } else {
+                resolved
+            }
+        } else {
+            ty
+        };
         if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
             if let Some(scalar) = scalar_of(&ty) {
                 let mask = scalar_bits(scalar).saturating_sub(1);

@@ -147,6 +147,7 @@ impl<'a> Emitter<'a> {
                             condition,
                             then_value,
                             else_value,
+                            false,
                         );
                     } else if self.needs_drop(&ty) {
                         let destination = format!("__cl_tmp{temp}");
