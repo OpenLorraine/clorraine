@@ -15650,3 +15650,347 @@ fn should_report_the_global_escape_after_a_write() {
         &[("E10031", 13, 5), ("E10033", 14, 5)],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Nested fixed-extent fills. A nested literal expands its fill at its own
+// dimension, so an unused or overwritten nested fill contributes nothing and
+// a copy of a nested fill-covered element keeps the loan its direct read has.
+// ---------------------------------------------------------------------------
+
+/// A fill-only row inside a nested array literal, copied at a covered element.
+const NESTED_FILLONLY_SOURCE: &str = r#"module spec.cpr.nestedfillonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct read of the same nested fill-covered element.
+const NESTED_FILLONLY_DIRECT_SOURCE: &str = r#"module spec.cpr.nestedfillonlydirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    fill(g[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The nested fill-covered element copied through a whole-array copy.
+const NESTED_COPY2_SOURCE: &str = r#"module spec.cpr.nestedcopy2;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    let h: str[2][2] = g;
+    let s: str = h[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct read through the whole-array copy.
+const NESTED_COPY2_DIRECT_SOURCE: &str = r#"module spec.cpr.nestedcopy2direct;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    let h: str[2][2] = g;
+    fill(h[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The conditional spelling of the nested fill-covered element.
+const NESTED_COND_COPY_SOURCE: &str = r#"module spec.cpr.nestedcondcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let zs: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    let g: str[2][2] = c ? [["AA", "BB"], [; xs[0]]] : zs;
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct read of the conditional spelling.
+const NESTED_COND_COPY_DIRECT_SOURCE: &str = r#"module spec.cpr.nestedcondcopydirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let zs: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    let g: str[2][2] = c ? [["AA", "BB"], [; xs[0]]] : zs;
+    fill(g[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The inner fill stores no element because the row's elements cover its
+/// extent.
+const NESTED_UNUSED_SOURCE: &str = r#"module spec.cpr.nestedunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"; xs[0]]];
+    fill(g[1][0], borrow slot);
+    return i32(g[1][0][0]) + i32(xs[0][0]) - (67 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 67;
+}
+"#;
+
+/// The nested fill element overwritten before its read.
+const NESTED_OVERWRITE_SOURCE: &str = r#"module spec.cpr.nestedoverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    g[1][0] = "ZZ";
+    fill(g[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 90;
+}
+"#;
+
+/// A fill-only row whose every element is overwritten before its read.
+const NESTED_FILLONLY_OVERWRITTEN_SOURCE: &str = r#"module spec.cpr.nestedfillonlyoverwritten;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    g[1][0] = "ZZ";
+    g[1][1] = "YY";
+    fill(g[1][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 89;
+}
+"#;
+
+/// The same inner fill read through a static sibling element.
+const NESTED_WHOLE_UNUSED_SOURCE: &str = r#"module spec.cpr.nestedwholeunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"; xs[0]]];
+    fill(g[0][0], borrow slot);
+    return i32(g[1][0][0]) + i32(xs[0][0]) - (67 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 65;
+}
+"#;
+
+/// The nested unused and overwritten fill copies stay accepted and clean.
+#[test]
+fn should_keep_the_nested_unused_and_overwritten_fill_copies_accepted() {
+    for (tag, source) in [
+        ("nestedunused", NESTED_UNUSED_SOURCE),
+        ("nestedoverwrite", NESTED_OVERWRITE_SOURCE),
+        ("nestedfillonlyoverwritten", NESTED_FILLONLY_OVERWRITTEN_SOURCE),
+        ("nestedwholeunused", NESTED_WHOLE_UNUSED_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}
+
+/// A copy of a nested fill-covered element reports one `E10030` at its fill,
+/// exactly as the direct read of the same element does.
+#[test]
+fn should_report_a_nested_fill_covered_element_copy() {
+    compile_rejects_once_at(
+        "nestedfillonly",
+        NESTED_FILLONLY_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "nestedfillonlydirect",
+        NESTED_FILLONLY_DIRECT_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "nestedcopy2",
+        NESTED_COPY2_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "nestedcopy2direct",
+        NESTED_COPY2_DIRECT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "nestedcondcopy",
+        NESTED_COND_COPY_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "nestedcondcopydirect",
+        NESTED_COND_COPY_DIRECT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}

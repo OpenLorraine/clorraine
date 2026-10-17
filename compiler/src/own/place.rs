@@ -1288,16 +1288,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.collect_copy_element_loans(else_value, position, base, copied);
             }
             ExprKind::ArrayLiteral { elements, fill } => {
-                let (element, extent) = match position.map(|position| &position.kind) {
-                    Some(TyKind::Array { element, extents }) => {
-                        (Some(element.as_ref()), extents.first().copied().flatten())
+                let extent = match position.map(|position| &position.kind) {
+                    Some(TyKind::Array { extents, .. }) => {
+                        extents.first().copied().flatten()
                     }
-                    _ => (None, None),
+                    _ => None,
                 };
+                // The element at this nesting level keeps the remaining
+                // extents, so a nested literal expands its own fill at its own
+                // dimension instead of collapsing to the folded leaf type.
+                let element = position.map(Ty::iterated_element);
                 for (index, element_value) in elements.iter().enumerate() {
                     let mut path = base.to_vec();
                     path.push(ir::Projection::Element(Some(index)));
-                    self.collect_copy_element_loans(element_value, element, &path, copied);
+                    self.collect_copy_element_loans(element_value, element.as_ref(), &path, copied);
                 }
                 if let Some(fill) = fill {
                     match extent {
@@ -1308,12 +1312,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             for index in elements.len()..extent {
                                 let mut path = base.to_vec();
                                 path.push(ir::Projection::Element(Some(index)));
-                                self.collect_copy_element_loans(fill, element, &path, copied);
+                                self.collect_copy_element_loans(
+                                    fill,
+                                    element.as_ref(),
+                                    &path,
+                                    copied,
+                                );
                             }
                         }
                         // An open extent keeps one record across the
                         // aggregate, which covers every remaining element.
-                        None => self.collect_copy_element_loans(fill, element, base, copied),
+                        None => {
+                            self.collect_copy_element_loans(fill, element.as_ref(), base, copied)
+                        }
                     }
                 }
             }

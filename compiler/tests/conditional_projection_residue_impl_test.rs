@@ -8743,3 +8743,215 @@ fn should_pin_the_global_write_conflict_reading() {
         &[("E10031", 13, 5), ("E10033", 14, 5)],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Nested fixed-extent fills. A nested literal keeps the element type at its
+// own nesting level, so its fill expands per element at that dimension: an
+// unused nested fill emits no fill store, an overwritten fill row drops each
+// element, and a covered element copy reports at its fill.
+// ---------------------------------------------------------------------------
+
+/// The inner fill stores no element because the row's elements cover it.
+const NESTED_UNUSED_SOURCE: &str = r#"module spec.cprimpl.nestedunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"; xs[0]]];
+    fill(g[1][0], borrow slot);
+    return i32(g[1][0][0]) + i32(xs[0][0]) - (67 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 67;
+}
+"#;
+
+/// A fill-only row whose every element is overwritten before its read.
+const NESTED_FILLONLY_OVERWRITTEN_SOURCE: &str = r#"module spec.cprimpl.nestedfillonlyoverwritten;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    g[1][0] = "ZZ";
+    g[1][1] = "YY";
+    fill(g[1][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 89;
+}
+"#;
+
+/// A fill-only row copied at a covered element.
+const NESTED_FILLONLY_COPY_SOURCE: &str = r#"module spec.cprimpl.nestedfillonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same covered element copied through a whole-array copy.
+const NESTED_COPY2_SOURCE: &str = r#"module spec.cprimpl.nestedcopy2;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["AA", "BB"], [; xs[0]]];
+    let h: str[2][2] = g;
+    let s: str = h[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The conditional spelling of the nested covered element.
+const NESTED_COND_COPY_SOURCE: &str = r#"module spec.cprimpl.nestedcondcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let zs: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    let g: str[2][2] = c ? [["AA", "BB"], [; xs[0]]] : zs;
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The unused nested fill emits only the listed row stores.
+#[test]
+fn should_pin_the_nested_unused_fill_emission() {
+    let tag = "implnestedunused";
+    let (_scratch, emitted) = emit_host(tag, NESTED_UNUSED_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_nestedunused_outer(ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "g[1][0] = cl_str(\"CC\");");
+    assert_contains(tag, body, "g[1][1] = cl_str(\"DD\");");
+    assert_absent(tag, body, "g[1][0] = xs[0];");
+    assert_absent(tag, body, "g[1][1] = xs[0];");
+}
+
+/// The nested fill-only row expands at its own dimension, and the overwrites
+/// replace both elements before the fill reads one.
+#[test]
+fn should_pin_the_nested_fill_expansion_and_overwrite() {
+    let tag = "implnestedfillonlyoverwritten";
+    let (_scratch, emitted) = emit_host(tag, NESTED_FILLONLY_OVERWRITTEN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_nestedfillonlyoverwritten_outer(ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "g[1][0] = xs[0];");
+    assert_contains(tag, body, "g[1][1] = xs[0];");
+    assert_contains(tag, body, "g[1][0] = cl_str(\"ZZ\");");
+    assert_contains(tag, body, "g[1][1] = cl_str(\"YY\");");
+    assert_follows(
+        tag,
+        body,
+        "g[1][1] = cl_str(\"YY\");",
+        "cl_spec_cprimpl_nestedfillonlyoverwritten_fill(g[1][1], &((*slot)));",
+    );
+}
+
+/// A copy of a nested fill-covered element reports at its fill in the three
+/// copy spellings.
+#[test]
+fn should_pin_the_nested_fill_covered_element_copies() {
+    assert_rejected_once_at(
+        "implnestedfillonly",
+        NESTED_FILLONLY_COPY_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implnestedcopy2",
+        NESTED_COPY2_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implnestedcondcopy",
+        NESTED_COND_COPY_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
