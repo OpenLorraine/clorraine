@@ -233,3 +233,48 @@ with a same-named own type parameter), `DEF-407` (the qualified generic fixed-ar
   returns `Unknown` for a module-path receiver).
 - Two same-named ffi declarations with different C signatures cannot share one TU (a C constraint,
   out of scope; the keyed lookup is structurally verified).
+
+## Phase 2 — Substitution edges I: conditional and element keys
+
+**Reviewed implementation**: `f96303f` (the implementation), `38ea969` (the pins), `b50cc2f` and
+`731cbc7` (the corrections). **Lenses**: correctness (L2C), semantics (L2S), memory (MS),
+emission-integrity (F).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L2C-1 (the substituted nullable member widening lost the guard and dereferenced null; the member-null rule missing), L2C-2 (the null rule once per instance, not per site); L2C-3/5/6 minors (the unpinned literal-arm context typing, the freestanding pin, the duplicated rule) |
+| semantics | FAIL — 3 blockers | L2S-3 (= L2C-1), L2S-1 (= L2C-2), L2S-2 (a nested conditional's false null arm at the inner conditional's span); L2S-4..6 pre-existing (the argument/arm widening, the concrete no-destination null arm, the `cstring` index-surface note) |
+| memory-safety | FINDINGS — 1 critical | MS-1 (= L2C-1); plus the dotted (`Qualified`) root missing the `E10010` minor and the uncontracted-FFI view-crossing regression |
+| emission-integrity | FINDINGS — 1 major | F1 (= L2C-1); the intended delta classes otherwise clean |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`b50cc2f`) | **Fixed**: the resolved source type drives the widening guard (the nullable member emits the concrete twin's guard); the member-null rule per instance (`E10010`); the null report stops after the site's first offending instance; `unify_numeric` checks the unknown before the parameter (the nested/unannotated false null arm); the literal/array-literal arm context typing pinned (AR-42); the freestanding element pin; the shared conditional-result/null-report helpers |
+| C7 (`731cbc7`) | **Fixed**: the dotted (`Qualified`) member root feeds the `E10010`; the uncontracted-FFI view crossing resolves the argument type (`(APTR)(...).ptr` restored); the nullable mixed conditional arm reports the concrete twin's one `E10200`; the argument/both-arm/both-null pins added |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| memory-safety | **PASS WITH MINORS — 0 blockers**: MS-1 fixed (the guarded line byte-identical to the concrete twin; the base SEGVs; the full coverage clean); the dotted-root and FFI-crossing items found and fixed |
+| correctness | **PASS WITH MINORS — 0 blockers**: all findings closed; the incidental fixes noted (`DEF-408`/`DEF-409`) |
+| final (fresh) | **CLEAN — 0 findings**: F1–F4 verified; the 54-probe matrix and the corpus show only the intended deltas; no head-only strict failure |
+
+### Filed rows
+
+`DEF-408` (the argument widening — **closed** by the correction), `DEF-409` (the conditional-arm
+widening — **closed** by the correction), `DEF-410`–`DEF-414` open, `DEF-415` filed (the same-arm
+nullable conditional zero view).
+
+### Record notes
+
+- AR-40 (the two test-source span corrections; the mechanical evidence recorded, the user veto
+  available in the batch summary), AR-41 (the `cstring` index-surface spec-text note), AR-42 (the
+  literal/array-literal arm context typing).
+- The correction round incidentally fixed `DEF-408` and `DEF-409`; both are closed with the
+  confirmation evidence.
+- `DEF-414`'s reproducer was not retained; the row stays open with the note.

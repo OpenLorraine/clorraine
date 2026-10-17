@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 13/60 tasks (22%) — Phase 2 pinned
+> **Progress**: 16/60 tasks (27%) — Phase 2 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -158,15 +158,15 @@ element key, and the substituted element member widening.
       instance and per direct context, the keyed `cl_id__u8` and the absent `#`, the member
       widening text and its concrete twin, a re-emission determinism pin) in
       `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17; eight impl pins: the opaque conditional at its else arm, the null arm, the four direct contexts, the keyed `cl_id__u8`, the `id(v.len)` control, the member widening with the concrete twin, and the non-view control; the base discrimination 5/3 at `ce1141e`; checker impl 92/92, plain and ASan)
-- [ ] 2.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
+- [x] 2.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
       probes the arm values and the member read; run the base/head differential over `m364_*`,
-      `m365_*`, `m368_*` (AR-37)
-- [ ] 2.3.3 Bounded confirmation: re-run the phase probes, the `RDC_ASAN=1` suite leg, and the
+      `m365_*`, `m368_*` (AR-37) ✅ (completed: 2026-10-17; the four lenses dispatched: correctness FAIL (2 blockers), semantics FAIL (3), memory FINDINGS (1 critical), emission FINDINGS (1 major); two correction rounds `b50cc2f`/`731cbc7` applied every item; the dotted root, the FFI crossing, and the mixed arm closed in the follow-up round)
+- [x] 2.3.3 Bounded confirmation: re-run the phase probes, the `RDC_ASAN=1` suite leg, and the
       focused suites; record the round results
-### Step 2.4: Phase Record
+### Step 2.4: Phase Record ✅ (completed: 2026-10-17; the bounded confirmations: memory PASS WITH MINORS (0 blockers), correctness PASS WITH MINORS (0 blockers), and a fresh final confirmation CLEAN (0 findings); `DEF-408`/`DEF-409` closed incidentally, `DEF-415` filed)
 
-- [ ] 2.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
-      update the Progress block and commit per the active commit mode
+- [x] 2.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+      update the Progress block and commit per the active commit mode ✅ (completed: 2026-10-17; the ledger section recorded; progress 16/60)
 
 **Verify**: `make check`; the checker-conformance suite plain and `RDC_ASAN=1`; the strict builds;
 the hosted-amiga emission for `DEF-365`/`368`; the freestanding compile for `DEF-365`; the
