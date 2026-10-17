@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 28/60 tasks (47%) — Phase 4 implemented
+> **Progress**: 29/60 tasks (48%) — Phase 4 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -279,12 +279,12 @@ bounds fault) and the conditional-base member store rejection, including the `un
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the emitted store sequence, the retained index
+- [x] 4.3.1 Write the phase implementation pins (the emitted store sequence, the retained index
       and bounds guard, the per-instance owning store and its drop, the single RHS call, the
       compound/update/nested/multi-index forms, the target-order materialization, the `E10221`
       spans for the five conditional forms including the unsafe-wrapped conditional forms, the accepted
       raw-prefix forms with their read-back, a re-emission determinism pin) in
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-17; eleven impl pins: the store sequence, the compound/update, the deep chain/nested, the multi-index, the target order, the owning member/element drops, the re-emission determinism, the seven `E10221` sites, the raw-prefix stores, and the slice emission; all eleven discriminate at the base `7103dc1`; residue impl 109/109, plain and ASan)
 - [ ] 4.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
       probes every store form under ASan/LSan; the emission lens runs the differential over
       `m367_*`/`m377_*` (AR-37)

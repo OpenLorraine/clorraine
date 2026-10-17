@@ -6101,3 +6101,632 @@ fn should_parenthesize_a_two_field_arm_literal() {
         "reemittwofield: the program re-emitted differently"
     );
 }
+
+// ---------------------------------------------------------------------------
+// indexedfieldstore: the runtime-indexed element and member store.
+//
+// A store target that selects an element with a run-time index names the
+// element's own storage, so the emitter pins the index, guards the element
+// bounds, and writes the projected lvalue. The owning member and element
+// stores release the value they overwrite, and a second emission is
+// byte-identical.
+// ---------------------------------------------------------------------------
+
+/// A member store through a run-time index.
+const INDEXED_FIELD_SOURCE: &str = r#"module spec.cprimpl.implindexedfield;
+
+struct Elem { y: i32; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func run(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y = bump();
+    return a[i].y - 7;
+}
+
+func main(): i32 {
+    return run(1) + calls - 1;
+}
+"#;
+
+/// A compound store and an update through a run-time index.
+const INDEXED_COMPOUND_SOURCE: &str = r#"module spec.cprimpl.implindexedcompound;
+
+struct Elem { y: i32; }
+
+func add(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y += 3;
+    return a[i].y - 3;
+}
+
+func bump(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y++;
+    return a[i].y - 1;
+}
+
+func main(): i32 {
+    return add(1) + bump(1);
+}
+"#;
+
+/// A deep member chain and a nested generic member store.
+const INDEXED_CHAIN_SOURCE: &str = r#"module spec.cprimpl.implindexedchain;
+
+import { String, stringOf } from std.text;
+
+struct Inner { y: i32; }
+struct Elem { b: Inner; }
+struct Named { name: String; }
+struct Mid { inner: Named; }
+struct Holder { mids: Mid[2]; }
+
+func chain(i: i32): i32 {
+    let a: Elem[3] = [Elem { b: Inner { y: 0 } }, Elem { b: Inner { y: 0 } }, Elem { b: Inner { y: 0 } }];
+    a[i].b.y = 7;
+    return a[i].b.y - 7;
+}
+
+func nested<T>(borrow w: T, i: i32): i32 {
+    w.mids[i].inner.name = stringOf("zz");
+    return i32(len(w.mids[i].inner.name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { mids: [Mid { inner: Named { name: stringOf("a") } }, Mid { inner: Named { name: stringOf("b") } }] };
+    return chain(1) + nested<Holder>(borrow h, 1) - 2;
+}
+"#;
+
+/// A member store through two run-time indices.
+const INDEXED_MULTI_SOURCE: &str = r#"module spec.cprimpl.implindexedmulti;
+
+import { String, stringOf } from std.text;
+
+struct Cell { name: String; }
+struct Grid { grid: Cell[2][2]; }
+
+func setg<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.grid[i][j].name = stringOf("zz");
+    return i32(len(w.grid[i][j].name));
+}
+
+func main(): i32 {
+    let g: Grid = Grid { grid: [[Cell { name: stringOf("a") }, Cell { name: stringOf("b") }], [Cell { name: stringOf("c") }, Cell { name: stringOf("d") }]] };
+    return setg<Grid>(borrow g, 1, 0) - 2;
+}
+"#;
+
+/// A store whose index the stored value updates.
+const INDEXED_ORDER_SOURCE: &str = r#"module spec.cprimpl.implindexedorder;
+
+struct Elem { y: i32; }
+
+let idx: i32 = 1;
+let calls: i32 = 0;
+
+func set_index(): i32 {
+    idx = 2;
+    calls = calls + 1;
+    return 7;
+}
+
+func run(): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[idx].y = set_index();
+    return (a[1].y - 7) + (a[2].y * 100) + (idx - 2);
+}
+
+func main(): i32 {
+    return run() + calls - 1;
+}
+"#;
+
+/// A generic owning member store and a generic whole-element store.
+const INDEXED_OWNED_SOURCE: &str = r#"module spec.cprimpl.implindexedowned;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func member<T>(borrow w: T, i: i32): i32 {
+    w.items[i].name = stringOf("zz");
+    return i32(len(w.items[i].name));
+}
+
+func element<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = Elem { name: stringOf("zz") };
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("a") }, Elem { name: stringOf("b") }] };
+    return member<Holder>(borrow h, 1) + element<Holder>(borrow h, 0) - 4;
+}
+"#;
+
+/// A compile-only slice element store.
+const INDEXED_SLICE_SOURCE: &str = r#"module spec.cprimpl.implindexedslice;
+
+struct Elem { y: i32; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func viaslice(borrow ps: Elem[], i: i32): i32 {
+    ps[i].y = bump();
+    return ps[i].y - 7;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+
+/// A raw-pointer field store and a raw-pointer field-element store.
+const RAW_PREFIX_STORE_SOURCE: &str = r#"module spec.cprimpl.implrawprefix2;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        unsafe p.f = Inner { x: 7 };
+        unsafe p.f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#;
+
+/// A runtime-indexed element field store pins its index, guard, and value.
+///
+/// The index is read into a temporary before the guard and the store, the
+/// bounds check reads that temporary, and the projected element lvalue keeps
+/// the same index. The stored call runs exactly once.
+#[test]
+fn should_pin_the_indexed_element_field_store_sequence() {
+    let tag = "implindexedfield";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_FIELD_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedfield_run(i32 i)\n{",
+    );
+    assert_contains(tag, body, "i32 __cl_tmp0 = 0;");
+    assert_follows(tag, body, "__cl_tmp0 = i;", "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(3))) cl_trap(\"E11211\", \"index out of range\");");
+    assert_follows(
+        tag,
+        body,
+        "cl_trap(\"E11211\", \"index out of range\");",
+        "a[__cl_tmp0].y = cl_spec_cprimpl_implindexedfield_bump();",
+    );
+    assert_eq!(
+        body.matches("implindexedfield_bump()").count(),
+        1,
+        "{tag}: the stored value must run once; body:\n{body}"
+    );
+}
+
+/// The compound store and the update project the same element lvalue.
+///
+/// Both forms read and write the slot the pinned index selects: the compound
+/// store adds to the projected member and the update adds one to it, with no
+/// second index evaluation.
+#[test]
+fn should_pin_the_indexed_compound_and_update_stores() {
+    let tag = "implindexedcompound";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_COMPOUND_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedcompound_add(i32 i)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "a[__cl_tmp0].y = (i32)((u32)a[__cl_tmp0].y + (u32)3);",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedcompound_bump(i32 i)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "a[__cl_tmp0].y = (i32)((u32)a[__cl_tmp0].y + (u32)1);",
+    );
+}
+
+/// A deep chain and a nested generic member store keep every projection.
+///
+/// The store reaches the selected element's field and then the written member,
+/// and the nested generic instance resolves the element's owning member so the
+/// old value is released before the store.
+#[test]
+fn should_pin_the_indexed_deep_chain_and_nested_member_stores() {
+    let tag = "implindexedchain";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_CHAIN_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedchain_chain(i32 i)\n{",
+    );
+    assert_contains(tag, body, "a[__cl_tmp0].b.y = 7;");
+
+    let body = function_body(tag, &emitted, "cl_nested__Holder(ClHolder *w, i32 i)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if ((*w).mids[__cl_tmp0].inner.name) { FreeString((*w).mids[__cl_tmp0].inner.name); }",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*w).mids[__cl_tmp0].inner.name = NULL;",
+        "(*w).mids[__cl_tmp0].inner.name = cl_std_text_stringOf(cl_str(\"zz\"));",
+    );
+}
+
+/// A nested index target keeps both indices on the store and its guards.
+///
+/// Each run-time index is pinned in source order, both bounds checks read the
+/// pinned values, and the projected member is written through both of them.
+#[test]
+fn should_pin_the_indexed_multi_index_store() {
+    let tag = "implindexedmulti";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_MULTI_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_setg__Grid(ClGrid *w, i32 i, i32 j)\n{",
+    );
+    assert_follows(tag, body, "__cl_tmp0 = i;", "__cl_tmp1 = j;");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = j;",
+        "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_follows(
+        tag,
+        body,
+        "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+        "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_contains(
+        tag,
+        body,
+        "(*w).grid[__cl_tmp0][__cl_tmp1].name = cl_std_text_stringOf(cl_str(\"zz\"));",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*w).grid[__cl_tmp0][__cl_tmp1].name = NULL;",
+        "(*w).grid[__cl_tmp0][__cl_tmp1].name = cl_std_text_stringOf(cl_str(\"zz\"));",
+    );
+}
+
+/// The target's index is pinned before the stored value runs.
+///
+/// The store reads the module index into a temporary before the guard and the
+/// store, so the call that also writes that index cannot redirect the store to
+/// the new slot.
+#[test]
+fn should_pin_the_target_location_ahead_of_the_stored_value() {
+    let tag = "implindexedorder";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_ORDER_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedorder_run(void)\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cprimpl_implindexedorder_idx;",
+        "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(3))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_follows(
+        tag,
+        body,
+        "cl_trap(\"E11211\", \"index out of range\");",
+        "a[__cl_tmp0].y = cl_spec_cprimpl_implindexedorder_set_index();",
+    );
+    assert_absent(tag, body, "a[idx].y = ");
+}
+
+/// A generic owning member store releases the value it overwrites.
+///
+/// The substituted member type owns its storage, so the store releases the old
+/// value and clears its slot before writing the new one.
+#[test]
+fn should_release_the_owner_an_indexed_member_store_overwrites() {
+    let tag = "implindexedownedmember";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_OWNED_SOURCE);
+    let body = function_body(tag, &emitted, "cl_member__Holder(ClHolder *w, i32 i)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if ((*w).items[__cl_tmp0].name) { FreeString((*w).items[__cl_tmp0].name); }",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*w).items[__cl_tmp0].name = NULL;",
+        "(*w).items[__cl_tmp0].name = cl_std_text_stringOf(cl_str(\"zz\"));",
+    );
+}
+
+/// A generic whole-element store releases the element it overwrites.
+///
+/// The element address carries the run-time index, and the promoted element
+/// type owns its member, so the store releases the old member through that
+/// address before writing the new element.
+#[test]
+fn should_release_the_owner_an_indexed_element_store_overwrites() {
+    let tag = "implindexedownedelement";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_OWNED_SOURCE);
+    let body = function_body(tag, &emitted, "cl_element__Holder(ClHolder *w, i32 i)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if ((*(&((*w).items[i]))).name) { FreeString((*(&((*w).items[i]))).name); }",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*(&((*w).items[i]))).name = NULL;",
+        "*(&((*w).items[i])) = (ClElem){ cl_std_text_stringOf(cl_str(\"zz\")) };",
+    );
+}
+
+/// The runtime-indexed store programs re-emit byte-identically.
+///
+/// The per-instance owning store and the pinned element lvalue read the
+/// substituted shapes, so a second emission of the same source produces the
+/// same text.
+#[test]
+fn should_re_emit_the_indexed_store_programs_identically() {
+    let (first, second) = emit_twice("reemitindexedstore", INDEXED_OWNED_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitindexedstore: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitindexedstore",
+        &first,
+        "(*w).items[__cl_tmp0].name = cl_std_text_stringOf(cl_str(\"zz\"));",
+    );
+}
+
+/// A conditional-rooted store reports one place rejection at its site.
+///
+/// The member, indexed member, fixed-array element, index base, and deep chain
+/// shapes — and the two `unsafe`-wrapped conditional selections — each report
+/// one `E10221` at the store's own line and emit no translation unit.
+#[test]
+fn should_pin_the_conditional_store_rejection_sites() {
+    let fragments = [
+        "left side of an assignment must be a place",
+        "assign to a variable, field, or element",
+    ];
+    let cases: [(&str, &str, usize); 7] = [
+        (
+            "implcondmember2",
+            r#"module spec.cprimpl.implcondmember2;
+
+struct Inner { g: i32; }
+struct Box { f: Inner; }
+
+func use(c: bool, a: Box, b: Box): i32 {
+    (c ? a : b).f.g = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { f: Inner { g: 0 } };
+    let b: Box = Box { f: Inner { g: 0 } };
+    return use(true, a, b);
+}
+"#,
+            7,
+        ),
+        (
+            "implcondindex2",
+            r#"module spec.cprimpl.implcondindex2;
+
+struct Cell { x: i32; }
+struct Inner { rows: Cell[2]; }
+struct Box { f: Inner; }
+
+func use(c: bool, i: i32, a: Box, b: Box): i32 {
+    (c ? a : b).f.rows[i].x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { f: Inner { rows: [Cell { x: 0 }, Cell { x: 0 }] } };
+    let b: Box = Box { f: Inner { rows: [Cell { x: 0 }, Cell { x: 0 }] } };
+    return use(true, 1, a, b);
+}
+"#,
+            8,
+        ),
+        (
+            "implcondarray2",
+            r#"module spec.cprimpl.implcondarray2;
+
+struct Bag { ys: i32[2]; }
+struct Box { b: Bag; }
+
+func use(c: bool, i: i32, a: Box, b: Box): i32 {
+    (c ? a : b).b.ys[i] = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { b: Bag { ys: [0, 0] } };
+    let b: Box = Box { b: Bag { ys: [0, 0] } };
+    return use(true, 1, a, b);
+}
+"#,
+            7,
+        ),
+        (
+            "implcondindexbase2",
+            r#"module spec.cprimpl.implcondindexbase2;
+
+struct Cell { x: i32; }
+
+func use(c: bool, i: i32, a: Cell[2], b: Cell[2]): i32 {
+    (c ? a : b)[i].x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    let b: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    return use(true, 1, a, b);
+}
+"#,
+            6,
+        ),
+        (
+            "implconddeep2",
+            r#"module spec.cprimpl.implconddeep2;
+
+struct Bag { ys: i32[2]; }
+struct Holder { b: Bag; }
+
+func use(c: bool, i: i32, h1: Holder, h2: Holder): i32 {
+    (c ? h1 : h2).b.ys[i] = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let h1: Holder = Holder { b: Bag { ys: [0, 0] } };
+    let h2: Holder = Holder { b: Bag { ys: [0, 0] } };
+    return use(true, 1, h1, h2);
+}
+"#,
+            7,
+        ),
+        (
+            "implcondunsafemember2",
+            r#"module spec.cprimpl.implcondunsafemember2;
+
+struct Inner { x: i32; }
+struct Box { v: Inner; }
+
+func run(c: bool, a: Box, b: Box): i32 {
+    (unsafe (c ? a : b)).v.x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: Inner { x: 0 } };
+    let b: Box = Box { v: Inner { x: 0 } };
+    return run(true, a, b);
+}
+"#,
+            7,
+        ),
+        (
+            "implcondunsafeindex2",
+            r#"module spec.cprimpl.implcondunsafeindex2;
+
+struct Cell { x: i32; }
+
+func run(c: bool, i: i32, a: Cell[2], b: Cell[2]): i32 {
+    (unsafe (c ? a : b))[i].x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    let b: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    return run(true, 1, a, b);
+}
+"#,
+            6,
+        ),
+    ];
+    for (tag, source, line) in cases {
+        assert_rejected_once_at(tag, source, "E10221", line, 5, &fragments, &[]);
+    }
+}
+
+/// A raw-pointer prefix store is accepted and writes the stored value.
+///
+/// The `unsafe` wrapper is transparent to the place it wraps, so the field
+/// store and the field-element store both emit through the pointer, and the
+/// enclosing read-back reads the value the store wrote.
+#[test]
+fn should_pin_the_accepted_raw_pointer_prefix_stores() {
+    let tag = "implrawprefix2";
+    let (_scratch, emitted) = emit_host(tag, RAW_PREFIX_STORE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implrawprefix2_main(void)\n{",
+    );
+    assert_contains(tag, body, "p->f = (ClInner){ 7 };");
+    assert_contains(tag, body, "p->f.x = 7;");
+    assert_follows(
+        tag,
+        body,
+        "p->f.x = 7;",
+        "return (i32)((u32)s.f.x - (u32)7);",
+    );
+}
+
+/// A compile-only slice element store emits the store and its bounds guard.
+///
+/// A slice value cannot be built locally, so the uncalled borrow-slice
+/// function pins the emission: the pinned index feeds the bounds check and the
+/// element's projected lvalue, and the stored call survives beside them.
+#[test]
+fn should_pin_the_indexed_slice_store_emission() {
+    let tag = "implindexedslice";
+    let (_scratch, emitted) = emit_host(tag, INDEXED_SLICE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implindexedslice_viaslice(ClSlice_Elem ps, i32 i)\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = i;",
+        "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)((ps).len))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_follows(
+        tag,
+        body,
+        "cl_trap(\"E11211\", \"index out of range\");",
+        "(ps).ptr[__cl_tmp0].y = cl_spec_cprimpl_implindexedslice_bump();",
+    );
+    assert_eq!(
+        body.matches("implindexedslice_bump()").count(),
+        1,
+        "{tag}: the slice store's value must run once; body:\n{body}"
+    );
+}
