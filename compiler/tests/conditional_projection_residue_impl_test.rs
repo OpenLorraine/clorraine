@@ -21,6 +21,11 @@
 //! source report at their fills, the union keeps both arms' positions, the
 //! accepted copies keep their store shapes, and an overwritten element drops
 //! the loan it replaced.
+//!
+//! The hidden view destinations and guarded owning carriers are pinned by the
+//! bound destination array and field copy at each read shape, the once-per-call
+//! counters, the carrier fill inside its guard, the loop's re-fill and release
+//! order, and the skipped field and element paths.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -9582,5 +9587,600 @@ fn should_pin_the_literal_sibling_order_before_a_deref_fill() {
         body,
         "__cl_tmp1 = cl_bump__String(rp, rq);",
         "xs[1].b = *(__cl_tmp1);",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// hidden view destinations and guarded owning carriers: a call-filled
+// view-array field binds its hidden destination at every read position, and an
+// owning conditional argument fills its carrier only on the guard's evaluated
+// path.
+// ---------------------------------------------------------------------------
+
+/// A call-valued view-array field read through a literal projection.
+const HIDDEN_READ_SOURCE: &str = r#"module spec.cprimpl.hiddenread;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    return i32(Inner { row: n1() }.row[0][0]) - 65;
+}
+
+func main(): i32 {
+    use();
+    return calls;
+}
+"#;
+
+/// The same field selected between two calls without a guard.
+const HIDDEN_ROW_COND_SOURCE: &str = r#"module spec.cprimpl.hiddenrowcond;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    return i32(Inner { row: ok ? n1() : n2() }.row[0][0]) - 65;
+}
+
+func main(): i32 {
+    use(true);
+    use(false);
+    return calls;
+}
+"#;
+
+/// A multi-extent grid whose rows are selected between calls under a guard.
+const HIDDEN_GRID_SOURCE: &str = r#"module spec.cprimpl.hiddengrid;
+
+struct Grid { rows: str[2][2]; }
+
+let calls: i32 = 0;
+
+func r1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func r2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(g: bool, o: bool): i32 {
+    if (g && i32(Grid { rows: [o ? r1() : r2(), r1()] }.rows[0][0][0]) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    use(true, true);
+    use(false, true);
+    return calls;
+}
+"#;
+
+/// A guarded row conditional and the same literal read after the guard.
+const HIDDEN_GUARD_ROW_SOURCE: &str = r#"module spec.cprimpl.hiddenguardrow;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(g: bool, ok: bool): i32 {
+    if (g && i32(Inner { row: ok ? n1() : n2() }.row[0][0]) > 0) {
+        return i32(Inner { row: ok ? n1() : n2() }.row[0][0]);
+    }
+    return -1;
+}
+
+func main(): i32 {
+    use(true, true);
+    use(true, false);
+    use(false, true);
+    return calls;
+}
+"#;
+
+/// The call-filled view field binds a destination array and copies the field at
+/// every read shape, and no shape keeps the brace-list call spelling.
+#[test]
+fn should_pin_the_hidden_view_destination_at_every_read_shape() {
+    let read = "hiddenread";
+    let (_scratch, emitted) = emit_host(read, HIDDEN_READ_SOURCE);
+    let body = function_body(
+        read,
+        &emitted,
+        "cl_spec_cprimpl_hiddenread_use(void)\n{",
+    );
+    assert_contains(read, body, "ClInner __cl_tmp0 = {0};");
+    assert_contains(read, body, "ClStr __cl_call_1[2] = {0};");
+    assert_contains(
+        read,
+        body,
+        "cl_spec_cprimpl_hiddenread_n1(__cl_call_1);",
+    );
+    assert_contains(
+        read,
+        body,
+        "memcpy(&(__cl_tmp0.row), &(__cl_call_1), sizeof(__cl_tmp0.row));",
+    );
+    assert_absent(read, body, "(ClInner){ cl_spec_cprimpl_hiddenread_n1()");
+
+    let row = "hiddenrowcond";
+    let (_scratch, emitted) = emit_host(row, HIDDEN_ROW_COND_SOURCE);
+    let body = function_body(
+        row,
+        &emitted,
+        "cl_spec_cprimpl_hiddenrowcond_use(bool ok)\n{",
+    );
+    assert_contains(row, body, "ClInner __cl_tmp0 = {0};");
+    assert_contains(row, body, "ClStr __cl_arm_2[2] = {0};");
+    assert_contains(
+        row,
+        body,
+        "cl_spec_cprimpl_hiddenrowcond_n1(__cl_arm_2);",
+    );
+    assert_contains(
+        row,
+        body,
+        "memcpy(&(__cl_tmp0.row), &(__cl_arm_2), sizeof(__cl_tmp0.row));",
+    );
+    assert_contains(
+        row,
+        body,
+        "cl_spec_cprimpl_hiddenrowcond_n2(__cl_arm_3);",
+    );
+    assert_contains(
+        row,
+        body,
+        "memcpy(&(__cl_tmp0.row), &(__cl_arm_3), sizeof(__cl_tmp0.row));",
+    );
+    assert_absent(row, body, "(ClInner){ (ok ? cl_spec_cprimpl_hiddenrowcond_n1()");
+
+    let grid = "hiddengrid";
+    let (_scratch, emitted) = emit_host(grid, HIDDEN_GRID_SOURCE);
+    let body = function_body(
+        grid,
+        &emitted,
+        "cl_spec_cprimpl_hiddengrid_use(bool g, bool o)\n{",
+    );
+    assert_on_line_of(
+        grid,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_hiddengrid_r1(__cl_tmp0.rows[0])",
+    );
+    assert_on_line_of(
+        grid,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_hiddengrid_r2(__cl_tmp0.rows[0])",
+    );
+    assert_on_line_of(
+        grid,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_hiddengrid_r1(__cl_tmp0.rows[1])",
+    );
+    assert_absent(grid, body, "cl_spec_cprimpl_hiddengrid_r1()");
+
+    let guard = "hiddenguardrow";
+    let (_scratch, emitted) = emit_host(guard, HIDDEN_GUARD_ROW_SOURCE);
+    let body = function_body(
+        guard,
+        &emitted,
+        "cl_spec_cprimpl_hiddenguardrow_use(bool g, bool ok)\n{",
+    );
+    assert_on_line_of(
+        guard,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_hiddenguardrow_n1(__cl_tmp0.row)",
+    );
+    assert_on_line_of(
+        guard,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_hiddenguardrow_n2(__cl_tmp0.row)",
+    );
+    assert_contains(
+        guard,
+        body,
+        "cl_spec_cprimpl_hiddenguardrow_n1(__cl_arm_2);",
+    );
+    assert_contains(
+        guard,
+        body,
+        "memcpy(&(__cl_tmp2.row), &(__cl_arm_2), sizeof(__cl_tmp2.row));",
+    );
+    assert_contains(
+        guard,
+        body,
+        "cl_spec_cprimpl_hiddenguardrow_n2(__cl_arm_3);",
+    );
+    assert_contains(
+        guard,
+        body,
+        "memcpy(&(__cl_tmp2.row), &(__cl_arm_3), sizeof(__cl_tmp2.row));",
+    );
+    assert_absent(guard, body, "cl_spec_cprimpl_hiddenguardrow_n1()");
+}
+
+/// The four call-filled destinations evaluate each call once.
+#[test]
+fn should_count_the_call_filled_view_destinations_once() {
+    for (tag, source, calls) in [
+        ("hiddenread", HIDDEN_READ_SOURCE, 1),
+        ("hiddenrowcond", HIDDEN_ROW_COND_SOURCE, 2),
+        ("hiddengrid", HIDDEN_GRID_SOURCE, 2),
+        ("hiddenguardrow", HIDDEN_GUARD_ROW_SOURCE, 4),
+    ] {
+        let (scratch, emitted) = emit_host(tag, source);
+        let exit = run_host_c(tag, &scratch, &emitted);
+        assert_eq!(
+            exit, calls,
+            "{tag}: expected the fixture to report {calls} calls; exit {exit}"
+        );
+    }
+}
+
+/// The hidden-destination programs re-emit byte-identically with the bound
+/// destination shape.
+#[test]
+fn should_re_emit_the_hidden_view_destination_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "hiddenread",
+            HIDDEN_READ_SOURCE,
+            "memcpy(&(__cl_tmp0.row), &(__cl_call_1), sizeof(__cl_tmp0.row));",
+        ),
+        (
+            "hiddenrowcond",
+            HIDDEN_ROW_COND_SOURCE,
+            "cl_spec_cprimpl_hiddenrowcond_n1(__cl_arm_2);",
+        ),
+        (
+            "hiddengrid",
+            HIDDEN_GRID_SOURCE,
+            "cl_spec_cprimpl_hiddengrid_r1(__cl_tmp0.rows[1])",
+        ),
+        (
+            "hiddenguardrow",
+            HIDDEN_GUARD_ROW_SOURCE,
+            "cl_spec_cprimpl_hiddenguardrow_n1(__cl_tmp0.row)",
+        ),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_contains(tag, &first, shape);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}
+
+/// An owning conditional argument under a short-circuit guard.
+const GUARD_CARRIER_SOURCE: &str = r#"module spec.cprimpl.guardcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                        : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+
+/// The same carrier re-filled by a loop.
+const GUARD_CARRIER_LOOP_SOURCE: &str = r#"module spec.cprimpl.guardcarrierloop;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 2) {
+        if (g && consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                            : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+            total = total + seen;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    use(true, true);
+    use(true, false);
+    use(false, true);
+    return calls;
+}
+"#;
+
+/// The same carrier under a guard that is always false.
+const GUARD_CARRIER_FALSE_SOURCE: &str = r#"module spec.cprimpl.guardcarrierfalse;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                        : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(false, true);
+    return a + 1 + calls;
+}
+"#;
+
+/// A guarded struct-literal field whose source is the caller's pointee.
+const GUARD_SKIP_FIELD_SOURCE: &str = r#"module spec.cprimpl.guardskipfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(take s: String, g: bool): i32 {
+    unsafe {
+        let q: raw String = &s;
+        if (g && consume(Box { s: *q }) == 0) {
+            return 1;
+        }
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(stringOf("xx"), false);
+    let b: i32 = use(stringOf("yy"), true);
+    return a + b - 1;
+}
+"#;
+
+/// A guarded array-literal element whose source is the caller's pointee.
+const GUARD_SKIP_ELEMENT_SOURCE: &str = r#"module spec.cprimpl.guardskipelement;
+
+import { String, stringOf } from std.text;
+
+func consume(xs: String[1]): i32 { return i32(len(xs[0])) - 2; }
+
+func use(take s: String, g: bool): i32 {
+    unsafe {
+        let q: raw String = &s;
+        if (g && consume([*q]) == 0) {
+            return 1;
+        }
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(stringOf("xx"), false);
+    let b: i32 = use(stringOf("yy"), true);
+    return a + b - 1;
+}
+"#;
+
+/// The owning conditional carrier fills inside the guard, after the drop of the
+/// previous value, and the call reads that same carrier.
+#[test]
+fn should_fill_the_owning_conditional_carrier_inside_its_guard() {
+    let tag = "guardcarrier";
+    let (_scratch, emitted) = emit_host(tag, GUARD_CARRIER_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardcarrier_use(bool g, bool ok)\n{",
+    );
+    assert_contains(tag, body, "ClOuter __cl_owned0 = {0};");
+    assert_on_line_of(tag, body, "if ((g &&", "(__cl_owned0 =");
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "cl_spec_cprimpl_guardcarrier_consume(__cl_owned0)",
+    );
+    assert_on_line_before(
+        tag,
+        body,
+        "if ((g &&",
+        "__cl_owned0.tag ? (FreeString(__cl_owned0.tag)",
+        "(__cl_owned0 =",
+    );
+    assert_on_line_before(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0 =",
+        "cl_spec_cprimpl_guardcarrier_consume(__cl_owned0)",
+    );
+    assert_absent(tag, body, "ClOuter __cl_save_");
+    assert_absent(tag, body, "if (__cl_save_");
+    assert_contains(
+        tag,
+        body,
+        "if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }",
+    );
+}
+
+/// A loop re-fills the carrier: each evaluated fill drops the previous value
+/// once, and the scope releases the last value after the loop.
+#[test]
+fn should_re_drop_and_re_release_the_loop_carrier() {
+    let tag = "guardcarrierloop";
+    let (scratch, emitted) = emit_host(tag, GUARD_CARRIER_LOOP_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardcarrierloop_use(bool g, bool ok)\n{",
+    );
+    assert_on_line_before(
+        tag,
+        body,
+        "if ((g &&",
+        "__cl_owned0.tag ? (FreeString(__cl_owned0.tag)",
+        "(__cl_owned0 =",
+    );
+    assert_on_line_before(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0 =",
+        "cl_spec_cprimpl_guardcarrierloop_consume(__cl_owned0)",
+    );
+    assert_eq!(
+        body
+            .matches("__cl_owned0.tag ? (FreeString(__cl_owned0.tag)")
+            .count(),
+        1,
+        "the guarded re-fill must drop the previous carrier exactly once; body:\n{body}"
+    );
+    assert_eq!(
+        body
+            .matches("if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }")
+            .count(),
+        1,
+        "the scope must release the last carrier exactly once; body:\n{body}"
+    );
+    assert_occurs_before(
+        tag,
+        body,
+        "while ((i < 2))",
+        "if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }",
+    );
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 4,
+        "the loop must evaluate the conditional arms four times; exit {exit}"
+    );
+}
+
+/// A skipped guard runs no carrier fill and no arm call.
+#[test]
+fn should_skip_the_guarded_carrier_calls_on_the_false_path() {
+    let tag = "guardcarrierfalse";
+    let (scratch, emitted) = emit_host(tag, GUARD_CARRIER_FALSE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardcarrierfalse_use(bool g, bool ok)\n{",
+    );
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 0,
+        "the skipped guard must not call an arm; exit {exit}"
+    );
+    assert_on_line_of(tag, body, "if ((g &&", "(__cl_owned0 =");
+    assert_absent(tag, body, "ClOuter __cl_save_");
+}
+
+/// A guarded struct-literal field moves the caller's pointee only on the
+/// guard's evaluated path; the skipped path keeps it.
+#[test]
+fn should_keep_a_guarded_field_source_on_the_evaluated_path() {
+    let tag = "guardskipfield";
+    let (scratch, emitted) = emit_host(tag, GUARD_SKIP_FIELD_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardskipfield_use(ClString s, bool g)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = *(q), (*(q) = NULL))",
+    );
+    assert_absent(tag, body, "__cl_owned0.s = *(q);");
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 0,
+        "the skipped field guard must leave the caller's value intact; exit {exit}"
+    );
+}
+
+/// A guarded array-literal element moves the caller's pointee only on the
+/// guard's evaluated path; the skipped path keeps it.
+#[test]
+fn should_keep_a_guarded_element_source_on_the_evaluated_path() {
+    let tag = "guardskipelement";
+    let (scratch, emitted) = emit_host(tag, GUARD_SKIP_ELEMENT_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardskipelement_use(ClString s, bool g)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0[0] = *(q), (*(q) = NULL))",
+    );
+    assert_absent(tag, body, "ClString __cl_save_");
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 0,
+        "the skipped element guard must leave the caller's value intact; exit {exit}"
     );
 }

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 52/60 tasks (87%) — Phase 7 implemented
+> **Progress**: 53/60 tasks (88%) — Phase 7 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -457,7 +457,7 @@ included) and the owning nested conditional's deferred carrier/fill.
 
 ### Step 7.3: Impl Tests & Review
 
-- [ ] 7.3.1 Write the phase implementation pins (the bound destination array, the
+- [x] 7.3.1 Write the phase implementation pins (the bound destination array, the ✅ (completed: 2026-10-17; eight impl pins: the hidden destination at every read shape, the call counters (1/2/2/4), the byte-identical re-emission, the carrier fill inside the guard, the loop re-drop/re-fill/re-release, the false-path absence, and the guarded field/element move on the evaluated path; all eight discriminate at `182af2c`; residue impl 163/163, plain and ASan)
       call-with-destination form, the field copy, the call counters, the `__cl_owned0` fill
       position inside the guarded path, the loop's re-fill/re-drop/re-release order, a re-emission
       determinism pin) in `compiler/tests/conditional_projection_residue_impl_test.rs`
