@@ -657,59 +657,24 @@ impl<'a> Emitter<'a> {
             }
             Statement::Move { target, source } => {
                 self.emit_line_directive(span);
-                self.emit_reassigned_target_drop(target);
                 let target_c = self.place(target);
                 let source_c = self.place(source);
-                // C cannot assign an array, so a fixed-array move copies the
-                // bytes instead; the zeroed source below empties the original.
-                // A fixed-array parameter is adjusted to a pointer to its
-                // first element, so the parameter name already is the array's
-                // address and the byte count comes from the element type.
-                if self.substitute(&target.ty).is_fixed_array() {
-                    let target_param = self.is_array_param_place(target);
-                    let source_param = self.is_array_param_place(source);
-                    let target_value = if target_param {
-                        target_c.clone()
-                    } else {
-                        format!("&({target_c})")
-                    };
-                    let source_value = if source_param {
-                        source_c.clone()
-                    } else {
-                        format!("&({source_c})")
-                    };
-                    let bytes = if !target_param {
-                        format!("sizeof({target_c})")
-                    } else if !source_param {
-                        format!("sizeof({source_c})")
-                    } else {
-                        let target_ty = self.substitute(&target.ty);
-                        self.array_param_bytes(&target_c, &target_ty)
-                    };
-                    self.push(&format!(
-                        "    memcpy({target_value}, {source_value}, {bytes});"
-                    ));
-                } else if crate::types::is_null_shaped(&self.substitute(&source.ty))
-                    && !crate::types::is_null_shaped(&self.substitute(&target.ty))
-                    && self.carries_null_value(&target.ty)
-                {
-                    // A null-shaped source lowers to the target's own empty
-                    // value: a view target needs its zero view and a handle
-                    // target its null, not the shape's `void *`.
-                    let empty = self.null_value(&self.substitute(&target.ty));
-                    self.push(&format!("    {target_c} = {empty};"));
-                } else {
-                    self.push(&format!("    {target_c} = {source_c};"));
-                }
-                // A move whose source type does not own at this instantiation
-                // is a plain copy: the source stays intact for a duplicable
-                // instance, while an owning one empties it. The source type is
-                // the resolved place type, so a source recorded opaquely — the
-                // member of an element placeholder — empties exactly as the
-                // concrete spelling does.
+                // A source reached through a run-time element may name the
+                // destination slot itself (`w.items[i].name = w.items[j].name`
+                // with `i == j`). The move must not empty the source when it is
+                // the destination, so an owning runtime source compares the two
+                // addresses first and treats an equal pair as a self-copy.
                 let source_ty = self.resolved_place_ty(source);
-                if self.needs_drop(&source_ty) {
-                    self.emit_move_zero_place(source, &source_c, &source_ty);
+                let runtime_source = self.needs_drop(&source_ty)
+                    && source.projections.iter().any(|projection| {
+                        matches!(projection, ir::Projection::ElementTemp(_))
+                    });
+                if runtime_source {
+                    self.push(&format!("    if (&({target_c}) != &({source_c})) {{"));
+                    self.emit_move_place(target, source, &target_c, &source_c);
+                    self.push("    }");
+                } else {
+                    self.emit_move_place(target, source, &target_c, &source_c);
                 }
             }
             Statement::MoveOut { place } => {
@@ -781,19 +746,37 @@ impl<'a> Emitter<'a> {
                         // different base; the replaced value must survive
                         // until the right-hand side has been evaluated. Save
                         // it, store the new value, then release the saved
-                        // value.
+                        // value. A projected source may name the destination
+                        // slot itself (`w.items[i] = w.items[j]` with `i == j`),
+                        // so an equal pair is a self-copy.
+                        let target_c = format!("*({pointer_c})");
+                        let aliasable = value_names_storage(value);
+                        if aliasable {
+                            // The address comparison reads the source index, so
+                            // its bounds check runs first.
+                            self.emit_guards(value);
+                            self.push(&format!(
+                                "    if (&({target_c}) != &({})) {{",
+                                self.value(value)
+                            ));
+                        }
                         let save = self.unique_local("__cl_save");
                         self.push("    {");
                         self.push(&format!(
-                            "        {} = *({pointer_c});",
+                            "        {} = {target_c};",
                             declarator(&pointer_ty, &save, &self.sema.table)
                         ));
-                        self.emit_guards(value);
+                        if !aliasable {
+                            self.emit_guards(value);
+                        }
                         let lowered = self.store_text(value, &pointer_ty);
-                        self.push(&format!("        *({pointer_c}) = {lowered};"));
+                        self.push(&format!("        {target_c} = {lowered};"));
                         self.emit_arm_source_moves(value, &pointer_ty);
                         self.emit_drop_expr(&save, &pointer_ty);
                         self.push("    }");
+                        if aliasable {
+                            self.push("    }");
+                        }
                     } else {
                         // The replaced element owns a value, so it is released
                         // (and its storage cleared) before the value is
@@ -1435,6 +1418,65 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Emits the copy and source-empty of a place move.
+    ///
+    /// The caller has already rendered the two places and decided whether the
+    /// move needs the runtime self-slot guard.
+    fn emit_move_place(&mut self, target: &Place, source: &Place, target_c: &str, source_c: &str) {
+        self.emit_reassigned_target_drop(target);
+        // C cannot assign an array, so a fixed-array move copies the
+        // bytes instead; the zeroed source below empties the original.
+        // A fixed-array parameter is adjusted to a pointer to its
+        // first element, so the parameter name already is the array's
+        // address and the byte count comes from the element type.
+        if self.substitute(&target.ty).is_fixed_array() {
+            let target_param = self.is_array_param_place(target);
+            let source_param = self.is_array_param_place(source);
+            let target_value = if target_param {
+                target_c.to_owned()
+            } else {
+                format!("&({target_c})")
+            };
+            let source_value = if source_param {
+                source_c.to_owned()
+            } else {
+                format!("&({source_c})")
+            };
+            let bytes = if !target_param {
+                format!("sizeof({target_c})")
+            } else if !source_param {
+                format!("sizeof({source_c})")
+            } else {
+                let target_ty = self.substitute(&target.ty);
+                self.array_param_bytes(target_c, &target_ty)
+            };
+            self.push(&format!(
+                "    memcpy({target_value}, {source_value}, {bytes});"
+            ));
+        } else if crate::types::is_null_shaped(&self.substitute(&source.ty))
+            && !crate::types::is_null_shaped(&self.substitute(&target.ty))
+            && self.carries_null_value(&target.ty)
+        {
+            // A null-shaped source lowers to the target's own empty
+            // value: a view target needs its zero view and a handle
+            // target its null, not the shape's `void *`.
+            let empty = self.null_value(&self.substitute(&target.ty));
+            self.push(&format!("    {target_c} = {empty};"));
+        } else {
+            self.push(&format!("    {target_c} = {source_c};"));
+        }
+        // A move whose source type does not own at this instantiation
+        // is a plain copy: the source stays intact for a duplicable
+        // instance, while an owning one empties it. The source type is
+        // the resolved place type, so a source recorded opaquely — the
+        // member of an element placeholder — empties exactly as the
+        // concrete spelling does.
+        let source_ty = self.resolved_place_ty(source);
+        if self.needs_drop(&source_ty) {
+            self.emit_move_zero_place(source, source_c, &source_ty);
+        }
+    }
+
     /// Emits a whole-array copy for a fixed-array assignment.
     ///
     /// The target place is rendered and delegated to
@@ -1772,6 +1814,9 @@ impl<'a> Emitter<'a> {
                 "                    memcpy({}, {arm_address}, {});",
                 target.address, target.bytes
             ));
+            // A distinct arm is a move: the bytes travel to the destination
+            // and the source is emptied, exactly as the general arm does.
+            self.emit_fixed_array_arm_source_move(arm, &arm_c, ty);
             self.push("                }");
             return;
         }
@@ -1840,17 +1885,30 @@ impl<'a> Emitter<'a> {
                 ));
                 // An owned arm is a move: the bytes travel to the destination
                 // and the source is emptied, so only the chosen arm is moved.
-                if self.needs_drop(ty) {
-                    let source_ty = self.substitute(&arm.ty);
-                    if self.needs_drop(&source_ty) {
-                        if let ValueKind::Place(place) = &arm.kind {
-                            self.emit_move_zero_place(place, &arm_c, &source_ty);
-                        } else {
-                            self.emit_move_zero(&arm_c, &source_ty);
-                        }
-                    }
-                }
+                self.emit_fixed_array_arm_source_move(arm, &arm_c, ty);
             }
+        }
+    }
+
+    /// Empties the source of a fixed-array conditional arm after its bytes
+    /// have moved to the destination.
+    ///
+    /// An owned arm is a move, so the destination and the arm must not both
+    /// keep the same handles. The rendered arm is emptied after the copy, and
+    /// a place arm empties through its own storage so the spelled slot is the
+    /// one that is cleared.
+    fn emit_fixed_array_arm_source_move(&mut self, arm: &Value, arm_c: &str, ty: &Ty) {
+        if !self.needs_drop(ty) {
+            return;
+        }
+        let source_ty = self.substitute(&arm.ty);
+        if !self.needs_drop(&source_ty) {
+            return;
+        }
+        if let ValueKind::Place(place) = &arm.kind {
+            self.emit_move_zero_place(place, arm_c, &source_ty);
+        } else {
+            self.emit_move_zero(arm_c, &source_ty);
         }
     }
 
@@ -3144,6 +3202,26 @@ fn arm_is_projected_place(value: &Value) -> bool {
         ValueKind::Place(place) => {
             !place.projections.is_empty()
                 || matches!(place.base, PlaceBase::DerefTemp { .. })
+        }
+        _ => false,
+    }
+}
+
+/// True when a value renders as a pure projection over existing storage.
+///
+/// Such a value can be named twice — once for an address comparison and once
+/// for the move — without running a side effect or filling a deferred
+/// temporary. A call, literal, or deferred operand returns false.
+fn value_names_storage(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        ValueKind::Member { base, .. } => value_names_storage(base),
+        ValueKind::Index { base, index } => {
+            value_names_storage(base)
+                && matches!(
+                    index.kind,
+                    ValueKind::Int(_) | ValueKind::Place(_) | ValueKind::Temp(_)
+                )
         }
         _ => false,
     }

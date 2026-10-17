@@ -14046,17 +14046,16 @@ func main(): i32 {
 // the read selected instead of element zero.
 // ---------------------------------------------------------------------------
 
-/// A runtime-index source place moves the selected element and guards it.
+/// A runtime-index source place reads the slot the index selects.
 ///
 /// The copy reads the slot the index selects, the side-effecting index runs
-/// once, and an out-of-range source traps before the store.
+/// once, and an out-of-range source traps before the store. The concrete twin
+/// keeps the same behavior.
 #[test]
 fn should_copy_a_runtime_index_place_on_the_stored_value() {
     let copy = r#"module spec.cpr.rhsindex;
 
-import { String, stringOf } from std.text;
-
-struct Elem { name: String; }
+struct Elem { y: i32; }
 struct Holder { items: Elem[2]; }
 
 let cursor: i32 = 0;
@@ -14069,21 +14068,28 @@ func next_index(): i32 {
 }
 
 func copy<T>(borrow w: T, i: i32, j: i32): i32 {
-    w.items[i].name = w.items[j].name;
-    return i32(len(w.items[i].name));
+    w.items[i].y = w.items[j].y;
+    return w.items[i].y;
 }
 
 func side<T>(borrow w: T, i: i32): i32 {
-    w.items[i].name = w.items[next_index()].name;
-    return i32(len(w.items[i].name));
+    w.items[i].y = w.items[next_index()].y;
+    return w.items[i].y;
+}
+
+func concrete(i: i32, j: i32): i32 {
+    let h: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
+    h.items[i].y = h.items[j].y;
+    return h.items[i].y;
 }
 
 func main(): i32 {
-    let h1: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
-    let h2: Holder = Holder { items: [Elem { name: stringOf("cc") }, Elem { name: stringOf("dd") }] };
-    let a: i32 = copy<Holder>(borrow h1, 0, 1) - 2;
-    let b: i32 = side<Holder>(borrow h2, 0) - 2;
-    return a + b + (calls - 1) * 100 + (cursor - 1) * 10;
+    let h1: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
+    let h2: Holder = Holder { items: [Elem { y: 33 }, Elem { y: 44 }] };
+    let a: i32 = copy<Holder>(borrow h1, 0, 1) - 22;
+    let b: i32 = side<Holder>(borrow h2, 0) - 44;
+    let c: i32 = concrete(0, 1) - 22;
+    return a + b + c + (calls - 1) * 100 + (cursor - 1) * 10;
 }
 "#;
     let output = run_memory("rhsindex", copy);
@@ -14092,22 +14098,83 @@ func main(): i32 {
 
     let bounds = r#"module spec.cpr.rhsindexbounds;
 
-import { String, stringOf } from std.text;
-
-struct Elem { name: String; }
+struct Elem { y: i32; }
 struct Holder { items: Elem[2]; }
 
 func oob<T>(borrow w: T, j: i32): void {
-    w.items[0].name = w.items[j].name;
+    w.items[0].y = w.items[j].y;
 }
 
 func main(): i32 {
-    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    let h: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
     oob<Holder>(borrow h, 5);
     return 0;
 }
 "#;
     assert_traps("rhsindexbounds", bounds, "error E11211: index out of range");
+
+    let self_member = r#"module spec.cpr.rhsindexselfmember;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i].name = w.items[j].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1, 1) - 2;
+}
+"#;
+    let output = run_memory("rhsindexselfmember", self_member);
+    assert_no_asan("rhsindexselfmember", &output);
+    assert_exit("rhsindexselfmember", &output, 0);
+
+    let self_same = r#"module spec.cpr.rhsindexselfsame;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32): i32 {
+    w.items[i].name = w.items[i].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1) - 2;
+}
+"#;
+    let output = run_memory("rhsindexselfsame", self_same);
+    assert_no_asan("rhsindexselfsame", &output);
+    assert_exit("rhsindexselfsame", &output, 0);
+
+    let self_whole = r#"module spec.cpr.rhsindexselfwhole;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i] = w.items[j];
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1, 1) - 2;
+}
+"#;
+    let output = run_memory("rhsindexselfwhole", self_whole);
+    assert_no_asan("rhsindexselfwhole", &output);
+    assert_exit("rhsindexselfwhole", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -14198,6 +14265,42 @@ func main(): i32 {
     let output = run_memory("selfequal", equal_indices);
     assert_no_asan("selfequal", &output);
     assert_exit("selfequal", &output, 0);
+
+    let distinct_fixed = r#"module spec.cpr.selfdistinctfixed;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    let j: i32 = 0;
+    let c: bool = true;
+    a[i].names = c ? a[j].names : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[i].names[0])) - 2;
+}
+"#;
+    let output = run_memory("selfdistinctfixed", distinct_fixed);
+    assert_no_asan("selfdistinctfixed", &output);
+    assert_exit("selfdistinctfixed", &output, 0);
+
+    let distinct_whole = r#"module spec.cpr.selfdistinctwhole;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String[2][2] = [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]];
+    let i: i32 = 1;
+    let j: i32 = 0;
+    let c: bool = true;
+    a[i] = c ? a[j] : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[i][0])) - 2;
+}
+"#;
+    let output = run_memory("selfdistinctwhole", distinct_whole);
+    assert_no_asan("selfdistinctwhole", &output);
+    assert_exit("selfdistinctwhole", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -14348,4 +14451,37 @@ func main(): i32 {
     let output = run_memory("rawoutslot", source);
     assert_no_asan("rawoutslot", &output);
     assert_exit("rawoutslot", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// conditionalderef: the dereferenced conditional pointer is an accepted place.
+//
+// `*(c ? p : q)` names the selected pointer's pointee, so the store writes and
+// the read-back observes the value on each selection. A member or element
+// selected directly from the conditional value stays rejected.
+// ---------------------------------------------------------------------------
+
+/// A dereferenced conditional pointer stores and reads back on both selections.
+#[test]
+fn should_store_through_a_dereferenced_conditional_pointer() {
+    let source = r#"module spec.cpr.condderefstore;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let a: S = S { f: Inner { x: 0 } };
+    let b: S = S { f: Inner { x: 0 } };
+    let c: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        *(c ? p : q) = S { f: Inner { x: 7 } };
+        *(c ? q : p) = S { f: Inner { x: 9 } };
+    }
+    return (a.f.x - 7) + (b.f.x - 9);
+}
+"#;
+    let output = run_host("condderefstore", source);
+    assert_exit("condderefstore", &output, 0);
 }

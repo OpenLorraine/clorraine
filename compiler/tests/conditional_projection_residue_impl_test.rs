@@ -6833,37 +6833,69 @@ func main(): i32 {
     );
 }
 
-/// A moved source place keeps its run-time index and its bounds guard.
+/// A runtime-index source place keeps its index and its bounds guard.
 #[test]
 fn should_pin_a_runtime_index_place_on_the_stored_value() {
     let source = r#"module spec.cprimpl.implrhsindexpin;
 
-import { String, stringOf } from std.text;
-
-struct Elem { name: String; }
+struct Elem { y: i32; }
 struct Holder { items: Elem[2]; }
 
+let calls: i32 = 0;
+
+func next_index(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
 func copy<T>(borrow w: T, i: i32, j: i32): i32 {
-    w.items[i].name = w.items[j].name;
-    return i32(len(w.items[i].name));
+    w.items[i].y = w.items[j].y;
+    return w.items[i].y;
+}
+
+func side<T>(borrow w: T, i: i32): i32 {
+    w.items[i].y = w.items[next_index()].y;
+    return w.items[i].y;
 }
 
 func main(): i32 {
-    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
-    return copy<Holder>(borrow h, 0, 1) - 2;
+    let h1: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
+    let h2: Holder = Holder { items: [Elem { y: 33 }, Elem { y: 44 }] };
+    let a: i32 = copy<Holder>(borrow h1, 0, 1) - 22;
+    let b: i32 = side<Holder>(borrow h2, 0) - 44;
+    return a + b + (calls - 1) * 100;
 }
 "#;
     let tag = "implrhsindexpin";
     let (_scratch, emitted) = emit_host(tag, source);
-    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
+    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder w, i32 i, i32 j)\n{");
     assert_follows(tag, body, "__cl_tmp1 = j;", "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");");
     assert_follows(
         tag,
         body,
-        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
-        "(*w).items[__cl_tmp1].name = NULL;",
+        "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+        "w.items[__cl_tmp0].y = w.items[__cl_tmp1].y;",
     );
-    assert_absent(tag, body, "(*w).items[0].name = (*w).items[__cl_tmp1].name;");
+    assert_absent(tag, body, "w.items[0].y = w.items[__cl_tmp1].y;");
+
+    let body = function_body(tag, &emitted, "cl_side__Holder(ClHolder w, i32 i)\n{");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = cl_spec_cprimpl_implrhsindexpin_next_index();",
+        "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_follows(
+        tag,
+        body,
+        "if ((__cl_tmp1 < 0) || ((usize)(__cl_tmp1) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+        "w.items[__cl_tmp0].y = w.items[__cl_tmp1].y;",
+    );
+    assert_eq!(
+        emitted.matches("implrhsindexpin_next_index()").count(),
+        1,
+        "{tag}: the source index must run once; emitted C:\n{emitted}"
+    );
 }
 
 /// A conditional self-arm is matched by its storage address.
@@ -7107,6 +7139,21 @@ func main(): i32 {
 "#;
     assert_rejected_once_at("implcondviewbase", view, "E10221", 6, 5, &["left side of an assignment must be a place"], &[]);
 
+    let slice = r#"module spec.cprimpl.implcondslicebase;
+
+struct Elem { y: i32; }
+
+func use(c: bool, a: Elem[], b: Elem[], i: i32): i32 {
+    (c ? a : b)[i].y = 7;
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once_at("implcondslicebase", slice, "E10221", 6, 5, &["left side of an assignment must be a place"], &[]);
+
     let deref = r#"module spec.cprimpl.implcondderef;
 
 struct Inner { x: i32; }
@@ -7132,4 +7179,182 @@ func main(): i32 {
         "cl_spec_cprimpl_implcondderef_main(void)\n{",
     );
     assert_contains(tag, body, "*(&(*((c ? p : q)))) = (ClS){ (ClInner){ 7 } };");
+}
+
+/// A distinct fixed-array conditional arm is emptied after its bytes move.
+///
+/// The address-equal branch restores the saved destination; the distinct branch
+/// copies the arm and clears the arm's own slot, so the destination and the arm
+/// do not both own the moved handles.
+#[test]
+fn should_empty_a_distinct_fixed_array_conditional_arm() {
+    let member = r#"module spec.cprimpl.implarmdistinct;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    let j: i32 = 0;
+    let c: bool = true;
+    a[i].names = c ? a[j].names : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[i].names[0])) - 2;
+}
+"#;
+    let tag = "implarmdistinct";
+    let (_scratch, emitted) = emit_host(tag, member);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implarmdistinct_main(void)\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memcpy(&(a[__cl_tmp0].names), &(a[j].names), sizeof(a[__cl_tmp0].names));",
+        "cl_zero(&a[j].names);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "if (&(a[j].names) == &(a[__cl_tmp0].names)) {",
+        "memcpy(&(a[__cl_tmp0].names), &(__cl_save_1), sizeof(a[__cl_tmp0].names));",
+    );
+
+    let whole = r#"module spec.cprimpl.implarmdistinctwhole;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String[2][2] = [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]];
+    let i: i32 = 1;
+    let j: i32 = 0;
+    let c: bool = true;
+    a[i] = c ? a[j] : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[i][0])) - 2;
+}
+"#;
+    let tag = "implarmdistinctwhole";
+    let (_scratch, emitted) = emit_host(tag, whole);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implarmdistinctwhole_main(void)\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memcpy(&((*(&(a[i])))), &(a[j]), sizeof((*(&(a[i])))));",
+        "cl_zero(&a[j]);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "if (&(a[j]) == &((*(&(a[i]))))) {",
+        "memcpy(&((*(&(a[i])))), &(__cl_save_1), sizeof((*(&(a[i])))));",
+    );
+}
+
+/// A self-slot source move keeps the destination value intact.
+///
+/// A source reached through a run-time element may name the destination slot.
+/// The move compares the two storage addresses and treats an equal pair as a
+/// self-copy, so the destination is not emptied.
+#[test]
+fn should_guard_a_self_slot_source_move() {
+    let member = r#"module spec.cprimpl.implselfslot;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i].name = w.items[j].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1, 1) - 2;
+}
+"#;
+    let tag = "implselfslot";
+    let (_scratch, emitted) = emit_host(tag, member);
+    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (&((*w).items[__cl_tmp0].name) != &((*w).items[__cl_tmp1].name)) {",
+    );
+    assert_contains(
+        tag,
+        body,
+        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
+    );
+    assert_follows(
+        tag,
+        body,
+        "(*w).items[__cl_tmp0].name = NULL;",
+        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
+    );
+
+    let same = r#"module spec.cprimpl.implselfslotsame;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32): i32 {
+    w.items[i].name = w.items[i].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1) - 2;
+}
+"#;
+    let tag = "implselfslotsame";
+    let (_scratch, emitted) = emit_host(tag, same);
+    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (&((*w).items[__cl_tmp0].name) != &((*w).items[__cl_tmp1].name)) {",
+    );
+
+    let whole = r#"module spec.cprimpl.implselfslotwhole;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.items[i] = w.items[j];
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1, 1) - 2;
+}
+"#;
+    let tag = "implselfslotwhole";
+    let (_scratch, emitted) = emit_host(tag, whole);
+    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (&(*(&((*w).items[i]))) != &((*w).items[j])) {",
+    );
+    assert_contains(
+        tag,
+        body,
+        "ClElem __cl_save_1 = *(&((*w).items[i]));",
+    );
 }
