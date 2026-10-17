@@ -15,6 +15,12 @@
 //! conditional field store, the hidden-destination return copy, the guarded
 //! view-array element fill, the call-filled literal destinations, and the
 //! distributed nested-arm read base.
+//!
+//! The element and store loans are pinned by the report sites and the copy
+//! emissions: the element-read store and every conditional or literal copy
+//! source report at their fills, the union keeps both arms' positions, the
+//! accepted copies keep their store shapes, and an overwritten element drops
+//! the loan it replaced.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -382,7 +388,89 @@ fn assert_rejected_once_at(
     );
 }
 
-/// A `T`-typed member selected between a `take` pair and a freshly built pair.
+/// Compiles `source` and asserts the front end rejected it with exactly one
+/// report carrying `code` at each of the given `line:column` sites, whose
+/// message contains every `fragments` entry, and wrote no translation unit.
+///
+/// Two equal entries pin two reports at one span; distinct entries pin one
+/// report at each site. The site set is compared as a whole, so a report that
+/// moves to another expression fails the case even when the count and the code
+/// still match.
+fn assert_rejected_at_sites(
+    tag: &str,
+    source: &str,
+    code: &str,
+    sites: &[(usize, usize)],
+    fragments: &[&str],
+) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|report| report.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        sites.len(),
+        "{tag}: expected {} error(s), saw {}; stderr:\n{stderr}",
+        sites.len(),
+        errors.len()
+    );
+    for line in &errors {
+        assert!(
+            line.contains(code),
+            "{tag}: expected the {code} report; saw `{line}`; stderr:\n{stderr}"
+        );
+    }
+    let mut actual_sites: Vec<String> = stderr
+        .lines()
+        .filter(|report| report.trim_start().starts_with("--> "))
+        .map(|report| report.trim().to_owned())
+        .collect();
+    actual_sites.sort();
+    let mut expected_sites: Vec<String> = sites
+        .iter()
+        .map(|(line, column)| format!(":{line}:{column}"))
+        .collect();
+    expected_sites.sort();
+    assert_eq!(
+        actual_sites.len(),
+        expected_sites.len(),
+        "{tag}: expected {} report site(s), saw {}; stderr:\n{stderr}",
+        expected_sites.len(),
+        actual_sites.len()
+    );
+    for (actual, expected) in actual_sites.iter().zip(&expected_sites) {
+        assert!(
+            actual.ends_with(expected.as_str()),
+            "{tag}: expected a report at {expected}; saw `{actual}`; stderr:\n{stderr}"
+        );
+    }
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
 const ARM_DUTY_SOURCE: &str = r#"module spec.cpr.armduty;
 import { String, stringOf } from std.text;
 struct Pair<T> { v: T; w: T; }
@@ -7419,6 +7507,792 @@ func main(): i32 {
             tag,
             body,
             "return (i32)((cl_string_view((*w).items[i].name)).len);",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Element and store loans. A view read out of a loaned element carries the
+// element's loan to the copy, and a conditional or array-literal copy hands
+// the destination every source position as one union. The rejected shapes
+// pin the report code, count, and site; the accepted shapes pin the copy
+// emission; the overwrite drops the loan the replaced element carried; and
+// the borrow-element conditional take is the count-and-span control.
+// ---------------------------------------------------------------------------
+
+/// A view stored from an element carries the element's loan: the copy passed
+/// to an out-slot reports the owner's scope, exactly as the direct element
+/// and member arguments do.
+const ELEMENT_READ_STORE_SOURCE: &str = r#"module spec.cprimpl.elemreadstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct element argument control: the element read itself reports.
+const ELEMENT_READ_DIRECT_SOURCE: &str = r#"module spec.cprimpl.elemreaddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The member argument control: a projection of the same owner reports.
+const ELEMENT_READ_MEMBER_SOURCE: &str = r#"module spec.cprimpl.elemreadmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    fill(a.w, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The in-scope control: the stored view is read while its owner is alive.
+const ELEMENT_READ_IN_SCOPE_SOURCE: &str = r#"module spec.cprimpl.elemreadinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    return i32(s[0]) - 97;
+}
+
+func main(): i32 { return outer(); }
+"#;
+
+/// The element-read store reports once at its fill; the direct and member
+/// twins keep their own report; the in-scope copy emits the plain element
+/// read and its bounded read-back.
+#[test]
+fn should_pin_the_element_read_store_loan() {
+    assert_rejected_once_at(
+        "implelemreadstore",
+        ELEMENT_READ_STORE_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implelemreaddirect",
+        ELEMENT_READ_DIRECT_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implelemreadmember",
+        ELEMENT_READ_MEMBER_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    let tag = "implelemreadinscope";
+    let (_scratch, emitted) = emit_host(tag, ELEMENT_READ_IN_SCOPE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_elemreadinscope_outer(void)\n{",
+    );
+    assert_contains(tag, body, "s = xs[0];");
+    assert_contains(tag, body, "((s).ptr[0])");
+}
+
+/// The conditional array copy carries the selected arm's element loans.
+const COPY_CONDITIONAL_SOURCE: &str = r#"module spec.cprimpl.copycond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = a.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The array-literal copy carries each element's loan under its own index.
+const COPY_LITERAL_SOURCE: &str = r#"module spec.cprimpl.copyliteral;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[2] = [xs[0], xs[1]];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The fill-form literal copy carries the listed element's loan while the
+/// fill value contributes none.
+const COPY_LITERAL_FILL_SOURCE: &str = r#"module spec.cprimpl.copyliteralfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = [xs[0]; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The single-view conditional shares both arms' element loans.
+const COPY_SINGLE_VIEW_SOURCE: &str = r#"module spec.cprimpl.copysingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("cc") };
+    let xs: str[1] = ["AA"];
+    let zs: str[1] = ["CC"];
+    xs[0] = a.v;
+    zs[0] = b.v;
+    let s: str = c ? xs[0] : zs[0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A conditional whose arm is an array literal unions the arm's positions
+/// with the other arm.
+const COPY_ARM_LITERAL_SOURCE: &str = r#"module spec.cprimpl.copycondarm;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let zs: str[2] = ["CC", "DD"];
+    let ys: str[2] = c ? [xs[0], xs[1]] : zs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A conditional element inside an array literal recurses into both arms and
+/// records the selected position's loans.
+const COPY_ELEMENT_IN_LITERAL_SOURCE: &str = r#"module spec.cprimpl.copymix;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = b.v;
+    zs[1] = b.w;
+    let ys: str[2] = [c ? xs[0] : zs[0], xs[1]];
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 66);
+}
+"#;
+
+/// The two arms fill different element counts, so the union keeps the first
+/// arm's second position and the second arm's first position.
+const COPY_DIFFERENT_ARMS_SOURCE: &str = r#"module spec.cprimpl.copydiff;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    zs[0] = a.v;
+    let ys: str[2] = c ? xs : zs;
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 98);
+}
+"#;
+
+/// The mixed-position copy loans one element from each arm, so the
+/// destination record must keep both positions.
+const COPY_MIXED_POSITIONS_SOURCE: &str = r#"module spec.cprimpl.copyunion;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 100);
+}
+"#;
+
+/// The first arm's position alone: only a union record reports this fill.
+const COPY_UNION_FIRST_SOURCE: &str = r#"module spec.cprimpl.copyunionfirst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The second arm's position alone: only a union record reports this fill.
+const COPY_UNION_SECOND_SOURCE: &str = r#"module spec.cprimpl.copyunionsecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 98;
+}
+"#;
+
+/// The conditional array copy reports once at the fill.
+#[test]
+fn should_pin_the_conditional_copy_fill() {
+    assert_rejected_once_at(
+        "implcopycond",
+        COPY_CONDITIONAL_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The array-literal copy reports once per affected fill.
+#[test]
+fn should_pin_the_array_literal_copy_fill() {
+    assert_rejected_once_at(
+        "implcopyliteral",
+        COPY_LITERAL_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The fill-form literal copy reports at the listed element's fill only.
+#[test]
+fn should_pin_the_fill_form_copy_fill() {
+    assert_rejected_once_at(
+        "implcopyliteralfill",
+        COPY_LITERAL_FILL_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The single-view conditional reports at its one fill.
+#[test]
+fn should_pin_the_single_view_copy_fill() {
+    assert_rejected_once_at(
+        "implcopysingle",
+        COPY_SINGLE_VIEW_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The conditional-with-an-array-literal arm reports at its fill.
+#[test]
+fn should_pin_the_arm_literal_copy_fill() {
+    assert_rejected_once_at(
+        "implcopycondarm",
+        COPY_ARM_LITERAL_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The conditional element inside an array literal reports at its fill and
+/// leaves the statically filled sibling accepted.
+#[test]
+fn should_pin_the_element_in_literal_copy_fill() {
+    assert_rejected_once_at(
+        "implcopymix",
+        COPY_ELEMENT_IN_LITERAL_SOURCE,
+        "E10030",
+        18,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The different-arm-count copy reports at every affected fill.
+#[test]
+fn should_pin_the_different_arm_count_copy_fills() {
+    assert_rejected_at_sites(
+        "implcopydiff",
+        COPY_DIFFERENT_ARMS_SOURCE,
+        "E10030",
+        &[(17, 5), (18, 5)],
+        &["does not live long enough"],
+    );
+}
+
+/// The mixed-position copy reports at both fills, so neither arm's position
+/// was replaced by the other arm's.
+#[test]
+fn should_pin_the_mixed_position_copy_fills() {
+    assert_rejected_at_sites(
+        "implcopyunion",
+        COPY_MIXED_POSITIONS_SOURCE,
+        "E10030",
+        &[(17, 5), (18, 5)],
+        &["does not live long enough"],
+    );
+}
+
+/// The first arm's position survives the union: filling only that element
+/// still reports its owner.
+#[test]
+fn should_pin_the_first_arm_position_of_the_copy_union() {
+    assert_rejected_once_at(
+        "implcopyunionfirst",
+        COPY_UNION_FIRST_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The second arm's position survives the union: filling only that element
+/// still reports its owner.
+#[test]
+fn should_pin_the_second_arm_position_of_the_copy_union() {
+    assert_rejected_once_at(
+        "implcopyunionsecond",
+        COPY_UNION_SECOND_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'b' does not live long enough"],
+        &[],
+    );
+}
+
+/// The in-scope copies emit their plain store shapes: the conditional arms
+/// stay two byte copies, the literal elements stay element stores, the
+/// single view stays one selected copy, and the arm literal keeps its
+/// element stores beside the other arm's byte copy.
+const COPY_IN_SCOPE_SOURCE: &str = r#"module spec.cprimpl.copyinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(c: bool): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    zs[0] = b.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    let lit: str[2] = [xs[0]; "EE"];
+    let arr: str[2] = [c ? xs[0] : zs[0], xs[1]];
+    let one: str = c ? xs[0] : zs[0];
+    let arm: str[2] = c ? [xs[0], xs[1]] : zs;
+    return i32(ys[0][0]) + i32(lit[0][0]) + i32(arr[0][0]) + i32(one[0])
+         + i32(arm[1][0]) - (97 + 97 + 97 + 97 + 98);
+}
+
+func main(): i32 { return outer(true); }
+"#;
+
+/// The accepted copies keep their emitted store shapes.
+#[test]
+fn should_pin_the_accepted_copy_emissions() {
+    let tag = "implcopyinscope";
+    let (_scratch, emitted) = emit_host(tag, COPY_IN_SCOPE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_copyinscope_outer(bool c)\n{");
+    assert_contains(tag, body, "memcpy(&(ys), &(xs), sizeof(ys));");
+    assert_contains(tag, body, "memcpy(&(ys), &(zs), sizeof(ys));");
+    assert_contains(tag, body, "lit[0] = xs[0];");
+    assert_contains(tag, body, "arr[0] = (c ? xs[0] : zs[0]);");
+    assert_contains(tag, body, "one = (c ? xs[0] : zs[0]);");
+    assert_contains(tag, body, "arm[0] = xs[0];");
+    assert_contains(tag, body, "memcpy(&(arm), &(zs), sizeof(arm));");
+}
+
+/// The fill-form copy that is used before the overwrite reports the loan.
+const COPY_DROP_LIVE_SOURCE: &str = r#"module spec.cprimpl.copydroplive;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = [xs[0]; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same copy whose loaned element is overwritten before the fill.
+const COPY_DROP_SOURCE: &str = r#"module spec.cprimpl.copydrop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = [xs[0]; "EE"];
+    ys[0] = "ZZ";
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 90;
+}
+"#;
+
+/// The overwrite drops the replaced element's loan: the live twin reports at
+/// its fill, while the overwritten copy stays accepted and emits the
+/// overwrite before the fill.
+#[test]
+fn should_drop_the_overwritten_copy_loan() {
+    assert_rejected_once_at(
+        "implcopydroplive",
+        COPY_DROP_LIVE_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    let tag = "implcopydrop";
+    let (_scratch, emitted) = emit_host(tag, COPY_DROP_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_copydrop_outer(ClStr *slot)\n{");
+    assert_contains(tag, body, "ys[0] = xs[0];");
+    assert_contains(tag, body, "ys[0] = cl_str(\"ZZ\");");
+    assert_follows(
+        tag,
+        body,
+        "ys[0] = cl_str(\"ZZ\");",
+        "cl_spec_cprimpl_copydrop_fill(ys[0], &((*slot)));",
+    );
+}
+
+/// The generic borrow-element conditional take control.
+const BORROW_ELEMENT_GENERIC_SOURCE: &str = r#"module spec.cprimpl.borrowelemcond;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func each<T>(xs: T, ys: T, c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return each<S[1]>(a, b, true) - 1;
+}
+"#;
+
+/// The concrete borrow-element conditional take control.
+const BORROW_ELEMENT_CONCRETE_SOURCE: &str = r#"module spec.cprimpl.borrowelemcondconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func each(xs: S[1], ys: S[1], c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return each(a, b, true) - 1;
+}
+"#;
+
+/// The borrow-element conditional take reports the partial-move limit twice
+/// at one span in both the generic and the concrete spelling, so the two
+/// arms agree in count and site.
+#[test]
+fn should_pin_the_borrow_element_conditional_take_parity() {
+    let sites = [(12, 24), (12, 24)];
+    assert_rejected_at_sites(
+        "implborrowelemcond",
+        BORROW_ELEMENT_GENERIC_SOURCE,
+        "E10026",
+        &sites,
+        &["partial moves are limited to top-level fields in v1"],
+    );
+    assert_rejected_at_sites(
+        "implborrowelemcondconcrete",
+        BORROW_ELEMENT_CONCRETE_SOURCE,
+        "E10026",
+        &sites,
+        &["partial moves are limited to top-level fields in v1"],
+    );
+}
+
+/// The accepted loan-carrying programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_copy_loan_programs_byte_identically() {
+    for (tag, source) in [
+        ("implcopyinscope", COPY_IN_SCOPE_SOURCE),
+        ("implelemreadinscope", ELEMENT_READ_IN_SCOPE_SOURCE),
+        ("implcopydrop", COPY_DROP_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(
+            first, second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
     }
 }

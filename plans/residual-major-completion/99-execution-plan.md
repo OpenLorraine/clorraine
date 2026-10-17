@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 36/60 tasks (60%) — Phase 5 implemented
+> **Progress**: 37/60 tasks (62%) — Phase 5 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -339,10 +339,10 @@ form, conditional arm), and the borrow-element conditional take control.
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the loan records and the `E10030` code/count/
+- [x] 5.3.1 Write the phase implementation pins (the loan records and the `E10030` code/count/
       span per shape, the union record and mixed positions, the accepted copy emissions, the
       overwritten-loan drop, the `DEF-374` control parity, a re-emission determinism pin) in
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-17; fifteen impl pins: the element-read store loan and the twins, the eight copy-source fills (including the different-arm-count and the mixed-position union with both sites, and the per-arm union pins), the accepted emissions, the overwritten-loan drop, the `DEF-374` parity, and the byte-identical re-emission; the base discrimination 12/3 at `a3de478`; residue impl 135/135, plain and ASan)
 - [ ] 5.3.2 Phase review — dispatch the lenses (correctness + memory-safety + semantics); the
       memory lens runs the ASan/LSan matrix over the red shapes (before) and the accepted
       controls (after); apply the corrections
