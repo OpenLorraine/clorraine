@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 16/60 tasks (27%) — Phase 2 complete
+> **Progress**: 18/60 tasks (30%) — Phase 3 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -194,12 +194,12 @@ ST-9..ST-12 · AR-13, AR-14, AR-15, AR-16
 **Objective**: Pin the plain-call literal, the nested nullable type argument (with the duplicate
 count), the qualified type path, and the folded negated literal matrix.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
       (genericliteralarg, nullabletypearg, qualifiedtypepath, negatedliteral) with their
-      controls; the red cases committed first
-- [ ] 3.1.2 Run the suite and record the red phase (the concrete `setS`, the `Array<String?>` and
+      controls; the red cases committed first ✅ (completed: 2026-10-17; four spec cases added: the generic concrete-parameter literal with the out-of-range `E10202`, the nullable type argument with the annotation/call-argument/nested cases and the five-site count, the qualified type path with the `ClArray__i32` symbol and the unqualified byte identity, and the eight-position folded negated-literal matrix with the fit controls)
+- [x] 3.1.2 Run the suite and record the red phase (the concrete `setS`, the `Array<String?>` and
       nullable-capable instances, the unqualified `Array<i32>`, the positive literals, and the
-      fit controls verified green first; AR-5)
+      fit controls verified green first; AR-5) ✅ (completed: 2026-10-17; the red phase recorded: checker 188 passed / 4 failed; the controls (the concrete `setS`, the nullable-capable `Array<String?>`, the unqualified `Array<i32>`, the positive literals, the `f32`/`bool` rejections) green at head)
 
 ### Step 3.2: Implementation
 

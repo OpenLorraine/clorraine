@@ -9490,3 +9490,456 @@ func main(): i32 {
         "bothnull: a rejected program must not write a translation unit"
     );
 }
+
+// ===== Context typing at substitution edges =====
+
+/// An integer literal at a generic callee's concrete parameter takes that
+/// type.
+///
+/// The callee's type parameter is bound by the explicit argument list, while
+/// its `n: usize` parameter is already concrete. The literal `0` is typed by
+/// that parameter, so the call builds strictly and runs. The concrete callee
+/// is the unchanged control, and a literal whose value does not fit `usize`
+/// reports the fit rule once at the literal.
+#[test]
+fn should_context_type_a_literal_at_a_generic_concrete_parameter() {
+    let concrete = r#"module spec.cc.p3litconcrete;
+
+struct S { x: i32; }
+
+func setS(borrow a: S[1], n: usize): void {
+    a[n] = S { x: 9 };
+}
+
+func main(): i32 {
+    let a: S[1] = [S { x: 1 }];
+    setS(borrow a, 0);
+    return a[0].x - 9;
+}
+"#;
+    let output = run_host("p3litconcrete", concrete);
+    assert_exit("p3litconcrete", &output, 0);
+
+    let generic = r#"module spec.cc.p3litgeneric;
+
+struct S { x: i32; }
+
+func set<T>(borrow a: T, n: usize): void {
+    a[n] = S { x: 9 };
+}
+
+func main(): i32 {
+    let a: S[1] = [S { x: 1 }];
+    set<S[1]>(borrow a, 0);
+    return a[0].x - 9;
+}
+"#;
+    let output = run_host("p3litgeneric", generic);
+    assert_exit("p3litgeneric", &output, 0);
+
+    let out_of_range = r#"module spec.cc.p3litrange;
+
+struct S { x: i32; }
+
+func set<T>(borrow a: T, n: usize): void {
+    a[n] = S { x: 9 };
+}
+
+func main(): i32 {
+    let a: S[1] = [S { x: 1 }];
+    set<S[1]>(borrow a, 1000000000000);
+    return a[0].x - 9;
+}
+"#;
+    assert_rejected_once(
+        "p3litrange",
+        out_of_range,
+        "E10202",
+        &["literal does not fit 'usize'", "main.clo:11:25"],
+        &["E10200"],
+    );
+}
+
+/// A nullable scalar type argument is rejected at every nested position.
+///
+/// `?` applies only to handles, `raw`, `cstring`, and views, so an `i32?`
+/// written inside a type argument or as an explicit call type argument
+/// reports one `E10011` at the offending type. A declared parameter, return,
+/// or binding keeps its existing report, so a program that carries every form
+/// reports each of its five sites once. The nullable handle `Array<String?>`
+/// is the control: it keys its own instance, builds strictly, and runs.
+#[test]
+fn should_report_a_nullable_type_argument_on_a_non_capable_type() {
+    let control = r#"module spec.cc.p3nullablehandle;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let g: Array<String?> = arrayNew<String?>();
+    let s: String? = stringOf("aa");
+    g.push(s);
+    if (len(g) == 1) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("p3nullablehandle", control);
+    assert!(
+        emitted.contains("ClArray__StringQ"),
+        "p3nullablehandle: the nullable handle type argument keys its own \
+         instance; emitted C:\n{emitted}"
+    );
+    let output = run_memory("p3nullablehandle", control);
+    assert_no_asan("p3nullablehandle", &output);
+    assert_exit("p3nullablehandle", &output, 0);
+
+    let annotation = r#"module spec.cc.p3nullableannot;
+
+import { Array } from std.mem;
+
+struct H { a: Array<i32?>; }
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "p3nullableannot",
+        annotation,
+        "E10011",
+        &["nullable type is not allowed on 'i32'", "main.clo:5:20"],
+        &[],
+    );
+
+    let call_argument = r#"module spec.cc.p3nullablecallarg;
+
+import { arrayNew } from std.mem;
+
+func main(): i32 {
+    let g = arrayNew<i32?>();
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "p3nullablecallarg",
+        call_argument,
+        "E10011",
+        &["nullable type is not allowed on 'i32'", "main.clo:6:22"],
+        &[],
+    );
+
+    let nested_array = r#"module spec.cc.p3nullablenestedarray;
+
+import { Array } from std.mem;
+
+struct H {
+    a: Array<Array<i32?>>;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "p3nullablenestedarray",
+        nested_array,
+        "E10011",
+        &["nullable type is not allowed on 'i32'", "main.clo:6:20"],
+        &[],
+    );
+
+    let nested_wrap = r#"module spec.cc.p3nullablenestedwrap;
+
+import { Array } from std.mem;
+
+struct Wrap<T> { v: T; }
+
+struct H {
+    a: Array<Wrap<i32?>>;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "p3nullablenestedwrap",
+        nested_wrap,
+        "E10011",
+        &["nullable type is not allowed on 'i32'", "main.clo:8:19"],
+        &[],
+    );
+
+    let count = r#"module spec.cc.p3nullablecount;
+
+import { Array, arrayNew } from std.mem;
+
+func f(x: i32?): i32? {
+    return x;
+}
+
+func main(): i32 {
+    let x: i32? = null;
+    let g: Array<i32?> = arrayNew<i32?>();
+    return 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("p3nullablecount", count);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "p3nullablecount: the front end accepted nullable scalar type arguments"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10011:").count(),
+        5,
+        "p3nullablecount: the parameter, return, binding, annotation, and call \
+         argument each report once; stderr:\n{stderr}"
+    );
+    for site in [
+        "main.clo:5:6",
+        "main.clo:5:8",
+        "main.clo:10:5",
+        "main.clo:11:18",
+        "main.clo:11:35",
+    ] {
+        assert_eq!(
+            stderr.matches(site).count(),
+            1,
+            "p3nullablecount: the site at {site} reports exactly once; \
+             stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "p3nullablecount: a rejected program must not write a translation unit"
+    );
+}
+
+/// Emits one host program from a fixed source path.
+///
+/// Two spellings that differ only inside the program then compare without
+/// source-location noise from different scratch directories.
+fn emit_host_at(tag: &str, scratch: &ScratchDir, source: &str, stem: &str) -> String {
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join(format!("{stem}.c"));
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    emitted
+}
+
+/// A qualified type path resolves to the same instance as its last segment.
+///
+/// A type written as `std.mem.Array<i32>` names the same generic instance as
+/// the imported `Array<i32>`: the declaration carries the instance, its
+/// method resolves to that instance, and the run reads the same value. The
+/// unqualified spelling is the control, and both emissions are byte for byte
+/// identical.
+#[test]
+fn should_resolve_a_qualified_type_path_to_its_instance() {
+    let unqualified = r#"module spec.cc.p3qualified;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: Array<i32> = arrayNew<i32>();
+    g.push(1);
+    return i32(len(g)) - 1;
+}
+"#;
+    let source_scratch = ScratchDir::new("p3qualified");
+    let unqualified_emitted = emit_host_at(
+        "p3qualifiedunq",
+        &source_scratch,
+        unqualified,
+        "unqualified",
+    );
+    assert!(
+        unqualified_emitted.contains("ClArray__i32 g"),
+        "p3qualifiedunq: the unqualified declaration carries the generic \
+         instance; emitted C:\n{unqualified_emitted}"
+    );
+    let build_scratch = ScratchDir::new("p3qualifiedbuild");
+    let program = build_host_c("p3qualifiedunq", &build_scratch, &unqualified_emitted);
+    let output = run_with_timeout("p3qualifiedunq", &program, &[]);
+    assert_exit("p3qualifiedunq", &output, 0);
+
+    let qualified = r#"module spec.cc.p3qualified;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: std.mem.Array<i32> = std.mem.arrayNew<i32>();
+    g.push(1);
+    return i32(len(g)) - 1;
+}
+"#;
+    let qualified_emitted = emit_host_at(
+        "p3qualifiedqual",
+        &source_scratch,
+        qualified,
+        "qualified",
+    );
+    let program = build_host_c("p3qualifiedqual", &build_scratch, &qualified_emitted);
+    let output = run_with_timeout("p3qualifiedqual", &program, &[]);
+    assert_exit("p3qualifiedqual", &output, 0);
+    assert!(
+        qualified_emitted.contains("ClArray__i32 g"),
+        "p3qualifiedqual: the qualified declaration resolves to the same \
+         generic instance; emitted C:\n{qualified_emitted}"
+    );
+    assert_eq!(
+        qualified_emitted, unqualified_emitted,
+        "p3qualifiedqual: the qualified spelling must emit the unqualified \
+         control byte for byte"
+    );
+}
+
+/// A negated integer literal is folded and fit-checked once.
+///
+/// The unary minus and its integer literal fold to one value, so `-5` takes
+/// the destination's integer type when the folded value fits. The eight
+/// destination positions (let initializer, module value, call argument,
+/// return, struct field, array element, conditional arm, and assignment)
+/// accept `-5` at `i16`, and `i8` accepts `-5` and `-128`. A folded value
+/// outside the destination's range reports the fit rule at the literal, while
+/// a non-integer destination keeps the ordinary conversion report. Positive
+/// literals are unchanged.
+#[test]
+fn should_context_type_a_negated_literal() {
+    let positive = r#"module spec.cc.p3negpositive;
+
+func main(): i32 {
+    let a: i16 = 5;
+    let b: i8 = 5;
+    let c: u8 = 5;
+    return i32(a) + i32(b) + i32(c) - 15;
+}
+"#;
+    let output = run_host("p3negpositive", positive);
+    assert_exit("p3negpositive", &output, 0);
+
+    let float_destination = r#"module spec.cc.p3negf32;
+
+func main(): i32 {
+    let a: f32 = -5;
+    return i32(a) + 5;
+}
+"#;
+    assert_rejected_once(
+        "p3negf32",
+        float_destination,
+        "E10200",
+        &["cannot convert 'i32' to 'f32' implicitly", "main.clo:4:18"],
+        &["E10202"],
+    );
+
+    let bool_destination = r#"module spec.cc.p3negbool;
+
+func main(): i32 {
+    let a: bool = -5;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "p3negbool",
+        bool_destination,
+        "E10200",
+        &["cannot convert 'i32' to 'bool' implicitly", "main.clo:4:19"],
+        &["E10202"],
+    );
+
+    let matrix = r#"module spec.cc.p3negmatrix;
+
+struct S { v: i16; }
+
+let g: i16 = -5;
+
+func took(v: i16): i32 { return i32(v); }
+
+func ret(): i16 { return -5; }
+
+func main(): i32 {
+    let a: i16 = -5;
+    let s: S = S { v: -5 };
+    let arr: i16[1] = [-5];
+    let c: i16 = true ? -5 : -5;
+    let b: i16 = 0;
+    b = -5;
+    return i32(a) + i32(g) + took(-5) + i32(ret()) + i32(s.v) + i32(arr[0]) + i32(c) + i32(b) + 40;
+}
+"#;
+    let output = run_host("p3negmatrix", matrix);
+    assert_exit("p3negmatrix", &output, 0);
+
+    let i8_five = r#"module spec.cc.p3negi8five;
+
+func main(): i32 {
+    let a: i8 = -5;
+    return i32(a) + 5;
+}
+"#;
+    let output = run_host("p3negi8five", i8_five);
+    assert_exit("p3negi8five", &output, 0);
+
+    let i8_min = r#"module spec.cc.p3negi8min;
+
+func main(): i32 {
+    let a: i8 = -128;
+    return i32(a) + 128;
+}
+"#;
+    let output = run_host("p3negi8min", i8_min);
+    assert_exit("p3negi8min", &output, 0);
+
+    let i8_below_min = r#"module spec.cc.p3negi8below;
+
+func main(): i32 {
+    let a: i8 = -129;
+    return i32(a);
+}
+"#;
+    assert_rejected_once(
+        "p3negi8below",
+        i8_below_min,
+        "E10202",
+        &["literal does not fit 'i8'", "main.clo:4:17"],
+        &["E10200"],
+    );
+
+    let unsigned = r#"module spec.cc.p3negu8;
+
+func main(): i32 {
+    let a: u8 = -5;
+    return i32(a);
+}
+"#;
+    assert_rejected_once(
+        "p3negu8",
+        unsigned,
+        "E10202",
+        &["literal does not fit 'u8'", "main.clo:4:17"],
+        &["E10200"],
+    );
+}
