@@ -30,7 +30,8 @@ two `E10026`).
 Every fix is conformance to the frozen specification: the fix makes an accepted program build
 and run with the language's semantics, stops an invalid-C acceptance, or makes a runtime
 ownership failure impossible. No new language surface, no new diagnostic code, no specification
-or registry edit (AR-29); a row that turns out to need one is parked with the evidence. The two
+or registry edit (AR-29); a row that turns out to need one is parked with the evidence — except
+`DEF-367`, which becomes a phase blocker and user ruling (AR-34). The two
 old ruling-parked majors (`DEF-167`, `DEF-171`) and the remaining minors stay out (AR-1); the
 dispatch's "79 minors" is the remaining backlog count after this batch (2 parked majors + 77
 minors), not 79 minor rows.
@@ -51,16 +52,19 @@ every accepted spelling builds strictly and runs with the language's semantics, 
 invalid spelling reports the frozen diagnostic.
 
 **Smallest viable design:** extend the machinery each row's fix direction names — the dot-call
-written-argument check (`sema/call.rs`), the load-stage import binding check (`load/mod.rs`), the
-emitter's qualified-callee identity (`own/call.rs`, `codegen.rs`), the per-instance conditional
-and nullable judgments (`sema/ops.rs`, `own/instance_check.rs`), the element binding substitution
-(`types/mod.rs`), the per-instance member conversion (`own/instance_check.rs`, `codegen/`), the
-context typing of literals (`sema/ops.rs`, `sema/items.rs`, `types/table.rs`), the runtime
-indexed-element store (`own/expr.rs`), the assignment place recursion (`sema/ops.rs`), the
-element-loan transfers (`own/place.rs`, `own/statements.rs`, `own/expr.rs`), the deref
-materialization and the guarded move-out channel (`own/statements.rs`, `own/lower.rs`), and the
-literal destination and guard-path lowering (`own/lower.rs`). No new pass, no new abstraction, no
-new dependency (AR-30).
+written-argument route with call-site type-argument inference (`sema/call.rs`, `sema/expr.rs`), the
+load-stage import binding check (`load/mod.rs`), the emitter's qualified-callee identity across
+the symbol and the mode/parameter/return lookups (`own/call.rs`, `own/call_check.rs`,
+`codegen.rs`, `codegen/calls.rs`, `codegen/expr.rs`, `codegen/function.rs`), the per-instance
+conditional and nullable judgments (`sema/ops.rs`, `own/instance_check.rs`, `own/place.rs`), the
+element binding substitution (`types/mod.rs`), the per-instance member conversion
+(`own/instance_check.rs`, `codegen/`), the plain-call literal context and the folded negated
+literal (`sema/call.rs`, `sema/ops.rs`), the generalized runtime-indexed store target
+(`own/expr.rs`), the assignment place recursion (`sema/ops.rs`), the element-loan transfers
+(`own/place.rs`, `own/statements.rs`, `own/expr.rs`), the shared owning-deref materializer and the
+guarded move-out channel (`own/statements.rs`, `own/lower.rs`, `ir.rs`, `codegen/guards.rs`), and
+the literal destination and guard-path lowering (`own/lower.rs`, `codegen/guards.rs`). No new
+pass, no new abstraction, no new dependency (AR-30).
 
 **Excluded machinery:** a new diagnostics family (every rejection reuses the frozen registry); a
 new store route the frozen place list does not define (the conditional-base store stays rejected,
@@ -94,13 +98,13 @@ parked rows or the minors.
 
 | Phase | Rows | Surface |
 |-------|------|---------|
-| 1 | `DEF-360`, `361` control, `DEF-363`, `DEF-390` | Call identity and written-argument checks: the dot-call written argument, the declaration/import collision, the qualified callee's own identity; the direct-name shadow is a pinned control |
-| 2 | `DEF-364`, `365`, `368` | Substitution edges I: the opaque conditional's per-instance judgments, the element-of-element key, the substituted element member at a view destination |
-| 3 | `DEF-371`, `384`, `385`, `386` | Substitution edges II: the literal at a generic concrete parameter, the nullable type argument, the qualified type path, the negated literal at concrete contexts |
-| 4 | `DEF-367`, `377` | Dropped store targets: the runtime-indexed element field store (critical) and the conditional-base member store's frozen place rejection |
-| 5 | `DEF-372`, `373`, `374` control | Element and store loans: the element-read store's loan, the conditional/array-literal/single-view copy's loans; the borrow-element conditional take is a pinned control |
-| 6 | `DEF-375`, `376` | Deref and take channels: the deref operand's single materialization and the guarded non-place take |
-| 7 | `DEF-378`, `379` | Literal destinations and guards: the hidden view-array destination at every literal position, and the owning nested conditional's arm store inside its guard path |
+| 1 | `DEF-360`, `361` control, `DEF-363`, `DEF-390` | Call identity and written-argument checks: the dot-call written argument (with call-site type-argument inference), the declaration/import collision across every declaration kind, the qualified callee's own identity across symbol and mode/parameter/return lookups; the direct-name shadow is a pinned six-fixture control |
+| 2 | `DEF-364`, `365`, `368` | Substitution edges I: the conditional's per-instance judgment with the expected type (direct contexts included), the element-of-element key, the substituted element member at a view destination |
+| 3 | `DEF-371`, `384`, `385`, `386` | Substitution edges II: the plain-call literal at a generic concrete parameter, the nullable type argument at nested type-argument positions, the qualified type path, the folded negated literal at concrete contexts |
+| 4 | `DEF-367`, `377` | Dropped store targets: the runtime-indexed element/member store (basic, compound, update, deep chain, target order, per-instance owning type) and the conditional-base member store's frozen place rejection (including the `unsafe`-wrapped forms) |
+| 5 | `DEF-372`, `373`, `374` control | Element and store loans: the element-read store's loan, the conditional/array-literal/single-view copy's loan union (mixed positions, fill form, conditional arm); the borrow-element conditional take is a pinned control |
+| 6 | `DEF-375`, `376` | Deref and take channels: the shared owning-deref materializer (store, return, aggregate field) and the guarded non-place take (deferred pointer fill) |
+| 7 | `DEF-378`, `379` | Literal destinations and guards: the hidden view-array destination at every literal position (read position included), and the owning nested conditional's argument carrier/fill inside its guard path |
 
 ### Key Decisions
 
@@ -109,22 +113,23 @@ parked rows or the minors.
 | Batch scope | The 20 remaining un-parked major/critical rows, severity-first — pre-decided by the dispatch and recorded, not re-litigated | AR-1 |
 | Parked-rows boundary | `DEF-167`, `DEF-171`, and the remaining minors stay out | AR-1 |
 | Probe status | 18 confirmed red; `DEF-361` and `DEF-374` verified green and reclassified as pinned controls | AR-3, AR-5 |
-| Phase grouping | Seven phases by machinery, executed 1 → 7 | AR-4 |
+| Phase grouping | Seven machinery phases; scope is severity-first, execution is dependency-ordered (P1 → P2/P3, P2 → P5, P6 → P7; P4 independent and fourth) | AR-4, AR-36 |
 | Handling mode | Red → green spec cases per row; the two reclassified rows are pinned controls; no row parked | AR-3, AR-5 |
-| `DEF-367` | Emit the store through the indexed element address (the frozen place list includes a field of an element); rejection is non-conformant | AR-6 |
-| `DEF-377` | Report the frozen `E10221` place rejection (a conditional selection is not a place) | AR-7 |
-| `DEF-384` | Reject the invalid nullable scalar type argument with `E10011`; the nullable-handle instance already keys and stays a control | AR-14 |
-| Test placement | Additions to the origin suites; no new suite pair | AR-26 |
-| Lenses | P1 correctness + semantics + emission; P2 all four; P3 correctness + semantics + emission; P4 all four; P5 correctness + memory + semantics; P6 all four; P7 all four | AR-27 |
+| `DEF-367` | Emit the store through the indexed element address, with the element/member type resolved per instance, all target forms (plain, compound, update, deep chain), and the target location materialized before the RHS; rejection is non-conformant | AR-6 |
+| `DEF-377` | Report the frozen `E10221` place rejection (a conditional selection, including an `unsafe`-wrapped one, is not a place); the place test recurses through `Unsafe` and the Index bypass is removed | AR-7 |
+| `DEF-384` | Reject the invalid nullable scalar at nested type-argument positions with `E10011`; keep the existing declaration checks; the nullable-handle instance already keys and stays a control | AR-14 |
+| `DEF-386` | Judge the fit on the folded negated value: `i8 = -128` accepts, `u8 = -5` and `i8 = -129` report `E10202`; no wrapping-value pin | AR-16 |
+| Test placement | Additions to the origin suites; no new suite pair (a no-home case needs a register entry and user approval); only `_impl_test.rs` byte-identity pins may be re-pinned | AR-26, AR-35 |
+| Lenses | P1 all four; P2 all four; P3 correctness + semantics + emission; P4 all four; P5 correctness + memory + semantics; P6 all four; P7 all four | AR-27 |
 
 ## Specialist Agents
 
 | Role | Kind | Use | AR Ref |
 | ---- | ---- | --- | ------ |
 | `correctness-reviewer` | reviewer (project brief) | Every phase | AR-27 |
-| `semantics-reviewer` | reviewer (project brief) | P1, P2, P3, P5, P6, P7 | AR-27 |
-| `memory-safety-auditor` | reviewer (read-only) | P2, P4, P5, P6, P7, and any ownership/loan/drop diff | AR-27 |
-| `emission-integrity-auditor` | reviewer (read-only) | Every phase (P1–P7) | AR-27 |
+| `semantics-reviewer` | reviewer (project brief) | Every phase (P1–P7, including P4) | AR-27 |
+| `memory-safety-auditor` | reviewer (read-only) | P1, P2, P4, P5, P6, P7, and any ownership/loan/drop diff | AR-27 |
+| `emission-integrity-auditor` | reviewer (read-only) | P1, P2, P3, P4, P6, P7 (not P5) | AR-27 |
 
 _Detection evidence: the four agents already exist under `.opencode/agents/` (committed project
 briefs) and authored the base evidence for these rows; no new specialist type is needed._
@@ -138,39 +143,59 @@ briefs) and authored the base evidence for these rows; no new specialist type is
   counts the full remaining backlog: 2 parked majors + 77 minors). They form the batch after this
   one (AR-1).
 - **The two controls**: `DEF-361` and `DEF-374` are implemented as pinned control cases only; no
-  fix is planned (AR-31, AR-32).
+  fix is planned (AR-31, AR-32). At close-out both move to `Done` with their control-pin evidence.
 - Any new diagnostic code, registry row, specification chapter, or golden (AR-29); a row that
-  turns out to need one is parked mid-phase with the evidence.
+  turns out to need one is parked mid-phase with the evidence — except `DEF-367`, whose only
+  fallback is a phase blocker and user ruling (AR-34).
 - A store route for a conditional selection (`DEF-377`'s target class) — the frozen place list is
-  closed (AR-7).
+  closed (AR-7). The dropped `(*p).f` member store is a residual row filed during execution, not
+  planned here (AR-7).
+- A new test-suite pair: every case has an origin home; a case with no home requires a register
+  entry and user approval (AR-26).
 
 ## Related Files
 
-- `compiler/src/sema/call.rs` — `check_dot_call` (:465), `dot_call` (:570), the written-argument check
-- `compiler/src/load/mod.rs` — `resolve_imports` (:386), the prior-import duplicate check (:413)
-- `compiler/src/own/call.rs` — `lower_call` (:279), the qualified callee arm (:255),
-  `global_head_segments`; `compiler/src/own/call_check.rs` — `callee_name` (:291)
-- `compiler/src/codegen.rs` — `resolve_function` (:701), the own-first fallback
-- `compiler/src/sema/ops.rs` — `check_conditional` (:318), `check_assign` (:352), `is_place` (:402),
-  `check_unary` (:18)
-- `compiler/src/own/instance_check.rs` — the per-instance conversion and move duties and audits
-- `compiler/src/types/mod.rs` — `element_param` (:702), `instance_bindings` (:712), `index_element` (:745),
-  `unify_numeric` (:839)
+- `compiler/src/sema/call.rs` — `check_dot_call` (:465), `dot_call` (:570), `check_args` (:629),
+  `check_args_impl` (:671); the call-site type-argument inference
+- `compiler/src/sema/expr.rs` — `record_deferred_conversion` (:491), the expected-type plumbing
+- `compiler/src/load/mod.rs` — `resolve_imports` (:386), `declarations_of` (:293), the prior-import
+  duplicate check (:413)
+- `compiler/src/own/call.rs` — `lower_call` (:279, the callee name via `callee_name` at :308), the
+  qualified func-field arm (:255), `global_head_segments`;
+  `compiler/src/own/call_check.rs` — `callee_name` (:291-298)
+- `compiler/src/codegen.rs` — `resolve_function` (:701), the own-first fallback;
+  `compiler/src/codegen/calls.rs`, `codegen/expr.rs`, `codegen/function.rs` — the mode, parameter,
+  and return lookups that must share the qualified identity
+- `compiler/src/sema/ops.rs` — `check_conditional` (:318, the expected-type parameter),
+  `check_assign` (:354), `is_place` (:402; Index :412, Member :423), `check_unary` (:18)
+- `compiler/src/own/instance_check.rs` — the per-instance conversion, move, and conditional duties
+  and audits
+- `compiler/src/types/mod.rs` — `element_param` (:702), `instance_bindings` (:712, the level push
+  :730-732), `index_element` (:745), `unify_numeric` (:839)
 - `compiler/src/types/table.rs` — `resolve_ty_with` (:602), `resolve_named` (:659)
 - `compiler/src/sema/items.rs` — `validate_type` (:131)
 - `compiler/src/own/program.rs` — `report_illegal_nullable` (:279)
+- `compiler/src/own/place.rs` — `replace_element_loans` (:1103), `move_element_loans` (:1184, the
+  destination replace :1202), `check_nullable_decl` (:1931)
 - `compiler/src/own/expr.rs` — the assignment/store case (:1226), `emit_assigned` (:2274),
-  `indexed_target` (:2354), `emit_indexed_store` (:2417)
-- `compiler/src/own/statements.rs` — the deref materialization gate (:490), the copy transfer
-- `compiler/src/own/place.rs` — `move_element_loans` (:1184), `check_nullable_decl` (:1931)
-- `compiler/src/own/lower.rs` — `materialize_guard_literal` (:1697), `literal_fields_need_stores` (:4536),
-  `literal_field_needs_stores` (:4563), `view_element_needs_binding` (:4592), the `&&`/`||` deferred
-  right operand (:228)
+  `indexed_target` (:2354, the Index-only gate :2364-2366), `emit_indexed_store` (:2417),
+  `emit_indexed_update` (:2491)
+- `compiler/src/own/statements.rs` — `prepare_store` (:440), the deref store gate (:490), the
+  `let` copy transfer (:391-399), `check_return` (:1358)
+- `compiler/src/own/lower.rs` — `materialize_owned_argument` (:4866, the take materialization
+  :4870-4888, the by-value carrier :5109-5131), `materialize_guard_literal` (:1697),
+  `literal_fields_need_stores` (:4536), `literal_field_needs_stores` (:4563),
+  `view_element_needs_binding` (:4592), the `&&`/`||` deferred right operand (:228)
+- `compiler/src/ir.rs` — the `Materialize` value and its `move_outs` (:298)
+- `compiler/src/codegen/guards.rs` — the guarded statement fill (:106-117), the guarded expression
+  fill (:1016), the drop/re-fill hoists (:273-307)
 - `compiler/src/sema/mod.rs` — `resolve_type` (:482)
 - Origin suites: `compiler/tests/checker_conformance_*_test.rs`,
-  `compiler/tests/conditional_projection_residue_*_test.rs`,
+  `compiler/tests/conditional_projection_residue_*_test.rs` (the `DEF-367` bounds case with its
+  inline `assert_traps` helper, precedent `borrow_store_integrity_spec_test.rs:363`),
   `compiler/tests/callable_release_integrity_*_test.rs`,
-  `compiler/tests/module_initializer_integrity_*_test.rs` (oracle only), the frozen spec suites, and
-  `compiler/tests/run_fault_spec_test.rs` (the `DEF-367` bounds fault)
-- Recorded probe sources under the gitignored `build/` tree: `build/batchM-plan/probes/` (this
-  batch's probes), `build/batchM-plan/extra/`, `build/batchM-plan/matrix/`
+  `compiler/tests/module_initializer_integrity_*_test.rs` (oracle only), and the frozen spec suites
+  (`run_fault_spec_test.rs` stays untouched)
+- Recorded probe sources under the gitignored `build/` tree: `build/batchM-plan/probes/`,
+  `build/batchM-plan/preflight/` (the preflight re-runs), `build/batchM-plan/extra/`,
+  `build/batchM-plan/matrix/`
