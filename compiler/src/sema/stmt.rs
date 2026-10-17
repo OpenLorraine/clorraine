@@ -88,6 +88,7 @@ impl Checker<'_, '_> {
     fn check_let(&mut self, decl: &LetStmt) {
         let declared = decl.ty.as_ref().map(|ty| self.resolve_type(ty));
         if let Some(ty) = &declared {
+            self.check_nullable_type(ty, decl.span);
             self.check_overlay_value(ty, decl.name_span);
         }
         match (&declared, &decl.value) {
@@ -143,6 +144,7 @@ impl Checker<'_, '_> {
         let declared = decl.ty.as_ref().map(|ty| self.resolve_type(ty));
         let ty = match declared {
             Some(ty) => {
+                self.check_nullable_type(&ty, decl.span);
                 let value_ty = self.check_into_slot(&decl.value, &ty);
                 if value_ty.is_closure() && !matches!(ty.kind, TyKind::Func(_)) {
                     self.reject_ephemeral_storage(&value_ty, decl.value.span);

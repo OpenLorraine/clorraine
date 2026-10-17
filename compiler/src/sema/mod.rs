@@ -531,8 +531,12 @@ impl<'a, 'd> Checker<'a, 'd> {
             Item::Func(decl) => self.check_function(decl),
             Item::Struct(decl) => self.check_struct(decl),
             Item::Enum(decl) => self.check_enum(decl),
-            Item::GlobalLet(decl) => self.check_global(&decl.ty, &decl.value, false),
-            Item::GlobalConst(decl) => self.check_global(&decl.ty, &decl.value, true),
+            Item::GlobalLet(decl) => {
+                self.check_global(&decl.ty, &decl.value, false, decl.name_span)
+            }
+            Item::GlobalConst(decl) => {
+                self.check_global(&decl.ty, &decl.value, true, decl.name_span)
+            }
             // A `comptime` body is frozen syntax whose semantics are staged
             // out, so it reports its staged-feature code. Handles and FFI
             // signatures are checked by later work; their signatures are
@@ -568,12 +572,14 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.function_name = Some(decl.name.clone());
         for param in &decl.params {
             let ty = self.resolve_type(&param.ty);
+            self.check_nullable_type(&ty, param.name_span);
             self.check_overlay_value(&ty, param.name_span);
             let lend = param.mode == crate::ast::Mode::Borrow;
             self.declare_with_lend(&param.name, ty, lend);
         }
         self.returns = self.resolve_type(&decl.returns);
         let returns = self.returns.clone();
+        self.check_nullable_type(&returns, decl.name_span);
         self.check_overlay_value(&returns, decl.name_span);
         self.check_block(&decl.body);
         self.function_name = None;
@@ -589,7 +595,26 @@ impl<'a, 'd> Checker<'a, 'd> {
     /// `E10224`, so it becomes the opaque type instead of cascading into an
     /// array-extent error.
     fn resolve_type(&mut self, ty: &Type) -> Ty {
-        if !self.validate_type(ty) {
+        self.resolve_type_at(ty, false)
+    }
+
+    /// Resolves a type written in a type-argument position.
+    ///
+    /// An explicit call type argument is such a position, so it is checked
+    /// against the nullability rule at its own node and every node beneath it,
+    /// exactly as a nested type argument in a declaration is.
+    fn resolve_type_argument(&mut self, ty: &Type) -> Ty {
+        self.resolve_type_at(ty, true)
+    }
+
+    /// The shared resolver, marked with the position the type sits at.
+    fn resolve_type_at(&mut self, ty: &Type, argument: bool) -> Ty {
+        let valid = if argument {
+            self.validate_type_argument(ty)
+        } else {
+            self.validate_type(ty)
+        };
+        if !valid {
             return Ty::unknown();
         }
         let table = self.table;

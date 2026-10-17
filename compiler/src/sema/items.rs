@@ -9,7 +9,11 @@
 //! arguments of a generic struct.
 
 use crate::ast::{EnumDecl, Expr, ScalarType, StructDecl, Type, TypeKind};
-use crate::types::{int_fits, integer_scalar, substitute_instance, Ty, TyKind, TypeTable};
+use crate::borrow::is_nullable_capable;
+use crate::span::Span;
+use crate::types::{
+    int_fits, integer_scalar, resolve_ty_with, substitute_instance, Ty, TyKind, TypeTable,
+};
 
 use super::Checker;
 
@@ -36,6 +40,7 @@ impl Checker<'_, '_> {
         let mut reported_recursion = false;
         for field in &decl.fields {
             let ty = self.resolve_type(&field.ty);
+            self.check_nullable_type(&ty, field.name_span);
             if matches!(ty.kind, TyKind::Str) || ty.is_slice() {
                 self.error(
                     "E10205",
@@ -104,8 +109,17 @@ impl Checker<'_, '_> {
     ///
     /// `constant` is true for a `const`, whose initializer is a constant
     /// context; a `let` initializer is computed at run time and is not.
-    pub(super) fn check_global(&mut self, declared: &Type, value: &Expr, constant: bool) {
+    /// `name_span` is where a nullable declared type reports, matching the
+    /// ownership stage's declaration check.
+    pub(super) fn check_global(
+        &mut self,
+        declared: &Type,
+        value: &Expr,
+        constant: bool,
+        name_span: Span,
+    ) {
         let ty = self.resolve_type(declared);
+        self.check_nullable_type(&ty, name_span);
         self.check_overlay_value(&ty, declared.span);
         if constant {
             self.require_constant(value, integer_scalar(&ty));
@@ -129,10 +143,68 @@ impl Checker<'_, '_> {
     /// then treats the whole type as opaque so the reported `E10224` does not
     /// cascade into array-literal or bounds errors.
     pub(super) fn validate_type(&mut self, ty: &Type) -> bool {
+        self.validate_type_at(ty, false)
+    }
+
+    /// Reports `E10011` when a declared type carries `?` but cannot be empty.
+    ///
+    /// The declaration sites report here as well as in the ownership stage:
+    /// the ownership stage runs only on a program whose type pass is clean, so
+    /// a nested type-argument report would otherwise hide the declaration
+    /// reports of the same program. The span is the declaration's own name
+    /// span, so the site matches the ownership check exactly.
+    pub(super) fn check_nullable_type(&mut self, ty: &Ty, span: Span) {
+        if !ty.nullable || is_nullable_capable(ty) {
+            return;
+        }
+        let base = Ty {
+            kind: ty.kind.clone(),
+            nullable: false,
+        };
+        self.error(
+            "E10011",
+            format!("nullable type is not allowed on '{}'", base.display()),
+            "`?` applies to handles, `raw`, `cstring`, and views",
+            span,
+        );
+    }
+
+    /// Validates a type written in a type-argument position.
+    ///
+    /// A type argument may name a nullable scalar or any other non-capable
+    /// type, and no declaration check sees it there: the declaration checks
+    /// own a parameter, return, binding, global, or field as a whole. Every
+    /// node inside the argument subtree is therefore checked against the
+    /// nullability rule, and each offending node reports once at its own span.
+    /// A nullable handle, `raw`, `cstring`, or view stays legal.
+    pub(super) fn validate_type_argument(&mut self, ty: &Type) -> bool {
+        self.validate_type_at(ty, true)
+    }
+
+    /// The shared type validation, marked with the position it sits at.
+    ///
+    /// `argument` marks a node inside a type argument; only there the
+    /// nullability rule is applied, so a declared binding or field keeps the
+    /// single report its own check produces.
+    fn validate_type_at(&mut self, ty: &Type, argument: bool) -> bool {
         let mut valid = true;
+        if argument {
+            // Classifying a nullable node needs its resolved shape: a handle,
+            // `raw`, `cstring`, or view can be empty, a scalar, `bool`, enum,
+            // or fixed array cannot.
+            let resolved = {
+                let table = self.table;
+                let type_params = &self.type_params;
+                let folder = &mut self.extent_folder;
+                resolve_ty_with(ty, type_params, table, &mut |expr| {
+                    folder.integer_at(expr, Some(ScalarType::Usize))
+                })
+            };
+            self.check_nullable_type(&resolved, ty.span);
+        }
         match &ty.kind {
             TypeKind::Array { element, extents } => {
-                if !self.validate_type(element) {
+                if !self.validate_type_at(element, argument) {
                     valid = false;
                 }
                 for (index, extent) in extents.iter().enumerate() {
@@ -169,23 +241,23 @@ impl Checker<'_, '_> {
                 }
             }
             TypeKind::Raw(inner) => {
-                if !self.validate_type(inner) {
+                if !self.validate_type_at(inner, argument) {
                     valid = false;
                 }
             }
             TypeKind::Function { params, returns } => {
                 for param in params {
-                    if !self.validate_type(&param.ty) {
+                    if !self.validate_type_at(&param.ty, argument) {
                         valid = false;
                     }
                 }
-                if !self.validate_type(returns) {
+                if !self.validate_type_at(returns, argument) {
                     valid = false;
                 }
             }
             TypeKind::Named { name, args } => {
                 for arg in args {
-                    if !self.validate_type(arg) {
+                    if !self.validate_type_at(arg, true) {
                         valid = false;
                     }
                 }

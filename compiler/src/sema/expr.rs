@@ -61,7 +61,7 @@ impl Checker<'_, '_> {
             } => self.check_call(callee, type_args, args, expr.span),
             ExprKind::Index { base, index } => self.check_index(base, index),
             ExprKind::Member { base, name } => self.check_member(expr, base, name),
-            ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
+            ExprKind::Unary { op, operand } => self.check_unary(expr, *op, operand, expected),
             ExprKind::Binary { op, left, right } => self.check_binary(*op, left, right),
             ExprKind::Assign { op, target, value } => self.check_assign(*op, target, value),
             ExprKind::Conditional {
@@ -1034,7 +1034,7 @@ impl Checker<'_, '_> {
 
         let mut resolved_args = Vec::with_capacity(type_args.len());
         for ty in type_args {
-            resolved_args.push(self.resolve_type(ty));
+            resolved_args.push(self.resolve_type_argument(ty));
         }
         // A generic aggregate whose type argument is a closure would have to
         // store the closure, whose environment is ephemeral. Only a callable

@@ -10,14 +10,44 @@ use crate::ast::{AssignOp, BinaryOp, Expr, ExprKind, ScalarType, UnaryOp};
 use crate::borrow::is_view;
 use crate::span::Span;
 use crate::types::{
-    contains_param, int_fits, int_literal_value, is_null_shaped, unify_numeric, Ty, TyKind,
+    contains_param, int_fits, int_literal_value, is_integer_scalar, is_null_shaped, unify_numeric,
+    Ty, TyKind,
 };
 
 use super::Checker;
 
 impl Checker<'_, '_> {
     /// Types a unary operator application.
-    pub(super) fn check_unary(&mut self, op: UnaryOp, operand: &Expr) -> Ty {
+    ///
+    /// A negated integer literal is folded before its context is consulted, so
+    /// `-5` takes the destination's integer type when the folded value fits,
+    /// exactly as the positive literal does. The operand is never context-typed:
+    /// the unary minus produces its own type, and only the folded value's fit
+    /// decides acceptance. Any other shape keeps the ordinary unary rules.
+    pub(super) fn check_unary(
+        &mut self,
+        expr: &Expr,
+        op: UnaryOp,
+        operand: &Expr,
+        expected: Option<&Ty>,
+    ) -> Ty {
+        if op == UnaryOp::Neg {
+            if let Some(value) = int_literal_value(expr) {
+                if let Some(scalar) = expected.and_then(Self::integer_context) {
+                    if !int_fits(value, scalar) {
+                        self.error(
+                            "E10202",
+                            format!("literal does not fit '{}'", Ty::scalar(scalar).display()),
+                            "use a wider type or a hex/binary form",
+                            expr.span,
+                        );
+                    }
+                    let ty = self.check_value(operand, None);
+                    self.require_numeric(&ty, "-", operand.span);
+                    return Ty::scalar(scalar);
+                }
+            }
+        }
         let ty = self.check_value(operand, None);
         match op {
             UnaryOp::Not => {
@@ -98,6 +128,18 @@ impl Checker<'_, '_> {
             Some(self.literal_type(expr.span, value, target))
         } else {
             None
+        }
+    }
+
+    /// The integer scalar a destination context supplies, if any.
+    ///
+    /// Only an integer scalar supplies a literal context. A float, `bool`, or
+    /// non-scalar destination leaves the literal at its default type so the
+    /// ordinary conversion reports the mismatch.
+    fn integer_context(expected: &Ty) -> Option<ScalarType> {
+        match expected.kind {
+            TyKind::Scalar(scalar) if is_integer_scalar(scalar) => Some(scalar),
+            _ => None,
         }
     }
 

@@ -9609,7 +9609,7 @@ func main(): i32 {
         "p3nullableannot",
         annotation,
         "E10011",
-        &["nullable type is not allowed on 'i32'", "main.clo:5:20"],
+        &["nullable type is not allowed on 'i32'", "main.clo:5:21"],
         &[],
     );
 

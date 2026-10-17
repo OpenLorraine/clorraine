@@ -27,7 +27,7 @@ impl Checker<'_, '_> {
     ) -> Ty {
         if let Some(target) = self.callee_type(callee) {
             for ty in type_args {
-                self.resolve_type(ty);
+                self.resolve_type_argument(ty);
             }
             let arg_ty = match args.first() {
                 Some(arg) => self.check_value(&arg.value, None),
@@ -89,7 +89,7 @@ impl Checker<'_, '_> {
                 // `String`-to-`str` widening apply when it is passed to a view.
                 if name == "text" {
                     for ty in type_args {
-                        self.resolve_type(ty);
+                        self.resolve_type_argument(ty);
                     }
                     for arg in args {
                         self.check_value(&arg.value, None);
@@ -173,7 +173,7 @@ impl Checker<'_, '_> {
     fn check_view_builder(&mut self, type_args: &[Type], args: &[Arg]) -> Ty {
         let mut explicit: Option<Ty> = None;
         for ty in type_args {
-            let resolved = self.resolve_type(ty);
+            let resolved = self.resolve_type_argument(ty);
             if explicit.is_none() {
                 explicit = Some(resolved);
             }
@@ -229,9 +229,28 @@ impl Checker<'_, '_> {
             .iter()
             .map(|param| param.name.clone())
             .collect();
+        // An integer literal at a parameter that does not name a type
+        // parameter is typed by that parameter, exactly as a non-generic call
+        // types it: the destination supplies the context, and a value that
+        // does not fit reports the fit rule at the literal. The parameter is
+        // concrete before inference, so the context is available here. Every
+        // other argument stays context-free: a parameter that still names a
+        // type parameter needs its argument's own type to bind the instance.
         let arg_types: Vec<(Ty, Span)> = args
             .iter()
-            .map(|arg| (self.check_value(&arg.value, None), arg.value.span))
+            .enumerate()
+            .map(|(index, arg)| {
+                let ty = match signature.params.get(index) {
+                    Some(param)
+                        if Self::concrete_integer_param(param)
+                            && crate::types::int_literal_value(&arg.value).is_some() =>
+                    {
+                        self.check_into(&arg.value, param)
+                    }
+                    _ => self.check_value(&arg.value, None),
+                };
+                (ty, arg.value.span)
+            })
             .collect();
 
         // The written count is judged against the declared parameters like
@@ -279,7 +298,7 @@ impl Checker<'_, '_> {
         } else {
             let mut resolved = Vec::with_capacity(type_args.len());
             for ty in type_args {
-                resolved.push(self.resolve_type(ty));
+                resolved.push(self.resolve_type_argument(ty));
             }
             if type_args.len() != declared.len() {
                 self.error(
@@ -600,6 +619,16 @@ impl Checker<'_, '_> {
             receiver_expr.map(|expr| expr.span).unwrap_or(span),
         );
         self.check_conversion(receiver, param, span);
+    }
+
+    /// True for a concrete integer scalar parameter.
+    ///
+    /// Such a parameter supplies a context type to an integer literal even
+    /// when its callee has type parameters elsewhere in the signature. A
+    /// parameter that still names one of them is not concrete, and a
+    /// non-integer parameter supplies no integer context.
+    fn concrete_integer_param(param: &Ty) -> bool {
+        matches!(param.kind, TyKind::Scalar(scalar) if crate::types::is_integer_scalar(scalar))
     }
 
     /// The declared type parameters of a candidate that still have no binding.

@@ -586,3 +586,10 @@ Ch 04 §13: a literal is typed by its context) and the aggregate-literal positio
 sole literal now reaches the arm. An arm outside the destination's range reports the existing fit
 rule `E10202` (TY-15) at the literal. The checker suites pin the scalar, float, and array-literal
 acceptances and the fit rejection as controls; no additional source change is involved.
+
+**AR-43 (spec-case span correction, auto-design):** The nullable type-argument annotation spec
+case expected `main.clo:5:20`, which points at the `<` of `Array<i32?>`; the offending type
+argument's own start is column 21, and the case's other four sites pin the argument's own start.
+Only the column is corrected (`5:20` -> `5:21`); the code, count, message, line, and the TY-4 rule
+stay pinned. This follows the AR-40 mechanical-span precedent.
+

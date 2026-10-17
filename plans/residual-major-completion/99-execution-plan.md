@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 18/60 tasks (30%) — Phase 3 red
+> **Progress**: 20/60 tasks (33%) — Phase 3 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -203,7 +203,7 @@ count), the qualified type path, and the folded negated literal matrix.
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Context-type the literal at a concrete generic parameter (plain-call route); apply
+- [x] 3.2.1 Context-type the literal at a concrete generic parameter (plain-call route); apply
       TY-4 at nested type-argument positions **and the explicit call type argument** (keep
       `check_nullable_decl` and `report_illegal_nullable`); resolve the multi-segment named type;
       for a negated integer literal fold with `int_literal_value`, pass the expected type to
@@ -211,9 +211,9 @@ count), the qualified type path, and the folded negated literal matrix.
       **not** context-type the operand — `compiler/src/sema/call.rs`,
       `compiler/src/sema/items.rs`, `compiler/src/sema/mod.rs`,
       `compiler/src/sema/ops.rs`, `compiler/src/own/program.rs`,
-      `compiler/src/own/place.rs`, `compiler/src/types/table.rs`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation; if the
-      nullable check rejects a legal nullable type, **narrow per AR-34(b)** (never park)
+      `compiler/src/own/place.rs`, `compiler/src/types/table.rs` ✅ (completed: 2026-10-17; the literal at a concrete generic parameter context-typed (`sema/call.rs:239/630`); TY-4 at the nested type-argument positions and the explicit call type argument with the declaration checks kept (`sema/items.rs:156/180/189`, `sema/mod.rs:575/582/606`, `sema/stmt.rs:91/147`, `sema/call.rs:30/92/176/301`, `sema/expr.rs:1037`); the multi-segment named type resolved (`types/table.rs:663`); the folded negated literal with the integer-scalar fit and no operand context (`sema/ops.rs:27/139`, `sema/expr.rs:64`); the span correction per AR-43)
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation; if the
+      nullable check rejects a legal nullable type, **narrow per AR-34(b)** (never park) ✅ (completed: 2026-10-17; checker 192/192 and impl 105/105 plain and under `RDC_ASAN=1` (the nullable-handle ASan control clean); `make check` exit 0; the hosted-amiga `DEF-384`/`385` legs; the `DEF-386` matrix; the differential intended deltas only, no head-only strict failure)
 
 ### Step 3.3: Impl Tests & Review
 

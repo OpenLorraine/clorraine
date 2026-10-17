@@ -655,7 +655,11 @@ where
 /// Resolves a named type to its kind.
 ///
 /// A struct keeps its concrete type arguments so a generic consumer can infer
-/// its parameters; every other named type ignores them.
+/// its parameters; every other named type ignores them. A qualified path
+/// resolves through its last segment: a type table is keyed by the simple
+/// declaration name, so `std.mem.Array<i32>` names the same instance as the
+/// imported `Array<i32>`. A type parameter is only reachable by its bare name,
+/// because a qualified spelling belongs to a module path.
 fn resolve_named(
     name: &QualifiedName,
     args: Vec<Ty>,
@@ -665,22 +669,20 @@ fn resolve_named(
     let Some(last) = name.segments.last() else {
         return TyKind::Unknown;
     };
-    if name.segments.len() == 1 {
-        if type_params.iter().any(|param| param == last) {
-            return TyKind::Param(last.clone());
-        }
-        if last == "String" {
-            return TyKind::Handle("String".to_owned());
-        }
-        if table.is_handle(last) {
-            return TyKind::Handle(last.clone());
-        }
-        if table.is_struct(last) {
-            return TyKind::Struct(last.clone(), args);
-        }
-        if table.is_enum(last) {
-            return TyKind::Enum(last.clone());
-        }
+    if name.segments.len() == 1 && type_params.iter().any(|param| param == last) {
+        return TyKind::Param(last.clone());
+    }
+    if last == "String" {
+        return TyKind::Handle("String".to_owned());
+    }
+    if table.is_handle(last) {
+        return TyKind::Handle(last.clone());
+    }
+    if table.is_struct(last) {
+        return TyKind::Struct(last.clone(), args);
+    }
+    if table.is_enum(last) {
+        return TyKind::Enum(last.clone());
     }
     TyKind::Unknown
 }
