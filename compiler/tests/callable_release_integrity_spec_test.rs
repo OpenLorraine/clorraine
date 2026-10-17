@@ -2823,3 +2823,116 @@ func main(): i32 {
     let output = run_with_timeout("deephead", &program, &[]);
     assert_exit("deephead", &output, 0);
 }
+
+/// An aliased take callee moves its argument exactly like the plain twin.
+///
+/// The alias binds the imported declaration, so the own stage's argument
+/// check sees the `take` mode: the move is marked and the later read reports
+/// the code and site the plain spelling reports.
+#[test]
+fn should_move_out_an_aliased_take_argument_at_the_use_site() {
+    let holder = r#"module spec.cri.aliastakeuseholder;
+
+export func sink(take s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let aliased = r#"module spec.cri.aliastakeusemain;
+
+import { stringOf } from std.text;
+import { sink as drop } from spec.cri.aliastakeuseholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = drop(s);
+    return n + i32(len(s)) - 4;
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("aliastakeuse", holder, aliased);
+    assert_rejected_output(
+        "aliastakeuse",
+        &output,
+        &c_path,
+        "E10020",
+        &["'s' was moved and cannot be used", "main.clo:9:24"],
+        &[],
+    );
+
+    let plain = r#"module spec.cri.aliastakeuseplain;
+
+import { stringOf } from std.text;
+import { sink } from spec.cri.aliastakeuseholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = sink(s);
+    return n + i32(len(s)) - 4;
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("aliastakeuseplain", holder, plain);
+    assert_rejected_output(
+        "aliastakeuseplain",
+        &output,
+        &c_path,
+        "E10020",
+        &["'s' was moved and cannot be used", "main.clo:9:24"],
+        &[],
+    );
+}
+
+/// A value-headed call resolves its receiver like the checker does.
+///
+/// The receiver path spells a loaded module whose binding chain differs from
+/// the local binding of the same name, so the module path wins (Ch 10
+/// MOD-13): the call goes through the module's binding and the run reads its
+/// value back.
+#[test]
+fn should_call_a_module_path_receiver_beside_a_colliding_binding() {
+    let holder = r#"module collcall.a;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+export let holder: Holder = Holder { g: qf };
+"#;
+    let main = r#"module collmain;
+
+struct H2 {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: H2;
+}
+
+func wrong(x: i32): i32 {
+    return x + 7;
+}
+
+let collcall: Outer = Outer { holder: H2 { g: wrong } };
+
+func main(): i32 {
+    return collcall.a.holder.g(5) - 35;
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("collcall", holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "collcall: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "collcall: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("collcall", &scratch, &emitted);
+    let output = run_with_timeout("collcall", &program, &[]);
+    assert_exit("collcall", &output, 0);
+}

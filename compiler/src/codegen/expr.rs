@@ -572,6 +572,21 @@ impl<'a> Emitter<'a> {
         segments: &[String],
     ) -> Option<(crate::ir::GlobalId, String)> {
         let (first, rest) = segments.split_first()?;
+        // The leading segments may spell the declaring module with the binding
+        // after them, so a qualified name resolves the exact binding and the
+        // segments after it are its fields. The longest module prefix wins,
+        // and it wins over a value head of the same spelling (Ch 10 MOD-13).
+        for split in (1..segments.len()).rev() {
+            let module = segments[..split].join(".");
+            let name = &segments[split];
+            if let Some((id, _)) = self
+                .globals
+                .iter()
+                .find(|(id, _)| id.module == module && &id.name == name)
+            {
+                return Some((id.clone(), segments[split + 1..].join(".")));
+            }
+        }
         let head = |id: &crate::ir::GlobalId| &id.name == first;
         if let Some((id, _)) = self
             .globals
@@ -587,20 +602,6 @@ impl<'a> Emitter<'a> {
         };
         if let Some((id, _)) = head_match {
             return Some((id.clone(), rest.join(".")));
-        }
-        // The leading segments may spell the declaring module with the binding
-        // after them, so a qualified name resolves the exact binding and the
-        // segments after it are its fields. The longest module prefix wins.
-        for split in (1..segments.len()).rev() {
-            let module = segments[..split].join(".");
-            let name = &segments[split];
-            if let Some((id, _)) = self
-                .globals
-                .iter()
-                .find(|(id, _)| id.module == module && &id.name == name)
-            {
-                return Some((id.clone(), segments[split + 1..].join(".")));
-            }
         }
         None
     }

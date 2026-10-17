@@ -1366,3 +1366,119 @@ func main(): i32 {
         "aliastakepin: the alias must not spell the symbol; emitted C:\n{emitted}"
     );
 }
+
+/// An aliased take callee moves its argument like the plain twin.
+///
+/// Both spellings report the same single move error at the same site, so the
+/// aliased resolution cannot lose the argument's mode.
+#[test]
+fn should_report_an_aliased_take_use_like_the_plain_twin() {
+    let holder = r#"module spec.criimpl.aliastakeuseholder;
+
+export func sink(take s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let aliased = r#"module spec.criimpl.aliastakeusemain;
+
+import { stringOf } from std.text;
+import { sink as drop } from spec.criimpl.aliastakeuseholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = drop(s);
+    return n + i32(len(s)) - 4;
+}
+"#;
+    let plain = r#"module spec.criimpl.aliastakeuseplain;
+
+import { stringOf } from std.text;
+import { sink } from spec.criimpl.aliastakeuseholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = sink(s);
+    return n + i32(len(s)) - 4;
+}
+"#;
+    for (tag, main) in [("aliastakeuse", aliased), ("aliastakeuseplain", plain)] {
+        let scratch = ScratchDir::new(tag);
+        let holder_path = scratch.path().join("holder.clo");
+        let main_path = scratch.path().join("main.clo");
+        std::fs::write(&holder_path, holder)
+            .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+        std::fs::write(&main_path, main)
+            .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+        let c_path = scratch.path().join("out.c");
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            main_path.display().to_string(),
+            holder_path.display().to_string(),
+        ]);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end accepted a moved value's use"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.matches("error E10020:").count(),
+            1,
+            "{tag}: expected one E10020; stderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("'s' was moved and cannot be used") && stderr.contains("main.clo:9:24"),
+            "{tag}: the report's message or site is missing; stderr:\n{stderr}"
+        );
+    }
+}
+
+/// A module-path receiver spells the binding the resolution reaches.
+///
+/// The call goes through the module's `holder` binding even though a local
+/// binding of the same head name exists, matching the checker's order.
+#[test]
+fn should_spell_a_module_path_receiver_beside_a_colliding_binding() {
+    let holder = r#"module collpin.a;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+export let holder: Holder = Holder { g: qf };
+"#;
+    let main = r#"module collpinmain;
+
+struct H2 {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: H2;
+}
+
+func wrong(x: i32): i32 {
+    return x + 7;
+}
+
+let collpin: Outer = Outer { holder: H2 { g: wrong } };
+
+func main(): i32 {
+    return collpin.a.holder.g(5) - 35;
+}
+"#;
+    let emitted = emit_pair("collpin", holder, main);
+    assert_contains("collpin", &emitted, "(cl_collpin_a_holder.g)(5)");
+    assert_eq!(
+        count(&emitted, "collpinmain_collpin.a"),
+        0,
+        "collpin: the binding's field chain must not spell the call; emitted C:\n{emitted}"
+    );
+}

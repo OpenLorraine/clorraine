@@ -1623,7 +1623,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A bare name can also name a module-level func-typed global, whose
         // value is the callable rather than a declaration to judge; anything
         // unresolved reaches no postlude either.
-        let Some(resolved) = self.program.callee(&name) else {
+        let Some(resolved) = self.resolved_callee(&name) else {
             return false;
         };
         let Callee::User(decl) = resolved else {

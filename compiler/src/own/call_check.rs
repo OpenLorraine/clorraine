@@ -88,7 +88,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return;
         };
-        let Some(resolved) = self.program.callee(&name) else {
+        let Some(resolved) = self.resolved_callee(&name) else {
             // A bare name may resolve to a module-level func-typed global:
             // the global's value is the callable, so its signature types the
             // call exactly as any other callable's does.

@@ -36,6 +36,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
                 let method = name.segments.len() - 1;
                 let head = &name.segments[0];
+                // The module path wins for the receiver exactly as it does for
+                // a read (Ch 10 MOD-13); a lexical binding still shadows it.
+                if self.lookup(head).is_none() {
+                    if let Some((id, fields)) = self.dotted_global(&name.segments[..method]) {
+                        if let Some(global_ty) =
+                            self.program.globals.get(&id).map(|global| global.ty.clone())
+                        {
+                            let mut ty = global_ty;
+                            for field in &fields {
+                                ty = self.member_type(&ty, field);
+                            }
+                            let projections = fields
+                                .iter()
+                                .map(|field| ir::Projection::Field(field.clone()))
+                                .collect();
+                            return Some(Value::place(Place {
+                                base: ir::PlaceBase::Global(id),
+                                projections,
+                                ty,
+                            }));
+                        }
+                    }
+                }
                 let projections: Vec<ir::Projection> = name.segments[1..method]
                     .iter()
                     .map(|segment| ir::Projection::Field(segment.clone()))
@@ -101,6 +124,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// itself mentions no name.
     fn receiver_path_type(&self, segments: &[String]) -> Option<Ty> {
         let (first, rest) = segments.split_first()?;
+        // The module path wins for a receiver exactly as it does for a read
+        // (Ch 10 MOD-13); a lexical binding of the head's name still shadows
+        // the path.
+        if self.lookup(first).is_none() {
+            if let Some((id, fields)) = self.dotted_global(segments) {
+                if let Some(ty) = self.program.globals.get(&id).map(|global| global.ty.clone()) {
+                    let mut ty = ty;
+                    for field in &fields {
+                        ty = self.member_type(&ty, field);
+                    }
+                    return Some(ty);
+                }
+            }
+        }
         if let Some(id) = self.lookup(first) {
             let mut ty = self.bindings[id].ty.clone();
             for segment in rest {
@@ -115,17 +152,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return Some(ty);
         }
-        let name = crate::ast::QualifiedName {
-            segments: segments.to_vec(),
-            span: crate::span::Span::default(),
-        };
-        let global = crate::init_graph::resolve_global(self.loaded, self.module, &name)?;
-        let id = ir::GlobalId::new(global.module.clone(), global.name.clone());
-        let mut ty = self.program.globals.get(&id)?.ty.clone();
-        for field in &global.fields {
-            ty = self.member_type(&ty, field);
-        }
-        Some(ty)
+        None
     }
 
     /// The callable value of a `func`-typed field call.
@@ -227,7 +254,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::Qualified(name) => {
-                ValueKind::Path(self.global_head_segments(&name.segments))
+                // The receiver resolves module-aware and the last segment is
+                // the called member, exactly as the checker splits the two:
+                // `m.holder.g` reads the module path's binding `holder` and
+                // calls its field `g`, while a plain head keeps its binding.
+                let last = name.segments.len() - 1;
+                let mut segments = self.global_head_segments(&name.segments[..last]);
+                segments.push(name.segments[last].clone());
+                ValueKind::Path(segments)
             }
             _ => return None,
         };
@@ -533,7 +567,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Returns `None` when the callee is not generic or some parameter stays
     /// unbound; the emitter then treats the call as opaque rather than guessing.
     pub(super) fn infer_call_types(&self, name: &str, arg_types: &[Ty]) -> Option<Vec<Ty>> {
-        let Some(Callee::User(decl)) = self.program.callee(name) else {
+        let Some(Callee::User(decl)) = self.resolved_callee(name) else {
             return None;
         };
         if decl.type_params.is_empty() {
@@ -579,7 +613,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // `ffi` declaration that happens to share the name must resolve to its
         // own symbol, never be silently replaced by the built-in lowering.
         if matches!(
-            self.program.callee(&name),
+            self.resolved_callee(&name),
             Some(Callee::User(_)) | Some(Callee::Ffi(_))
         ) {
             return None;
@@ -684,27 +718,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ))
     }
 
-    /// The declared parameter modes of a known user or `ffi` function.
+    /// The declaration a written callee name resolves to, by scope.
     ///
     /// The written name resolves the way the checker resolves it: the caller's
-    /// own declaration first, then an import binding under its original name,
-    /// and only then the program-wide simple-name map. An aliased import
-    /// therefore keeps the imported declaration's modes, so a `take`
-    /// parameter still moves its argument out of the caller's slot.
-    pub(super) fn callee_modes(&self, name: &str) -> Option<Vec<Mode>> {
-        if let Some(signature) = self.sema.table.function(&self.module.name, name) {
-            return Some(signature.modes.clone());
+    /// own module first, then an import binding under its original name, and
+    /// only then the program-wide simple-name map. Every mode and ownership
+    /// judgment of the call reads this one resolution, so an aliased or
+    /// same-named spelling judges exactly like its plain twin.
+    pub(super) fn resolved_callee(&self, name: &str) -> Option<Callee<'a>> {
+        if let Some(decl) = declared_function(self.module, name) {
+            return Some(Callee::User(decl));
+        }
+        if let Some(signature) = declared_ffi(self.module, name) {
+            return Some(Callee::Ffi(signature));
         }
         if let Some(binding) = self.module.import(name) {
             if !binding.poisoned {
-                if let Some(signature) =
-                    self.sema.table.function(&binding.module, &binding.original)
-                {
-                    return Some(signature.modes.clone());
+                if let Some(target) = self.loaded.module(&binding.module) {
+                    if let Some(decl) = declared_function(target, &binding.original) {
+                        return Some(Callee::User(decl));
+                    }
+                    if let Some(signature) = declared_ffi(target, &binding.original) {
+                        return Some(Callee::Ffi(signature));
+                    }
                 }
             }
         }
-        match self.program.callee(name) {
+        self.program.callee(name)
+    }
+
+    /// The declared parameter modes of a known user or `ffi` function.
+    pub(super) fn callee_modes(&self, name: &str) -> Option<Vec<Mode>> {
+        match self.resolved_callee(name) {
             Some(Callee::User(decl)) => Some(decl.params.iter().map(|param| param.mode).collect()),
             Some(Callee::Ffi(signature)) => {
                 Some(signature.params.iter().map(|param| param.mode).collect())
@@ -818,4 +863,23 @@ pub(super) struct LoweredCall {
     /// its owned temporary arguments and `take` arguments exactly like a
     /// module call's.
     pub modes: Option<Vec<Mode>>,
+}
+
+/// The `func` declaration a module declares under a name.
+fn declared_function<'a>(module: &'a crate::load::Module, name: &str) -> Option<&'a FuncDecl> {
+    module.items.iter().find_map(|item| match item {
+        crate::ast::Item::Func(decl) if decl.name == name => Some(decl),
+        _ => None,
+    })
+}
+
+/// The `ffi` signature a module declares under a name.
+fn declared_ffi<'a>(
+    module: &'a crate::load::Module,
+    name: &str,
+) -> Option<&'a crate::ast::FuncSignature> {
+    module.items.iter().find_map(|item| match item {
+        crate::ast::Item::Ffi(block) => block.decls.iter().find(|decl| decl.name == name),
+        _ => None,
+    })
 }

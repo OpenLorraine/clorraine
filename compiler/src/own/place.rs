@@ -1821,27 +1821,46 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         crate::init_graph::resolve_name_global(self.loaded, self.module, name).map(global_id)
     }
 
-    /// The segments of a dotted read, with the head binding's identity.
+    /// The segments of a dotted read, with the binding's identity.
     ///
-    /// A dotted name reads a binding at its head and fields after it. When
-    /// that head is a module-level binding, the declaring module is spelled in
-    /// front of it, so the emitter names the same binding the front end
-    /// resolved even when several modules export the same name. A local,
-    /// parameter, or unresolved head keeps its written segments.
+    /// A dotted name reads a binding and the fields after it. The binding is
+    /// the one the module-aware resolution reaches — a leading module path
+    /// first, then a same-module or imported head — and its declaring module
+    /// is spelled in front of it, so the emitter names the same binding the
+    /// front end resolved even when several modules export the same name. A
+    /// local, parameter, or unresolved path keeps its written segments.
     pub(super) fn global_head_segments(&self, segments: &[String]) -> Vec<String> {
-        let Some((head, rest)) = segments.split_first() else {
+        let Some((head, _)) = segments.split_first() else {
             return segments.to_vec();
         };
         if self.lookup(head).is_some() {
             return segments.to_vec();
         }
-        let Some(id) = self.resolve_global_id(head) else {
+        let Some((id, fields)) = self.dotted_global(segments) else {
             return segments.to_vec();
         };
         let mut qualified: Vec<String> = id.module.split('.').map(str::to_owned).collect();
         qualified.push(id.name);
-        qualified.extend(rest.iter().cloned());
+        qualified.extend(fields);
         qualified
+    }
+
+    /// The module binding a dotted path reaches, when the path resolves.
+    ///
+    /// The resolution is module-aware, exactly as the checker's is: a leading
+    /// module path reaches the binding it declares, and otherwise the head is
+    /// a same-module or imported binding; the segments after the binding are
+    /// field projections.
+    pub(super) fn dotted_global(&self, segments: &[String]) -> Option<(ir::GlobalId, Vec<String>)> {
+        let name = crate::ast::QualifiedName {
+            segments: segments.to_vec(),
+            span: Span::default(),
+        };
+        let global = crate::init_graph::resolve_global(self.loaded, self.module, &name)?;
+        Some((
+            ir::GlobalId::new(global.module.clone(), global.name.clone()),
+            global.fields,
+        ))
     }
 
     /// The checked type of the module-level binding a bare name resolves to.
