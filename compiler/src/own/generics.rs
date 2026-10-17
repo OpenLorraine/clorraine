@@ -483,10 +483,10 @@ fn record_call(
     sema: &SemaOutput,
     mono: &mut Monomorphization,
 ) {
-    let Some(name) = callee_simple_name(callee) else {
+    let Some(name) = callee_call_name(callee, program) else {
         return;
     };
-    let Some(Callee::User(decl)) = program.callee(&name) else {
+    let Some(decl) = program.user_function(&name) else {
         return;
     };
     let instance_args: Vec<Ty> = if type_args.is_empty() {
@@ -1129,7 +1129,7 @@ fn resolve_ir_call_args(
     program: &ProgramInfo,
     sema: &SemaOutput,
 ) -> Option<Vec<Ty>> {
-    let Some(Callee::User(decl)) = program.callee(callee) else {
+    let Some(decl) = program.user_function(callee) else {
         return None;
     };
     if decl.type_params.is_empty() {
@@ -1329,7 +1329,7 @@ fn record_instance(
     {
         return;
     }
-    let Some(Callee::User(decl)) = program.callee(callee) else {
+    let Some(decl) = program.user_function(callee) else {
         return;
     };
     if decl.type_params.len() != type_args.len() {
@@ -1446,6 +1446,22 @@ fn walk_value(
         | ValueKind::Aggregate
         | ValueKind::Temp(_) => {}
     }
+}
+
+/// The name a call names, keeping a module-qualified declaration whole.
+///
+/// A qualified path that reaches a user function names that declaration, so
+/// the collectors resolve the same callee the checker and the emitter do.
+/// Every other callee keeps the simple name the existing inference uses: a
+/// member call's function, a local func value, or a shadowing name.
+fn callee_call_name(callee: &Expr, program: &ProgramInfo) -> Option<String> {
+    if let ExprKind::Qualified(name) = &callee.kind {
+        let full = name.segments.join(".");
+        if program.user_function(&full).is_some() {
+            return Some(full);
+        }
+    }
+    callee_simple_name(callee)
 }
 
 /// The simple name a callee expression carries.

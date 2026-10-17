@@ -39,6 +39,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // The module path wins for the receiver exactly as it does for
                 // a read (Ch 10 MOD-13); a lexical binding still shadows it.
                 if self.lookup(head).is_none() {
+                    // A receiver path that names a loaded module is a module
+                    // path, not a binding: a parent module's same-spelled
+                    // export must not become the receiver of the call.
+                    if name.segments[..method].len() >= 2
+                        && self.loaded.has_module(&name.segments[..method].join("."))
+                    {
+                        return None;
+                    }
                     if let Some((id, fields)) = self.dotted_global(&name.segments[..method]) {
                         if let Some(global_ty) =
                             self.program.globals.get(&id).map(|global| global.ty.clone())
@@ -124,6 +132,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// itself mentions no name.
     fn receiver_path_type(&self, segments: &[String]) -> Option<Ty> {
         let (first, rest) = segments.split_first()?;
+        // A receiver path that names a loaded module is a module qualifier, not
+        // a binding, unless a lexical binding shadows the head.
+        if self.lookup(first).is_none()
+            && segments.len() >= 2
+            && self.loaded.has_module(&segments.join("."))
+        {
+            return None;
+        }
         // The module path wins for a receiver exactly as it does for a read
         // (Ch 10 MOD-13); a lexical binding of the head's name still shadows
         // the path.

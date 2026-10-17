@@ -739,11 +739,11 @@ impl Checker<'_, '_> {
             self.record_deferred_conversion_with(
                 ty,
                 &param,
-                arg.span,
+                arg.value.span,
                 Self::conversion_literal(&arg.value),
                 borrow_slot,
             );
-            self.check_conversion(ty, &param, arg.span);
+            self.check_conversion(ty, &param, arg.value.span);
         }
     }
 

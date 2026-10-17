@@ -8100,9 +8100,10 @@ func main(): i32 {
         &["E11101"],
     );
 
-    // Every declaration kind the module loader registers, in both orders. The
-    // `comptime` kind also reports its staged-feature code; the collision is
-    // the finding under test, so only that code's count and site are pinned.
+    // Every declaration kind the module loader registers, in both orders. A
+    // `comptime` declaration registers like the others; the collision is a
+    // load error, so the driver stops before the staged-feature report runs and
+    // this row reports the same single `E11103`.
     let kinds: &[(&str, &str)] = &[
         ("let", "let g: i32 = 7;"),
         ("func", "func g(): i32 { return 7; }"),
@@ -8290,4 +8291,229 @@ func main(): i32 {
 "#;
     let output = run_host("shadowcontrol", baseline);
     assert_exit("shadowcontrol", &output, 0);
+}
+
+// ===== Qualified call identity and the written-value span =====
+
+/// A self-qualified user call keeps its take, borrow, and initializer modes.
+///
+/// The module spells its own name in front of the call; the declaration's
+/// ownership modes still decide the call. The initializer's `take` value is
+/// owned and released by the callee, the body's `take` value is moved once, and
+/// the borrow leaves the caller's source alive. A user declaration's modes
+/// already followed a qualified spelling, so this case is the control for the
+/// `ffi` and generic cases below.
+#[test]
+fn should_keep_a_self_qualified_user_calls_modes() {
+    let source = r#"module spec.cc.qualtake;
+
+import { String, stringOf } from std.text;
+
+func takeIt(take s: String): i32 {
+    return i32(len(s));
+}
+
+func lendIt(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+let taken: i32 = spec.cc.qualtake.takeIt(stringOf("abc"));
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let a: i32 = spec.cc.qualtake.lendIt(s);
+    let b: i32 = spec.cc.qualtake.takeIt(stringOf("ab"));
+    return (taken - 3) + (a - 4) + (b - 2) + i32(len(s)) - 4;
+}
+"#;
+    let output = run_memory("qualtake", source);
+    assert_no_asan("qualtake", &output);
+    assert_exit("qualtake", &output, 0);
+}
+
+/// A self-qualified `ffi` call reaches its declaration and keeps its mode.
+///
+/// The `take` declaration owns and frees the string it receives, so the caller
+/// must not release that value again; the `borrow` declaration reads the caller's
+/// storage, which the caller releases at the end of the scope. The borrowed
+/// initializer call reads the module's own declaration too. The module spells
+/// its own name in front of both calls.
+#[test]
+fn should_reach_a_self_qualified_ffi_declaration() {
+    let source = r#"module spec.cc.qualffi;
+
+import { String, stringOf } from std.text;
+
+ffi own {
+    func FreeString(take s: String): void;
+    func cl_string_len(borrow s: String): usize;
+}
+
+let g: usize = spec.cc.qualffi.cl_string_len(stringOf("abc"));
+
+func main(): i32 {
+    spec.cc.qualffi.FreeString(stringOf("ab"));
+    let n: usize = spec.cc.qualffi.cl_string_len(stringOf("abcd"));
+    return (i32(g) - 3) + (i32(n) - 4);
+}
+"#;
+    let output = run_memory("qualffi", source);
+    assert_no_asan("qualffi", &output);
+    assert_exit("qualffi", &output, 0);
+}
+
+/// A self-qualified inferred generic call declares and uses its instance.
+///
+/// A generic function cannot be exported, so a module-qualified generic call is
+/// legal only from the declaring module. The inferred argument list must key
+/// the same instance a plain call would, in a body, through a module-level
+/// argument, and inside another generic body.
+#[test]
+fn should_reach_a_self_qualified_inferred_generic() {
+    let direct = r#"module spec.cc.selfgeneric;
+
+let seed: i32 = 5;
+
+func pick<T>(take a: T, take b: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let a: i32 = 5;
+    let b: i32 = 6;
+    return (spec.cc.selfgeneric.pick(a, b) - 1) + (spec.cc.selfgeneric.seed - 5);
+}
+"#;
+    let output = run_memory("selfgeneric", direct);
+    assert_no_asan("selfgeneric", &output);
+    assert_exit("selfgeneric", &output, 0);
+
+    let relayed = r#"module spec.cc.selfgenericbody;
+
+func sink<T>(take v: T): i32 {
+    return 1;
+}
+
+func relay<T>(take v: T): i32 {
+    return spec.cc.selfgenericbody.sink(v);
+}
+
+func main(): i32 {
+    return relay<i32>(5) - 1;
+}
+"#;
+    let output = run_memory("selfgenericbody", relayed);
+    assert_no_asan("selfgenericbody", &output);
+    assert_exit("selfgenericbody", &output, 0);
+}
+
+/// A module-path binding receiver keeps its member call.
+///
+/// `m.x.f(...)` where `x` is the module's binding is a member call through the
+/// binding, not a module-qualified function: the callee is `f`, and the
+/// receiver is `x`. The body call and the initializer call both reach the
+/// module's function, including a deep module path.
+#[test]
+fn should_reach_a_module_path_bindings_member_call() {
+    let source = r#"module spec.cc.globaldot;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+
+let g: i32 = spec.cc.globaldot.n.peek(5);
+
+func main(): i32 {
+    return (g - 6) + (spec.cc.globaldot.n.peek(7) - 8);
+}
+"#;
+    let output = run_memory("globaldot", source);
+    assert_no_asan("globaldot", &output);
+    assert_exit("globaldot", &output, 0);
+
+    let deep = r#"module spec.cc.deep.globaldot;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+
+func main(): i32 {
+    return spec.cc.deep.globaldot.n.peek(5) - 6;
+}
+"#;
+    let output = run_memory("deepglobaldot", deep);
+    assert_no_asan("deepglobaldot", &output);
+    assert_exit("deepglobaldot", &output, 0);
+}
+
+/// A marked dot-call argument reports at the written value.
+///
+/// A pending written argument is judged after the call site fixes the type
+/// arguments, and the report covers the value rather than the `take` marker in
+/// front of it, exactly as the direct call's report does.
+#[test]
+fn should_report_a_marked_dot_call_argument_at_its_written_value() {
+    let dot = r#"module spec.cc.markedpending;
+
+struct S { x: i32; }
+
+func g<T>(take s: S, take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(s: S): i32 {
+    return s.g(take 7, take "x");
+}
+
+func main(): i32 {
+    let s: S = S { x: 0 };
+    return outer<i32>(s) - 1;
+}
+"#;
+    assert_rejected_once(
+        "markedpending",
+        dot,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'i32' implicitly",
+            "main.clo:10:29",
+        ],
+        &["main.clo:10:24"],
+    );
+
+    let direct = r#"module spec.cc.markeddirect;
+
+struct S { x: i32; }
+
+func g<T>(take s: S, take v: T, take w: T): i32 {
+    return 1;
+}
+
+func call(s: S): i32 {
+    return g(take s, take 7, take "x");
+}
+
+func main(): i32 {
+    let s: S = S { x: 0 };
+    return call(s) - 1;
+}
+"#;
+    assert_rejected_once(
+        "markeddirect",
+        direct,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'i32' implicitly",
+            "main.clo:10:35",
+        ],
+        &["main.clo:10:30"],
+    );
 }

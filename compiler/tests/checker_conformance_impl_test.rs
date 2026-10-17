@@ -4866,3 +4866,245 @@ func main(): i32 {
         "cl_each__arr2_i32(b)",
     );
 }
+
+// ===== Qualified call identity and the written-value span =====
+
+/// A self-qualified `ffi` call spells the declaration's symbol and keeps its
+/// modes.
+///
+/// The symbol is the `ffi` declaration's own simple name, never the dotted path
+/// the call writes. A `take` initializer call hands the value to the callee and
+/// binds no owner for it, so the initializer releases nothing after the call; a
+/// `take` body argument is moved out of the caller's slot; a `borrow` body call
+/// leaves the caller's release in place.
+#[test]
+fn should_emit_a_self_qualified_ffi_symbol_and_take_mode() {
+    let initializer = r#"module spec.cc.impl.selfffitake;
+
+import { String, stringOf } from std.text;
+
+ffi own {
+    func probe_free_len(take s: String): i32;
+}
+
+let g: i32 = spec.cc.impl.selfffitake.probe_free_len(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let emitted = emit_host("selfffitake", initializer);
+    assert_contains(
+        "selfffitake",
+        &emitted,
+        "cl_spec_cc_impl_selfffitake_g = probe_free_len(cl_std_text_stringOf(cl_str(\"abc\")));",
+    );
+    assert_eq!(
+        count(&emitted, "FreeString(__cl_itmp0)"),
+        0,
+        "selfffitake: the callee owns a taken value, so the initializer must not \
+         release it; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "spec.cc.impl.selfffitake.probe_free_len"),
+        0,
+        "selfffitake: the call must spell the declaration's simple symbol; emitted C:\n{emitted}"
+    );
+
+    let body = r#"module spec.cc.impl.selfffibody;
+
+import { String, stringOf } from std.text;
+
+ffi own {
+    func probe_free_len2(take s: String): i32;
+    func cl_string_len(borrow s: String): usize;
+}
+
+func main(): i32 {
+    let n: i32 = spec.cc.impl.selfffibody.probe_free_len2(stringOf("abc"));
+    let m: usize = spec.cc.impl.selfffibody.cl_string_len(stringOf("abcd"));
+    return (n - 3) + (i32(m) - 4);
+}
+"#;
+    let emitted = emit_host("selfffibody", body);
+    assert_contains("selfffibody", &emitted, "probe_free_len2(__cl_owned0)");
+    assert_contains("selfffibody", &emitted, "m = cl_string_len(__cl_owned1);");
+    assert_eq!(
+        count(&emitted, "spec.cc.impl.selfffibody."),
+        0,
+        "selfffibody: the calls must spell the declarations' simple symbols; emitted C:\n{emitted}"
+    );
+    let call = emitted
+        .find("probe_free_len2(__cl_owned0)")
+        .unwrap_or_else(|| panic!("selfffibody: the take call is missing; emitted C:\n{emitted}"));
+    assert!(
+        emitted[call..]
+            .lines()
+            .take(4)
+            .any(|line| line.contains("__cl_owned0 = NULL;")),
+        "selfffibody: the taken argument is emptied after the call; emitted C:\n{emitted}"
+    );
+}
+
+/// A self-qualified inferred generic call declares its instance once.
+///
+/// The inferred call's key is the same one a plain call derives, so the
+/// translation unit declares and defines the instance it calls. The generic
+/// body's qualified call keys its own instance the same way.
+#[test]
+fn should_declare_a_self_qualified_inferred_generic_instance() {
+    let direct = r#"module spec.cc.impl.selfgeneric;
+
+func pick<T>(take a: T, take b: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let a: i32 = 5;
+    let b: i32 = 6;
+    return spec.cc.impl.selfgeneric.pick(a, b) - 1;
+}
+"#;
+    let emitted = emit_host("implselfgeneric", direct);
+    assert_keyed_instance(
+        "implselfgeneric",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__i32(i32 a, i32 b)",
+        "cl_pick__i32(a, b)",
+    );
+
+    let relayed = r#"module spec.cc.impl.selfgenericbody;
+
+func sink<T>(take v: T): i32 {
+    return 1;
+}
+
+func relay<T>(take v: T): i32 {
+    return spec.cc.impl.selfgenericbody.sink(v);
+}
+
+func main(): i32 {
+    return relay<i32>(5) - 1;
+}
+"#;
+    let emitted = emit_host("implselfgenericbody", relayed);
+    assert_keyed_instance(
+        "implselfgenericbody",
+        &emitted,
+        "static i32 cl_sink__",
+        "static i32 cl_sink__i32(i32 v)",
+        "cl_sink__i32(v)",
+    );
+}
+
+/// A module-path binding receiver calls its member through the binding.
+///
+/// `m.n.f(...)` names the module's binding `n` as the receiver and the free
+/// function `f` as the callee, so the emitter spells the function's symbol and
+/// passes the binding's place first. The initializer form lowers the same way.
+#[test]
+fn should_emit_a_module_path_binding_member_call() {
+    let body = r#"module spec.cc.impl.globaldotbody;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+
+func main(): i32 {
+    return spec.cc.impl.globaldotbody.n.peek(5) - 6;
+}
+"#;
+    let emitted = emit_host("globaldotbody", body);
+    assert_contains(
+        "globaldotbody",
+        &emitted,
+        "cl_spec_cc_impl_globaldotbody_peek(cl_spec_cc_impl_globaldotbody_n, 5)",
+    );
+    assert_eq!(
+        count(&emitted, "spec.cc.impl.globaldotbody."),
+        0,
+        "globaldotbody: the call must not spell the qualified path; emitted C:\n{emitted}"
+    );
+
+    let initializer = r#"module spec.cc.impl.globaldotinit;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+
+let g: i32 = spec.cc.impl.globaldotinit.n.peek(5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let emitted = emit_host("globaldotinit", initializer);
+    assert_contains(
+        "globaldotinit",
+        &emitted,
+        "cl_spec_cc_impl_globaldotinit_g = cl_spec_cc_impl_globaldotinit_peek(",
+    );
+    assert_contains(
+        "globaldotinit",
+        &emitted,
+        "cl_spec_cc_impl_globaldotinit_peek(cl_spec_cc_impl_globaldotinit_n, 5)",
+    );
+    assert_eq!(
+        count(&emitted, "spec.cc.impl.globaldotinit.n.peek"),
+        0,
+        "globaldotinit: the call must not spell the qualified path; emitted C:\n{emitted}"
+    );
+}
+
+/// A pending dot-call argument reports at its written value.
+///
+/// The `take` marker in front of a pending argument is not part of the judged
+/// value: the report starts at the value, exactly as the direct call's report
+/// starts there.
+#[test]
+fn should_report_a_marked_dot_argument_at_its_written_value() {
+    let source = r#"module spec.cc.impl.markedpending;
+
+struct S { x: i32; }
+
+func g<T>(take s: S, take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(s: S): i32 {
+    return s.g(take 7, take "x");
+}
+
+func main(): i32 {
+    let s: S = S { x: 0 };
+    return outer<i32>(s) - 1;
+}
+"#;
+    let stderr = reject_host("implmarkedpending", source);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "implmarkedpending: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'static str' to 'i32' implicitly"),
+        "implmarkedpending: expected the conversion message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:10:29"),
+        "implmarkedpending: expected the report at the written value; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("main.clo:10:24"),
+        "implmarkedpending: the report must not start at the marker; stderr:\n{stderr}"
+    );
+}

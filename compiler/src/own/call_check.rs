@@ -292,19 +292,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A bare name and a member name keep their spelling. A module-qualified
     /// path names the loaded module and its declaration, so it keeps every
     /// segment: the caller's same-named function must never displace it. A
-    /// qualified path whose head is a lexical or module-level value names a
-    /// member access (a dot call), and its callee is the last segment.
+    /// qualified path whose receiver names a lexical binding or a module-level
+    /// binding is a member access (a dot call), and its callee is the last
+    /// segment; the receiver may itself be a module-path binding, so the whole
+    /// receiver path decides the question.
     pub(super) fn callee_name(&self, callee: &Expr) -> Option<String> {
         match &callee.kind {
             ExprKind::Name(name) => Some(name.clone()),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let head_is_value = name
-                    .segments
+                let receiver = &name.segments[..name.segments.len() - 1];
+                let receiver_is_value = receiver
                     .first()
-                    .is_some_and(|head| {
-                        self.lookup(head).is_some() || self.resolve_global_id(head).is_some()
-                    });
-                if head_is_value {
+                    .is_some_and(|head| self.lookup(head).is_some())
+                    || (!(receiver.len() >= 2 && self.loaded.has_module(&receiver.join(".")))
+                        && self.dotted_global(receiver).is_some());
+                if receiver_is_value {
                     name.segments.last().cloned()
                 } else {
                     Some(name.segments.join("."))

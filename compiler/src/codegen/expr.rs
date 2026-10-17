@@ -977,12 +977,18 @@ impl<'a> Emitter<'a> {
             "text" => self.text_call(args.first()),
             _ => {
                 // A func-typed local is called through its own C spelling, so
-                // the compiler's local names map resolves it; every other
-                // unresolved name is a compiler-known helper spelled as-is.
+                // the compiler's local names map resolves it. An `ffi` call,
+                // qualified or not, names the declaration's own C symbol. Every
+                // other unresolved name is a compiler-known helper spelled
+                // as-is.
                 let spelled = self
                     .local_names
                     .get(callee)
                     .cloned()
+                    .or_else(|| {
+                        self.ffi_callee_signature(callee)
+                            .map(|signature| signature.name.clone())
+                    })
                     .unwrap_or_else(|| callee.to_owned());
                 format!("{spelled}({argument_list})")
             }

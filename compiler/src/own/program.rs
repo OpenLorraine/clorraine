@@ -60,16 +60,19 @@ pub enum StdlibEffect {
     Value,
 }
 
-/// Every declaration the ownership stage needs, keyed by simple name.
+/// Every declaration the ownership stage needs.
 ///
-/// Names are program-global in the model the MVP corpus uses, so a simple key
-/// is enough; a later revision can qualify by module without changing callers.
-#[derive(Default)]
+/// User functions keep a simple-name map for the existing scope resolution.
+/// `ffi` signatures carry their declaring module as well, so a module-qualified
+/// call reaches that module's declaration instead of a same-named one
+/// elsewhere.
 pub struct ProgramInfo<'a> {
+    /// The loaded program, for resolving module-qualified call identities.
+    pub loaded: &'a Loaded,
     /// User functions with bodies.
     pub functions: BTreeMap<String, UserFunc<'a>>,
-    /// `ffi`-declared signatures.
-    pub ffi_functions: BTreeMap<String, &'a FuncSignature>,
+    /// `ffi`-declared signatures, keyed by their declaring module and name.
+    pub ffi_functions: BTreeMap<(String, String), &'a FuncSignature>,
     /// `ffi` blocks, for the export check.
     pub ffi_blocks: Vec<&'a FfiBlock>,
     /// Handle declarations and their deleters.
@@ -83,7 +86,15 @@ pub struct ProgramInfo<'a> {
 impl<'a> ProgramInfo<'a> {
     /// Collects every ownership-relevant declaration of the program.
     pub fn collect(loaded: &'a Loaded, table: &crate::types::TypeTable) -> Self {
-        let mut info = ProgramInfo::default();
+        let mut info = ProgramInfo {
+            loaded,
+            functions: BTreeMap::new(),
+            ffi_functions: BTreeMap::new(),
+            ffi_blocks: Vec::new(),
+            handles: BTreeMap::new(),
+            structs: BTreeMap::new(),
+            globals: BTreeMap::new(),
+        };
         for module in loaded.modules.values() {
             for item in &module.items {
                 match item {
@@ -94,7 +105,7 @@ impl<'a> ProgramInfo<'a> {
                         info.ffi_blocks.push(block);
                         for signature in &block.decls {
                             info.ffi_functions
-                                .entry(signature.name.clone())
+                                .entry((module.name.clone(), signature.name.clone()))
                                 .or_insert(signature);
                         }
                     }
@@ -153,13 +164,51 @@ impl<'a> ProgramInfo<'a> {
         if let Some(function) = self.functions.get(name) {
             return Some(Callee::User(function));
         }
-        if let Some(signature) = self.ffi_functions.get(name) {
+        if let Some(signature) = self.ffi_function(name) {
             return Some(Callee::Ffi(signature));
         }
         stdlib_effect(name).map(|effect| Callee::Stdlib {
             name: name.to_owned(),
             effect,
         })
+    }
+
+    /// The user function a call name names, resolving a module-qualified path.
+    ///
+    /// A module-qualified name names the declaration in its own module. A
+    /// simple name keeps the existing scope resolution, so an imported or
+    /// same-module function still wins over one elsewhere.
+    pub fn user_function(&self, name: &str) -> Option<UserFunc<'a>> {
+        if let Some((module, simple)) = name.rsplit_once('.') {
+            let target = self.loaded.module(module)?;
+            return target.items.iter().find_map(|item| match item {
+                Item::Func(decl) if decl.name == simple => Some(decl),
+                _ => None,
+            });
+        }
+        match self.callee(name) {
+            Some(Callee::User(decl)) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// The `ffi` signature a call name names.
+    ///
+    /// A module-qualified name resolves in that module only. A simple name
+    /// keeps the program-wide lookup the existing callers use: the first
+    /// declaration in module order, which is the same order the collected map
+    /// was built in.
+    pub(crate) fn ffi_function(&self, name: &str) -> Option<&'a FuncSignature> {
+        if let Some((module, simple)) = name.rsplit_once('.') {
+            return self
+                .ffi_functions
+                .get(&(module.to_owned(), simple.to_owned()))
+                .copied();
+        }
+        self.ffi_functions
+            .iter()
+            .find(|((_, simple), _)| simple == name)
+            .map(|(_, signature)| *signature)
     }
 }
 

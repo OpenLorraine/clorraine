@@ -92,8 +92,12 @@ pub(super) struct Emitter<'a> {
     out: String,
     /// User functions keyed by `(module, name)`.
     functions: BTreeMap<(String, String), FuncInfo<'a>>,
-    /// `ffi` signatures keyed by simple name, for call-site ABI handling.
-    ffi_functions: BTreeMap<String, &'a crate::ast::FuncSignature>,
+    /// `ffi` signatures keyed by their declaring module and name.
+    ///
+    /// The module is part of the key so a module-qualified call reaches that
+    /// module's declaration; a simple name still resolves through the caller's
+    /// module, its imports, or a unique declaration elsewhere.
+    ffi_functions: BTreeMap<(String, String), &'a crate::ast::FuncSignature>,
     /// The module of the body currently being emitted, for call resolution.
     pub(super) current_module: String,
     /// Module-level bindings keyed by their module and simple name.
@@ -360,7 +364,7 @@ impl<'a> Emitter<'a> {
                     Item::Ffi(block) => {
                         for signature in &block.decls {
                             self.ffi_functions
-                                .entry(signature.name.clone())
+                                .entry((module.name.clone(), signature.name.clone()))
                                 .or_insert(signature);
                         }
                     }
@@ -740,6 +744,48 @@ impl<'a> Emitter<'a> {
         found
     }
 
+    /// Resolves an `ffi` declaration by its call name.
+    ///
+    /// A module-qualified name resolves in that module only. A simple name
+    /// resolves the way a call does: the caller's module first, then an import
+    /// binding, and only then a unique declaration elsewhere; an ambiguous
+    /// name resolves to `None` rather than guessing another module's function.
+    pub(super) fn ffi_callee_signature(&self, name: &str) -> Option<&'a crate::ast::FuncSignature> {
+        if let Some((module, simple)) = name.rsplit_once('.') {
+            return self
+                .ffi_functions
+                .get(&(module.to_owned(), simple.to_owned()))
+                .copied();
+        }
+        if let Some(signature) = self
+            .ffi_functions
+            .get(&(self.current_module.clone(), name.to_owned()))
+        {
+            return Some(*signature);
+        }
+        if let Some(module) = self.loaded.module(&self.current_module) {
+            if let Some(binding) = module.import(name) {
+                if let Some(signature) = self
+                    .ffi_functions
+                    .get(&(binding.module.clone(), binding.original.clone()))
+                {
+                    return Some(*signature);
+                }
+            }
+        }
+        let mut found: Option<&'a crate::ast::FuncSignature> = None;
+        for ((_, simple), signature) in &self.ffi_functions {
+            if simple != name {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some(*signature);
+        }
+        found
+    }
+
     /// True when the caller's module declares the function, or one of its
     /// imports binds the name to a function.
     ///
@@ -748,9 +794,7 @@ impl<'a> Emitter<'a> {
     /// function of the same simple name elsewhere is not in scope. A guard
     /// that decides between a function and a module-level value of the same
     /// name must not treat `resolve_function`'s unique-function-elsewhere arm
-    /// as a binding. An `ffi` signature resolves by name for the whole
-    /// program, exactly as the checker reads it, so its names are in scope
-    /// too.
+    /// as a binding. An `ffi` signature is in scope the same way.
     pub(super) fn function_in_scope(&self, name: &str) -> bool {
         if self
             .functions
@@ -758,7 +802,7 @@ impl<'a> Emitter<'a> {
         {
             return true;
         }
-        if self.ffi_functions.contains_key(name) {
+        if self.ffi_callee_signature(name).is_some() {
             return true;
         }
         self.loaded

@@ -554,10 +554,10 @@ other 18 rows are red and planned.
 
 **AR-39 (origin-suite correction ruling, auto-design):** The batch-L case
 `should_key_a_collision_between_an_import_alias_and_an_own_binding` (and its impl pin) encoded a
-program that bound one name twice \u2014 the exact MOD-12 collision that phase 1 now reports as
+program that bound one name twice — the exact MOD-12 collision that phase 1 now reports as
 `E11103`. The frozen rule governs: the program input was non-conformant, so the case is re-targeted
 to distinct names (the import renamed to `other`, used to keep the import path live) while
-preserving the case's subject \u2014 the initializer dot-call receiver keys the module's own binding \u2014
+preserving the case's subject — the initializer dot-call receiver keys the module's own binding —
 and its read-back/keying assertions. The collision itself is pinned by the new `E11103` case. This
 is an input correction, not a weakening: the same initializer/keying coverage runs, and the
 renamed-import control keeps the import path exercised.

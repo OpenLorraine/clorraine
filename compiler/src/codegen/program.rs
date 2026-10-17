@@ -2895,14 +2895,23 @@ impl<'a> Emitter<'a> {
 
     /// The projected read a module-level qualified receiver path names.
     ///
-    /// Resolves only the head segment as a value and walks the rest as field
-    /// projections, so the read carries the projected field's type and a
-    /// module path that spells a segment like an exported global is never a
-    /// value. A head that names no global (a module qualifier or a declared
-    /// function) has no read.
+    /// The path resolves like a read: a leading module path first, then a
+    /// same-module or imported head, and the segments after the binding are
+    /// field projections. The read carries the projected field's type, so a
+    /// receiver that is a module-path binding is not mistaken for a callee. A
+    /// path that names no binding has no read.
     fn global_projected_read(&mut self, module: &Module, segments: &[String]) -> Option<Value> {
-        let (head, rest) = segments.split_first()?;
-        let global = crate::init_graph::resolve_name_global(self.loaded, module, head)?;
+        // A receiver path that names a loaded module is a module qualifier,
+        // not a binding: a parent module's same-spelled export must not
+        // become the receiver of the qualified call.
+        if segments.len() >= 2 && self.loaded.has_module(&segments.join(".")) {
+            return None;
+        }
+        let path = crate::ast::QualifiedName {
+            segments: segments.to_vec(),
+            span: crate::span::Span::default(),
+        };
+        let global = crate::init_graph::resolve_global(self.loaded, module, &path)?;
         let identity = GlobalId::new(global.module, global.name);
         let mut ty = self
             .globals
@@ -2910,7 +2919,7 @@ impl<'a> Emitter<'a> {
             .map(|info| info.ty.clone())
             .unwrap_or_else(Ty::unknown);
         let mut projections: Vec<Projection> = Vec::new();
-        for segment in rest {
+        for segment in &global.fields {
             projections.push(Projection::Field(segment.clone()));
             ty = self.field_type(&ty, segment);
         }
@@ -3043,7 +3052,7 @@ impl<'a> Emitter<'a> {
         if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
             return None;
         }
-        if self.ffi_functions.contains_key(&name)
+        if self.ffi_callee_signature(&name).is_some()
             || self.functions.keys().any(|(_, simple)| *simple == name)
         {
             return None;

@@ -1072,8 +1072,7 @@ impl<'a> Emitter<'a> {
         if let Some(info) = self.resolve_function(callee) {
             return Some(info.decl.params.iter().map(|param| param.mode).collect());
         }
-        self.ffi_functions
-            .get(callee)
+        self.ffi_callee_signature(callee)
             .map(|signature| signature.params.iter().map(|param| param.mode).collect())
     }
 
@@ -1097,7 +1096,7 @@ impl<'a> Emitter<'a> {
                     .collect(),
             );
         }
-        self.ffi_functions.get(callee).map(|signature| {
+        self.ffi_callee_signature(callee).map(|signature| {
             signature
                 .params
                 .iter()

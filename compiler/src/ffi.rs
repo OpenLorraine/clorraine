@@ -63,7 +63,7 @@ pub fn check_items(program: &ProgramInfo, diagnostics: &mut Diagnostics) {
 /// True when `deleter` is an `ffi` function taking `take T` and returning
 /// `void`, the CN-6 signature for a handle's deleter.
 fn deleter_is_valid(deleter: &str, handle: &str, program: &ProgramInfo) -> bool {
-    let Some(signature) = program.ffi_functions.get(deleter) else {
+    let Some(signature) = program.ffi_function(deleter) else {
         return false;
     };
     if signature.params.len() != 1 {
