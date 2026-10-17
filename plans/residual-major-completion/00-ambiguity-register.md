@@ -569,3 +569,10 @@ implementation reports the test source's correct site, so only the two expected 
 corrected (a mechanical test-source span, not a weakening: the code, the count, the message, and the
 column stay pinned).
 
+**AR-41 (noted spec-text gap, no change):** The checker accepts indexing a `cstring`
+(`sema/expr.rs:936` maps it to `u8`) and the element binding chain now includes `CString`; Ch 08 §3
+(`:209`) names only `T[]`, `str`, and fixed arrays as indexable. The phase adds no new acceptance
+(direct `cstring` indexing was already accepted); the chain only completes the key for that existing
+shape. No spec edit is made here; a future spec revision may name `cstring` explicitly (Ch 04 §7's
+raw indexing is the adjacent frozen rule).
+
