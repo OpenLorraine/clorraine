@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 56/60 tasks (93%) — Phase 7 complete
+> **Progress**: 60/60 tasks (100%) — Complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -488,9 +488,9 @@ hosted-amiga leg
 
 ### Step 8.1: Verification and Sync
 
-- [ ] 8.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, the
+- [x] 8.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, the ✅ (completed: 2026-10-17; `make check` exit 0; `make verify` **all legs passed** (the hosted-amiga cross legs, the corpus under vamos, the vbcc leg, the FS-UAE outputs, the six faults matching); the focused ASan legs 194/114, 190/171, 68/36, 65/43; the per-phase strict audits, no head-only strict failure; one local XAUTHORITY refresh in the untracked `docker/.env`)
       focused ASan legs, and the per-phase emission differentials; record the evidence
-- [ ] 8.1.2 Update the roadmap rows: the 18 red rows move to Done with per-row evidence; the two
+- [x] 8.1.2 Update the roadmap rows: the 18 red rows move to Done with per-row evidence; the two ✅ (completed: 2026-10-17; the 18 red rows and the two controls Done with per-row evidence; `DEF-380` closed incidentally; the parked majors stay open; the in-execution filed rows checked (the incidentals Done); the roadmap recomputed: 437 rows, 310 Done, 127 open; `DEF-382` open, `DEF-447` annotated)
       controls (`DEF-361`, `DEF-374`) move to Done with their control-pin evidence; the two
       parked majors stay open. Add/check **every row filed during execution** with its
       reproduction and evidence; record `DEF-380`'s boundary from the `DEF-378` gridel family
@@ -499,9 +499,9 @@ hosted-amiga leg
       the next-batch count from the roadmap. State the accounting explicitly (18 Done + 2
       controls Done; 2 parked majors open; the remaining minors counted by audit — no
       "minors untouched" claim without the count) (AR-38)
-- [ ] 8.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
+- [x] 8.1.3 Record the close-out section in the findings ledger and mark the plan Complete in ✅ (completed: 2026-10-17; the close-out section appended to `05-findings.md`; the plan marked Complete in `00-index.md`)
       `00-index.md`
-- [ ] 8.1.4 Refresh the specialist check (`analyze-agents`) and record its state; update the
+- [x] 8.1.4 Refresh the specialist check (`analyze-agents`) and record its state; update the ✅ (completed: 2026-10-17; the `analyze-agents` check refreshed, outcome None (the four project agents cover the recurring areas); `codeops/specialist-check.json` updated; no AGENTS.md test-map change needed)
       `AGENTS.md` test map only if the batch wording needs it
 
 **Verify**: `make check`; `make verify`

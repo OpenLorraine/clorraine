@@ -8,7 +8,7 @@
 > element surfaces, the concrete context-typing positions, the dropped store targets, the
 > element/store loan transfers, the raw-deref and guarded-take channels, and the literal
 > destination and guard paths.
-> **Status**: Planning
+> **Status**: Complete
 > **Created**: 2026-10-17
 > **Implements**: the 20 rows above — 18 probed red at the planning head `86d6f51`;
 > `DEF-361` and `DEF-374` probed green and carried as pinned controls (AR-3, AR-5, AR-31,

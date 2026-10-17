@@ -509,3 +509,31 @@ ternary arm), `DEF-447` (the inline read-base owning literal — **annotated not
   the phase-7 heads are all LSan-clean); the row is annotated and stays open pending a fresh repro.
 - The `Materialize` extension (`temp: Option<TempId>`, `destination: Option<Place>`) is consistent
   across both guard forms; the named destination has body-scope lifetime.
+
+## Close-out
+
+**Verification (8.1.1):** `make check` exit 0 (inside `make verify`); **`make verify` — all legs
+passed**: the hosted-amiga cross-toolchain legs, the portable corpus under `vamos`, the vbcc
+build-only leg, the FS-UAE interrupt-counter and graphics outputs, and the six runtime-fault
+programs each matching. The focused ASan legs: checker 194/194 and 114/114, the residue 190/190 and
+171/171, the callable-release 68/68 and 36/36, and the module-initializer 65/65 and 43/43. The
+strict-build sweep evidence is the batch's per-phase emission audits (no head-only strict failure in
+any phase). Environment note: the FS-UAE leg required refreshing the local (untracked)
+`docker/.env` XAUTHORITY cookie after the display session rotated; all other legs ran unchanged.
+
+**Roadmap (8.1.2):** the 18 red rows and the two controls move to Done with per-row evidence;
+`DEF-380` is closed incidentally (the multi-extent grid read; the `m378_gridel` probe builds strictly
+and runs 0); the two parked majors (`DEF-167`, `DEF-171`) stay open; every in-execution filed row is
+checked — the incidentals `DEF-391`, `DEF-394`, `DEF-403`, `DEF-408`, `DEF-409`, `DEF-442`, and
+`DEF-443` are Done, and the remaining filed rows stay open. The roadmap now shows 437 rows: 310 Done
+and 127 open (the next-batch backlog: 2 parked majors + 125 minors/residuals); `DEF-382` stays open
+(the `DEF-371` concrete-parameter fix does not substitute explicit type arguments), and `DEF-447` is
+annotated not reproduced.
+
+**Plan (8.1.3):** the plan is marked Complete (60/60).
+
+**Specialist (8.1.4):** the `analyze-agents` check refreshed — outcome **None**: the four
+committed project agents (correctness-reviewer, semantics-reviewer, memory-safety-auditor,
+emission-integrity-auditor) cover the recurring compiler areas the batch's reviews exercised, and no
+new role has a unique evidence source or capability; `codeops/specialist-check.json` records the
+refreshed state.

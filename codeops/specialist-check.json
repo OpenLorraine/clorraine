@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-17T03:39:33+02:00",
+  "checkedAt": "2026-10-17T22:56:15+02:00",
   "plans": [
     "array-value-integrity",
     "borrow-generic-integrity",
@@ -35,6 +35,7 @@
     "residual-defect-hardening",
     "residual-major-closeout",
     "residual-major-closeout-ii",
+    "residual-major-completion",
     "runtime-value-integrity",
     "slice-temporary-integrity",
     "store-emission-integrity"
