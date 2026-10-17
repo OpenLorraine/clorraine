@@ -170,6 +170,12 @@ pub struct OpaqueMemberUse {
     /// positions the frozen rules let the sanctioned view pointer conversion
     /// reach. Every other position reports the frozen conversion rule.
     pub sanctioned: bool,
+    /// The written root binding name, when the read is rooted at one.
+    ///
+    /// The possible-null rule names the root binding as the concrete spelling
+    /// does; a read rooted at a call or a literal has no name, so its null
+    /// judgment stays with the conversion rule.
+    pub base: Option<String>,
 }
 
 /// One value whose conversion is deferred to its instance.

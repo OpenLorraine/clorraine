@@ -1055,6 +1055,7 @@ impl Checker<'_, '_> {
                                 span: arg.value.span,
                                 expected: param.clone(),
                                 sanctioned: false,
+                                base: super::expr::plain_binding_root(&arg.value),
                             });
                             continue;
                         }

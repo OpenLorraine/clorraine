@@ -10,8 +10,7 @@ use crate::ast::{AssignOp, BinaryOp, Expr, ExprKind, ScalarType, UnaryOp};
 use crate::borrow::is_view;
 use crate::span::Span;
 use crate::types::{
-    contains_param, implicit_conversion, int_fits, int_literal_value, is_null_shaped, unify_numeric,
-    Ty, TyKind,
+    contains_param, int_fits, int_literal_value, is_null_shaped, unify_numeric, Ty, TyKind,
 };
 
 use super::Checker;
@@ -375,17 +374,8 @@ impl Checker<'_, '_> {
                 self.conditional_arms.push(arms);
             }
         }
-        if then_ty.kind == else_ty.kind {
-            return then_ty;
-        }
-        if let Some(unified) = unify_numeric(&then_ty, &else_ty) {
-            return unified;
-        }
-        if implicit_conversion(&else_ty, &then_ty) {
-            return then_ty;
-        }
-        if implicit_conversion(&then_ty, &else_ty) {
-            return else_ty;
+        if let Some(result) = crate::types::conditional_result(&then_ty, &else_ty) {
+            return result;
         }
         self.error(
             "E10200",
@@ -411,11 +401,7 @@ impl Checker<'_, '_> {
         expected: &Ty,
         span: Span,
     ) -> bool {
-        if is_null_shaped(arm_ty)
-            && !expected.nullable
-            && !expected.is_unknown()
-            && !contains_param(expected)
-        {
+        if crate::types::null_arm_needs_report(arm_ty, expected) {
             self.error(
                 "E10012",
                 "'null' is not allowed here",

@@ -292,7 +292,7 @@ impl Emitter<'_> {
             }
         }
         let text = self.value(arg);
-        let arg_ty = self.substitute(&arg.ty);
+        let arg_ty = self.resolved_value_ty(arg);
         let wants_str = expected.is_some_and(|expected| {
             matches!(
                 self.substitute(expected).kind,
@@ -314,9 +314,13 @@ impl Emitter<'_> {
                 // widening: the view constructor would dereference it, so the
                 // argument carries the parameter's own null guard instead.
                 // The argument is evaluated inside an expression, so its own
-                // operand guards ride inline, once, ahead of the test.
+                // operand guards ride inline, once, ahead of the test. A
+                // generic member read resolves through its instance here, so
+                // its nullness reaches the guard.
                 if matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
-                    if let Some(guarded) = self.guarded_view_widening_inline(arg, expected) {
+                    if let Some(guarded) =
+                        self.guarded_view_widening_inline(arg, &arg_ty, expected)
+                    {
                         return guarded;
                     }
                     return format!("cl_string_view({text})");

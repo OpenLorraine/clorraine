@@ -1214,6 +1214,25 @@ fn check_opaque_member_uses(
                 continue;
             }
             if crate::types::implicit_conversion(&member, &expected) {
+                // The conversion is legal, but a nullable member at a
+                // non-nullable destination keeps the concrete twin's
+                // possible-null rule. The report names the root binding and
+                // lands where the read is written; a read rooted at a call or
+                // a literal has no binding the concrete spelling could name,
+                // so it keeps the conversion path only.
+                if crate::types::nullable_value_needs_narrowing(&member, &expected) {
+                    if let Some(name) = &usage.base {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10010",
+                                format!("value '{name}' may be null here"),
+                                usage.span,
+                            )
+                            .with_help("check `!= null` before the use"),
+                        );
+                        break;
+                    }
+                }
                 continue;
             }
             if usage.sanctioned
@@ -1295,20 +1314,24 @@ fn check_opaque_conditionals(
             // A null arm faces the destination, or the sibling when the
             // conditional has no destination of its own. The instance keeps
             // the concrete twin's order: the null report first, then the
-            // settled result's conversion.
+            // settled result's conversion. Both arms are judged, and either
+            // report ends the site so a second instance cannot repeat it.
             if !conditional.null_reported {
-                null_conditional_report(
+                let then_reported = null_conditional_report(
                     &then_ty,
                     expected.unwrap_or(&else_ty),
                     conditional.then_span,
                     diagnostics,
                 );
-                null_conditional_report(
+                let else_reported = null_conditional_report(
                     &else_ty,
                     expected.unwrap_or(&then_ty),
                     conditional.else_span,
                     diagnostics,
                 );
+                if then_reported || else_reported {
+                    break;
+                }
             }
             // The settled result follows the declaration's arm rule, then the
             // destination conversion the concrete twin's store applies.
@@ -1317,15 +1340,7 @@ fn check_opaque_conditionals(
             {
                 continue;
             }
-            let result = if then_ty.kind == else_ty.kind {
-                then_ty.clone()
-            } else if let Some(unified) = crate::types::unify_numeric(&then_ty, &else_ty) {
-                unified
-            } else if crate::types::implicit_conversion(&else_ty, &then_ty) {
-                then_ty.clone()
-            } else if crate::types::implicit_conversion(&then_ty, &else_ty) {
-                else_ty.clone()
-            } else {
+            let Some(result) = crate::types::conditional_result(&then_ty, &else_ty) else {
                 diagnostics.push(
                     Diagnostic::error(
                         "E10200",
@@ -1361,7 +1376,7 @@ fn check_opaque_conditionals(
     }
 }
 
-/// Reports the null rule for one substituted arm.
+/// Reports the null rule for one substituted arm, returning whether it did.
 ///
 /// The arm reports only when it is the null shape and the context — the
 /// destination or the sibling — is concrete and non-nullable; a nullable or
@@ -1371,18 +1386,15 @@ fn null_conditional_report(
     context: &Ty,
     span: Span,
     diagnostics: &mut Diagnostics,
-) {
-    if !crate::types::is_null_shaped(arm)
-        || context.nullable
-        || context.is_unknown()
-        || crate::types::contains_param(context)
-    {
-        return;
+) -> bool {
+    if !crate::types::null_arm_needs_report(arm, context) {
+        return false;
     }
     diagnostics.push(
         Diagnostic::error("E10012", "'null' is not allowed here", span)
             .with_help("declare the type `T?` or avoid the empty state"),
     );
+    true
 }
 
 /// Reports the frozen judgment for a value whose conversion was deferred.

@@ -965,7 +965,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.report_null_rule(span);
             return;
         }
-        if value_ty.nullable && concrete {
+        if crate::types::nullable_value_needs_narrowing(&value_ty, expected) {
             self.check_nonnull_expr(expr, span);
         }
     }

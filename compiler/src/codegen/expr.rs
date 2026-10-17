@@ -730,12 +730,15 @@ impl<'a> Emitter<'a> {
         // view for a null handle. A fresh arm binds to a temporary before the
         // conditional's store instead, so only a place-rooted arm spells it.
         // The arm has no statement position for its operand guards, so they
-        // ride inline, once, ahead of the test.
-        if let Some(guarded) = self.guarded_view_widening_inline(value, result) {
+        // ride inline, once, ahead of the test. The arm's type resolves
+        // through the instance substitution, so a generic member read reaches
+        // the nullness decision and the widening with its concrete type.
+        let value_ty = self.resolved_value_ty(value);
+        if let Some(guarded) = self.guarded_view_widening_inline(value, &value_ty, result) {
             return guarded;
         }
         let text = self.guarded_value(value);
-        let text = self.widen_text_view(text, &self.substitute(&value.ty), result);
+        let text = self.widen_text_view(text, &value_ty, result);
         // A text view's pointer member arm at a raw result spells the
         // sanctioned cast, exactly as a store does.
         if self.raw_text_view_pointer(value, result) {

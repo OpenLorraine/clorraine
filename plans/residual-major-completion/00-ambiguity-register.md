@@ -576,3 +576,13 @@ column stay pinned).
 shape. No spec edit is made here; a future spec revision may name `cstring` explicitly (Ch 04 §7's
 raw indexing is the adjacent frozen rule).
 
+
+**AR-42 (literal-arm context typing, auto-design):** Passing a conditional's destination into both
+arm checks also types literal and array-literal arms by that destination. `let y: u8 = c ? 1 : 2;`
+takes `u8` for both integer literals, a float pair (`c ? 1.5 : 2.5` at `f32`) keeps `f32`, and
+`c ? [1, 2] : [3, 4]` takes the fixed array's element type. This is the frozen literal rule (LEX-14,
+Ch 04 §13: a literal is typed by its context) and the aggregate-literal positional rule (Ch 04
+§15), not a new conversion: the destination a let, return, field, or argument already supplies to a
+sole literal now reaches the arm. An arm outside the destination's range reports the existing fit
+rule `E10202` (TY-15) at the literal. The checker suites pin the scalar, float, and array-literal
+acceptances and the fit rejection as controls; no additional source change is involved.

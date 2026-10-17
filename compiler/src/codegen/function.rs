@@ -2388,8 +2388,13 @@ impl<'a> Emitter<'a> {
     /// A flat store already emitted the source's operand guards as statements,
     /// so the test reads the plain place; a caller with no statement position
     /// for them calls [`Self::guarded_view_widening_inline`] instead.
-    pub(super) fn guarded_view_widening(&self, value: &Value, target: &Ty) -> Option<String> {
-        self.widening_with_guards(value, target, false)
+    pub(super) fn guarded_view_widening(
+        &self,
+        value: &Value,
+        value_ty: &Ty,
+        target: &Ty,
+    ) -> Option<String> {
+        self.widening_with_guards(value, value_ty, target, false)
     }
 
     /// Renders the same guard with the source's operand guards inline.
@@ -2401,19 +2406,25 @@ impl<'a> Emitter<'a> {
     pub(super) fn guarded_view_widening_inline(
         &self,
         value: &Value,
+        value_ty: &Ty,
         target: &Ty,
     ) -> Option<String> {
-        self.widening_with_guards(value, target, true)
+        self.widening_with_guards(value, value_ty, target, true)
     }
 
     /// Renders the guarded view widening, optionally with the guards inline.
+    ///
+    /// `value_ty` is the source type after the active instance substitution:
+    /// a generic body records the member read as opaque, so the caller
+    /// resolves it before the nullness decision.
     fn widening_with_guards(
         &self,
         value: &Value,
+        value_ty: &Ty,
         target: &Ty,
         inline_guards: bool,
     ) -> Option<String> {
-        if !self.reads_stable_storage(value) || !self.needs_view_guard(&value.ty, target) {
+        if !self.reads_stable_storage(value) || !self.needs_view_guard(value_ty, target) {
             return None;
         }
         let (text, guards) = self.guarded_parts(value);
@@ -2484,7 +2495,7 @@ impl<'a> Emitter<'a> {
         // reads the source twice, so only a place-rooted source spells it; a
         // fresh call root binds into an owner before a view store, and every
         // other value keeps the plain constructor.
-        if let Some(guarded) = self.guarded_view_widening(value, ty) {
+        if let Some(guarded) = self.guarded_view_widening(value, &value_ty, ty) {
             return guarded;
         }
         let text = self.value(value);

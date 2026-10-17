@@ -858,10 +858,20 @@ pub fn contains_closure(ty: &Ty) -> bool {
 /// Returns `None` for a mixed-sign integer pair or a pair that is not a T1a
 /// widening in either direction; the caller turns that into `E10200`.
 pub fn unify_numeric(left: &Ty, right: &Ty) -> Option<Ty> {
-    if left.is_unknown() || left.is_param() {
+    // An unresolved side carries no type of its own: a `null` arm must take
+    // the sibling's type, not replace it, or the conditional's result becomes
+    // the null shape and every later use reports the null again. The
+    // unknown check therefore precedes the type-parameter check.
+    if left.is_unknown() {
         return Some(right.clone());
     }
-    if right.is_unknown() || right.is_param() {
+    if right.is_unknown() {
+        return Some(left.clone());
+    }
+    if left.is_param() {
+        return Some(right.clone());
+    }
+    if right.is_param() {
         return Some(left.clone());
     }
     if left.kind == right.kind {
@@ -892,6 +902,52 @@ pub fn scalar_cast_allowed(from: &Ty, to: &Ty) -> bool {
             | (TyKind::Enum(_), TyKind::Scalar(_))
             | (TyKind::Raw(_), TyKind::Scalar(_))
     )
+}
+
+/// The type a conditional's two settled arms produce, when they agree.
+///
+/// This is the one rule both the declaration and the per-instance judgment
+/// use: identical kinds agree, a numeric widening joins a scalar pair, and an
+/// implicit widening picks its target. `None` means the pair needs the
+/// else-arm conversion report. An arm that is still open takes the sibling
+/// through [`unify_numeric`], exactly as the declaration accepts it.
+pub fn conditional_result(then_ty: &Ty, else_ty: &Ty) -> Option<Ty> {
+    if then_ty.kind == else_ty.kind {
+        return Some(then_ty.clone());
+    }
+    if let Some(unified) = unify_numeric(then_ty, else_ty) {
+        return Some(unified);
+    }
+    if implicit_conversion(else_ty, then_ty) {
+        return Some(then_ty.clone());
+    }
+    if implicit_conversion(then_ty, else_ty) {
+        return Some(else_ty.clone());
+    }
+    None
+}
+
+/// True when a conditional's null arm must report at its context.
+///
+/// The arm reports only when it is the null shape and the context — the
+/// destination or the sibling arm — is concrete and non-nullable. A nullable
+/// or still-open context accepts the null, exactly as the concrete spelling
+/// does.
+pub fn null_arm_needs_report(arm: &Ty, context: &Ty) -> bool {
+    is_null_shaped(arm) && context_requires_concrete(context)
+}
+
+/// True when a nullable value reaches a context that cannot hold null.
+///
+/// A non-nullable concrete destination keeps the possible-null rule; a
+/// nullable or still-open destination defers the judgment to its instance.
+pub fn nullable_value_needs_narrowing(value: &Ty, context: &Ty) -> bool {
+    value.nullable && context_requires_concrete(context)
+}
+
+/// True when a context cannot hold null and is concrete enough to judge.
+fn context_requires_concrete(context: &Ty) -> bool {
+    !context.nullable && !context.is_unknown() && !contains_param(context)
 }
 
 /// True when an integer value fits the scalar type's range.

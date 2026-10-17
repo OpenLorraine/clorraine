@@ -87,6 +87,20 @@ fn emit_host(tag: &str, source: &str) -> String {
 /// selects the ABI typedefs and the null spelling, both visible in the
 /// emitted C. The spec suite's hosted-amiga helpers build the same emission.
 fn emit_hosted_amiga(tag: &str, source: &str) -> String {
+    emit_profile(tag, source, "hosted-amiga")
+}
+
+/// Emits one freestanding program and asserts the front end accepted it.
+///
+/// The freestanding profile has no operating system surface, so an emission
+/// pin checks the keyed symbol and the absent placeholder without building a
+/// target binary. The freestanding suite owns the link and run legs.
+fn emit_freestanding(tag: &str, source: &str) -> String {
+    emit_profile(tag, source, "freestanding")
+}
+
+/// Emits one program for `profile` and asserts the front end accepted it.
+fn emit_profile(tag: &str, source: &str, profile: &str) -> String {
     let scratch = ScratchDir::new(tag);
     let source_path = scratch.path().join("main.clo");
     std::fs::write(&source_path, source)
@@ -94,7 +108,7 @@ fn emit_hosted_amiga(tag: &str, source: &str) -> String {
     let c_path = scratch.path().join("out.c");
     let output = run_clc(&[
         "--profile".to_owned(),
-        "hosted-amiga".to_owned(),
+        profile.to_owned(),
         "-o".to_owned(),
         c_path.display().to_string(),
         source_path.display().to_string(),
@@ -5386,6 +5400,19 @@ func main(): i32 {
         !amiga.contains("#element"),
         "implelemkeyamiga: the hosted-amiga translation unit must not carry an element placeholder; emitted C:\n{amiga}"
     );
+
+    let freestanding = emit_freestanding("implelemkeyfs", source);
+    assert_keyed_instance(
+        "implelemkeyfs",
+        &freestanding,
+        "static u8 cl_id__",
+        "static u8 cl_id__u8(u8 x)",
+        "cl_id__u8((v).ptr[0])",
+    );
+    assert!(
+        !freestanding.contains("#element"),
+        "implelemkeyfs: the freestanding translation unit must not carry an element placeholder; emitted C:\n{freestanding}"
+    );
 }
 
 /// The element `len` control does not index the substituted element.
@@ -5520,5 +5547,315 @@ func main(): i32 {
     assert!(
         !emitted.contains("cl_string_view(xs[0].v)"),
         "implmembernonview: a non-view destination must not widen; emitted C:\n{emitted}"
+    );
+}
+
+// ===== Substitution edges: nullable members and conditional residue =====
+
+/// A nullable substituted member guards its view widening.
+///
+/// The generic body reads a `String?` member from the opaque element and stores
+/// it in a `str?` view. The instance must emit the concrete twin's guard, which
+/// selects the destination's empty view for a null member instead of building a
+/// view over the null handle. The generic and concrete assignment lines are
+/// byte-identical, and the guard appears exactly once. At the base compiler the
+/// generic line is the unguarded `cl_string_view(xs[0].name)`.
+#[test]
+fn should_guard_a_nullable_substituted_member_at_a_view_destination() {
+    let generic = r#"module spec.cc.impl.nulmemberviewpin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs[0].name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first<S[1]>(a) - 3;
+}
+"#;
+    let concrete = r#"module spec.cc.impl.nulmemberviewconcretepin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first(xs: S[1]): i32 {
+    let s: str? = xs[0].name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first(a) - 3;
+}
+"#;
+    let guarded = "s = (xs[0].name ? cl_string_view(xs[0].name) : cl_zero_ClStr());";
+    let generic_c = emit_host("implnulmemberview", generic);
+    let concrete_c = emit_host("implnulmemberviewconcrete", concrete);
+    assert_eq!(
+        count(&generic_c, guarded),
+        1,
+        "implnulmemberview: the substituted member read must guard exactly once; emitted C:\n{generic_c}"
+    );
+    assert_eq!(
+        count(&concrete_c, guarded),
+        1,
+        "implnulmemberviewconcrete: the concrete twin must guard exactly once; emitted C:\n{concrete_c}"
+    );
+    let generic_line = generic_c
+        .lines()
+        .find(|line| line.trim() == guarded)
+        .expect("implnulmemberview: the generic assignment line");
+    let concrete_line = concrete_c
+        .lines()
+        .find(|line| line.trim() == guarded)
+        .expect("implnulmemberviewconcrete: the concrete assignment line");
+    assert_eq!(
+        generic_line, concrete_line,
+        "implnulmemberview: the generic and concrete guarded assignments must be byte-identical"
+    );
+}
+
+/// A nullable substituted member at a non-nullable view reports the null rule.
+///
+/// The member converts to `str` (a `String?` still widens), so the nullability
+/// is the failure: one `E10010` at the read, naming the root binding, and no
+/// conversion report. The concrete twin reports the same rule at its own
+/// statement. At the base compiler the generic spelling is accepted.
+#[test]
+fn should_report_a_nullable_substituted_member_at_a_nonnullable_destination() {
+    let generic = r#"module spec.cc.impl.nulmemberrejectpin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first<S[1]>(a);
+}
+"#;
+    let stderr = reject_host("implnulmemberreject", generic);
+    assert_eq!(
+        stderr.matches("error E10010:").count(),
+        1,
+        "implnulmemberreject: the possible-null rule reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("value 'xs' may be null here"),
+        "implnulmemberreject: the report must name the root binding; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:18"),
+        "implnulmemberreject: the report must land on the read; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10200:"),
+        "implnulmemberreject: the conversion itself is legal; stderr:\n{stderr}"
+    );
+
+    let concrete = r#"module spec.cc.impl.nulmemberrejectconcretepin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first(xs: S[1]): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first(a);
+}
+"#;
+    let stderr = reject_host("implnulmemberrejectconcrete", concrete);
+    assert_eq!(
+        stderr.matches("error E10010:").count(),
+        1,
+        "implnulmemberrejectconcrete: the possible-null rule reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:5"),
+        "implnulmemberrejectconcrete: the report must land on the destination; stderr:\n{stderr}"
+    );
+}
+
+/// One conditional site reports its null arm once across two instances.
+///
+/// The conditionals sit in a generic body instantiated with `i32` and `u8`;
+/// both instances reject the same null arm at the same non-nullable
+/// destination. The site's first offending instance reports and the site ends,
+/// so the translation unit has one `E10012` at the `null`. At the base compiler
+/// each instance prints an identical report.
+#[test]
+fn should_report_a_two_instance_conditional_null_once() {
+    let source = r#"module spec.cc.impl.twonullpin;
+
+func choose<T>(c: bool, a: T): i32 {
+    let y: T = c ? a : null;
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = choose<i32>(true, 5);
+    let u: u8 = 6;
+    let b: i32 = choose<u8>(false, u);
+    return a + b;
+}
+"#;
+    let stderr = reject_host("impltwonull", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "impltwonull: the site reports once across its instances; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "impltwonull: expected the null rule message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:24"),
+        "impltwonull: the report must land on the null; stderr:\n{stderr}"
+    );
+}
+
+/// A nested conditional reports at the one `null`, not at the inner conditional.
+///
+/// The inner `c ? x : null` takes its non-null sibling's type, so an enclosing
+/// conditional does not see it as a null-shaped arm. The one `null` reports
+/// once at its own span; the inner conditional's start carries no report. At
+/// the base compiler the enclosing site reports the inner conditional again.
+#[test]
+fn should_report_a_nested_conditional_null_once() {
+    let source = r#"module spec.cc.impl.nestednullpin;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(c1: bool, c2: bool, x: T): i32 {
+    return i32(id(c2 ? (c1 ? x : null) : x));
+}
+
+func main(): i32 {
+    return f<i32>(true, true, 5) - 5;
+}
+"#;
+    let stderr = reject_host("implnestednull", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "implnestednull: the one null reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:6:34"),
+        "implnestednull: the report must land on the null; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("main.clo:6:24"),
+        "implnestednull: the inner conditional's start must not report; stderr:\n{stderr}"
+    );
+}
+
+/// An unannotated conditional local keeps its sibling's type.
+///
+/// `let v = c ? x : null;` takes the non-null sibling's type, so the later
+/// `return v` does not see the null shape. The one `null` reports once at its
+/// own span; the return carries no report. At the base compiler the local
+/// carries the null shape and the return reports it again.
+#[test]
+fn should_report_an_unannotated_conditional_null_once() {
+    let source = r#"module spec.cc.impl.unannotnullpin;
+
+func f<T>(c: bool, x: T): T {
+    let v = c ? x : null;
+    return v;
+}
+
+func main(): i32 {
+    return f<i32>(true, 5) - 5;
+}
+"#;
+    let stderr = reject_host("implunannotnull", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "implunannotnull: the one null reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:21"),
+        "implunannotnull: the report must land on the null; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("main.clo:5:12"),
+        "implunannotnull: the return must not report the local; stderr:\n{stderr}"
+    );
+}
+
+/// Literal and array-literal arms take the destination's type.
+///
+/// The destination reaches both arm checks, so the integer literal arms carry
+/// the `u8` suffix, the float arms keep `f32` values, and the array-literal arm
+/// fills the fixed-array destination element by element. These shapes already
+/// held before this correction, so they are controls.
+#[test]
+fn should_keep_the_literal_arm_controls() {
+    let source = r#"module spec.cc.impl.literalarmspin;
+
+func main(): i32 {
+    let c: bool = true;
+    let y: u8 = c ? 1 : 2;
+    let f: f32 = c ? 1.5 : 2.5;
+    let a: u8[2] = c ? [1, 2] : [3, 4];
+    if (f != 1.5) {
+        return 9;
+    }
+    return i32(y) + i32(a[0]) + i32(a[1]) - 4;
+}
+"#;
+    let emitted = emit_host("implliteralarms", source);
+    assert_contains("implliteralarms", &emitted, "y = (c ? 1u : 2u);");
+    assert_contains("implliteralarms", &emitted, "f = (c ? 1.5 : 2.5);");
+    assert_contains("implliteralarms", &emitted, "a[0] = 1u;");
+    assert_contains("implliteralarms", &emitted, "a[0] = 3u;");
+}
+
+/// An out-of-range literal arm reports the fit rule at the literal.
+///
+/// The arm is typed by the scalar destination, so the report is `E10202` at the
+/// literal rather than a conversion at the conditional. The shape already held
+/// before this correction, so it is a control.
+#[test]
+fn should_report_a_literal_arm_fit_at_its_site() {
+    let source = r#"module spec.cc.impl.literalfitpin;
+
+func main(): i32 {
+    let c: bool = true;
+    let y: u8 = c ? 1 : 300;
+    return i32(y);
+}
+"#;
+    assert_rejected_once_at_site(
+        "implliteralfit",
+        source,
+        "error E10202:",
+        "literal does not fit 'u8'",
+        "main.clo:5:25",
     );
 }

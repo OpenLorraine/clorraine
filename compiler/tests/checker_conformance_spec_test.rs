@@ -8754,9 +8754,9 @@ func main(): i32 {
     );
     build_hosted_amiga_c("elemkeyamiga", &amiga_scratch, &amiga);
 
-    // FREESTANDING EMISSION PLACEHOLDER: this suite has no freestanding
-    // profile helper, so the freestanding key and placeholder checks are
-    // pinned by the implementation suite.
+    // The freestanding key and the absent placeholder are pinned by
+    // `should_key_a_nested_element_instance_from_the_substituted_element` in
+    // the implementation suite.
 }
 
 /// A substituted element member widens at a view destination.
@@ -8884,4 +8884,268 @@ func main(): i32 {
 "#;
     let output = run_host("condcontrol", control);
     assert_exit("condcontrol", &output, 0);
+}
+
+// ===== Substitution edges: nullable members and conditional residue =====
+
+/// A nullable substituted member guards its view widening.
+///
+/// The generic body reads a `String?` member from the opaque element. At the
+/// `str?` destination the instance must select the destination's empty view
+/// for a null member instead of constructing a view over the null handle, so
+/// the null-selected run exits 0 and stays clean under AddressSanitizer. The
+/// non-null selection is the control that reads the member's bytes.
+///
+/// At the base implementation the null-selected run dereferences the null
+/// handle in `cl_string_view`.
+#[test]
+fn should_guard_a_nullable_substituted_member_at_a_view_destination() {
+    let null_selected = r#"module spec.cc.corr.nulmemberview;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs[0].name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first<S[1]>(a) - 3;
+}
+"#;
+    let output = run_memory("nulmemberview", null_selected);
+    assert_exit("nulmemberview", &output, 0);
+    assert_no_asan("nulmemberview", &output);
+
+    let non_null = r#"module spec.cc.corr.nulmemberviewok;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs[0].name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    return first<S[1]>(a);
+}
+"#;
+    let output = run_host("nulmemberviewok", non_null);
+    assert_exit("nulmemberviewok", &output, 0);
+}
+
+/// A nullable substituted member at a non-nullable view reports the null rule.
+///
+/// The member `String?` widens to `str`, so the conversion itself is legal; the
+/// nullability is the failure. The instance audit reports the concrete twin's
+/// possible-null rule once at the read, naming the root binding, and writes no
+/// translation unit. The concrete spelling is the control.
+///
+/// At the base implementation the generic spelling is accepted.
+#[test]
+fn should_reject_a_nullable_substituted_member_at_a_nonnullable_destination() {
+    let generic = r#"module spec.cc.corr.nulmemberreject;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first<S[1]>(a);
+}
+"#;
+    assert_rejected_once(
+        "nulmemberreject",
+        generic,
+        "E10010",
+        &["value 'xs' may be null here", "main.clo:8:18"],
+        &["E10200"],
+    );
+
+    let concrete = r#"module spec.cc.corr.nulmemberrejectconcrete;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first(xs: S[1]): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first(a);
+}
+"#;
+    assert_rejected_once(
+        "nulmemberrejectconcrete",
+        concrete,
+        "E10010",
+        &["value 'xs' may be null here", "main.clo:8:5"],
+        &["E10200"],
+    );
+}
+
+/// A conditional null arm reports once across its concrete instances.
+///
+/// One site inside a generic function is judged once per instantiation. Two
+/// instances (`i32` and `u8`) both reach the same non-nullable destination, so
+/// the site must not print the same report twice; one `E10012` at the `null`
+/// is the result.
+///
+/// At the base implementation each instance prints an identical report at the
+/// same span.
+#[test]
+fn should_report_a_two_instance_conditional_null_once() {
+    let source = r#"module spec.cc.corr.twonull;
+
+func choose<T>(c: bool, a: T): i32 {
+    let y: T = c ? a : null;
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = choose<i32>(true, 5);
+    let u: u8 = 6;
+    let b: i32 = choose<u8>(false, u);
+    return a + b;
+}
+"#;
+    assert_rejected_once(
+        "twonull",
+        source,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:4:24"],
+        &["E10200"],
+    );
+}
+
+/// A nested conditional's null arm reports at the one `null`.
+///
+/// The inner `c ? x : null` takes its non-null sibling's type, so the enclosing
+/// conditional does not see a null-shaped arm: only the inner `null` reports.
+/// The enclosing conditional's span must not carry a second report.
+///
+/// At the base implementation the inner conditional types as the null shape
+/// and the enclosing site reports it as a null arm.
+#[test]
+fn should_report_a_nested_conditional_null_once() {
+    let source = r#"module spec.cc.corr.nestednull;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(c1: bool, c2: bool, x: T): i32 {
+    return i32(id(c2 ? (c1 ? x : null) : x));
+}
+
+func main(): i32 {
+    return f<i32>(true, true, 5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "nestednull",
+        source,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:6:34"],
+        &["E10200", "main.clo:6:24"],
+    );
+}
+
+/// An unannotated conditional local keeps its sibling's type.
+///
+/// `let v = c ? x : null;` takes the non-null sibling's type, so the later
+/// `return v` does not treat the local as the null shape. Only the `null` arm
+/// reports once.
+///
+/// At the base implementation the local carries the null shape and the return
+/// reports it a second time.
+#[test]
+fn should_report_an_unannotated_conditional_null_once() {
+    let source = r#"module spec.cc.corr.unannotnull;
+
+func f<T>(c: bool, x: T): T {
+    let v = c ? x : null;
+    return v;
+}
+
+func main(): i32 {
+    return f<i32>(true, 5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "unannotnull",
+        source,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:4:21"],
+        &["E10200", "main.clo:5:12"],
+    );
+}
+
+/// Literal and array-literal arms take the destination's type.
+///
+/// The destination reaches both arm checks, so an integer literal arm takes the
+/// scalar destination's type, a float literal arm takes `f32`, and an array
+/// literal arm takes the destination's fixed-array element type. The program
+/// reads the selected values back. These shapes already held before this
+/// correction, so they are controls.
+#[test]
+fn should_keep_the_literal_arm_controls() {
+    let source = r#"module spec.cc.corr.literalarms;
+
+func main(): i32 {
+    let c: bool = true;
+    let y: u8 = c ? 1 : 2;
+    let f: f32 = c ? 1.5 : 2.5;
+    let a: u8[2] = c ? [1, 2] : [3, 4];
+    if (f != 1.5) {
+        return 9;
+    }
+    return i32(y) + i32(a[0]) + i32(a[1]) - 4;
+}
+"#;
+    let output = run_host("literalarms", source);
+    assert_exit("literalarms", &output, 0);
+}
+
+/// A literal arm that does not fit its destination reports the fit rule.
+///
+/// The arm is typed by the scalar destination, so the out-of-range literal
+/// reports `E10202` at the literal rather than a conversion at the conditional.
+/// The shape already held before this correction, so it is a control.
+#[test]
+fn should_report_a_literal_arm_fit_at_its_site() {
+    let source = r#"module spec.cc.corr.literalfit;
+
+func main(): i32 {
+    let c: bool = true;
+    let y: u8 = c ? 1 : 300;
+    return i32(y);
+}
+"#;
+    assert_rejected_once(
+        "literalfit",
+        source,
+        "E10202",
+        &["literal does not fit 'u8'", "main.clo:5:25"],
+        &["E10200"],
+    );
 }

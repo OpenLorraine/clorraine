@@ -464,6 +464,7 @@ impl Checker<'_, '_> {
                         span: expr.span,
                         expected: expected.clone(),
                         sanctioned: slot,
+                        base: plain_binding_root(expr),
                     });
                     return ty;
                 }
@@ -1452,7 +1453,7 @@ pub(super) fn member_read_name(expr: &Expr) -> Option<String> {
 /// An index base that is not a plain binding has no name the null rule could
 /// print, exactly as the concrete spelling judges: only a binding's own
 /// storage can be narrowed or may be null.
-fn plain_binding_root(expr: &Expr) -> Option<String> {
+pub(super) fn plain_binding_root(expr: &Expr) -> Option<String> {
     match &expr.kind {
         ExprKind::Name(name) => Some(name.clone()),
         ExprKind::Member { base, .. }

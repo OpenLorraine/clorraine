@@ -1091,7 +1091,7 @@ impl<'a> Emitter<'a> {
                 // A possibly-null handle keeps its nullness through the
                 // widening: the guard selects the destination's zero view for
                 // a null handle instead of dereferencing it.
-                self.guarded_view_widening(&lowered, declared)
+                self.guarded_view_widening(&lowered, &self.resolved_value_ty(&lowered), declared)
                     .unwrap_or_else(|| format!("cl_string_view({})", self.value(&lowered)))
             }
             // A non-view destination still spells the member conversions a
@@ -1561,7 +1561,10 @@ impl<'a> Emitter<'a> {
     fn bind_guarded_view_source(&mut self, value: &Value, view: &Ty) -> Value {
         let fresh = match &value.kind {
             ValueKind::Conditional { .. } => self.conditional_arms_need_guard_binding(value),
-            _ => self.needs_view_guard(&value.ty, view) && !self.reads_stable_storage(value),
+            _ => {
+                self.needs_view_guard(&self.resolved_value_ty(value), view)
+                    && !self.reads_stable_storage(value)
+            }
         };
         if !fresh {
             return value.clone();
