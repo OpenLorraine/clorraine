@@ -692,13 +692,22 @@ impl<'a> Emitter<'a> {
 
     /// Resolves a called function name against the emitting module.
     ///
-    /// The caller's own module wins, so two modules with a same-named function
-    /// each call their own. When the caller declares no such function, a name
-    /// bound by one of the caller's imports resolves to that module's function,
-    /// so an imported same-named function is not mistaken for ambiguous. Only
-    /// then is a unique function of that name elsewhere used; an ambiguous name
-    /// resolves to `None` rather than guessing.
+    /// A module-qualified name names its declaration exactly, with or without
+    /// an import, and wins over a same-named function of the caller's module;
+    /// a qualified name that reaches no function is a func value, an intrinsic,
+    /// or a helper, so no simple-name fallback applies. Otherwise the caller's
+    /// own module wins, so two modules with a same-named function each call
+    /// their own. When the caller declares no such function, a name bound by
+    /// one of the caller's imports resolves to that module's function, so an
+    /// imported same-named function is not mistaken for ambiguous. Only then is
+    /// a unique function of that name elsewhere used; an ambiguous name resolves
+    /// to `None` rather than guessing.
     pub(super) fn resolve_function(&self, name: &str) -> Option<&FuncInfo<'a>> {
+        if let Some((module, simple)) = name.rsplit_once('.') {
+            return self
+                .functions
+                .get(&(module.to_owned(), simple.to_owned()));
+        }
         if let Some(info) = self
             .functions
             .get(&(self.current_module.clone(), name.to_owned()))

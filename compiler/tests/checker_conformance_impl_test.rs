@@ -2714,18 +2714,18 @@ export struct Box { n: i32; }
 export let b: Box = Box { n: 5 };
 "#;
 
-/// An import alias that repeats an own binding keeps the own binding's key.
+/// An initializer dot-call receiver keeps the module's own binding's key.
 ///
-/// `import { b as g }` beside `let g: i32` binds the name twice, and the
+/// With the import renamed to `other` and the module's own `g`, the
 /// initializer's `g.pick(7)` keys the module's own `i32`, so the emitted call
 /// reaches a declared and defined instance. The import's `Box` must leave no
 /// trace: a recorded instance of it would declare a specialization the
 /// emitter never calls.
 #[test]
-fn should_declare_the_own_binding_at_an_aliased_receiver_collision() {
-    let collision = r#"module spec.cc.impl.aliascollision;
+fn should_declare_the_own_binding_at_an_initializer_dot_receiver() {
+    let initializer = r#"module spec.cc.impl.aliascollision;
 
-import { b as g } from spec.cc.impl.aliasreceiverholder;
+import { b as other } from spec.cc.impl.aliasreceiverholder;
 
 func pick<T>(take v: T, w: i32): i32 {
     return w;
@@ -2733,13 +2733,13 @@ func pick<T>(take v: T, w: i32): i32 {
 
 let g: i32 = 3;
 
-let h: i32 = g.pick(7);
+let h: i32 = g.pick(7) + other.n;
 
 func main(): i32 {
-    return (h - 7) + (g - 3);
+    return (h - 12) + (g - 3);
 }
 "#;
-    let emitted = emit_host_pair("aliascollision", ALIAS_RECEIVER_HOLDER_SOURCE, collision);
+    let emitted = emit_host_pair("aliascollision", ALIAS_RECEIVER_HOLDER_SOURCE, initializer);
     assert_keyed_instance(
         "aliascollision",
         &emitted,

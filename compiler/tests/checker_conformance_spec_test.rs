@@ -5158,19 +5158,17 @@ func main(): i32 {
 
 // ===== The receiver head's scope =====
 
-/// An import alias that repeats an own binding leaves the own binding the
-/// receiver.
+/// A module initializer's dot-call receiver keys the module's own binding.
 ///
-/// `import { b as g }` beside `let g: i32` binds the name twice, and a read
-/// of `g` resolves to the module's own binding, so the initializer's dot call
-/// `g.pick(7)` keys the own `i32` instance and the run reads the value back
-/// (exit 0). The member-dependent sibling resolves the same way through the
-/// instance check: `g.drain()` iterates the own array while the import names
-/// a struct, and the run counts the two elements (exit 0). Recording the
-/// import's type instead left the emitted call undeclared or rejected the
-/// generic body with an iteration error.
+/// With distinct names — the import renamed to `other` and the module's own
+/// `g` — the initializer's `g.pick(7)` keys the own `i32` instance and the run
+/// reads the value back (exit 0). The member-dependent sibling resolves the
+/// same way through the instance check: `g.drain()` iterates the own array and
+/// the run counts the two elements (exit 0). Binding one name twice is the
+/// declaration/import collision, which the collision case above pins as
+/// `E11103`.
 #[test]
-fn should_key_a_collision_between_an_import_alias_and_an_own_binding() {
+fn should_key_an_own_binding_at_an_initializer_dot_receiver() {
     let holder = r#"module spec.cc.aliasreceiverholder;
 
 export struct Box { n: i32; }
@@ -5178,9 +5176,9 @@ export struct Box { n: i32; }
 export let b: Box = Box { n: 5 };
 "#;
 
-    let collision = r#"module spec.cc.aliascollision;
+    let initializer = r#"module spec.cc.aliascollision;
 
-import { b as g } from spec.cc.aliasreceiverholder;
+import { b as other } from spec.cc.aliasreceiverholder;
 
 func pick<T>(take v: T, w: i32): i32 {
     return w;
@@ -5188,19 +5186,19 @@ func pick<T>(take v: T, w: i32): i32 {
 
 let g: i32 = 3;
 
-let h: i32 = g.pick(7);
+let h: i32 = g.pick(7) + other.n;
 
 func main(): i32 {
-    return (h - 7) + (g - 3);
+    return (h - 12) + (g - 3);
 }
 "#;
-    let output = run_memory_pair("aliascollision", holder, collision);
+    let output = run_memory_pair("aliascollision", holder, initializer);
     assert_no_asan("aliascollision", &output);
     assert_exit("aliascollision", &output, 0);
 
     let member = r#"module spec.cc.aliascollisionmember;
 
-import { b as g } from spec.cc.aliasreceiverholder;
+import { b as other } from spec.cc.aliasreceiverholder;
 
 func drain<T>(xs: T): i32 {
     let n: i32 = 0;
@@ -5212,10 +5210,10 @@ func drain<T>(xs: T): i32 {
 
 let g: i32[2] = [1, 2];
 
-let h: i32 = g.drain();
+let h: i32 = g.drain() + other.n;
 
 func main(): i32 {
-    return h - 2;
+    return h - 7;
 }
 "#;
     let output = run_memory_pair("aliascollisionmember", holder, member);

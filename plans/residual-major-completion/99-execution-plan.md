@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 2/60 tasks (3%) — Phase 1 red
+> **Progress**: 4/60 tasks (7%) — Phase 1 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -83,7 +83,7 @@ controls.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Infer the callee's type arguments at the dot-call site and run the written-argument
+- [x] 1.2.1 Infer the callee's type arguments at the dot-call site and run the written-argument
       conversion check there; extend the import duplicate test to every declaration kind; thread
       the module-qualified callee identity through the symbol and the mode/parameter/return
       lookups — `compiler/src/sema/call.rs`, `compiler/src/sema/expr.rs`,
@@ -91,9 +91,9 @@ controls.
       `compiler/src/own/call_check.rs`, `compiler/src/codegen.rs`,
       `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs`,
       `compiler/src/codegen/function.rs`. **`DEF-361` is a control: no code change for it**
-      (AR-31)
-- [ ] 1.2.2 Run the suites to green; on any failure STOP and fix the implementation (or park per
-      AR-29 if a frozen code is insufficient)
+      (AR-31) ✅ (completed: 2026-10-17; the dot-call written-argument check with call-site type-argument inference (`sema/call.rs:488/619/576/600/1186`); the declaration/import collision for every kind (`load/mod.rs:391/420/177`); the qualified callee identity threaded through the own stage, the emitter, and the initializer path (`own/call_check.rs:297`, `own/call.rs:738/611`, `codegen.rs:705`, `codegen/program.rs:2688/3338`, `own/place.rs:1455/1512/1617`); the direct-name control unchanged; one origin case re-targeted per AR-39)
+- [x] 1.2.2 Run the suites to green; on any failure STOP and fix the implementation (or park per
+      AR-29 if a frozen code is insufficient) ✅ (completed: 2026-10-17; checker 166/166 and callable 68/68 plain and under `RDC_ASAN=1`; `make check` exit 0 (2,382); the differential 17 intended deltas and no change in the spec/tests, examples, or stdlib emissions; no head-only strict failure; the boundary probes green)
 
 ### Step 1.3: Impl Tests & Review
 

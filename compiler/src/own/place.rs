@@ -1452,7 +1452,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .map(|arg| self.view_loans(&arg.value))
                 .unwrap_or_default()
         };
-        match self.program.callee(&name) {
+        match self.resolved_callee(&name) {
             Some(Callee::User(decl)) => {
                 let type_params: Vec<String> =
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
@@ -1509,7 +1509,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let Some(name) = self.callee_name(callee) else {
                     return LoanKind::Shared;
                 };
-                match self.program.callee(&name) {
+                match self.resolved_callee(&name) {
                     Some(Callee::Stdlib {
                         effect: StdlibEffect::ViewOf { kind, .. },
                         ..
@@ -1614,7 +1614,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             args.get(written_index)
                 .map(|arg| ViewCallSource::Expr(&arg.value))
         };
-        match self.program.callee(&name) {
+        match self.resolved_callee(&name) {
             Some(Callee::User(decl)) => {
                 let type_params: Vec<String> =
                     decl.type_params.iter().map(|p| p.name.clone()).collect();

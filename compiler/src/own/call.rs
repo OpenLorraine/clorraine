@@ -608,12 +608,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         type_args: &'a [crate::ast::Type],
         args: &'a [Arg],
     ) -> Option<(Ty, ValueKind)> {
-        let name = self.callee_name(callee)?;
+        let written = self.callee_name(callee)?;
+        // A module-qualified spelling keeps its declaration identity for the
+        // shadow check, while the compiler-known helper is named by its last
+        // segment.
+        let name = written
+            .rsplit_once('.')
+            .map(|(_, simple)| simple.to_owned())
+            .unwrap_or_else(|| written.clone());
         // Only the compiler-known helper lowers as an intrinsic. A user or
         // `ffi` declaration that happens to share the name must resolve to its
         // own symbol, never be silently replaced by the built-in lowering.
         if matches!(
-            self.resolved_callee(&name),
+            self.resolved_callee(&written),
             Some(Callee::User(_)) | Some(Callee::Ffi(_))
         ) {
             return None;
@@ -722,10 +729,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The written name resolves the way the checker resolves it: the caller's
     /// own module first, then an import binding under its original name, and
-    /// only then the program-wide simple-name map. Every mode and ownership
-    /// judgment of the call reads this one resolution, so an aliased or
-    /// same-named spelling judges exactly like its plain twin.
+    /// only then the program-wide simple-name map. A module-qualified name is
+    /// resolved exactly instead: its leading segments name the module and its
+    /// last segment the declaration there, so a same-named function of the
+    /// caller's module never displaces it. Every mode and ownership judgment of
+    /// the call reads this one resolution, so an aliased or same-named spelling
+    /// judges exactly like its plain twin.
     pub(super) fn resolved_callee(&self, name: &str) -> Option<Callee<'a>> {
+        if let Some((module, simple)) = name.rsplit_once('.') {
+            if let Some(target) = self.loaded.module(module) {
+                if let Some(decl) = declared_function(target, simple) {
+                    return Some(Callee::User(decl));
+                }
+                if let Some(signature) = declared_ffi(target, simple) {
+                    return Some(Callee::Ffi(signature));
+                }
+            }
+        }
         if let Some(decl) = declared_function(self.module, name) {
             return Some(Callee::User(decl));
         }

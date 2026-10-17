@@ -2681,6 +2681,15 @@ impl<'a> Emitter<'a> {
                     Some(_) => None,
                     None => self.global_dot_receiver(module, callee),
                 };
+                // A callee carrying its own callable, or a dot call's receiver,
+                // keeps the simple member name; a module-qualified free
+                // function keeps its whole path so the exact declaration is
+                // reached.
+                let name = if callable.is_some() || receiver.is_some() {
+                    callee_name(callee).unwrap_or_default()
+                } else {
+                    qualified_callee_name(callee)
+                };
                 let resolved_type_args: Vec<Ty> = if callable.is_some() {
                     type_args
                         .iter()
@@ -2689,7 +2698,7 @@ impl<'a> Emitter<'a> {
                 } else {
                     self.init_call_type_args(
                         module,
-                        callee,
+                        &name,
                         type_args,
                         args,
                         receiver.as_ref().map(|value| value.ty.clone()),
@@ -2740,7 +2749,7 @@ impl<'a> Emitter<'a> {
                     written_args.push(self.lower_global(module, &arg.value));
                 }
                 ValueKind::Call {
-                    callee: callee_name(callee).unwrap_or_default(),
+                    callee: name,
                     type_args: resolved_type_args,
                     args: written_args,
                     receiver: None,
@@ -2779,7 +2788,7 @@ impl<'a> Emitter<'a> {
     fn init_call_type_args(
         &self,
         module: &Module,
-        callee: &Expr,
+        name: &str,
         type_args: &[Type],
         args: &[Arg],
         receiver_ty: Option<Ty>,
@@ -2790,10 +2799,7 @@ impl<'a> Emitter<'a> {
                 .map(|ty| self.resolve_written(ty))
                 .collect();
         }
-        let Some(name) = callee_name(callee) else {
-            return Vec::new();
-        };
-        let Some(info) = self.resolve_function(&name) else {
+        let Some(info) = self.resolve_function(name) else {
             return Vec::new();
         };
         let decl = info.decl;
@@ -3320,6 +3326,19 @@ fn callee_name(callee: &Expr) -> Option<String> {
         ExprKind::Qualified(name) => name.segments.last().cloned(),
         ExprKind::Member { name, .. } => Some(name.clone()),
         _ => None,
+    }
+}
+
+/// The callee name of a program-level call, keeping a module path whole.
+///
+/// A module-qualified free-function call names the loaded module's declaration,
+/// so every segment is kept and a same-named function of the caller's module
+/// never displaces it. A member callee carries its receiver separately, so it
+/// keeps the simple member name.
+fn qualified_callee_name(callee: &Expr) -> String {
+    match &callee.kind {
+        ExprKind::Qualified(name) if name.segments.len() >= 2 => name.segments.join("."),
+        _ => callee_name(callee).unwrap_or_default(),
     }
 }
 

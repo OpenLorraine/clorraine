@@ -7,11 +7,11 @@
 //! checks its type arguments. Anything else stays opaque, so an unmodelled
 //! external function does not cascade into false errors.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{Arg, Expr, ExprKind, Type};
 use crate::span::Span;
-use crate::types::{implicit_conversion, view_type, FuncParam, FuncSig, Ty, TyKind};
+use crate::types::{implicit_conversion, substitute, view_type, FuncParam, FuncSig, Ty, TyKind};
 
 use super::Checker;
 
@@ -485,40 +485,47 @@ impl Checker<'_, '_> {
                 signature.returns
             }
             Some(DotCall::Function(signature)) => {
-                if let Some((receiver_param, rest)) = signature.params.split_first() {
-                    // The receiver is a written argument at index zero, so a
-                    // nullable borrow receiver takes the same exact-place rule
-                    // as a direct call's argument.
-                    let receiver_mode = signature
-                        .modes
-                        .first()
-                        .copied()
-                        .unwrap_or(crate::ast::Mode::None);
-                    if self.is_out_slot_param(receiver_param, receiver_mode) {
-                        self.check_out_slot_receiver(
+                if signature.type_params.is_empty() {
+                    if let Some((receiver_param, rest)) = signature.params.split_first() {
+                        // The receiver is a written argument at index zero, so a
+                        // nullable borrow receiver takes the same exact-place rule
+                        // as a direct call's argument.
+                        let receiver_mode = signature
+                            .modes
+                            .first()
+                            .copied()
+                            .unwrap_or(crate::ast::Mode::None);
+                        self.check_dot_receiver(
                             receiver_expr,
                             &receiver,
                             receiver_param,
+                            receiver_mode,
                             span,
                         );
+                        // The receiver is not a written argument, so the remaining
+                        // modes line up with the written arguments; a nullable
+                        // borrow parameter keeps its exact-place rule on this route.
+                        let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
+                        self.check_args_impl(args, rest, rest_modes, false, Some((name, span)));
                     } else {
-                        // The receiver is a written argument at index zero, so
-                        // its deferred conversion is recorded exactly like an
-                        // argument's and judged at the instance.
-                        self.record_deferred_conversion(
-                            &receiver,
-                            receiver_param,
-                            receiver_expr.map(|expr| expr.span).unwrap_or(span),
-                        );
-                        self.check_conversion(&receiver, receiver_param, span);
+                        self.check_args(args, &signature.params, Some((name, span)));
                     }
-                    // The receiver is not a written argument, so the remaining
-                    // modes line up with the written arguments; a nullable
-                    // borrow parameter keeps its exact-place rule on this route.
-                    let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
-                    self.check_args_impl(args, rest, rest_modes, false, Some((name, span)));
                 } else {
-                    self.check_args(args, &signature.params, Some((name, span)));
+                    // A generic candidate's type arguments are fixed at this
+                    // call site from the receiver and the written arguments,
+                    // exactly as a plain call fixes them from its arguments.
+                    // Judging a written argument against the declared type
+                    // parameter would accept anything, and recording the
+                    // declared parameter against the enclosing function would
+                    // judge the callee's parameter with the caller's instance.
+                    self.check_generic_dot_call(
+                        receiver_expr,
+                        &receiver,
+                        name,
+                        args,
+                        &signature,
+                        span,
+                    );
                 }
                 signature.returns
             }
@@ -559,6 +566,214 @@ impl Checker<'_, '_> {
                 Ty::unknown()
             }
         }
+    }
+
+    /// Checks a dot-call receiver against the candidate's first parameter.
+    ///
+    /// A nullable borrow receiver is an ownership out-slot and keeps the exact
+    /// place rule; every other receiver records the same deferred conversion a
+    /// written argument does, so a generic caller's instance judges it.
+    fn check_dot_receiver(
+        &mut self,
+        receiver_expr: Option<&Expr>,
+        receiver: &Ty,
+        param: &Ty,
+        mode: crate::ast::Mode,
+        span: Span,
+    ) {
+        if self.is_out_slot_param(param, mode) {
+            self.check_out_slot_receiver(receiver_expr, receiver, param, span);
+            return;
+        }
+        self.record_deferred_conversion(
+            receiver,
+            param,
+            receiver_expr.map(|expr| expr.span).unwrap_or(span),
+        );
+        self.check_conversion(receiver, param, span);
+    }
+
+    /// The declared type parameters of a candidate that still have no binding.
+    ///
+    /// A parameter missing from the map has no inferred instance at this call
+    /// site, so a parameter type that names it cannot be judged here.
+    fn unbound_params(declared: &[String], bindings: &BTreeMap<String, Ty>) -> BTreeSet<String> {
+        declared
+            .iter()
+            .filter(|name| !bindings.contains_key(*name))
+            .cloned()
+            .collect()
+    }
+
+    /// Checks a generic dot-call candidate.
+    ///
+    /// The receiver is the call's argument at index zero, so it anchors the
+    /// candidate's first parameter; together with the written arguments it
+    /// fixes the candidate's type arguments exactly as a plain call's
+    /// arguments do. An argument whose parameter the receiver already fixed is
+    /// judged immediately, like a non-generic candidate's, so a literal keeps
+    /// the parameter's context type. The rest are typed once for the type
+    /// arguments they contribute and judged after the inference; a parameter
+    /// that stays unresolved is left to the instantiation rather than recorded
+    /// against the enclosing function.
+    fn check_generic_dot_call(
+        &mut self,
+        receiver_expr: Option<&Expr>,
+        receiver: &Ty,
+        name: &str,
+        args: &[Arg],
+        signature: &FuncSig,
+        span: Span,
+    ) {
+        let declared: Vec<String> = signature
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        let receiver_mode = signature
+            .modes
+            .first()
+            .copied()
+            .unwrap_or(crate::ast::Mode::None);
+        let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
+        let rest = signature.params.get(1..).unwrap_or(&[]);
+        let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
+        if let Some(param) = signature.params.first() {
+            match_param(param, receiver, &declared, &mut bindings);
+        }
+        // The written count is judged against the declared parameters like
+        // every other call; a mismatch reports once and still walks the
+        // arguments for their own errors.
+        if args.len() != rest.len() {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for '{name}': expected {}, found {}",
+                    rest.len(),
+                    args.len()
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+            for arg in args {
+                self.check_value(&arg.value, None);
+            }
+            self.check_dot_receiver_call(
+                receiver_expr,
+                receiver,
+                signature,
+                receiver_mode,
+                &bindings,
+                span,
+            );
+            return;
+        }
+        // Walk the written arguments once. A parameter the receiver already
+        // fixed is judged here; the others contribute their type to the
+        // inference below.
+        let mut pending: Vec<Option<Ty>> = Vec::with_capacity(args.len());
+        let receiver_unbound = Self::unbound_params(&declared, &bindings);
+        for (index, arg) in args.iter().enumerate() {
+            let mode = rest_modes
+                .get(index)
+                .copied()
+                .unwrap_or(crate::ast::Mode::None);
+            if mode == crate::ast::Mode::Take {
+                self.reject_capture_move(&arg.value);
+                self.record_generic_capture_move(&arg.value);
+            }
+            let expected = rest.get(index).map(|param| substitute(param, &bindings));
+            match expected {
+                Some(param) if !mentions_unbound(&param, &receiver_unbound) => {
+                    if self.is_out_slot_param(&param, mode) {
+                        self.check_out_slot_argument(arg, &param);
+                    } else {
+                        self.check_into(&arg.value, &param);
+                    }
+                    pending.push(None);
+                }
+                _ => pending.push(Some(self.check_value(&arg.value, None))),
+            }
+        }
+        for (index, ty) in pending.iter().enumerate() {
+            if let Some(ty) = ty {
+                if let Some(param) = rest.get(index) {
+                    match_param(param, ty, &declared, &mut bindings);
+                }
+            }
+        }
+        let unbound = Self::unbound_params(&declared, &bindings);
+        self.check_dot_receiver_call(
+            receiver_expr,
+            receiver,
+            signature,
+            receiver_mode,
+            &bindings,
+            span,
+        );
+        for (index, ty) in pending.iter().enumerate() {
+            let (Some(ty), Some(arg)) = (ty, args.get(index)) else {
+                continue;
+            };
+            let Some(param) = rest.get(index).map(|param| substitute(param, &bindings)) else {
+                continue;
+            };
+            let mode = rest_modes
+                .get(index)
+                .copied()
+                .unwrap_or(crate::ast::Mode::None);
+            if self.is_out_slot_param(&param, mode) {
+                self.check_out_slot_place(arg, ty, &param);
+                continue;
+            }
+            if mentions_unbound(&param, &unbound) {
+                continue;
+            }
+            // A borrow slot whose declared type still mentions a parameter is
+            // judged per instance: the audit leaves a nullable substitution to
+            // the out-slot place duty and reports the non-nullable ones itself.
+            let borrow_slot = mode == crate::ast::Mode::Borrow
+                && rest
+                    .get(index)
+                    .is_some_and(crate::types::contains_param);
+            self.record_deferred_conversion_with(
+                ty,
+                &param,
+                arg.span,
+                Self::conversion_literal(&arg.value),
+                borrow_slot,
+            );
+            self.check_conversion(ty, &param, arg.span);
+        }
+    }
+
+    /// Checks the receiver of a generic dot call against its resolved first
+    /// parameter, when the call site fixes it.
+    fn check_dot_receiver_call(
+        &mut self,
+        receiver_expr: Option<&Expr>,
+        receiver: &Ty,
+        signature: &FuncSig,
+        mode: crate::ast::Mode,
+        bindings: &BTreeMap<String, Ty>,
+        span: Span,
+    ) {
+        let Some(param) = signature
+            .params
+            .first()
+            .map(|param| substitute(param, bindings))
+        else {
+            return;
+        };
+        let declared: Vec<String> = signature
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        if mentions_unbound(&param, &Self::unbound_params(&declared, bindings)) {
+            return;
+        }
+        self.check_dot_receiver(receiver_expr, receiver, &param, mode, span);
     }
 
     /// Resolves the candidate a dot-call names.
@@ -961,6 +1176,38 @@ enum DotCall {
     Field(FuncSig),
     /// A free function whose first parameter is the receiver.
     Function(FuncSig),
+}
+
+/// True when a type mentions one of the named type parameters.
+///
+/// The walk mirrors [`crate::types::contains_param`], but only the names the
+/// call site left unbound count: a parameter the inference resolved to the
+/// caller's own type argument still judges at the call and at its instance.
+fn mentions_unbound(ty: &Ty, unbound: &BTreeSet<String>) -> bool {
+    if unbound.is_empty() {
+        return false;
+    }
+    match &ty.kind {
+        TyKind::Param(name) => unbound.contains(name),
+        TyKind::Array { element, .. } => mentions_unbound(element, unbound),
+        TyKind::Raw(inner) => mentions_unbound(inner, unbound),
+        TyKind::Struct(_, args) => args.iter().any(|arg| mentions_unbound(arg, unbound)),
+        TyKind::Func(signature) => {
+            signature
+                .params
+                .iter()
+                .any(|param| mentions_unbound(&param.ty, unbound))
+                || mentions_unbound(&signature.returns, unbound)
+        }
+        TyKind::Closure(closure) => {
+            closure
+                .params
+                .iter()
+                .any(|param| mentions_unbound(param, unbound))
+                || mentions_unbound(&closure.returns, unbound)
+        }
+        _ => false,
+    }
 }
 
 /// The simple name of a callee, when it is one.

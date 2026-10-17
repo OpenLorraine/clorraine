@@ -174,8 +174,8 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
 
     let mut modules: BTreeMap<String, Module> = BTreeMap::new();
     for (name, group) in groups {
-        let imports = resolve_imports(&group, &exports, diagnostics);
         let decls = decls_by_module.remove(&name).unwrap_or_default();
+        let imports = resolve_imports(&group, &decls, &exports, diagnostics);
         modules.insert(
             name.clone(),
             Module {
@@ -383,8 +383,14 @@ fn collect_declarations(
 }
 
 /// Binds a module's imports and reports unresolved, duplicate, and unused ones.
+///
+/// One name may be bound only once per module. An import whose local name is
+/// also a same-module declaration would bind that name a second time, so it is
+/// reported exactly like a duplicate import; the declaration itself stays a
+/// single valid declaration.
 fn resolve_imports(
     group: &Group,
+    declarations: &BTreeMap<String, Decl>,
     exports: &BTreeMap<String, BTreeSet<String>>,
     diagnostics: &mut Diagnostics,
 ) -> Vec<ImportBinding> {
@@ -410,7 +416,8 @@ fn resolve_imports(
                     .with_help("check the name or add `export`"),
                 );
             }
-            let duplicated = bindings.iter().any(|binding| binding.local == local);
+            let duplicated = bindings.iter().any(|binding| binding.local == local)
+                || declarations.contains_key(&local);
             if duplicated {
                 diagnostics.push(
                     Diagnostic::error(
