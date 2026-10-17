@@ -457,3 +457,47 @@ raw-enum member read is the value form of its enum).
   its sanctioned conversion (the same boundary; disclosed and pinned).
 - The standing shapes (`p.foo` on `raw u8`, `p.ptr` on `raw str`) remain as `DEF-352`; `DEF-349`'s
   pointer-to-int cast is untouched.
+
+## Phase 8 — Module/global identity and the const folder
+
+**Reviewed implementation**: `67ca5ac` plus four correction rounds (`c1bd712`, `2ecb5bd`, `2ec129e`,
+`83d95f2`). **Lenses**: correctness (L8R), semantics (L8S), emission-integrity, and a scoped
+memory-safety audit, plus a bounded re-confirmation.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L8R-1 (an aliased `take` lost its parameter mode in the ownership lowering — a double free; the base failed the strict build, the phase's symbol fix made it runnable), L8R-2 (a two-field module-path callee dropped its receiver); L8R-3 (a pin gap), L8R-4 filed (`DEF-389`) |
+| semantics | FAIL — 2 blockers | L8S-1 (the aliased callee's modes reached the lowering but not the own-stage argument check — an accepted use-after-move; the same root as `DEF-391`), L8S-2 (the receiver resolution order diverged between the checker and the own stage/emitter); L8S-3..L8S-7 filed (`DEF-390`..`DEF-393`), AR-25 (the collision order: the module path wins for reads and calls alike) |
+| emission-integrity | FINDINGS — 1 | The MOD-13 regression (a loaded-module qualified read rejected when an import of the same name existed); the 17 emission diffs and 11 head accepts otherwise intended; the cross-profile ABI numbers independently verified (`ClMixed` 8/8, `ClNested` 12/10, `str` 16/8, etc.) |
+| memory-safety (scoped) | FINDINGS — 2 | (1) a deep module-path callee in an initializer missed the dependency collector — a head-newly-buildable null function-pointer call; (2) a base-clean→head SEGV at the aliased deref-borrow (the owned-deref-read rule emptied the pointee at a `borrow` parameter; the plain twin crashed at both refs); both closed, `DEF-394` incidentally fixed |
+| re-confirmation | **PASS WITH MINORS — 0 blockers** | Both findings closed; the 8 accept→reject parity shapes from the shared callee resolution verified against their plain twins; the K18/`rev8`/`l8-audit` gates identical; the p8 set 82 unchanged + 5 fixed |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (`c1bd712`) | **Fixed**: the qualified reading of a module path takes precedence over a value head of the same name (a lexical binding still shadows) — MOD-13; the collision and chain variants byte-identical to the base |
+| C2/C3/C4 (`2ecb5bd`) | **Fixed**: the callee modes resolve an aliased import to its original declaration (the caller's move-out returns); the segment resolver handles the longest module prefix plus trailing fields (the two-deep callee keeps its receiver); the bare func-global mismatch record pinned |
+| C5/C6 (`2ec129e`) | **Fixed**: one scope-aware callee resolution across the own stage (the argument check, the mode lookup, the elision predicate, the shadow check, the inference) — the aliased and same-named use-after-move reject `E10020` like their plain twins; the own-stage and emitter receiver order follows the checker (the module path first, a lexical shadow) |
+| M1/M2 (`83d95f2`) | **Fixed**: the dependency collector delegates to the segment resolver (the deep initializer runs after its provider); the non-owning argument materialization passes a raw-deref read in place (only a `take` parameter owns it) — the borrow-deref reads run clean in both spellings, the take twin keeps its move-out |
+
+### Filed rows
+
+`DEF-389` (the module-path diagnostic selection), `DEF-390` (the qualified function call's emission),
+`DEF-391` (the simple-name callee resolution — the same root as L8S-1), `DEF-392` (the `sizeof` fold's
+declines), `DEF-393` (`offsetof`'s value emission), `DEF-394` (**closed as incidentally fixed** by the
+shared callee resolution); AR-24 (the ABI-layout extent ruling), AR-25 (the collision order).
+
+### Record notes
+
+- The shared callee resolution also corrected eight previously accepted aliased/same-named spellings
+  (they now report their plain twins' `E10020`/`E10026`/`E10034`) — a recorded accept→reject parity
+  class.
+- The p8 probe-set count reconciles as 82 unchanged + 5 fixed over the 87 mains (the two full-path
+  initializer probes need the module-path collector to be counted).
+- The `assert_no_asan` helper matches only `AddressSanitizer`; a leak-only report would slip past the
+  suite ASan leg (pre-existing; the host probes ran with leak detection).
+- AR-24 replaces AR-13's deferred-spelling illustration with the modeled ABI value; the extent equals
+  the target C `sizeof` on every verified shape.

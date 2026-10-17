@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 19:30
-> **Progress**: 47/51 tasks (92%) — Phase 8 in review
+> **Last Updated**: 2026-10-20 06:00
+> **Progress**: 48/51 tasks (94%) — Phase 8 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -391,9 +391,9 @@ checker typing.
 - [x] 8.3.1 Write the phase implementation pins (the emitted alias/binding symbols, the deferred
       extent spelling, the checker typing record, the byte-identical controls, re-emission
       determinism pins) in the origin `_impl_test.rs` files ✅ (completed: 2026-10-19 19:30; delivered with the implementation round — the aliased-import symbol pin (the imported symbol present, the alias absent), the module-qualified binding call, the scope-resolution control, the extent spelling + value reads + byte-identical re-emission pin, and the ABI-numbers unit test (`types/table.rs`); the base discrimination verified by the review lenses)
-- [ ] 8.3.2 Phase review evidence and progress update — commit per the active commit mode;
+- [x] 8.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; the emission lens runs the base/head differential over the `k18`
-      matrix
+      matrix ✅ (completed: 2026-10-20 06:00; all four lenses dispatched (correctness + semantics + emission per the plan, plus the scoped memory audit per the dispatch matrix) plus four correction rounds: the module-path precedence (MOD-13), the aliased callee modes + the longest-prefix path + the record pin, the shared scope-aware callee resolution + the receiver-order split, and the dependency-collector delegation + the non-owning deref read; rows filed `DEF-389`\u2013`DEF-393`, `DEF-394` closed incidentally; AR-24/AR-25 recorded; the closing verification: the callable spec 67/67 + impl 33/33, the module-initializer 65/65 + 43/43 (plain and ASan), `make check` exit 0 (2,378), the memory re-confirmation PASS WITH MINORS \u2014 0 blockers)
 
 **Verify**: `make check`; the identity matrix and the profile legs
 
