@@ -81,6 +81,37 @@ fn emit_host(tag: &str, source: &str) -> String {
     emitted
 }
 
+/// Emits one host program from a fixed source path.
+///
+/// Two spellings that differ only inside the program then compare without
+/// source-location noise from different scratch directories, because the
+/// emitted `#line` directives name the same path.
+fn emit_host_at(tag: &str, scratch: &ScratchDir, source: &str, stem: &str) -> String {
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join(format!("{stem}.c"));
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty"
+    );
+    emitted
+}
+
 /// Emits one hosted-amiga program and asserts the front end accepted it.
 ///
 /// The cross toolchain is not needed for an emission pin: the profile only
@@ -6158,4 +6189,411 @@ func main(): i32 {
             "implbothnull: the null at {site} must report; stderr:\n{stderr}"
         );
     }
+}
+
+// ===== Substitution context typing =====
+
+/// A literal at a generic callee's concrete parameter takes that type.
+///
+/// The callee's `n: usize` parameter is concrete even though `T` is generic, so
+/// the literal is typed `usize` and the emitter spells the unsigned constant at
+/// the call. A literal beyond `usize` reports the fit rule once at the literal.
+/// At the base compiler the literal keeps its default `i32`, so the call
+/// reports a conversion and the out-of-range value reports `E10200`.
+#[test]
+fn should_context_type_the_literal_at_a_generic_concrete_parameter() {
+    let accepted = r#"module spec.cc.impl.genericlitpin;
+
+struct S { x: i32; }
+
+func set<T>(borrow a: T, n: usize): void {
+    a[n] = S { x: 9 };
+}
+
+func main(): i32 {
+    let a: S[1] = [S { x: 1 }];
+    set<S[1]>(borrow a, 0);
+    return a[0].x - 9;
+}
+"#;
+    let emitted = emit_host("genericlitpin", accepted);
+    assert_contains("genericlitpin", &emitted, "cl_set__arr1_S(a, 0u);");
+
+    let out_of_range = r#"module spec.cc.impl.genericlitrangepin;
+
+struct S { x: i32; }
+
+func set<T>(borrow a: T, n: usize): void {
+    a[n] = S { x: 9 };
+}
+
+func main(): i32 {
+    let a: S[1] = [S { x: 1 }];
+    set<S[1]>(borrow a, 1000000000000);
+    return a[0].x - 9;
+}
+"#;
+    assert_rejected_once_at_site(
+        "genericlitrangepin",
+        out_of_range,
+        "error E10202:",
+        "literal does not fit 'usize'",
+        "main.clo:11:25",
+    );
+}
+
+/// A nullable non-capable type argument reports once at every site.
+///
+/// The field annotation, the explicit call type argument, and both nested forms
+/// each report one `E10011` at the offending type. A program that also declares
+/// a nullable parameter, return, and local reports all five sites in one pass,
+/// one each. At the base compiler every type-argument site is accepted.
+#[test]
+fn should_report_each_nullable_type_argument_site_once() {
+    let annotation = r#"module spec.cc.impl.nullableannotpin;
+
+import { Array } from std.mem;
+
+struct H { a: Array<i32?>; }
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once_at_site(
+        "nullableannotpin",
+        annotation,
+        "error E10011:",
+        "nullable type is not allowed on 'i32'",
+        "main.clo:5:21",
+    );
+
+    let call_argument = r#"module spec.cc.impl.nullablecallargpin;
+
+import { arrayNew } from std.mem;
+
+func main(): i32 {
+    let g = arrayNew<i32?>();
+    return 0;
+}
+"#;
+    assert_rejected_once_at_site(
+        "nullablecallargpin",
+        call_argument,
+        "error E10011:",
+        "nullable type is not allowed on 'i32'",
+        "main.clo:6:22",
+    );
+
+    let nested_array = r#"module spec.cc.impl.nullablenestedarraypin;
+
+import { Array } from std.mem;
+
+struct H {
+    a: Array<Array<i32?>>;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once_at_site(
+        "nullablenestedarraypin",
+        nested_array,
+        "error E10011:",
+        "nullable type is not allowed on 'i32'",
+        "main.clo:6:20",
+    );
+
+    let nested_wrap = r#"module spec.cc.impl.nullablenestedwrappin;
+
+import { Array } from std.mem;
+
+struct Wrap<T> { v: T; }
+
+struct H {
+    a: Array<Wrap<i32?>>;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once_at_site(
+        "nullablenestedwrappin",
+        nested_wrap,
+        "error E10011:",
+        "nullable type is not allowed on 'i32'",
+        "main.clo:8:19",
+    );
+
+    let count_source = r#"module spec.cc.impl.nullablecountpin;
+
+import { Array, arrayNew } from std.mem;
+
+func f(x: i32?): i32? {
+    return x;
+}
+
+func main(): i32 {
+    let x: i32? = null;
+    let g: Array<i32?> = arrayNew<i32?>();
+    return 0;
+}
+"#;
+    let stderr = reject_host("nullablecountpin", count_source);
+    assert_eq!(
+        stderr.matches("error E10011:").count(),
+        5,
+        "nullablecountpin: the parameter, return, binding, annotation, and call \
+         argument each report once; stderr:\n{stderr}"
+    );
+    for site in [
+        "main.clo:5:6",
+        "main.clo:5:8",
+        "main.clo:10:5",
+        "main.clo:11:18",
+        "main.clo:11:35",
+    ] {
+        assert_eq!(
+            stderr.matches(site).count(),
+            1,
+            "nullablecountpin: the site at {site} reports exactly once; stderr:\n{stderr}"
+        );
+    }
+}
+
+/// The nullable handle type argument keys its own instance.
+///
+/// `Array<String?>` is legal because a handle can be empty, so the instance key
+/// carries the nullable spelling and the emitter declares `ClArray__StringQ`.
+/// This shape already held at the base compiler, so it is a control.
+#[test]
+fn should_key_the_nullable_handle_type_argument() {
+    let source = r#"module spec.cc.impl.nullablehandlekeypin;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let g: Array<String?> = arrayNew<String?>();
+    let s: String? = stringOf("aa");
+    g.push(s);
+    if (len(g) == 1) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("nullablehandlekeypin", source);
+    assert_contains("nullablehandlekeypin", &emitted, "ClArray__StringQ");
+}
+
+/// A qualified type path resolves to the unqualified instance.
+///
+/// `std.mem.Array<i32>` names the same declaration as `Array<i32>`, so the
+/// emitter declares `ClArray__i32` and both spellings emit the same translation
+/// unit. At the base compiler the qualified spelling resolves to an unknown
+/// type and the declaration renders as `i32`.
+#[test]
+fn should_resolve_the_qualified_type_path_to_the_unqualified_instance() {
+    let unqualified = r#"module spec.cc.impl.qualifiedtypepin;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: Array<i32> = arrayNew<i32>();
+    g.push(1);
+    return i32(len(g)) - 1;
+}
+"#;
+    let qualified = r#"module spec.cc.impl.qualifiedtypepin;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: std.mem.Array<i32> = std.mem.arrayNew<i32>();
+    g.push(1);
+    return i32(len(g)) - 1;
+}
+"#;
+    let scratch = ScratchDir::new("qualifiedtypepin");
+    let unqualified_emitted = emit_host_at("qualifiedtypepinunq", &scratch, unqualified, "unq");
+    let qualified_emitted = emit_host_at("qualifiedtypepinqual", &scratch, qualified, "qual");
+    assert_contains(
+        "qualifiedtypepinqual",
+        &qualified_emitted,
+        "ClArray__i32 g",
+    );
+    assert_contains(
+        "qualifiedtypepinunq",
+        &unqualified_emitted,
+        "ClArray__i32 g",
+    );
+    assert_eq!(
+        qualified_emitted, unqualified_emitted,
+        "qualifiedtypepin: the qualified spelling must emit the unqualified control byte for byte"
+    );
+}
+
+/// A folded negated literal is emitted at its destination's integer width.
+///
+/// The unary minus and its literal fold to one value, so each of the eight
+/// destination positions emits the folded constant cast to `i16`, and `-128`
+/// takes `i8`. Re-emitting the same source is byte-identical. At the base
+/// compiler every negated literal keeps its `i32` operand type and the program
+/// is rejected with `E10200`.
+#[test]
+fn should_fold_the_negated_literal_at_concrete_destinations() {
+    let source = r#"module spec.cc.impl.negmatrixpin;
+
+struct S { v: i16; }
+
+let g: i16 = -5;
+
+func took(v: i16): i32 { return i32(v); }
+
+func ret(): i16 { return -5; }
+
+func main(): i32 {
+    let a: i16 = -5;
+    let s: S = S { v: -5 };
+    let arr: i16[1] = [-5];
+    let c: i16 = true ? -5 : -5;
+    let b: i16 = 0;
+    b = -5;
+    let m: i8 = -128;
+    return i32(a) + i32(g) + took(-5) + i32(ret()) + i32(s.v) + i32(arr[0]) + i32(c) + i32(b) + i32(m) + 168;
+}
+"#;
+    let emitted = emit_host("negmatrixpin", source);
+    assert_eq!(
+        count(&emitted, "(i16)(-(u16)5)"),
+        9,
+        "negmatrixpin: the eight destination positions must emit the folded i16 literal; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "(i8)(-(u8)128)"),
+        1,
+        "negmatrixpin: the i8 destination must emit the folded minimum; emitted C:\n{emitted}"
+    );
+    let (first, second) = emit_twice("negmatrixreemit", source);
+    assert_eq!(
+        first, second,
+        "negmatrixreemit: re-emitting the same source must be byte-identical"
+    );
+}
+
+/// A folded literal outside its destination's range reports the fit rule once.
+///
+/// `-129` does not fit `i8` and `-5` does not fit `u8`, so each reports one
+/// `E10202` at the literal and no conversion. A float or `bool` destination
+/// supplies no integer context, so the literal keeps its default type and the
+/// ordinary conversion reports `E10200`; those two shapes already held at the
+/// base compiler and stay controls.
+#[test]
+fn should_report_the_folded_literal_fit_and_keep_the_non_integer_reports() {
+    let below_min = r#"module spec.cc.impl.negbelowpin;
+
+func main(): i32 {
+    let a: i8 = -129;
+    return i32(a);
+}
+"#;
+    let stderr = reject_host("negbelowpin", below_min);
+    assert_eq!(
+        stderr.matches("error E10202:").count(),
+        1,
+        "negbelowpin: the folded value reports the fit rule once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("literal does not fit 'i8'"),
+        "negbelowpin: the report names the destination; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:17"),
+        "negbelowpin: the report lands on the literal; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10200:"),
+        "negbelowpin: the folded fit replaces the conversion; stderr:\n{stderr}"
+    );
+
+    let unsigned = r#"module spec.cc.impl.negu8pin;
+
+func main(): i32 {
+    let a: u8 = -5;
+    return i32(a);
+}
+"#;
+    let stderr = reject_host("negu8pin", unsigned);
+    assert_eq!(
+        stderr.matches("error E10202:").count(),
+        1,
+        "negu8pin: the folded value reports the fit rule once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("literal does not fit 'u8'"),
+        "negu8pin: the report names the destination; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:17"),
+        "negu8pin: the report lands on the literal; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10200:"),
+        "negu8pin: the folded fit replaces the conversion; stderr:\n{stderr}"
+    );
+
+    let float_destination = r#"module spec.cc.impl.negf32pin;
+
+func main(): i32 {
+    let a: f32 = -5;
+    return i32(a) + 5;
+}
+"#;
+    let stderr = reject_host("negf32pin", float_destination);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "negf32pin: a float destination keeps the conversion report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'i32' to 'f32' implicitly"),
+        "negf32pin: the report names the conversion; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:18"),
+        "negf32pin: the report lands on the literal; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10202:"),
+        "negf32pin: a non-integer context supplies no fit check; stderr:\n{stderr}"
+    );
+
+    let bool_destination = r#"module spec.cc.impl.negboolpin;
+
+func main(): i32 {
+    let a: bool = -5;
+    return 0;
+}
+"#;
+    let stderr = reject_host("negboolpin", bool_destination);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "negboolpin: a bool destination keeps the conversion report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'i32' to 'bool' implicitly"),
+        "negboolpin: the report names the conversion; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:19"),
+        "negboolpin: the report lands on the literal; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10202:"),
+        "negboolpin: a non-integer context supplies no fit check; stderr:\n{stderr}"
+    );
 }

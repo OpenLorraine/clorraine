@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 20/60 tasks (33%) — Phase 3 implemented
+> **Progress**: 21/60 tasks (35%) — Phase 3 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -217,10 +217,10 @@ count), the qualified type path, and the folded negated literal matrix.
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the literal's resolved type, the `E10011` span
+- [x] 3.3.1 Write the phase implementation pins (the literal's resolved type, the `E10011` span
       and count per nested site with no duplicates, the qualified type symbol, the folded unary
       fit and the position matrix, a re-emission determinism pin) in
-      `compiler/tests/checker_conformance_impl_test.rs`
+      `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17; six impl pins: the literal's resolved type and the `E10202`, the five nullable sites once each, the `ClArray__StringQ` control, the qualified `ClArray__i32` byte identity, the folded matrix, and the folded fit with the non-integer reports; the base discrimination 5/1 at `4cfe123`; checker impl 111/111, plain and ASan)
 - [ ] 3.3.2 Phase review — dispatch the lenses (correctness + semantics + emission-integrity);
       apply the corrections; the AR-34 stop conditions are checked and recorded; run the
       differential over `m371_*`, `m384_*`, `m385_*`, `m386_*` (AR-37)
