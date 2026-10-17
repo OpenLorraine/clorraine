@@ -8955,3 +8955,512 @@ fn should_pin_the_nested_fill_covered_element_copies() {
         &[],
     );
 }
+
+// ===== Owning raw-deref materialization and guarded deref takes =====
+
+/// The generic store program: a `String` instance stores through an impure
+/// pointer expression that advances a counter on every call.
+const DEREF_OWNER_STORE_SOURCE: &str = r#"module spec.cprimpl.derefownerstore;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func overwrite<T>(p: raw T, q: raw T, take v: T): T {
+    unsafe {
+        v = *alt(p, q);
+    }
+    return v;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let v: String = stringOf("vv");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = overwrite<String>(p, q, v);
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+
+/// The generic return program: the callee returns the pointee of an impure
+/// pointer expression.
+const DEREF_OWNER_RETURN_SOURCE: &str = r#"module spec.cprimpl.derefownerreturn;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read_it<T>(p: raw T, q: raw T): T {
+    return unsafe *alt(p, q);
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = read_it<String>(p, q);
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+
+/// The generic struct-literal field program: `Box.s` receives the pointee of
+/// an impure pointer expression.
+const DEREF_OWNER_FIELD_SOURCE: &str = r#"module spec.cprimpl.derefownerfield;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+struct Box { s: String; }
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func make<T>(p: raw T, q: raw T): Box {
+    return Box { s: unsafe *alt(p, q) };
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let bx: Box = make<String>(p, q);
+        return i32(len(bx.s)) + calls * 10;
+    }
+}
+"#;
+
+/// The array-literal element program: the element receives the pointee of an
+/// impure pointer expression.
+const DEREF_OWNER_ELEMENT_SOURCE: &str = r#"module spec.cprimpl.derefownerelement;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let xs: String[1] = [*alt(p, q)];
+        return i32(len(xs[0])) + calls * 10;
+    }
+}
+"#;
+
+/// The conditional-arm program: the selected arm reads the pointee of an
+/// impure pointer expression.
+const DEREF_OWNER_ARM_SOURCE: &str = r#"module spec.cprimpl.derefownerarm;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let fallback: String = stringOf("cc");
+    let flag: bool = true;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = flag ? *alt(p, q) : fallback;
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+
+/// The guarded take of a place-pointer deref: the callee owns the pointee and
+/// the caller's slot is emptied on the evaluated path.
+const GUARDED_DEREF_TAKE_SOURCE: &str = r#"module spec.cprimpl.guardedtake;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let g: bool = true;
+    unsafe {
+        let q: raw String = &a;
+        let ok: bool = g && (eat(take (unsafe *q)) == 1);
+        if (ok) { return 0; }
+    }
+    return 1;
+}
+"#;
+
+/// The guarded take of an impure-pointer deref: the pointer fill and the
+/// pointee emptying travel on the guard's evaluated path.
+const GUARDED_DEREF_TAKE_IMPURE_SOURCE: &str = r#"module spec.cprimpl.guardedtakeimpure;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let ok: bool = g && (eat(take (unsafe *alt(p, q))) == 1);
+        if (ok) { return 0; }
+    }
+    return 1;
+}
+"#;
+
+/// The skipped guarded take of an impure-pointer deref: the pointer must not
+/// be called at all when the left operand decides the result.
+const GUARDED_DEREF_TAKE_SKIP_SOURCE: &str = r#"module spec.cprimpl.guardedtakeskip;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let g: bool = false;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let ok: bool = g && (eat(take (unsafe *alt(p, q))) == 1);
+        if (ok) { return 2; }
+    }
+    return calls * 10 + i32(len(a)) - 2;
+}
+"#;
+
+/// Asserts the emitted line with `anchor` contains `first` before `second`.
+///
+/// A guarded operand is printed as one line, so this pins the fill, the call,
+/// and the pointee emptying in their evaluation order without hoisting any of
+/// them ahead of the guard.
+fn assert_on_line_before(tag: &str, emitted: &str, anchor: &str, first: &str, second: &str) {
+    let line = emitted
+        .lines()
+        .find(|line| line.contains(anchor))
+        .unwrap_or_else(|| panic!("{tag}: no emitted line contains {anchor:?}"));
+    let first_at = line.find(first).unwrap_or_else(|| {
+        panic!("{tag}: the line with {anchor:?} lacks {first:?}; line:\n{line}")
+    });
+    let second_at = line.find(second).unwrap_or_else(|| {
+        panic!("{tag}: the line with {anchor:?} lacks {second:?}; line:\n{line}")
+    });
+    assert!(
+        first_at < second_at,
+        "{tag}: expected {first:?} before {second:?} on the line with {anchor:?}; line:\n{line}"
+    );
+}
+
+/// Compiles the emitted C with the host compiler and returns the run exit code.
+///
+/// The strict flag set is the repository's ordinary host build. The programs
+/// are tiny, so a direct run is enough to observe a call counter folded into
+/// the exit code.
+fn run_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> i32 {
+    let c_path = scratch.path().join("run.c");
+    std::fs::write(&c_path, emitted)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the emitted C: {err}"));
+    let program = scratch.path().join("run.bin");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let status = Command::new(&program)
+        .status()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
+    status.code().unwrap_or(-1)
+}
+
+/// The owning deref store evaluates its pointer once and reads and empties the
+/// same temporary: one `cl_alt` call, then the store from the pinned pointer
+/// and the pointee zero through the same temporary.
+#[test]
+fn should_pin_the_owning_deref_store_materialization() {
+    let tag = "derefownerstore";
+    let (_scratch, emitted) = emit_host(tag, DEREF_OWNER_STORE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_overwrite__String(ClString *p, ClString *q, ClString v)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "the impure pointer must evaluate once in the store; body:\n{body}"
+    );
+    assert_follows(tag, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+}
+
+/// The owning deref return evaluates its pointer once and reads and empties
+/// the same temporary.
+#[test]
+fn should_pin_the_owning_deref_return_materialization() {
+    let tag = "derefownerreturn";
+    let (_scratch, emitted) = emit_host(tag, DEREF_OWNER_RETURN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_read_it__String(ClString *p, ClString *q)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "the impure pointer must evaluate once in the return; body:\n{body}"
+    );
+    assert_follows(
+        tag,
+        body,
+        "ClString __cl_return_1 = *(__cl_tmp0);",
+        "*(__cl_tmp0) = NULL;",
+    );
+}
+
+/// The owning deref struct-literal field pins the pointer once, stores the
+/// field from it, and empties the pointee after the copy.
+#[test]
+fn should_pin_the_owning_deref_field_materialization() {
+    let tag = "derefownerfield";
+    let (_scratch, emitted) = emit_host(tag, DEREF_OWNER_FIELD_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_make__String(ClString *p, ClString *q)\n{",
+    );
+    assert_contains(tag, body, "__cl_return_1.s = *(__cl_tmp0);");
+    assert_follows(
+        tag,
+        body,
+        "__cl_return_1.s = *(__cl_tmp0);",
+        "*(__cl_tmp0) = NULL;",
+    );
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "the impure pointer must evaluate once in the field store; body:\n{body}"
+    );
+}
+
+/// The owning deref array-literal element evaluates its pointer once and
+/// reads and empties the same temporary.
+#[test]
+fn should_pin_the_owning_deref_element_materialization() {
+    let tag = "derefownerelement";
+    let (_scratch, emitted) = emit_host(tag, DEREF_OWNER_ELEMENT_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_derefownerelement_main(void)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "the impure pointer must evaluate once in the element store; body:\n{body}"
+    );
+    assert_follows(tag, body, "xs[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+}
+
+/// The owning deref conditional arm fills the pinned pointer inside the chosen
+/// branch, then reads and empties the same temporary there.
+#[test]
+fn should_pin_the_owning_deref_arm_materialization() {
+    let tag = "derefownerarm";
+    let (_scratch, emitted) = emit_host(tag, DEREF_OWNER_ARM_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_derefownerarm_main(void)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "the impure pointer must evaluate once in the chosen arm; body:\n{body}"
+    );
+    assert_follows(
+        tag,
+        body,
+        "if (flag) {",
+        "__cl_tmp0 = cl_alt__String(p, q);",
+    );
+    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+}
+
+/// The guarded take of a place-pointer deref empties the pointee on the
+/// guard's evaluated path, after the call.
+#[test]
+fn should_pin_the_guarded_deref_take_pointer_emptying() {
+    let tag = "guardedtake";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_DEREF_TAKE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardedtake_main(void)\n{",
+    );
+    assert_absent(tag, body, "*(q) = NULL;");
+    assert_on_line_of(tag, body, "ok = (g &&", "_eat(*(q))");
+    assert_on_line_before(tag, body, "ok = (g &&", "_eat(*(q))", "(*(q) = NULL)");
+}
+
+/// The guarded take of an impure-pointer deref defers the pointer fill to the
+/// guard's right operand and empties the pointee there after the call.
+#[test]
+fn should_pin_the_guarded_deref_take_deferred_pointer_fill() {
+    let tag = "guardedtakeimpure";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_DEREF_TAKE_IMPURE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardedtakeimpure_main(void)\n{",
+    );
+    assert_absent(tag, body, "= cl_alt__String(p, q);");
+    assert_on_line_of(tag, body, "ok = (g &&", "__cl_tmp0 = cl_alt__String(p, q)");
+    assert_on_line_before(
+        tag,
+        body,
+        "ok = (g &&",
+        "__cl_tmp0 = cl_alt__String(p, q)",
+        "_eat(*(__cl_tmp0))",
+    );
+    assert_on_line_before(
+        tag,
+        body,
+        "ok = (g &&",
+        "_eat(*(__cl_tmp0))",
+        "(*(__cl_tmp0) = NULL)",
+    );
+}
+
+/// The skipped guarded take leaves the impure pointer only inside the guard's
+/// right operand, and no eager statement runs it for the false selection.
+#[test]
+fn should_pin_the_guarded_deref_take_false_path_absence() {
+    let tag = "guardedtakeskip";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_DEREF_TAKE_SKIP_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_guardedtakeskip_main(void)\n{",
+    );
+    assert_absent(tag, body, "= cl_alt__String(p, q);");
+    assert_on_line_of(tag, body, "ok = (g &&", "cl_alt__String(p, q)");
+    assert_on_line_of(tag, body, "ok = (g &&", "(*(__cl_tmp0) = NULL)");
+}
+
+/// The skipped guarded take leaves the call counter at zero: the false
+/// selection never evaluates the impure pointer.
+#[test]
+fn should_pin_the_guarded_deref_take_false_path_counter() {
+    let tag = "guardedtakeskipcounter";
+    let (scratch, emitted) = emit_host(tag, GUARDED_DEREF_TAKE_SKIP_SOURCE);
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 0,
+        "the skipped guarded take must not call the impure pointer; exit {exit}"
+    );
+}
+
+/// The guarded deref take programs re-emit byte-identically, with the pointee
+/// emptying carried on the guarded path.
+#[test]
+fn should_re_emit_the_guarded_deref_take_programs_byte_identically() {
+    for (tag, source, shape) in [
+        ("guardedtake", GUARDED_DEREF_TAKE_SOURCE, "(*(q) = NULL)"),
+        (
+            "guardedtakeimpure",
+            GUARDED_DEREF_TAKE_IMPURE_SOURCE,
+            "(*(__cl_tmp0) = NULL)",
+        ),
+        (
+            "guardedtakeskip",
+            GUARDED_DEREF_TAKE_SKIP_SOURCE,
+            "(*(__cl_tmp0) = NULL)",
+        ),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_contains(tag, &first, shape);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

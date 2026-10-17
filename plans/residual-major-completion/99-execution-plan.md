@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 44/60 tasks (73%) — Phase 6 implemented
+> **Progress**: 45/60 tasks (75%) — Phase 6 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -401,7 +401,7 @@ conditional positions and the guarded take's consumed source and deferred pointe
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the single `cl_alt` call in the store/return/field/array/conditional C, the read/empty pointer identity, the guarded emptying position, the deferred
+- [x] 6.3.1 Write the phase implementation pins (the single `cl_alt` call in the store/return/field/array/conditional C, the read/empty pointer identity, the guarded emptying position, the deferred ✅ (completed: 2026-10-17; ten impl pins: the single `cl_alt` call and the read/empty identity across the store, return, field, element, and conditional arm; the guarded pointer emptying and the deferred fill on the evaluated path; the false-path absence and its run counter; the byte-identical re-emission; all ten discriminate at `bdc2a4e`; residue impl 154/154, plain and ASan)
       pointer fill, the false-path absence, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 6.3.2 Phase review — dispatch the lenses (all four); the memory lens runs all five
