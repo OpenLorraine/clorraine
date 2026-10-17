@@ -32,18 +32,18 @@
 | `DEF-365` | 🟠 major | Red | P2 | `cl_id__u8`, no `#`; build/run on host and m68k profiles | _(to be filled)_ |
 | `DEF-368` | 🟠 major | Red | P2 | Concrete twin's `cl_string_view`; build/run 0 | _(to be filled)_ |
 | `DEF-371` | 🟠 major | Red | P3 | Literal typed by the concrete parameter; build/run 0 | _(to be filled)_ |
-| `DEF-384` | 🟠 major | Red | P3 | One `E10011` at each nested type-argument site; no duplicates; nullable handle control runs | _(to be filled)_ |
+| `DEF-384` | 🟠 major | Red | P3 | One `E10011` at each nested type-argument site and the explicit call type argument; five sites in the count case, no duplicates; nullable handle control runs | _(to be filled)_ |
 | `DEF-385` | 🟠 major | Red | P3 | Qualified type path emits the unqualified instance; run 0 | _(to be filled)_ |
-| `DEF-386` | 🟠 major | Red | P3 | Folded fit: `-5`/`i8 -128` accept; `u8 -5`/`i8 -129` report `E10202` | _(to be filled)_ |
-| `DEF-367` | 🔴 critical | Red | P4 | Plain/compound/update/chain/order stores emit; per-instance owning store LSan-clean; bounds trap kept | _(to be filled)_ |
-| `DEF-377` | 🟠 major | Red | P4 | One `E10221` per conditional-base store incl. `unsafe`; three green controls accepted | _(to be filled)_ |
+| `DEF-386` | 🟠 major | Red | P3 | Folded fit: `-5`/`i8 -128` accept; `u8 -5`/`i8 -129` report `E10202`; `f32`/`bool` stay `E10200` | _(to be filled)_ |
+| `DEF-367` | 🔴 critical | Red | P4 | Plain/compound/update/chain/nested/multi-index/order stores emit; per-instance owning store LSan-clean; bounds trap kept | _(to be filled)_ |
+| `DEF-377` | 🟠 major | Red | P4 | Five conditional-rooted forms and unsafe-wrapped conditional forms each `E10221`; raw `unsafe p.f` prefixes accepted with a store-emitting read-back; block controls accepted; `(*p).f`/`unsafe (*p).f` residual probed | _(to be filled)_ |
 | `DEF-372` | 🟠 major | Red | P5 | One `E10030` at the fill; direct/member twins keep theirs | _(to be filled)_ |
 | `DEF-373` | 🟠 major | Red | P5 | One `E10030` per affected fill; the mixed-position union reports both; in-scope copies accepted | _(to be filled)_ |
 | `DEF-374` | 🟠 major | Control | P5 | Two `E10026` per twin at the same span | _(to be filled)_ |
-| `DEF-375` | 🟠 major | Red | P6 | Store/return/field each call `alt` once; ASan/LSan-clean | _(to be filled)_ |
+| `DEF-375` | 🟠 major | Red | P6 | Store/return/field/array/conditional each call `alt` once and move the pointee; ASan/LSan-clean | _(to be filled)_ |
 | `DEF-376` | 🟠 major | Red | P6 | Both selections ASan-clean; the false path does not call the impure pointer | _(to be filled)_ |
 | `DEF-378` | 🟠 major | Red | P7 | Read/unguarded/nested/guarded positions build and run 0; one call each | _(to be filled)_ |
-| `DEF-379` | 🟠 major | Red | P7 | Calls = 2; run 0; carrier fill inside the guard path; ASan-clean | _(to be filled)_ |
+| `DEF-379` | 🟠 major | Red | P7 | Calls = 2 (single-pass) / 4 (loop); run 0; carrier fill inside the guard path; eager control run 0; ASan-clean | _(to be filled)_ |
 
 ## Phase 1 — Call identity and written-argument checks
 
@@ -107,7 +107,7 @@ and emission-integrity (AR-27; semantics owns the place rule and the store targe
 ### Verdicts
 
 _(to be filled; the `DEF-367` store shape, per-instance owning store, RHS count, bounds guard,
-target order, and `DEF-377` rejection spans — including `unsafe` — are recorded here)_
+target order, the five plus unsafe-wrapped `DEF-377` rejection spans, and the accepted raw-prefix read-backs are recorded here)_
 
 ### Findings and rulings
 
@@ -115,8 +115,9 @@ _(to be filled)_
 
 ### Filed rows
 
-_(to be filled: new `DEF-` rows, or "none"; the dropped store through `(*p).f` is a known
-candidate residual for this phase — record its reproduction and evidence before filing)_
+_(to be filled: new `DEF-` rows, or "none"; the dropped stores through `(*p).f` and
+`unsafe (*p).f` are known candidates for this phase — probe both and record their reproduction
+and evidence before filing)_
 
 ## Phase 5 — Element and store loans
 
@@ -176,7 +177,7 @@ _(to be filled)_
 **Verification**: _(to be filled: `make check`, `make verify`, the focused ASan legs, the strict
 sweep, the per-phase emission differentials)_. **Row accounting**: _(to be filled: 18 red rows
 Done, 2 controls Done, the two parked majors open, the remaining minors counted by audit; every
-in-execution filed row checked, including the likely incidentals `DEF-380` and `DEF-382` —
-recorded incidental vs open, AR-38)_. **Code record**: _(to be filled: the phase commits and the
+in-execution filed row checked, including `DEF-380`'s gridel boundary and `DEF-382`'s open
+status — recorded incidental vs open, AR-38)_. **Code record**: _(to be filled: the phase commits and the
 final tree)_. **Residuals**: _(to be filled: any filed row or recorded limitation, including the
-`(*p).f` store if it remains)_.
+`(*p).f`/`unsafe (*p).f` stores if they remain)_.

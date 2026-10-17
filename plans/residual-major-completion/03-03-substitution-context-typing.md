@@ -40,22 +40,23 @@ Frozen: Ch 02 §5 TY-4 (`spec/02-types.md:124`: "`T?` is allowed only on handles
 `cstring`, and views | E10011"). The existing helpers `report_illegal_nullable`
 (`own/program.rs:279`, declared fields) and `check_nullable_decl` (`own/place.rs:1931`, declared
 bindings) are correct and **stay unchanged**; `validate_type` (`sema/items.rs:131`) does not check
-nullability at all, which is why a nested type-argument occurrence escapes.
+nullability at all, which is why nested occurrences escape.
 
-Fix: add a TY-4 check scoped to **nested type-argument positions**, with the node's own span:
-extend `validate_type`'s recursion (or a parallel resolved-type walk called from `resolve_type`,
-`sema/mod.rs:482`) so `ty.nullable && !is_nullable_capable(ty)` in a type-argument position
-reports one `E10011`; do not re-report a declared binding or field that the existing checks own.
-The probes split into two single-occurrence programs — the field annotation
-`struct H { a: Array<i32?>; }` (`m384_annot`) and the explicit call type argument
+Fix: add a TY-4 check scoped to **nested type-argument positions** and the **explicit call type
+argument**: (a) extend `validate_type`'s recursion (or a parallel resolved-type walk called from
+`resolve_type`, `sema/mod.rs:482`) so a nullable non-capable node in a type-argument position
+reports one `E10011` at its own span; (b) add a call-site walk or a position flag for an explicit
+call type argument, so `arrayNew<i32?>()` reports too. Do not re-report a declared binding or
+field that the existing checks own. The probes split into two single-occurrence programs — the
+field annotation `struct H { a: Array<i32?>; }` (`m384_annot`) and the explicit call type argument
 `arrayNew<i32?>()` (`m384_callarg`) — each expected to report one `E10011`. The nested cases
 `Array<Array<i32?>>` and `Array<Wrap<i32?>>` (`m384_nested`) each report one `E10011` at the inner
-`i32?`; the duplicate-count case (`m384_count`: `let x: i32?`, a nullable parameter and return,
-and `Array<i32?>`) reports one at each site, no duplicates. `Array<String?>` (a handle) is the
-verified control and the phase also probes the legal nullable `raw`/`cstring`/view spellings; it
-already keys (`ClArray__StringQ`), builds, and runs 0, so **no ABI key change is made** — the
-row's key half is the control (AR-14). If the extension rejects a legal nullable type, the phase
-narrows to the invalid non-capable kinds (AR-34(b), never parks).
+`i32?`; the duplicate-count case (`m384_count`: nullable parameter, nullable return,
+`let x: i32?`, the `Array<i32?>` annotation, and the `arrayNew<i32?>()` call argument) reports
+**five** sites, one each, no duplicates. `Array<String?>` (a handle) is the verified control; it already keys
+(`ClArray__StringQ`), builds, and runs 0, so **no ABI key change is made**. Expected: one `E10011`
+at each invalid nested/call site; the nullable-capable controls run 0. If the extension rejects a
+legal nullable type, the phase narrows to the invalid non-capable kinds (AR-34(b), never parks).
 
 ### 3. The qualified type path (`DEF-385`)
 
@@ -74,21 +75,23 @@ limitation and is out of scope (AR-34), recorded as a residual if a probe shows 
 qualified and unqualified spellings build strictly and run 0; the unqualified control's emission
 is byte-identical.
 
-### 4. The negated literal at a concrete context (`DEF-386`)
+### 4. The negated integer literal (`DEF-386`)
 
 `let delta: i16 = -5;` (the spec's own example, `spec/02-types.md:49`), `let a: i8 = -5;`, and
 `let a: i8 = -128;` report `E10200: cannot convert 'i32' to 'i16'/'i8'`; the positive literals
 accept. Frozen: Ch 01 LEX-14, Ch 04 §13 (`:291`: "A literal is typed by its context"), the fit
 rule at Ch 04 §5 (`:120-121`), and the unary `-` row (`:110`: same type).
 
-Fix: `check_unary` (`sema/ops.rs:18`) accepts the expected context type from its `check_value`
-caller and propagates it into the operand, and the fit is judged on the **folded negated value**
-(reuse the deferred `int_fits`/`int_literal_value`), not on the positive operand alone. Expected:
-`i16 = -5`, `i8 = -5`, and `i8 = -128` accepted, build-clean, run 0; `u8 = -5` and `i8 = -129`
-each report one `E10202` at the literal; the position matrix (let, call argument, return, struct
-field, array element, conditional arm, assignment) accepts `-5` at `i16`; the positive literals
-stay green. The plan adds no new conversion and no new fit rule; the existing literal-context and
-fit rules are applied to the folded unary operand. There is no wrapping-value pin.
+Fix: pass the expected type to `check_unary`; for a **negated integer literal**, fold it first
+with `int_literal_value` (which already folds the unary minus), apply exactly one `int_fits`
+check on the **folded value** gated by `is_integer_scalar`, and **do not context-type the
+operand**. A non-integer context (`f32`,
+`bool`) stays on the ordinary conversion path and reports `E10200`. Expected: `i16 = -5`,
+`i8 = -5`, and `i8 = -128` accepted, build-clean, run 0; `u8 = -5` and `i8 = -129` each report
+one `E10202` at the literal; `f32 = -5` and `bool = -5` still report `E10200`; the eight-position
+matrix (let initializer, module value, call argument, return, struct field, array element,
+conditional arm, assignment) accepts `-5` at `i16`; the positive literals stay green. There is no
+wrapping-value pin and no context typing of the operand.
 
 ## Integration Points
 
@@ -96,10 +99,11 @@ fit rules are applied to the folded unary operand. There is no wrapping-value pi
   in `compiler/src/sema/expr.rs` / `compiler/src/sema/ops.rs`.
 - `compiler/src/sema/items.rs:131` (`validate_type`), `compiler/src/own/program.rs:279`
   (`report_illegal_nullable`), `compiler/src/own/place.rs:1931` (`check_nullable_decl`),
-  `compiler/src/sema/mod.rs:482` (`resolve_type`).
+  `compiler/src/sema/mod.rs:482` (`resolve_type`), the call-site type-argument walk.
 - `compiler/src/types/table.rs:659` (`resolve_named`), `:602` (`resolve_ty_with`).
-- `compiler/src/sema/ops.rs:18` (`check_unary`), the `check_value` expected-type plumbing, the
-  shared `int_fits`/`int_literal_value` folding.
+- `compiler/src/sema/ops.rs:18` (`check_unary`), the `check_value` literal path, the shared
+  `int_fits`/`int_literal_value` folding; `compiler/src/types/tests.rs:209` (the existing folded
+  negated-literal unit test).
 - Controls: `probes/m371_control.clo`, `m384_nullablehandle.clo`, `preflight/m384_annot.clo`,
   `m384_callarg.clo`, `m384_nested.clo`, `m384_count.clo`, the unqualified `Array<i32>` shape,
   `preflight/m386_matrix.clo`, `m386_i8_neg128.clo`, `m386_i8_neg129.clo`, `m386_u8_neg5.clo`,
@@ -126,12 +130,12 @@ fit rules are applied to the folded unary operand. There is no wrapping-value pi
   - `should_report_a_nullable_type_argument_on_a_non_capable_type` (`DEF-384`): one `E10011` at
     each single-occurrence probe (annotation, explicit call type argument), one at each nested
     case (`Array<Array<i32?>>`, `Array<Wrap<i32?>>`), and one per site in the duplicate-count
-    case; the verified `Array<String?>` control and the legal nullable `raw`/`cstring`/view
-    spellings the phase probes run 0.
+    case; the verified `Array<String?>` control runs 0.
   - `should_resolve_a_qualified_type_path_to_its_instance` (`DEF-385`): the qualified and
     unqualified spellings build and run 0; the unqualified control is byte-identical.
-  - `should_context_type_a_negated_literal` (`DEF-386`): the position matrix and `i8 = -128`
-    build and run 0; the positive control; `i8 = -129` and `u8 = -5` report one `E10202` each.
+  - `should_context_type_a_negated_literal` (`DEF-386`): the eight-position matrix, `i8 = -5`,
+    and `i8 = -128` build and run 0; `i8 = -129` and `u8 = -5` report one `E10202` each;
+    `f32 = -5` and `bool = -5` report `E10200`; the positive control runs 0.
 - **Impl pins** (`checker_conformance_impl_test.rs`): the literal's resolved type and the
   accepted emission; the `E10011` span and count at each type-argument site; the qualified type's
   emitted symbol; the folded unary operand's fit; a re-emission determinism pin.

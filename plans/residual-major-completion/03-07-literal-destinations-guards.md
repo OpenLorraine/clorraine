@@ -19,23 +19,22 @@ language's evaluation order.
 (`too few arguments to function 'cl_probe_..._n1'; expected 1, have 0`): the literal keeps the
 brace-list form, but a fixed view array is returned through a hidden destination parameter
 (`static void cl_n1(ClStr __cl_ret[2])`). The guarded positions use
-`materialize_guard_literal`; the **read and unguarded** positions do not consult the predicate at
-all, which is why the read position is red. The causal chain is: `literal_fields_need_stores`
-(`own/lower.rs:4536`) and `literal_field_needs_stores` (`:4563`) route a view-array field to the
-element-wise store only when `view_element_needs_binding` (`:4592`) says so, and that predicate
-returns false for a call-valued view element. Frozen: Ch 04 §3 (`spec/04-expressions.md:53`)
-fixes function-call and array-literal evaluation order; Ch 04 §15 makes the literal elements
-typed by the expected type; Ch 17 §5 fixes the move shape. The hidden destination is an internal
-emission mechanism; the frozen requirement is that the accepted literal builds and evaluates each
-call once with the literal's value.
+`materialize_guard_literal`; the **unguarded codegen value/read path** is decided by
+`struct_literal_needs_stores` (`codegen/function.rs:1890`), which is not consulted for the
+literal's value/projection-base position. The lowerer predicate `literal_field_needs_stores`
+(`own/lower.rs:4563`) already returns true for a call-valued fixed-array field (the field is not a
+brace list), so the fix is the read-path call site, not a new predicate. Frozen: Ch 04 §3
+(`spec/04-expressions.md:53`) fixes function-call and array-literal evaluation order; Ch 04 §15
+makes the literal elements typed by the expected type; Ch 17 §5 fixes the move shape. The hidden
+destination is an internal emission mechanism; the frozen requirement is that the accepted
+literal builds and evaluates each call once with the literal's value.
 
-Fix: treat a call-valued view-array element as needing the binding store whenever the call's
-return uses the hidden destination (a fixed view-array return), and make the **unguarded** literal
-builder consult the same predicate (not only the guarded materializer). The existing element-wise
-store path binds the destination, calls the function into it, and copies the field; the change is
-the predicate plus the unguarded route, not a new ABI. Expected: `readpos`, `gridel`, and
-`guardrowcond` build strictly and run 0; each call runs once; the concrete non-call view-array
-literal control stays byte-identical.
+Fix: consult `struct_literal_needs_stores` (or route the literal through the lowerer's existing
+store form) at the unguarded value/read position, so the destination is bound and the call is
+emitted into it. The existing element-wise store path binds the destination, calls the function
+into it, and copies the field; the change is the read-path call site, not a new ABI. Expected:
+`readpos`, `gridel`, and `guardrowcond` build strictly and run 0; each call runs once; the concrete
+non-call view-array literal control stays byte-identical.
 
 ### 2. The owning nested conditional under a guard (`DEF-379`)
 
@@ -48,7 +47,7 @@ when `defer_move_outs > 0`; the fill position is `codegen/guards.rs:106-117` (st
 `:1016` (guarded expression form), and the drop/re-fill hoist is `guards.rs:273-307`.
 `materialize_guard_literal` (`own/lower.rs:1697`) is the guarded-literal entry, not the by-value
 argument carrier. Frozen: Ch 04 §3 (`:63`, the `&&`/`||` row: "Left operand first; the right
-operand only when the result is not yet fixed"); Ch 04 §5 (`:107`: "only the chosen branch
+operand only when the result is not yet fixed"); Ch 04 §5 (`:108`: "only the chosen branch
 evaluates").
 
 Fix: defer the final by-value argument binding under `defer_move_outs` into the `Materialize`
@@ -56,9 +55,11 @@ channel instead of emitting the eager `Assign`, so the guarded codegen fills it 
 path; keep the call and its emptying on the same path. The phase's memory lens also analyzes the
 guard drop/re-fill interaction (`guards.rs:273-307`) for a re-executed guard: the carrier's
 previous value must not be released on the skipped path, and a re-fill on the evaluated path must
-release the previous value exactly once. Expected: calls = 2, run 0; ASan/LSan-clean; both
-selections covered; the impl pin asserts `__cl_owned0`'s fill sits inside the guarded evaluated
-path. The eager (unguarded) literal shapes keep their current order.
+release the previous value exactly once. A loop fixture (`b379_loop`) re-executes the guard twice per use
+(observed calls = 6, run 2; expected calls = 4, run 0), exercising the re-fill/re-drop/re-release
+order. Expected: calls = 2 and run 0 in the single-pass fixture, calls = 4 and run 0 in the loop
+fixture; ASan/LSan-clean for both selections and the loop; the impl pin asserts `__cl_owned0`'s
+fill sits inside the guarded evaluated path and the re-fill releases the previous value once. The eager (unguarded) literal shapes keep their current order.
 
 ## Integration Points
 
@@ -66,12 +67,14 @@ path. The eager (unguarded) literal shapes keep their current order.
   (`literal_field_needs_stores`), `:4592` (`view_element_needs_binding`), the unguarded literal
   builder and the element-wise store path; `:5109-5131` (the by-value carrier),
   `materialize_owned_argument` (:4866), the `&&`/`||` right-operand lowering (:228-236).
-- `compiler/src/codegen/guards.rs:106-117` (the statement fill), `:1016` (the guarded expression
-  fill), `:273-307` (the drop/re-fill hoists); `compiler/src/ir.rs` (`Materialize`) if the
-  carrier travels through it.
+- `compiler/src/codegen/function.rs:1890` (`struct_literal_needs_stores`, the unguarded
+  value/read path) — the fix must consult it at the read/projection-base call site; `compiler/src/codegen/guards.rs:106-117` (the statement fill), `:1016` (the
+  guarded expression fill), `:273-307` (the drop/re-fill hoists); `compiler/src/ir.rs` — the
+  deferred argument carrier is `ValueKind::Materialize` (`ir.rs:298`: `move_outs: Vec<Place>` and `value_move_outs: Vec<Value>`).
 - The batch-L phase-5 guarded view-literal machinery and the `DEF-323` cases.
 - Controls: `probes/m378_readpos.clo`, `m378_gridel.clo`, `m378_guardrowcond.clo`,
-  `probes/m379_guardnest.clo`; the batch-L literal/store origin pins.
+  `probes/m379_guardnest.clo`, `preflight/b379_loop.clo`, `preflight/b379_eager.clo`; the batch-L
+  literal/store origin pins.
 
 ## Error Handling
 
@@ -90,10 +93,11 @@ path. The eager (unguarded) literal shapes keep their current order.
 - **Spec cases** (`conditional_projection_residue_spec_test.rs`):
   - `should_materialize_a_hidden_view_destination_at_every_literal_position` (`DEF-378`): the
     read, grid-element, and guarded-row-condition shapes build and run 0; each call runs once;
-    the unguarded builder consults the predicate; the concrete brace-list control is unchanged.
+    the unguarded codegen value/read path consults `struct_literal_needs_stores`; the concrete brace-list control is unchanged.
   - `should_keep_an_owning_nested_conditional_inside_its_guard` (`DEF-379`): both selections
-    build and run 0; calls = 2; ASan/LSan-clean; a re-executed guard releases the previous
-    carrier value exactly once.
+    build and run 0; calls = 2 in the single-pass fixture and calls = 4 in the loop fixture
+    (`b379_loop`); ASan/LSan-clean; a re-executed guard releases the previous carrier value
+    exactly once; `b379_eager` is the eager-order control (run 0).
 - **Impl pins** (`conditional_projection_residue_impl_test.rs`): the bound destination array, the
   call-with-destination form, the copy into the field, the call counter, the guarded fill's
   position (the `__cl_owned0` fill inside the evaluated path), the drop/re-fill order, and a

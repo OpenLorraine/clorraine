@@ -101,10 +101,10 @@ parked rows or the minors.
 | 1 | `DEF-360`, `361` control, `DEF-363`, `DEF-390` | Call identity and written-argument checks: the dot-call written argument (with call-site type-argument inference), the declaration/import collision across every declaration kind, the qualified callee's own identity across symbol and mode/parameter/return lookups; the direct-name shadow is a pinned six-fixture control |
 | 2 | `DEF-364`, `365`, `368` | Substitution edges I: the conditional's per-instance judgment with the expected type (direct contexts included), the element-of-element key, the substituted element member at a view destination |
 | 3 | `DEF-371`, `384`, `385`, `386` | Substitution edges II: the plain-call literal at a generic concrete parameter, the nullable type argument at nested type-argument positions, the qualified type path, the folded negated literal at concrete contexts |
-| 4 | `DEF-367`, `377` | Dropped store targets: the runtime-indexed element/member store (basic, compound, update, deep chain, target order, per-instance owning type) and the conditional-base member store's frozen place rejection (including the `unsafe`-wrapped forms) |
+| 4 | `DEF-367`, `377` | Dropped store targets: the runtime-indexed element/member store (basic, compound, update, deep chain, nested generic member, multi-index, target order, per-instance owning type) and the five conditional-rooted member-store rejections with the accepted `unsafe p.f` prefix forms |
 | 5 | `DEF-372`, `373`, `374` control | Element and store loans: the element-read store's loan, the conditional/array-literal/single-view copy's loan union (mixed positions, fill form, conditional arm); the borrow-element conditional take is a pinned control |
-| 6 | `DEF-375`, `376` | Deref and take channels: the shared owning-deref materializer (store, return, aggregate field) and the guarded non-place take (deferred pointer fill) |
-| 7 | `DEF-378`, `379` | Literal destinations and guards: the hidden view-array destination at every literal position (read position included), and the owning nested conditional's argument carrier/fill inside its guard path |
+| 6 | `DEF-375`, `376` | Deref and take channels: the shared owning-deref materializer (store, return, aggregate field, array-literal element, conditional arm) and the guarded non-place take (deferred pointer fill) |
+| 7 | `DEF-378`, `379` | Literal destinations and guards: the hidden view-array destination at every literal position (read position included), and the owning nested conditional's argument carrier/fill inside its guard path (loop re-execution and eager control) |
 
 ### Key Decisions
 
@@ -113,11 +113,11 @@ parked rows or the minors.
 | Batch scope | The 20 remaining un-parked major/critical rows, severity-first — pre-decided by the dispatch and recorded, not re-litigated | AR-1 |
 | Parked-rows boundary | `DEF-167`, `DEF-171`, and the remaining minors stay out | AR-1 |
 | Probe status | 18 confirmed red; `DEF-361` and `DEF-374` verified green and reclassified as pinned controls | AR-3, AR-5 |
-| Phase grouping | Seven machinery phases; scope is severity-first, execution is dependency-ordered (P1 → P2/P3, P2 → P5, P6 → P7; P4 independent and fourth) | AR-4, AR-36 |
+| Phase grouping | Seven machinery phases; scope is severity-first, execution is dependency-ordered (P1 → P2/P3, P2 → P3/P5, P6 → P7; P4 independent and fourth) | AR-4, AR-36 |
 | Handling mode | Red → green spec cases per row; the two reclassified rows are pinned controls; no row parked | AR-3, AR-5 |
 | `DEF-367` | Emit the store through the indexed element address, with the element/member type resolved per instance, all target forms (plain, compound, update, deep chain), and the target location materialized before the RHS; rejection is non-conformant | AR-6 |
-| `DEF-377` | Report the frozen `E10221` place rejection (a conditional selection, including an `unsafe`-wrapped one, is not a place); the place test recurses through `Unsafe` and the Index bypass is removed | AR-7 |
-| `DEF-384` | Reject the invalid nullable scalar at nested type-argument positions with `E10011`; keep the existing declaration checks; the nullable-handle instance already keys and stays a control | AR-14 |
+| `DEF-377` | Report the frozen `E10221` place rejection for the five conditional-rooted forms and the unsafe-wrapped conditional forms; the `Member` arm recurses through `is_place(base)`, `Unsafe(inner)` recurses to the inner place (raw prefixes accepted/read-back), and the Index bypass is removed | AR-7 |
+| `DEF-384` | Reject the invalid nullable scalar at nested type-argument positions and the explicit call type argument with `E10011`; keep the existing declaration checks; the nullable-handle instance already keys and stays a control | AR-14 |
 | `DEF-386` | Judge the fit on the folded negated value: `i8 = -128` accepts, `u8 = -5` and `i8 = -129` report `E10202`; no wrapping-value pin | AR-16 |
 | Test placement | Additions to the origin suites; no new suite pair (a no-home case needs a register entry and user approval); only `_impl_test.rs` byte-identity pins may be re-pinned | AR-26, AR-35 |
 | Lenses | P1 all four; P2 all four; P3 correctness + semantics + emission; P4 all four; P5 correctness + memory + semantics; P6 all four; P7 all four | AR-27 |
@@ -148,8 +148,8 @@ briefs) and authored the base evidence for these rows; no new specialist type is
   turns out to need one is parked mid-phase with the evidence — except `DEF-367`, whose only
   fallback is a phase blocker and user ruling (AR-34).
 - A store route for a conditional selection (`DEF-377`'s target class) — the frozen place list is
-  closed (AR-7). The dropped `(*p).f` member store is a residual row filed during execution, not
-  planned here (AR-7).
+  closed (AR-7). The dropped `(*p).f`/`unsafe (*p).f` member stores are a residual row filed during execution
+  (both still drop the store; probe both when filed), not planned here (AR-7).
 - A new test-suite pair: every case has an origin home; a case with no home requires a register
   entry and user approval (AR-26).
 
@@ -186,7 +186,7 @@ briefs) and authored the base evidence for these rows; no new specialist type is
   :4870-4888, the by-value carrier :5109-5131), `materialize_guard_literal` (:1697),
   `literal_fields_need_stores` (:4536), `literal_field_needs_stores` (:4563),
   `view_element_needs_binding` (:4592), the `&&`/`||` deferred right operand (:228)
-- `compiler/src/ir.rs` — the `Materialize` value and its `move_outs` (:298)
+- `compiler/src/ir.rs` — the `Materialize` value (:298, `move_outs: Vec<Place>` and `value_move_outs: Vec<Value>`), `MoveOutValue` (:377)
 - `compiler/src/codegen/guards.rs` — the guarded statement fill (:106-117), the guarded expression
   fill (:1016), the drop/re-fill hoists (:273-307)
 - `compiler/src/sema/mod.rs` — `resolve_type` (:482)

@@ -18,10 +18,12 @@ the dot-call argument check, the import binding check, and the callee-identity t
 `pick<T>(take v: T, take w: T)` with `b: Box` and `b.pick(7)` is accepted: the receiver fixes
 `T = Box`, so `7` can never match `w: Box`, but the dot-call route checks the written argument
 against the declared `T` (a type parameter accepts anything). The direct `pick<Box>(b, 7)` and the
-inferred `pick(b, 7)` both report one `E10200` at the `7`. The valid generic caller
-`outer<i32>(b, c)` with `b.pick(c)` is falsely rejected with `E10200` at the receiver, because the
-deferred record (`sema/expr.rs:491` `record_deferred_conversion`) stores `self.function_name` (the
-enclosing function) and later substitutes the callee's `T` against the caller's instance. The
+inferred `pick(b, 7)` each report one `E10200` at the `7` (they do not run). The valid generic
+caller `outer<i32>(b, c)` with `b: Box`, `c: Box`, and `b.pick(c)` is falsely rejected with
+**two** `E10200` at 8:12 and 8:19, because the deferred record (`sema/expr.rs:491`
+`record_deferred_conversion`) stores `self.function_name` (the enclosing function) and later
+substitutes the callee's `T` against the caller's instance. The earlier `c: i32` shapes are
+invalid rejection cases, not controls. The
 frozen rule is Ch 04 §8 (`spec/04-expressions.md:189-192`): a dot-call candidate "must accept the
 receiver as its first parameter and match the argument list under the usual implicit widenings
 (section 5, Ch 02 section 9); no other conversions apply"; Ch 04 §14 (`:327`) makes the illegal
@@ -35,7 +37,9 @@ judged against the substituted parameter and reports at the written argument) or
 call's instance stays unresolved. Both the `take`-receiver and `borrow`-receiver spellings are
 covered; the receiver's own conversion record stays unchanged; the `W10001` warning on a
 `borrow` receiver of a duplicable type is orthogonal. This route is owned by P1 and does **not**
-share the P2 conditional duty or the P3 plain-call literal context (AR-36).
+share the P2 conditional duty or the P3 plain-call literal context (AR-36). Expected: one
+`E10200` at each written mismatch, the direct twins each report one `E10200`, and the matching
+dot calls plus the `c: Box` generic caller run 0.
 
 ### 2. The declaration/import collision (`DEF-363`)
 
@@ -68,7 +72,9 @@ and return lookups as well as the symbol** — `codegen/calls.rs`, `codegen/expr
 lexical local/parameter named like the head still shadows the module path (batch-L AR-25). The
 checker's module-signature typing is already correct and stays; a signature mismatch keeps its
 `E10200`, and the matching qualified call builds and runs the module's function. The qualified
-func-typed global `m.hook()` is a green control (verified run 0) and must stay. The import/alias
+func-typed global `m.hook()` and the qualified-head local-shadow fixture (`m390_shadow`, a
+local named like the one-segment module head with a callable field) are green controls (run 0)
+and must stay. The import/alias
 and func-global identity paths of batch L stay intact (their suites re-run).
 
 ### 4. The control (`DEF-361`)
@@ -98,7 +104,8 @@ name). The phase pins the six fixtures and plans no code change (AR-31).
   `compiler/src/codegen.rs:701` (`resolve_function`); `codegen/calls.rs`, `codegen/expr.rs`,
   `codegen/function.rs` (modes/parameters/returns).
 - Controls: `probes/m360_control.clo`, the six `m361_*`/`d_*` fixtures, `m363_control.clo`,
-  `m390_control.clo`, `preflight/m390_hook_*`; the batch-L aliased/qualified identity cases in
+  `m390_control.clo`, `preflight/m390_hook_*`, `preflight/m390_shadow_*` (the qualified-head
+  local-shadow fixture); the batch-L aliased/qualified identity cases in
   `callable_release_integrity_*` and `checker_conformance_*`.
 
 ## Error Handling
@@ -117,13 +124,15 @@ name). The phase pins the six fixtures and plans no code change (AR-31).
 - **Spec cases** (`checker_conformance_spec_test.rs`; `callable_release_integrity_spec_test.rs`
   for `DEF-390`):
   - `should_report_a_dot_call_written_argument_at_its_resolved_parameter` (`DEF-360`): the
-    `take` and `borrow` receivers report one `E10200` at the argument; the matching dot calls,
-    the direct twins, and the generic caller `outer<i32>(b, c)` are controls.
+    `take` and `borrow` receivers report one `E10200` at the argument; the direct twins each
+    report one `E10200`; the matching dot calls and the `c: Box` generic caller
+    `outer<i32>(b, c)` are accepted; the `c: i32` caller is a rejection case.
   - `should_report_a_declaration_import_collision` (`DEF-363`): the import-first, declaration-
     first, and direct spellings report one `E11103`; the func/struct/const kind matrix covers
     both orders; the renamed control runs.
   - `should_emit_the_qualified_function_identity` (`DEF-390`): the qualified value call, the
-    signature shape, the mismatch control, and the qualified func-typed global `m.hook()`.
+    signature shape, the mismatch control, the qualified func-typed global `m.hook()`, and the
+    qualified-head local-shadow fixture (`m390_shadow`).
   - `should_keep_a_direct_name_shadow_at_a_dot_receiver` (`DEF-361` control): the six fixtures
     (local, parameter, generic-body local, expression lambda, block lambda) run 0.
 - **Impl pins** (`checker_conformance_impl_test.rs`; `callable_release_integrity_impl_test.rs`):

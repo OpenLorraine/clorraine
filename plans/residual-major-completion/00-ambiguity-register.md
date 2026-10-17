@@ -27,7 +27,7 @@ fixed by earlier corrections and become controls.
 | 1 | Scope | Which rows batch M closes | A) the 20 remaining un-parked rows (1 critical + 19 majors), severity-first; B) the two parked majors; C) the minors | **A** — pre-decided by the dispatch and recorded, not re-litigated. The scope is **severity-first** (the critical is planned first); execution is dependency-ordered (AR-4/AR-36). B stays parked (`DEF-167`, `DEF-171`); C is the next batch. The dispatch's "79 minors" is the remaining backlog count after this batch: 2 parked majors + 77 minor rows (observed: 99 open rows = 1 critical + 21 majors + 77 minors; 20 close here, 2 majors stay parked) | ✅ Resolved (pre-decided, count corrected) |
 | 2 | Process | The specification-first and zero-ambiguity discipline | — | **Spec cases first, then red, then implement, then green, then impl pins.** Every row's expected outcome is fixed below before any code: a frozen diagnostic (code + site), a strict-build-clean run with its exit value, or an ASan-clean run. No implementer question may remain; a discovered gap re-enters this register before code | ✅ Resolved (pre-decided) |
 | 3 | Verification | The current status of the 20 rows at the head | probe the actual compiler (`86d6f51`) against reconstructed minimal reproductions | **The AR-5 table** — 18 red; `DEF-361` and `DEF-374` green at the head and carried as pinned controls. No row is parked: every fix reuses a frozen code | ✅ Resolved |
-| 4 | Design | Phase grouping and sequencing | A) seven phases by machinery, executed 1 → 7; B) one row per phase; C) the origin batches' phases | **A** — P1 call identity/written arguments; P2 substitution edges I (conditional/element keys); P3 substitution edges II (context typing); P4 dropped store targets; P5 element/store loans; P6 deref/take channels; P7 literal destinations/guards. Each phase's surface is coherent for its lens set; the scope is severity-first, the **execution is dependency-ordered** (P1 → P2, P1 → P3, P2 → P5, P6 → P7; P4 is independent and runs fourth — AR-36) | ✅ Resolved (delegated) |
+| 4 | Design | Phase grouping and sequencing | A) seven phases by machinery, executed 1 → 7; B) one row per phase; C) the origin batches' phases | **A** — P1 call identity/written arguments; P2 substitution edges I (conditional/element keys); P3 substitution edges II (context typing); P4 dropped store targets; P5 element/store loans; P6 deref/take channels; P7 literal destinations/guards. Each phase's surface is coherent for its lens set; the scope is severity-first, the **execution is dependency-ordered** (P1 → P2, P1 → P3, P2 → P3 and P2 → P5, P6 → P7; P4 is independent and runs fourth — AR-36) | ✅ Resolved (delegated) |
 | 5 | Behavior | Per-row handling mode | red → green, or a control where the probe shows the row green | **Red → green for 18 rows**; `DEF-361` and `DEF-374` are green controls (their probed shapes stay accepted/rejecting exactly as observed). Every red case must fail without the fix; every control must fail if a fix regresses it | ✅ Resolved (delegated) |
 
 ## Per-Row Behavior Rulings
@@ -39,62 +39,73 @@ the unary `*` row at `:112` makes a dereferenced raw pointer a place) includes b
 and an array element; `a[i].y` is a struct field of an array element, so it **is** a place. The
 row's "or reject `E10221` until supported" fallback is **non-conformant** and declined: it would
 reject a spelling the frozen list accepts. Fix: (a) resolve the element/member type per instance —
-the pointer's `ty` is unknown at the declaration (`own/expr.rs:2360` `element_ty`), so
+the pointer's `ty` is unknown at the declaration (`own/expr.rs:2367` `element_ty`), so
 `StorePointer`'s owning/fixed-array branch never runs. The generic-borrow member spelling
 (`w.items[i].name = ...`) is currently dropped (run 255, no leak), and the whole-element spelling
 (`w.items[i] = Elem { ... }`) emits but leaks the overwritten owner (LSan `m367_gen_elemstore`);
-both are covered by resolving the substituted place type
-(`codegen/expr.rs:290` `resolved_place_ty`); (b) generalize the target builder so the plain store,
-compound assignment (`+=`), update (`++`/`--`), and deep member chains all emit — `indexed_target`
-(`own/expr.rs:2354`, the Index-only gate at `:2364-2366`) is shared by `emit_indexed_store`
-(`:2417`) and `emit_indexed_update` (`:2491`); (c) always materialize the runtime base/index for
-the new route so the target location is evaluated before the RHS (Ch 04 §3, `:53`) — the
-`contains_update` pin is insufficient; (d) the `emit_indexed_store` `None` fallback must not
-silently drop: after the generalization it is reachable only for a target the checker already
-rejected with `E10221`, and the phase either proves that (an exhaustive match/debug assertion) or
-reports the frozen `E10221` at the target — no new diagnostic. The bounds guard stays (Ch 04 §9,
+both are covered by resolving the substituted place type. The store's pointer is a `Value`
+(`AddressOf`), so `resolved_place_ty` (which takes a `Place`) is **not** its path: extend
+`resolved_value_ty` (`codegen/expr.rs:366`) to the `AddressOf` operand, or record a target
+`Place`/type duty at lowering. (b) Generalize the target builder so the plain store, compound
+assignment (`+=`), update (`++`/`--`), deep member chains, **nested generic members**
+(`w.mids[i].inner.name`), and **multi-index** targets (`w.grid[i][j].name`) all emit —
+`indexed_target` (`own/expr.rs:2354`, the Index-only gate at `:2364-2366`) is shared by
+`emit_indexed_store` (`:2417`) and `emit_indexed_update` (`:2491`); the no-silent-drop rule
+applies to `emit_indexed_update` too. (c) Always materialize the runtime base/index for the new
+route so the target location is evaluated before the RHS (Ch 04 §3, `:53`) — the `contains_update`
+pin is insufficient. (d) The `None` fallback must not silently drop and must **not** add an
+`E10221` false-rejection path for accepted targets: make it a debug assertion or pin its
+unreachability over the supported place roots. The bounds guard stays (Ch 04 §9,
 `:98-111`; IX-1 `E11211`). The slice spelling is pinned compile-only (AR-33); the bounds-fault
 case lives in the residue suite with the inline `assert_traps` helper (precedent
 `borrow_store_integrity_spec_test.rs:363`), not in `run_fault_spec_test`.
 Expected: local array, borrow parameter, generic borrow, constant index, compound, update, deep
-chain, and target-order shapes all emit; the values read back; the RHS count is exact (4 in the
+chain, nested generic member, multi-index, and target-order shapes all emit; the values read back; the RHS count is exact (4 in the
 basic probe); the generic owning store is LSan-clean; an out-of-range generic-borrow index traps
 `E11211`; ASan/LSan-clean. There is no park fallback: if the route cannot be emitted on a profile,
 the phase stops for a user ruling (AR-34(a)).
 
-**AR-7 — `DEF-377`: the conditional-base member store reports `E10221`.** The same frozen place
-list is closed; a conditional selection is not a local, parameter, field, element, or deref, so
-`(c ? a : b).f.g = x`, `(c ? a : b).f[i].x = x`, `(c ? a : b).b.ys[i] = x`, and
-`(c ? a1 : a2)[i].x = x` are not places. The batch-L `DEF-322` ruling is the precedent: the scalar
-member twin already reports `E10221`, and the read spelling stays accepted because reads need no
-place. Fix: recurse the place test through the `Unsafe` wrapper (`ExprKind::Unsafe(inner) =>
-self.is_place(inner)`) and remove the Index arm's shallow `|| matches!(base.kind,
-ExprKind::Unsafe(_))` bypass (`sema/ops.rs:402`; Index :412, Member :423), so a member/Index
-chain rooted in a conditional is not a place. The verified green controls are `s.f.g = 7`,
-`s.arr[i] = 7`, and the raw member chain `p.f.g = 7` inside an `unsafe { }` block; the prefix
-spellings `unsafe p.f = ...` and `unsafe p.f.x = ...` report `E10221` at the head already and are
-**not** claimed as accepted. Add `(unsafe (c ? a : b)).v.x = 7` and
-`(unsafe (c ? a : b))[i].x = 7` as `E10221` cases. The dropped store through `(*p).f` is filed as
-a residual row during execution (a note, not a planned fix here).
-Expected: one `E10221` per conditional-rooted store (including the `unsafe`-wrapped forms), no
-TU; the read and the three green controls stay accepted.
+**AR-7 — `DEF-377`: the conditional-base member store reports `E10221`; the place test recurses.**
+The frozen place list is closed; a conditional selection is not a local, parameter, field, element,
+or deref, so the **five** forms `(c ? a : b).f.g = x`, `(c ? a : b).f[i].x = x`,
+`(c ? a : b).b.ys[i] = x`, `(c ? a1 : a2)[i].x = x`, and the deep chain
+`(c ? h1 : h2).b.ys[i] = x` are not places. The batch-L `DEF-322` ruling is the precedent: the
+scalar member twin already reports `E10221`, and the read spelling stays accepted because reads
+need no place. Fix: three changes to `is_place` (`sema/ops.rs:402`): (a) add
+`ExprKind::Member { base, .. } => self.is_place(base)` — the current shallow `matches!` on the
+base kind is what lets all five red shapes through; (b) add
+`ExprKind::Unsafe(inner) => self.is_place(inner)` — the wrapper is transparent to the inner place,
+so `unsafe p.f`/`unsafe p.f.x` are accepted (their inner member roots at a local/raw pointer)
+while `unsafe (c ? a : b).v` and `(unsafe (c ? a : b)).v.x` are **not** places and report one
+`E10221`; (c) remove the Index arm's shallow `|| matches!(base.kind, ExprKind::Unsafe(_))` bypass
+and keep its `self.is_place(base)` recursion. The five red forms and the unsafe-wrapped
+conditional forms then each report one `E10221`. The accepted prefix raw forms must **read back
+the stored value** (the read-back is the oracle that the store is emitted); the block forms
+(`s.f.g`, `s.arr[i]`, `p.f.g` inside `unsafe { }`) stay green. The dropped store through `(*p).f` and `unsafe (*p).f` is filed as a residual row during
+execution (the `Unsafe` transparency newly accepts the unsafe spelling, which still drops the
+store; probe both when filed).
+Expected: one `E10221` per conditional-rooted store (the five forms and the unsafe-wrapped
+conditional forms), no TU; the `unsafe p.f`/`p.f.x` prefix forms are accepted and read back; the
+block controls are accepted and run 0.
 
 **AR-8 — `DEF-360`: the dot-call written argument reports `E10200`, inferred at the call site.**
 Ch 04 §8 (`spec/04-expressions.md:189-192`): a dot-call candidate "must accept the receiver as its
 first parameter and match the argument list under the usual implicit widenings (section 5, Ch 02
 section 9); no other conversions apply." Ch 04 §14 (`:327`): "An implicit conversion the language
 does not allow is E10200." The receiver fixes the first parameter (`T = Box`), so the written `7`
-can only match `w: T = Box` by an illegal conversion. The direct inferred and explicit twins
-already report one `E10200` at the argument; the dot-call route must run the same written-argument
-conversion check after the receiver. The route must **infer the callee's type arguments at the
-call site** from the receiver and written arguments, not defer a parameter-typed record against
-the enclosing function: the deferred record (`sema/expr.rs:491` `record_deferred_conversion`)
-stores `self.function_name`, so a valid generic caller `outer<i32>(b, c)` with `b.pick(c)` is
-falsely rejected (`E10200`, observed at the receiver in `m360_genericcaller`/`m360_genericcaller2`;
-the audit's two-report shape is the same class). Both spellings apply: a `take` receiver
-(`b.pick(7)`) and a `borrow` receiver (`b.put(7)`). Expected: one `E10200` at the written argument
-(`m360_dotarg.clo` 11:25; `m360_borrowdot.clo`'s written `7` at 11:11), no TU; the matching dot
-calls, the direct twins, and the generic caller run 0.
+can only match `w: T = Box` by an illegal conversion. The direct inferred and explicit twins each
+report one `E10200` (they do **not** run); the matching dot calls run 0. The dot-call route must
+run the same written-argument conversion check after the receiver. It must **infer the callee's
+type arguments at the call site** from the receiver and written arguments, not defer a
+parameter-typed record against the enclosing function: the deferred record
+(`sema/expr.rs:491` `record_deferred_conversion`) stores `self.function_name`, so the valid
+generic caller `outer<i32>(b, c)` with `b: Box`, `c: Box`, and `b.pick(c)` is falsely rejected
+with **two** `E10200` (`m360_genericcaller_box.clo` 8:12 and 8:19); the earlier
+`m360_genericcaller`/`2` probes pass `c: i32` and are invalid rejection cases, not controls.
+Both spellings apply: a `take` receiver (`b.pick(7)`) and a `borrow` receiver (`b.put(7)`).
+Expected: one `E10200` at the written argument (`m360_dotarg.clo` 11:25;
+`m360_borrowdot.clo`'s written `7` at 11:11) and for each `c: i32` generic-caller shape, no TU;
+the matching dot calls and the `c: Box` generic caller run 0.
 
 **AR-9 — `DEF-363`: a declaration/import collision reports `E11103` for every declaration kind.**
 Ch 10 §4 MOD-12 (`spec/10-modules.md:111`): "Binding one name twice in a module is an error;
@@ -121,8 +132,10 @@ reports one `E10012` at the `null` (Ch 02 §5 TY-7, `spec/02-types.md:127`: "`nu
 non-nullable type is required is an error"). The judgment is per instantiation (Ch 06 G-6, `:272`;
 Ch 17 §7, `:242`), once per site; the un-instantiated generic body keeps its current acceptance.
 (c) The **direct** conditional must take the expected type into `check_conditional`
-(`sema/ops.rs:318`) from `check_value`; today `sema/expr.rs:67-71` drops `expected`, so
-`let y: i32 = c ? x : null;` is accepted and the C fails. The four context pins are the let
+(`sema/ops.rs:318`) from `check_value`, and `check_conditional` passes it into **both** arm
+checks (`check_value(then_value, Some(expected))` and `check_value(else_value, Some(expected))`);
+today `sema/expr.rs:67-71` drops `expected`, so `let y: i32 = c ? x : null;` is accepted and the
+C fails. The four context pins are the let
 initializer, the return, the struct field, and the call argument; the concrete disagreeing call
 and the null-arm case are also pinned. Controls: identical arms and a non-null sibling arm run 0.
 Fix site: the conditional check (`sema/ops.rs:318`) plus a per-instance judgment for a
@@ -164,18 +177,22 @@ concrete twin is the control and stays green; the out-of-range input `1000000000
 
 **AR-14 — `DEF-384`: the invalid nullable scalar reports `E10011` at nested type-argument
 positions.** Ch 02 §5 TY-4 (`spec/02-types.md:124`): "`T?` is allowed only on handles, `raw`,
-`cstring`, and views | E10011". The new check is scoped to **nested type-argument positions**; the
-existing declaration checks stay as they are (`own/place.rs:1931` `check_nullable_decl`,
-`own/program.rs:279` `report_illegal_nullable`). The probes split into two single-occurrence
-programs: the field annotation `struct H { a: Array<i32?>; }` (`m384_annot`) and the explicit call
-type argument `arrayNew<i32?>()` (`m384_callarg`), each expected to report one `E10011`. Nested
-cases `Array<Array<i32?>>` and `Array<Wrap<i32?>>` (`m384_nested`) each report one `E10011` at the
-inner `i32?`; the duplicate-count case (`m384_count`: `let x: i32?`, a nullable parameter and
-return, and `Array<i32?>`) reports one at each site, no duplicates. `Array<String?>` already keys
-(`ClArray__StringQ`), builds, and runs 0, so the row's "key the nullable spelling in the ABI" half
-**needs no change**; it is the control, and the ABI-key residual of the note is not reproducible
-as a defect. Expected: one `E10011` at each invalid nested site; the nullable-capable instances
-(`Array<String?>` and the legal nullable `raw`/`cstring`/view spellings the phase probes) run 0.
+`cstring`, and views | E10011". The new check is scoped to **nested type-argument positions** and
+the **explicit call type argument**: (a) a nested annotation walk alongside the existing
+declaration checks (`own/place.rs:1931` `check_nullable_decl`, `own/program.rs:279`
+`report_illegal_nullable`, both unchanged) and (b) a call-site walk or position flag on an
+explicit call type argument (`arrayNew<i32?>()`), so both the annotation and the call argument
+report. The probes split into two single-occurrence programs: the field annotation
+`struct H { a: Array<i32?>; }` (`m384_annot`) and the explicit call type argument
+`arrayNew<i32?>()` (`m384_callarg`), each expected to report one `E10011`. Nested cases
+`Array<Array<i32?>>` and `Array<Wrap<i32?>>` (`m384_nested`) each report one `E10011` at the inner
+`i32?`; the duplicate-count case (`m384_count`: nullable parameter, nullable return,
+`let x: i32?`, the `Array<i32?>` annotation, and the `arrayNew<i32?>()` call argument) reports
+**five** sites, one each, no duplicates. `Array<String?>` already keys (`ClArray__StringQ`),
+builds, and runs 0, so the row's "key the nullable spelling in the ABI" half **needs no change**;
+it is the control, and the ABI-key residual of the note is not reproducible as a defect.
+Expected: one `E10011` at each invalid nested/call site; the nullable-capable instances
+(`Array<String?>`, the verified control) run 0.
 If the extension rejects a legal nullable type, the phase narrows to the invalid non-capable kinds
 (AR-34(b)).
 
@@ -191,16 +208,18 @@ collision is a pre-existing table limitation and is out of this row's scope (it 
 table-identity change, not this fix). Expected: build-clean, run 0; the emitted symbol is the
 unqualified `ClArray__i32`; the unqualified control stays byte-identical.
 
-**AR-16 — `DEF-386`: a negated literal is judged on its folded value.** Ch 01 LEX-14 and Ch 04
-§13 (`:291`) say a literal is typed by its context; Ch 04 §5 (`:120-121`) carries the fit rule and
-the unary `-` row (`:110`) gives the same type. The spec's own example is `let delta: i16 = -5;`
-(`spec/02-types.md:49`). Fix: the unary check (`sema/ops.rs:18` `check_unary`) propagates the
-expected context into the operand, and the fit is judged on the **folded negated value** (reuse
-the deferred `int_fits`/`int_literal_value`), not on the operand alone. Expected: `i16 = -5`,
-`i8 = -5`, and `i8 = -128` are accepted; `u8 = -5` and `i8 = -129` each report one `E10202` at the
-literal. The position matrix covers a let initializer, a call argument, a return, a struct field,
-an array element, a conditional arm, and an assignment. The `u8 = -5` wrapping pin (251) is
-**removed**; there is no wrapping-value expectation. The plan adds no new fit rule.
+**AR-16 — `DEF-386`: a negated integer literal is folded and fit-checked once.** Ch 01 LEX-14 and
+Ch 04 §13 (`:291`) say a literal is typed by its context; Ch 04 §5 (`:120-121`) carries the fit
+rule and the unary `-` row (`:110`) gives the same type. The spec's own example is
+`let delta: i16 = -5;` (`spec/02-types.md:49`). Fix: pass the expected type to `check_unary`;
+for a **negated integer literal**, fold it first with `int_literal_value` (which already handles the unary minus), apply exactly one
+`int_fits` check on the **folded value** gated by `is_integer_scalar`, and **do not** context-type
+the operand. A non-integer context (`f32`, `bool`) stays on the ordinary conversion path and
+reports `E10200`. Expected: `i16 = -5`, `i8 = -5`, and `i8 = -128` are accepted; `u8 = -5` and
+`i8 = -129` each report one `E10202` at the literal; `f32 = -5` and `bool = -5` still report
+`E10200`; the positive-literal control stays green. The position matrix covers **eight**
+positions: let initializer, module value, call argument, return, struct field, array element,
+conditional arm, and assignment. There is no wrapping-value expectation.
 
 **AR-17 — `DEF-372`: the element-read store carries the element's loan.** Ch 16 §2
 (`spec/16-borrow-rules.md:51-58`): "Turning a `String` into a `str` implicitly — for example ...
@@ -217,16 +236,19 @@ direct and member twins; no TU.
 loans as a union.** Same frozen rule as AR-17, plus Ch 03 §2 (`spec/03-ownership.md:70-71`: a view
 lend copies the view, and the storage it points into is shared) and Ch 16 BR-4
 (`spec/16-borrow-rules.md:190`: a move of the owner requires no live loan). The legal copy
-(`let ys: str[2] = (c ? xs : zs);`, `[xs[0], xs[1]]`, `c ? xs[0] : zs[0]`) must record each
-element/arm loan so the later out-slot store reports `E10030` at the fill, exactly as the direct
-conditional twin does. The destination record is a **union**: `move_element_loans`
-(`own/place.rs:1184`) snapshots the source and replaces the destination record at `:1202` through
-`replace_element_loans` (`:1103`), so a per-arm call would lose the first arm's positions. Fix:
-snapshot both arms and write the destination's loan union once; extend the DEF-315 machinery to
-the conditional, array-literal (**including the fill form**), single-view, and conditional-with-
-an-array-literal-arm sources. Not a rejection of the copy (the copy itself is legal; the escape is
-the report). Expected: the mixed-position case (arm A loans `ys[0]`, arm B loans `ys[1]`) reports
-at both fill sites; one `E10030` per fill; no TU.
+(`let ys: str[2] = (c ? xs : zs);`, `[xs[0], xs[1]]`, `c ? xs[0] : zs[0]`, and a conditional
+element inside an array literal `[c ? xs[0] : zs[0], xs[1]]`) must record each element/arm loan so
+the later out-slot store reports `E10030` at the fill, exactly as the direct conditional twin
+does. The destination record is a **union**: `move_element_loans` (`own/place.rs:1184`) snapshots
+the source and replaces the destination record at `:1202` through `replace_element_loans`
+(`:1103`), so a per-arm/per-element call would lose the first arm's positions. Fix: snapshot both
+arms and the array-literal elements and write the destination's loan **union** once; recurse into
+a conditional element inside an array literal, unioning both arms; extend the DEF-315 machinery to
+the conditional, array-literal (**including the fill form**), single-view, and
+conditional-with-an-array-literal-arm sources. Not a rejection of the copy (the copy itself is
+legal; the escape is the report). Expected: the mixed-position case (arm A loans `ys[0]`, arm B
+loans `ys[1]`) reports at both fill sites; the different-arm-count case (`b373_diff`) and the
+fill-form case (`b373_fill`) report at every affected fill; one `E10030` per fill; no TU.
 
 **AR-19 — `DEF-374`: the borrow-element conditional take stays a control.** At the head the
 generic and the concrete twins both report two `E10026` (one per arm) at the same span
@@ -235,58 +257,67 @@ generic and the concrete twins both report two `E10026` (one per arm) at the sam
 move as `E10026`; the two reports are the two arm move-outs. The phase pins the count parity and
 makes no code change. A regression turns the row red in the phase and re-enters this register.
 
-**AR-20 — `DEF-375`: the owning raw-deref source is materialized once in every consuming
+**AR-20 — `DEF-375`: the owning raw-deref source is materialized and moved in every consuming
 position.** Ch 04 §3 (`:53`): "Evaluation is strictly left-to-right and deterministic." Ch 04 §7
 makes `*p` a place read; Ch 17 §5 (`:182-192`) makes a move a copy plus a zero of the source, with
-the zero as the drop flag, so one release can never run twice. The emitted C calls `cl_alt(p,q)`
-twice (`build/batchM-plan/out/m375_derefimpure.c:702-703`), so the second call selects the other
-pointee, which is emptied while the first pointee's value is bound and later released twice. The
-store-only gate `owns_drop(ty)` (`own/statements.rs:490`, in `prepare_store`) does not cover
-`return *alt(p,q)` (`m375_ret`, ASan double-free) or `Box { s: *alt(p,q) }` (`m375_field`, ASan
-double-free), and the take-argument path (`own/lower.rs:4866-4888`) already materializes under
-`owns_drop || maybe_owns || unknown`. Fix: one shared "materialize an owning deref source" helper
-with that take-path predicate, called by the **store**, the **return**, and the **aggregate/
-struct-literal-field** paths. Maybe-owning values materialize; a concrete duplicable pointee is
-the control (no emptiness, no double call). A generic duplicable instance may emit one extra
-temporary versus its concrete twin; that emission delta is acceptable and named. Expected: `alt`
-called once in all three shapes (`m375_derefimpure`, `m375_ret`, `m375_field`); the read pointee is
-the one emptied; the store probe runs 12, the return/field probes run their read values, and the concrete
-duplicable control (`m375_dup`, `T = i32`) reads once and runs 0; ASan/LSan-clean.
+the zero as the drop flag, so one release can never run twice. The store-only gate `owns_drop(ty)`
+(`own/statements.rs:490`, in `prepare_store`) does not cover `return *alt(p,q)` (`m375_ret`), the
+struct/aggregate field `Box { s: *alt(p,q) }` (`m375_field` and `b375_field`), an array-literal
+element `[*alt(p,q)]` (`b375_arr`), or a conditional arm `flag ? *alt(p,q) : x` (`b375_cond`);
+all abort with ASan double-free. The take-argument path (`own/lower.rs:4866-4888`) already
+materializes under `owns_drop || maybe_owns || unknown`. Fix: one shared "materialize an owning
+deref source" helper with that take-path predicate, used by the **store**, the **return**, the
+**aggregate/struct-literal field**, the **array-literal element**, and the **conditional arm**
+paths. A field/aggregate source must be **moved** — the pointee is zeroed — not merely pinned: the
+current field C either calls `alt` twice (impure pointer) or once without emptying (place
+pointer), so the caller and the field can both own the pointee. Under a guard the fill/materialization is deferred to the evaluated path. Maybe-owning
+values materialize; a concrete duplicable pointee is the control (`m375_dup`, `T = i32`: one call,
+no emptiness, run 0). A generic duplicable instance may emit one extra temporary versus its
+concrete twin; that emission delta is acceptable and named. The discarded read (`b375_discard`)
+and the non-taking argument (`b375_arg`) stay clean (no move, no empty). Expected: `alt` called
+once in all five consuming shapes; the store probe runs 12, the return/field read-backs run 12,
+the array/conditional probes run 12; the discarded/argument controls run 0; ASan/LSan-clean.
 
 **AR-21 — `DEF-376`: the guarded take carries the consumed non-place source, including its
 pointer fill.** Ch 04 §3 (`:53` and the `&&`/`||` row at `:63`): "Left operand first; the right
-operand only when the result is not yet fixed"; Ch 04 §5 (`:107`): "only the chosen branch
+operand only when the result is not yet fixed"; Ch 04 §5 (`:108`): "only the chosen branch
 evaluates." Ch 03 §3/O6 makes a value moved on any path count as moved at a join; the zeroed
 source is the drop flag (Ch 17 §5). The deferred move-out channel carries places only, so
 `g && (eat(take (unsafe *q)) == 1)` keeps the inline call and the pointee is not emptied on the
 taken path. The take-deref materialization at `own/lower.rs:4866-4888` runs at statement entry
 even under `defer_move_outs`, so `g = false` still calls an impure pointer
 (`m376_impure_false`: calls = 1, run 10; expected calls = 0, run 0). Fix: gate the eager take
-materialization on `defer_move_outs == 0`, and carry the pointer fill on the deferred record (the
-`Materialize` value/`move_outs`, `ir.rs:298`) so the guarded codegen fills it on the evaluated
-path. The exhaustive-match sites to audit: `ir.rs` (`Materialize.move_outs`),
-`codegen/guards.rs`, `codegen/function.rs`, `codegen/cleanup.rs`, `own/generics.rs`,
-`own/instance_check.rs`, `own/loops.rs`. Expected: accepted; `g = true` run 0, `g = false` run 0
+materialization on `defer_move_outs == 0`, and carry the pointer fill on the deferred record. The
+carrier shape must change: `Materialize.move_outs` is `Vec<Place>` and cannot carry a raw-deref
+pointee (a `Value`), so add `value_move_outs: Vec<Value>` to `Materialize` (`ir.rs:298`) while
+`move_outs` stays the place channel; the pointer-temp fill is `Materialize.value`. The existing
+pointee channel is `take_pointee_move_outs -> Vec<Value>` (`own/call.rs:768`) emitted as
+`MoveOutValue` (`ir.rs:377`); emit `MoveOutValue` in both guard forms in `codegen/guards.rs`.
+The exhaustive-match sites to audit: `ir.rs` (`Materialize`), `codegen/guards.rs`,
+`codegen/function.rs`, `codegen/cleanup.rs`, `own/generics.rs`, `own/instance_check.rs`,
+`own/loops.rs`. Expected: accepted; `g = true` run 0, `g = false` run 0
 with the impure pointer not called; ASan/LSan-clean for both selections.
 
-**AR-22 — `DEF-378`: the unguarded literal builder must consult the hidden-destination
+**AR-22 — `DEF-378`: the unguarded codegen value/read path must consult the hidden-destination
 predicate.** Ch 04 §3 (`:53`) fixes the function-call and array-literal evaluation order; Ch 04
 §15 makes the literal elements typed by the expected type; Ch 17 §5 fixes the destination move
 shape. A call returning a fixed view array (`str[2]`) writes through a hidden destination
 parameter (`static void cl_n1(ClStr __cl_ret[2])`), so the literal must bind that destination at
-**every** position. The guarded positions use `materialize_guard_literal`; the read and unguarded
-positions do not consult the predicate at all, which is why `Inner { row: n1() }.row[0][0]`
-(`m378_readpos`) is red. The causal chain is: `literal_fields_need_stores` (`own/lower.rs:4536`)
-and `literal_field_needs_stores` (`:4563`) route a view-array field to the element-wise store only
-when `view_element_needs_binding` (`:4592`) says so, and that predicate returns false for a
-call-valued view element. Fix: treat a call-valued view-array element whose return uses the hidden
-destination as needing the binding store, and make the **unguarded** literal builder consult the
-same predicate. Expected: `readpos`, `gridel`, and `guardrowcond` build strictly and run 0; each
-call runs once; the concrete brace-list control is unchanged.
+**every** position. The guarded positions use `materialize_guard_literal`; the **unguarded
+codegen value/read path** is decided by `struct_literal_needs_stores`
+(`codegen/function.rs:1890`), which is not consulted for the literal's value/projection-base
+position, so `Inner { row: n1() }.row[0][0]` (`m378_readpos`) keeps the brace-list/call form and
+is red. The lowerer predicate `literal_field_needs_stores` (`own/lower.rs:4563`) already returns
+true for a call-valued fixed-array field (the field is not a brace list), so the element-wise
+store machinery exists; the missing link is the read-path call site. Fix: consult
+`struct_literal_needs_stores` (or route the literal through the lowerer's store form) at the
+unguarded value/read position, so the destination is bound and the call is emitted into it.
+Expected: `readpos`, `gridel`, and `guardrowcond` build strictly and run 0; each call runs once;
+the concrete brace-list control is unchanged.
 
 **AR-23 — `DEF-379`: the owning nested conditional's argument carrier and fill stay in its guard
 path.** Ch 04 §3 (`:63`, the `&&`/`||` row): the right operand evaluates only when the left does
-not fix the result; Ch 04 §5 (`:107`): "only the chosen branch evaluates." The eager carrier is
+not fix the result; Ch 04 §5 (`:108`): "only the chosen branch evaluates." The eager carrier is
 `materialize_owned_argument`'s by-value binding (`own/lower.rs:5109-5131`), which emits an
 `Assign` into `__cl_owned0` at statement entry even when `defer_move_outs > 0`; the fill position
 is emitted by `codegen/guards.rs` (`:106-117` for the statement form, `:1016` for the guarded
@@ -295,8 +326,11 @@ carrier before `if (g && consume(...))`, so a call runs on the skipped `g == fal
 3, expected 2). Fix: defer the final by-value argument binding under `defer_move_outs` into the
 `Materialize` channel instead of the eager `Assign`, so the guarded codegen fills it on the
 evaluated path; the phase's memory lens also analyzes the guard drop/re-fill interaction
-(`guards.rs:273-307`) for a re-executed guard. Expected: calls = 2, run 0; ASan/LSan-clean; the
-impl pin asserts `__cl_owned0`'s fill is inside the guarded evaluated path.
+(`guards.rs:273-307`) for a re-executed guard. A loop fixture (`b379_loop`) re-executes the
+guard twice per use (observed calls = 6, run 2; expected calls = 4, run 0); `b379_eager` is the
+unguarded eager-order control (run 0). Expected: calls = 2 and run 0 in the single-pass fixture,
+calls = 4 and run 0 in the loop fixture; ASan/LSan-clean; the impl pin asserts `__cl_owned0`'s
+fill is inside the guarded evaluated path and the re-fill releases the previous value once.
 
 **AR-24 — `DEF-390`: a qualified call carries its module identity through every lookup.** Ch 10 §5
 MOD-13 (`:112`): "Qualified access `A.B.f()` is always available, with or without an import"; Ch
@@ -359,18 +393,23 @@ P6: all four. P7: all four. The read-only auditors stay read-only. This supersed
 - Compile: `make -C docker exec CMD="target/debug/clc --profile host -o out.c prog.clo && cc
   -std=c99 -O0 -g -Wall -Wextra -Werror -o out.bin out.c"` (the `&& cc` spelling; the pinned
   container).
-- ASan: `cmd="cc -std=c99 -O0 -g -fsanitize=address -no-pie"`; run
-  `ASAN_OPTIONS=detect_leaks=1:symbolize=0 timeout 30`.
+- ASan: `make -C docker exec CMD="cc -std=c99 -O0 -g -fsanitize=address -no-pie -o
+  build/batchM-plan/out/<name>.asan.bin <out>.c"`, then
+  `ASAN_OPTIONS=detect_leaks=1:symbolize=0 timeout 30 <name>.asan.bin`.
 - Suites: `make check` per phase; focused suites via
   `make -C docker exec CMD="RDC_ASAN=1 cargo test --test <suite>"` for the memory legs and
   `make -C docker exec CMD="cargo test --test <suite>"` for the plain legs.
 - Profiles: `clc --profile hosted-amiga` plus the pinned `m68k-amigaos-gcc` leg for `DEF-365`,
-  `368`, `378`, `384`, `385`; `clc --profile freestanding` for `DEF-365` only. The freestanding
-  exclusions are recorded: `DEF-368`/`384`/`385` import `std.text`/`std.mem`, which the
-  freestanding profile rejects with `E11200` (observed, not a defect).
+  `368`, `378`, `384`, `385`; `clc --profile freestanding` for `DEF-365` and the no-import
+  `m364_control_fs` (the `m364_control` fixture imports `std.text` and is **not**
+  freestanding-eligible, `E11200`). The freestanding exclusions are recorded: `DEF-368`/`384`/`385`
+  import `std.text`/`std.mem`, which the freestanding profile rejects with `E11200` (observed,
+  not a defect).
 - Per-phase legs: P2 adds the `RDC_ASAN=1` suite leg and the `DEF-368` hosted-amiga emission; P3
-  adds the nullable-handle ASan run; the `DEF-364` control is compiled on hosted-amiga and
-  freestanding (it imports no std module).
+  adds the nullable-handle ASan run; P4 compiles the accepted `DEF-367` store forms on
+  hosted-amiga (`clc --profile hosted-amiga` plus the pinned `m68k-amigaos-gcc`); the no-import
+  `m364_control_fs` is compiled on hosted-amiga and freestanding (the std-importing
+  `m364_control` is host-only).
 - **Emission differential:** every emission-changing phase (P1, P2, P4, P6, P7 at minimum) runs a
   base/head differential over its named probe set and the corpus, with the command
   `make -C docker exec CMD="target/debug/clc --profile host -o out.c <file>"` plus `cc`; every
@@ -395,8 +434,9 @@ batch-I/J/K/L precedent).
 **AR-31 — `DEF-361` control evidence (six fixtures).** No red reproduction could be constructed
 at the head. The green fixture set is exactly: `m361_local.clo` + holder (local shadow),
 `m361_param.clo` + holder (parameter shadow), `matrix/d_param_generic.clo` (generic-body local),
-`matrix/d_lambda_expr.clo` (expression-bodied lambda parameter), and `matrix/d_lambda_block.clo`
-(block-bodied lambda parameter); all compile strictly and run 0. The **module-own/module-initializer
+`matrix/d_lambda_expr.clo` (expression-bodied lambda parameter), `matrix/d_lambda_block.clo`
+(block-bodied lambda parameter), and `probes/m361_control.clo` (the no-import baseline); all
+compile strictly and run 0. The **module-own/module-initializer
 shape is removed from the control set**: it is the `DEF-363` import/`let` collision, and P1's fix
 turns it red (it must report `E11103`, not run 0). `matrix/d_comp.clo` (`E90001`, comptime
 unsupported) and `matrix/d_capture.clo` (`E10405`, missing capture list) are unrelated dialect
@@ -424,9 +464,9 @@ bounds-fault case is in the residue suite (AR-26).
 cannot be emitted on a profile without a new C declarator form, the phase **stops** (blocker) and
 asks the user for a ruling with the emitted-C evidence; parking is not allowed (the frozen place
 rule forbids the rejection fallback). (b) `DEF-384`: if extending the nullable check to nested
-type arguments rejects an accepted legal spelling (`Array<String?>` and the nullable `raw`/
-`cstring`/view controls), the phase records the false positive and **narrows** the check to the
-invalid non-capable kinds (never parks); the control set is the proof. (c) `DEF-385`: a
+type arguments rejects the accepted `Array<String?>` control, the phase records the false
+positive and **narrows** the check to the invalid non-capable kinds (never parks); the control
+is the proof. (c) `DEF-385`: a
 cross-module last-segment type-name collision is out of scope; the phase records it as a residual
 if a probe shows it. (d) `DEF-390`: if a lexical local shadows the module head, the value-headed
 reading wins (batch-L AR-25) and the case is not a module call; the phase pins that shadow
@@ -443,9 +483,11 @@ are recorded in the findings ledger. A new suite pair needs a register entry and
 and its call-site type-argument inference; P2 owns the per-instance conditional duty; P3 owns the
 plain-call literal context. There is **no shared hook** between them. The execution dependencies
 are: P1 → P2 and P1 → P3 (the written-argument route settles the call-site inference the other
-two respect), P2 → P5 (the element substitution feeds the loan positions), P6 → P7 (the deferred
-move-out/Materialize channel feeds the guard fill), and P4 is independent. The scope is
-severity-first (the critical first); execution is dependency-ordered, so P4 runs fourth.
+two respect), P2 → P3 (the conditional's expected-type arm check is one of the context-typing
+positions P3 extends), P2 → P5 (the element substitution feeds the loan positions), P6 → P7 (the
+deferred move-out/Materialize channel feeds the guard fill), and P4 is independent. The scope is
+severity-first scope (the critical is planned first); execution is dependency-ordered, so P4
+runs fourth.
 
 **AR-37 — Verification legs and the emission differential.** Every emission-changing phase runs a
 base/head differential over its named probe set (P1: `m360_*`, `m361_*`, `m363_*`, `m390_*`; P2:
@@ -455,12 +497,16 @@ included when the qualified type path changes an emitted symbol. The P2/P3 memor
 profile legs are the ones in AR-28.
 
 **AR-38 — Close-out accounting.** At close-out, every row filed during execution is added or
-checked in the roadmap with its reproduction and evidence; the likely incidentals are probed and
-recorded as incidental or open (`DEF-380` via the `DEF-378` family, `DEF-382` via the `DEF-371`
-literal fix); the next-batch count is recomputed from the roadmap; the two control rows
-(`DEF-361`, `DEF-374`) move to `Done` with their control-pin evidence; and the accounting states
-the totals explicitly (18 red rows Done, 2 controls Done, 2 parked majors open, the remaining
-minors counted by audit — no "minors untouched" claim without the count).
+checked in the roadmap with its reproduction and evidence. The `DEF-378` grid-element fixture
+(`gridel`) incidentally closes **`DEF-380`** (the multi-extent view-array field): record the
+boundary (which grid shapes are covered and which remain) and mark `DEF-380` incidental or open
+accordingly. `DEF-382` is **not** claimed incidental via the `DEF-371` fix: that fix is scoped to
+a concrete parameter at a generic callee, while `DEF-382`'s `identity<u8>(5)` is the separate
+generic-argument route; record `DEF-382` as open unless the fix also substitutes explicit type
+arguments. The next-batch count is recomputed from the roadmap; the two control rows (`DEF-361`,
+`DEF-374`) move to `Done` with their control-pin evidence; the accounting states the totals
+explicitly (18 red rows Done, 2 controls Done, 2 parked majors open, the remaining minors counted
+by audit — no "minors untouched" claim without the count).
 
 ## Open Questions (collected for the user — none blocks execution)
 
@@ -481,26 +527,26 @@ the command line (the file list is the program). The probes are gitignored scrat
 
 | Row | Probe | Verified current behavior |
 |-----|-------|---------------------------|
-| `DEF-360` | `m360_dotarg.clo`, `m360_borrowdot.clo`, `m360_genericcaller.clo` / `m360_genericcaller2.clo` | ❌ Red: accepted; strict build fails (`incompatible type for argument 2 of 'cl_pick__Box'` at 11:25; `cl_put__Box` at 11:20). The direct inferred and explicit twins report one `E10200` at the argument; `m360_control.clo` runs 0. The valid generic caller `outer<i32>(b, c)` with `b.pick(c)` is falsely rejected with `E10200` at the receiver (8:12) in both shapes |
+| `DEF-360` | `m360_dotarg.clo`, `m360_borrowdot.clo`, `m360_genericcaller.clo` / `m360_genericcaller2.clo` (invalid `c: i32`), `m360_genericcaller_box.clo` (`c: Box`) | ❌ Red: accepted; strict build fails (`incompatible type for argument 2 of 'cl_pick__Box'` at 11:25; `cl_put__Box` at 11:20). The direct inferred and explicit twins each report one `E10200`; `m360_control.clo` runs 0. The valid `c: Box` generic caller is falsely rejected with **two** `E10200` (8:12 and 8:19); the `c: i32` shapes are rejection cases (one `E10200` at 8:12) |
 | `DEF-361` | six fixtures: `m361_local.clo` + holder, `m361_param.clo` + holder, `matrix/d_param_generic.clo`, `matrix/d_lambda_expr.clo`, `matrix/d_lambda_block.clo`, `m361_control.clo` (no-import baseline) | ✅ **Control**: all six compile strictly and run 0; no red reproduction at the head (AR-31). The module-own/module-initializer shape is **removed** (it is the `DEF-363` collision and P1 turns it red); `matrix/d_comp.clo` is `E90001` (comptime unsupported) and `matrix/d_capture.clo` is `E10405` (missing capture list) — unrelated |
-| `DEF-363` | `m363_importfirst.clo`, `m363_declfirst.clo`, `m363_direct.clo`; `m363_kinds_main.clo` + `m363_kinds_{fmod,smod,cmod}.clo` | ❌ Red: all accepted; compile strictly and run 0 (the collision is unreported); `m363_control.clo` also runs 0. The function/struct/const kind matrix is accepted with only unused-import warnings |
-| `DEF-390` | `m390_main.clo` + `m390_lib.clo`; `m390_sigmain.clo` + `m390_siglib.clo`; `m390_hook_main.clo` + `m390_hook_lib.clo` | ❌ Red: `probe.m390.lib.f()` is accepted and runs the caller's `f` (run 1, expected 0); the signature shape is accepted and the strict build fails (`incompatible type for argument 1 of 'cl_probe_m390_sigmain_f'`); the mismatch control reports one `E10200` at the argument; `m390_control.clo` runs 0. The qualified func-typed global `m.hook()` is a green control (run 0) |
-| `DEF-364` | `m364_condopaque.clo`, `m364_nullarm.clo`, `m364_direct.clo`, `m364_ctx.clo` | ❌ Red: (a) accepted, strict build fails (`type mismatch in conditional expression`); (b) accepted, strict build fails (`pointer/integer type mismatch` and `void *` to `i32`). The direct contexts (let, return, struct field, call argument) are accepted and fail the strict build (`m364_direct`/`m364_ctx`). The concrete disagreeing call already reports one `E10200` at 7:22 (`m364_concrete`). Controls `m364_control.clo` run 0 |
+| `DEF-363` | `m363_importfirst.clo`, `m363_declfirst.clo`, `m363_direct.clo`; `m363_kinds_main.clo` + `m363_kinds_{func,struct,const}.clo` | ❌ Red: all accepted; compile strictly and run 0 (the collision is unreported); `m363_control.clo` also runs 0. The function/struct/const kind matrix is accepted with only unused-import warnings |
+| `DEF-390` | `m390_main.clo` + `m390_lib.clo`; `m390_sigmain.clo` + `m390_siglib.clo`; `m390_hook_main.clo` + `m390_hook_lib.clo`, `m390_shadow_main.clo` + `m390_shadow_lib.clo` | ❌ Red: `probe.m390.lib.f()` is accepted and runs the caller's `f` (run 1, expected 0); the signature shape is accepted and the strict build fails (`incompatible type for argument 1 of 'cl_probe_m390_sigmain_f'`); the mismatch control reports one `E10200` at the argument; `m390_control.clo` runs 0. The qualified func-typed global `m.hook()` and the qualified-head local-shadow `m390_shadow` are green controls (run 0) |
+| `DEF-364` | `m364_condopaque.clo`, `m364_nullarm.clo`, `m364_direct.clo`, `m364_ctx.clo` | ❌ Red: (a) accepted, strict build fails (`type mismatch in conditional expression`); (b) accepted, strict build fails (`pointer/integer type mismatch` and `void *` to `i32`). The direct contexts (let, return, struct field, call argument) are accepted and fail the strict build (`m364_direct`/`m364_ctx`). The concrete disagreeing call already reports one `E10200` at 7:22 (`m364_concrete`). Controls `m364_control.clo` (host) and the no-import `m364_control_fs` (host and freestanding) run 0 |
 | `DEF-365` | `m365_elemkey.clo` | ❌ Red: accepted; strict build fails (`stray '#' in program`, `cl_id__` undeclared); the emitted key is `cl_id__#element of #element of T` on host, hosted-amiga, and freestanding |
 | `DEF-368` | `m368_elemview.clo` (generic), `m368_concrete.clo` | ❌ Red: accepted; strict build fails (`incompatible types ... assigning to 'ClStr' from 'ClString'` at 8:9); the concrete twin runs 0; hosted-amiga emits the same assignment |
 | `DEF-371` | `m371_literal.clo`, `m371_control.clo` | ❌ Red: one `E10200` (`cannot convert 'i32' to 'usize'`) at 15:25; the concrete twin compiles and runs 0 |
-| `DEF-384` | `m384_annot.clo`, `m384_callarg.clo`, `m384_nested.clo`, `m384_count.clo`; `m384_nullabletypearg.clo`, `m384_nullablehandle.clo` | ❌ Red: the field annotation, the explicit call type argument, and both nested cases (`Array<Array<i32?>>`, `Array<Wrap<i32?>>`) are accepted and run 0. The duplicate-count case reports the three existing `E10011` sites (nullable parameter, nullable return, `let x: i32?`) but not the `Array<i32?>`; after the fix each site reports once, no duplicates. The combined probe is accepted and fails the strict build (`void *` to `i32` in `cl_push__i32Q`); `Array<String?>` keys (`ClArray__StringQ`) and runs 0 |
+| `DEF-384` | `m384_annot.clo`, `m384_callarg.clo`, `m384_nested.clo`, `m384_count.clo`; `m384_nullabletypearg.clo`, `m384_nullablehandle.clo` | ❌ Red: the field annotation, the explicit call type argument, and both nested cases (`Array<Array<i32?>>`, `Array<Wrap<i32?>>`) are accepted and run 0. The duplicate-count case reports the three existing `E10011` sites (nullable parameter, nullable return, `let x: i32?`) but neither the `Array<i32?>` annotation nor the `arrayNew<i32?>()` argument; after the fix the **five** sites report once each, no duplicates. The combined probe is accepted and fails the strict build (`void *` to `i32` in `cl_push__i32Q`); `Array<String?>` keys (`ClArray__StringQ`) and runs 0 |
 | `DEF-385` | `m385_qualifiedtype.clo` | ❌ Red: accepted; strict build fails (`incompatible types ... to 'i32' from 'ClArray__i32'` at 4:9; `cl_push__i32` argument type); hosted-amiga emits `i32 g`. The unqualified control runs 0 |
-| `DEF-386` | `m386_matrix.clo`, `m386_i8_neg128.clo`, `m386_i8_neg129.clo`, `m386_u8_neg5.clo`, `m386_control.clo` | ❌ Red: the position matrix (let, module value, argument, return, field, array element, conditional arm, assignment) reports eight `E10200` (`i32`→`i16`); `i8 = -128` reports `E10200`; `i8 = -129` and `u8 = -5` report `E10200` (expected `E10202`); the positive control runs 0 |
-| `DEF-367` | `m367_indexed.clo`, `m367_compound.clo`, `m367_update.clo`, `m367_chain.clo`, `m367_order.clo`, `m367_gen_elemstore.clo`, `m367_bounds.clo` | ❌ Red (critical): accepted; strict build ok; `m367_indexed` run 191 (calls = 1, expected 4); `m367_compound` run 253; `m367_update` run 255; `m367_chain` run 249; `m367_order` run 247; `m367_gen_elemstore` runs 0 but LeakSanitizer reports a leak; `m367_bounds` runs 0 (the out-of-range store is dropped, no `E11211`); the constant index emits; ASan clean where no memory error is expected |
-| `DEF-377` | `m377_member.clo`, `m377_index.clo`, `m377_array.clo`, `m377_indexbase.clo`, `m377_deep.clo`; `m377_unsafe_cond_member.clo`, `m377_unsafe_cond_index.clo`; `m377_controls.clo`, `m377_unsafe_ptr.clo` | ❌ Red: the five forms are accepted; runs 255/249/249/249/255 — the stores and RHS side effects are dropped; ASan/LSan-clean (the store is absent). The `unsafe`-wrapped conditional member/index stores are accepted and run 0. Green controls: `s.f.g`, `s.arr[i]`, and the raw member chain `p.f.g` inside `unsafe { }` (run 0). The prefix spelling `unsafe p.f = ...` reports `E10221` at the head (not claimed as accepted) |
-| `DEF-372` | `m372_elementread.clo`; `m372_direct.clo`, `m372_member.clo` | ❌ Red: accepted; strict build ok; run varies (14 observed) + ASan `heap-use-after-free`. The direct element argument and the member twin report one `E10030` |
-| `DEF-373` | `m373_conditional.clo`, `m373_arrayliteral.clo`, `m373_singleview.clo`, `m373_union.clo`; `m373_direct.clo` | ❌ Red: all four accepted; strict build ok; runs vary (56/193/145/38–40 observed) + ASan `heap-use-after-free`. The direct conditional twin reports one `E10030`; the mixed-position union case reads freed storage |
+| `DEF-386` | `m386_matrix.clo`, `m386_i8_neg5.clo`, `m386_i8_neg128.clo`, `m386_i8_neg129.clo`, `m386_u8_neg5.clo`, `m386_f32_neg5.clo`, `m386_bool_neg5.clo`, `m386_control.clo` | ❌ Red: the eight-position matrix (let, module value, argument, return, field, array element, conditional arm, assignment) reports eight `E10200` (`i32`→`i16`); `i8 = -5` and `i8 = -128` report `E10200`; `i8 = -129` and `u8 = -5` report `E10200` (expected `E10202`); `f32 = -5` and `bool = -5` report `E10200` and must stay `E10200`; the positive control runs 0 |
+| `DEF-367` | `m367_indexed.clo`, `m367_compound.clo`, `m367_update.clo`, `m367_chain.clo`, `m367_order.clo`, `m367_gen_elemset.clo`, `m367_gen_elemstore.clo`, `m367_bounds.clo`, `b367_nested.clo`, `b367_two.clo`, `b367_whole.clo` | ❌ Red (critical): accepted; strict build ok; `m367_indexed` run 191 (calls = 1, expected 4); `m367_compound` 253; `m367_update` 255; `m367_chain` 249; `m367_order` 247; the generic member spelling is dropped (255) and the whole-element store runs 0 with a LeakSanitizer leak (`m367_gen_elemstore`); `b367_nested`/`b367_two` run 255; `b367_whole` runs 0 with a leak; `m367_bounds` runs 0 (no `E11211`); the constant index emits; ASan clean where no memory error is expected |
+| `DEF-377` | `m377_member.clo`, `m377_index.clo`, `m377_array.clo`, `m377_indexbase.clo`, `m377_deep.clo`; `m377_unsafe_cond_member.clo`, `m377_unsafe_cond_index.clo`, `m377_unsafe_prefix.clo`, `m377_unsafe_prefix2.clo`, `m377_unsafe_bare.clo`; `m377_controls.clo`, `m377_unsafe_ptr.clo` | ❌ Red: the five forms are accepted; runs 255/249/249/249/255 — the stores and RHS side effects are dropped; ASan/LSan-clean (the store is absent). The `unsafe`-wrapped conditional member/index stores are accepted and run 0. Green controls: `s.f.g`, `s.arr[i]`, and the raw member chain `p.f.g` inside `unsafe { }` (run 0). The prefix raw forms `unsafe p.f`/`p.f.x` report `E10221` at the head and become accepted (with a read-back) after the place-test change; the prefix conditional `unsafe (c?a:b).v` stays `E10221` |
+| `DEF-372` | `m372_elementread.clo`; `m372_direct.clo`, `m372_member.clo` | ❌ Red: accepted; strict build ok; run varies; ASan `heap-use-after-free` (the sanitizer is the oracle). The direct element argument and the member twin report one `E10030` |
+| `DEF-373` | `m373_conditional.clo`, `m373_arrayliteral.clo`, `m373_singleview.clo`, `m373_union.clo`, `b373_mix.clo`, `b373_diff.clo`, `b373_fill.clo`; `m373_direct.clo` | ❌ Red: all accepted; strict build ok; run varies; ASan `heap-use-after-free` (the sanitizer report is the oracle); the `b373_mix`/`b373_diff`/`b373_fill` runs also vary; ASan UAF; the direct conditional twin reports one `E10030` |
 | `DEF-374` | `m374_condelem.clo`, `m374_concrete.clo` | ✅ **Control**: both reject with two `E10026` at 12:24 (the per-arm parity, AR-32) |
-| `DEF-375` | `m375_derefimpure.clo`, `m375_ret.clo`, `m375_field.clo` | ❌ Red: accepted; strict build ok; abort 134 + ASan `attempting double-free`; the emitted C calls `cl_alt__String` twice (`m375_derefimpure.c:702-703`), so the second call empties the other pointee. The return (`m375_ret`) and struct-literal-field (`m375_field`) shapes double-free identically |
+| `DEF-375` | `m375_derefimpure.clo`, `m375_ret.clo`, `m375_field.clo`, `b375_arr.clo`, `b375_cond.clo`; controls `b375_discard.clo`, `b375_arg.clo`, `m375_dup.clo` | ❌ Red: the five consuming shapes are accepted; strict build ok; abort 134 + ASan `attempting double-free`; the store C calls `cl_alt__String` twice (`m375_derefimpure.c:702-703`); the return/field/array/conditional shapes double-free identically; the discarded read, the non-taking argument, and the concrete duplicable `T = i32` are clean (run 0) |
 | `DEF-376` | `m376_guardedtake.clo`, `m376_impure_false.clo`, `m376_impure_true.clo` | ❌ Red: accepted; `m376_guardedtake`/`m376_impure_true` abort 134 + ASan `attempting double-free`; `m376_impure_false` runs 10 (the statement-entry materialization calls the impure pointer once even though `g = false`; expected calls = 0, run 0) |
 | `DEF-378` | `m378_readpos.clo`, `m378_gridel.clo`, `m378_guardrowcond.clo` | ❌ Red: all accepted; strict build fails (`too few arguments ... expected 1, have 0` for `cl_probe_m378_*_n1/r1`); the read and unguarded positions are red because the builder does not consult the hidden-destination predicate |
-| `DEF-379` | `m379_guardnest.clo` | ❌ Red: accepted; strict build ok; run 1 (expected 0) — the by-value argument carrier is filled before `if (g && consume(...))`, so calls = 3 where 2 are expected |
+| `DEF-379` | `m379_guardnest.clo`, `b379_loop.clo`, `b379_eager.clo` | ❌ Red: accepted; strict build ok; single-pass run 1 (expected 0), calls = 3 (expected 2); the loop fixture (two re-executions) runs 2 (expected 0), calls = 6 (expected 4); the by-value carrier fill precedes `if (g && consume(...))`; the eager (unguarded) control runs 0 |
 
 **The two reclassifications**: `DEF-361` and `DEF-374` are verified green at the head and are
 carried as pinned controls in their phases; neither has a residual in another row's scope. The

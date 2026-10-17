@@ -43,12 +43,14 @@ concrete arms report one `E10200` at the else arm (the concrete twin's site); a 
 non-nullable substituted context reports one `E10012` at the `null`. The report is once per site;
 the controls (identical arms, a non-null sibling, the legal nullable instance) stay accepted.
 
-Fix (b): pass the expected type into `check_conditional` (`sema/ops.rs:318`) so a direct
-conditional in a let, return, struct field, or call argument judges its null arm against the
-destination; the four context pins are `m364_ctx` (let, return, field, argument) and the concrete
-disagreeing call is the same rule at a concrete parameter. This is P2's per-instance/context duty;
-it does **not** share P1's dot-call written-argument route or P3's plain-call literal context
-(AR-36). The un-instantiated generic body keeps its current acceptance for the opaque shapes; the
+Fix (b): pass the expected type into `check_conditional` (`sema/ops.rs:318`) and into **both** arm
+checks (`check_value(then_value, Some(expected))` and `check_value(else_value, Some(expected))`),
+so a direct conditional in a let, return, struct field, or call argument judges its null arm
+against the destination; the four context pins are `m364_ctx` (let, return, field, argument) and
+the concrete disagreeing call is the same rule at a concrete parameter. This is P2's
+per-instance/context duty; it does **not** share P1's dot-call written-argument route or P3's
+plain-call literal context (AR-36), but P3 extends the same expected-type arm check for its
+literal positions (P2 → P3). The un-instantiated generic body keeps its current acceptance for the opaque shapes; the
 direct contexts report immediately.
 
 ### 2. The nested element placeholder (`DEF-365`)
@@ -91,7 +93,8 @@ the emitted member assignment is byte-identical to the concrete twin's.
 - `compiler/src/own/instance_check.rs` (the conversion duty), `compiler/src/own/call_check.rs`
   (the argument check), `compiler/src/codegen/expr.rs`/`codegen/function.rs` (the member
   emission), `compiler/src/codegen/expr.rs:290` (`resolved_place_ty`, the `DEF-339` helper).
-- Controls: `probes/m364_control.clo`, `m365_elemkey.clo`'s `id(v.len)` shape,
+- Controls: `probes/m364_control.clo` (host), `preflight/m364_control_fs.clo` (hosted-amiga and
+  freestanding; no std imports), `m365_elemkey.clo`'s `id(v.len)` shape,
   `m368_concrete.clo`; the origin checker/conversion cases.
 
 ## Error Handling
@@ -125,8 +128,8 @@ the emitted member assignment is byte-identical to the concrete twin's.
 - **Verification**: `make check`; the focused suite plain and with `CMD="RDC_ASAN=1 cargo test
   --test checker_conformance_spec_test --test checker_conformance_impl_test"`; the strict builds;
   the hosted-amiga emission for `DEF-365`/`368`; the freestanding compile for `DEF-365`; the
-  `DEF-364` control compiled on hosted-amiga and freestanding (it imports no std module). The
-  freestanding exclusions for `DEF-365`'s peers are recorded in AR-28.
+  no-import `m364_control_fs` compiled on hosted-amiga and freestanding. The
+  freestanding exclusion for `DEF-368` (it imports `std.text`, `E11200`) is recorded in AR-28.
 - **Risks/lenses**: all four (AR-27). The memory lens probes the conditional values and the
   element member read (the ownership of the arm values and the view loan); the emission lens runs
   the base/head differential over `m364_*`, `m365_*`, `m368_*` and checks the keyed symbols and

@@ -41,11 +41,13 @@ fill (ASan heap-use-after-free):
 - `let ys: str[2] = [xs[0], xs[1]];` where the elements hold loans (**including the fill
   form**);
 - `let s: str = c ? xs[0] : zs[0];` (the single-view conditional);
-- a conditional whose arm is itself an array literal.
+- a conditional whose arm is itself an array literal;
+- a conditional element inside an array literal (`[c ? xs[0] : zs[0], xs[1]]`), the union
+  covering both arms.
 
 The mixed-position probe (`preflight/m373_union.clo`) has arm A loan `ys[0]` and arm B loan
-`ys[1]`; both `fill` sites must report, but the current copy records no loans at all (run 38 +
-ASan UAF). The direct twin `fill(c ? a.v : b.v, borrow slot)` reports one `E10030`; the
+`ys[1]`; both `fill` sites must report, but the current copy records no loans at all (run varies;
+ASan heap-use-after-free — the sanitizer is the oracle). The direct twin `fill(c ? a.v : b.v, borrow slot)` reports one `E10030`; the
 member-source, out-slot, return, and global destinations already reject (the row note's
 controls). Frozen: the same Ch 16 §2 loan rule, Ch 03 §2
 (`spec/03-ownership.md:70-71`: a view lend copies the view, and the storage it points into is
@@ -58,7 +60,8 @@ source and replaces the destination record at `:1202` through `replace_element_l
 so a per-arm call would lose the first arm's positions. Snapshot **both arms** and write the
 destination's union once; translate each element of an array-literal source (fill form included)
 and both arms of a single-view conditional; a conditional whose arm is an array literal unions
-the arm's element positions. The lifecycle keeps the existing per-position drop (the batch-J
+the arm's element positions; a conditional element inside an array literal recurses into both
+arms and unions them per element position. The lifecycle keeps the existing per-position drop (the batch-J
 `DEF-290` fix); an overwritten copy drops the stale loans. Expected: the mixed-position case
 reports at both `fill` sites; one `E10030` per affected fill; no TU; the copies used in-scope stay
 accepted; the direct conditional twin keeps its report.
@@ -79,7 +82,8 @@ span parity; no code change (AR-32). A regression turns the row red in the phase
   `compiler/src/own/expr.rs` (the conditional value transfer and the element read).
 - The batch-L `DEF-315` copy-transfer path and the `E10030` report helper.
 - Controls: `probes/m372_direct.clo`, `m372_member.clo`, `m373_direct.clo`,
-  `preflight/m373_union.clo`, `m374_condelem.clo`, `m374_concrete.clo`; the batch-L loan matrix
+  `preflight/m373_union.clo`, `b373_mix.clo`, `b373_diff.clo`, `b373_fill.clo`,
+  `m374_condelem.clo`, `m374_concrete.clo`; the batch-L loan matrix
   (`hp_alias_copy`/`hp_alias_return`/`hp_alias_param` shapes).
 
 ## Error Handling
@@ -102,9 +106,10 @@ span parity; no code change (AR-32). A regression turns the row red in the phase
     runs 0.
   - `should_report_an_escaping_copy_from_a_conditional_or_literal_source` (`DEF-373`): the
     conditional array copy, the array-literal copy (fill form included), the single-view
-    conditional, and a conditional whose arm is an array literal each report one `E10030`; the
-    mixed-position case (arm A `ys[0]`, arm B `ys[1]`) reports at both fills; the direct
-    conditional twin keeps its report; the in-scope copies run 0.
+    conditional, a conditional whose arm is an array literal, a conditional element inside an
+    array literal (`b373_mix`), the different-arm-count case (`b373_diff`), and the fill-form case
+    (`b373_fill`) each report one `E10030`; the mixed-position case reports at both fills; the
+    direct conditional twin keeps its report; the in-scope copies run 0.
   - `should_report_the_borrow_element_conditional_take_twice` (`DEF-374` control): the generic
     and concrete twins each report two `E10026` at the same span.
 - **Impl pins** (`conditional_projection_residue_impl_test.rs`): the loan records and the report
@@ -118,5 +123,3 @@ span parity; no code change (AR-32). A regression turns the row red in the phase
 - **Risks/lenses**: correctness + memory-safety + semantics (AR-27). The memory lens owns the
   loan/origin matrix, the mixed-position union, and the ASan leg; the semantics lens owns the
   Ch 16 reading. No emission lens for this phase (AR-27).
-- **Risks/lenses**: correctness + memory-safety + semantics (AR-27). The memory lens owns the
-  loan/origin matrix and the ASan leg; the semantics lens owns the Ch 16 reading.

@@ -14,8 +14,9 @@ Close the last 20 un-parked rows — the critical `DEF-367` and 19 majors, with 
 machinery (call identity and written arguments; substitution edges I; substitution edges II;
 dropped store targets; element/store loans; deref/take channels; literal destinations and guards)
 and a close-out. The scope is severity-first (the critical is planned first); the **execution is
-dependency-ordered** (P1 → P2, P1 → P3, P2 → P5, P6 → P7; P4 is independent and runs fourth —
-AR-36). Every fix extends existing machinery; every phase follows the specification-first ordering
+dependency-ordered** (P1 → P2, P1 → P3, P2 → P3 and P2 → P5, P6 → P7; P4 is independent and runs
+fourth — AR-36). Every fix extends existing machinery; every phase follows the specification-first
+ordering
 (spec cases → red → implement → green → impl pins → review). The new cases append to the origin
 suites (AR-26); the probe-verified controls (the six `DEF-361` fixtures, the `DEF-374` two-report
 pair, the nullable-handle instance, the constant-index store, the qualified func-typed global, the
@@ -75,9 +76,10 @@ controls.
       `compiler/tests/checker_conformance_spec_test.rs` (dotwrittenarg, directshadowcontrol,
       importdeclcollision) and `compiler/tests/callable_release_integrity_spec_test.rs`
       (qualifiedcallidentity) with their controls; the red cases committed first
-- [ ] 1.1.2 Run the suites and record the red phase (the matching dot calls, the generic caller,
-      the renamed import, the qualified mismatch, the func-typed global, and the six direct-name
-      fixtures verified green first; AR-5)
+- [ ] 1.1.2 Run the suites and record the red phase (the matching dot calls, the renamed import,
+      the qualified mismatch, the func-typed global, and the six direct-name fixtures verified
+      green first; the `c: Box` generic caller is part of the red expectation — it is falsely
+      rejected at the head; AR-5)
 
 ### Step 1.2: Implementation
 
@@ -114,7 +116,7 @@ controls.
 emission differential
 
 **Deliverables**:
-- [ ] ST-1..ST-4 red then green; the six direct-name control fixtures stay green
+- [ ] ST-1, ST-3, ST-4 red then green; ST-2 is the green control and the six direct-name fixtures stay green
 - [ ] The origin suites and the batch-L identity oracles stay green
 
 ---
@@ -143,8 +145,8 @@ element key, and the substituted element member widening.
 ### Step 2.2: Implementation
 
 - [ ] 2.2.1 Judge the substituted conditional arms per instance and pass the expected type into
-      `check_conditional` for the four direct contexts; bind the nested element level from the
-      substituted element; apply the substituted member's view conversion —
+      `check_conditional` and **both arm checks** for the four direct contexts; bind the nested
+      element level from the substituted element; apply the substituted member's view conversion —
       `compiler/src/sema/ops.rs`, `compiler/src/sema/expr.rs`, `compiler/src/sema/call.rs`,
       `compiler/src/own/instance_check.rs`, `compiler/src/types/mod.rs`,
       `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs`
@@ -168,7 +170,7 @@ element key, and the substituted element member widening.
 
 **Verify**: `make check`; the checker-conformance suite plain and `RDC_ASAN=1`; the strict builds;
 the hosted-amiga emission for `DEF-365`/`368`; the freestanding compile for `DEF-365`; the
-`DEF-364` control on hosted-amiga and freestanding
+no-import `m364_control_fs` on hosted-amiga and freestanding
 
 **Deliverables**:
 - [ ] ST-5..ST-8 red then green
@@ -202,9 +204,11 @@ count), the qualified type path, and the folded negated literal matrix.
 ### Step 3.2: Implementation
 
 - [ ] 3.2.1 Context-type the literal at a concrete generic parameter (plain-call route); apply
-      TY-4 at nested type-argument positions only (keep `check_nullable_decl` and
-      `report_illegal_nullable`); resolve the multi-segment named type; propagate the unary
-      operand's context and judge the folded value — `compiler/src/sema/call.rs`,
+      TY-4 at nested type-argument positions **and the explicit call type argument** (keep
+      `check_nullable_decl` and `report_illegal_nullable`); resolve the multi-segment named type;
+      for a negated integer literal fold with `int_literal_value`, pass the expected type to
+      `check_unary`, apply exactly one `int_fits` check gated by `is_integer_scalar`, and do
+      **not** context-type the operand — `compiler/src/sema/call.rs`,
       `compiler/src/sema/items.rs`, `compiler/src/sema/mod.rs`,
       `compiler/src/sema/ops.rs`, `compiler/src/own/program.rs`,
       `compiler/src/own/place.rs`, `compiler/src/types/table.rs`
@@ -262,11 +266,14 @@ bounds fault) and the conditional-base member store rejection, including the `un
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Resolve the element/member type per instance; generalize the target builder for
-      plain/compound/update/deep-chain stores; always materialize the base/index before the RHS;
-      make the `None` fallback report the frozen `E10221` or prove it unreachable; recurse the
-      place test through `Unsafe` and remove the Index bypass — `compiler/src/own/expr.rs`,
-      `compiler/src/sema/ops.rs`
+- [ ] 4.2.1 Resolve the element/member type through the store's `Value` path
+      (`resolved_value_ty` on the `AddressOf` operand, or a target `Place`/type duty); generalize
+      the target builder for plain/compound/update/deep-chain/multi-index/nested stores; always
+      materialize the base/index before the RHS; make the `None` fallback a debug assertion or pin
+      its unreachability (no `E10221` false-rejection path for accepted targets); apply the same
+      no-silent-drop rule to `emit_indexed_update`; add
+      `Member => is_place(base)` and `Unsafe(inner) => is_place(inner)`, and remove the Index bypass —
+      `compiler/src/own/expr.rs`, `compiler/src/sema/ops.rs`
 - [ ] 4.2.2 Run the suites to green; on any failure STOP and fix the implementation. If a profile
       refuses the route, **stop for a user ruling** (AR-34(a)); do not park
 
@@ -274,8 +281,9 @@ bounds fault) and the conditional-base member store rejection, including the `un
 
 - [ ] 4.3.1 Write the phase implementation pins (the emitted store sequence, the retained index
       and bounds guard, the per-instance owning store and its drop, the single RHS call, the
-      compound/update forms, the target-order materialization, the `E10221` spans including
-      `Unsafe`, a re-emission determinism pin) in
+      compound/update/nested/multi-index forms, the target-order materialization, the `E10221`
+      spans for the five conditional forms including the unsafe-wrapped conditional forms, the accepted
+      raw-prefix forms with their read-back, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 4.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
       probes every store form under ASan/LSan; the emission lens runs the differential over
@@ -285,14 +293,14 @@ bounds fault) and the conditional-base member store rejection, including the `un
 ### Step 4.4: Phase Record
 
 - [ ] 4.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`
-      (including the `(*p).f` residual candidate); update the Progress block and commit per the
+      (including the `(*p).f` and `unsafe (*p).f` residual candidates); update the Progress block and commit per the
       active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the ASan/LSan store matrix;
-the strict builds
+the strict builds; the hosted-amiga compile of the accepted store forms (AR-28)
 
 **Deliverables**:
-- [ ] ST-13..ST-14 red then green; the bounds trap `E11211` stays green
+- [ ] ST-13..ST-14 red then green; the five conditional forms and the unsafe-wrapped **conditional** forms reject with one `E10221`; the unsafe **raw-prefix** forms are accepted with a store-emitting read-back; the bounds trap `E11211` stays green
 - [ ] The batch-L store/literal origin pins stay green
 
 ---
@@ -314,16 +322,18 @@ form, conditional arm), and the borrow-element conditional take control.
 
 - [ ] 5.1.1 [spec-author] Write the phase cases —
       `compiler/tests/conditional_projection_residue_spec_test.rs` (elementreadloan,
-      copysourceloans, borrowelemtakecontrol) with their controls; the red cases committed first
+      copysourceloans with the mixed-position, different-arm-count, and fill-form cases,
+      borrowelemtakecontrol) with their controls; the red cases committed first
 - [ ] 5.1.2 Run the suite and record the red phase (the direct/member twins, the in-scope copies,
       the mixed-position union, and the `DEF-374` two-report parity verified green first; AR-5,
       AR-32)
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Carry the element-read store's loan; snapshot both copy arms and write the
-      destination's loan **union** once, including the fill form and a conditional arm that is an
-      array literal — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`,
+- [ ] 5.2.1 Carry the element-read store's loan; snapshot both copy arms and the array-literal
+      elements and write the destination's loan **union** once, including the fill form, a
+      conditional arm that is an array literal, and a conditional element inside an array literal
+      — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`,
       `compiler/src/own/expr.rs`. **`DEF-374` is a control: no code change for it** (AR-32)
 - [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
@@ -357,28 +367,32 @@ form, conditional arm), and the borrow-element conditional take control.
 > **Rows**: `DEF-375`, `DEF-376`
 > **Lenses**: correctness + semantics + memory-safety + emission-integrity (AR-27)
 > **Reasoning**: high — the shared materializer and the deferred pointer fill decide double frees
-> across the store, return, aggregate, and guarded paths; the emitted pointer identity is the proof
+> across the store, return, aggregate/field, array-element, conditional-arm, and guarded paths; the emitted pointer identity and move are the proof
 
 ### Step 6.1: Specification Tests
 
 **Reference**: [03-06](03-06-deref-take-channels.md) · [07](07-testing-strategy.md)
 ST-18..ST-19 · AR-20, AR-21
-**Objective**: Pin the single-evaluated owning deref source in store/return/field and the guarded
-take's consumed source and deferred pointer fill.
+**Objective**: Pin the single-evaluated owning deref source in the store/return/field/array/
+conditional positions and the guarded take's consumed source and deferred pointer fill.
 
 - [ ] 6.1.1 [spec-author] Write the phase cases —
       `compiler/tests/conditional_projection_residue_spec_test.rs` (derefoperandonce,
-      guardeddereftake) with the three `DEF-375` shapes, the discarded/concrete-duplicable
-      controls, and the false/true impure `DEF-376` selections; the red cases committed first
+      guardeddereftake) with the five `DEF-375` shapes, the discarded/non-taking/concrete-
+      duplicable controls, and the false/true impure `DEF-376` selections; the red cases
+      committed first
 - [ ] 6.1.2 Run the suite and record the red phase (the discarded read, the duplicable pointee,
       and the eager take controls verified green first; AR-5)
 
 ### Step 6.2: Implementation
 
 - [ ] 6.2.1 Add the shared owning-deref materializer (take-path predicate) used by the store, the
-      return, and the aggregate/struct-literal field; gate the take materialization on
-      `defer_move_outs == 0` and carry the pointer fill on the deferred `Materialize` record —
-      `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`, `compiler/src/ir.rs`,
+      return, the aggregate/struct-literal field, the array-literal element, and the conditional
+      arm; the field source is moved (pointee zeroed); gate the take materialization on
+      `defer_move_outs == 0`; add `value_move_outs: Vec<Value>` to `Materialize` (keep
+      `move_outs` as the place channel), carry the pointer-temp fill in `Materialize.value`, and
+      emit `MoveOutValue` in both guard forms — `compiler/src/own/statements.rs`,
+      `compiler/src/own/lower.rs`, `compiler/src/ir.rs`, `compiler/src/own/call.rs`,
       `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs`,
       `compiler/src/codegen/cleanup.rs`; audit the exhaustive matches in
       `compiler/src/own/generics.rs`, `compiler/src/own/instance_check.rs`,
@@ -387,11 +401,10 @@ take's consumed source and deferred pointer fill.
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the single `cl_alt` call in the store/return/
-      field C, the read/empty pointer identity, the guarded emptying position, the deferred
+- [ ] 6.3.1 Write the phase implementation pins (the single `cl_alt` call in the store/return/field/array/conditional C, the read/empty pointer identity, the guarded emptying position, the deferred
       pointer fill, the false-path absence, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 6.3.2 Phase review — dispatch the lenses (all four); the memory lens runs all three
+- [ ] 6.3.2 Phase review — dispatch the lenses (all four); the memory lens runs all five
       `DEF-375` shapes and both `DEF-376` selections under ASan; apply the corrections; run the
       differential over `m375_*`/`m376_*` (AR-37)
 - [ ] 6.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused
@@ -404,7 +417,7 @@ take's consumed source and deferred pointer fill.
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan probes
 
 **Deliverables**:
-- [ ] ST-18..ST-19 red then green (all three `DEF-375` shapes; both `DEF-376` selections)
+- [ ] ST-18..ST-19 red then green (all five `DEF-375` shapes read back 12; both `DEF-376` selections)
 - [ ] The batch-L `DEF-329`/guarded-take oracles stay green
 
 ---
@@ -427,26 +440,27 @@ included) and the owning nested conditional's deferred carrier/fill.
 
 - [ ] 7.1.1 [spec-author] Write the phase cases —
       `compiler/tests/conditional_projection_residue_spec_test.rs` (hiddenviewdestination,
-      guardnestedowning) with the brace-list and eager-order controls; the red cases committed
-      first
+      guardnestedowning with the loop fixture `b379_loop`) with the brace-list and eager-order
+      controls; the red cases committed first
 - [ ] 7.1.2 Run the suite and record the red phase (the concrete brace-list, the direct-literal,
       and the unguarded nested controls verified green first; AR-5)
 
 ### Step 7.2: Implementation
 
 - [ ] 7.2.1 Route a call-valued view-array element to the binding store at every literal position
-      (the **unguarded** builder consults the predicate) and defer the by-value argument carrier
+      (consult `struct_literal_needs_stores` at the **unguarded codegen value/read** call site,
+      including the projection-base position) and defer the by-value argument carrier
       under `defer_move_outs` into the `Materialize` channel; keep the fill in the guard's
-      evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`,
-      `compiler/src/ir.rs` if the carrier travels through it
+      evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/function.rs`,
+      `compiler/src/codegen/guards.rs`, `compiler/src/ir.rs` (the `Materialize` value)
 - [ ] 7.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 7.3: Impl Tests & Review
 
 - [ ] 7.3.1 Write the phase implementation pins (the bound destination array, the
       call-with-destination form, the field copy, the call counters, the `__cl_owned0` fill
-      position inside the guarded path, the drop/re-fill order, a re-emission determinism pin) in
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      position inside the guarded path, the loop's re-fill/re-drop/re-release order, a re-emission
+      determinism pin) in `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 7.3.2 Phase review — dispatch the lenses (all four); the memory lens analyzes the guard
       drop/re-fill (`codegen/guards.rs:273-307`); the emission lens runs the differential over
       `m378_*`/`m379_*` (AR-37); apply the corrections
@@ -479,8 +493,9 @@ hosted-amiga leg
 - [ ] 8.1.2 Update the roadmap rows: the 18 red rows move to Done with per-row evidence; the two
       controls (`DEF-361`, `DEF-374`) move to Done with their control-pin evidence; the two
       parked majors stay open. Add/check **every row filed during execution** with its
-      reproduction and evidence; probe the likely incidentals (`DEF-380` via the `DEF-378`
-      family, `DEF-382` via the `DEF-371` literal fix) and record incidental vs open; recompute
+      reproduction and evidence; record `DEF-380`'s boundary from the `DEF-378` gridel family
+      (incidental vs open), and keep `DEF-382` open unless the fix substitutes explicit type
+      arguments (the `DEF-371` concrete-parameter fix does not cover `identity<u8>(5)`); recompute
       the next-batch count from the roadmap. State the accounting explicitly (18 Done + 2
       controls Done; 2 parked majors open; the remaining minors counted by audit — no
       "minors untouched" claim without the count) (AR-38)
@@ -503,8 +518,9 @@ hosted-amiga leg
 ```
 Phase 1 (call identity + written arguments)
    ├──→ Phase 2 (substitution I: conditional/element)
+   │        ├──→ Phase 3 (substitution II: context typing; the conditional arm check feeds it)
    │        └──→ Phase 5 (element/store loans)
-   └──→ Phase 3 (substitution II: context typing)
+   └──→ Phase 3
 
 Phase 4 (dropped store targets)          [independent; runs fourth]
 
@@ -516,8 +532,9 @@ All → Phase 8 (close-out)
 
 Arrow legend: `A → B` marks a machinery dependency (B extends the judgment A touches). The scope
 is severity-first (the critical is planned first); the **execution is dependency-ordered**: P1
-settles the call-site inference, then P2 and P3 run, P4 is independent and runs fourth, P5
-follows P2, and P6 settles the deferred move-out/`Materialize` channel before P7 uses it (AR-36).
+settles the call-site inference, then P2 runs and feeds P3 (the conditional expected-type arm
+check) and P5, P4 is independent and runs fourth, and P6 settles the deferred move-out/
+`Materialize` channel before P7 uses it (AR-36).
 The phases run 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 in order.
 
 ---
@@ -534,8 +551,8 @@ The phases run 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 in order.
 | `make -C docker exec CMD="RDC_ASAN=1 cargo test --test conditional_projection_residue_spec_test --test conditional_projection_residue_impl_test"` | The P4–P7 memory leg |
 | `make -C docker exec CMD="target/debug/clc --profile host -o out.c prog.clo && cc -std=c99 -O0 -g -Wall -Wextra -Werror -o out.bin out.c"` | The strict-build probes (the pinned container) |
 | `cc -std=c99 -O0 -g -fsanitize=address -no-pie` + `ASAN_OPTIONS=detect_leaks=1:symbolize=0 timeout 30` | The host ASan/LSan probes |
-| `make -C docker exec CMD="target/debug/clc --profile hosted-amiga -o out.c prog.clo"` + the pinned `m68k-amigaos-gcc` | The hosted-amiga emission leg for `DEF-365`/`368`/`378`/`384`/`385` and the `DEF-364` control |
-| `make -C docker exec CMD="target/debug/clc --profile freestanding -o out.c prog.clo"` | The freestanding compile for `DEF-365` and the `DEF-364` control |
+| `make -C docker exec CMD="target/debug/clc --profile hosted-amiga -o out.c prog.clo"` + the pinned `m68k-amigaos-gcc` | The hosted-amiga emission leg for `DEF-365`/`368`/`378`/`384`/`385` and the no-import `m364_control_fs` control |
+| `make -C docker exec CMD="target/debug/clc --profile freestanding -o out.c prog.clo"` | The freestanding compile for `DEF-365` and the no-import `m364_control_fs` control |
 | Per-phase clc+cc over the named probe sets and the corpus | The base/head emission differential (AR-37) |
 | `make verify` | Close-out: every hosted-amiga leg plus the runtime-fault programs |
 
