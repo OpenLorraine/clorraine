@@ -256,3 +256,10 @@ oracle needs `len(pad) == sizeof(ClS)`); a deferred spelling alone would need a 
 change. The value positions keep their pinned declared folds. Recorded; the review lenses verify
 the numbers per profile.
 
+**AR-25 (collision order ruling, auto-design):** When a qualified head names both a loaded module and a
+value/import binding, **the module path wins** — for reads and for value-headed calls alike (the
+checker's `module_path_type` precedence, which the phase-8 corrections generalized); the value head
+applies only when no loaded module matches, and a lexical local always shadows both. The own-stage
+receiver resolution and the emitter align with the checker (settling the L8S-5 undecided shapes in
+favor of one order across stages).
+
