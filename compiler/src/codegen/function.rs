@@ -663,13 +663,18 @@ impl<'a> Emitter<'a> {
                 // destination slot itself (`w.items[i].name = w.items[j].name`
                 // with `i == j`). The move must not empty the source when it is
                 // the destination, so an owning runtime source compares the two
-                // addresses first and treats an equal pair as a self-copy.
+                // addresses first and treats an equal pair as a self-copy. An
+                // identical object text is already a self-copy and needs no
+                // emitted comparison at all.
                 let source_ty = self.resolved_place_ty(source);
                 let runtime_source = self.needs_drop(&source_ty)
                     && source.projections.iter().any(|projection| {
                         matches!(projection, ir::Projection::ElementTemp(_))
                     });
                 if runtime_source {
+                    if target_object_text(&target_c) == target_object_text(&source_c) {
+                        return;
+                    }
                     self.push(&format!("    if (&({target_c}) != &({source_c})) {{"));
                     self.emit_move_place(target, source, &target_c, &source_c);
                     self.push("    }");
@@ -747,35 +752,46 @@ impl<'a> Emitter<'a> {
                         // until the right-hand side has been evaluated. Save
                         // it, store the new value, then release the saved
                         // value. A projected source may name the destination
-                        // slot itself (`w.items[i] = w.items[j]` with `i == j`),
-                        // so an equal pair is a self-copy.
+                        // slot itself (`w.items[i] = w.items[i]`), so the
+                        // object texts are compared first and an identical
+                        // pair is a self-copy.
                         let target_c = format!("*({pointer_c})");
                         let aliasable = value_names_storage(value);
-                        if aliasable {
-                            // The address comparison reads the source index, so
-                            // its bounds check runs first.
-                            self.emit_guards(value);
+                        let value_c = if aliasable {
+                            Some(self.value(value))
+                        } else {
+                            None
+                        };
+                        let identical = value_c.as_deref().is_some_and(|value_c| {
+                            target_object_text(&target_c)
+                                == target_object_text(value_c)
+                        });
+                        if !identical {
+                            if let Some(value_c) = &value_c {
+                                // The address comparison reads the source index,
+                                // so its bounds check runs first.
+                                self.emit_guards(value);
+                                self.push(&format!(
+                                    "    if (&({target_c}) != &({value_c})) {{"
+                                ));
+                            }
+                            let save = self.unique_local("__cl_save");
+                            self.push("    {");
                             self.push(&format!(
-                                "    if (&({target_c}) != &({})) {{",
-                                self.value(value)
+                                "        {} = {target_c};",
+                                declarator(&pointer_ty, &save, &self.sema.table)
                             ));
-                        }
-                        let save = self.unique_local("__cl_save");
-                        self.push("    {");
-                        self.push(&format!(
-                            "        {} = {target_c};",
-                            declarator(&pointer_ty, &save, &self.sema.table)
-                        ));
-                        if !aliasable {
-                            self.emit_guards(value);
-                        }
-                        let lowered = self.store_text(value, &pointer_ty);
-                        self.push(&format!("        {target_c} = {lowered};"));
-                        self.emit_arm_source_moves(value, &pointer_ty);
-                        self.emit_drop_expr(&save, &pointer_ty);
-                        self.push("    }");
-                        if aliasable {
+                            if !aliasable {
+                                self.emit_guards(value);
+                            }
+                            let lowered = self.store_text(value, &pointer_ty);
+                            self.push(&format!("        {target_c} = {lowered};"));
+                            self.emit_arm_source_moves(value, &pointer_ty);
+                            self.emit_drop_expr(&save, &pointer_ty);
                             self.push("    }");
+                            if aliasable {
+                                self.push("    }");
+                            }
                         }
                     } else {
                         // The replaced element owns a value, so it is released

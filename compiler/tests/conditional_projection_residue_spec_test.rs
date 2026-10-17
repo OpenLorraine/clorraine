@@ -14175,6 +14175,27 @@ func main(): i32 {
     let output = run_memory("rhsindexselfwhole", self_whole);
     assert_no_asan("rhsindexselfwhole", &output);
     assert_exit("rhsindexselfwhole", &output, 0);
+
+    let same_whole = r#"module spec.cpr.rhsindexselfsamewhole;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = w.items[i];
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1) - 2;
+}
+"#;
+    let output = run_memory("rhsindexselfsamewhole", same_whole);
+    assert_no_asan("rhsindexselfsamewhole", &output);
+    assert_exit("rhsindexselfsamewhole", &output, 0);
 }
 
 // ---------------------------------------------------------------------------

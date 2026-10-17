@@ -7358,3 +7358,67 @@ func main(): i32 {
         "ClElem __cl_save_1 = *(&((*w).items[i]));",
     );
 }
+
+/// An identical whole-element self-copy emits no move at all.
+///
+/// `w.items[i] = w.items[i]` names one object on both sides, so the store needs
+/// no drop, copy, or empty. The host and hosted-amiga emissions both keep the
+/// target guard and the read-back and emit no address comparison, which a C
+/// compiler would otherwise fold into a tautological compare.
+#[test]
+fn should_skip_an_identical_whole_element_self_copy() {
+    let source = r#"module spec.cprimpl.implselfsamewhole;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = w.items[i];
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(borrow h, 1) - 2;
+}
+"#;
+    for profile in ["host", "hosted-amiga"] {
+        let tag = if profile == "host" {
+            "implselfsamewhole"
+        } else {
+            "implselfsamewholeamiga"
+        };
+        let scratch = ScratchDir::new(tag);
+        let source_path = write_source(tag, &scratch, source);
+        let c_path = scratch.path().join("out.c");
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            profile.to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+        let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i)\n{");
+        assert_absent(tag, body, "!= &(");
+        assert_absent(tag, body, "*(&((*w).items[i])) = (*w).items[i];");
+        assert_contains(
+            tag,
+            body,
+            "if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+        );
+        assert_contains(
+            tag,
+            body,
+            "return (i32)((cl_string_view((*w).items[i].name)).len);",
+        );
+    }
+}
