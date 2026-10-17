@@ -320,3 +320,55 @@ and `DEF-405` (the explicit/inferred type-argument literal context).
   (the `m378_*` hidden out-parameter probes) is `DEF-378`'s phase; P-3 is the parked `embed`.
 - A negated float literal at `f32` reports `E10200` on both the generic and concrete spellings
   (pre-existing parity, `DEF-420`).
+
+## Phase 4 — Dropped store targets
+
+**Reviewed implementation**: `43a3a35` (the implementation), `4371374` (the pins), and the correction
+rounds (`26f27d6`, `af04306`, `2d2e17a`). **Lenses**: correctness (L4C), semantics (L4S),
+memory-safety (MS), emission-integrity (P4).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | L4C-1 (the fixed-array row-store pin); the P-1..P-6 pre-existing notes; the distinct-arm double free (L4C2-1) was the R1 correction's finding |
+| semantics | FAIL — 3 blockers | L4S-1 (the generic RHS indexed-place fold: the stored value read element 0), L4S-2 (the raw/view conditional base rejected although the implied deref is admitted), L4S-3 (the generic compound/update signed arithmetic); L4S-4/5 minors; L4S-6 (the owned-move RHS pin) in the re-confirmation |
+| memory-safety | FINDINGS — 2 criticals | MS-1 (the new member store freed the overwritten owner before a view/alias RHS read it), MS-2 (the conditional self-arm over a runtime index nulled the target); the R1 distinct-arm double free in the re-confirmation |
+| emission-integrity | CONFIRMED — 0 head-introduced | The three intended delta classes; the re-audit then found the R1 distinct-arm (fixed) and the self-slot crash (F3) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`26f27d6`) | **Fixed**: the overwritten-owner save until the RHS view/alias has read it (including the ArrayLit fill and the raw-deref path); the pinned runtime-index source place; the conditional self-arm storage-address compare; the generic compound/update wrap casts; the `Unsafe` capture root (`E10402`); the raw-deref member out-slot addressing; the conditional-value-base rejection control; the bare-`T` row pin |
+| R1 (`af04306`) | **Fixed**: the distinct fixed-array arm's source move-out; the duplicable RHS-index pins; the slice-view control and the deref read-back; the self-slot address guard (the member and whole-element twins) |
+| F3/P4F-2 (`2d2e17a`) | **Fixed**: the identical whole-element self-copy is skipped entirely (no tautological compare, no save/copy/empty) |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| memory-safety | PASS WITH MINORS (the two criticals + the five shared-root rows fixed), then FAIL (the R1 distinct-arm) → fixed |
+| correctness | FAIL (the R1 distinct-arm) → fixed; the final confirmation confirmed 7/7 fixed shapes |
+| semantics | FAIL (L4S-6) → the duplicable pins and the F2 controls |
+| emission-integrity | FINDINGS (the R1 distinct-arm + the self-slot) → fixed |
+| final (`P4F-2`) | **CLEAN — 0 findings** |
+
+### Filed rows
+
+`DEF-421` (the deref-rooted member store dropped), `DEF-422` (the standalone raw-prefix store
+`E10600`), `DEF-423` (the whole-element store order; **extended** with `at1`/`at2`), `DEF-424` (the
+ArrayLit save/clear before the RHS; extended with the constant-index self-copy), `DEF-425` (the
+generic owned element move through a borrow parameter), `DEF-426` (the generic `/=`/`%=` guard),
+`DEF-427` (the `len` of a runtime-indexed element folds to zero).
+
+### Record notes
+
+- AR-44 records the conditional-value base decision: the syntactic closed-list reading rejects
+  `(c?p:q).v.x` / `(c?a:b)[i].y` (one `E10221`), the explicit `*(c?p:q)` deref spelling is accepted
+  with a read-back, and no per-arm selecting route is added; the final confirmation closed the
+  deferred-route question.
+- The conditional self-arm now compares storage addresses (ignoring the pinned-index spelling); the
+  distinct fixed-array arm empties its source; the identical whole-element self-copy is skipped.
+- The `(*p).f` / `unsafe (*p).f` dropped-store residual remains `DEF-421`; the constant-index
+  whole-element self-copy is added to `DEF-424`'s evidence.

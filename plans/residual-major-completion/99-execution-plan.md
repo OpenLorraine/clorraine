@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 29/60 tasks (48%) — Phase 4 pinned
+> **Progress**: 32/60 tasks (53%) — Phase 4 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -285,16 +285,16 @@ bounds fault) and the conditional-base member store rejection, including the `un
       spans for the five conditional forms including the unsafe-wrapped conditional forms, the accepted
       raw-prefix forms with their read-back, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-17; eleven impl pins: the store sequence, the compound/update, the deep chain/nested, the multi-index, the target order, the owning member/element drops, the re-emission determinism, the seven `E10221` sites, the raw-prefix stores, and the slice emission; all eleven discriminate at the base `7103dc1`; residue impl 109/109, plain and ASan)
-- [ ] 4.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
+- [x] 4.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
       probes every store form under ASan/LSan; the emission lens runs the differential over
-      `m367_*`/`m377_*` (AR-37)
-- [ ] 4.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, the residue-suite
+      `m367_*`/`m377_*` (AR-37) ✅ (completed: 2026-10-17; the four lenses dispatched (correctness PASS WITH MINORS, semantics FAIL 3 blockers, memory FINDINGS 2 criticals, emission CONFIRMED 0), the three correction rounds (`26f27d6`, `af04306`, `2d2e17a`), and the follow-up confirmations; rows `DEF-421`–`DEF-427` filed, `DEF-423`/`DEF-424` extended, AR-44 recorded)
+- [x] 4.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, the residue-suite
       `assert_traps` case, and the focused suites
-### Step 4.4: Phase Record
+### Step 4.4: Phase Record ✅ (completed: 2026-10-17; the bounded confirmations: memory PASS then the R1 blocker fixed, correctness PASS with the R1 fix, semantics PASS with the duplicable pins, emission CLEAN, and the final P4F-2 CLEAN (0 findings); the ASan matrix, the `assert_traps` bounds case, and the focused suites green)
 
-- [ ] 4.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`
+- [x] 4.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`
       (including the `(*p).f` and `unsafe (*p).f` residual candidates); update the Progress block and commit per the
-      active commit mode
+      active commit mode ✅ (completed: 2026-10-17; the ledger section recorded; the residual candidates filed; progress 32/60)
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the ASan/LSan store matrix;
 the strict builds; the hosted-amiga compile of the accepted store forms (AR-28)
