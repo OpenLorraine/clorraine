@@ -10630,3 +10630,226 @@ fn should_keep_the_all_literal_grid_brace_list() {
     let exit = run_host_c(tag, &scratch, &emitted);
     assert_eq!(exit, 0, "the literal grid must run; exit {exit}");
 }
+
+/// A guarded literal whose field is a conditional of two places.
+const GUARDED_CONDITIONAL_FIELD_SOURCE: &str = r#"module spec.cprimpl.m7l4place;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+
+func use(g: bool, flag: bool, take x: String, take y: String): i32 {
+    if (g && consume(Holder { s: flag ? x : y, tag: stringOf("x") }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// The same field with a raw-deref arm through an impure pointer.
+const GUARDED_CONDITIONAL_DEREF_SOURCE: &str = r#"module spec.cprimpl.m7l4deref;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+func pickPtr(p: raw String, q: raw String, flag: bool): raw String {
+    if (flag) { return p; }
+    return q;
+}
+
+func use(g: bool, flag: bool, take x: String, take y: String, take f: String): i32 {
+    unsafe {
+        let p: raw String = &x;
+        if (g && consume(Holder { s: flag ? *pickPtr(p, p, flag) : f, tag: stringOf("x") }) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// The same conditional field under `||` and in a ternary arm.
+const GUARDED_CONDITIONAL_POSITIONS_SOURCE: &str = r#"module spec.cprimpl.m7l4pos;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+
+func orUse(g: bool, flag: bool, take x: String, take y: String): i32 {
+    if (g || consume(Holder { s: flag ? x : y, tag: stringOf("x") }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func ternaryUse(g: bool, flag: bool, take x: String, take y: String): i32 {
+    return g ? consume(Holder { s: flag ? x : y, tag: stringOf("x") }) : 0;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A conditional field of an owned literal moves the chosen arm and empties
+/// that arm's source; the raw-deref arm calls its pointer once.
+#[test]
+fn should_pin_a_guarded_literal_conditional_field_arm() {
+    let tag = "m7l4place";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_CONDITIONAL_FIELD_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7l4place_use(bool g, bool flag, ClString x, ClString y)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = x, (x = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = y, (y = NULL))",
+    );
+    assert_absent(tag, body, "(ClHolder){ (flag ?");
+
+    let tag = "m7l4deref";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_CONDITIONAL_DEREF_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7l4deref_use(bool g, bool flag, ClString x, ClString y, ClString f)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = (((__cl_tmp0 = cl_spec_cprimpl_m7l4deref_pickPtr(p, p, flag))), *(__cl_tmp0)), (*(__cl_tmp0) = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = f, (f = NULL))",
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_m7l4deref_pickPtr(p, p, flag)").count(),
+        1,
+        "the impure pointer must evaluate once; body:\n{body}"
+    );
+}
+
+/// The conditional field move stays on the branch that evaluates it under
+/// `||` and in a ternary arm.
+#[test]
+fn should_pin_the_guarded_literal_conditional_field_positions() {
+    let tag = "m7l4pos";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_CONDITIONAL_POSITIONS_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7l4pos_orUse(bool g, bool flag, ClString x, ClString y)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g ||",
+        "(__cl_owned0.s = x, (x = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7l4pos_ternaryUse(bool g, bool flag, ClString x, ClString y)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "__cl_ret = (g ?",
+        "(__cl_owned0.s = x, (x = NULL))",
+    );
+}
+
+/// An owning element read from the body-scope read base at index zero.
+const R1_ZERO_SOURCE: &str = r#"module spec.cprimpl.m7r1zero;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+func n1(): String[2] { return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = Holder { names: n1() }.names[0];
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The same read at index one.
+const R1_ONE_SOURCE: &str = r#"module spec.cprimpl.m7r1one;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+func n1(): String[2] { return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = Holder { names: n1() }.names[1];
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The assignment spelling from element one.
+const R1_ASSIGN_SOURCE: &str = r#"module spec.cprimpl.m7r1assign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+func n1(): String[2] { return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = stringOf("zz");
+    s = Holder { names: n1() }.names[1];
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// An owning element read from a call-filled field moves the selected slot and
+/// empties it, so the read base's cleanup frees nothing twice.
+#[test]
+fn should_pin_the_call_filled_element_move_out() {
+    for (tag, source, index) in [
+        ("m7r1zero", R1_ZERO_SOURCE, 0),
+        ("m7r1one", R1_ONE_SOURCE, 1),
+        ("m7r1assign", R1_ASSIGN_SOURCE, 1),
+    ] {
+        let (_scratch, emitted) = emit_host(tag, source);
+        let signature = format!("cl_spec_cprimpl_{tag}_use(void)\n{{");
+        let body = function_body(tag, &emitted, &signature);
+        assert_contains(tag, body, "ClHolder __cl_owned0 = {0};");
+        let call = format!("cl_spec_cprimpl_{tag}_n1(__cl_call_1);");
+        assert_contains(tag, body, &call);
+        let moved = format!("s = __cl_owned0.names[{index}];");
+        let emptied = format!("__cl_owned0.names[{index}] = NULL;");
+        assert_follows(tag, body, &moved, &emptied);
+        assert_eq!(
+            body.matches(&moved).count(),
+            1,
+            "{tag}: the selected element must move once; body:\n{body}"
+        );
+    }
+}

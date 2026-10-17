@@ -17269,3 +17269,325 @@ fn should_outlive_the_statement_for_an_owning_literal_projection() {
         assert_exit(tag, &output, 0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// guarded literal conditional fields: an owned conditional field moves the
+// chosen arm into the field and empties that arm's source, including a
+// raw-deref arm whose pointer runs once.
+// ---------------------------------------------------------------------------
+
+/// Two place arms under `&&`.
+const M7_L4_PLACE_AND_SOURCE: &str = r#"module spec.cpr.m7l4placeand;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+
+func use(g: bool, flag: bool, take x: String, take y: String): i32 {
+    if (g && consume(Holder { s: flag ? x : y, tag: stringOf("x") }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 2;
+}
+"#;
+
+/// Two place arms under `||`.
+const M7_L4_PLACE_OR_SOURCE: &str = r#"module spec.cpr.m7l4placeor;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+
+func use(g: bool, flag: bool, take x: String, take y: String): i32 {
+    if (g || consume(Holder { s: flag ? x : y, tag: stringOf("x") }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, false, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 3;
+}
+"#;
+
+/// Two place arms in a ternary arm.
+const M7_L4_PLACE_TERNARY_SOURCE: &str = r#"module spec.cpr.m7l4placetenary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+
+func use(g: bool, flag: bool, take x: String, take y: String): i32 {
+    return g ? consume(Holder { s: flag ? x : y, tag: stringOf("x") }) : 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c;
+}
+"#;
+
+/// A raw-deref impure arm and a place arm under `&&`.
+const M7_L4_DEREF_AND_SOURCE: &str = r#"module spec.cpr.m7l4derefand;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+func pickPtr(p: raw String, q: raw String, flag: bool): raw String {
+    if (flag) { return p; }
+    return q;
+}
+
+func use(g: bool, flag: bool, take x: String, take y: String, take f: String): i32 {
+    unsafe {
+        let p: raw String = &x;
+        if (g && consume(Holder { s: flag ? *pickPtr(p, p, flag) : f, tag: stringOf("x") }) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    return a + b + c - 2;
+}
+"#;
+
+/// A raw-deref impure arm and a place arm under `||`.
+const M7_L4_DEREF_OR_SOURCE: &str = r#"module spec.cpr.m7l4derefor;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+func pickPtr(p: raw String, q: raw String, flag: bool): raw String {
+    if (flag) { return p; }
+    return q;
+}
+
+func use(g: bool, flag: bool, take x: String, take y: String, take f: String): i32 {
+    unsafe {
+        let p: raw String = &x;
+        if (g || consume(Holder { s: flag ? *pickPtr(p, p, flag) : f, tag: stringOf("x") }) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let b: i32 = use(false, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let c: i32 = use(false, false, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    return a + b + c - 3;
+}
+"#;
+
+/// A raw-deref impure arm and a place arm in a ternary arm.
+const M7_L4_DEREF_TERNARY_SOURCE: &str = r#"module spec.cpr.m7l4derefternary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: String; }
+func consume(h: Holder): i32 { return i32(len(h.s)) - 2; }
+func pickPtr(p: raw String, q: raw String, flag: bool): raw String {
+    if (flag) { return p; }
+    return q;
+}
+
+func use(g: bool, flag: bool, take x: String, take y: String, take f: String): i32 {
+    unsafe {
+        let p: raw String = &x;
+        return g ? consume(Holder { s: flag ? *pickPtr(p, p, flag) : f, tag: stringOf("x") }) : 0;
+    }
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"), stringOf("ff"));
+    return a + b + c;
+}
+"#;
+
+/// An owned conditional field moves its chosen arm and empties that arm's
+/// source under every guarded position; the raw-deref arm's pointer runs once.
+#[test]
+fn should_move_a_guarded_literal_conditional_field_arm() {
+    for (tag, source) in [
+        ("m7l4placeand", M7_L4_PLACE_AND_SOURCE),
+        ("m7l4placeor", M7_L4_PLACE_OR_SOURCE),
+        ("m7l4placetenary", M7_L4_PLACE_TERNARY_SOURCE),
+        ("m7l4derefand", M7_L4_DEREF_AND_SOURCE),
+        ("m7l4derefor", M7_L4_DEREF_OR_SOURCE),
+        ("m7l4derefternary", M7_L4_DEREF_TERNARY_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// call-filled element moves: an owning element read from the body-scope read
+// base moves the selected slot and empties it, so the base's cleanup cannot
+// free the value the destination now holds.
+// ---------------------------------------------------------------------------
+
+/// A `let` binding from element zero of a call-filled field.
+const M7_R1_ZERO_SOURCE: &str = r#"module spec.cpr.m7r1zero;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+let calls: i32 = 0;
+func n1(): String[2] { calls = calls + 1; return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = Holder { names: n1() }.names[0];
+    return i32(len(s)) - 2 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// A `let` binding from element one of a call-filled field.
+const M7_R1_ONE_SOURCE: &str = r#"module spec.cpr.m7r1one;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+let calls: i32 = 0;
+func n1(): String[2] { calls = calls + 1; return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = Holder { names: n1() }.names[1];
+    return i32(len(s)) - 2 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The assignment spelling from element one of a call-filled field.
+const M7_R1_ASSIGN_SOURCE: &str = r#"module spec.cpr.m7r1assign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: String[2]; }
+let calls: i32 = 0;
+func n1(): String[2] { calls = calls + 1; return [stringOf("aa"), stringOf("bb")]; }
+
+func use(): i32 {
+    let s: String = stringOf("zz");
+    s = Holder { names: n1() }.names[1];
+    return i32(len(s)) - 2 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The whole-row projection control.
+const M7_R1_WHOLE_SOURCE: &str = r#"module spec.cpr.m7r1whole;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    let r: str[2] = Mixed { row: n1(), tag: stringOf("xy") }.row;
+    return i32(r[0][0]) - 65 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The member projection control.
+const M7_R1_MEMBER_SOURCE: &str = r#"module spec.cpr.m7r1member;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    let s: String = Mixed { row: n1(), tag: stringOf("xy") }.tag;
+    return i32(len(s)) - 2 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// The argument projection control.
+const M7_R1_ARGUMENT_SOURCE: &str = r#"module spec.cpr.m7r1arg;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func consume(s: String): i32 { return i32(len(s)) - 2; }
+
+func use(): i32 {
+    if (consume(Mixed { row: n1(), tag: stringOf("xy") }.tag) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return use() - 1; }
+"#;
+
+/// The return projection control.
+const M7_R1_RETURN_SOURCE: &str = r#"module spec.cpr.m7r1ret;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func get(): String { return Mixed { row: n1(), tag: stringOf("xy") }.tag; }
+
+func main(): i32 { return i32(len(get())) - 2 + calls - 1; }
+"#;
+
+/// The element move empties the selected slot for both indices and the
+/// assignment spelling; the whole-row, member, argument, and return controls
+/// stay clean.
+#[test]
+fn should_move_a_call_filled_element_into_an_owning_binding() {
+    for (tag, source) in [
+        ("m7r1zero", M7_R1_ZERO_SOURCE),
+        ("m7r1one", M7_R1_ONE_SOURCE),
+        ("m7r1assign", M7_R1_ASSIGN_SOURCE),
+        ("m7r1whole", M7_R1_WHOLE_SOURCE),
+        ("m7r1member", M7_R1_MEMBER_SOURCE),
+        ("m7r1arg", M7_R1_ARGUMENT_SOURCE),
+        ("m7r1ret", M7_R1_RETURN_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}

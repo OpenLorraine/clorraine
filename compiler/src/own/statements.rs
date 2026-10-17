@@ -582,7 +582,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ValueKind::Member { .. } | ValueKind::Index { .. }
             )
         {
-            if self.projection_roots_at_temp(&lowered) {
+            if self.projection_roots_at_temp(&lowered)
+                || self.projection_roots_at_generated_owner(&lowered)
+            {
                 // The base runs before the index, so the materialized base is
                 // filled before the index is pinned.
                 let lowered = self.settle_projection_base(lowered);

@@ -2989,6 +2989,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a projection chain roots at a compiler-generated owner.
+    ///
+    /// A generated owner is compiler storage, not a caller binding: a consumed
+    /// projection of it must move the selected value and empty the slot, or
+    /// the owner's scope cleanup frees the value the destination now holds.
+    /// The walk follows the same member and element chain as
+    /// [`Self::projection_roots_at_temp`].
+    pub(super) fn projection_roots_at_generated_owner(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(place) => match &place.base {
+                ir::PlaceBase::Local(name) => self
+                    .bindings
+                    .iter()
+                    .any(|binding| binding.generated && binding.ir_name == *name),
+                _ => false,
+            },
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.projection_roots_at_generated_owner(base)
+            }
+            _ => false,
+        }
+    }
+
     /// True when the value reads storage an owned container is responsible for.
     ///
     /// A place, or a field or element projection of one at any index, names

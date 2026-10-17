@@ -894,6 +894,18 @@ impl<'a> Emitter<'a> {
                     self.value_hands_over_storage_with(&element, value, include_materialized)
                 })
             }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.value_hands_over_storage_with(ty, then_value, include_materialized)
+                    || self.value_hands_over_storage_with(
+                        ty,
+                        else_value,
+                        include_materialized,
+                    )
+            }
             _ => false,
         }
     }
@@ -1062,6 +1074,27 @@ impl<'a> Emitter<'a> {
                 // destination, and a place source copies its bytes and empties.
                 if let Some(stored) = self.array_row_expr(&sub, &field_ty, value) {
                     parts.push(stored);
+                    continue;
+                }
+            }
+            // An owned conditional field moves the chosen arm into the field
+            // and empties that arm's source, exactly as an element store does.
+            // A plain store would copy the handle and leave the chosen arm
+            // owning the same value until its own cleanup released it again.
+            if self.needs_drop(&field_ty) {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &value.kind
+                {
+                    parts.push(self.conditional_move_expr(
+                        &sub,
+                        &field_ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    ));
                     continue;
                 }
             }
