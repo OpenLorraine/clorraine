@@ -418,3 +418,49 @@ element-store nested fill with a fresh member value); `DEF-309` extended (the ca
   `E10026` at the same span.
 - The open-extent fill keeps one aggregate record (a conservative fallback; an unresolved extent
   cannot name its elements).
+
+## Phase 6 — Deref and take channels
+
+**Reviewed implementation**: `194a942` (the implementation), `7671684` (the pins), `98aedeb` (the
+correction). **Lenses**: correctness (L6C), semantics (L6S), memory-safety (P), emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | L6C-1 (the deferred-fill comment), L6C-2 (a projection through a raw deref — filed `DEF-437`), L6C-3 (the phase-7 carrier, verified with the composites in P7), L6C-4 (a loop-head place take — filed `DEF-444`) |
+| semantics | FAIL — 1 blocker | L6S-1 (the literal sibling source order reversed by the eager field/element fill); L6S-2..L6S-5 pre-existing filed (`DEF-436`, `DEF-437`, `DEF-438`, `DEF-439`) |
+| memory-safety | CONFIRMED — 0 in-diff | The five positions and both guard forms memory-correct (place and impure pointers, concrete struct/view/duplicable substitutions, both selections); five pre-existing findings filed (`DEF-436`, `DEF-437`, `DEF-440`, `DEF-441`, `DEF-442`) |
+| emission-integrity | CONFIRMED — 0 in-diff | 48 deltas in the intended classes; no head-only strict failure; the profiles/determinism clean; the pre-existing residuals filed (`DEF-436`, `DEF-443`) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`98aedeb`) | **Fixed**: the struct-literal field and array-literal element defer their owning-deref fill, so the earlier siblings evaluate first (the source order); the deferred-fill comment reworded; the two-field/two-element order cases added |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| semantics | **PASS — 0 blockers**: L6S-1 closed (the two-field/two-element/nested/multi-field runs all match the source order); the deferred-fill mechanics conformant; the regression matrix unchanged |
+
+### Filed rows
+
+`DEF-436` (the whole-element and raw-target stores bypass the materializer), `DEF-437` (the member
+projection of a raw pointee), `DEF-438` (the eager take-argument order), `DEF-439` (the
+`value_move_outs` gap in `arm_consumes_target`), `DEF-440` (the guarded intrinsic raw-deref pointee),
+`DEF-441` (the guarded take of a member over a raw pointer), `DEF-442` (the guarded take of a
+conditional of literals), `DEF-443` (the guarded struct-literal field with a conditional deref arm),
+`DEF-444` (the loop-head place-deref take).
+
+### Record notes
+
+- The literal-position fill now travels in a `Materialize` and is emitted by the field/element store
+  at its own turn; the guarded literal remains the phase-7 carrier concern (`DEF-379`).
+- `b375_arr` (and an existing-array `xs = [*alt(p,q)]`) gains the pre-existing fixed-array
+  `reads_target` save prologue because the deferred fill exposes the call's named-binding arguments;
+  it is non-semantic (a fresh declaration's save is a no-op; the existing-array run values are
+  identical and ASan/LSan-clean).
+- The `value_move_outs` channel carries the consumed non-place source in both guard forms; the
+  `move_outs` place channel is unchanged.

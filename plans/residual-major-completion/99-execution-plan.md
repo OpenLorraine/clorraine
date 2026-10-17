@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 45/60 tasks (75%) — Phase 6 pinned
+> **Progress**: 48/60 tasks (80%) — Phase 6 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -404,14 +404,14 @@ conditional positions and the guarded take's consumed source and deferred pointe
 - [x] 6.3.1 Write the phase implementation pins (the single `cl_alt` call in the store/return/field/array/conditional C, the read/empty pointer identity, the guarded emptying position, the deferred ✅ (completed: 2026-10-17; ten impl pins: the single `cl_alt` call and the read/empty identity across the store, return, field, element, and conditional arm; the guarded pointer emptying and the deferred fill on the evaluated path; the false-path absence and its run counter; the byte-identical re-emission; all ten discriminate at `bdc2a4e`; residue impl 154/154, plain and ASan)
       pointer fill, the false-path absence, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 6.3.2 Phase review — dispatch the lenses (all four); the memory lens runs all five
+- [x] 6.3.2 Phase review — dispatch the lenses (all four); the memory lens runs all five ✅ (completed: 2026-10-17; the four lenses dispatched (correctness PASS WITH MINORS, semantics FAIL 1 blocker, memory CONFIRMED 0 in-diff, emission CONFIRMED 0 in-diff); the correction round deferred the literal-position fill (the sibling source order) and reworded the comment; rows `DEF-436`–`DEF-444` filed)
       `DEF-375` shapes and both `DEF-376` selections under ASan; apply the corrections; run the
       differential over `m375_*`/`m376_*` (AR-37)
-- [ ] 6.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused
+- [x] 6.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused ✅ (completed: 2026-10-17; the bounded confirmation: semantics PASS (0 blockers; L6S-1 closed, the order matrix green); the ASan matrix and the focused suites green)
       suites
 ### Step 6.4: Phase Record
 
-- [ ] 6.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+- [x] 6.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`; ✅ (completed: 2026-10-17; the ledger section recorded; progress 48/60)
       update the Progress block and commit per the active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan probes
