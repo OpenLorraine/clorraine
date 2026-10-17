@@ -7841,3 +7841,455 @@ func main(): i32 {
     assert_no_asan("rawenumcontrols", &output);
     assert_exit("rawenumcontrols", &output, 0);
 }
+
+// ===== Call identity and written-argument checks =====
+
+/// The holder module the declaration/import collision programs import from.
+///
+/// It exports `v` for the renamed-import shapes and `g` for the direct
+/// spelling, so the colliding local name is always `g`.
+const DECL_COLLISION_HOLDER: &str = r#"module spec.cc.declcollisionholder;
+
+export let v: i32 = 5;
+export let g: i32 = 5;
+"#;
+
+/// Builds a module that binds `g` through an import and through its own
+/// declaration, in the requested order.
+///
+/// The import renames `v` to `g`, so the diagnostic's site is the imported
+/// source name `v` while its message names the local binding `g`. Returns the
+/// program text and the one-based line of the import statement.
+fn declaration_collision_program(
+    module: &str,
+    declaration: &str,
+    import_first: bool,
+) -> (String, usize) {
+    let import = "import { v as g } from spec.cc.declcollisionholder;";
+    let main = "func main(): i32 {\n    return 0;\n}";
+    if import_first {
+        (
+            format!("module {module};\n\n{import}\n\n{declaration}\n\n{main}\n"),
+            3,
+        )
+    } else {
+        let import_line = declaration.lines().count() + 4;
+        (
+            format!("module {module};\n\n{declaration}\n\n{import}\n\n{main}\n"),
+            import_line,
+        )
+    }
+}
+
+/// A dot call's written argument is judged against the parameter the receiver
+/// fixes.
+///
+/// The receiver `b: Box` fixes the callee's first type parameter to `Box`, so
+/// every written argument must convert to `Box` under the usual implicit
+/// widenings; the callee's type arguments are inferred at the call site. The
+/// `take` and `borrow` receiver spellings each report one `E10200` at the
+/// written argument, and the direct inferred and explicit twins report the
+/// same code at their own written argument. The matching `take` dot call and
+/// the generic caller `outer<i32>(b, c)` with `c: Box` run their values,
+/// while the `c: i32` caller reports at the written argument.
+///
+/// Before the fix the dot calls were accepted and the strict C build failed on
+/// `cl_pick__Box` and `cl_put__Box`; the valid generic caller was falsely
+/// rejected with two `E10200` because the deferred record judged the callee's
+/// parameter against the caller's own instance; and the `c: i32` caller
+/// reported at the receiver instead of the written argument.
+#[test]
+fn should_report_a_dot_call_written_argument_at_its_resolved_parameter() {
+    let take_dot = r#"module spec.cc.dotwrittenarg;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = b.pick(7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "dotwrittenarg",
+        take_dot,
+        "E10200",
+        &[
+            "cannot convert 'i32' to 'Box' implicitly",
+            "main.clo:11:25",
+        ],
+        &[],
+    );
+
+    let borrow_dot = r#"module spec.cc.dotwrittenborrow;
+
+struct Box { x: i32; }
+
+func put<T>(borrow out: T, v: T): void {
+    out = v;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    b.put(7);
+    return b.x - 1;
+}
+"#;
+    assert_rejected_once(
+        "dotwrittenborrow",
+        borrow_dot,
+        "E10200",
+        &[
+            "cannot convert 'i32' to 'Box' implicitly",
+            "main.clo:11:11",
+        ],
+        &[],
+    );
+
+    let inferred = r#"module spec.cc.dotwritteninferred;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = pick(b, 7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "dotwritteninferred",
+        inferred,
+        "E10200",
+        &[
+            "cannot convert 'i32' to 'Box' implicitly",
+            "main.clo:11:26",
+        ],
+        &[],
+    );
+
+    let explicit = r#"module spec.cc.dotwrittenexplicit;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = pick<Box>(b, 7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "dotwrittenexplicit",
+        explicit,
+        "E10200",
+        &[
+            "cannot convert 'i32' to 'Box' implicitly",
+            "main.clo:11:31",
+        ],
+        &[],
+    );
+
+    let generic_i32 = r#"module spec.cc.dotgenerici32;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(b: Box, c: T): i32 {
+    return b.pick(c);
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    return outer<i32>(b, 7) - 1;
+}
+"#;
+    assert_rejected_once(
+        "dotgenerici32",
+        generic_i32,
+        "E10200",
+        &[
+            "cannot convert 'i32' to 'Box' implicitly",
+            "main.clo:10:19",
+        ],
+        &[],
+    );
+
+    let matching = r#"module spec.cc.dotcontrol;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let c: Box = Box { x: 2 };
+    let g: i32 = b.pick(c);
+    return g - 2;
+}
+"#;
+    let output = run_memory("dotcontrol", matching);
+    assert_no_asan("dotcontrol", &output);
+    assert_exit("dotcontrol", &output, 0);
+
+    let generic_box = r#"module spec.cc.dotgenericbox;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(b: Box, c: Box): i32 {
+    return b.pick(c);
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let c: Box = Box { x: 2 };
+    return outer<i32>(b, c) - 1;
+}
+"#;
+    let output = run_memory("dotgenericbox", generic_box);
+    assert_no_asan("dotgenericbox", &output);
+    assert_exit("dotgenericbox", &output, 0);
+}
+
+/// One name may not be bound by both an import and a same-module declaration.
+///
+/// Binding one name twice in a module is an error for every declaration kind,
+/// in either order; the collision reports once, at the import item's name, and
+/// names the local binding. The module declaration stays a valid single
+/// declaration (no duplicate-declaration report), and a renamed import beside
+/// an unrelated declaration stays accepted and runs. Before the fix only a
+/// prior import was compared, so every declaration kind was accepted with an
+/// unused-import warning.
+#[test]
+fn should_report_a_declaration_import_collision() {
+    let direct = r#"module spec.cc.declcollisiondirect;
+
+import { g } from spec.cc.declcollisionholder;
+
+let g: i32 = 7;
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let (_scratch, output, c_path) =
+        compile_pair("declcollision-direct", DECL_COLLISION_HOLDER, direct);
+    assert_rejected_output(
+        "declcollision-direct",
+        &output,
+        &c_path,
+        "E11103",
+        &["duplicate import of 'g'", "main.clo:3:10"],
+        &["E11101"],
+    );
+
+    // Every declaration kind the module loader registers, in both orders. The
+    // `comptime` kind also reports its staged-feature code; the collision is
+    // the finding under test, so only that code's count and site are pinned.
+    let kinds: &[(&str, &str)] = &[
+        ("let", "let g: i32 = 7;"),
+        ("func", "func g(): i32 { return 7; }"),
+        ("struct", "struct g { x: i32; }"),
+        ("const", "const g: i32 = 7;"),
+        ("enum", "enum g : u8 { A, B }"),
+        (
+            "handle",
+            r#"ffi hlib {
+    func Close(take p: g): void;
+}
+handle g freedBy Close;"#,
+        ),
+        ("ffi-block", "ffi g { func h(x: i32): i32; }"),
+        ("ffi-func", "ffi hlib { func g(x: i32): i32; }"),
+        ("intrinsic", "intrinsic func g(): i32;"),
+        ("comptime", "comptime func g(): i32 { return 7; }"),
+    ];
+    for (index, (kind, declaration)) in kinds.iter().enumerate() {
+        for import_first in [true, false] {
+            let order = if import_first { "importfirst" } else { "declfirst" };
+            let tag = format!("declcollision-{kind}-{order}");
+            let module = format!(
+                "spec.cc.declcollision{index}{}",
+                if import_first { "i" } else { "d" }
+            );
+            let (main, import_line) =
+                declaration_collision_program(&module, declaration, import_first);
+            let (_scratch, output, c_path) = compile_pair(&tag, DECL_COLLISION_HOLDER, &main);
+            let site = format!("main.clo:{import_line}:10");
+            assert_rejected_output(
+                &tag,
+                &output,
+                &c_path,
+                "E11103",
+                &["duplicate import of 'g'", site.as_str()],
+                &["E11101"],
+            );
+        }
+    }
+
+    let control = r#"module spec.cc.declcollisioncontrol;
+
+import { v as g } from spec.cc.declcollisionholder;
+
+let h: i32 = 2;
+
+func main(): i32 {
+    return g + h - 7;
+}
+"#;
+    let output = run_memory_pair("declcollision-control", DECL_COLLISION_HOLDER, control);
+    assert_no_asan("declcollision-control", &output);
+    assert_exit("declcollision-control", &output, 0);
+}
+
+/// The holder module the direct-name shadow programs import from.
+///
+/// The exported `b` is a `Box`, so a dot receiver that wrongly resolved to the
+/// import would instantiate the loop over a non-iterable struct and fail.
+const SHADOW_HOLDER: &str = r#"module spec.cc.shadowholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+/// A direct-name shadow at a dot receiver keeps its own type.
+///
+/// A local, a parameter, a generic-body local, and an expression- or
+/// block-bodied lambda parameter may shadow a module name, and the innermost
+/// scope decides the dot-call receiver: each program builds strictly and runs
+/// its expected value, so the imported binding is never the receiver. The
+/// no-import baseline pins the same loop shape without a shadow. The
+/// module-own/module-initializer shape is not part of this control; it is the
+/// declaration/import collision above.
+#[test]
+fn should_keep_a_direct_name_shadow_at_a_dot_receiver() {
+    let local = r#"module spec.cc.shadowlocal;
+
+import { b } from spec.cc.shadowholder;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(): i32 {
+    let b: i32[2] = [3, 4];
+    return b.each();
+}
+
+let g: i32 = body();
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let output = run_memory_pair("shadowlocal", SHADOW_HOLDER, local);
+    assert_no_asan("shadowlocal", &output);
+    assert_exit("shadowlocal", &output, 0);
+
+    let parameter = r#"module spec.cc.shadowparam;
+
+import { b } from spec.cc.shadowholder;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(b: i32[2]): i32 {
+    return b.each();
+}
+
+func main(): i32 {
+    let a: i32[2] = [3, 4];
+    return body(a) - 7;
+}
+"#;
+    let output = run_memory_pair("shadowparam", SHADOW_HOLDER, parameter);
+    assert_no_asan("shadowparam", &output);
+    assert_exit("shadowparam", &output, 0);
+
+    let generic = r#"module spec.cc.shadowgeneric;
+
+import { b } from spec.cc.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+func run<T>(x: T): i32 { let b: i32[2] = [3, 4]; return b.drain() + 0; }
+
+func main(): i32 { let a: i32[2] = [3, 4]; return run<i32[2]>(a) - 2; }
+"#;
+    let output = run_memory_pair("shadowgeneric", SHADOW_HOLDER, generic);
+    assert_no_asan("shadowgeneric", &output);
+    assert_exit("shadowgeneric", &output, 0);
+
+    let lambda_expression = r#"module spec.cc.shadowlambdaexpr;
+
+import { b } from spec.cc.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+let f: func(i32[2]): i32 = (b: i32[2]) => b.drain();
+
+func main(): i32 { let a: i32[2] = [3, 4]; return f(a) - 2; }
+"#;
+    let output = run_memory_pair("shadowlambdaexpr", SHADOW_HOLDER, lambda_expression);
+    assert_no_asan("shadowlambdaexpr", &output);
+    assert_exit("shadowlambdaexpr", &output, 0);
+
+    let lambda_block = r#"module spec.cc.shadowlambdablock;
+
+import { b } from spec.cc.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+let f: func(i32[2]): i32 = (b: i32[2]) => { return b.drain(); };
+
+func main(): i32 { let a: i32[2] = [3, 4]; return f(a) - 2; }
+"#;
+    let output = run_memory_pair("shadowlambdablock", SHADOW_HOLDER, lambda_block);
+    assert_no_asan("shadowlambdablock", &output);
+    assert_exit("shadowlambdablock", &output, 0);
+
+    let baseline = r#"module spec.cc.shadowcontrol;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(): i32 {
+    let b: i32[2] = [3, 4];
+    return b.each();
+}
+
+func main(): i32 {
+    return body() - 7;
+}
+"#;
+    let output = run_host("shadowcontrol", baseline);
+    assert_exit("shadowcontrol", &output, 0);
+}

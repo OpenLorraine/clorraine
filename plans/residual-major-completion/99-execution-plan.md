@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 00:00
-> **Progress**: 0/60 tasks (0%) — Planning
+> **Last Updated**: 2026-10-17
+> **Progress**: 2/60 tasks (3%) — Phase 1 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -72,14 +72,14 @@ ST-1..ST-4 · AR-8, AR-9, AR-24, AR-31
 declaration/import collision kind matrix, the qualified callee identity, and the six direct-name
 controls.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases —
+- [x] 1.1.1 [spec-author] Write the phase cases —
       `compiler/tests/checker_conformance_spec_test.rs` (dotwrittenarg, directshadowcontrol,
       importdeclcollision) and `compiler/tests/callable_release_integrity_spec_test.rs`
-      (qualifiedcallidentity) with their controls; the red cases committed first
-- [ ] 1.1.2 Run the suites and record the red phase (the matching dot calls, the renamed import,
+      (qualifiedcallidentity) with their controls; the red cases committed first ✅ (completed: 2026-10-17; four spec cases added: the dot-call written argument (`checker_conformance`), the declaration/import collision with the 10-kind matrix (`checker_conformance`), the six-fixture direct-name control (`checker_conformance`), and the qualified function identity (`callable_release_integrity`))
+- [x] 1.1.2 Run the suites and record the red phase (the matching dot calls, the renamed import,
       the qualified mismatch, the func-typed global, and the six direct-name fixtures verified
       green first; the `c: Box` generic caller is part of the red expectation — it is falsely
-      rejected at the head; AR-5)
+      rejected at the head; AR-5) ✅ (completed: 2026-10-17; the red phase recorded: checker 164 passed / 2 failed (the dot-written-argument and collision cases), callable 67 passed / 1 failed (the qualified identity); the six shadow fixtures and all other controls green, plain and under `RDC_ASAN=1`)
 
 ### Step 1.2: Implementation
 

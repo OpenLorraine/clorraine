@@ -2982,3 +2982,137 @@ func main(): i32 {
     assert_no_asan("ptrlendplain", &output);
     assert_exit("ptrlendplain", &output, 0);
 }
+
+// ===== Qualified call identity =====
+
+/// A qualified call reaches the module's function, not a same-named caller
+/// function.
+///
+/// A qualified path names the loaded module and its function, so the module's
+/// symbol, parameter modes, and return type govern the call. The value call
+/// returns the module's value, the signature-divergent shape passes an `i32`
+/// to the module's `f(n: i32)`, and the checker's mismatch keeps its one
+/// `E10200` at the written argument. The qualified func-typed global and the
+/// local-shadowed module head stay on their own callees, and a plain
+/// same-module call is the unchanged baseline.
+///
+/// Before the fix the call was typed with the module's signature but emitted
+/// the caller's same-named function, so the value call returned the wrong
+/// value and the signature shape failed the strict C build on the caller's
+/// symbol.
+#[test]
+fn should_emit_the_qualified_function_identity() {
+    let lib = r#"module spec.cc.quallib;
+
+export func f(): i32 {
+    return 1;
+}
+"#;
+    let main = r#"module spec.cc.qualmain;
+
+func f(): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    return spec.cc.quallib.f() - 1;
+}
+"#;
+    let output = run_pair_memory("qualifiedcall", lib, main);
+    assert_no_asan("qualifiedcall", &output);
+    assert_exit("qualifiedcall", &output, 0);
+
+    let siglib = r#"module spec.cc.qualsig;
+
+export func f(n: i32): i32 {
+    return n + 1;
+}
+"#;
+    let sigmain = r#"module spec.cc.qualsigmain;
+
+func f(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return spec.cc.qualsig.f(5) - 6;
+}
+"#;
+    let output = run_pair_memory("qualifiedsig", siglib, sigmain);
+    assert_no_asan("qualifiedsig", &output);
+    assert_exit("qualifiedsig", &output, 0);
+
+    let mismatch = r#"module spec.cc.qualmismatch;
+
+func f(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return spec.cc.qualsig.f("x") - 6;
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("qualifiedmismatch", siglib, mismatch);
+    assert_rejected_output(
+        "qualifiedmismatch",
+        &output,
+        &c_path,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'i32' implicitly",
+            "main.clo:8:30",
+        ],
+        &[],
+    );
+
+    let hooklib = r#"module spec.cc.qualhooklib;
+
+export let hook: func(i32): i32 = (n: i32) => n + 1;
+"#;
+    let hookmain = r#"module spec.cc.qualhookmain;
+
+func hook(n: i32): i32 { return n + 9; }
+
+func main(): i32 {
+    return spec.cc.qualhooklib.hook(5) - 6;
+}
+"#;
+    let output = run_pair_memory("qualifiedhook", hooklib, hookmain);
+    assert_no_asan("qualifiedhook", &output);
+    assert_exit("qualifiedhook", &output, 0);
+
+    let shadowlib = r#"module m390shadowlib;
+
+export func f(): i32 { return 1; }
+"#;
+    let shadowmain = r#"module spec.cc.qualshadowmain;
+
+struct Lib { f: func(): i32; }
+
+func run(): i32 {
+    let m390shadowlib: Lib = Lib { f: () => 2 };
+    return m390shadowlib.f();
+}
+
+func main(): i32 {
+    return run() - 2;
+}
+"#;
+    let output = run_pair_memory("qualifiedshadow", shadowlib, shadowmain);
+    assert_no_asan("qualifiedshadow", &output);
+    assert_exit("qualifiedshadow", &output, 0);
+
+    let control = r#"module spec.cc.qualcontrol;
+
+func f(): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    return f() - 2;
+}
+"#;
+    let output = run_memory("qualifiedcontrol", control);
+    assert_no_asan("qualifiedcontrol", &output);
+    assert_exit("qualifiedcontrol", &output, 0);
+}
