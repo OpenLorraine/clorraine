@@ -16485,3 +16485,410 @@ func main(): i32 {
     assert_no_asan("literalarrayorder", &output);
     assert_exit("literalarrayorder", &output, 2);
 }
+
+// ---------------------------------------------------------------------------
+// literalviewdestinations: a call-filled view-array field at every literal
+// position.
+//
+// A function that returns a fixed view array writes through a hidden
+// destination parameter, so a literal that names such a call as a field must
+// bind that destination wherever the literal is evaluated: as the base of a
+// projection, in an unguarded row conditional, in a multi-extent grid row, and
+// on the guarded path of a row conditional. A concrete brace-list field needs
+// no destination and stays the control.
+// ---------------------------------------------------------------------------
+
+/// A call-filled view-array field materializes its hidden destination at every
+/// literal position.
+///
+/// `Inner { row: n1() }` is read through the literal, `Inner { row: ok ?
+/// n1() : n2() }` selects one of two call rows without a guard, and the grid
+/// literal fills two `str[2]` rows. Each call runs once, so the counters
+/// cancel the trailing constants and every program exits 0. The guarded row
+/// conditional evaluates its row only when the guard holds: the condition and
+/// the taken return each run one call, while the skipped guard runs none, so
+/// the fixture records four calls and exits 0. The concrete brace-list literal
+/// needs no hidden destination and stays accepted. Every program must build
+/// under the strict flags and be free of memory errors.
+///
+/// The grid program is the multi-extent `str[2][2]` row spelling, which a
+/// separate multi-extent view-array emission gap also covers; the close-out
+/// measures whether this case closes that gap incidentally.
+#[test]
+fn should_materialize_a_hidden_view_destination_at_every_literal_position() {
+    let read = r#"module spec.cpr.viewdestread;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    return i32(Inner { row: n1() }.row[0][0]) - 65 + (calls - 1) * 10;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("viewdestread", read);
+    assert_no_asan("viewdestread", &output);
+    assert_exit("viewdestread", &output, 0);
+
+    let unguarded = r#"module spec.cpr.viewdestrowcond;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    return i32(Inner { row: ok ? n1() : n2() }.row[0][0]);
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return (a - 65) + (b - 67) + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("viewdestrowcond", unguarded);
+    assert_no_asan("viewdestrowcond", &output);
+    assert_exit("viewdestrowcond", &output, 0);
+
+    let grid = r#"module spec.cpr.viewdestgrid;
+
+struct Grid { rows: str[2][2]; }
+
+let calls: i32 = 0;
+
+func r1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func r2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(g: bool, o: bool): i32 {
+    if (g && i32(Grid { rows: [o ? r1() : r2(), r1()] }.rows[0][0][0]) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(false, true);
+    return (a - 1) + (b - 0) + calls - 2;
+}
+"#;
+    let output = run_memory("viewdestgrid", grid);
+    assert_no_asan("viewdestgrid", &output);
+    assert_exit("viewdestgrid", &output, 0);
+
+    let guarded = r#"module spec.cpr.viewdestguardrow;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func use(g: bool, ok: bool): i32 {
+    if (g && i32(Inner { row: ok ? n1() : n2() }.row[0][0]) > 0) {
+        return i32(Inner { row: ok ? n1() : n2() }.row[0][0]);
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 4;
+}
+"#;
+    let output = run_memory("viewdestguardrow", guarded);
+    assert_no_asan("viewdestguardrow", &output);
+    assert_exit("viewdestguardrow", &output, 0);
+
+    let control = r#"module spec.cpr.viewdestcontrol;
+
+struct Inner { row: str[2]; }
+
+func readDirect(): i32 {
+    return i32(Inner { row: ["AA", "BB"] }.row[0][0]);
+}
+
+func readBound(): i32 {
+    let inner: Inner = Inner { row: ["CC", "DD"] };
+    return i32(inner.row[1][0]);
+}
+
+func main(): i32 {
+    return readDirect() + readBound() - 133;
+}
+"#;
+    let output = run_memory("viewdestcontrol", control);
+    assert_no_asan("viewdestcontrol", &output);
+    assert_exit("viewdestcontrol", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardnestcarrier: an owning nested conditional under a short-circuit guard.
+//
+// The right side of `&&` evaluates only when the left does not decide, so an
+// owning conditional argument must fill its carrier on the evaluated path
+// only. A skipped guard runs no call, moves no source, and releases nothing.
+// A loop re-executes the guard, so the carrier's previous value releases
+// exactly once. The eager (unguarded) spelling keeps its current order, and a
+// guarded literal or by-value take keeps the caller's pointee intact when the
+// guard skips.
+// ---------------------------------------------------------------------------
+
+/// An owning nested conditional under a short-circuit guard fills its carrier
+/// only on the evaluated path.
+///
+/// `g && consume(ok ? Outer { ... n1() ... } : Outer { ... n2() ... })` runs
+/// the chosen arm's call only when `g` is true, so the single-pass fixture
+/// records two calls (one per selected arm) and the loop fixture records four
+/// (two guard evaluations per selected arm); both exit 0. The eager control
+/// has no guard and keeps its order, and the direct literal under a guard
+/// already fills only on its evaluated path, so it stays the second control.
+/// A guarded struct-literal field, a guarded array-literal element, and a
+/// guarded by-value take whose source is the caller's pointee leave that
+/// pointee intact when the guard skips: the skipped call exits 0 after reading
+/// the value, while the evaluated call moves it and exits with the expected
+/// value. Every run must be free of memory errors, so the loop's re-fill and
+/// both skipped paths are leak- and double-free-clean.
+#[test]
+fn should_keep_an_owning_nested_conditional_inside_its_guard() {
+    let single = r#"module spec.cpr.guardnest;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                        : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardnest", single);
+    assert_no_asan("guardnest", &output);
+    assert_exit("guardnest", &output, 0);
+
+    let looped = r#"module spec.cpr.guardnestloop;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 2) {
+        if (g && consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                            : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+            total = total + seen;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 130) + (b - 134) + (c - 0) + calls - 4;
+}
+"#;
+    let output = run_memory("guardnestloop", looped);
+    assert_no_asan("guardnestloop", &output);
+    assert_exit("guardnestloop", &output, 0);
+
+    let eager = r#"module spec.cpr.guardnesteager;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(ok: bool): i32 {
+    if (consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                   : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return (a - 65) + (b - 67) + calls - 2;
+}
+"#;
+    let output = run_memory("guardnesteager", eager);
+    assert_no_asan("guardnesteager", &output);
+    assert_exit("guardnesteager", &output, 0);
+
+    let direct = r#"module spec.cpr.guardnestdirect;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func consume(o: Outer): i32 {
+    seen = i32(o.inner.names[0][0]);
+    return 1;
+}
+
+func use(g: bool): i32 {
+    if (g && consume(Outer { inner: Inner { names: n1() }, tag: stringOf("x") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return (a - 65) + (b + 1) + calls - 1;
+}
+"#;
+    let output = run_memory("guardnestdirect", direct);
+    assert_no_asan("guardnestdirect", &output);
+    assert_exit("guardnestdirect", &output, 0);
+
+    let field = r#"module spec.cpr.guardskipfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(take s: String, g: bool): i32 {
+    unsafe {
+        let q: raw String = &s;
+        if (g && consume(Box { s: *q }) == 0) {
+            return 1;
+        }
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(stringOf("xx"), false);
+    let b: i32 = use(stringOf("yy"), true);
+    return a + b - 1;
+}
+"#;
+    let output = run_memory("guardskipfield", field);
+    assert_no_asan("guardskipfield", &output);
+    assert_exit("guardskipfield", &output, 0);
+
+    let element = r#"module spec.cpr.guardskipelement;
+
+import { String, stringOf } from std.text;
+
+func consume(xs: String[1]): i32 { return i32(len(xs[0])) - 2; }
+
+func use(take s: String, g: bool): i32 {
+    unsafe {
+        let q: raw String = &s;
+        if (g && consume([*q]) == 0) {
+            return 1;
+        }
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(stringOf("xx"), false);
+    let b: i32 = use(stringOf("yy"), true);
+    return a + b - 1;
+}
+"#;
+    let output = run_memory("guardskipelement", element);
+    assert_no_asan("guardskipelement", &output);
+    assert_exit("guardskipelement", &output, 0);
+
+    let argument = r#"module spec.cpr.guardskiparg;
+
+import { String, stringOf } from std.text;
+
+func consume(take x: String): i32 { return i32(len(x)) - 2; }
+
+func use(take s: String, g: bool): i32 {
+    unsafe {
+        let q: raw String = &s;
+        if (g && consume(*q) == 0) {
+            return 1;
+        }
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(stringOf("xx"), false);
+    let b: i32 = use(stringOf("yy"), true);
+    return a + b - 1;
+}
+"#;
+    let output = run_memory("guardskiparg", argument);
+    assert_no_asan("guardskiparg", &output);
+    assert_exit("guardskiparg", &output, 0);
+}

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 48/60 tasks (80%) — Phase 6 complete
+> **Progress**: 50/60 tasks (83%) — Phase 7 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -438,11 +438,11 @@ ST-20..ST-21 · AR-22, AR-23
 **Objective**: Pin the hidden destination at every literal position (the unguarded builder
 included) and the owning nested conditional's deferred carrier/fill.
 
-- [ ] 7.1.1 [spec-author] Write the phase cases —
+- [x] 7.1.1 [spec-author] Write the phase cases — ✅ (completed: 2026-10-17; two spec cases added: the hidden view-array destination at the read, unguarded, grid, and guarded-row positions with the brace-list control, and the owning nested conditional under the guard with the single/loop fixtures, the eager and direct-literal controls, and the guarded field/element/argument skip composites)
       `compiler/tests/conditional_projection_residue_spec_test.rs` (hiddenviewdestination,
       guardnestedowning with the loop fixture `b379_loop`) with the brace-list and eager-order
       controls; the red cases committed first
-- [ ] 7.1.2 Run the suite and record the red phase (the concrete brace-list, the direct-literal,
+- [x] 7.1.2 Run the suite and record the red phase (the concrete brace-list, the direct-literal, ✅ (completed: 2026-10-17; the red phase recorded: residue 183 passed / 2 failed; the four view-destination shapes fail the strict C build (the hidden destination); the guardnest runs 1/calls 3 (single) and 2/calls 6 (loop); the guarded field/element skips SEGV; the brace-list, eager, direct-literal, and direct take controls green)
       and the unguarded nested controls verified green first; AR-5)
 
 ### Step 7.2: Implementation
