@@ -10184,3 +10184,449 @@ fn should_keep_a_guarded_element_source_on_the_evaluated_path() {
         "the skipped element guard must leave the caller's value intact; exit {exit}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// owned literal field sources: a guarded literal field that names caller
+// storage moves the value and empties the source on the evaluated path, at
+// every storage position.
+// ---------------------------------------------------------------------------
+
+/// The place, raw-deref, member, nested, fixed-array, and direct field sources.
+const OWNED_FIELD_POSITIONS_SOURCE: &str = r#"module spec.cprimpl.ownedfields;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+struct H { s: String; }
+struct A { ss: String[2]; }
+struct Inner { s: String; }
+struct Outer { inner: Inner; }
+
+func consumeBox(b: Box): i32 { return i32(len(b.s)) - 2; }
+func consumeA(a: A): i32 { return i32(len(a.ss[0])) - 2; }
+func consumeOuter(o: Outer): i32 { return i32(len(o.inner.s)) - 2; }
+
+func placeUse(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g && consumeBox(ok ? Box { s: s } : Box { s: t }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func derefUse(g: bool, ok: bool, take s: String, take t: String): i32 {
+    unsafe {
+        let q: raw String = &s;
+        let r: raw String = &t;
+        if (g && consumeBox(ok ? Box { s: *q } : Box { s: *r }) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+func memberUse(g: bool, ok: bool, take h: H, take k: H): i32 {
+    if (g && consumeBox(ok ? Box { s: h.s } : Box { s: k.s }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func nestedUse(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g && consumeOuter(ok ? Outer { inner: Inner { s: s } } : Outer { inner: Inner { s: t } }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func fixedUse(g: bool, ok: bool, take a: String, take b: String, take c: String, take d: String): i32 {
+    if (g && consumeA(ok ? A { ss: [a, b] } : A { ss: [c, d] }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func directUse(g: bool, take s: String): i32 {
+    if (g && consumeBox(Box { s: s }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// Each owned field source is stored through a move that empties the source;
+/// the compound literal is not used for it.
+#[test]
+fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
+    let tag = "ownedfields";
+    let (_scratch, emitted) = emit_host(tag, OWNED_FIELD_POSITIONS_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_placeUse(bool g, bool ok, ClString s, ClString t)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = s, (s = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = t, (t = NULL))",
+    );
+    assert_absent(tag, body, "(ClBox){ s }");
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_derefUse(bool g, bool ok, ClString s, ClString t)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = *(q), (*(q) = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = *(r), (*(r) = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_memberUse(bool g, bool ok, ClH h, ClH k)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = h.s, (h.s = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = k.s, (k.s = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_nestedUse(bool g, bool ok, ClString s, ClString t)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.inner.s = s, (s = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.inner.s = t, (t = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_fixedUse(bool g, bool ok, ClString a, ClString b, ClString c, ClString d)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.ss[0] = a, (a = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.ss[1] = b, (b = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.ss[0] = c, (c = NULL))",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.ss[1] = d, (d = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfields_directUse(bool g, ClString s)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = s, (s = NULL))",
+    );
+    assert_absent(tag, body, "(ClBox){ s }");
+}
+
+/// The same owned place field under `||`, a loop, and a ternary arm.
+const OWNED_FIELD_POSITIONS_OTHER_SOURCE: &str = r#"module spec.cprimpl.ownedfieldpos;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consumeBox(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func orUse(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g || consumeBox(ok ? Box { s: s } : Box { s: t }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func loopUse(g: bool): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 2) {
+        let s: String = stringOf("xx");
+        if (g && consumeBox(Box { s: s }) == 0) {
+            total = total + 1;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func ternaryUse(g: bool, ok: bool, take s: String, take t: String): i32 {
+    return g ? consumeBox(ok ? Box { s: s } : Box { s: t }) : 0;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// The owned field move sits on the branch that evaluates it under each
+/// position, including the loop's re-created local and the ternary arm.
+#[test]
+fn should_pin_the_owned_literal_field_move_positions() {
+    let tag = "ownedfieldpos";
+    let (_scratch, emitted) = emit_host(tag, OWNED_FIELD_POSITIONS_OTHER_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfieldpos_orUse(bool g, bool ok, ClString s, ClString t)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g ||",
+        "(__cl_owned0.s = s, (s = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfieldpos_loopUse(bool g)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(__cl_owned0.s = s, (s = NULL))",
+    );
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_ownedfieldpos_ternaryUse(bool g, bool ok, ClString s, ClString t)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "__cl_ret = (g ?",
+        "(__cl_owned0.s = s, (s = NULL))",
+    );
+}
+
+/// A conditional argument carried by a ternary arm with call-filled fields.
+const TERNARY_ARM_CARRIER_SOURCE: &str = r#"module spec.cprimpl.m7ternarycarrierimpl;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    return g ? consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                          : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) : 0;
+}
+
+func main(): i32 {
+    use(true, true);
+    use(true, false);
+    use(false, true);
+    return calls;
+}
+"#;
+
+/// A ternary-arm carrier passes each arm's hidden destination and runs the
+/// chosen arm exactly once.
+#[test]
+fn should_pin_the_ternary_arm_carrier_destination() {
+    let tag = "m7ternarycarrierimpl";
+    let (scratch, emitted) = emit_host(tag, TERNARY_ARM_CARRIER_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7ternarycarrierimpl_use(bool g, bool ok)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "__cl_ret = (g ?",
+        "cl_spec_cprimpl_m7ternarycarrierimpl_n1(__cl_tmp0.inner.names)",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "__cl_ret = (g ?",
+        "cl_spec_cprimpl_m7ternarycarrierimpl_n2(__cl_tmp1.inner.names)",
+    );
+    assert_on_line_of(tag, body, "__cl_ret = (g ?", "(__cl_owned0 =");
+    assert_absent(tag, body, "cl_spec_cprimpl_m7ternarycarrierimpl_n1()");
+    assert_absent(tag, body, "cl_spec_cprimpl_m7ternarycarrierimpl_n2()");
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 2,
+        "the two selected arms must call once each; exit {exit}"
+    );
+}
+
+/// An owning literal projected through a whole row and a single element.
+const OWNING_LITERAL_READ_SOURCE: &str = r#"module spec.cprimpl.m7owningread;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func rowUse(): i32 {
+    let r: str[2] = Mixed { row: n1(), tag: stringOf("xy") }.row;
+    return i32(r[0][0]) - 65;
+}
+
+func elemUse(): i32 {
+    let e: str = Mixed { row: n1(), tag: stringOf("xy") }.row[0];
+    return i32(e[0]) - 65;
+}
+
+func main(): i32 { return rowUse() + elemUse(); }
+"#;
+
+/// An owning literal read through a projection binds to a body-scope local,
+/// so the derived view outlives the statement that built the literal.
+#[test]
+fn should_pin_the_owning_literal_read_binding_scope() {
+    let tag = "m7owningread";
+    let (scratch, emitted) = emit_host(tag, OWNING_LITERAL_READ_SOURCE);
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7owningread_rowUse(void)\n{",
+    );
+    assert_contains(tag, body, "ClMixed __cl_owned0 = {0};");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(r), &(__cl_owned0.row), sizeof(r));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }",
+    );
+    assert_absent(tag, body, "ClMixed __cl_tmp");
+
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7owningread_elemUse(void)\n{",
+    );
+    assert_contains(tag, body, "ClMixed __cl_owned0 = {0};");
+    assert_contains(tag, body, "e = __cl_owned0.row[0];");
+    assert_contains(
+        tag,
+        body,
+        "if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }",
+    );
+    assert_absent(tag, body, "ClMixed __cl_tmp");
+
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(
+        exit, 0,
+        "the whole-row and element projections must run; exit {exit}"
+    );
+}
+
+/// A pure multi-extent grid passed by value under a guard.
+const LITERAL_GRID_SOURCE: &str = r#"module spec.cprimpl.m7literalgrid;
+
+struct Grid { rows: str[2][2]; }
+func consume(g: Grid): i32 { return i32(g.rows[0][0][0]) - 65; }
+
+func use(g: bool): i32 {
+    if (g && consume(Grid { rows: [["AA", "BB"], ["CC", "DD"]] }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return a + b - 1;
+}
+"#;
+
+/// An all-literal grid keeps its brace list; only a non-literal row takes the
+/// per-element store form.
+#[test]
+fn should_keep_the_all_literal_grid_brace_list() {
+    let tag = "m7literalgrid";
+    let (scratch, emitted) = emit_host(tag, LITERAL_GRID_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_m7literalgrid_use(bool g)\n{",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "if ((g &&",
+        "(ClGrid){ { { cl_str(\"AA\"), cl_str(\"BB\") }, { cl_str(\"CC\"), cl_str(\"DD\") } } }",
+    );
+    assert_absent(tag, body, ".rows[0][0] =");
+    assert_absent(tag, body, ".rows[1][0] =");
+    let exit = run_host_c(tag, &scratch, &emitted);
+    assert_eq!(exit, 0, "the literal grid must run; exit {exit}");
+}

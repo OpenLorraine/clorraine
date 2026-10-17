@@ -1741,6 +1741,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
+    /// Routes a deferred carrier's conditional arms through the literal store.
+    ///
+    /// A ternary arm keeps the enclosing eager-arm flag, so an arm literal with
+    /// a call-filled fixed-array field would otherwise keep the compound-literal
+    /// call without the hidden destination. The deferred carrier needs each arm
+    /// wrapped in the guarded literal materialization, so the hidden destination
+    /// is passed where the arm is evaluated. A non-conditional value is
+    /// returned unchanged.
+    fn materialize_deferred_conditional_arms(&mut self, value: Value) -> Value {
+        let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = value.kind
+        else {
+            return value;
+        };
+        let then_value = self.materialize_deferred_carrier_arm(*then_value);
+        let else_value = self.materialize_deferred_carrier_arm(*else_value);
+        Value::new(
+            value.ty,
+            ValueKind::Conditional {
+                condition,
+                then_value: Box::new(then_value),
+                else_value: Box::new(else_value),
+            },
+        )
+    }
+
+    /// Wraps one deferred carrier arm that only a guarded literal store fills.
+    ///
+    /// A nested conditional recurses, and a struct literal whose fixed-array
+    /// field has no compound-literal form takes the guarded literal form. Every
+    /// other arm keeps its spelling.
+    fn materialize_deferred_carrier_arm(&mut self, value: Value) -> Value {
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.materialize_deferred_conditional_arms(value);
+        }
+        if matches!(value.kind, ValueKind::StructLit { .. })
+            && self.literal_fields_need_stores(&value)
+        {
+            return self.materialize_guard_literal(value);
+        }
+        value
+    }
+
     /// Binds a value whose evaluation position matters to a statement temporary.
     ///
     /// Evaluation is strictly left-to-right, and C leaves the order of a
@@ -2953,13 +2999,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// rooted at the element address, and so is any projection over a local, a
     /// parameter, or a call-returned array stored in a place.
     ///
-    /// A destination materialization is covered too: the compiler releases it
-    /// at the end of the statement that created it, so a projection of it is
-    /// storage that release owns. The same holds for a conditional whose arms
-    /// both point into such storage, because the chosen arm is a projection of
-    /// it. An ownerless temporary that is not a destination (a transfer
-    /// temporary) is not covered: its value travels to a binding that owns it,
-    /// so a projection still needs that binding.
+    /// A destination materialization is covered too: a statement temporary is
+    /// released at the end of the statement that created it, and a named
+    /// destination lives in the function body scope. In both forms the compiler
+    /// owns the storage a projection reads. The same holds for a conditional
+    /// whose arms both point into such storage, because the chosen arm is a
+    /// projection of it. An ownerless temporary that is not a destination (a
+    /// transfer temporary) is not covered: its value travels to a binding that
+    /// owns it, so a projection still needs that binding.
     pub(super) fn projects_from_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) => true,
@@ -2992,12 +3039,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The provenance of a view whose storage a lowered value reads.
     ///
-    /// A projection over a materialized value reads storage the compiler owns
-    /// through a statement temporary, so the view must carry a loan of that
-    /// temporary: releasing the temporary at the statement's end would
-    /// otherwise leave the view pointing into freed storage. A projection over
-    /// a place keeps the place's own provenance, which the source expression
-    /// already reports.
+    /// A projection over a statement-materialized value reads storage the
+    /// compiler owns through a temporary, so the view must carry a loan of that
+    /// temporary: releasing it at the statement's end would otherwise leave the
+    /// view pointing into freed storage. A named destination is owned by its
+    /// body-scope binding, and a view never projects out of that carrier. A
+    /// projection over a place keeps the place's own provenance, which the
+    /// source expression already reports.
     pub(super) fn lowered_view_provenance(&self, value: &Value) -> Provenance {
         match &value.kind {
             // A named destination is a generated binding whose own scope owns
@@ -3492,10 +3540,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// without storing the literal anywhere, and a C compound literal cannot
     /// name a fixed-array field that a call writes through the hidden
     /// destination or that a conditional fills per arm. The literal is
-    /// therefore stored into a fresh temporary first and the projection reads
-    /// that temporary. Under a conditionally evaluated operand the fill is
-    /// deferred to the path that evaluates the operand, so a skipped guard
-    /// never runs the field's call.
+    /// therefore stored first and the projection reads that storage. A literal
+    /// that owns storage binds to a body-scope local, so a view derived from
+    /// its field outlives the statement that created it; a duplicable literal
+    /// uses a statement temporary. Under a conditionally evaluated operand the
+    /// fill is deferred to the path that evaluates the operand, so a skipped
+    /// guard never runs the field's call.
     fn materialize_literal_read_base(&mut self, value: Value) -> Value {
         if !matches!(value.kind, ValueKind::StructLit { .. })
             || !self.literal_read_needs_stores(&value)
@@ -3506,7 +3556,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return self.materialize_guard_literal(value);
         }
         let ty = value.ty.clone();
-        self.materialize_value_type(value, ty)
+        if !(self.owns_drop(&ty) || self.maybe_owns(&ty)) {
+            return self.materialize_value_type(value, ty);
+        }
+        let name = format!("__cl_owned{}", self.next_owned_temp);
+        self.next_owned_temp += 1;
+        let id = self.declare_generated_local(&name, ty.clone(), self.current_span);
+        self.move_binding_to_body_scope(id);
+        self.set_place(
+            id,
+            PlaceState {
+                initialized: true,
+                ..PlaceState::default()
+            },
+        );
+        self.bindings[id].used = true;
+        let place = self.binding_place(id);
+        self.emit(Statement::Assign {
+            target: place.clone(),
+            value,
+        });
+        Value::new(place.ty.clone(), ValueKind::Place(place))
     }
 
     /// Stores a value into a fresh temporary and returns the temporary value.
@@ -5394,6 +5464,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // travels on the deferred materialization the guard emitter runs where
         // the operand stands.
         if self.defer_move_outs > 0 {
+            let value = self.materialize_deferred_conditional_arms(value);
             let ty = self.materialized_ty(&value);
             let name = format!("__cl_owned{}", self.next_owned_temp);
             self.next_owned_temp += 1;

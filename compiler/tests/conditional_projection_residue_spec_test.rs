@@ -16892,3 +16892,380 @@ func main(): i32 {
     assert_no_asan("guardskiparg", &output);
     assert_exit("guardskiparg", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// owned literal field sources and the ternary carrier: a guarded literal that
+// moves a place, a raw-deref read, a member, a nested field, or a fixed-array
+// element must empty the source on the evaluated path only, and a ternary arm
+// carrier must pass the hidden destination for every call-filled field.
+// ---------------------------------------------------------------------------
+
+/// An owned place field in a conditional arm under a guard.
+const M7_OWNED_PLACE_SOURCE: &str = r#"module spec.cpr.m7ownedplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g && consume(ok ? Box { s: s } : Box { s: t }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 2;
+}
+"#;
+
+/// A raw-deref field in a conditional arm under a guard.
+const M7_OWNED_DEREF_SOURCE: &str = r#"module spec.cpr.m7ownedderef;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, ok: bool, take s: String, take t: String): i32 {
+    unsafe {
+        let q: raw String = &s;
+        let r: raw String = &t;
+        if (g && consume(ok ? Box { s: *q } : Box { s: *r }) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 2;
+}
+"#;
+
+/// A member field in a conditional arm under a guard.
+const M7_OWNED_MEMBER_SOURCE: &str = r#"module spec.cpr.m7ownedmember;
+
+import { String, stringOf } from std.text;
+
+struct H { s: String; }
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, ok: bool, take h: H, take k: H): i32 {
+    if (g && consume(ok ? Box { s: h.s } : Box { s: k.s }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, H { s: stringOf("xx") }, H { s: stringOf("yy") });
+    let b: i32 = use(true, false, H { s: stringOf("xx") }, H { s: stringOf("yy") });
+    let c: i32 = use(false, true, H { s: stringOf("xx") }, H { s: stringOf("yy") });
+    return a + b + c - 2;
+}
+"#;
+
+/// A nested field in a conditional arm under a guard.
+const M7_OWNED_NESTED_SOURCE: &str = r#"module spec.cpr.m7ownednested;
+
+import { String, stringOf } from std.text;
+
+struct Inner { s: String; }
+struct Outer { inner: Inner; }
+func consume(o: Outer): i32 { return i32(len(o.inner.s)) - 2; }
+
+func use(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g && consume(ok ? Outer { inner: Inner { s: s } } : Outer { inner: Inner { s: t } }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 2;
+}
+"#;
+
+/// A fixed-array place field in a conditional arm under a guard.
+const M7_OWNED_FIXED_SOURCE: &str = r#"module spec.cpr.m7ownedfixed;
+
+import { String, stringOf } from std.text;
+
+struct A { ss: String[2]; }
+func consume(a: A): i32 { return i32(len(a.ss[0])) - 2; }
+
+func use(g: bool, ok: bool, take a: String, take b: String, take c: String, take d: String): i32 {
+    if (g && consume(ok ? A { ss: [a, b] } : A { ss: [c, d] }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("aa"), stringOf("bb"), stringOf("cc"), stringOf("dd"));
+    let b: i32 = use(true, false, stringOf("aa"), stringOf("bb"), stringOf("cc"), stringOf("dd"));
+    let c: i32 = use(false, true, stringOf("aa"), stringOf("bb"), stringOf("cc"), stringOf("dd"));
+    return a + b + c - 2;
+}
+"#;
+
+/// A fixed-array field of member reads in a conditional arm.
+const M7_OWNED_MEMBER_FIXED_SOURCE: &str = r#"module spec.cpr.m7ownedmemberfixed;
+
+import { String, stringOf } from std.text;
+
+struct H { s: String; }
+struct A { ss: String[2]; }
+func consume(a: A): i32 { return i32(len(a.ss[0])) - 2; }
+
+func use(g: bool, ok: bool, take h: H, take k: H, take m: H, take n: H): i32 {
+    if (g && consume(ok ? A { ss: [h.s, k.s] } : A { ss: [m.s, n.s] }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, H { s: stringOf("aa") }, H { s: stringOf("bb") }, H { s: stringOf("cc") }, H { s: stringOf("dd") });
+    let b: i32 = use(true, false, H { s: stringOf("aa") }, H { s: stringOf("bb") }, H { s: stringOf("cc") }, H { s: stringOf("dd") });
+    let c: i32 = use(false, true, H { s: stringOf("aa") }, H { s: stringOf("bb") }, H { s: stringOf("cc") }, H { s: stringOf("dd") });
+    return a + b + c - 2;
+}
+"#;
+
+/// A direct literal argument whose field is an owned place.
+const M7_OWNED_DIRECT_SOURCE: &str = r#"module spec.cpr.m7owneddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, take s: String): i32 {
+    if (g && consume(Box { s: s }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, stringOf("xx"));
+    let b: i32 = use(false, stringOf("yy"));
+    return a + b - 1;
+}
+"#;
+
+/// A direct literal argument whose fixed-array field is owned places.
+const M7_OWNED_DIRECT_FIXED_SOURCE: &str = r#"module spec.cpr.m7owneddirectfixed;
+
+import { String, stringOf } from std.text;
+
+struct A { ss: String[2]; }
+func consume(a: A): i32 { return i32(len(a.ss[0])) - 2; }
+
+func use(g: bool, take a: String, take b: String): i32 {
+    if (g && consume(A { ss: [a, b] }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, stringOf("aa"), stringOf("bb"));
+    let b: i32 = use(false, stringOf("cc"), stringOf("dd"));
+    return a + b - 1;
+}
+"#;
+
+/// An owned place field under `||`.
+const M7_OWNED_OR_SOURCE: &str = r#"module spec.cpr.m7ownedor;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, ok: bool, take s: String, take t: String): i32 {
+    if (g || consume(ok ? Box { s: s } : Box { s: t }) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, false, stringOf("xx"), stringOf("yy"));
+    return a + b + c - 3;
+}
+"#;
+
+/// An owned place field re-created and moved on each loop iteration.
+const M7_OWNED_LOOP_SOURCE: &str = r#"module spec.cpr.m7ownedloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 2) {
+        let s: String = stringOf("xx");
+        if (g && consume(Box { s: s }) == 0) {
+            total = total + 1;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return a + b - 2;
+}
+"#;
+
+/// An owned place field in a ternary arm.
+const M7_OWNED_TERNARY_SOURCE: &str = r#"module spec.cpr.m7ownedternary;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+func consume(b: Box): i32 { return i32(len(b.s)) - 2; }
+
+func use(g: bool, ok: bool, take s: String, take t: String): i32 {
+    return g ? consume(ok ? Box { s: s } : Box { s: t }) : 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true, stringOf("xx"), stringOf("yy"));
+    let b: i32 = use(true, false, stringOf("xx"), stringOf("yy"));
+    let c: i32 = use(false, true, stringOf("xx"), stringOf("yy"));
+    return a + b + c;
+}
+"#;
+
+/// Every storage position of an owned literal field moves the source on the
+/// evaluated path, and the skipped selection leaves it owned.
+#[test]
+fn should_move_an_owned_literal_field_source_on_every_guarded_path() {
+    for (tag, source) in [
+        ("m7ownedplace", M7_OWNED_PLACE_SOURCE),
+        ("m7ownedderef", M7_OWNED_DEREF_SOURCE),
+        ("m7ownedmember", M7_OWNED_MEMBER_SOURCE),
+        ("m7ownednested", M7_OWNED_NESTED_SOURCE),
+        ("m7ownedfixed", M7_OWNED_FIXED_SOURCE),
+        ("m7ownedmemberfixed", M7_OWNED_MEMBER_FIXED_SOURCE),
+        ("m7owneddirect", M7_OWNED_DIRECT_SOURCE),
+        ("m7owneddirectfixed", M7_OWNED_DIRECT_FIXED_SOURCE),
+        ("m7ownedor", M7_OWNED_OR_SOURCE),
+        ("m7ownedloop", M7_OWNED_LOOP_SOURCE),
+        ("m7ownedternary", M7_OWNED_TERNARY_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}
+
+/// A ternary-arm carrier whose conditional argument has call-filled fields.
+const M7_TERNARY_CARRIER_SOURCE: &str = r#"module spec.cpr.m7ternarycarrier;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    return g ? consume(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                          : Outer { inner: Inner { names: n2() }, tag: stringOf("y") }) : 0;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c - 0) + calls - 2;
+}
+"#;
+
+/// The ternary-arm carrier builds strictly, selects both arms, and calls each
+/// chosen arm once; the skipped selection runs neither branch.
+#[test]
+fn should_fill_a_ternary_arm_carrier_on_its_evaluated_path() {
+    let output = run_memory("m7ternarycarrier", M7_TERNARY_CARRIER_SOURCE);
+    assert_no_asan("m7ternarycarrier", &output);
+    assert_exit("m7ternarycarrier", &output, 0);
+}
+
+/// An owning literal row projection bound to a whole row.
+const M7_OWNING_ROW_SOURCE: &str = r#"module spec.cpr.m7owningrow;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    let r: str[2] = Mixed { row: n1(), tag: stringOf("xy") }.row;
+    return i32(r[0][0]) - 65 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// An owning literal row projection bound to one element.
+const M7_OWNING_ELEMENT_SOURCE: &str = r#"module spec.cpr.m7owningelem;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { row: str[2]; tag: String; }
+
+let calls: i32 = 0;
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+
+func use(): i32 {
+    let e: str = Mixed { row: n1(), tag: stringOf("xy") }.row[0];
+    return i32(e[0]) - 65 + calls - 1;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// An owning literal whose row or element is bound to a view outlives the
+/// statement that produced it.
+#[test]
+fn should_outlive_the_statement_for_an_owning_literal_projection() {
+    for (tag, source) in [
+        ("m7owningrow", M7_OWNING_ROW_SOURCE),
+        ("m7owningelem", M7_OWNING_ELEMENT_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}

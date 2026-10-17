@@ -295,11 +295,13 @@ pub enum ValueKind {
         /// A named destination that keeps its own cleanup instead of the
         /// temporary.
         ///
-        /// A carrier that must survive its statement — a by-value argument
-        /// binding a loop re-fills — fills a named binding: the binding's own
-        /// scope releases the last value, and each guarded re-fill releases
-        /// the previous one on the evaluated path. When set, the temporary is
-        /// unused and the fill targets this place.
+        /// A carrier that must outlive its statement — a by-value argument
+        /// binding that a loop re-fills — fills a named binding in the
+        /// function's body scope. That scope releases the last value, and each
+        /// evaluated re-fill releases the previous one on the guarded path, so
+        /// the carrier has body-scope lifetime rather than statement-temporary
+        /// lifetime. When set, the temporary is unused and the fill targets
+        /// this place.
         destination: Option<Place>,
         /// The value assigned to the temporary.
         value: Box<Value>,

@@ -554,15 +554,17 @@ impl<'a> Emitter<'a> {
         {
             return self.conditional_move_expr(target_c, ty, condition, then_value, else_value);
         }
-        // A struct-literal arm whose owned field reads a fresh materialized
-        // root stores field by field: the field's move-out empties the source
-        // in the same comma sequence, so the destination is the only owner and
-        // the source's pending release is a no-op. A literal without such a
-        // field keeps the compact compound-literal spelling.
+        // A struct-literal arm whose owned field moves from caller storage
+        // stores field by field: the field's move-out empties the source in
+        // the same comma sequence, so the destination is the only owner and
+        // the source's own cleanup finds nothing. The same form covers a
+        // materialized root, a place, a raw-deref read, a member or element
+        // selection, and a nested literal or array carrying one of those. A
+        // literal without such a field keeps the compact compound-literal
+        // spelling.
         if let ValueKind::StructLit { name, fields } = &arm.kind {
             let hands_over = fields.iter().any(|(field, value)| {
-                matches!(&value.kind, ValueKind::Materialize { .. })
-                    && self.needs_drop(&self.field_type(ty, field))
+                self.value_hands_over_storage(&self.field_type(ty, field), value)
             });
             if hands_over {
                 if let Some(stored) = self.struct_assign_expr(target_c, ty, name, fields) {
@@ -833,6 +835,97 @@ impl<'a> Emitter<'a> {
         })
     }
 
+    /// True when an owned value moves from caller storage at any depth.
+    ///
+    /// A compound literal copies a field's handle but leaves the source
+    /// storage owning the same value, so the field must be stored through a
+    /// move: a place, a compiler temporary, a materialized root, a member or
+    /// element selection, or a raw-deref read names that storage directly. A
+    /// nested struct literal or array literal is searched through its own
+    /// positions, because a place reached inside it has the same problem.
+    fn value_hands_over_storage(&self, ty: &Ty, value: &Value) -> bool {
+        self.value_hands_over_storage_with(ty, value, true)
+    }
+
+    /// True when an owned literal field moves from caller storage.
+    ///
+    /// An adopting materialized carrier is compiler storage whose consumer
+    /// already owns the value, so the direct literal fill keeps its compact
+    /// copy for that form. A place, a deref, a member, an element, a
+    /// non-adopting carrier, or a nested literal that reaches one still forces
+    /// the move.
+    fn value_hands_over_literal_storage(&self, ty: &Ty, value: &Value) -> bool {
+        self.value_hands_over_storage_with(ty, value, false)
+    }
+
+    /// The shared walk for the two storage judgments.
+    fn value_hands_over_storage_with(
+        &self,
+        ty: &Ty,
+        value: &Value,
+        include_materialized: bool,
+    ) -> bool {
+        if !self.needs_drop(ty) {
+            return false;
+        }
+        if arm_has_storage_root(value) {
+            return include_materialized
+                || !matches!(
+                    value.kind,
+                    ValueKind::Materialize {
+                        adopting: true,
+                        ..
+                    }
+                );
+        }
+        match &value.kind {
+            ValueKind::StructLit { fields, .. } => fields.iter().any(|(field, value)| {
+                self.value_hands_over_storage_with(
+                    &self.field_type(ty, field),
+                    value,
+                    include_materialized,
+                )
+            }),
+            ValueKind::ArrayLit { elements, fill } => {
+                let element = ty.iterated_element();
+                elements.iter().any(|value| {
+                    self.value_hands_over_storage_with(&element, value, include_materialized)
+                }) || fill.as_deref().is_some_and(|value| {
+                    self.value_hands_over_storage_with(&element, value, include_materialized)
+                })
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a fixed-array value is entirely literal leaves.
+    ///
+    /// A brace list of constants needs no statement form. A nested row is
+    /// checked recursively, so an all-literal grid keeps its brace list while
+    /// a row with a call, a conditional, or a storage read does not.
+    fn fixed_array_value_is_literal(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::ArrayLit { elements, fill } => {
+                elements
+                    .iter()
+                    .all(|value| self.fixed_array_value_is_literal(value))
+                    && fill
+                        .as_deref()
+                        .map_or(true, |value| self.fixed_array_value_is_literal(value))
+            }
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .all(|(_, value)| self.fixed_array_value_is_literal(value)),
+            ValueKind::Int(_)
+            | ValueKind::Float(_)
+            | ValueKind::Char(_)
+            | ValueKind::Bool(_)
+            | ValueKind::Str(_)
+            | ValueKind::Null => true,
+            _ => false,
+        }
+    }
+
     /// True when a struct literal needs field-by-field stores inside a guard.
     ///
     /// Only a fixed-array field whose element is itself an aggregate forces the
@@ -854,18 +947,12 @@ impl<'a> Emitter<'a> {
                     return true;
                 }
             }
-            // An owning raw-deref field moves its pointee: the store must
-            // empty the storage after the copy, which the compound literal
-            // cannot express.
-            if self.needs_drop(&field_ty)
-                && matches!(
-                    value.kind,
-                    ValueKind::Unary {
-                        op: UnaryOp::Deref,
-                        ..
-                    }
-                )
-            {
+            // An owned field that moves from caller storage — a place, a
+            // raw-deref read, a member or element selection, or a nested
+            // literal carrying one — must store through the move, because the
+            // compound literal cannot empty the source. A materialized carrier
+            // is already owned by its consumer, so its compact copy stays.
+            if self.value_hands_over_literal_storage(&field_ty, value) {
                 return true;
             }
             if let ValueKind::StructLit {
@@ -888,7 +975,9 @@ impl<'a> Emitter<'a> {
     /// apply. A field that is not a brace list is forced too: a conditional or
     /// a call writing through the hidden destination has no array value. A
     /// nested row must itself be a brace list, so a call or a conditional at
-    /// any depth forces the store form.
+    /// any depth forces the store form. An element or fill that moves an owned
+    /// value from caller storage forces it as well, and an all-literal nested
+    /// grid keeps its brace list because every leaf is a constant.
     fn fixed_array_value_needs_guard_stores(&self, value: &Value, ty: &Ty) -> bool {
         let element = ty.iterated_element();
         if matches!(
@@ -900,15 +989,19 @@ impl<'a> Emitter<'a> {
         let ValueKind::ArrayLit { elements, fill } = &value.kind else {
             return true;
         };
-        if !element.is_fixed_array() {
-            return false;
-        }
-        let needs = |inner: &Value| {
-            if !matches!(inner.kind, ValueKind::ArrayLit { .. }) {
-                return true;
+        if element.is_fixed_array() {
+            if self.fixed_array_value_is_literal(value) {
+                return false;
             }
-            self.fixed_array_value_needs_guard_stores(inner, &element)
-        };
+            let needs = |inner: &Value| {
+                if !matches!(inner.kind, ValueKind::ArrayLit { .. }) {
+                    return true;
+                }
+                self.fixed_array_value_needs_guard_stores(inner, &element)
+            };
+            return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
+        }
+        let needs = |inner: &Value| self.value_hands_over_literal_storage(&element, inner);
         elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
     }
 
