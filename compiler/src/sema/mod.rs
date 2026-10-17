@@ -95,6 +95,13 @@ pub struct SemaOutput {
     /// resolves both sides and applies the ordinary conversion (or null)
     /// judgment.
     pub opaque_conversions: Vec<OpaqueConversion>,
+    /// Conditionals whose arm agreement is deferred to their instance.
+    ///
+    /// An arm that still names a type parameter keeps the declaration's
+    /// acceptance: the substitution decides whether the two arms agree and
+    /// whether a null arm reaches a non-nullable context, so the per-instance
+    /// audit re-applies the conditional rule to the resolved arms.
+    pub opaque_conditionals: Vec<OpaqueConditional>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -206,6 +213,66 @@ pub enum ConversionLiteral {
     Float(f64),
 }
 
+/// One conditional whose arm agreement is deferred to its instance.
+///
+/// The declaration cannot judge a conditional whose arms still mention a type
+/// parameter: the substitution decides whether the resolved arms agree. The
+/// audit applies the same rule the declaration applies to concrete arms, and
+/// reports the null rule when a resolved arm is the null shape in a
+/// non-nullable sibling context.
+pub struct OpaqueConditional {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The then arm's declared type.
+    pub then_ty: Ty,
+    /// The else arm's declared type.
+    pub else_ty: Ty,
+    /// The then arm's span, for the null-arm report.
+    pub then_span: Span,
+    /// The else arm's span, for the conversion and null-arm reports.
+    pub else_span: Span,
+    /// The whole conditional's span, for the destination conversion.
+    pub span: Span,
+    /// The destination the conditional must convert to, when one is known.
+    ///
+    /// A let, return, field, or call-argument destination is recorded here so
+    /// the instance judges the resolved result exactly as the concrete twin's
+    /// destination does. `None` means the conditional sits in a position with
+    /// no destination of its own.
+    pub expected: Option<Ty>,
+    /// True when the declaration already reported a null arm at a concrete
+    /// destination, so the instance must not report it a second time.
+    pub null_reported: bool,
+}
+
+/// The arm types of one checked conditional.
+///
+/// A generic call types its arguments before its type arguments are inferred,
+/// so a conditional argument's null arm cannot face the destination then. The
+/// recorded arms let the call site attach the destination once the parameter
+/// is resolved, without walking the expression a second time.
+pub struct ConditionalArms {
+    /// The enclosing function's name, when the conditional sits in one.
+    pub function: Option<String>,
+    /// The then arm's checked type.
+    pub then_ty: Ty,
+    /// The else arm's checked type.
+    pub else_ty: Ty,
+    /// The then arm's span.
+    pub then_span: Span,
+    /// The else arm's span.
+    pub else_span: Span,
+    /// The whole conditional's span.
+    pub span: Span,
+    /// The destination the conditional must convert to, when one is known.
+    pub destination: Option<Ty>,
+    /// True when an arm still names a type parameter, so the instance must
+    /// decide the agreement.
+    pub opaque: bool,
+    /// True when the declaration already reported a null arm.
+    pub null_reported: bool,
+}
+
 /// One index read on a bare type parameter.
 ///
 /// The declaration cannot judge the bounds: the substitution may be any type,
@@ -241,6 +308,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut opaque_indexes: Vec<OpaqueIndex> = Vec::new();
     let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
     let mut opaque_conversions: Vec<OpaqueConversion> = Vec::new();
+    let mut opaque_conditionals: Vec<OpaqueConditional> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -255,6 +323,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_indexes.extend(checker.opaque_indexes.drain(..));
         opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
         opaque_conversions.extend(checker.opaque_conversions.drain(..));
+        opaque_conditionals.extend(checker.opaque_conditionals.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
@@ -266,6 +335,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_indexes,
         opaque_member_uses,
         opaque_conversions,
+        opaque_conditionals,
     }
 }
 
@@ -320,6 +390,15 @@ struct Checker<'a, 'd> {
     opaque_member_uses: Vec<OpaqueMemberUse>,
     /// Values whose conversion is deferred to their instance, in check order.
     opaque_conversions: Vec<OpaqueConversion>,
+    /// Conditionals whose arm agreement is deferred to their instance, in
+    /// check order.
+    opaque_conditionals: Vec<OpaqueConditional>,
+    /// The arm types of every checked conditional, in check order.
+    conditional_arms: Vec<ConditionalArms>,
+    /// Maps a conditional's then arm address to its entry in
+    /// [`Checker::conditional_arms`], so a call site can attach its
+    /// destination after inference.
+    conditional_index: HashMap<usize, usize>,
     /// The member-read expressions whose base is a view and whose spelling is
     /// `ptr`: they are the one form the frozen conversion table lets reach a
     /// `cstring` destination without a cast in the source.
@@ -396,6 +475,9 @@ impl<'a, 'd> Checker<'a, 'd> {
             opaque_indexes: Vec::new(),
             opaque_member_uses: Vec::new(),
             opaque_conversions: Vec::new(),
+            opaque_conditionals: Vec::new(),
+            conditional_arms: Vec::new(),
+            conditional_index: HashMap::new(),
             view_pointer_members: BTreeSet::new(),
             ffi_params: BTreeMap::new(),
             ffi_results: BTreeMap::new(),
@@ -413,6 +495,27 @@ impl<'a, 'd> Checker<'a, 'd> {
     fn check_module(&mut self) {
         for item in &self.module.items {
             self.check_item(item);
+        }
+        // The conditional sites are complete once every body has been checked,
+        // including the destinations a call site attached after inference, so
+        // the deferred sites are recorded here in source order.
+        for arms in self.conditional_arms.drain(..) {
+            if !arms.opaque {
+                continue;
+            }
+            let Some(function) = arms.function else {
+                continue;
+            };
+            self.opaque_conditionals.push(OpaqueConditional {
+                function,
+                then_ty: arms.then_ty,
+                else_ty: arms.else_ty,
+                then_span: arms.then_span,
+                else_span: arms.else_span,
+                span: arms.span,
+                expected: arms.destination,
+                null_reported: arms.null_reported,
+            });
         }
     }
 

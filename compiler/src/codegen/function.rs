@@ -2473,7 +2473,11 @@ impl<'a> Emitter<'a> {
             }
             return format!("({}, {empty})", self.value(value));
         }
-        let value_ty = self.substitute(&value.ty);
+        // The store's source type decides the view widening. A generic body
+        // records an opaque member read, so the instance substitution resolves
+        // the member through its base before the destination's conversion is
+        // applied, exactly as the concrete spelling does.
+        let value_ty = self.resolved_value_ty(value);
         // A possibly-null handle keeps its nullness through the widening: a
         // view constructed over the null handle would dereference it, so the
         // null guard selects the destination's empty view instead. The guard

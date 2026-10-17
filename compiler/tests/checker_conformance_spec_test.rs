@@ -8577,7 +8577,7 @@ func main(): i32 {
         "E10200",
         &[
             "cannot convert 'str' to 'i32' implicitly",
-            "main.clo:4:27",
+            "main.clo:6:27",
         ],
         &["E10012"],
     );
@@ -8598,7 +8598,7 @@ func main(): i32 { return pick(true, 5) - 5; }
         "condnullarm",
         null_arm,
         "E10012",
-        &["'null' is not allowed here", "main.clo:4:27"],
+        &["'null' is not allowed here", "main.clo:6:27"],
         &["E10200"],
     );
 

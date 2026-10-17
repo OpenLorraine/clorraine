@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 10/60 tasks (17%) — Phase 2 red
+> **Progress**: 12/60 tasks (20%) — Phase 2 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -144,13 +144,13 @@ element key, and the substituted element member widening.
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Judge the substituted conditional arms per instance and pass the expected type into
+- [x] 2.2.1 Judge the substituted conditional arms per instance and pass the expected type into
       `check_conditional` and **both arm checks** for the four direct contexts; bind the nested
       element level from the substituted element; apply the substituted member's view conversion —
       `compiler/src/sema/ops.rs`, `compiler/src/sema/expr.rs`, `compiler/src/sema/call.rs`,
       `compiler/src/own/instance_check.rs`, `compiler/src/types/mod.rs`,
-      `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-17; the destination into `check_conditional` and both arms (`sema/expr.rs:71`, `sema/ops.rs:328/408/439/465`); the site record and the per-instance audit (`sema/call.rs:343/750`, `sema/expr.rs:476`, `sema/mod.rs:223/254/502`, `own/instance_check.rs:63/1264/1369`); the index-surface level chain (`types/mod.rs:712/749`); the substitution-aware member store (`codegen/function.rs:2479`); the span correction per AR-40)
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17; checker 175/175 and impl 84/84 plain and under `RDC_ASAN=1`; `make check` exit 0; the hosted-amiga keyed symbol and widening text; the freestanding `DEF-365` build and the `m364_control_fs` profiles; the differential intended deltas only, no head-only strict failure)
 
 ### Step 2.3: Impl Tests & Review
 

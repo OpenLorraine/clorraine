@@ -562,3 +562,10 @@ and its read-back/keying assertions. The collision itself is pinned by the new `
 is an input correction, not a weakening: the same initializer/keying coverage runs, and the
 renamed-import control keeps the import path exercised.
 
+**AR-40 (spec-case span correction, auto-design):** The opaque-conditional and null-arm spec
+cases initially expected `main.clo:4:27`, copied from the blank-line-free probe sources; the test's own
+program text carries two blank lines and places the else arm / the `null` at `main.clo:6:27`. The
+implementation reports the test source's correct site, so only the two expected line numbers are
+corrected (a mechanical test-source span, not a weakening: the code, the count, the message, and the
+column stay pinned).
+

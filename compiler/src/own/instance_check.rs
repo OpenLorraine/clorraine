@@ -60,6 +60,7 @@ pub fn check(
     check_opaque_projections(program, sema, mono, diagnostics);
     check_opaque_indexes(program, sema, mono, diagnostics);
     check_opaque_member_uses(program, sema, mono, diagnostics);
+    check_opaque_conditionals(program, sema, mono, diagnostics);
     check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
@@ -1248,6 +1249,140 @@ fn resolved_member_ty(sema: &SemaOutput, base: &Ty, name: &str) -> Option<Ty> {
         TyKind::Raw(inner) => resolved_member_ty(sema, inner, name),
         _ => crate::types::view_member_ty(base, name),
     }
+}
+
+/// Reports the conditional rule on an opaque site's substituted arms.
+///
+/// The declaration accepts a conditional whose arms still name a type
+/// parameter because the substitution decides whether they agree. Each
+/// concrete instantiation applies the rule the declaration applies to concrete
+/// arms: a null arm at a non-nullable sibling or destination reports the null
+/// rule at the null, a pair the ordinary widenings cannot join reports the
+/// conversion at the else arm, and the settled result faces the destination the
+/// concrete twin's store faces. One site reports once — its first offending
+/// instance.
+fn check_opaque_conditionals(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for conditional in &sema.opaque_conditionals {
+        let Some(Callee::User(decl)) = program.callee(&conditional.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != conditional.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let then_ty = crate::types::substitute(&conditional.then_ty, &bindings);
+            let else_ty = crate::types::substitute(&conditional.else_ty, &bindings);
+            let expected = conditional
+                .expected
+                .as_ref()
+                .map(|expected| crate::types::substitute(expected, &bindings));
+            // A destination that is still open defers the judgment to a later
+            // instance, exactly as an open arm does.
+            let open_expected = expected
+                .as_ref()
+                .is_some_and(|ty| crate::types::contains_param(ty) || ty.is_void());
+            if open_expected {
+                continue;
+            }
+            let expected = expected.as_ref();
+            // A null arm faces the destination, or the sibling when the
+            // conditional has no destination of its own. The instance keeps
+            // the concrete twin's order: the null report first, then the
+            // settled result's conversion.
+            if !conditional.null_reported {
+                null_conditional_report(
+                    &then_ty,
+                    expected.unwrap_or(&else_ty),
+                    conditional.then_span,
+                    diagnostics,
+                );
+                null_conditional_report(
+                    &else_ty,
+                    expected.unwrap_or(&then_ty),
+                    conditional.else_span,
+                    diagnostics,
+                );
+            }
+            // The settled result follows the declaration's arm rule, then the
+            // destination conversion the concrete twin's store applies.
+            if crate::types::contains_param(&then_ty)
+                || crate::types::contains_param(&else_ty)
+            {
+                continue;
+            }
+            let result = if then_ty.kind == else_ty.kind {
+                then_ty.clone()
+            } else if let Some(unified) = crate::types::unify_numeric(&then_ty, &else_ty) {
+                unified
+            } else if crate::types::implicit_conversion(&else_ty, &then_ty) {
+                then_ty.clone()
+            } else if crate::types::implicit_conversion(&then_ty, &else_ty) {
+                else_ty.clone()
+            } else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10200",
+                        format!(
+                            "cannot convert '{}' to '{}' implicitly",
+                            else_ty.display(),
+                            then_ty.display()
+                        ),
+                        conditional.else_span,
+                    )
+                    .with_help("use an explicit cast `T(expr)`"),
+                );
+                break;
+            };
+            if let Some(expected) = expected {
+                if !crate::types::implicit_conversion(&result, expected) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10200",
+                            format!(
+                                "cannot convert '{}' to '{}' implicitly",
+                                result.display(),
+                                expected.display()
+                            ),
+                            conditional.span,
+                        )
+                        .with_help("use an explicit cast `T(expr)`"),
+                    );
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Reports the null rule for one substituted arm.
+///
+/// The arm reports only when it is the null shape and the context — the
+/// destination or the sibling — is concrete and non-nullable; a nullable or
+/// still-open context accepts it, exactly as the concrete spelling does.
+fn null_conditional_report(
+    arm: &Ty,
+    context: &Ty,
+    span: Span,
+    diagnostics: &mut Diagnostics,
+) {
+    if !crate::types::is_null_shaped(arm)
+        || context.nullable
+        || context.is_unknown()
+        || crate::types::contains_param(context)
+    {
+        return;
+    }
+    diagnostics.push(
+        Diagnostic::error("E10012", "'null' is not allowed here", span)
+            .with_help("declare the type `T?` or avoid the empty state"),
+    );
 }
 
 /// Reports the frozen judgment for a value whose conversion was deferred.

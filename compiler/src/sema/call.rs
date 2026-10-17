@@ -337,14 +337,23 @@ impl Checker<'_, '_> {
                             .params
                             .get(index)
                             .is_some_and(crate::types::contains_param);
-                    self.record_deferred_conversion_with(
-                        ty,
-                        &expected,
-                        *arg_span,
-                        literal,
-                        borrow_slot,
-                    );
+                    // A conditional's own duty owns its destination; the
+                    // instance audit judges it after substitution.
+                    let deferred_conditional =
+                        self.note_conditional_destination(&arg.value, &expected);
+                    if !deferred_conditional {
+                        self.record_deferred_conversion_with(
+                            ty,
+                            &expected,
+                            *arg_span,
+                            literal,
+                            borrow_slot,
+                        );
+                    }
                     self.check_conversion(ty, &expected, *arg_span);
+                    // The argument was typed before the inference, so a
+                    // conditional's null arm faces its destination only now.
+                    self.judge_conditional_argument(&arg.value, &expected);
                 }
             }
         }
@@ -736,14 +745,22 @@ impl Checker<'_, '_> {
                 && rest
                     .get(index)
                     .is_some_and(crate::types::contains_param);
-            self.record_deferred_conversion_with(
-                ty,
-                &param,
-                arg.value.span,
-                Self::conversion_literal(&arg.value),
-                borrow_slot,
-            );
+            // A conditional's own duty owns its destination; the instance
+            // audit judges it after substitution.
+            let deferred_conditional = self.note_conditional_destination(&arg.value, &param);
+            if !deferred_conditional {
+                self.record_deferred_conversion_with(
+                    ty,
+                    &param,
+                    arg.value.span,
+                    Self::conversion_literal(&arg.value),
+                    borrow_slot,
+                );
+            }
             self.check_conversion(ty, &param, arg.value.span);
+            // The argument was typed before the inference, so a
+            // conditional's null arm faces its destination only now.
+            self.judge_conditional_argument(&arg.value, &param);
         }
     }
 

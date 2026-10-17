@@ -9,7 +9,10 @@
 use crate::ast::{AssignOp, BinaryOp, Expr, ExprKind, ScalarType, UnaryOp};
 use crate::borrow::is_view;
 use crate::span::Span;
-use crate::types::{implicit_conversion, int_fits, int_literal_value, unify_numeric, Ty, TyKind};
+use crate::types::{
+    contains_param, implicit_conversion, int_fits, int_literal_value, is_null_shaped, unify_numeric,
+    Ty, TyKind,
+};
 
 use super::Checker;
 
@@ -314,17 +317,64 @@ impl Checker<'_, '_> {
         false
     }
 
-    /// Types `cond ? a : b`.
+    /// Types `cond ? a : b`, judging each arm against the destination when
+    /// one is known.
+    ///
+    /// The expected type reaches both arm checks so a literal takes the
+    /// destination's type, and a null arm is judged against the destination
+    /// before unification would swallow the null shape. An arm type that still
+    /// names a type parameter keeps the declaration's acceptance: the
+    /// per-instance audit re-applies this rule to the substituted arms.
     pub(super) fn check_conditional(
         &mut self,
         condition: &Expr,
         then_value: &Expr,
         else_value: &Expr,
+        expected: Option<&Ty>,
+        span: Span,
     ) -> Ty {
         let condition_ty = self.check_value(condition, None);
         self.require_bool(&condition_ty, condition.span);
-        let then_ty = self.check_value(then_value, None);
-        let else_ty = self.check_value(else_value, None);
+        let then_ty = self.check_value(then_value, expected);
+        let else_ty = self.check_value(else_value, expected);
+        let null_reported = if let Some(expected) = expected {
+            self.report_null_conditional_arm(&then_ty, expected, then_value.span)
+                | self.report_null_conditional_arm(&else_ty, expected, else_value.span)
+        } else {
+            false
+        };
+        // The arm types are still open at the declaration, so the instance
+        // decides whether they agree and whether a null arm reaches a
+        // non-nullable destination. The site records its arms and the
+        // destination it has so far; a generic call attaches its resolved
+        // parameter later, and the module finish turns every open site into
+        // the deferred duty.
+        let key = then_value as *const Expr as usize;
+        // A null arm whose destination is still open is judged at the
+        // instance too: the substituted destination decides whether the null
+        // is legal.
+        let open_destination = expected.is_some_and(contains_param);
+        let null_arm = is_null_shaped(&then_ty) || is_null_shaped(&else_ty);
+        let arms = super::ConditionalArms {
+            function: self.function_name.clone(),
+            then_ty: then_ty.clone(),
+            else_ty: else_ty.clone(),
+            then_span: then_value.span,
+            else_span: else_value.span,
+            span,
+            destination: expected.cloned(),
+            opaque: contains_param(&then_ty)
+                || contains_param(&else_ty)
+                || (null_arm && open_destination),
+            null_reported,
+        };
+        match self.conditional_index.get(&key).copied() {
+            Some(index) => self.conditional_arms[index] = arms,
+            None => {
+                self.conditional_index.insert(key, self.conditional_arms.len());
+                self.conditional_arms.push(arms);
+            }
+        }
         if then_ty.kind == else_ty.kind {
             return then_ty;
         }
@@ -348,6 +398,88 @@ impl Checker<'_, '_> {
             else_value.span,
         );
         then_ty
+    }
+
+    /// Reports the null rule for one conditional arm at a known destination.
+    ///
+    /// A destination that is nullable or still open accepts the null arm. A
+    /// concrete non-nullable destination reports at the arm, exactly where the
+    /// null is written.
+    pub(super) fn report_null_conditional_arm(
+        &mut self,
+        arm_ty: &Ty,
+        expected: &Ty,
+        span: Span,
+    ) -> bool {
+        if is_null_shaped(arm_ty)
+            && !expected.nullable
+            && !expected.is_unknown()
+            && !contains_param(expected)
+        {
+            self.error(
+                "E10012",
+                "'null' is not allowed here",
+                "declare the type `T?` or avoid the empty state",
+                span,
+            );
+            return true;
+        }
+        false
+    }
+
+    /// Attaches a conditional's destination and reports whether the site is
+    /// deferred to its instance.
+    ///
+    /// A conditional argument to a generic call is typed before the type
+    /// arguments are inferred, so its destination is known only afterwards.
+    /// The site keeps the destination for the instance audit and the ordinary
+    /// deferred conversion is skipped: the conditional's own duty judges both
+    /// the arm agreement and the resolved result against it, so one site
+    /// reports once exactly as its concrete twin does.
+    pub(super) fn note_conditional_destination(&mut self, expr: &Expr, expected: &Ty) -> bool {
+        let ExprKind::Conditional { then_value, .. } = &expr.kind else {
+            return false;
+        };
+        let key = &**then_value as *const Expr as usize;
+        let Some(index) = self.conditional_index.get(&key).copied() else {
+            return false;
+        };
+        let arms = &mut self.conditional_arms[index];
+        // A null arm at a still-open destination is judged by the instance:
+        // the substituted destination decides whether the null is legal.
+        let open_destination = contains_param(expected);
+        let null_arm = is_null_shaped(&arms.then_ty) || is_null_shaped(&arms.else_ty);
+        if open_destination && null_arm {
+            arms.opaque = true;
+        }
+        arms.destination = Some(expected.clone());
+        arms.opaque
+    }
+
+    /// Applies a call argument's resolved destination to a conditional arm.
+    ///
+    /// A generic call types its arguments before its type arguments are
+    /// inferred, so a conditional argument's null arm has no destination then.
+    /// The recorded arm types let the call site apply the null rule once the
+    /// parameter resolves, without walking the expression a second time.
+    pub(super) fn judge_conditional_argument(&mut self, expr: &Expr, expected: &Ty) {
+        let ExprKind::Conditional { then_value, .. } = &expr.kind else {
+            return;
+        };
+        let key = &**then_value as *const Expr as usize;
+        let Some(index) = self.conditional_index.get(&key).copied() else {
+            return;
+        };
+        let arms = &self.conditional_arms[index];
+        // A site whose arms still name a type parameter is judged by the
+        // instance audit, which substitutes the same destination.
+        if arms.opaque {
+            return;
+        }
+        let (then_ty, else_ty, then_span, else_span) =
+            (arms.then_ty.clone(), arms.else_ty.clone(), arms.then_span, arms.else_span);
+        self.report_null_conditional_arm(&then_ty, expected, then_span);
+        self.report_null_conditional_arm(&else_ty, expected, else_span);
     }
 
     /// Types an assignment, which has a `void` result.

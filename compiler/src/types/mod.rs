@@ -720,6 +720,10 @@ pub fn instance_bindings(params: &[String], args: &[Ty]) -> BTreeMap<String, Ty>
     // #element of T`), so each level's element binds the next placeholder, to
     // a fixed point: the element of the element resolves like the element
     // itself, exactly as the loops that mint the names iterate one step each.
+    // A level continues while its element still has an index surface: an
+    // array row keeps yielding rows, and a text view or a raw pointer yields
+    // its byte or pointee, so a nested element of `str[2]` resolves to its
+    // byte rather than leaving the placeholder unbound.
     let mut index = 0;
     while index < levels.len() {
         let (name, ty) = levels[index].clone();
@@ -727,13 +731,30 @@ pub fn instance_bindings(params: &[String], args: &[Ty]) -> BTreeMap<String, Ty>
         let element = index_element(&ty);
         if !bindings.contains_key(&inner) {
             bindings.insert(inner.clone(), element.clone());
-            if matches!(&element.kind, TyKind::Array { .. }) {
+            if has_index_surface(&element) {
                 levels.push((inner, element));
             }
         }
         index += 1;
     }
     bindings
+}
+
+/// True when a type has an index surface, so its element can be indexed
+/// again.
+///
+/// An array row, a text view, and a raw pointer all accept a further indexing
+/// step; every other kind ends the element chain and leaves any deeper
+/// placeholder unresolved.
+fn has_index_surface(ty: &Ty) -> bool {
+    matches!(
+        &ty.kind,
+        TyKind::Array { .. }
+            | TyKind::Str
+            | TyKind::StaticStr
+            | TyKind::CString
+            | TyKind::Raw(_)
+    )
 }
 
 /// The element one indexing step binds.

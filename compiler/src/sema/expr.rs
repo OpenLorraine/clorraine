@@ -68,7 +68,7 @@ impl Checker<'_, '_> {
                 condition,
                 then_value,
                 else_value,
-            } => self.check_conditional(condition, then_value, else_value),
+            } => self.check_conditional(condition, then_value, else_value, expected, expr.span),
             ExprKind::Cast { ty, value } => self.check_cast(ty, value),
             ExprKind::RawCast { ty, value } => self.check_raw_cast(ty, value),
             ExprKind::StructLiteral {
@@ -470,7 +470,13 @@ impl Checker<'_, '_> {
             }
         }
         let literal = Self::conversion_literal(expr);
-        self.record_deferred_conversion_with(&ty, expected, expr.span, literal, false);
+        // A conditional's own duty owns the arm agreement and the destination,
+        // so the ordinary deferred conversion is not recorded for it; the
+        // site keeps the destination the instance audit substitutes.
+        let deferred_conditional = self.note_conditional_destination(expr, expected);
+        if !deferred_conditional {
+            self.record_deferred_conversion_with(&ty, expected, expr.span, literal, false);
+        }
         self.check_conversion(&ty, expected, expr.span);
         ty
     }
