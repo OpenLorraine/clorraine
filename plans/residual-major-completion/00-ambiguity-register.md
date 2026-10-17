@@ -592,3 +592,12 @@ case expected `main.clo:5:20`, which points at the `<` of `Array<i32?>`; the off
 argument's own start is column 21, and the case's other four sites pin the argument's own start.
 Only the column is corrected (`5:20` -> `5:21`); the code, count, message, line, and the TY-4 rule
 stay pinned. This follows the AR-40 mechanical-span precedent.
+
+**AR-44 (conditional-value base store, recorded decision):** A store whose base is a conditional
+**value** — `(c?p:q).v.x`, `(c?a:b)[i].y`, the fixed-array and slice-view forms, and the unsafe-wrapped
+conditionals — reports one `E10221`: a conditional selection is not in the frozen closed place list
+(Ch 04 §4). The accepted spelling of the same location is the explicit deref `*(c?p:q)` (and
+`*(c?p:q)` field/element access), which is pinned with a read-back. A per-arm selecting route is not
+added: the pre-phase compiler accepted these stores and silently dropped them, so the explicit deref
+spelling is the conformant form; the final confirmation closed the deferred-route question.
+
