@@ -13143,3 +13143,661 @@ func main(): i32 {
     assert_no_asan("guardskip", &output);
     assert_exit("guardskip", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Indexed element fields: a field reached through a run-time index.
+//
+// The frozen place list includes a struct field and an array element, so a
+// field reached through a run-time index is a place on every supported root:
+// the local fixed array, a borrow of a fixed array, a generic borrow, and a
+// borrow slice. The store and its right side must emit once, the read-back
+// must see the stored value, the overwritten owner must release once, and the
+// bounds guard must stay in front of the write.
+// ---------------------------------------------------------------------------
+
+/// Returns the emitted C body of the definition whose signature ends with
+/// `suffix`, up to its closing brace at the start of a line.
+///
+/// The emitter prints a forward declaration for every function, so the search
+/// takes the last match, which is the definition. An uncalled function has no
+/// later call site that could match the same suffix.
+fn emitted_function_body<'a>(emitted: &'a str, suffix: &str) -> &'a str {
+    let start = emitted
+        .rfind(suffix)
+        .unwrap_or_else(|| panic!("the emitted C has no function ending in {suffix}"));
+    let rest = &emitted[start..];
+    let end = rest.find("\n}").map(|offset| offset + 2).unwrap_or(rest.len());
+    &rest[..end]
+}
+
+/// Asserts a run failed and its first stderr line is exactly `expected`.
+///
+/// The runtime trap contract is `error CODE: message` on the first line
+/// followed by an abort, so a successful exit is always a failure, and a
+/// different first line (a sanitizer banner, a stack-smashing message, or an
+/// unchecked write that survives) is a failure too.
+fn assert_trap_line(tag: &str, build: &str, output: &Output, expected: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag} ({build}): expected a runtime trap (nonzero exit); stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let first = String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(
+        first, expected,
+        "{tag} ({build}): unexpected first stderr line"
+    );
+}
+
+/// Asserts a program traps with the exact first stderr line `expected` on both
+/// a plain strict host build and an AddressSanitizer build.
+///
+/// A bounds trap is a memory-safety contract: the sanitizer build must reach
+/// the same trap and must not report a memory error instead, so both runs must
+/// agree on the first line and the sanitizer run must print no report.
+fn assert_traps(tag: &str, source: &str, expected: &str) {
+    let plain = run_host(tag, source);
+    assert_trap_line(tag, "plain", &plain, expected);
+
+    let sanitized = run_asan(tag, source);
+    assert_trap_line(tag, "asan", &sanitized, expected);
+    assert_no_asan(tag, &sanitized);
+}
+
+/// A member store through a run-time index writes the element and evaluates
+/// its right side exactly once.
+///
+/// The local fixed array, the borrow parameter, the generic borrow, and the
+/// constant-index twin each store `bump()` into one element and read it back,
+/// so the four calls cancel the counter term and the run exits 0. The compound
+/// store, the update, the deep member chain, the nested generic member, the
+/// multi-index target, and the target-order case each read back their stored
+/// value. The generic owning member and whole-element stores release the
+/// overwritten owner once, so the memory run is leak-free. An uncalled borrow
+/// slice still emits the element store's call and its bounds guard, and an
+/// out-of-range generic-borrow index traps before the write.
+#[test]
+fn should_store_a_field_of_a_runtime_indexed_element() {
+    let basic = r#"module spec.cpr.indexedfieldstore;
+
+struct Elem { y: i32; }
+struct Holder { items: Elem[3]; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func local(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y = bump();
+    return a[i].y - 7;
+}
+
+func viaslice(borrow ps: Elem[], i: i32): i32 {
+    ps[i].y = bump();
+    return ps[i].y - 7;
+}
+
+func viaborrow(borrow w: Holder, i: i32): i32 {
+    w.items[i].y = bump();
+    return w.items[i].y - 7;
+}
+
+func viageneric<T>(borrow w: T, i: i32): i32 {
+    w.items[i].y = bump();
+    return w.items[i].y - 7;
+}
+
+func constant(): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[1].y = bump();
+    return a[1].y - 7;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }] };
+    let r: i32 = 0;
+    r = r + local(1);
+    r = r + viaborrow(borrow h, 1);
+    r = r + viageneric<Holder>(borrow h, 1);
+    r = r + constant();
+    return r + (calls - 4) * 100;
+}
+"#;
+    let output = run_host("indexedfieldstore", basic);
+    assert_exit("indexedfieldstore", &output, 0);
+
+    let compound = r#"module spec.cpr.indexedcompound;
+
+struct Elem { y: i32; }
+
+func add(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y += 3;
+    return a[i].y - 3;
+}
+
+func main(): i32 {
+    return add(1);
+}
+"#;
+    let output = run_host("indexedcompound", compound);
+    assert_exit("indexedcompound", &output, 0);
+
+    let update = r#"module spec.cpr.indexedupdate;
+
+struct Elem { y: i32; }
+
+func run(i: i32): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[i].y++;
+    return a[i].y - 1;
+}
+
+func main(): i32 {
+    return run(1);
+}
+"#;
+    let output = run_host("indexedupdate", update);
+    assert_exit("indexedupdate", &output, 0);
+
+    let chain = r#"module spec.cpr.indexedchain;
+
+struct Inner { y: i32; }
+struct Elem { b: Inner; }
+
+func run(i: i32): i32 {
+    let a: Elem[3] = [Elem { b: Inner { y: 0 } }, Elem { b: Inner { y: 0 } }, Elem { b: Inner { y: 0 } }];
+    a[i].b.y = 7;
+    return a[i].b.y - 7;
+}
+
+func main(): i32 {
+    return run(1);
+}
+"#;
+    let output = run_host("indexedchain", chain);
+    assert_exit("indexedchain", &output, 0);
+
+    let nested = r#"module spec.cpr.indexednested;
+
+import { String, stringOf } from std.text;
+
+struct Inner { name: String; }
+struct Mid { inner: Inner; }
+struct Holder { mids: Mid[2]; }
+
+func setg<T>(borrow w: T, i: i32): i32 {
+    w.mids[i].inner.name = stringOf("zz");
+    return i32(len(w.mids[i].inner.name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { mids: [Mid { inner: Inner { name: stringOf("a") } }, Mid { inner: Inner { name: stringOf("b") } }] };
+    let n: i32 = setg<Holder>(borrow h, 1);
+    return n - 2;
+}
+"#;
+    let output = run_host("indexednested", nested);
+    assert_exit("indexednested", &output, 0);
+
+    let multi = r#"module spec.cpr.indexedmulti;
+
+import { String, stringOf } from std.text;
+
+struct Cell { name: String; }
+struct Grid { grid: Cell[2][2]; }
+
+func setg<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.grid[i][j].name = stringOf("zz");
+    return i32(len(w.grid[i][j].name));
+}
+
+func main(): i32 {
+    let g: Grid = Grid { grid: [[Cell { name: stringOf("a") }, Cell { name: stringOf("b") }], [Cell { name: stringOf("c") }, Cell { name: stringOf("d") }]] };
+    let n: i32 = setg<Grid>(borrow g, 1, 0);
+    return n - 2;
+}
+"#;
+    let output = run_host("indexedmulti", multi);
+    assert_exit("indexedmulti", &output, 0);
+
+    let order = r#"module spec.cpr.indexedorder;
+
+struct Elem { y: i32; }
+
+let idx: i32 = 1;
+let calls: i32 = 0;
+
+func set_index(): i32 {
+    idx = 2;
+    calls = calls + 1;
+    return 7;
+}
+
+func run(): i32 {
+    let a: Elem[3] = [Elem { y: 0 }, Elem { y: 0 }, Elem { y: 0 }];
+    a[idx].y = set_index();
+    let stored: i32 = a[1].y;
+    return (stored - 7) + (a[2].y * 100) + (idx - 2);
+}
+
+func main(): i32 {
+    return run() + calls - 1;
+}
+"#;
+    let output = run_host("indexedorder", order);
+    assert_exit("indexedorder", &output, 0);
+
+    let member = r#"module spec.cpr.indexedgenmember;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func setg<T>(borrow w: T, i: i32): i32 {
+    w.items[i].name = stringOf("zz");
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("a") }, Elem { name: stringOf("b") }] };
+    let n: i32 = setg<Holder>(borrow h, 1);
+    return n - 2;
+}
+"#;
+    let output = run_memory("indexedgenmember", member);
+    assert_no_asan("indexedgenmember", &output);
+    assert_exit("indexedgenmember", &output, 0);
+
+    let element = r#"module spec.cpr.indexedgenelement;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func setg<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = Elem { name: stringOf("zz") };
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("a") }, Elem { name: stringOf("b") }] };
+    let n: i32 = setg<Holder>(borrow h, 1);
+    return n - 2;
+}
+"#;
+    let output = run_memory("indexedgenelement", element);
+    assert_no_asan("indexedgenelement", &output);
+    assert_exit("indexedgenelement", &output, 0);
+
+    let whole = r#"module spec.cpr.indexedgenwhole;
+
+import { String, stringOf } from std.text;
+
+struct Cell { name: String; }
+struct Grid { grid: Cell[2][2]; }
+
+func setg<T>(borrow w: T, i: i32, j: i32): i32 {
+    w.grid[i][j] = Cell { name: stringOf("zz") };
+    return i32(len(w.grid[i][j].name));
+}
+
+func main(): i32 {
+    let g: Grid = Grid { grid: [[Cell { name: stringOf("a") }, Cell { name: stringOf("b") }], [Cell { name: stringOf("c") }, Cell { name: stringOf("d") }]] };
+    let n: i32 = setg<Grid>(borrow g, 1, 0);
+    return n - 2;
+}
+"#;
+    let output = run_memory("indexedgenwhole", whole);
+    assert_no_asan("indexedgenwhole", &output);
+    assert_exit("indexedgenwhole", &output, 0);
+
+    let slice = r#"module spec.cpr.indexedslice;
+
+struct Elem { y: i32; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func viaslice(borrow ps: Elem[], i: i32): i32 {
+    ps[i].y = bump();
+    return ps[i].y - 7;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let (_slice_scratch, emitted) = emit_host("indexedslice", slice);
+    let body = emitted_function_body(&emitted, "_viaslice(");
+    assert!(
+        body.contains("bump("),
+        "indexedslice: the element store's right side is missing from the slice function; body:\n{body}"
+    );
+    assert!(
+        body.lines().any(|line| {
+            let line = line.trim();
+            !line.starts_with("return") && (line.contains(".y =") || line.contains("->y ="))
+        }),
+        "indexedslice: the slice function has no element store; body:\n{body}"
+    );
+    assert!(
+        body.contains("cl_trap(\"E11211\", \"index out of range\")"),
+        "indexedslice: the store has no bounds guard; body:\n{body}"
+    );
+
+    let bounds = r#"module spec.cpr.indexedbounds;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func setg<T>(borrow w: T, i: i32): void {
+    w.items[i].name = stringOf("zz");
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("a") }, Elem { name: stringOf("b") }] };
+    setg<Holder>(borrow h, 5);
+    return 0;
+}
+"#;
+    assert_traps("indexedbounds", bounds, "error E11211: index out of range");
+}
+
+// ---------------------------------------------------------------------------
+// conditionalbasestore: a conditional selection is not a place.
+//
+// The frozen place list is closed, so a member or element store whose root is
+// a conditional selection reports `E10221` instead of being accepted and
+// dropped. The member walk must recurse to its root, and the `unsafe` wrapper
+// is transparent to the place it wraps: a raw-prefix store stays accepted and
+// must read back the written value, while a store rooted at a conditional
+// selection stays rejected. Reads need no place, and the block spellings on a
+// named or raw base stay accepted.
+// ---------------------------------------------------------------------------
+
+/// A store whose root is a conditional selection is rejected once, while the
+/// raw-prefix and block spellings stay accepted and read back.
+///
+/// The five member/element shapes (`(c ? a : b).f.g` and its index, array,
+/// index-base, and deep-chain siblings), the two `unsafe`-wrapped selections,
+/// and the prefix conditional selection each report exactly one `E10221` and
+/// emit no translation unit. The prefix raw stores `unsafe p.f` and
+/// `unsafe p.f.x` are accepted and read back 7, and the read plus block
+/// controls (`s.f.g`, `s.arr[i]`, `p.f.g` inside `unsafe { }`) run 0.
+#[test]
+fn should_reject_a_conditional_base_member_store() {
+    let member = r#"module spec.cpr.condmemberstore;
+
+struct Inner { g: i32; }
+struct Box { f: Inner; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func use(c: bool, a: Box, b: Box): i32 {
+    (c ? a : b).f.g = bump();
+    return calls;
+}
+
+func main(): i32 {
+    let a: Box = Box { f: Inner { g: 0 } };
+    let b: Box = Box { f: Inner { g: 0 } };
+    return use(true, a, b) - 1;
+}
+"#;
+    compile_rejects("condmemberstore", member, "E10221", 1);
+
+    let index = r#"module spec.cpr.condindexstore;
+
+struct Cell { x: i32; }
+struct Inner { rows: Cell[2]; }
+struct Box { f: Inner; }
+
+func use(c: bool, i: i32, a: Box, b: Box): i32 {
+    (c ? a : b).f.rows[i].x = 7;
+    return (c ? a : b).f.rows[i].x;
+}
+
+func main(): i32 {
+    let a: Box = Box { f: Inner { rows: [Cell { x: 0 }, Cell { x: 0 }] } };
+    let b: Box = Box { f: Inner { rows: [Cell { x: 0 }, Cell { x: 0 }] } };
+    return use(true, 1, a, b) - 7;
+}
+"#;
+    compile_rejects("condindexstore", index, "E10221", 1);
+
+    let array = r#"module spec.cpr.condarraystore;
+
+struct Bag { ys: i32[2]; }
+struct Box { b: Bag; }
+
+func use(c: bool, i: i32, a: Box, b: Box): i32 {
+    (c ? a : b).b.ys[i] = 7;
+    return (c ? a : b).b.ys[i];
+}
+
+func main(): i32 {
+    let a: Box = Box { b: Bag { ys: [0, 0] } };
+    let b: Box = Box { b: Bag { ys: [0, 0] } };
+    return use(true, 1, a, b) - 7;
+}
+"#;
+    compile_rejects("condarraystore", array, "E10221", 1);
+
+    let index_base = r#"module spec.cpr.condindexbasestore;
+
+struct Cell { x: i32; }
+
+func use(c: bool, i: i32, a: Cell[2], b: Cell[2]): i32 {
+    (c ? a : b)[i].x = 7;
+    return (c ? a : b)[i].x;
+}
+
+func main(): i32 {
+    let a: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    let b: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    return use(true, 1, a, b) - 7;
+}
+"#;
+    compile_rejects("condindexbasestore", index_base, "E10221", 1);
+
+    let deep = r#"module spec.cpr.conddeepstore;
+
+struct Bag { ys: i32[2]; }
+struct Holder { b: Bag; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func use(c: bool, i: i32, h1: Holder, h2: Holder): i32 {
+    (c ? h1 : h2).b.ys[i] = bump();
+    return calls;
+}
+
+func main(): i32 {
+    let h1: Holder = Holder { b: Bag { ys: [0, 0] } };
+    let h2: Holder = Holder { b: Bag { ys: [0, 0] } };
+    return use(true, 1, h1, h2) - 1;
+}
+"#;
+    compile_rejects("conddeepstore", deep, "E10221", 1);
+
+    let unsafe_member = r#"module spec.cpr.condunsafemember;
+
+struct Inner { x: i32; }
+struct Box { v: Inner; }
+
+func run(c: bool, a: Box, b: Box): i32 {
+    (unsafe (c ? a : b)).v.x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: Inner { x: 0 } };
+    let b: Box = Box { v: Inner { x: 0 } };
+    return run(true, a, b);
+}
+"#;
+    compile_rejects("condunsafemember", unsafe_member, "E10221", 1);
+
+    let unsafe_index = r#"module spec.cpr.condunsafeindex;
+
+struct Cell { x: i32; }
+
+func run(c: bool, i: i32, a: Cell[2], b: Cell[2]): i32 {
+    (unsafe (c ? a : b))[i].x = 7;
+    return 0;
+}
+
+func main(): i32 {
+    let a: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    let b: Cell[2] = [Cell { x: 0 }, Cell { x: 0 }];
+    return run(true, 1, a, b);
+}
+"#;
+    compile_rejects("condunsafeindex", unsafe_index, "E10221", 1);
+
+    let prefix = r#"module spec.cpr.condprefixstore;
+
+struct Inner { x: i32; }
+struct Box { v: Inner; }
+
+func run(c: bool, a: Box, b: Box): i32 {
+    unsafe (c ? a : b).v = Inner { x: 7 };
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: Inner { x: 0 } };
+    let b: Box = Box { v: Inner { x: 0 } };
+    return run(true, a, b);
+}
+"#;
+    compile_rejects_once_at(
+        "condprefixstore",
+        prefix,
+        "E10221",
+        7,
+        5,
+        &[
+            "left side of an assignment must be a place",
+            "assign to a variable, field, or element",
+        ],
+        &[],
+    );
+
+    let raw_field = r#"module spec.cpr.condrawprefixfield;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        unsafe p.f = Inner { x: 7 };
+    }
+    return s.f.x - 7;
+}
+"#;
+    let output = run_host("condrawprefixfield", raw_field);
+    assert_exit("condrawprefixfield", &output, 0);
+
+    let raw_chain = r#"module spec.cpr.condrawprefixchain;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        unsafe p.f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#;
+    let output = run_host("condrawprefixchain", raw_chain);
+    assert_exit("condrawprefixchain", &output, 0);
+
+    let read = r#"module spec.cpr.condread;
+
+struct Inner { g: i32; }
+struct Box { f: Inner; }
+
+func use(c: bool, a: Box, b: Box): i32 {
+    return (c ? a : b).f.g;
+}
+
+func main(): i32 {
+    let a: Box = Box { f: Inner { g: 7 } };
+    let b: Box = Box { f: Inner { g: 9 } };
+    return use(true, a, b) - 7;
+}
+"#;
+    let output = run_host("condread", read);
+    assert_exit("condread", &output, 0);
+
+    let blocks = r#"module spec.cpr.condblocks;
+
+struct Inner { x: i32; }
+struct S { f: Inner; arr: i32[2]; }
+
+func use(borrow s: S): i32 {
+    s.f.x = 7;
+    s.arr[1] = 7;
+    return s.f.x + s.arr[1] - 14;
+}
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 }, arr: [0, 0] };
+    return use(borrow s);
+}
+"#;
+    let output = run_host("condblocks", blocks);
+    assert_exit("condblocks", &output, 0);
+
+    let raw_block = r#"module spec.cpr.condrawblock;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        p.f.x = 7;
+        let q: raw S = &s;
+        q.f = Inner { x: 8 };
+    }
+    return s.f.x - 8;
+}
+"#;
+    let output = run_host("condrawblock", raw_block);
+    assert_exit("condrawblock", &output, 0);
+}

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 24/60 tasks (40%) — Phase 3 complete
+> **Progress**: 26/60 tasks (43%) — Phase 4 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -256,13 +256,13 @@ ST-13..ST-14 · AR-6, AR-7, AR-33
 **Objective**: Pin the runtime-indexed element/member store in every form (with the residue-suite
 bounds fault) and the conditional-base member store rejection, including the `unsafe` forms.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases —
+- [x] 4.1.1 [spec-author] Write the phase cases —
       `compiler/tests/conditional_projection_residue_spec_test.rs` (indexedelementfieldstore,
       conditionalmemberstore) with the inline `assert_traps` bounds case (precedent
       `borrow_store_integrity_spec_test.rs:363`); the red cases committed first. The frozen
-      `run_fault_spec_test.rs` data and the Amiga fault list stay untouched (AR-26)
-- [ ] 4.1.2 Run the suites and record the red phase (the constant-index store, the read spelling,
-      the `s.f.g`/`s.arr[i]`/`p.f.g` controls verified green first; AR-5)
+      `run_fault_spec_test.rs` data and the Amiga fault list stay untouched (AR-26) ✅ (completed: 2026-10-17; two spec cases added to the residue suite: the indexed-element field store in every form (local, borrow, generic, constant, compound, update, deep chain, nested generic member, multi-index, target order, the generic owning stores with the LSan leg, the compile-only slice, and the inline `assert_traps` bounds case), and the conditional-base store rejection (the five forms, the two unsafe-wrapped conditionals, the raw-prefix acceptance with read-back, the prefix conditional rejection, the read and block controls))
+- [x] 4.1.2 Run the suites and record the red phase (the constant-index store, the read spelling,
+      the `s.f.g`/`s.arr[i]`/`p.f.g` controls verified green first; AR-5) ✅ (completed: 2026-10-17; the red phase recorded: residue 161 passed / 2 failed; the constant-index, read, `s.f.g`/`s.arr[i]`/`p.f.g` block controls and the prefix-conditional rejection green at head; the order read-back rewritten to discriminate the target index order)
 
 ### Step 4.2: Implementation
 
