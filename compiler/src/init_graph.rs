@@ -296,43 +296,18 @@ impl<'a> Collector<'a> {
     }
 
     /// Walks a dotted name, resolving its module path or value binding head.
+    ///
+    /// The resolution is the front end's: a leading module path — at any
+    /// depth — reaches the binding it declares, and otherwise the head is a
+    /// same-module or imported binding. The read and its declaring module
+    /// enter the dependency relation either way, so a deep reference orders
+    /// its initializer after the binding it reads.
     fn walk_qualified(&mut self, name: &QualifiedName) {
-        // Mirror the resolver: a full module path is tried before a member read
-        // of something in scope.
-        if let Some((last, head)) = name.segments.split_last() {
-            let path = head.join(".");
-            if !path.is_empty() {
-                if path == self.module.name {
-                    if let Some(key) = binding_in_module(self.loaded, &self.module.name, last) {
-                        self.reads.push(key);
-                        return;
-                    }
-                } else if self.loaded.has_module(&path)
-                    && self.loaded.module_exports(&path, last)
-                {
-                    if let Some(key) = binding_in_module(self.loaded, &path, last) {
-                        self.reads.push(key);
-                    }
-                    self.note_module(&path);
-                    return;
-                }
-            }
-        }
-        let Some(first) = name.segments.first() else {
+        let Some(global) = resolve_segments(self.loaded, self.module, &name.segments) else {
             return;
         };
-        if self.module.decl(first).is_some() {
-            if let Some(key) = binding_in_module(self.loaded, &self.module.name, first) {
-                self.reads.push(key);
-            }
-            return;
-        }
-        if let Some(binding) = self.module.import(first) {
-            if let Some(key) = binding_in_module(self.loaded, &binding.module, &binding.original) {
-                self.reads.push(key);
-            }
-            self.note_module(&binding.module);
-        }
+        self.reads.push((global.module.clone(), global.name.clone()));
+        self.note_module(&global.module);
     }
 }
 

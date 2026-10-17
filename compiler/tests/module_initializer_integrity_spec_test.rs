@@ -285,6 +285,49 @@ fn run_asan(tag: &str, source: &str) -> Output {
 
 /// Runs a memory-safety case: under AddressSanitizer when `RDC_ASAN` is set,
 /// otherwise as an ordinary strict host build.
+/// Runs a two-file module program under the active memory leg.
+///
+/// The single-file `run_memory` path selects the sanitizer when `RDC_ASAN` is
+/// set; a module program needs the same build, so this helper mirrors it for
+/// the pair the initializer order needs.
+fn run_pair_memory(tag: &str, holder: &str, main: &str) -> Output {
+    let (scratch, output, c_path) = compile_pair(tag, holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    let program = if std::env::var_os("RDC_ASAN").is_some() {
+        let c_path = scratch.path().join("build_asan.c");
+        std::fs::write(&c_path, &emitted).expect("write the emitted C");
+        let program = scratch.path().join("prog_asan");
+        let built = Command::new("cc")
+            .args([
+                "-std=c99",
+                "-O0",
+                "-g",
+                "-fsanitize=address",
+                "-no-pie",
+                "-o",
+                program.to_str().expect("program path"),
+                c_path.to_str().expect("emitted C path"),
+            ])
+            .output()
+            .expect("failed to spawn the host C compiler");
+        assert!(
+            built.status.success(),
+            "{tag}: the sanitizer build failed; stderr:\n{}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+        program
+    } else {
+        build_host_c(tag, &scratch, &emitted)
+    };
+    run_with_timeout(tag, &program, &[])
+}
+
 fn run_memory(tag: &str, source: &str) -> Output {
     if std::env::var_os("RDC_ASAN").is_some() {
         run_asan(tag, source)
@@ -2534,4 +2577,66 @@ func main(): i32 {
     let output = run_memory("constfoldviewvalue", view_value);
     assert_no_asan("constfoldviewvalue", &output);
     assert_exit("constfoldviewvalue", &output, 0);
+}
+
+/// A deep module-path reference in an initializer orders after its provider.
+///
+/// The read and the call through `outer.holder.g` record the provider binding
+/// in the dependency relation, so the provider's initializer stores `outer`
+/// before the reader runs; both the cross-module and the self-module
+/// initializer read their values back.
+#[test]
+fn should_order_a_deep_module_path_initializer_after_its_provider() {
+    let provider = r#"module spec.mii.initdeepprovider;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: Holder;
+}
+
+export let outer: Outer = Outer { holder: Holder { g: qf } };
+"#;
+    let reader = r#"module spec.mii.initdeepreader;
+
+let n: i32 = spec.mii.initdeepprovider.outer.holder.g(5);
+
+func main(): i32 {
+    return n - 35;
+}
+"#;
+    let output = run_pair_memory("initdeep", provider, reader);
+    assert_no_asan("initdeep", &output);
+    assert_exit("initdeep", &output, 0);
+
+    let self_case = r#"module spec.mii.initdeepself;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: Holder;
+}
+
+let f: func(i32): i32 = spec.mii.initdeepself.outer.holder.g;
+let outer: Outer = Outer { holder: Holder { g: qf } };
+
+func main(): i32 {
+    return f(5) - 35;
+}
+"#;
+    let output = run_memory("initdeepself", self_case);
+    assert_no_asan("initdeepself", &output);
+    assert_exit("initdeepself", &output, 0);
 }

@@ -2936,3 +2936,49 @@ func main(): i32 {
     let output = run_with_timeout("collcall", &program, &[]);
     assert_exit("collcall", &output, 0);
 }
+
+/// A borrow parameter reads a raw-deref argument without emptying it.
+///
+/// The callee only borrows the pointee, so the owner stays readable after
+/// the call: both the aliased and the plain spelling run clean in the memory
+/// leg and read the owner's value back.
+#[test]
+fn should_lend_a_raw_deref_argument_without_emptying_its_pointee() {
+    let holder = r#"module spec.cri.ptrlendmod;
+
+export func lend(borrow s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let aliased = r#"module spec.cri.ptrlendalias;
+
+import { stringOf } from std.text;
+import { lend as use } from spec.cri.ptrlendmod;
+
+func main(): i32 {
+    let a: String = stringOf("abcd");
+    let q: raw String = unsafe &a;
+    let n: i32 = use(unsafe *q);
+    return n + i32(len(a)) - 8;
+}
+"#;
+    let output = run_pair_memory("ptrlendalias", holder, aliased);
+    assert_no_asan("ptrlendalias", &output);
+    assert_exit("ptrlendalias", &output, 0);
+
+    let plain = r#"module spec.cri.ptrlendplain;
+
+import { stringOf } from std.text;
+import { lend } from spec.cri.ptrlendmod;
+
+func main(): i32 {
+    let a: String = stringOf("abcd");
+    let q: raw String = unsafe &a;
+    let n: i32 = lend(unsafe *q);
+    return n + i32(len(a)) - 8;
+}
+"#;
+    let output = run_pair_memory("ptrlendplain", holder, plain);
+    assert_no_asan("ptrlendplain", &output);
+    assert_exit("ptrlendplain", &output, 0);
+}

@@ -1482,3 +1482,60 @@ func main(): i32 {
         "collpin: the binding's field chain must not spell the call; emitted C:\n{emitted}"
     );
 }
+
+/// A borrow deref argument is read in place; a take one empties the pointee.
+///
+/// The pointee emptying belongs to the owning position only: the borrow
+/// spelling passes the read straight through, so the owner stays readable,
+/// while the take spelling keeps the move-out.
+#[test]
+fn should_empty_a_take_deref_arguments_pointee_only() {
+    let holder = r#"module spec.criimpl.ptrpinmod;
+
+export func lend(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+export func sink(take s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let lend_main = r#"module spec.criimpl.ptrlendpin;
+
+import { stringOf } from std.text;
+import { lend } from spec.criimpl.ptrpinmod;
+
+func main(): i32 {
+    let a: String = stringOf("abcd");
+    let q: raw String = unsafe &a;
+    let n: i32 = lend(unsafe *q);
+    return n + i32(len(a)) - 8;
+}
+"#;
+    let emitted = emit_pair("ptrlendpin", holder, lend_main);
+    assert_contains("ptrlendpin", &emitted, "cl_spec_criimpl_ptrpinmod_lend(*(q))");
+    assert_eq!(
+        count(&emitted, "*(q) = NULL;"),
+        0,
+        "ptrlendpin: a borrow argument must not empty its pointee; emitted C:\n{emitted}"
+    );
+
+    let take_main = r#"module spec.criimpl.ptrtakepin;
+
+import { stringOf } from std.text;
+import { sink } from spec.criimpl.ptrpinmod;
+
+func main(): i32 {
+    let a: String = stringOf("abcd");
+    let q: raw String = unsafe &a;
+    let n: i32 = sink(unsafe *q);
+    return n - 4;
+}
+"#;
+    let emitted = emit_pair("ptrtakepin", holder, take_main);
+    assert_eq!(
+        count(&emitted, "*(q) = NULL;"),
+        1,
+        "ptrtakepin: the take argument's move-out is missing; emitted C:\n{emitted}"
+    );
+}

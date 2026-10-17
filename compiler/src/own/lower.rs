@@ -5011,6 +5011,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return value;
         }
+        // A raw-deref read names the caller's own pointee. A non-owning
+        // position only reads it, so no binding is made: the store that would
+        // hold the value moves an owned deref read's pointee, and only a
+        // `take` parameter owns the argument. The read passes as it stands,
+        // and the pointee stays readable after the call.
+        if matches!(
+            value.kind,
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            }
+        ) {
+            return value;
+        }
         // A conditional lend argument may mix a place-rooted arm with an
         // ownerless one. Binding the whole conditional would adopt the chosen
         // arm — the store empties a place the callee only borrows — while
