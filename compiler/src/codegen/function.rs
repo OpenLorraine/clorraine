@@ -717,7 +717,10 @@ impl<'a> Emitter<'a> {
                 // so its guards (including the bounds check) must run first.
                 self.emit_guards(pointer);
                 let pointer_c = self.value(pointer);
-                let pointer_ty = self.substitute(&pointer.ty);
+                // The pointer records the pointee type; a target recorded in a
+                // generic body resolves it through the address operand, so the
+                // owning and fixed-array branches see the instance's shape.
+                let pointer_ty = self.resolved_value_ty(pointer);
                 if pointer_ty.is_fixed_array() {
                     // A fixed-array element is not assignable in C, so the
                     // store goes through the byte-copy/branch-store core

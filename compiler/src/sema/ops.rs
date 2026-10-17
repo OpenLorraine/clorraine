@@ -572,11 +572,8 @@ impl Checker<'_, '_> {
             // step whose base chain carries no member between a conditional
             // and the index reports the place rule rather than silently
             // dropping the store; a member step above the index is judged by
-            // the member arm. The unsafe wrapper stays place-transparent,
-            // exactly as the member arm treats it.
-            ExprKind::Index { base, .. } => {
-                self.is_place(base) || matches!(base.kind, ExprKind::Unsafe(_))
-            }
+            // the member arm.
+            ExprKind::Index { base, .. } => self.is_place(base),
             // The parser spells `value.field` as a dotted name, so a dotted name
             // that starts with a value in scope is a place just like a field.
             ExprKind::Qualified(name) => {
@@ -585,17 +582,11 @@ impl Checker<'_, '_> {
             ExprKind::Unary {
                 op: UnaryOp::Deref, ..
             } => true,
-            ExprKind::Member { base, .. } => matches!(
-                base.kind,
-                ExprKind::Name(_)
-                    | ExprKind::Member { .. }
-                    | ExprKind::Index { .. }
-                    | ExprKind::Unary {
-                        op: UnaryOp::Deref,
-                        ..
-                    }
-                    | ExprKind::Unsafe(_)
-            ),
+            ExprKind::Member { base, .. } => self.is_place(base),
+            // The unsafe wrapper is transparent to the place it wraps: a field
+            // or element write through a raw pointer is still a place, while a
+            // selection it wraps is not.
+            ExprKind::Unsafe(inner) => self.is_place(inner),
             _ => false,
         }
     }

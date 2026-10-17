@@ -2335,7 +2335,111 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
-    /// Lowers an indexed target to its element read and its address.
+    /// Lowers a member store target to its current value, its place, and its
+    /// type.
+    ///
+    /// The target is a member chain over a run-time element selection
+    /// (`a[i].b.y`, `w.grid[i][j].name`). Every base and index is materialized
+    /// once, here, before the right-hand side is lowered, so the target's
+    /// location evaluates first and a later side effect cannot change the slot
+    /// the store reaches. The element read, the place, and the guard share
+    /// those temporaries, so a compound store or an update cannot run a
+    /// side-effecting operand twice.
+    ///
+    /// The place keeps each run-time index on an `ElementTemp` projection, so
+    /// the store renders the element's own lvalue (`ps[i].y`) exactly as the
+    /// constant-index twin does, while the emitter still emits the element's
+    /// bounds check. The recorded type is the target's own type; a generic
+    /// declaration records it opaquely and the emitter resolves it through the
+    /// place's projections at the instance.
+    fn indexed_member_target(&mut self, target: &'a Expr) -> (Value, Place, Ty) {
+        let element = self.lower_value(target);
+        let element = self.pin_store_target(element);
+        debug_assert!(
+            matches!(element.kind, ValueKind::Member { .. }) && has_element_selection(&element),
+            "a member store target must lower to a projected element selection"
+        );
+        let element_ty = self.ty(target);
+        let place = self.store_target_place(&element, element_ty.clone());
+        (element, place, element_ty)
+    }
+
+    /// True when a store target ends in a member selection.
+    ///
+    /// A member target stores through the element's own lvalue, so its
+    /// run-time index travels on a place projection. A whole-element target
+    /// keeps the element-address form its existing emission pins.
+    fn is_member_store_target(&self, target: &Expr) -> bool {
+        let mut target = target;
+        while let ExprKind::Unsafe(inner) = &target.kind {
+            target = inner;
+        }
+        matches!(target.kind, ExprKind::Member { .. })
+    }
+
+    /// Materializes the base and index of every element selection in a store
+    /// target.
+    ///
+    /// The target's location is evaluated before the right-hand side, so each
+    /// index is read into a temporary where the target stands and an impure
+    /// base is computed once. A member chain only recurses: copying a member's
+    /// base would point the store at the copy instead of the storage.
+    fn pin_store_target(&mut self, value: Value) -> Value {
+        let ty = value.ty.clone();
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.pin_store_target(*base);
+                Value::new(
+                    ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.pin_store_target(*base);
+                let base = self.materialize_operand(base);
+                let index = self.settle_projection_base(*index);
+                let index = self.materialize_store_index(index);
+                Value::new(
+                    ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                )
+            }
+            other => Value::new(ty, other),
+        }
+    }
+
+    /// Binds one store-target index to an eager temporary.
+    ///
+    /// A place index is pinned even though reading it has no side effect: the
+    /// right-hand side may update the place, and the store must reach the
+    /// element the index named before that update. A constant or an already
+    /// materialized index keeps its spelling.
+    fn materialize_store_index(&mut self, index: Value) -> Value {
+        if matches!(index.kind, ValueKind::Int(_) | ValueKind::Temp(_)) {
+            return index;
+        }
+        self.materialize_value(index)
+    }
+
+    /// Builds the projected place a pinned store target names.
+    ///
+    /// The pinned value keeps each run-time index in a temporary, so the place
+    /// records it as an `ElementTemp` and the emitter renders the same index it
+    /// guarded. The root is the place the target started from.
+    fn store_target_place(&self, value: &Value, ty: Ty) -> Place {
+        let mut place = store_target_place_parts(value)
+            .expect("an indexed store target must root in a place");
+        place.ty = ty;
+        place
+    }
+
+    /// Lowers an indexed element target to its element read and its address.
     ///
     /// The base and the run-time index are materialized once so the element
     /// read and the store address share one evaluation: a side-effecting index
@@ -2362,6 +2466,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => target,
         };
         let ExprKind::Index { base, index } = &target.kind else {
+            debug_assert!(
+                false,
+                "a whole-element store target must be an element selection"
+            );
             return None;
         };
         let element_ty = self.ty(target);
@@ -2420,10 +2528,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         value: &'a Expr,
         compound: Option<BinaryOp>,
     ) -> Option<Value> {
-        // The target's location evaluates before the right-hand side, so an
-        // updating side pins the location parts first; the side's own update
-        // then pins at its position, before the store.
+        // The target's location evaluates before the right-hand side. A member
+        // target pins every base and index at this position; a whole-element
+        // target keeps its existing guarded position.
         let pin = super::lower::contains_update(value);
+        if self.is_member_store_target(target) {
+            let (element, place, element_ty) = self.indexed_member_target(target);
+            self.emit(Statement::Guards {
+                checks: vec![element],
+            });
+            return self.emit_assigned(place, &element_ty, value, compound);
+        }
         let Some((element, pointer, element_ty)) =
             self.indexed_target(target, compound.is_some(), pin)
         else {
@@ -2484,11 +2599,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Lowers an indexed increment or decrement as a read-modify-write.
     ///
-    /// The element's own location is materialized by the target lowering, so
-    /// an updating index (`arr[i++]`) runs before the read and the store; the
-    /// location pin is left off because the right-hand side here is the
-    /// constant one, which carries no update.
+    /// The target builder materializes the element's base and index, so an
+    /// updating index (`arr[i++]`) runs before the read and the store, and a
+    /// side effect on a later operand cannot redirect the update. A member
+    /// target reduces to the element's own lvalue, exactly as the
+    /// constant-index twin does.
     fn emit_indexed_update(&mut self, target: &'a Expr, binary: BinaryOp, one: Value) {
+        if self.is_member_store_target(target) {
+            let (element, place, element_ty) = self.indexed_member_target(target);
+            self.emit(Statement::Guards {
+                checks: vec![element],
+            });
+            let left = Value::place(place.clone());
+            self.emit_compound_store(binary, place, &element_ty, left, one);
+            return;
+        }
         let Some((element, pointer, element_ty)) = self.indexed_target(target, true, false) else {
             return;
         };
@@ -2550,6 +2675,48 @@ fn has_runtime_element(projections: &[ir::Projection]) -> bool {
             ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
         )
     })
+}
+
+/// True when a lowered value selects an array or view element.
+///
+/// An indexed store target reaches this module only when its place carries a
+/// run-time element, so the lowered chain must contain an element selection;
+/// the debug assertion in the target builder pins that agreement.
+fn has_element_selection(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Index { .. } => true,
+        ValueKind::Member { base, .. } => has_element_selection(base),
+        _ => false,
+    }
+}
+
+/// The place a pinned store-target value names, when it roots in storage.
+///
+/// The value walk appends the same field and element selections in the same
+/// order, so the rendered place reaches the slot the value's guards checked. A
+/// run-time index keeps its temporary on an `ElementTemp` projection; the
+/// constant form stays on `Element`.
+fn store_target_place_parts(value: &Value) -> Option<Place> {
+    match &value.kind {
+        ValueKind::Place(place) => Some(place.clone()),
+        ValueKind::Member { base, name } => {
+            let mut place = store_target_place_parts(base)?;
+            place.projections.push(ir::Projection::Field(name.clone()));
+            Some(place)
+        }
+        ValueKind::Index { base, index } => {
+            let mut place = store_target_place_parts(base)?;
+            let projection = match &index.kind {
+                ValueKind::Int(value) => ir::Projection::Element(usize::try_from(*value).ok()),
+                ValueKind::Temp(temp) => ir::Projection::ElementTemp(*temp),
+                ValueKind::Materialize { temp, .. } => ir::Projection::ElementTemp(*temp),
+                _ => return None,
+            };
+            place.projections.push(projection);
+            Some(place)
+        }
+        _ => None,
+    }
 }
 
 /// The pointer expression when an assignment target dereferences a raw

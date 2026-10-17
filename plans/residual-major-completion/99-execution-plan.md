@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 26/60 tasks (43%) — Phase 4 red
+> **Progress**: 28/60 tasks (47%) — Phase 4 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -266,16 +266,16 @@ bounds fault) and the conditional-base member store rejection, including the `un
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Resolve the element/member type through the store's `Value` path
+- [x] 4.2.1 Resolve the element/member type through the store's `Value` path
       (`resolved_value_ty` on the `AddressOf` operand, or a target `Place`/type duty); generalize
       the target builder for plain/compound/update/deep-chain/multi-index/nested stores; always
       materialize the base/index before the RHS; make the `None` fallback a debug assertion or pin
       its unreachability (no `E10221` false-rejection path for accepted targets); apply the same
       no-silent-drop rule to `emit_indexed_update`; add
       `Member => is_place(base)` and `Unsafe(inner) => is_place(inner)`, and remove the Index bypass —
-      `compiler/src/own/expr.rs`, `compiler/src/sema/ops.rs`
-- [ ] 4.2.2 Run the suites to green; on any failure STOP and fix the implementation. If a profile
-      refuses the route, **stop for a user ruling** (AR-34(a)); do not park
+      `compiler/src/own/expr.rs`, `compiler/src/sema/ops.rs` ✅ (completed: 2026-10-17; the indexed member target builder (`own/expr.rs:2355/2372/2387/2423/2435/2458/2525/2607/2685/2699`); the codegen `AddressOf`/`StorePointer` resolution (`codegen/expr.rs:385`, `codegen/function.rs:723`); the place recursion and Index-bypass removal (`sema/ops.rs:576/585/589`)); the `None` fallback is a debug assertion; the update path shares the rule)
+- [x] 4.2.2 Run the suites to green; on any failure STOP and fix the implementation. If a profile
+      refuses the route, **stop for a user ruling** (AR-34(a)); do not park ✅ (completed: 2026-10-17; residue 163/163 plain and under `RDC_ASAN=1`; `make check` exit 0; the strict/ASan/LSan legs; the hosted-amiga compile of the eight store forms; the differential intended deltas only, no head-only strict failure; no profile refusal)
 
 ### Step 4.3: Impl Tests & Review
 

@@ -378,6 +378,14 @@ impl<'a> Emitter<'a> {
                     field
                 }
             }
+            // A store target's pointer records the pointee type, which the
+            // operand's projection chain carries. A generic declaration records
+            // that type opaquely, so the address resolves through the element
+            // or member the instance substitutes.
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand,
+            } => self.resolved_value_ty(operand),
             ValueKind::Index { base, .. } => {
                 let base_ty = self.resolved_value_ty(base);
                 let element = element_type(&base_ty);
