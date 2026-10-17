@@ -5108,3 +5108,417 @@ func main(): i32 {
         "implmarkedpending: the report must not start at the marker; stderr:\n{stderr}"
     );
 }
+
+// ===== Substitution edges: conditional judgments, element keys, and element members =====
+
+/// A conditional whose arms still name type parameters is judged at its instance.
+///
+/// The declaration cannot decide whether the two arms agree, so the site is
+/// recorded and re-judged once per concrete instantiation. The report is the
+/// concrete twin's: one conversion at the else arm, naming the substituted arm
+/// types and carrying no translation unit. At the base compiler the program is
+/// accepted and the emitter writes a C conditional whose arms have different
+/// types.
+#[test]
+fn should_report_an_opaque_conditional_at_its_else_arm() {
+    let source = r#"module spec.cc.impl.condopaqueinstance;
+
+func id<T>(x: T): T { return x; }
+
+func choose<T, U>(c: bool, a: T, b: U): i32 {
+    return i32(id(c ? a : b));
+}
+
+func main(): i32 {
+    return choose<i32, str>(true, 3, "x") - 3;
+}
+"#;
+    assert_rejected_once_at_site(
+        "implcondopaque",
+        source,
+        "error E10200:",
+        "cannot convert 'str' to 'i32' implicitly",
+        "main.clo:6:27",
+    );
+}
+
+/// A null arm at a non-nullable substituted destination reports at the null.
+///
+/// The generic callee fixes the argument's parameter to `i32` after the
+/// argument has been typed, so the conditional's null arm is judged when the
+/// parameter resolves. The report is the frozen null rule at the `null`, and no
+/// conversion report is added. At the base compiler the program is accepted
+/// and the emitter writes a pointer/integer conditional.
+#[test]
+fn should_report_an_opaque_conditional_null_arm_at_the_null() {
+    let source = r#"module spec.cc.impl.condnullarminstance;
+
+func id<T>(x: T): T { return x; }
+
+func pick(c: bool, x: i32): i32 {
+    return i32(id(c ? x : null));
+}
+
+func main(): i32 { return pick(true, 5) - 5; }
+"#;
+    let stderr = reject_host("implcondnullarm", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "implcondnullarm: the null arm reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "implcondnullarm: expected the null rule message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:6:27"),
+        "implcondnullarm: the report must land on the null; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10200:"),
+        "implcondnullarm: the null rule owns the report; stderr:\n{stderr}"
+    );
+}
+
+/// A direct conditional's null arm faces every destination kind.
+///
+/// A let initializer, a return, a struct field, and a call argument each pass
+/// their type into the conditional, so the same null arm reports once at each
+/// own `null`. The count and the four sites are the pin; no conversion report
+/// belongs to these shapes. At the base compiler each context is accepted and
+/// the emitted C fails to build.
+#[test]
+fn should_report_a_direct_conditional_null_at_each_context() {
+    let source = r#"module spec.cc.impl.condctxpin;
+
+struct S { v: i32; }
+
+func ret(c: bool, x: i32): i32 {
+    return c ? x : null;
+}
+
+func arg(v: i32): i32 { return v; }
+
+func main(): i32 {
+    let c: bool = true;
+    let x: i32 = 5;
+    let a: i32 = c ? x : null;
+    let s: S = S { v: c ? x : null };
+    let b: i32 = arg(c ? x : null);
+    return a + s.v + b + ret(c, x) - 20;
+}
+"#;
+    let stderr = reject_host("implcondctx", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        4,
+        "implcondctx: each direct context reports once; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("'null' is not allowed here").count(),
+        4,
+        "implcondctx: each report names the null rule; stderr:\n{stderr}"
+    );
+    for site in [
+        "main.clo:6:20",
+        "main.clo:14:26",
+        "main.clo:15:31",
+        "main.clo:16:30",
+    ] {
+        assert!(
+            stderr.contains(site),
+            "implcondctx: the null at {site} must report; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("error E10200:"),
+        "implcondctx: the null rule owns these reports; stderr:\n{stderr}"
+    );
+}
+
+/// The concrete twin and the accepted conditional controls keep their shapes.
+///
+/// The concrete disagreeing call already reported one conversion at its else
+/// arm before the instance judgment existed. The identical-arm and non-null
+/// sibling conditionals, and the legal nullable destinations, are accepted and
+/// re-emit byte-identically. These shapes already held before the change, so
+/// they are controls rather than discriminators.
+#[test]
+fn should_keep_the_conditional_concrete_twin_and_controls() {
+    let concrete = r#"module spec.cc.impl.condconcretepin;
+
+func f(v: i32): i32 { return v; }
+
+func main(): i32 {
+    let c: bool = true;
+    return f(c ? 5 : "x");
+}
+"#;
+    assert_rejected_once_at_site(
+        "implcondconcrete",
+        concrete,
+        "error E10200:",
+        "cannot convert 'static str' to 'i32' implicitly",
+        "main.clo:7:22",
+    );
+
+    let control = r#"module spec.cc.impl.condcontrolpin;
+
+func id<T>(x: T): T { return x; }
+
+func choose<T, U>(c: bool, a: T, b: U): i32 {
+    return i32(id<T>(c ? a : a));
+}
+
+func pick(c: bool, x: i32): i32 {
+    return i32(id<i32>(c ? x : 5));
+}
+
+func main(): i32 {
+    return choose<i32, str>(true, 3, "x") + pick(true, 5) - 8;
+}
+"#;
+    let (first, second) = emit_twice("implcondcontrol", control);
+    assert_eq!(
+        count(&first, "cl_id__i32("),
+        4,
+        "implcondcontrol: one keyed instance with two calls is expected; emitted C:\n{first}"
+    );
+    assert_eq!(
+        first, second,
+        "implcondcontrol: the same source must re-emit byte-identically"
+    );
+
+    let nullable = r#"module spec.cc.impl.condnullablepin;
+
+func pass(x: str?): i32 {
+    if (x == null) {
+        return 0;
+    }
+    return 9;
+}
+
+func forward(c: bool, s: str): str? {
+    return c ? s : null;
+}
+
+func pick(c: bool, s: str): i32 {
+    let a: str? = c ? s : null;
+    let r: i32 = pass(c ? s : null);
+    let f: str? = forward(c, s);
+    if (a == null) {
+        return 1;
+    }
+    if (r != 9) {
+        return 2;
+    }
+    if (f == null) {
+        return 3;
+    }
+    return pass(a) + pass(f) - 18;
+}
+
+func main(): i32 {
+    return pick(true, "ab");
+}
+"#;
+    let (first, second) = emit_twice("implcondnullable", nullable);
+    assert_eq!(
+        first, second,
+        "implcondnullable: the legal nullable destinations must re-emit byte-identically"
+    );
+}
+
+/// A nested element instance is keyed from the substituted element.
+///
+/// The row type is `str[2]`, so the first indexed level is a `str` view and the
+/// second is its byte: the callee instance must be keyed `u8` rather than leave
+/// the generated element placeholder in the symbol. The translation unit
+/// declares, defines, and calls exactly one such instance, carries no
+/// placeholder text, re-emits byte-identically, and keys the same symbol on the
+/// hosted-amiga profile. At the base compiler the key is
+/// `cl_id__#element of #element of T`, which the strict C build rejects.
+#[test]
+fn should_key_a_nested_element_instance_from_the_substituted_element() {
+    let source = r#"module spec.cc.impl.elemkeypin;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(xs: T): i32 {
+    for (v in xs) {
+        return i32(id(v[0]));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: str[2] = ["ab", "c"];
+    return f<str[2]>(a) - 97;
+}
+"#;
+    let (first, second) = emit_twice("implelemkey", source);
+    assert_keyed_instance(
+        "implelemkey",
+        &first,
+        "static u8 cl_id__",
+        "static u8 cl_id__u8(u8 x)",
+        "cl_id__u8((v).ptr[0])",
+    );
+    assert!(
+        !first.contains("#element"),
+        "implelemkey: the translation unit must not carry an element placeholder; emitted C:\n{first}"
+    );
+    assert_eq!(
+        first, second,
+        "implelemkey: the same source must re-emit byte-identically"
+    );
+
+    let amiga = emit_hosted_amiga("implelemkeyamiga", source);
+    assert_keyed_instance(
+        "implelemkeyamiga",
+        &amiga,
+        "static u8 cl_id__",
+        "static u8 cl_id__u8(u8 x)",
+        "cl_id__u8((v).ptr[0])",
+    );
+    assert!(
+        !amiga.contains("#element"),
+        "implelemkeyamiga: the hosted-amiga translation unit must not carry an element placeholder; emitted C:\n{amiga}"
+    );
+}
+
+/// The element `len` control does not index the substituted element.
+///
+/// `v.len` reads the view's length, so the callee instance is keyed by the
+/// length's `usize` and never mints a nested element placeholder. The shape
+/// already held before the element-chain change, so it is a control.
+#[test]
+fn should_keep_the_nested_element_len_control() {
+    let source = r#"module spec.cc.impl.elemkeylenpin;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(xs: T): i32 {
+    for (v in xs) {
+        return i32(id(v.len));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: str[2] = ["ab", "c"];
+    return f<str[2]>(a) - 2;
+}
+"#;
+    let emitted = emit_host("implelemkeylen", source);
+    assert_keyed_instance(
+        "implelemkeylen",
+        &emitted,
+        "static usize cl_id__",
+        "static usize cl_id__usize(usize x)",
+        "cl_id__usize(v.len)",
+    );
+    assert!(
+        !emitted.contains("#element"),
+        "implelemkeylen: the translation unit must not carry an element placeholder; emitted C:\n{emitted}"
+    );
+}
+
+/// A substituted element member read widens at a view destination.
+///
+/// The generic body reads a `String` member from the opaque element and stores
+/// it in a `str` view. The instance must emit the concrete twin's shim-view
+/// widening, so the generic and concrete assignments are the same text. At the
+/// base compiler the generic body assigns the handle directly (`ClString` into
+/// `ClStr`), which the strict C build rejects.
+#[test]
+fn should_widen_a_substituted_element_member_at_a_view_destination() {
+    let generic = r#"module spec.cc.impl.elemviewpin;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    return first<S[1]>(a) - 2;
+}
+"#;
+    let concrete = r#"module spec.cc.impl.elemviewconcretepin;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first(xs: S[1]): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    return first(a) - 2;
+}
+"#;
+    let widening = "s = cl_string_view(xs[0].name);";
+    let generic_c = emit_host("implelemview", generic);
+    let concrete_c = emit_host("implelemviewconcrete", concrete);
+    assert_eq!(
+        count(&generic_c, widening),
+        1,
+        "implelemview: the substituted member read must widen exactly once; emitted C:\n{generic_c}"
+    );
+    assert_eq!(
+        count(&concrete_c, widening),
+        1,
+        "implelemviewconcrete: the concrete twin must widen exactly once; emitted C:\n{concrete_c}"
+    );
+    let generic_line = generic_c
+        .lines()
+        .find(|line| line.trim() == widening)
+        .expect("implelemview: the generic assignment line");
+    let concrete_line = concrete_c
+        .lines()
+        .find(|line| line.trim() == widening)
+        .expect("implelemviewconcrete: the concrete assignment line");
+    assert_eq!(
+        generic_line, concrete_line,
+        "implelemview: the generic and concrete assignments must be byte-identical"
+    );
+}
+
+/// A member read at a non-view destination keeps its plain store.
+///
+/// Only an owned `String` read into a `str` view takes the shim-view widening.
+/// An `i32` member read into an `i32` destination stays a plain store and never
+/// grows a view constructor. The shape already held before the widening change,
+/// so it is a control.
+#[test]
+fn should_keep_the_element_member_nonview_destination() {
+    let source = r#"module spec.cc.impl.membernonviewpin;
+
+struct S { v: i32; w: i32; }
+
+func first<T>(xs: T): i32 {
+    let n: i32 = xs[0].v;
+    return n;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { v: 3, w: 4 }];
+    return first<S[1]>(a) - 3;
+}
+"#;
+    let emitted = emit_host("implmembernonview", source);
+    assert_contains("implmembernonview", &emitted, "n = xs[0].v;");
+    assert!(
+        !emitted.contains("cl_string_view(xs[0].v)"),
+        "implmembernonview: a non-view destination must not widen; emitted C:\n{emitted}"
+    );
+}

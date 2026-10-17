@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 12/60 tasks (20%) — Phase 2 implemented
+> **Progress**: 13/60 tasks (22%) — Phase 2 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -154,10 +154,10 @@ element key, and the substituted element member widening.
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the conditional report code/count/span per
+- [x] 2.3.1 Write the phase implementation pins (the conditional report code/count/span per
       instance and per direct context, the keyed `cl_id__u8` and the absent `#`, the member
       widening text and its concrete twin, a re-emission determinism pin) in
-      `compiler/tests/checker_conformance_impl_test.rs`
+      `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17; eight impl pins: the opaque conditional at its else arm, the null arm, the four direct contexts, the keyed `cl_id__u8`, the `id(v.len)` control, the member widening with the concrete twin, and the non-view control; the base discrimination 5/3 at `ce1141e`; checker impl 92/92, plain and ASan)
 - [ ] 2.3.2 Phase review — dispatch the lenses (all four); apply the corrections; the memory lens
       probes the arm values and the member read; run the base/head differential over `m364_*`,
       `m365_*`, `m368_*` (AR-37)
