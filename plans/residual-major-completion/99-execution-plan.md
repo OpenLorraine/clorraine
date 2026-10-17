@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 53/60 tasks (88%) — Phase 7 pinned
+> **Progress**: 56/60 tasks (93%) — Phase 7 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -461,14 +461,14 @@ included) and the owning nested conditional's deferred carrier/fill.
       call-with-destination form, the field copy, the call counters, the `__cl_owned0` fill
       position inside the guarded path, the loop's re-fill/re-drop/re-release order, a re-emission
       determinism pin) in `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 7.3.2 Phase review — dispatch the lenses (all four); the memory lens analyzes the guard
+- [x] 7.3.2 Phase review — dispatch the lenses (all four); the memory lens analyzes the guard ✅ (completed: 2026-10-17; the four lenses dispatched (correctness FAIL 2 blockers, semantics FAIL 1, memory FINDINGS 1, emission FINDINGS 1); the two correction rounds (`103cd78`, `78a848a`) moved the guarded place fields and the conditional field, materialized the ternary carrier, bound the read base at body scope, kept the literal grid list, and re-rooted the generated-owner move-out; rows `DEF-445`–`DEF-448` filed, `DEF-442`/`DEF-443` closed incidentally, `DEF-447` annotated)
       drop/re-fill (`codegen/guards.rs:273-307`); the emission lens runs the differential over
       `m378_*`/`m379_*` (AR-37); apply the corrections
-- [ ] 7.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused
+- [x] 7.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused ✅ (completed: 2026-10-17; the bounded confirmations: correctness PASS (L7C-4 closed), semantics PASS WITH MINORS (L7S-1 closed), emission CONFIRMED (R1 closed, F1 closed); the ASan matrix and the focused suites green)
       suites
 ### Step 7.4: Phase Record
 
-- [ ] 7.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+- [x] 7.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`; ✅ (completed: 2026-10-17; the ledger section recorded; progress 56/60)
       update the Progress block and commit per the active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the strict builds; the

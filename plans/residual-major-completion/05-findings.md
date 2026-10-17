@@ -464,3 +464,48 @@ conditional of literals), `DEF-443` (the guarded struct-literal field with a con
   identical and ASan/LSan-clean).
 - The `value_move_outs` channel carries the consumed non-place source in both guard forms; the
   `move_outs` place channel is unchanged.
+
+## Phase 7 — Literal destinations and guards
+
+**Reviewed implementation**: `581e8c7` (the implementation), `8c10710` (the pins), `103cd78` and
+`78a848a` (the corrections). **Lenses**: correctness (L7C), semantics (L7S), memory-safety,
+emission-integrity (F1/R1).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L7C-1 (a guarded literal's owned place/deref/fixed-array field was copied without emptying — a double free), L7C-4 (the conditional-field instance, found in the re-confirmation); L7C-2 (the read-base statement temporary — a false `E10030`), L7C-3 (the literal-only grid store form) |
+| semantics | FAIL — 1 blocker | L7S-1 (= L7C-1); L7S-2 (the conditional-of-literals read base, filed `DEF-445`), L7S-3 (the fill re-evaluation, `DEF-309` extended), L7S-4 (the carrier argument order, `DEF-438` extended), L7S-5 (the docs, closed) |
+| memory-safety | FINDINGS — 1 | The guarded fixed-array field of caller-owned places (= L7C-1's family); five pre-existing shapes confirmed |
+| emission-integrity | FINDINGS — 1 | F1 (a ternary-arm deferred carrier emitted a bare hidden-destination call); the re-audit then found R1 (the body-scope read-base element move double-freed) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`103cd78`) | **Fixed**: the guarded literal place fields move through the store form (the struct arm, the fixed-array field, the direct literal); a ternary arm's struct literal is materialized before the deferred carrier is wrapped; an owning read-base literal binds at body scope; the all-literal grid keeps the brace list; the docs describe the body-scope lifetime |
+| C2 (`78a848a`) | **Fixed**: the conditional literal field moves per arm (the L7C-4 fix); an owning projection of a compiler-generated owner re-roots its move-out, so a call-filled element moved into a binding empties the source (R1) |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| correctness | **PASS**: L7C-4 closed (the place, deref, mixed, loop, `\|\|`, and ternary arms); the full phase-7 matrix regressed only by the intended deltas |
+| semantics | **PASS WITH MINORS**: L7S-1 closed (the nine carrier shapes and the direct/loop/take place forms clean); the rows filed |
+| emission-integrity | **CONFIRMED** (F1 closed; zero head-only strict failures), then **FINDINGS — 1** (R1) → fixed → **CONFIRMED — 0** |
+
+### Filed rows
+
+`DEF-445` (the conditional-of-literals read base), `DEF-446` (a take conditional literal in an eager
+ternary arm), `DEF-447` (the inline read-base owning literal — **annotated not reproduced**),
+`DEF-448` (a take of a conditional array literal of places); `DEF-309` and `DEF-438` extended.
+
+### Record notes
+
+- `DEF-442` and `DEF-443` are **closed incidentally** by the phase-7 corrections (the guarded take
+  of a conditional of literals; the conditional literal field).
+- `DEF-447`'s filed repro does not reproduce on any ref where the program's C builds (the base and
+  the phase-7 heads are all LSan-clean); the row is annotated and stays open pending a fresh repro.
+- The `Materialize` extension (`temp: Option<TempId>`, `destination: Option<Place>`) is consistent
+  across both guard forms; the named destination has body-scope lifetime.
