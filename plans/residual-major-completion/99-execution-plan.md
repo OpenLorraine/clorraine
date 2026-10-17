@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 23/60 tasks (38%) — Phase 3 corrections
+> **Progress**: 24/60 tasks (40%) — Phase 3 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -224,12 +224,12 @@ count), the qualified type path, and the folded negated literal matrix.
 - [x] 3.3.2 Phase review — dispatch the lenses (correctness + semantics + emission-integrity);
       apply the corrections; the AR-34 stop conditions are checked and recorded; run the
       differential over `m371_*`, `m384_*`, `m385_*`, `m386_*` (AR-37) ✅ (completed: 2026-10-17; the three lenses dispatched: correctness PASS WITH MINORS (0 blockers), semantics FAIL (1 blocker: the integer-only literal context), emission CONFIRMED (0); the correction round added the float/cstring literal context at a concrete generic parameter and the value-headed qualified type rejection, plus the register hygiene; the AR-34 stop conditions checked (no legal nullable type rejected); the differential over `m371_*`/`m384_*`/`m385_*`/`m386_*` clean)
-- [ ] 3.3.3 Bounded confirmation: re-run the phase probes, the nullable-handle ASan control, and
+- [x] 3.3.3 Bounded confirmation: re-run the phase probes, the nullable-handle ASan control, and
       the focused suites
-### Step 3.4: Phase Record
+### Step 3.4: Phase Record ✅ (completed: 2026-10-17; the bounded confirmation: semantics PASS (0 blockers; L3S-001/L3S-002 closed, the regression matrix clean); the correction round verified)
 
-- [ ] 3.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
-      update the Progress block and commit per the active commit mode
+- [x] 3.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+      update the Progress block and commit per the active commit mode ✅ (completed: 2026-10-17; the ledger section recorded; rows `DEF-416`–`DEF-420` filed and `DEF-396`/`401`/`405` extended; progress 24/60)
 
 **Verify**: `make check`; the checker-conformance suite; the strict builds; the nullable-handle
 ASan control; the hosted-amiga leg for `DEF-384`/`385`; the `DEF-386` matrix on host

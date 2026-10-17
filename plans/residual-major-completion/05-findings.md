@@ -278,3 +278,45 @@ nullable conditional zero view).
 - The correction round incidentally fixed `DEF-408` and `DEF-409`; both are closed with the
   confirmation evidence.
 - `DEF-414`'s reproducer was not retained; the row stays open with the note.
+
+## Phase 3 — Substitution edges II: context typing
+
+**Reviewed implementation**: `ffae71f` (the implementation), `c6f5dc4` (the pins), `fef7cbe` (the
+corrections). **Lenses**: correctness (L3C), semantics (L3S), emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | L3C-001 (the register's trailing blank line); P-1..P-3 pre-existing (the dot-call explicit type arguments, the literal-context siblings, the TY-4 declaration positions) |
+| semantics | FAIL — 1 blocker | L3S-001 (the literal-context rule was integer-only: a float at an `f32` concrete parameter and a `static str` at a `cstring` concrete parameter reported `E10200` while the concrete twin accepted); L3S-002 (a value-headed qualified type path resolved by its last segment); L3S-003..L3S-007 pre-existing filed |
+| emission-integrity | CONFIRMED — 0 | The four intended delta classes; no head-only strict failure (two base failures fixed); the qualified type byte-identical to the unqualified control; determinism clean; the qualified generic callee's type arguments noted (extends `DEF-396`) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`fef7cbe`) | **Fixed**: every literal at a concrete generic parameter goes through the non-generic check — a float takes the `f32` context, a static-str literal takes the `cstring` allowance, an integer at `f32`/`bool` stays `E10200`; a `judged` flag stops the later conversion from repeating; the qualified type name requires a real module prefix (a value/function-headed path reports `E10219`); the register's trailing blank line removed |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| semantics | **PASS — 0 blockers**: L3S-001/L3S-002 closed; the regression matrix (the literal contexts, the TY-4 five-site count and the nested/legal instances, the qualified type byte identity, the folded matrix and boundaries, the controls) shows only the intended deltas; the pre-existing rows confirmed open |
+
+### Filed rows
+
+`DEF-416` (the cross-module simple-name type collision), `DEF-417` (the TY-4 declaration
+positions), `DEF-418` (the explicit type arguments on a non-generic callee), `DEF-419` (the
+import-renamed type names), `DEF-420` (the negated float at `f32`); the extensions to `DEF-396`
+(the qualified generic callee's type arguments), `DEF-401` (the dot-call explicit type arguments),
+and `DEF-405` (the explicit/inferred type-argument literal context).
+
+### Record notes
+
+- AR-43 corrects the nullable annotation spec span to the argument's own start (the AR-40
+  mechanical-span precedent).
+- The emission lens's P-1 (the qualified generic callee's type arguments) extends `DEF-396`; P-2
+  (the `m378_*` hidden out-parameter probes) is `DEF-378`'s phase; P-3 is the parked `embed`.
+- A negated float literal at `f32` reports `E10200` on both the generic and concrete spellings
+  (pre-existing parity, `DEF-420`).
