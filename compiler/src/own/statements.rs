@@ -380,22 +380,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
                 }
             }
-            // A carrier copy hands its view positions to the new binding: the
-            // destination's views read the same storage, so the source's
-            // element loans follow the copy — for a view-like array exactly as
-            // for the single view, so a later escape or backing write through
-            // the copy is judged like the source's own. A projected source
-            // (`let ys: str[2] = rows[0];`) contributes the positions recorded
-            // under its projection, translated to the destination's paths. A
-            // single view keeps its own loan machinery, so only a container
-            // destination takes the element positions.
+            // A carrier or view copy hands its view positions to the new
+            // binding: the destination's views read the same storage, so the
+            // source's element loans follow the copy — for a view-like array
+            // exactly as for the single view, so a later escape or backing
+            // write through the copy is judged like the source's own. A
+            // place read with constant projections transfers the positions it
+            // selects (`let s: str = xs[0];` included), while a conditional,
+            // an array literal, or a run-time read supplies its positions arm
+            // by arm and is written as one union.
             if let Some(value) = &decl.value {
-                if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
-                    if super::place::constant_path(&projections)
-                        && (projections.is_empty() || !is_view(&target))
+                let copied = match self.place_target(value) {
+                    Some(PlaceTarget::Local(source, projections))
+                        if super::place::constant_path(&projections) =>
                     {
                         self.move_element_loans(source, &projections, id, &[]);
+                        true
                     }
+                    _ => false,
+                };
+                if !copied && is_view_like(&target) && self.collects_copy_positions(value) {
+                    self.record_copy_element_loans(id, &[], value, decl.span);
                 }
             }
             let place = self.binding_place(id);
@@ -752,20 +757,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
             }
         }
-        // A carrier copy hands its view positions to the new binding — for a
-        // view-like array exactly as in `check_let`, so a later escape or
-        // backing write through the copy is judged like the source's own. A
-        // projected source contributes the positions recorded under its
-        // projection, translated to the destination's paths; a single view
-        // keeps its own loan machinery.
-        if let Some(PlaceTarget::Local(source, projections)) =
-            self.place_target(&decl.value)
-        {
-            if super::place::constant_path(&projections)
-                && (projections.is_empty() || !is_view(&target))
+        // A carrier or view copy hands its view positions to the new binding —
+        // for a view-like array exactly as in `check_let`, so a later escape
+        // or backing write through the copy is judged like the source's own.
+        // A place read with constant projections transfers the positions it
+        // selects; a conditional, an array literal, or a run-time read
+        // supplies its positions arm by arm and is written as one union.
+        let copied = match self.place_target(&decl.value) {
+            Some(PlaceTarget::Local(source, projections))
+                if super::place::constant_path(&projections) =>
             {
                 self.move_element_loans(source, &projections, id, &[]);
+                true
             }
+            _ => false,
+        };
+        if !copied && is_view_like(&target) && self.collects_copy_positions(&decl.value) {
+            self.record_copy_element_loans(id, &[], &decl.value, decl.span);
         }
         let place = self.binding_place(id);
         self.emit_prepared_store(place, prepared);

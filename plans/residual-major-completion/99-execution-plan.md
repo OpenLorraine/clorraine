@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 34/60 tasks (57%) — Phase 5 red
+> **Progress**: 36/60 tasks (60%) — Phase 5 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -330,12 +330,12 @@ form, conditional arm), and the borrow-element conditional take control.
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Carry the element-read store's loan; snapshot both copy arms and the array-literal
+- [x] 5.2.1 Carry the element-read store's loan; snapshot both copy arms and the array-literal
       elements and write the destination's loan **union** once, including the fill form, a
       conditional arm that is an array literal, and a conditional element inside an array literal
       — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`,
-      `compiler/src/own/expr.rs`. **`DEF-374` is a control: no code change for it** (AR-32)
-- [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/expr.rs`. **`DEF-374` is a control: no code change for it** (AR-32) ✅ (completed: 2026-10-17; the element-read store's loan (`own/place.rs:209`, the copy loan collector `:1231-1440`; `own/statements.rs:381-404/760-777`; `own/expr.rs:1283-1308`) and the copy-source union (`own/place.rs:1231/1268/1308/1329`: both arms and all literal elements collected, the destination written once; the conditional-element recursion; the runtime-index positions; `drop_written_owner_positions` at `:1415` keeps the single-view controls at one `E10031` — flagged to the semantics lens); `DEF-374` unchanged)
+- [x] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17; residue 173/173 plain and under `RDC_ASAN=1`; `make check` exit 0; the boundary probes (nested, runtime, assignments, loaned fill, nested mix, overwritten copy) and the write-conflict controls green; the differential shows the new `E10030` rejections only, the corpus emissions unchanged)
 
 ### Step 5.3: Impl Tests & Review
 

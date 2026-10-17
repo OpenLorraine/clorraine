@@ -1283,14 +1283,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A copy from a carrier place hands its positions over: the
                 // destination's views read the same storage, so the source's
                 // element loans follow the copy — for a whole view-like array
-                // exactly as for the single view. A projected source
-                // (`ys = rows[0]`) contributes the positions recorded under its
-                // projection, translated to the destination's paths; a single
-                // view destination keeps its own loan machinery.
+                // exactly as for the single view. A value that is not a place
+                // read (a conditional or an array literal) supplies its
+                // positions arm by arm and is written as one union. A
+                // projected store keeps its own element-loan recording above,
+                // so it is not a copy.
                 let moved = match self.place_target(value) {
                     Some(PlaceTarget::Local(source, source_projections))
                         if super::place::constant_path(&source_projections)
-                            && (source_projections.is_empty() || !is_view(&target_ty))
                             && (!is_view_like(&target_ty) || projections.is_empty()) =>
                     {
                         self.move_element_loans(source, &source_projections, id, &projections);
@@ -1298,7 +1298,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => false,
                 };
-                if !moved && !is_view_like(&target_ty) {
+                if !moved
+                    && is_view_like(&target_ty)
+                    && projections.is_empty()
+                    && self.collects_copy_positions(value)
+                {
+                    self.record_copy_element_loans(id, &projections, value, target.span);
+                } else if !moved && !is_view_like(&target_ty) {
                     self.replace_element_loans(id, &projections, BTreeSet::new());
                     let positions = self.literal_view_loan_positions(value);
                     if !positions.is_empty() {

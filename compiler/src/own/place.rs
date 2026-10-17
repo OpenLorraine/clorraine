@@ -200,6 +200,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 },
                 span,
             );
+            // A write to an owner replaces the storage its view loans point
+            // into; when such a loan is live the write reports the frozen
+            // conflict (`E10031`). The recorded positions that name the owner
+            // are stale afterwards, so a later escape would only repeat the
+            // same violation at a second site. The binding loans stay, because
+            // their uses keep the conflict report reachable.
+            self.drop_written_owner_positions(id);
         }
         if !projections.is_empty() && self.state.place(id).moved {
             let name = self.bindings[id].name.clone();
@@ -1210,6 +1217,220 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Records the view-position loans a copy source hands its destination.
+    ///
+    /// A copy reads the source positions and stores their views, so the
+    /// destination's positions loan the same storage: a place contributes the
+    /// positions recorded under its projection, a conditional both arms, and
+    /// an array literal each element under its own index and the fill value
+    /// across the remaining positions. The whole record is collected before
+    /// the destination is written, so the destination carries the union and a
+    /// later arm never replaces an earlier arm's positions. A position whose
+    /// value derives directly (`[a.v]`) creates its shared loan at the copy
+    /// site, exactly as an element store does.
+    pub(super) fn record_copy_element_loans(
+        &mut self,
+        to: usize,
+        base: &[ir::Projection],
+        value: &Expr,
+        span: Span,
+    ) {
+        let mut copied = CopyLoans::default();
+        self.collect_copy_element_loans(value, base, &mut copied);
+        let mut paths = copied.recorded;
+        for (path, owners) in copied.owners {
+            let loans = paths.entry(path).or_default();
+            for owner in owners {
+                if let Some(loan) = self.record_view_loan(owner, LoanKind::Shared, span) {
+                    loans.insert(loan);
+                }
+            }
+        }
+        // The store replaced every position under `base`, so the destination's
+        // record there is dropped once before the collected union is written.
+        self.replace_element_loans(to, base, BTreeSet::new());
+        for (path, loans) in paths {
+            if !loans.is_empty() {
+                self.replace_element_loans(to, &path, loans);
+            }
+        }
+    }
+
+    /// Collects one copy source's position loans into `copied`.
+    ///
+    /// A conditional contributes both arms, an array literal each element and
+    /// the fill value (which stands for every remaining element, so it covers
+    /// the aggregate's own position), and a projection or cast its inner
+    /// value. Every other expression is read as a place: the positions it
+    /// selects are translated onto the destination's path, and a place with
+    /// no recorded position contributes the real owners its storage derives
+    /// from.
+    fn collect_copy_element_loans(
+        &self,
+        value: &Expr,
+        base: &[ir::Projection],
+        copied: &mut CopyLoans,
+    ) {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_copy_element_loans(then_value, base, copied);
+                self.collect_copy_element_loans(else_value, base, copied);
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for (index, element) in elements.iter().enumerate() {
+                    let mut path = base.to_vec();
+                    path.push(ir::Projection::Element(Some(index)));
+                    self.collect_copy_element_loans(element, &path, copied);
+                }
+                if let Some(fill) = fill {
+                    self.collect_copy_element_loans(fill, base, copied);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.collect_copy_element_loans(inner, base, copied),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.collect_copy_element_loans(value, base, copied);
+            }
+            _ => self.collect_place_copy_loans(value, base, copied),
+        }
+    }
+
+    /// True when a copy source names its view positions arm by arm.
+    ///
+    /// A conditional or an array literal — under any cast or unsafe wrapper —
+    /// contributes independent positions, and a run-time element read names no
+    /// single recorded position. Every other value keeps the binding effect's
+    /// own loan creation, so a call result's exclusive view keeps its kind and
+    /// its single loan request.
+    pub(super) fn collects_copy_positions(&self, value: &Expr) -> bool {
+        match &value.kind {
+            ExprKind::Conditional { .. } | ExprKind::ArrayLiteral { .. } => true,
+            ExprKind::Unsafe(inner) => self.collects_copy_positions(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.collects_copy_positions(value)
+            }
+            _ => self.place_target(value).is_some(),
+        }
+    }
+
+    /// Collects the position loans one place read contributes to a copy.
+    ///
+    /// A binding with recorded positions is authoritative: a constant read
+    /// keeps every position at or below it, translated onto the destination's
+    /// path, while a run-time read cannot name the element it selects and
+    /// contributes every recorded position at the destination's own path. A
+    /// local place with no recorded position contributes the loans the value
+    /// already carries, or else the real owners of its storage; a value that
+    /// names no place contributes only its carried loans, because the binding
+    /// effect already creates the loan a fresh derivation owes.
+    fn collect_place_copy_loans(
+        &self,
+        value: &Expr,
+        base: &[ir::Projection],
+        copied: &mut CopyLoans,
+    ) {
+        if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
+            if let Some(paths) = self.state.element_loans.get(&source) {
+                let read = constant_path(&projections).then_some(projections.as_slice());
+                for (path, loans) in paths {
+                    let destination = match read {
+                        Some(read) => {
+                            if let Some(rest) = path.strip_prefix(read) {
+                                let mut full = base.to_vec();
+                                full.extend(rest.iter().cloned());
+                                Some(full)
+                            } else if read.starts_with(path.as_slice()) {
+                                // The read selects a position a fill record
+                                // covers, so the copied value is one view at
+                                // the destination's own path.
+                                Some(base.to_vec())
+                            } else {
+                                None
+                            }
+                        }
+                        None => Some(base.to_vec()),
+                    };
+                    if let Some(destination) = destination {
+                        copied
+                            .recorded
+                            .entry(destination)
+                            .or_default()
+                            .extend(loans.iter().copied());
+                    }
+                }
+                return;
+            }
+            let loans = self.view_loans(value);
+            if !loans.is_empty() {
+                copied
+                    .recorded
+                    .entry(base.to_vec())
+                    .or_default()
+                    .extend(loans);
+                return;
+            }
+            let owners = self.provenance_loan_owners(value);
+            if !owners.is_empty() {
+                copied.owners.entry(base.to_vec()).or_default().extend(owners);
+            }
+            return;
+        }
+        let loans = self.view_loans(value);
+        if !loans.is_empty() {
+            copied
+                .recorded
+                .entry(base.to_vec())
+                .or_default()
+                .extend(loans);
+        }
+    }
+
+    /// The real owners a value's storage provenance names.
+    ///
+    /// Module storage, literals, and ownerless values name no owner, so they
+    /// contribute no loan.
+    fn provenance_loan_owners(&self, value: &Expr) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if let Some(owner) = owner_of(&atom) {
+                owners.insert(owner);
+            }
+        }
+        owners
+    }
+
+    /// Drops the recorded view positions that read a written owner's storage.
+    ///
+    /// A write to a non-view binding replaces the storage its view loans point
+    /// into; when one of those loans is live, the write reports the frozen
+    /// conflict (`E10031`). The positions that name the owner are stale
+    /// afterwards: a later escape of one of those views would repeat the same
+    /// violation at a second site. The binding loans stay, because their uses
+    /// keep the write's conflict report reachable; only the per-position
+    /// record is dropped, exactly as overwriting a view element drops the
+    /// loans of the value it replaced.
+    fn drop_written_owner_positions(&mut self, owner: usize) {
+        let stale: BTreeSet<LoanId> = self
+            .loan_ids
+            .iter()
+            .filter(|(origin, _)| origin.owner == LoanOwner::Binding(owner))
+            .map(|(_, loan)| *loan)
+            .collect();
+        if stale.is_empty() {
+            return;
+        }
+        self.state.element_loans.retain(|_, paths| {
+            for loans in paths.values_mut() {
+                loans.retain(|loan| !stale.contains(loan));
+            }
+            paths.retain(|_, loans| !loans.is_empty());
+            !paths.is_empty()
+        });
+    }
+
     /// Writes the union of loans a binding carries.
     fn set_binding_loan_union(&mut self, id: usize, loans: BTreeSet<LoanId>) {
         if loans.is_empty() {
@@ -2084,6 +2305,21 @@ fn owner_of(provenance: &Provenance) -> Option<LoanOwner> {
         Provenance::Temp(temp) => Some(LoanOwner::Temp(*temp)),
         _ => None,
     }
+}
+
+/// The view-position loans a copy source hands its destination.
+///
+/// A copied value contributes two kinds of position: a loan the source
+/// already recorded, keyed by the destination path it translates to, and the
+/// owner of a position the copy derives directly, which creates its shared
+/// loan at the copy site. Keeping both apart until the destination record is
+/// written lets the copy union every arm before it replaces the old record.
+#[derive(Default)]
+struct CopyLoans {
+    /// Recorded source loans, translated onto the destination's paths.
+    recorded: BTreeMap<Vec<ir::Projection>, BTreeSet<LoanId>>,
+    /// Owners of positions the copy derives directly.
+    owners: BTreeMap<Vec<ir::Projection>, BTreeSet<LoanOwner>>,
 }
 
 /// Merges the storage provenances a conditional or an array literal names.
