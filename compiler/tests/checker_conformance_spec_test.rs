@@ -9149,3 +9149,344 @@ func main(): i32 {
         &["E10200"],
     );
 }
+
+// ===== Dotted member roots, FFI view crossings, and conditional-arm residue =====
+
+/// A dotted nullable member reports the possible-null rule like its postfix twin.
+///
+/// The parser spells `xs.name` as a dotted read and `xs[0].name` as a postfix
+/// read. Both root at the binding `xs`, so both report one `E10010` at a
+/// non-nullable `str` destination when the member is `String?`. The concrete
+/// twin reports the same rule at its own statement, and no translation unit is
+/// written.
+///
+/// At the base implementation the dotted spelling is accepted because its root
+/// name is not recorded.
+#[test]
+fn should_report_a_dotted_nullable_member_at_a_nonnullable_destination() {
+    let generic = r#"module spec.cc.f2.dotreject;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs.name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S = S { name: null };
+    return first<S>(a);
+}
+"#;
+    assert_rejected_once(
+        "dotreject",
+        generic,
+        "E10010",
+        &["value 'xs' may be null here", "main.clo:8:18"],
+        &["E10200"],
+    );
+
+    let concrete = r#"module spec.cc.f2.dotrejectconcrete;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first(xs: S): i32 {
+    let s: str = xs.name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S = S { name: null };
+    return first(a);
+}
+"#;
+    assert_rejected_once(
+        "dotrejectconcrete",
+        concrete,
+        "E10010",
+        &["value 'xs' may be null here", "main.clo:8:5"],
+        &["E10200"],
+    );
+}
+
+/// A dotted nullable member at a view destination guards its widening.
+///
+/// The dotted read resolves through the instance to `String?`, so the `str?`
+/// store selects the destination's empty view for a null member. The
+/// null-selected run exits 0 and stays clean under AddressSanitizer; the
+/// non-null selection reads the member's bytes. The postfix spelling is
+/// unchanged.
+#[test]
+fn should_guard_a_dotted_nullable_member_at_a_view_destination() {
+    let null_selected = r#"module spec.cc.f2.dotview;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs.name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S = S { name: null };
+    return first<S>(a) - 3;
+}
+"#;
+    let output = run_memory("dotview", null_selected);
+    assert_exit("dotview", &output, 0);
+    assert_no_asan("dotview", &output);
+
+    let non_null = r#"module spec.cc.f2.dotviewok;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs.name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab") };
+    return first<S>(a);
+}
+"#;
+    let output = run_host("dotviewok", non_null);
+    assert_exit("dotviewok", &output, 0);
+}
+
+/// A substituted member argument crosses an uncontracted FFI view as a pointer.
+///
+/// The `str` parameter's ABI type is `APTR`, so the argument crosses as the
+/// view's pointer member. A dotted member read and a postfix member read both
+/// widen first, then cross as `(APTR)(...).ptr`. The raw-pointer and `cstring`
+/// parameters keep their own crossings.
+///
+/// At the correction head the crossing test reads the unresolved argument type,
+/// so the widened view struct reaches the stub and the C build fails.
+#[test]
+fn should_cross_a_substituted_member_argument_to_an_ffi_view() {
+    let source = r#"module spec.cc.f2.ffiview;
+
+import { String, stringOf } from std.text;
+
+ffi lib {
+    func RStr(s: str): i32;
+    func Raw(p: raw u8): i32;
+    func CText(s: cstring): i32;
+}
+
+struct S { name: String; }
+
+func dotted<T>(xs: T): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RStr(xs.name);
+    }
+    return n;
+}
+
+func indexed<T>(xs: T): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RStr(xs[0].name);
+    }
+    return n;
+}
+
+func controls(t: str): i32 {
+    let n: i32 = 0;
+    let p: raw u8 = t.ptr;
+    unsafe {
+        n = CText("x") + Raw(p) + RStr(t);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("hi") };
+    let b: S[1] = [S { name: stringOf("hi") }];
+    let t: str = "hi";
+    return dotted<S>(a) + indexed<S[1]>(b) + controls(t) - 5;
+}
+"#;
+    let stub = "typedef void *APTR;\ntypedef int LONG;\nLONG RStr(APTR s) { return s != 0; }\nLONG Raw(APTR p) { return p != 0; }\nLONG CText(char *s) { return s != 0; }\n";
+    let output = run_host_with_stub("ffiview", source, stub);
+    assert_exit("ffiview", &output, 0);
+}
+
+/// A nullable mixed conditional arm reports the concrete twin's conversion.
+///
+/// The then arm is a `String?` member and the else arm a `static str`; the two
+/// do not convert to each other, so the concrete spelling reports one `E10200`
+/// at the else arm. The generic instance resolves the arm and reports the same
+/// conversion at the same arm, with no translation unit.
+///
+/// At the base implementation the unresolved arm takes the sibling's type and
+/// the instance builds a conditional instead of rejecting.
+#[test]
+fn should_report_a_nullable_mixed_conditional_arm() {
+    let generic = r#"module spec.cc.f2.condmixed;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T, c: bool): i32 {
+    let s: str = c ? xs[0].name : "z";
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first<S[1]>(a, false) - 1;
+}
+"#;
+    assert_rejected_once(
+        "condmixed",
+        generic,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'String?' implicitly",
+            "main.clo:8:35",
+        ],
+        &["E10010"],
+    );
+
+    let concrete = r#"module spec.cc.f2.condmixedconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String?; }
+
+func first(xs: S[1], c: bool): i32 {
+    let s: str = c ? xs[0].name : "z";
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: null }];
+    return first(a, false) - 1;
+}
+"#;
+    assert_rejected_once(
+        "condmixedconcrete",
+        concrete,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'String?' implicitly",
+            "main.clo:8:35",
+        ],
+        &["E10010"],
+    );
+}
+
+/// The accepted conditional-arm controls keep building.
+///
+/// Two `String?` members at a `str?` destination agree on their type, and a
+/// non-nullable `String` member beside a `str` arm settles on `str`; both
+/// selections widen their owned arms and run.
+#[test]
+fn should_keep_the_conditional_arm_controls() {
+    let same_arm = r#"module spec.cc.f2.condsamearm;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T, c: bool): i32 {
+    let s: str? = c ? xs[0].name : xs[1].name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: null }, S { name: null }];
+    return first<S[2]>(a, true) - 3;
+}
+"#;
+    let output = run_host("condsamearm", same_arm);
+    assert_exit("condsamearm", &output, 0);
+
+    let non_null_arm = r#"module spec.cc.f2.condnonnullarm;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first<T>(xs: T, t: str, c: bool): i32 {
+    let s: str = c ? xs.name : t;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("hi") };
+    return first<S>(a, "z", true) - 2;
+}
+"#;
+    let output = run_host("condnonnullarm", non_null_arm);
+    assert_exit("condnonnullarm", &output, 0);
+}
+
+/// A site whose two arms are null reports each arm once for the first instance.
+///
+/// Two instances reach the same site; both arms are the null literal at a
+/// non-nullable substituted destination. The first instance's two arms report
+/// at their own nulls and the site ends, so the site carries two reports, not
+/// four.
+///
+/// At the base implementation each instance reports both arms.
+#[test]
+fn should_report_both_null_arms_once_per_instance() {
+    let source = r#"module spec.cc.f2.bothnull;
+
+func choose<T>(c: bool): i32 {
+    let y: T = c ? null : null;
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = choose<i32>(true);
+    let u: u8 = 6;
+    let b: i32 = choose<u8>(false);
+    return a + b;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("bothnull", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "bothnull: the front end accepted null arms at a concrete destination"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        2,
+        "bothnull: each null arm of the first instance reports once; stderr:\n{stderr}"
+    );
+    for site in ["main.clo:4:20", "main.clo:4:27"] {
+        assert!(
+            stderr.contains(site),
+            "bothnull: the null at {site} must report; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "bothnull: a rejected program must not write a translation unit"
+    );
+}

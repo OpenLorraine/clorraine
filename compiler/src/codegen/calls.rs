@@ -247,7 +247,10 @@ impl Emitter<'_> {
     /// widens to the `str` view first, so the widened value crosses the same
     /// way. A `cstring` argument is already a C pointer and never wraps.
     fn argument_crosses_as_view(&self, arg: &Value, expected: &Ty) -> bool {
-        let arg_ty = self.substitute(&arg.ty);
+        // The argument's recorded type can still be opaque in a generic body;
+        // the instance substitution resolves the member read, exactly as the
+        // argument widening does.
+        let arg_ty = self.resolved_value_ty(arg);
         if is_struct_view(&arg_ty) {
             return true;
         }

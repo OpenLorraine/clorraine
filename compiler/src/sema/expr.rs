@@ -1456,6 +1456,10 @@ pub(super) fn member_read_name(expr: &Expr) -> Option<String> {
 pub(super) fn plain_binding_root(expr: &Expr) -> Option<String> {
     match &expr.kind {
         ExprKind::Name(name) => Some(name.clone()),
+        // A dotted read is spelled as a qualified name; its head is the value
+        // binding the rest of the path selects from, so the null rule names
+        // that binding exactly as it names a postfix read's root.
+        ExprKind::Qualified(name) => name.segments.first().cloned(),
         ExprKind::Member { base, .. }
         | ExprKind::Index { base, .. }
         | ExprKind::Unsafe(base) => plain_binding_root(base),

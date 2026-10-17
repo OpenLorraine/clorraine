@@ -351,9 +351,13 @@ impl Checker<'_, '_> {
         let key = then_value as *const Expr as usize;
         // A null arm whose destination is still open is judged at the
         // instance too: the substituted destination decides whether the null
-        // is legal.
+        // is legal. An arm whose type stays unknown at the declaration can be
+        // an opaque member read whose concrete type decides the arm rule, so
+        // the instance resolves it before judging.
         let open_destination = expected.is_some_and(contains_param);
         let null_arm = is_null_shaped(&then_ty) || is_null_shaped(&else_ty);
+        let unresolved_arm = (then_ty.is_unknown() && !is_null_shaped(&then_ty))
+            || (else_ty.is_unknown() && !is_null_shaped(&else_ty));
         let arms = super::ConditionalArms {
             function: self.function_name.clone(),
             then_ty: then_ty.clone(),
@@ -364,6 +368,7 @@ impl Checker<'_, '_> {
             destination: expected.cloned(),
             opaque: contains_param(&then_ty)
                 || contains_param(&else_ty)
+                || unresolved_arm
                 || (null_arm && open_destination),
             null_reported,
         };

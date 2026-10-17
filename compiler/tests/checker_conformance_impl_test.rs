@@ -5859,3 +5859,303 @@ func main(): i32 {
         "main.clo:5:25",
     );
 }
+
+// ===== Dotted member roots, FFI crossings, and conditional-arm residue =====
+
+/// A dotted nullable member records its root binding.
+///
+/// The dotted read and the postfix read both root at `xs`, so the per-instance
+/// audit names the same binding and reports one possible-null rule at the read.
+/// At the base compiler the dotted spelling records no root and is accepted.
+#[test]
+fn should_report_a_dotted_nullable_member_at_a_nonnullable_destination() {
+    let source = r#"module spec.cc.impl.dotrejectpin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs.name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S = S { name: null };
+    return first<S>(a);
+}
+"#;
+    let stderr = reject_host("impldotreject", source);
+    assert_eq!(
+        stderr.matches("error E10010:").count(),
+        1,
+        "impldotreject: the possible-null rule reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("value 'xs' may be null here"),
+        "impldotreject: the report must name the dotted root; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:18"),
+        "impldotreject: the report must land on the read; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10200:"),
+        "impldotreject: the conversion itself is legal; stderr:\n{stderr}"
+    );
+}
+
+/// A dotted nullable member at a view destination widens under its guard.
+///
+/// The dotted read resolves to the concrete `String?` member, so the store
+/// spells the same guarded widening the postfix read spells.
+#[test]
+fn should_guard_a_dotted_nullable_member_at_a_view_destination() {
+    let source = r#"module spec.cc.impl.dotviewpin;
+
+import { String } from std.text;
+
+struct S { name: String?; }
+
+func first<T>(xs: T): i32 {
+    let s: str? = xs.name;
+    if (s == null) {
+        return 3;
+    }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let a: S = S { name: null };
+    return first<S>(a) - 3;
+}
+"#;
+    let emitted = emit_host("impldotview", source);
+    let guarded = "s = (xs.name ? cl_string_view(xs.name) : cl_zero_ClStr());";
+    assert_eq!(
+        count(&emitted, guarded),
+        1,
+        "impldotview: the dotted read must guard exactly once; emitted C:\n{emitted}"
+    );
+}
+
+/// A substituted member argument crosses an uncontracted FFI view as a pointer.
+///
+/// The crossing test reads the argument's resolved type, so the widened view
+/// crosses as `(APTR)(...).ptr` exactly as a named `str` value does. The dotted
+/// and postfix members both widen first; the raw and `cstring` arguments keep
+/// their own crossings.
+#[test]
+fn should_cross_a_substituted_member_argument_to_an_ffi_view() {
+    let source = r#"module spec.cc.impl.ffiviewpin;
+
+import { String, stringOf } from std.text;
+
+ffi lib {
+    func RStr(s: str): i32;
+    func Raw(p: raw u8): i32;
+    func CText(s: cstring): i32;
+}
+
+struct S { name: String; }
+
+func dotted<T>(xs: T): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RStr(xs.name);
+    }
+    return n;
+}
+
+func indexed<T>(xs: T): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RStr(xs[0].name);
+    }
+    return n;
+}
+
+func controls(t: str): i32 {
+    let n: i32 = 0;
+    let p: raw u8 = t.ptr;
+    unsafe {
+        n = CText("x") + Raw(p) + RStr(t);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("hi") };
+    let b: S[1] = [S { name: stringOf("hi") }];
+    let t: str = "hi";
+    return dotted<S>(a) + indexed<S[1]>(b) + controls(t) - 5;
+}
+"#;
+    let emitted = emit_host("implffiview", source);
+    assert_contains(
+        "implffiview",
+        &emitted,
+        "RStr((APTR)(cl_string_view(xs.name)).ptr)",
+    );
+    assert_contains(
+        "implffiview",
+        &emitted,
+        "RStr((APTR)(cl_string_view(xs[0].name)).ptr)",
+    );
+    assert_contains("implffiview", &emitted, "RStr((APTR)(t).ptr)");
+    assert_contains("implffiview", &emitted, "CText(\"x\")");
+    assert_contains("implffiview", &emitted, "Raw(p)");
+}
+
+/// A substituted member argument widens, and a nullable one guards.
+///
+/// The argument renderer resolves the member through the instance, so a
+/// non-nullable `String` member widens to the `str` parameter and a `String?`
+/// member guards its widening at a `str?` parameter. At the base compiler the
+/// unresolved argument keeps its member read and the C build fails.
+#[test]
+fn should_widen_a_substituted_member_argument() {
+    let source = r#"module spec.cc.impl.argwidenpin;
+
+import { String, stringOf } from std.text;
+
+func consume(s: str): i32 { return i32(len(s)); }
+
+func maybe(s: str?): i32 {
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s));
+}
+
+struct S { name: String; }
+struct N { name: String?; }
+
+func nonnull<T>(xs: T): i32 {
+    return consume(xs.name);
+}
+
+func nullable<T>(xs: T): i32 {
+    return maybe(xs.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("hi") };
+    let b: N = N { name: stringOf("hi") };
+    return nonnull<S>(a) + nullable<N>(b) - 4;
+}
+"#;
+    let emitted = emit_host("implargwiden", source);
+    assert_contains(
+        "implargwiden",
+        &emitted,
+        "consume(cl_string_view(xs.name))",
+    );
+    assert_contains(
+        "implargwiden",
+        &emitted,
+        "maybe((xs.name ? cl_string_view(xs.name) : cl_zero_ClStr()))",
+    );
+}
+
+/// Both substituted conditional arms widen at a view result.
+///
+/// The instance resolves each arm's `String` member before the arm renderer, so
+/// both arms take the shim-view widening and the assignment is byte-identical
+/// to the concrete twin's. At the base compiler the unresolved arms keep the
+/// handle values and the C build fails.
+#[test]
+fn should_widen_both_substituted_member_arms() {
+    let generic = r#"module spec.cc.impl.condarmspin;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first<T>(xs: T, c: bool): i32 {
+    let s: str = c ? xs[0].name : xs[1].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("hi") }, S { name: stringOf("hi") }];
+    return first<S[2]>(a, true) - 2;
+}
+"#;
+    let concrete = r#"module spec.cc.impl.condarmsconcretepin;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first(xs: S[2], c: bool): i32 {
+    let s: str = c ? xs[0].name : xs[1].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("hi") }, S { name: stringOf("hi") }];
+    return first(a, true) - 2;
+}
+"#;
+    let widening = "s = (c ? cl_string_view(xs[0].name) : cl_string_view(xs[1].name));";
+    let generic_c = emit_host("implcondarms", generic);
+    let concrete_c = emit_host("implcondarmsconcrete", concrete);
+    assert_eq!(
+        count(&generic_c, widening),
+        1,
+        "implcondarms: both arms must widen exactly once; emitted C:\n{generic_c}"
+    );
+    assert_eq!(
+        count(&concrete_c, widening),
+        1,
+        "implcondarmsconcrete: the concrete twin must widen exactly once; emitted C:\n{concrete_c}"
+    );
+    let generic_line = generic_c
+        .lines()
+        .find(|line| line.trim() == widening)
+        .expect("implcondarms: the generic assignment line");
+    let concrete_line = concrete_c
+        .lines()
+        .find(|line| line.trim() == widening)
+        .expect("implcondarmsconcrete: the concrete assignment line");
+    assert_eq!(
+        generic_line, concrete_line,
+        "implcondarms: the generic and concrete assignments must be byte-identical"
+    );
+}
+
+/// A site whose two arms are null reports each arm once for its first instance.
+///
+/// The first instance's then and else arms report at their own nulls, and the
+/// site ends, so two instances produce two reports rather than four. At the
+/// base compiler each instance reports both arms.
+#[test]
+fn should_report_both_null_arms_once_per_instance() {
+    let source = r#"module spec.cc.impl.bothnullpin;
+
+func choose<T>(c: bool): i32 {
+    let y: T = c ? null : null;
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = choose<i32>(true);
+    let u: u8 = 6;
+    let b: i32 = choose<u8>(false);
+    return a + b;
+}
+"#;
+    let stderr = reject_host("implbothnull", source);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        2,
+        "implbothnull: the first instance reports both arms once; stderr:\n{stderr}"
+    );
+    for site in ["main.clo:4:20", "main.clo:4:27"] {
+        assert!(
+            stderr.contains(site),
+            "implbothnull: the null at {site} must report; stderr:\n{stderr}"
+        );
+    }
+}

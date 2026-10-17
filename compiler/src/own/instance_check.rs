@@ -15,7 +15,7 @@
 //! a fill inside a lifted lambda body) is left to the host C compiler, which
 //! rejects the undeclared or unsubstituted type it emits.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::borrow::is_view;
 use crate::diag::{Diagnostic, Diagnostics};
@@ -1270,6 +1270,35 @@ fn resolved_member_ty(sema: &SemaOutput, base: &Ty, name: &str) -> Option<Ty> {
     }
 }
 
+/// The concrete type of a conditional arm that names an opaque member read.
+///
+/// The declaration types the arm `Unknown` because its base is an opaque
+/// value; the projection recorded at the same read carries the base type, so
+/// the instance substitutes it and resolves the member exactly as the
+/// member-use audit does. Every other unresolved arm keeps its unknown type,
+/// which the arm rule accepts as the sibling's type.
+fn resolved_conditional_arm(
+    sema: &SemaOutput,
+    function: &str,
+    arm_ty: &Ty,
+    span: Span,
+    bindings: &BTreeMap<String, Ty>,
+) -> Ty {
+    if !arm_ty.is_unknown() {
+        return arm_ty.clone();
+    }
+    let Some(projection) = sema.opaque_projections.iter().find(|projection| {
+        projection.function == function && projection.span.start == span.start
+    }) else {
+        return arm_ty.clone();
+    };
+    let base = crate::types::substitute(&projection.ty, bindings);
+    if crate::types::contains_param(&base) || base.is_unknown() {
+        return arm_ty.clone();
+    }
+    resolved_member_ty(sema, &base, &projection.name).unwrap_or_else(|| arm_ty.clone())
+}
+
 /// Reports the conditional rule on an opaque site's substituted arms.
 ///
 /// The declaration accepts a conditional whose arms still name a type
@@ -1298,6 +1327,23 @@ fn check_opaque_conditionals(
             let bindings = crate::types::instance_bindings(&params, &instance.args);
             let then_ty = crate::types::substitute(&conditional.then_ty, &bindings);
             let else_ty = crate::types::substitute(&conditional.else_ty, &bindings);
+            // An arm that names an opaque member read has no type at the
+            // declaration; the matching projection resolves it through the
+            // instance before the arm rule and the null rule judge it.
+            let then_ty = resolved_conditional_arm(
+                sema,
+                &conditional.function,
+                &then_ty,
+                conditional.then_span,
+                &bindings,
+            );
+            let else_ty = resolved_conditional_arm(
+                sema,
+                &conditional.function,
+                &else_ty,
+                conditional.else_span,
+                &bindings,
+            );
             let expected = conditional
                 .expected
                 .as_ref()
