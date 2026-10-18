@@ -47,8 +47,12 @@ collector. Four call sites remain incomplete:
    `record_copy_element_loans` (`own/place.rs:1236`) already takes a `base` path and
    `collect_copy_element_loans` (`:1274`) already unions conditional arms and array literals. The
    runtime branch of `replace_element_loans` (`:1119-1127`) only unions `state.loans`; it records
-   no element position. The constant-store sibling `ys[0] = a.v; let s = ys[1]; fill(s)` is
-   accepted and clean and must stay that way.
+   no element position. The fix records the wildcard `Element(None)` path there (the non-constant
+   branch keeps the binding union for `E10031`) and makes the three position readers match a
+   recorded `Element(None)` against any `Element(_)` at the same position prefix
+   (`collect_place_copy_loans`, `move_element_loans`, `place_recorded_position_owners`;
+   `recorded_position_frame_owners` shares the match). The constant-store sibling
+   `ys[0] = a.v; let s = ys[1]; fill(s)` is accepted and clean and must stay that way.
 3. **Deeper projection after a shorter recording (`DEF-431`, verification branch).**
    `move_element_loans` (`own/place.rs:1192`) snapshots the source and keeps a path only when it is
    **below** the read (`path.strip_prefix(source)` at `:1212`); the collector's rule
@@ -75,8 +79,15 @@ collector. Four call sites remain incomplete:
    transfer, pass them to `move_element_loans` instead of `[]`. The union is written once (the
    helper already replaces before recording). For the runtime destination, record a wildcard
    `Element(None)` position so a constant read under the runtime-written path matches, and do not
-   union every binding loan onto every read (the `ys[1]` sibling control is the oracle). Then run
-   the `DEF-431`/`DEF-435` verification branch below.
+   union every binding loan onto every read (the `ys[1]` sibling control is the oracle). Define the
+   wildcard once: a recorded `Element(None)` step matches any `Element(_)` step in the read at the
+   same position prefix, and all three readers (`collect_place_copy_loans`,
+   `move_element_loans`, `place_recorded_position_owners`) use that match instead of structural
+   `starts_with`/`strip_prefix`; a read whose own path is `Element(None)`/`ElementTemp` keeps the
+   whole-read union (in `move_element_loans`, a non-constant source keeps every recorded position
+   under `base` rather than `strip_prefix`). `replace_element_loans` records the wildcard path with
+   the union it writes to the binding **and** keeps that binding union for `E10031`. Then run the
+   `DEF-431`/`DEF-435` verification branch below.
 3. **`DEF-431` (only if the gate does not green it):** in `move_element_loans`, keep a path when it
    is below **or covers** the source read, mirroring `collect_place_copy_loans`; the destination's
    record under `base` is still replaced first. If the gate alone greens the case, close the row
@@ -103,7 +114,7 @@ case must fail without the fix; each direct control stays green.
 | ST-1 | `DEF-428` | `s = s` and `ys = ys` over `xs[0] = a.v`, then `fill`; the in-scope read-back; the direct `fill(xs[0])` control | One `E10030` at each fill after the self-assignment; no TU; the in-scope read-back runs; the direct control keeps its report |
 | ST-2 | `DEF-429` | `grid[0] = c ? xs : zs`; `out2[0] = c ? xs[0] : zs[0]`; `g[0] = [xs[0], xs[1]]`; the runtime-destination forms `grid[k] = c ? xs : zs` with `fill(grid[1][0])` and `let s = grid[1][0]`; the direct conditional fill; the constant sibling control `ys[0] = a.v; let s = ys[1]; fill(s)` | One `E10030` at each affected fill, including the direct conditional fill (red at head, control after the fix); no TU; the copies stay accepted; the sibling control is accepted and clean (no over-report) |
 | ST-3 | `DEF-431` | `rows[0] = xs; let s = rows[0][0]; fill(s)`; the direct `fill(rows[0][0])` control; the deeper read the prefix fallback must cover | One `E10030` at the copy's fill; no TU; the direct control keeps its report. If the `429` gate alone greens this, the row closes incidental with the red-green evidence |
-| ST-4 | `DEF-435` | The constant `g[1] = [; a.v]` copy and its direct read; the runtime `g[k] = [; a.v]` copy and its later constant read; the literal-form fill | One `E10030` at the constant copy's fill (incidental if the `429` gate greens it) and one at the runtime copy's fill; the direct reads keep their reports; no TU; the store itself is accepted |
+| ST-4 | `DEF-435` | The constant `g[1] = [; a.v]` copy and its direct read (`d435b`); the runtime `g[k] = [; a.v]` copy and its later constant read; the direct runtime read (`q435runtime_direct`); the literal-form fill | One `E10030` at the constant copy's fill (incidental if the `429` gate greens it) and one at the runtime copy's fill; the constant direct read (`d435b`) reports `E10030`; the runtime direct read (`q435runtime_direct`) is accepted and ASan-red at the head and is recorded per AR-35(e) as an intended delta or a filed residual; no TU; the store itself is accepted |
 
 The impl pins (`_impl_test.rs`) assert the loan record paths and the report code/count/span per
 shape, the accepted copy emissions, and a re-emission determinism pin. Only byte-identity pins may
@@ -121,7 +132,8 @@ be re-pinned (AR-30).
 - The batch-M loan matrix and the `E10031` write-conflict controls (`borrow_store_integrity`)
   stay green (batch-M AR-45).
 - The `DEF-431`/`DEF-435` verification branch: re-run ST-3/ST-4 after the `429` gate and record
-  whether each closed incidental or needed its fallback.
+  whether each closed incidental or needed its fallback. Record the `DEF-435` runtime direct read
+  (`q435runtime_direct`) outcome per AR-35(e): intended delta (one `E10030`) or filed residual.
 
 ## Risks and Lenses
 
@@ -130,6 +142,7 @@ be re-pinned (AR-30).
 - **Semantics** owns the Ch 16 reading: the copy is legal; only the escape reports. A fix that
   rejects the copy itself is wrong.
 - **Correctness** owns the blast radius: every call site of `set_binding_loans`,
+  `replace_element_loans`, `record_element_view_loans`, `place_recorded_position_owners`,
   `move_element_loans`, `record_copy_element_loans`, and `emit_indexed_store`; every accepted
   in-scope shape stays accepted.
 - **Risk:** the self-assignment no-op must not resurrect stale loans after an overwrite; the
@@ -138,6 +151,8 @@ be re-pinned (AR-30).
 - **Risk:** the runtime union is conservative; a naive whole-binding merge would false-reject the
   accepted constant sibling `ys[0] = a.v; let s = ys[1]; fill(s)`. The wildcard `Element(None)`
   position must match only reads under the runtime-written path; the sibling control and the
-  `k = 0` expected outcome are the oracle.
+  `k = 0` expected outcome are the oracle. The wildcard is a recorded position, not a read: a read
+  whose own path is `Element(None)` keeps the whole-read union, so the matcher must not treat the
+  two directions alike.
 - **Risk:** the element-store collector must not record a loan for a non-view element
   (`g[1] = mk()`); guard it with the view-like destination/type, not the store shape alone.

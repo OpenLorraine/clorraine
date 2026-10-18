@@ -58,10 +58,13 @@ frozen BR-5 and the concrete/take twins require rejection (AR-22).
    type; an owning instance reports one `E10034` at the store, and the separate duplicable
    generic whole-move control stays accepted. Do not call `move_place` at the definition (it would
    report before substitution), and do not add a new effect kind. The duplicable control is
-   `let r: T = h;` at `T = i32`; the `String?` body cannot take a duplicable `T`.
+   `let r: T = h;` at `T = P` (the duplicable struct used by `q410dup`); the `String?` body cannot
+   take a duplicable `T`.
 2. **`DEF-426`:** resolve the unknown projection type before the guard: pass/derive the
    `resolved_place_ty`/`resolved_value_ty` of the compound operand into `division_guard_condition`
-   (`codegen/guards.rs:1444-1460`). Emit the guard at the instance, exactly as the concrete twin.
+   (`codegen/guards.rs:1444-1460`). Both resolvers already exist at the head
+   (`codegen/expr.rs:321`, `:397`); this row does not depend on a P4 output. Emit the guard at the
+   instance, exactly as the concrete twin.
 3. **`DEF-425` (park):** record the conflict and the ruling request in the phase-5 ledger and the
    close-out; make no code, test, spec, or registry edit. The park task is a bookkeeping task, not
    a fix task.
@@ -74,7 +77,7 @@ case; its park evidence is the existing batch-M cases and the `d425a`/`d425b`/`d
 
 | ST | Row | Case | Expected |
 |----|-----|------|----------|
-| ST-16 | `DEF-410` | `pick<T>(c, h) { let r: String? = c ? h : null; }` at `T = String`; the separate duplicable generic whole move (`let r: T = h;` at `T = i32`); the concrete twin; the simple generic whole move at `T = String` | One `E10034` at the store for the owning instance; no TU; the duplicable generic whole move runs; the concrete twin keeps its report; the simple generic move keeps its report; no report at the definition |
+| ST-16 | `DEF-410` | `pick<T>(c, h) { let r: String? = c ? h : null; }` at `T = String`; the separate duplicable generic whole move (`let r: T = h;` at `T = P`, the `q410dup` struct); the concrete twin; the simple generic whole move at `T = String` | One `E10034` at the store for the owning instance; no TU; the duplicable generic whole move runs; the concrete twin keeps its report; the simple generic move keeps its report; no report at the definition |
 | ST-17 | `DEF-426` | The generic and concrete `/=`, `%=` member and element twins; `/0`; `INT_MIN / -1`; `INT_MIN % -1` | The same guards in both twins (resolved through `resolved_place_ty`/`resolved_value_ty`); each fault traps `E11210` on the plain and ASan builds (inline `assert_traps`), no SIGFPE; the value results are unchanged |
 
 The impl pins assert the `E10034` record/count/span, the duplicable acceptance, the guard count
@@ -103,6 +106,6 @@ record also stores the `DEF-425` park evidence and the ruling request.
   consumer, and every division guard site.
 - **Risk:** recording a generic conditional arm must not report at the definition; the
   per-instance audit is the only reporter. The `E10034` record dedupe is one per site. The
-  duplicable control is the generic whole move, not the `String?` body.
+  duplicable control is the generic whole move at `T = P`, not the `String?` body.
 - **Risk (park):** a future ruling may authorize the `DEF-425` fix; until then no code, test, or
   spec edit is made. A silent fix is forbidden.

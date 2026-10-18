@@ -21,7 +21,8 @@ This is batch N, the memory-and-value follow-up to batch M. The rows were filed 
 reviews after their own corrections: the loan-completeness residuals of the element/store copy
 machinery (`DEF-428`–`DEF-433`, `DEF-435`), the raw-deref move-out channels (`DEF-437`,
 `DEF-439`–`DEF-441`), the store-lowering and evaluation-order residuals (`DEF-421`, `DEF-423`,
-`DEF-424`, `DEF-436`), the per-instance generic judgments (`DEF-410`, `DEF-425`, `DEF-426`), and
+`DEF-424`, `DEF-436`), the per-instance generic judgments (`DEF-410`, `DEF-426`; `DEF-425`
+parked), and
 the literal-destination residues (`DEF-445`, `DEF-446`, `DEF-448`). Nine rows are the last
 un-parked criticals; they are planned first and every one of them has a memory-safety lens.
 
@@ -34,7 +35,9 @@ reproduce. Two do not:
   (`len(w.items[i])`, `len(w.items[i].name)`, concrete, generic, borrow, and loop alias) resolves
   to 2. The row is a false positive whose expected value belongs to the single index. The
   compiler's `len` fallback for a scalar is a current-output fact, pinned as an implementation
-  test rather than treated as a frozen rule.
+  test rather than treated as a frozen rule; the spec control asserts only acceptance and
+  ASan/LSan cleanliness, and a future scalar-`len` fix needs a user ruling because the residual
+  row records the current fallback.
 - **`DEF-447`** — the filed inline read-base owning literal and its nested-field, `String`-field,
   and view-copy variants are LSan-clean in every probe at the head. No reproduction exists. The
   row is a false positive left over from the phase-7 body-scope read-base binding.
@@ -111,10 +114,10 @@ new place kind (the frozen closed list governs, AR-17); a new IR channel beyond 
 
 | Phase | Rows | Surface |
 |-------|------|---------|
-| 1 | `DEF-428`, `429` primary; `431`, `435` verification branches | Element and store loan transfer on stored copies: exact self-assignment, the composite source into element/projected/runtime destinations, and the post-`429` verification branch for the deeper-projection prefix fallback and the element-store collector |
+| 1 | `DEF-428`, `429` primary; `431`, `435` verification branches | Element and store loan transfer on stored copies: exact self-assignment, the composite source into element/projected/runtime destinations with the `Element(None)` wildcard, and the post-`429` verification branch for the deeper-projection prefix fallback and the element-store collector |
 | 2 | `DEF-430`, `432`, `433` | Loan sources through a runtime-index store then constant read, a temporary-derived element in a view-array literal, and a call-mediated element-view result |
 | 3 | `DEF-437`, `439`, `440`, `441` | Raw-deref move-outs: a projection of a raw pointee, a guarded take whose raw pointer aliases the conditional target, a guarded borrowing intrinsic or borrow argument, and a guarded take of a member over a raw pointer |
-| 4 | `DEF-421`, `423`, `424`, `436` | Store lowering and order: the `Deref`-rooted place and its pinned base/index, whole-element target pinning, RHS-before-clear with the constant-index self-copy, and the shared materializer on the element/raw-target RHS |
+| 4 | `DEF-421`, `423`, `424`, `436` | Store lowering and order: the `Deref`-rooted place and its pinned base/index, whole-element target pinning, RHS-before-clear with the constant-index self-copy and the `is_raw_self_alias` no-op, and the shared materializer on the element/raw-target RHS |
 | 5 | `DEF-410`, `426` (`DEF-425` parked) | Per-instance generic judgments: a conditional move of a by-value parameter and the generic compound division guard |
 | 6 | `DEF-445`, `446`, `448` | Literal destinations: the conditional-of-literals read base, the take conditional literal in an eager ternary arm, and the take of a conditional array literal of places |
 | 7 | `DEF-427`, `447` | Control resolution: two false positives closed with green controls and probe evidence; no code change |
@@ -128,19 +131,19 @@ new place kind (the frozen closed list governs, AR-17); a new IR channel beyond 
 | Phase grouping | Seven machinery phases: P1 (4 rows, with two post-`429` verification branches), P2 (3), P3 (4), P4 (4), P5 (2), P6 (3), P7 controls (2); execution is severity-first (P1–P3 carry all nine criticals; P4–P6 are the majors; P7 is fix-free) | AR-4 |
 | Handling mode | Red → green spec cases per active row; two control resolutions with no code change; one park with a ruling request | AR-5, AR-22 |
 | `DEF-428` | Preserve element loans on an exact whole-binding self-assignment | AR-6 |
-| `DEF-429` | Union the composite source positions at an element/projected/runtime destination; this is the primary P1 fix | AR-7 |
-| `DEF-430` | Record a wildcard runtime position and include its loans in a constant-read copy; the sibling constant read stays accepted | AR-8 |
+| `DEF-429` | Union the composite source positions at an element/projected/runtime destination; the runtime destination records a wildcard `Element(None)` that matches any `Element(_)` at the same prefix; this is the primary P1 fix | AR-7 |
+| `DEF-430` | Record a wildcard runtime position and include its loans in a constant-read copy; the wildcard matches any `Element(_)` at the same prefix in the three position readers; the sibling constant read stays accepted | AR-8 |
 | `DEF-431` | Verify after `DEF-429`: if the gate alone greens it, close as incidental; otherwise add the collector's prefix fallback to `move_element_loans` | AR-9 |
 | `DEF-432` | Record the provenance owners (including a lowered temp) of a non-place element | AR-10 |
 | `DEF-433` | Consult binding-loan owners, including the direct call form; keep a caller-parameter acceptance | AR-11 |
-| `DEF-435` | Verify after `DEF-429`: the constant case is the prefix-fallback path; the runtime-element case needs the collector in `emit_indexed_store` | AR-12 |
+| `DEF-435` | Verify after `DEF-429`: the constant case is the prefix-fallback path; the runtime-element case needs the collector in `emit_indexed_store`; the constant direct read (`d435b`) reports `E10030` while the runtime direct read (`q435runtime_direct`) is the AR-35(e) blast radius | AR-12 |
 | `DEF-437` | Pin a `Deref` anywhere in the projection chain before the move, through all three emission gates | AR-13 |
 | `DEF-439` | Apply a runtime alias condition to the consumed save in each arm | AR-14 |
 | `DEF-440` | Return the `Deref`-rooted projection unchanged for a borrowing intrinsic or borrow argument | AR-15 |
 | `DEF-441` | Record the projected member (not the root) for a take rooted at a `Deref` | AR-16 |
 | `DEF-421` | Emit the `Deref`-rooted member store and pin its base/index before the RHS; the frozen place list accepts it | AR-17 |
 | `DEF-423` | Pin the whole-element base/index before the RHS; the `at1` source read becomes a filed residual | AR-18 |
-| `DEF-424` | Evaluate the self-read before the clear; treat an identical constant-index move (and the raw self-alias) as a no-op | AR-19 |
+| `DEF-424` | Evaluate the self-read before the clear; treat an identical constant-index move and a raw self-alias (`Deref(AddressOf(place))`, matched by `is_raw_self_alias`) as a no-op; `place_target` stays `Deref`-free | AR-19 |
 | `DEF-436` | Run the shared materializer on the element/raw-target RHS; each pointer expression runs once | AR-20 |
 | `DEF-410` | Report one `E10034` per owning instance (concrete-twin parity); a duplicable generic whole move stays accepted | AR-21 |
 | `DEF-425` | **PARKED** pending the user's ruling: the batch-M spec cases pin acceptance, frozen BR-5 and the concrete/take twins require rejection | AR-22 |
@@ -176,7 +179,8 @@ and authored the batch-M evidence for these rows; no new specialist type is need
   to Done with the control evidence.
 - **Residual rows**: the accepted post-store source read (`DEF-423`'s `at1`) and the scalar-`len`
   fold (`DEF-427`'s `len(u8)`) are filed at their phase records with no code in this batch
-  (AR-18, AR-27).
+  (AR-18, AR-27). A future scalar-`len` fix needs a user ruling: the residual row records the
+  current fallback (`0`), not a frozen rule.
 - Any new diagnostic code, registry row, specification chapter, or golden (AR-33).
 - A new test-suite pair: every case has an origin home (AR-30).
 - A new place kind, a conditional-base store route, or a new IR move-out channel (AR-17, AR-14).
@@ -184,19 +188,22 @@ and authored the batch-M evidence for these rows; no new specialist type is need
 
 ## Related Files
 
-- `compiler/src/own/place.rs` — `mark_moved_if_owning_at` (:541), `note_borrowed_element_move`
-  (:629), `recorded_position_frame_owners` (:975), `set_binding_loans` (:1096),
-  `replace_element_loans` (:1111, the runtime union at :1119-1127), `move_element_loans` (:1192,
-  the prefix fallback at :1212), `record_copy_element_loans` (:1236),
-  `collect_copy_element_loans` (:1274), `collect_place_copy_loans` (:1369), `view_loans` (:1512),
-  `provenance_loan_owners` (:1435), `view_owners` (:1569), `lowered_root_bindings` (:1603),
-  `loan_owners` (:815), `binding_loan_owners` (:808), `place_target` (:1931, no `Deref` arm)
+- `compiler/src/own/place.rs` — `place_recorded_position_owners` (:913, the wildcard-aware
+  position reader), `mark_moved_if_owning_at` (:541), `note_borrowed_element_move` (:629),
+  `recorded_position_frame_owners` (:975, the same wildcard match), `set_binding_loans` (:1096),
+  `replace_element_loans` (:1111, the runtime wildcard record and union at :1119-1127),
+  `move_element_loans` (:1192, the wildcard-aware prefix transfer at :1212),
+  `record_copy_element_loans` (:1236), `collect_copy_element_loans` (:1274),
+  `collect_place_copy_loans` (:1369), `view_loans` (:1512), `provenance_loan_owners` (:1435),
+  `view_owners` (:1569), `lowered_root_bindings` (:1603), `loan_owners` (:815),
+  `binding_loan_owners` (:808), `place_target` (:1931, no `Deref` arm)
 - `compiler/src/own/statements.rs` — `bind_value` (:793), `prepare_binding_effect` (:816),
   `apply_binding_effect` (:881), `emit_store` (:422), `prepare_store` (:445),
   `materialize_owning_deref` (:502), `emit_prepared_store` (:667)
 - `compiler/src/own/expr.rs` — `consume_owned_place` (:48), `conditional_move_sources` (:175),
   `check_assign` (:990, the raw-deref target :1003), the projected-store loan gate
-  (:1291-1318), `is_exact_self_assign` (:1481), `reject_structural_len_target` (:1448),
+  (:1291-1318), `is_exact_self_assign` (:1481), `is_raw_self_alias` (new, beside it),
+  `reject_structural_len_target` (:1448), `record_element_view_loans` (:1679),
   `emit_assigned` (:2280), `indexed_member_target` (:2361), `pin_store_target` (:2393),
   `indexed_target` (:2490), `emit_indexed_store` (:2557), `emit_indexed_update` (:2639),
   `raw_deref_target` (:2765)
@@ -223,7 +230,7 @@ and authored the batch-M evidence for these rows; no new specialist type is need
   its `run_memory` helper is added with the control), and the frozen spec suites as the
   regression oracle
 - Recorded probe sources under the gitignored `build/batchN-plan/probes/` tree: the planning
-  probes, the preflight re-probes (`preflight-N/`), and this revision's re-run (`apply/`); the
+  probes, the preflight re-probes (`preflight-N/`), and the iteration-2 re-run (`apply/`); the
   phase-1 executor starts from that tree and updates the pointers if it adds a probe
 
 ## Next Steps
@@ -231,7 +238,7 @@ and authored the batch-M evidence for these rows; no new specialist type is need
 | Step | Owner |
 |------|-------|
 | Run `analyze-agents` before phase 1 (the AGENTS.md rule after new plans land) | executor |
-| Apply the preflight resolutions (this revision) and keep the probe record current | planner |
+| Apply the iteration-2 preflight corrections (this revision) and keep the probe record current | planner |
 | Execute phase 1 (spec cases first, the `DEF-429` gate, then the `431`/`435` branch) | executor |
 | Record the `DEF-425` park and the ruling request in the phase-5 ledger | executor |
 | Keep `05-findings.md` and `99-execution-plan.md` current after every task | executor |

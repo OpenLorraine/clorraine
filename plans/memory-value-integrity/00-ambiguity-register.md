@@ -75,9 +75,17 @@ destination's positions must be the **union** of the source positions, exactly a
 `own/expr.rs:1299-1306`, so a projected/element destination records nothing; the runtime branch of
 `replace_element_loans` (`own/place.rs:1119-1127`) only unions the binding loans and records no
 element position. **Chosen fix (primary P1):** pass the destination `base` into the composite-aware
-collector and write the union once; record a wildcard `Element(None)` for the runtime destination.
-Expected: one `E10030` at each later fill, including the runtime forms; the copies themselves stay
-accepted; the direct conditional twin keeps its report; the constant sibling
+collector and write the union once; record a wildcard `Element(None)` for the runtime
+destination. The wildcard is a **recorded position**, not a read: in `element_loans`, an
+`Element(None)` step matches any `Element(_)` step at the same position prefix, while a read whose
+own path carries `Element(None)`/`ElementTemp` keeps the existing whole-read union. The match is
+used by all three readers (`collect_place_copy_loans`, `move_element_loans`,
+`place_recorded_position_owners`; `recorded_position_frame_owners` shares it), replaces their
+structural `starts_with`/`strip_prefix` comparisons, and never changes `place_target`. The
+non-constant branch of `replace_element_loans` records the wildcard path with the union it writes
+to the binding in `element_loans` **and** keeps that binding union for `E10031`. Expected: one
+`E10030` at each later fill, including the runtime forms; the copies themselves stay accepted; the
+direct conditional twin keeps its report; the constant sibling
 `ys[0] = a.v; let s = ys[1]; fill(s)` stays accepted and clean (a whole-binding union merge is
 wrong).
 
@@ -88,12 +96,17 @@ the element); `let s: str = xs[1]` reads a constant element, and the copy transf
 the position records, so it loses the runtime write (`own/place.rs:1192` `move_element_loans`,
 `:1369` `collect_place_copy_loans`). **Chosen fix:** record a wildcard `Element(None)` position in
 `element_loans` and match a constant read only when it falls under the runtime-written path, not a
-whole-binding union. Expected: `fill(s, borrow slot)` reports one `E10030`; the `k = 0` variant
-keeps the conservative report; the constant sibling `ys[0] = a.v; let s = ys[1]; fill(s)` stays
-accepted and clean. **Blast radius:** the direct runtime-index fill (`fill(xs[1])` after
-`xs[k] = a.v`, probe `d430c`) is accepted at the head; the conformant outcome is also one
-`E10030`. If the fix reaches it, record the intended delta and pin it; if not, the phase files a
-residual row with the probe (it is outside the row's copy wording but the same frozen rule).
+whole-binding union. The wildcard step matches any `Element(_)` at the same position prefix in
+`collect_place_copy_loans`, `move_element_loans`, and `place_recorded_position_owners`
+(`recorded_position_frame_owners` uses the same match); the non-constant branch of
+`replace_element_loans` records the wildcard path with the union it writes to the binding in
+`element_loans` and keeps that binding union for `E10031`. Expected:
+`fill(s, borrow slot)` reports one `E10030`; the `k = 0` variant keeps the conservative report;
+the constant sibling `ys[0] = a.v; let s = ys[1]; fill(s)` stays accepted and clean. **Blast
+radius:** the direct runtime-index fill (`fill(xs[1])` after `xs[k] = a.v`, probe `d430c`) is
+accepted at the head; the conformant outcome is also one `E10030`. If the fix reaches it, record
+the intended delta and pin it; if not, the phase files a residual row with the probe (it is
+outside the row's copy wording but the same frozen rule).
 
 **AR-9 — `DEF-431`: the copy transfer keeps the collector's prefix fallback.** Frozen: Ch 16 §2;
 the direct `fill(rows[0][0], ...)` already reports `E10030`. `move_element_loans`
@@ -134,9 +147,12 @@ blocked by the `DEF-429` gate; it never reaches `emit_indexed_store`. The **runt
 never calls the copy collector. **Chosen fix:** verify the constant half after `DEF-429` (it is the
 `DEF-431` prefix-fallback path; close it incidental if the gate greens it); add the collector call
 with the element's destination path for the runtime half. Expected: one `E10030` at the constant
-and runtime copies' later fills, matching the direct read; the direct read keeps its report; the
-store itself stays accepted; the direct runtime read is recorded as the same collector's blast
-radius (AR-8).
+and runtime copies' later fills, matching the constant direct read (`d435b`, which reports
+`E10030`); the store itself stays accepted. The **runtime direct read** (`q435runtime_direct`) is
+accepted and ASan-red at the head; it is the same collector's blast radius, so the phase records
+it per AR-35(e): the intended delta is one `E10030`, and if it stays accepted the phase files a
+residual row with the probe. The constant direct read and the runtime direct read are judged
+separately.
 
 **AR-13 — `DEF-437`: a `Deref` anywhere in a projection chain is pinned before the move.**
 Frozen: Ch 04 §5 (`:112`: unary `*` yields a place of type `T`) and §7 (the raw dereference
@@ -162,8 +178,10 @@ frees it after the take already freed it. **Chosen fix:** specify the per-arm sa
 directly: in the then-branch zero the save only when the taken value's rendered address equals the
 target; in the else-branch drop the save normally. The equivalent emitted condition is
 `take_ran && &pointee == &target`. Expected: the taken path does not free the consumed save; the
-`g = true`/`g = false` aliasing selections and the non-aliasing control run 0 and are ASan/LSan-
-clean; the false path leaves v intact.
+`g = true` and `g = false` aliasing selections and the non-aliasing control run 0 and are
+ASan/LSan-clean; the false arm drops the save normally and stores `y` (no double free), so the
+case uses distinct lengths (`v = "vv"`, `y = "yyyy"`) and the run reads `y`'s length rather than a
+same-length `v`.
 
 **AR-15 — `DEF-440`: a borrowing intrinsic or borrow argument leaves a raw-deref read unchanged.**
 Frozen: Ch 16 §2 (a view/read lend does not move) and Ch 17 §5. `while (i < 2 && len(*alt(p,q)) ==
@@ -226,7 +244,15 @@ statement temporaries **before** the save/clear (the frozen left-to-right order)
 save/clear and store the temporaries; the temporaries have one statement lifetime, start zeroed
 (one zeroed temp array), are stored once, and each is moved out once (`emit_move_zero`); the saved
 bytes still release the old owners once. The "read the saved copy" alternative is not chosen. Treat
-the raw self-alias as a no-op, reusing `is_exact_self_assign` (`own/expr.rs:1481-1493`). The
+the raw self-alias as a no-op with a **raw-self-alias recognizer** (`is_raw_self_alias`, new beside
+`is_exact_self_assign` in `own/expr.rs`): unwrap `Deref(AddressOf(place))` (through `Unsafe`) and
+compare the inner place's `place_target` to the target binding/projections, or compare the rendered
+addresses. `is_exact_self_assign` alone is not enough: it matches only `PlaceTarget::Local`
+(`own/expr.rs:1481-1493`), while `*(&x)`/`*(&a[i].inner)` have no place target, and AR-17 forbids
+a `Deref` arm in `place_target`. The recognizer must not match a distinct place; ST-14 pins
+`x = *(&x)` and `a[i].inner = *(&a[i].inner)`, the distinct-binding/place controls (`x = *(&y)`,
+`a[0].inner = *(&a[1].inner)`) with distinct contents, and a following distinct-value store through
+the same place, so a lost store is visible. The
 constant-index sibling `w.items[1] = w.items[1]` in a generic body (`d424f`) emits drop +
 self-copy + zero and SEGVs because the `Statement::Move` emission
 (`codegen/function.rs:659-690`) skips an identical source/target only for a runtime-index source;
@@ -256,9 +282,10 @@ the conditional arm as a maybe-owning source in `prepare_binding_effect`
 (`own/statements.rs:816-887`) through the existing `MoveIfOwning` effect (or the equivalent
 `mark_moved_if_owning` duty), so the per-instance audit (`own/instance_check.rs:210-260`) reports
 one `E10034` when the substitute owns. No new effect kind is added; no report at the definition.
-The duplicable control is a separate generic whole move (`let r: T = h;` at `T = i32`), because the
-`String?` body cannot take a duplicable `T`. Expected: `T = String` reports one `E10034` at the
-store, no TU; the duplicable generic whole move runs; the concrete twin is unchanged.
+The duplicable control is a separate generic whole move (`let r: T = h;` at `T = P`, the
+duplicable struct used by the `q410dup` probe), because the `String?` body cannot take a duplicable
+`T`. Expected: `T = String` reports one `E10034` at the store, no TU; the `T = P` generic whole move
+runs; the concrete twin is unchanged.
 
 **AR-22 — `DEF-425`: parked — the frozen BR-5 conflict needs the user's ruling.** Frozen:
 BR-5 and STR-11/12 (`spec/07-structs.md:106-107`). The generic body
@@ -270,10 +297,10 @@ a borrow parameter. The concrete `borrow` twin reports one `E10034` at the RHS e
 (`rhsindexselfmember`/`rhsindexselfsamewhole`) and
 `compiler/tests/conditional_projection_residue_impl_test.rs:7365-7460` (`implselfslot`). The two
 cannot both stand: conforming the generic body to BR-5 requires editing an immutable spec-oracle
-case, which needs a user ruling (AR-33/AR-37). **Ruling: park `DEF-425`.** Record the rejected
-body, the pinned cases, the concrete/take twins, and the ruling request in the phase-5 ledger and
-the close-out; make no code, test, spec, or registry edit. If the user rules that the pinned
-acceptance is wrong, the fix is the previously planned `RequiresNotLend` projection path
+case, which needs a user ruling (AR-22 + AR-30 + AR-33). **Ruling: park `DEF-425`.** Record the
+rejected body, the pinned cases, the concrete/take twins, and the ruling request in the phase-5
+ledger and the close-out; make no code, test, spec, or registry edit. If the user rules that the
+pinned acceptance is wrong, the fix is the previously planned `RequiresNotLend` projection path
 (`project_place_path` + `check_not_lend_requirements`), not the `E10026` duty.
 
 **AR-23 — `DEF-426`: the generic compound division guard uses the resolved projection type.**
@@ -330,11 +357,13 @@ not the filed "expected 2". That `0` is the compiler's scalar-`len` fallback
 (`codegen/calls.rs:367`), not a frozen rule. The expected 2 belongs to `len(w.items[i])`, which is
 green in every probed shape (concrete, generic, borrow, loop alias, `str`/`String` elements), as
 does the single-index member form `len(w.items[i].name)`. **Ruling: close `DEF-427` as a false
-positive with the probe evidence; no code change.** The green spec case pins only the frozen
-view-length matrix plus the filed probe's accepted run; the `len(u8) == 0` observation is an
-implementation pin that documents the current output, and a residual row is filed for the
-scalar-`len` fold (no code in this batch). The array-value suite's `run_memory` helper is added
-with the control so its ASan leg is real.
+positive with the probe evidence; no code change.** The green spec case asserts only that the
+frozen view-length matrix and the filed shape are accepted and ASan/LSan-clean; it does not assert
+the filed run's exit value. The exact `len(w.items[i][0]) == 254` and `len(u8) == 0` observations
+are implementation pins that document the current output, and a residual row is filed for the
+scalar-`len` fold (no code in this batch). A future scalar-`len` fix needs a user ruling because
+the residual row records the current fallback, not a frozen rule. The array-value suite's
+`run_memory` helper is added with the control so its ASan leg is real.
 
 **AR-28 — `DEF-447`: false positive — no reproduction.** The filed inline read-base owning
 literal `G { rows: [n1(), n1()], tag: stringOf("x") }.rows[0][0][0]` and its nested-field,
@@ -436,8 +465,9 @@ task's file list; the deviation is recorded and covered by the phase's lenses.
 - (d) `DEF-427`/`447`: if the execution-head probe shows a red shape (the false-positive evidence
   no longer holds), the control-resolution task **reclassifies the row to a fix** and re-enters
   this register before code; a silent fix is forbidden.
-- (e) `DEF-430`: if the direct runtime-index fill stays accepted after the copy fix, the phase
-  files a residual row with `d430c`/`d430e`; if it starts rejecting, the intended delta is pinned.
+- (e) `DEF-430`/`DEF-435`: if the direct runtime-index fill (`d430c`/`d430e`) or the direct runtime
+  element read (`q435runtime_direct`) stays accepted after the copy fix, the phase files a residual
+  row with the probe; if it starts rejecting, the intended delta is pinned.
 - (f) `DEF-425` is parked under AR-22; if the user rules that the pinned acceptance is wrong, the
   fix reuses the `RequiresNotLend` projection path (`project_place_path` +
   `check_not_lend_requirements`), not the `E10026` duty. No second element audit.

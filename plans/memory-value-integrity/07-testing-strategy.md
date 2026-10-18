@@ -10,13 +10,13 @@
 
 | Area | Target |
 | ---- | ------ |
-| Loan transfer | A stored copy of a view keeps every source position: the exact self-assignment, the composite conditional/array source at an element/projected/runtime destination (with the constant-sibling acceptance), the deeper projection after a shorter recording, and the element-store nested fill each report `E10030` at the escaping fill and stay accepted otherwise; `DEF-431`/`DEF-435` close incidental if the `429` gate alone greens them |
-| Loan sources | A runtime store's wildcard position reaches a constant-read copy (the sibling read stays accepted); a temporary-derived element records its lowered owner; a call-mediated element view consults the binding loans (both copy and direct-call forms); each escape reports `E10030` |
+| Loan transfer | A stored copy of a view keeps every source position: the exact self-assignment, the composite conditional/array source at an element/projected/runtime destination (with the constant-sibling acceptance), the wildcard `Element(None)` record and its three-reader match (the non-constant branch keeps the `E10031` union), the deeper projection after a shorter recording, and the element-store nested fill each report `E10030` at the escaping fill and stay accepted otherwise; `DEF-431`/`DEF-435` close incidental if the `429` gate alone greens them |
+| Loan sources | A runtime store's wildcard `Element(None)` position reaches a constant-read copy (the sibling read stays accepted); a temporary-derived element records its lowered owner; a call-mediated element view consults the binding loans (both copy and direct-call forms); each escape reports `E10030` |
 | Deref move-outs | A projection of a raw pointee (through all three emission gates), a guarded take aliasing the conditional target, a guarded borrowing intrinsic or borrow argument, and a guarded take of a projected member over a raw pointer each release exactly once; the chosen path evaluates, the false path does not; the sibling member stays owned; ASan/LSan clean |
 | Store lowering | The `Deref`-rooted member store emits (never drops) and pins its base/index before the RHS; the whole-element target is pinned before the RHS; the fixed-array literal self-read runs before the clear; the constant-index self-copy and raw self-alias are no-ops; the element/raw-target RHS materializes once per pointer expression |
 | Per-instance | The conditional by-value move reports one `E10034` for an owning instance and accepts a separate duplicable generic whole move; the generic compound division emits the `E11210` guard through the resolved projection type and traps, never SIGFPE; `DEF-425` is parked with its evidence |
 | Literal destinations | The conditional-of-literals read base (including the mixed place/literal form), the ternary-arm take literal, and the conditional array literal of places build strictly and run with the chosen values; each call once; the controls stay byte-identical |
-| Controls | `DEF-427`'s view-length matrix reads 2 in every spelling; its filed byte probe is accepted and runs 254; the scalar-`len` output is an implementation pin; `DEF-447`'s filed literal and variants are LSan-clean; no code change |
+| Controls | `DEF-427`'s view-length matrix reads 2 in every spelling; its filed byte probe is accepted and ASan/LSan-clean (the exact `254`/`0` output is an implementation pin); a future scalar-`len` fix needs a user ruling; `DEF-447`'s filed literal and variants are LSan-clean; no code change |
 
 - Test names state behavior (`should_…`), as the existing suites do.
 - **The new cases go into the ORIGIN suites, additions only** (AR-30):
@@ -50,7 +50,7 @@
 | ST-1 | `selfassignloans` (`DEF-428`) | `s = s` and `ys = ys` over `xs[0] = a.v`, then `fill`; the in-scope read-back; the direct `fill(xs[0])` control | One `E10030` at each fill after the self-assignment; no TU; the in-scope read-back runs; the direct control keeps its report | Red: accepted; ASan heap-use-after-free (the sanitizer is the oracle); the direct control reports `E10030` (13:5) |
 | ST-2 | `compositeelementstore` (`DEF-429`) | `grid[0] = c ? xs : zs`; `out2[0] = c ? xs[0] : zs[0]`; `g[0] = [xs[0], xs[1]]`; the runtime `grid[k] = c ? xs : zs` with the direct fill and the copy; the direct conditional fill; the constant sibling `ys[0] = a.v; let s = ys[1]; fill(s)` | One `E10030` at each affected fill (including the runtime forms and the direct conditional fill); the copies stay accepted; the sibling is accepted and clean; no TU | Red: all accepted; ASan heap-use-after-free; the direct conditional fill is red at head and a control after the fix; the sibling is clean |
 | ST-3 | `deeperprojectioncopy` (`DEF-431`) | `rows[0] = xs; let s = rows[0][0]; fill(s)`; the direct `fill(rows[0][0])` control; the deeper read the prefix fallback must cover | One `E10030` at the copy's fill; the direct control keeps its report; no TU. Incidental closure allowed if the `429` gate greens it | Red: accepted; ASan heap-use-after-free; the direct control `E10030` (15:5) |
-| ST-4 | `elementstorenestedfill` (`DEF-435`) | The constant `g[1] = [; a.v]` copy and direct read; the runtime `g[k] = [; a.v]` copy and later constant read; the literal-fill form | One `E10030` at the constant copy's fill (incidental if the `429` gate greens it) and one at the runtime copy's fill; the direct reads keep their reports; the store is accepted; no TU | Red: accepted; ASan heap-use-after-free; the direct read `E10030` (13:5) |
+| ST-4 | `elementstorenestedfill` (`DEF-435`) | The constant `g[1] = [; a.v]` copy and its direct read (`d435b`); the runtime `g[k] = [; a.v]` copy and its later constant read; the direct runtime read (`q435runtime_direct`); the literal-fill form | One `E10030` at the constant copy's fill (incidental if the `429` gate greens it) and one at the runtime copy's fill; the constant direct read (`d435b`) reports `E10030`; the runtime direct read (`q435runtime_direct`) is accepted and ASan-red at the head and is recorded per AR-35(e) as an intended delta or a filed residual; the store is accepted; no TU | Red: accepted; ASan heap-use-after-free; the constant direct read `E10030` (13:5) |
 
 ### P2 — Loan sources (`03-02`)
 
@@ -65,7 +65,7 @@
 | # | Case (row) | Input / Scenario | Expected Output / Behavior | Red evidence / controls |
 |---|-----------|------------------|----------------------------|-------------------------|
 | ST-8 | `rawderefprojection` (`DEF-437`) | The store (`let v: String = (*p).s`), the return, the struct-literal field, and the take argument; the conditional-arm control | Each moves the pointee once through the materializer and all three emission gates; the read-backs are correct; ASan/LSan clean; the conditional arm stays green | Red: accepted; abort 134 + ASan double-free on each isolated form |
-| ST-9 | `guardedtargetalias` (`DEF-439`) | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true`; `g = false` (aliasing); the non-aliasing control (`p = &w`) | Both aliasing selections run 0; the non-aliasing control drops the save; ASan/LSan clean; the false path leaves v intact; the taken path does not free the consumed save; the emitted alias condition is pinned | Red: `g = true` abort 134 + ASan double-free; `g = false` and the non-aliasing form run 0 (controls) |
+| ST-9 | `guardedtargetalias` (`DEF-439`) | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true`; `g = false` (aliasing) with distinct lengths (`v = "vv"`, `y = "yyyy"`); the non-aliasing control (`p = &w`) | Both aliasing selections run 0; the non-aliasing control drops the save; ASan/LSan clean; the false arm drops the save normally and stores `y` (the run reads `y`); the taken path does not free the consumed save; the emitted alias condition is pinned | Red: `g = true` abort 134 + ASan double-free; `g = false` and the non-aliasing form run 0 (controls); the distinct-length false path reads `y` |
 | ST-10 | `guardedintrinsicderef` (`DEF-440`) | `while (i < 2 && len(*alt(p,q)) == 2)`; the `i32(len(...))` spelling; `read((*alt(p,q)).s)`; the impure call counter | Two iterations, no double free; `alt` once per evaluation; the borrow argument is a read; ASan/LSan clean | Red: abort 134 + ASan double-free (intrinsic and borrow argument) |
 | ST-11 | `guardedmembertake` (`DEF-441`) | `g && (eat(take (*alt(p,q)).name) == 1)`; both selections; the two-owned-member sibling read; the impure call counter | The taken member is emptied, the sibling stays owned and readable; the false path does not call; the pointer runs once; ASan/LSan clean | Red: abort 134 + ASan double-free; the root-wide empty loses the sibling |
 
@@ -75,14 +75,14 @@
 |---|-----------|------------------|----------------------------|-------------------------|
 | ST-12 | `derefrootedstore` (`DEF-421`) | `(*p).f`, `(*p).f.x`, `(*p).arr[i].x`, `unsafe (*p).f`; `(*p).arr[idx].y = bump()` with a call counter; the block controls; the conditional-base rejection; the structural `.len` target | Each store emits and reads back the value (run 0); the indexed form stores at the pre-call index and calls `bump` once; the conditional base keeps one `E10221`; the structural `.len` target keeps its `E10221`; the block controls stay green; hosted-amiga compiles the accepted forms | Red: accepted; the store absent; runs 249/249/251; the `unsafe` spelling newly accepted and dropped; `q423bump` exits 249 |
 | ST-13 | `elementtargetorder` (`DEF-423`) | `a[idx] = mkrow()` (mkrow sets idx = 5); `a[idx] = set_idx() ? a[idx] : Elem {...}` with a destination read-back (and the no-read `at2` form); the out-of-range store; the member-route control; the `at1` source read as a residual | The stores land in the pinned in-bounds element; the conditional self-store is a legal move with a correct destination read; the out-of-range store traps `E11211` on the plain and ASan builds; the member control unchanged; `at1` is recorded as an accepted use-after-move residual, not fixed | Red: SEGV 139 / double-free 134; ASan stack-buffer-overflow / double-free; the member-route equivalent reads the emptied source, so the case reads the destination (AR-18) |
-| ST-14 | `fixedarrayselfread` (`DEF-424`) | `a[i].names = [stringOf(a[i].names[0]), ...]`; the two-element self-read; `a[i].inner = *(&a[i].inner)`; `x = *(&x)`; the generic constant-index self-copy; the concrete constant-index control | The self-read stores run 0 with their values; the self-copy and raw self-alias are no-ops with the value intact; the concrete `E10026` unchanged; ASan/LSan clean; the RHS temporaries are zeroed and moved out once | Red: SEGV 139 on all self-read/self-alias forms; the concrete control `E10026` |
+| ST-14 | `fixedarrayselfread` (`DEF-424`) | `a[i].names = [stringOf(a[i].names[0]), ...]`; the two-element self-read; `a[i].inner = *(&a[i].inner)` and `x = *(&x)`; the distinct-binding control `x = *(&y)` and the distinct-place control `a[0].inner = *(&a[1].inner)`; a following distinct-value store through each self-alias place; the generic constant-index self-copy; the concrete constant-index control | The self-read stores run 0 with their values; the self-copy and raw self-alias are no-ops with the value intact; the distinct-binding/place controls read the other value back (an over-broad no-op leaves the old value and fails); the following distinct-value store lands; the concrete `E10026` unchanged; ASan/LSan clean; the RHS temporaries are zeroed and moved out once | Red: SEGV 139 on all self-read/self-alias forms; the concrete control `E10026` |
 | ST-15 | `derefrhistore` (`DEF-436`) | `xs[i] = *alt(p,q)`; `unsafe *alt(rp,rq) = *alt(p,q)`; the named-store control; the duplicable control | Each pointer expression is called once (one for the element form, two total for the raw-target form); the stored value is correct; ASan/LSan clean; the controls stay green | Red: abort 134 + ASan double-free (element); the raw-target probe stores the wrong value (100, calls = 3) |
 
 ### P5 — Per-instance generic judgments (`03-05`)
 
 | # | Case (row) | Input / Scenario | Expected Output / Behavior | Red evidence / controls |
 |---|-----------|------------------|----------------------------|-------------------------|
-| ST-16 | `genericconditionalstore` (`DEF-410`) | `pick<T>(c, h) { let r: String? = c ? h : null; }` at `T = String`; the separate duplicable generic whole move (`let r: T = h;` at `T = i32`); the concrete twin; the simple generic whole move at `T = String` | One `E10034` at the store for the owning instance; no TU; the duplicable generic whole move runs; the concrete twin keeps its report; the simple generic move keeps its report; no report at the definition | Red: accepted, abort 134 + ASan double-free; the concrete twin `E10034` (6:5); the simple move `E10034` (6:5) |
+| ST-16 | `genericconditionalstore` (`DEF-410`) | `pick<T>(c, h) { let r: String? = c ? h : null; }` at `T = String`; the separate duplicable generic whole move (`let r: T = h;` at `T = P`, the `q410dup` struct); the concrete twin; the simple generic whole move at `T = String` | One `E10034` at the store for the owning instance; no TU; the duplicable generic whole move runs; the concrete twin keeps its report; the simple generic move keeps its report; no report at the definition | Red: accepted, abort 134 + ASan double-free; the concrete twin `E10034` (6:5); the simple move `E10034` (6:5); `q410dup` runs 0 clean |
 | ST-17 | `genericdivisionguard` (`DEF-426`) | The generic and concrete `/=`, `%=` member and element twins; `/0`; `INT_MIN / -1`; `INT_MIN % -1` | The same guards in both twins (resolved through `resolved_place_ty`/`resolved_value_ty`); each fault traps `E11210` on the plain and ASan builds; no SIGFPE; the value results unchanged | Red: the generic emits 0 guards (concrete 3); `/0` SIGFPE 136 |
 
 `DEF-425` is parked; its park evidence is the existing batch-M cases and the `d425a`/`d425b`/
@@ -100,7 +100,7 @@
 
 | # | Case (row) | Input / Scenario | Expected Output / Behavior | Red evidence / controls |
 |---|-----------|------------------|----------------------------|-------------------------|
-| ST-21 | `viewlengthcontrol` (`DEF-427`) | The frozen view-length matrix `len(w.items[i])` (concrete, generic, borrow, loop alias) and `len(w.items[i].name)`; the filed byte-index probe `len(w.items[i][0])` as an accepted run | The view-length readings are 2 at every spelling and run 0; the filed probe is accepted and runs 254 (no memory error); the scalar-`len` output (`0`) is asserted only in the implementation pin | **Green control**: the view matrix runs 0; the filed double index runs 254, ASan 254 |
+| ST-21 | `viewlengthcontrol` (`DEF-427`) | The frozen view-length matrix `len(w.items[i])` (concrete, generic, borrow, loop alias) and `len(w.items[i].name)`; the filed byte-index probe `len(w.items[i][0])` as an accepted run | The view-length readings are 2 at every spelling and run 0; the filed probe is accepted, builds strictly, and is ASan/LSan-clean (its exit value is not asserted); the exact `254`/`0` output is asserted only in the implementation pin; a future scalar-`len` fix needs a user ruling | **Green control**: the view matrix runs 0; the filed double index is accepted and ASan/LSan-clean; the exact output is an impl pin |
 | ST-22 | `inlineownedliteral` (`DEF-447`) | The filed `G { rows: [n1(), n1()], tag: stringOf("x") }.rows[0][0][0]`; the call-row/nested-field, view-copy, and `String`-field variants | All build strictly and run 0; ASan/LSan clean; the body-scope read-base binding is pinned | **Green control**: run 0, LSan-clean at the head |
 
 ## Test Categories
@@ -120,7 +120,7 @@
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| The origin `_impl_test.rs` files (append) | The loan record paths and report code/count/span; the wildcard runtime position and temp-owner records (including `__cl_owned0`); the binding-loan fallback (copy and direct-call forms); the per-pointer-expression call count and projected-member `MoveOutValue` placement; the runtime alias condition; the store target projection and pinned base/index; the self-copy/self-alias skip; the `E10034` records and duplicable generic whole-move acceptance; the division guard text/count through the resolved projection type; the literal destination and per-arm store (including the mixed read base); the call counters; the controls' emitted scalar `.len` and literal binding; and the re-emission determinism pins. Only byte-identity pins may be re-pinned; spec cases never (AR-30) | High |
+| The origin `_impl_test.rs` files (append) | The loan record paths and report code/count/span; the `Element(None)` wildcard record and its three-reader match (including the non-constant branch's union for `E10031`); the temp-owner records (including `__cl_owned0`); the binding-loan fallback (copy and direct-call forms); the per-pointer-expression call count and projected-member `MoveOutValue` placement; the runtime alias condition and the false arm's store of `y`; the store target projection and pinned base/index; the self-copy/self-alias skip through `is_raw_self_alias` (including a distinct-place refusal); the exact `254`/`0` scalar-`len` output; the `E10034` records and duplicable generic whole-move acceptance at `T = P`; the division guard text/count through the resolved projection type; the literal destination and per-arm store (including the mixed read base); the call counters; the controls' emitted scalar `.len` and literal binding; and the re-emission determinism pins. Only byte-identity pins may be re-pinned; spec cases never (AR-30) | High |
 
 ### Integration Tests
 
@@ -157,17 +157,17 @@
 - The P4 fixtures: the `Deref`-rooted stores (four forms, the indexed `bump` form, and the
   conditional-base rejection), the fixed-array call RHS and the conditional-order fixtures
   (`at1`/`at2` with the destination read-back and the `at1` residual), the
-  `au1`/`ak1`/`ak2`/`x = *(&x)` self-reads and the generic constant-index self-copy, and the
-  impure `alt` stores.
-- The P5 fixtures: the generic conditional store, the separate duplicable generic whole move, and
-  the generic/concrete division pairs with the fault values. `DEF-425` uses the existing batch-M
-  fixtures as park evidence.
+  `au1`/`ak1`/`ak2`/`x = *(&x)` self-reads, the distinct-binding/place and following distinct-value
+  controls, the generic constant-index self-copy, and the impure `alt` stores.
+- The P5 fixtures: the generic conditional store, the separate duplicable generic whole move at
+  `T = P` (`q410dup`), and the generic/concrete division pairs with the fault values. `DEF-425` uses
+  the existing batch-M fixtures as park evidence.
 - The P6 fixtures: the `str[2]` call-valued literals (read base, mixed place/literal, nested
   field/element, ternary arm, `if`-condition control), the conditional array of `str[2]` places,
   and the `String`/`Box` controls.
 - The P7 fixtures: the `str[2]`/`String[2]` view-length matrix (concrete, generic, borrow, loop
-  alias, member), the filed byte-index probe (accepted run), and the filed inline read-base
-  literal plus its variants.
+  alias, member), the filed byte-index probe (accepted and sanitizer-clean; exact output in the
+  impl pin), and the filed inline read-base literal plus its variants.
 - The real compiler, C toolchain, ASan, the m68k toolchain, and the driver — no mocks.
 
 ## Verification Gates
@@ -200,5 +200,6 @@
 - [ ] No regressions in existing tests (the origin suites, the frozen spec suites, the batch-I–M
       oracles)
 - [ ] The controls (`DEF-427`, `DEF-447`) pin the closure evidence: the view-length matrix and the
-      filed literal are green; the filed byte probe is accepted and recorded
+      filed literal are green; the filed byte probe is accepted and sanitizer-clean, with the exact
+      output in the implementation pin
 - [ ] Test coverage meets goals

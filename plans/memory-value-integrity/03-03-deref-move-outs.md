@@ -66,9 +66,10 @@ IR channel, no new rejection (AR-13–AR-16).
    deferred (the batch-M rule).
 2. **`DEF-439`:** replace the bool-only save decision with the per-arm runtime alias check. In the
    then-branch zero the save only when the taken value's rendered address equals the target; in
-   the else-branch drop the save normally. The equivalent emitted condition is
-   `take_ran && &pointee == &target`. The runtime comparison is required because the pointer may
-   alias or not.
+   the else-branch drop the save normally and store the chosen arm. The equivalent emitted
+   condition is `take_ran && &pointee == &target`. The runtime comparison is required because the
+   pointer may alias or not. The false-path case uses distinct lengths (`v = "vv"`,
+   `y = "yyyy"`) so the stored `y` is visible in the run.
 3. **`DEF-440`:** in `bind_intrinsic_argument`, before any binding, return a `Deref`-rooted
    projection chain unchanged (the borrowing intrinsic only reads; a later store/return still
    materializes it). Extend the non-take rule (`own/lower.rs:5393-5401`) to walk `Member`/`Index`
@@ -87,13 +88,14 @@ All go to `compiler/tests/conditional_projection_residue_{spec,impl}_test.rs` (A
 | ST | Row | Case | Expected |
 |----|-----|------|----------|
 | ST-8 | `DEF-437` | The store (`let v: String = (*p).s`), the return, the struct-literal field, and the take argument; the conditional-arm control (`d437b`) | Each moves the pointee once through the materializer and all three emission gates; the read-backs are correct; ASan/LSan clean; the conditional arm stays green |
-| ST-9 | `DEF-439` | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true`; `g = false` (aliasing); the non-aliasing control (`p = &w`) | Both aliasing selections run 0; the non-aliasing control drops the save; ASan/LSan clean; the false path leaves v intact; the taken path does not free the consumed save; the emitted alias condition is pinned |
+| ST-9 | `DEF-439` | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true`; `g = false` (aliasing) with distinct lengths (`v = "vv"`, `y = "yyyy"`); the non-aliasing control (`p = &w`) | Both aliasing selections run 0; the non-aliasing control drops the save; ASan/LSan clean; the false arm drops the save normally and stores `y` (the run reads `y`); the taken path does not free the consumed save; the emitted alias condition is pinned |
 | ST-10 | `DEF-440` | `while (i < 2 && len(*alt(p,q)) == 2)`; the `i32(len(...))` spelling; `read((*alt(p,q)).s)`; the impure call counter | Two iterations, no double free; `alt` once per evaluation; the borrow argument is a read; ASan/LSan clean |
 | ST-11 | `DEF-441` | `g && (eat(take (*alt(p,q)).name) == 1)`; `g = true`/`false`; the two-owned-member sibling read; the impure call counter | The taken member is emptied, the sibling stays owned and readable; the false path does not call; the pointer runs once; ASan/LSan clean |
 
 The impl pins assert the single call per pointer expression, the read/empty pointer identity, the
 projected-member `MoveOutValue` position inside the evaluated path, the absent false-path call, the
-emitted alias condition, and a re-emission determinism pin.
+emitted alias condition, the false arm's store of `y` under distinct lengths, and a re-emission
+determinism pin.
 
 ## Verification
 

@@ -97,22 +97,30 @@ projection, and the element-store nested fill, with their direct controls.
       replacement only (`own/statements.rs`, `own/place.rs:1096`; reuse
       `is_exact_self_assign`, `own/expr.rs:1481-1493`); (b) remove the `projections.is_empty()`
       gate and pass the destination path to the collector (`own/expr.rs:1299-1306`), recording a
-      wildcard `Element(None)` for the runtime destination; (c) re-run ST-3/ST-4. If the `429`
+      wildcard `Element(None)` for the runtime destination; the non-constant branch of
+      `replace_element_loans` (`own/place.rs:1119-1127`) records the wildcard path with the union
+      in `element_loans` and keeps the binding union for `E10031`; make the three position readers
+      (`collect_place_copy_loans`, `move_element_loans`, `place_recorded_position_owners`, and the
+      shared `recorded_position_frame_owners`) match a recorded `Element(None)` against any
+      `Element(_)` at the same position prefix; (c) re-run ST-3/ST-4. If the `429`
       gate greens `DEF-431`/`DEF-435`, record the incidental closure with evidence; otherwise add
       the prefix fallback to `move_element_loans` (`own/place.rs:1212`) for `DEF-431` and the
       collector call in `emit_indexed_store` (`own/expr.rs:2557-2629`) for `DEF-435`'s runtime
-      half. Do not union every binding loan onto every read (the `ys[1]` sibling control).
+      half. Record the constant direct read (`d435b`, `E10030`) and the runtime direct read
+      (`q435runtime_direct`) separately per AR-35(e). Do not union every binding loan onto every
+      read (the `ys[1]` sibling control).
 - [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation (or park per
       AR-33 if a frozen code is insufficient); run `make check`
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the loan record paths, the report
-      code/count/span per shape, the accepted copy emissions, and a re-emission determinism pin)
-      in `conditional_projection_residue_impl_test.rs`
+- [ ] 1.3.1 Write the phase implementation pins (the loan record paths, the `Element(None)` wildcard
+      record and its three-reader match, the report code/count/span per shape, the accepted copy
+      emissions, and a re-emission determinism pin) in `conditional_projection_residue_impl_test.rs`
 - [ ] 1.3.2 Phase review — dispatch the correctness, semantics, and memory-safety lenses; apply
       the corrections; run the host ASan/LSan probes. The reviewer packet includes the
-      blast-radius step (every `set_binding_loans`, `move_element_loans`,
+      blast-radius step (every `set_binding_loans`, `replace_element_loans`,
+      `record_element_view_loans`, `place_recorded_position_owners`, `move_element_loans`,
       `record_copy_element_loans`, and `emit_indexed_store` caller) and the test-integrity step
 - [ ] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suite after the
       corrections; record FAIL/PASS per round
@@ -160,23 +168,26 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
 
 - [ ] 2.2.1 Extend the loan sources: record the wildcard `Element(None)` runtime position and
       match only reads under the runtime-written path (`own/place.rs:1119-1127`, `:1369`,
-      `:1192`); thread the lowered value/root-owner map (`view_owners`/`lowered_root_bindings`,
-      `:1569`/`:1603`) from `check_let`/`check_assign` and record the non-place owner
-      (`:1421-1428`); consult `view_loans`/`loan_owners` for the direct call form and the
-      binding-loan owners in the cross-frame fallback (`own/call_check.rs:585`; `own/place.rs:1512`,
-      `:815`)
+      `:1192`; the non-constant branch records the wildcard and keeps the binding union for
+      `E10031`, and `place_recorded_position_owners`/`recorded_position_frame_owners` share the
+      same `Element(None)`-matches-`Element(_)` prefix rule); thread the lowered value/root-owner
+      map (`view_owners`/`lowered_root_bindings`, `:1569`/`:1603`) from
+      `check_let`/`check_assign` and record the non-place owner (`:1421-1428`); consult
+      `view_loans`/`loan_owners` for the direct call form and the binding-loan owners in the
+      cross-frame fallback (`own/call_check.rs:585`; `own/place.rs:1512`, `:815`)
 - [ ] 2.2.2 Run the suite to green; on any failure STOP and fix (or park per AR-33); run
       `make check`
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the wildcard runtime record and its path match,
-      the temp-owner record including `__cl_owned0`, the binding-loan fallback for both forms, the
-      report code/count/span, the sibling/caller-parameter acceptances, and a re-emission
-      determinism pin)
+- [ ] 2.3.1 Write the phase implementation pins (the wildcard `Element(None)` record and its
+      prefix match, the temp-owner record including `__cl_owned0`, the binding-loan fallback for
+      both forms, the report code/count/span, the sibling/caller-parameter acceptances, and a
+      re-emission determinism pin)
 - [ ] 2.3.2 Phase review — dispatch correctness, semantics, and memory-safety; apply the
       corrections; run the host ASan/LSan probes. The packet includes the blast-radius step
-      (`collect_place_copy_loans`, `move_element_loans`, `recorded_position_frame_owners`,
+      (`replace_element_loans`, `record_element_view_loans`, `collect_place_copy_loans`,
+      `move_element_loans`, `place_recorded_position_owners`, `recorded_position_frame_owners`,
       `frame_owned_view_owner`) and the test-integrity step
 - [ ] 2.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
       rounds
@@ -213,8 +224,9 @@ and the guarded member take, with both guard selections and the false-path contr
 
 - [ ] 3.1.1 [spec-author] Write the phase cases (rawderefprojection, guardedtargetalias,
       guardedintrinsicderef, guardedmembertake) with the isolated store/return/field forms, both
-      selections, the non-aliasing control, the two-owned-member sibling read, and the batch-M
-      discard/non-taking controls; the red cases committed first
+      selections, the distinct-length false path (`v = "vv"`, `y = "yyyy"`), the non-aliasing
+      control, the two-owned-member sibling read, and the batch-M discard/non-taking controls; the
+      red cases committed first
 - [ ] 3.1.2 Run the suite and record the red phase (the isolated store/return/field forms, the
       five consuming shapes, and both guard selections); verify the controls green first
 
@@ -238,8 +250,8 @@ and the guarded member take, with both guard selections and the false-path contr
 
 - [ ] 3.3.1 Write the phase implementation pins (the single call per pointer expression, the
       read/empty pointer identity, the projected-member `MoveOutValue` placement inside the
-      evaluated path, the emitted alias condition, the absent false-path call, and a re-emission
-      determinism pin)
+      evaluated path, the emitted alias condition, the false arm's store of `y` under distinct
+      lengths, the absent false-path call, and a re-emission determinism pin)
 - [ ] 3.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
       probes and the base/head emission differential over the P3 probe set and the corpus. The
       packet includes the blast-radius step (every `materialize_owning_deref` call,
@@ -281,7 +293,9 @@ the fixed-array self-read/self-copy, and the element/raw-target RHS materializat
 - [ ] 4.1.1 [spec-author] Write the phase cases (derefrootedstore, elementtargetorder,
       fixedarrayselfread, derefrhistore) with the indexed `bump` counter, the conditional-base and
       structural-`.len` controls, the `assert_traps` bounds case, the `x = *(&x)`/nested/two-element
-      self-reads, the `at1` residual, and the duplicable controls; the red cases committed first
+      self-reads with the distinct-binding/place controls and a following distinct-value store
+      through each raw-self-alias place (so a lost store is visible), the `at1` residual, and the
+      duplicable controls; the red cases committed first
 - [ ] 4.1.2 Run the suite and record the red phase; verify the controls green first
 
 ### Step 4.2: Implementation
@@ -292,18 +306,23 @@ the fixed-array self-read/self-copy, and the element/raw-target RHS materializat
       `pin_store_target` (`own/expr.rs:2393-2421`) and make the whole-element base/index pin
       unconditional (`:2490-2566`); evaluate the fixed-array literal self-read before the clear,
       treat the identical constant-index `Move` and the raw self-alias as no-ops
-      (`codegen/function.rs:1557-1592`, `:659-690`; `own/expr.rs:1481-1493`); run
-      `materialize_owning_deref` on the element/raw-target RHS (`own/expr.rs:2603-2622`,
-      `:1055-1076`). Keep the structural `.len` `E10221` branch (`own/expr.rs:1448-1461`). File the
-      `at1` use-after-move row at the phase record; do not fix it here.
+      (`codegen/function.rs:1557-1592`, `:659-690`), and implement the raw self-alias with the
+      **`is_raw_self_alias` recognizer** (new beside `is_exact_self_assign`,
+      `own/expr.rs:1481-1493`): unwrap `Deref(AddressOf(place))` and compare the inner place, or
+      compare the rendered addresses; keep `place_target` `Deref`-free and pin the two self-alias
+      forms in ST-14 with the distinct-binding/place controls and a following distinct-value store,
+      so a lost store is visible; run `materialize_owning_deref` on the element/raw-target
+      RHS (`own/expr.rs:2603-2622`, `:1055-1076`). Keep the structural `.len` `E10221` branch
+      (`own/expr.rs:1448-1461`). File the `at1` use-after-move row at the phase record; do not fix
+      it here.
 - [ ] 4.2.2 Run the suite to green; on any failure STOP and fix (or stop for a profile/new-channel
       ruling per AR-35(a)(b)); run `make check`
 
 ### Step 4.3: Impl Tests & Review
 
 - [ ] 4.3.1 Write the phase implementation pins (the target projection, the pinned base/index, the
-      store/RHS order, the self-copy/self-alias skip, the per-pointer-expression call count, and a
-      re-emission determinism pin)
+      store/RHS order, the self-copy/`is_raw_self_alias` skip including a distinct-place refusal,
+      the per-pointer-expression call count, and a re-emission determinism pin)
 - [ ] 4.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
       probes, the `assert_traps` cases, the strict builds, and the base/head differential. The
       packet includes the blast-radius step (every `place_target`, `indexed_target`,
@@ -347,8 +366,9 @@ duplicable generic whole move, the concrete twin, and the generic division guard
 
 - [ ] 5.1.1 [spec-author] Write the phase cases in
       `borrow_generic_integrity_spec_test.rs` (genericconditionalstore) and
-      `conditional_projection_residue_spec_test.rs` (genericdivisionguard), with the owning,
-      duplicable-generic-whole-move, and concrete controls; the red cases committed first
+      `conditional_projection_residue_spec_test.rs` (genericdivisionguard), with the owning, the
+      duplicable-generic-whole-move at `T = P` (`q410dup`), and concrete controls; the red cases
+      committed first
 - [ ] 5.1.2 Run the suites and record the red phase (the generic body accepted; the concrete twin
       rejecting; the generic guard absent); verify the controls green first
 
@@ -358,11 +378,11 @@ duplicable generic whole move, the concrete twin, and the generic division guard
       `prepare_binding_effect` (`own/statements.rs:816-887`; `RequiresNotLend`, the per-instance
       audit `check_not_lend_requirements`), not by calling `move_place` at the definition
       (`conditional_move_sources`, `own/expr.rs:175-205`); resolve the division guard's unknown
-      projection type with `resolved_place_ty`/`resolved_value_ty` (`codegen/expr.rs:321`, `:397`)
-      in `division_guard_condition` (`codegen/guards.rs:1444-1460`). The P5 scope is
-      `DEF-410`/`DEF-426` only; `DEF-425` is parked. The parked route, if the user rules for a fix,
-      is `RequiresNotLend` + `project_place_path` + `check_not_lend_requirements` — not the
-      `E10026` duty.
+      projection type with `resolved_place_ty`/`resolved_value_ty` (`codegen/expr.rs:321`, `:397`,
+      both already at head) in `division_guard_condition` (`codegen/guards.rs:1444-1460`). The P5
+      scope is `DEF-410`/`DEF-426` only; `DEF-425` is parked. The parked route, if the user rules
+      for a fix, is `RequiresNotLend` + `project_place_path` + `check_not_lend_requirements` — not
+      the `E10026` duty.
 - [ ] 5.2.2 Run the suites to green; on any failure STOP and fix (or record per AR-35(f)); run
       `make check`
 
@@ -476,9 +496,10 @@ record the false-positive probe evidence.
 
 - [ ] 7.1.1 [spec-author] Write the controls: `viewlengthcontrol` in
       `array_value_integrity_spec_test.rs` (the frozen view-length matrix; the filed byte probe as
-      an accepted run) and `inlineownedliteral` in `conditional_projection_residue_spec_test.rs`
-      (the filed shape and its variants); both controls are green at the head. Add the
-      array-value suite's `run_memory` helper so the ASan leg is real
+      an accepted, sanitizer-clean run, without asserting its exit value) and `inlineownedliteral`
+      in `conditional_projection_residue_spec_test.rs` (the filed shape and its variants); both
+      controls are green at the head. Add the array-value suite's `run_memory` helper so the ASan
+      leg is real
 - [ ] 7.1.2 Run the controls and record the green baseline; re-run the adversarial probes
       (`d427p`, the `DEF-447` variants) and confirm the false-positive evidence at the execution
       head
@@ -493,8 +514,9 @@ record the false-positive probe evidence.
 ### Step 7.3: Impl Pins & Review
 
 - [ ] 7.3.1 Write the control implementation pins: the view matrix's emitted `.len` and the
-      **scalar-`len` fallback** (`len(u8) == 0`) as a current-output record, plus the body-scope
-      literal binding / no leak for `DEF-447`, in the two `_impl_test.rs` files
+      **scalar-`len` fallback** (`len(u8) == 0`, with the filed probe's exact `254` run) as a
+      current-output record, plus the body-scope literal binding / no leak for `DEF-447`, in the
+      two `_impl_test.rs` files; note that a future scalar-`len` fix needs a user ruling
 - [ ] 7.3.2 Phase review — dispatch correctness and memory-safety over the closure evidence;
       confirm the probe record and the control expectations; reclassify to a fix if a red shape
       appears (AR-35(d))
@@ -510,8 +532,10 @@ record the false-positive probe evidence.
 builds
 
 **Deliverables**:
-- [ ] ST-21..ST-22 green; the false-positive evidence recorded; the filed byte probe accepted
-- [ ] The scalar-`len` fold filed as a residual row (no code)
+- [ ] ST-21..ST-22 green; the false-positive evidence recorded; the filed byte probe accepted and
+      sanitizer-clean (exact output in the impl pin)
+- [ ] The scalar-`len` fold filed as a residual row (no code); a future scalar-`len` fix needs a
+      user ruling
 - [ ] No code change; a red execution-head shape reclassifies the row instead of closing it
 
 ---
@@ -532,8 +556,9 @@ builds
       false-positive controls (`DEF-427`, `DEF-447`) move to Done with their control/probe
       evidence; `DEF-425` stays **parked** with its conflict evidence and ruling request; the two
       other parked majors (`DEF-167`, `DEF-171`) stay open. Add/check every row filed during
-      execution (including the `at1` source read and the scalar-`len` fold) with its reproduction
-      and evidence; recompute the next-batch count and state the accounting explicitly (AR-36)
+      execution (including the `DEF-435` runtime direct read, the `at1` source read, and the
+      scalar-`len` fold) with its reproduction and evidence; recompute the next-batch count and
+      state the accounting explicitly (AR-36)
 - [ ] 8.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
       `00-index.md`
 - [ ] 8.1.4 Refresh the specialist check (`analyze-agents`) and record its state; update the
@@ -556,16 +581,16 @@ builds
 ```
 Phase 1 (loan transfer on stored copies) ──→ Phase 2 (loan sources)     [own/place.rs]
 Phase 3 (raw-deref move-outs) ──→ Phase 4 (store lowering and order)    [Deref store/materializer]
-Phase 4 (store lowering and order) ──→ Phase 5 (per-instance judgments) [store's resolved type]
 Phase 6 (literal destinations)                                          [independent]
 Phase 7 (control resolution)                                            [independent; no code]
 All → Phase 8 (close-out)
 ```
 
 Arrow legend: P1→P2 (the shared `own/place.rs` loan bookkeeping), P3→P4 (the raw-deref store and
-materializer surfaces), P4→P5 (the store's resolved type used by the division guard); P6 and P7
-are independent. The execution order stays **1 → 2 → 3 → 4 → 5 → 6 → 7 → 8** (severity-first:
-P1–P3 carry all nine criticals; AR-4).
+materializer surfaces); P4 and P5 are independent — `DEF-426` uses the `resolved_place_ty`/
+`resolved_value_ty` resolver that already exists at head (`codegen/expr.rs:321`, `:397`), not a P4
+output; P6 and P7 are independent. The execution order stays
+**1 → 2 → 3 → 4 → 5 → 6 → 7 → 8** (severity-first: P1–P3 carry all nine criticals; AR-4).
 
 ---
 

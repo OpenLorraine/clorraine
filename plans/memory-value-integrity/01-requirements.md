@@ -43,12 +43,20 @@ out (AR-1).
   `g[0] = [xs[0], xs[1]]`, and the runtime-destination forms `grid[k] = c ? xs : zs` followed by
   `fill(grid[1][0])` or `let s = grid[1][0]` all record the source positions as a union on the
   destination, so each later fill reports one `E10030`; the copies themselves stay accepted. The
-  constant-store sibling control `ys[0] = a.v; let s = ys[1]; fill(s)` stays accepted and clean.
+  runtime destination records a wildcard `Element(None)` that matches any `Element(_)` at the same
+  position prefix in `collect_place_copy_loans`, `move_element_loans`, and
+  `place_recorded_position_owners` (`recorded_position_frame_owners` shares the match); the
+  non-constant branch of `replace_element_loans` records the wildcard path with the union it writes
+  to the binding and keeps that binding union for `E10031`. The constant-store sibling control
+  `ys[0] = a.v; let s = ys[1]; fill(s)` stays accepted and clean.
 - [ ] **R3 — A runtime-index store's wildcard loans reach a constant-read copy** (`DEF-430`,
   critical): after `xs[k] = a.v` with a runtime `k`, `let s: str = xs[1]; fill(s, ...)` reports
   one `E10030` at the fill; the `k = 0` variant is recorded as the conservative expected outcome;
   the constant-store sibling read `ys[0] = a.v; let s = ys[1]` stays accepted and clean; the
-  constant-index store control keeps its report; the copy is otherwise accepted.
+  constant-index store control keeps its report; the copy is otherwise accepted. The wildcard
+  `Element(None)` matches any `Element(_)` at the same position prefix in the three position
+  readers; the non-constant branch records it in `element_loans` with the union it writes to the
+  binding and keeps that union for `E10031`.
 - [ ] **R4 — The deeper-projection copy keeps the collector's prefix fallback** (`DEF-431`,
   critical): after `rows[0] = xs`, `let s = rows[0][0]; fill(s, ...)` reports one `E10030` at the
   fill, matching the direct `fill(rows[0][0], ...)` control. Phase 1 verifies this after the
@@ -66,10 +74,13 @@ out (AR-1).
 - [ ] **R7 — An element-store value goes through the composite-aware collector** (`DEF-435`,
   major): the constant case `g[1] = [; a.v]` followed by `let s = g[1][0]; fill(s, ...)` and the
   runtime-element case `g[k] = [; a.v]` followed by a later constant read each report one
-  `E10030`, matching the direct `fill(g[1][0], ...)` read; the direct read keeps its report; the
-  store itself stays accepted. Phase 1 verifies the constant case after the `DEF-429` gate (it is
-  the prefix-fallback path); the runtime-element case needs the collector in
-  `emit_indexed_store`. Both close as incidental if the gate alone greens them.
+  `E10030`, matching the constant direct `fill(g[1][0], ...)` read (`d435b`, which reports
+  `E10030`); the store itself stays accepted. Phase 1 verifies the constant case after the
+  `DEF-429` gate (it is the prefix-fallback path); the runtime-element case needs the collector in
+  `emit_indexed_store`. The runtime direct read (`q435runtime_direct`) is accepted and ASan-red at
+  the head; it is the AR-35(e) blast radius: the intended delta is one `E10030`, and if it stays
+  accepted the phase files a residual row with the probe. Both store cases close as incidental if
+  the gate alone greens them.
 - [ ] **R8 — A `Deref` anywhere in a projection chain is pinned before the move** (`DEF-437`,
   critical): `let v: String = (*p).s`, `return (*p).s`, `Holder { t: (*p).s }`, and
   `eat(take (*p).s)` each move the pointee once; the read-backs are correct and the runs are
@@ -79,8 +90,9 @@ out (AR-1).
 - [ ] **R9 — The conditional target's consumed save applies a runtime alias check** (`DEF-439`,
   major): `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v` does not free the consumed
   save; the then-branch zeroes the save only when the taken pointer aliases the target, the
-  else-branch drops it normally; `g = true`, `g = false` (aliasing), and the non-aliasing control
-  run 0 and are ASan/LSan-clean; the false path leaves v intact.
+  else-branch drops it normally and stores `y`; `g = true`, `g = false` (aliasing), and the
+  non-aliasing control run 0 and are ASan/LSan-clean; the case uses distinct lengths
+  (`v = "vv"`, `y = "yyyy"`) so the false arm's stored `y` is visible (the run is 2, not 0).
 - [ ] **R10 — A borrowing intrinsic or borrow argument leaves a raw-deref read unchanged**
   (`DEF-440`, critical): `while (i < 2 && len(*alt(p,q)) == 2)` and `read((*alt(p,q)).s)` bind and
   release nothing, run their expected paths, call `alt` once per evaluation, and are ASan/LSan-
@@ -105,7 +117,12 @@ out (AR-1).
   `a[i].inner = *(&a[i].inner)` / `x = *(&x)` run 0 with their values; the constant-index self-copy
   `w.items[1] = w.items[1]` in a generic body is skipped and runs 0 with the value intact; the
   concrete constant-index `E10026` is unchanged; the RHS temporaries have one statement lifetime,
-  are zeroed, and are moved out once.
+  are zeroed, and are moved out once. The raw self-alias is recognized by `is_raw_self_alias`
+  (unwrap `Deref(AddressOf(place))` and compare the inner place; `place_target` stays
+  `Deref`-free); ST-14 pins the two self-alias shapes, the distinct-binding/place controls
+  (`x = *(&y)`, `a[0].inner = *(&a[1].inner)`) with distinct contents, and a following
+  distinct-value store through each self-alias place, so an over-broad no-op that loses a real
+  store is visible.
 - [ ] **R15 — The element and raw-target stores materialize their owning-deref RHS** (`DEF-436`,
   major): `xs[i] = *alt(p,q)` and `unsafe *alt(rp,rq) = *alt(p,q)` each call its pointer
   expression once (one for the element form, two total for the raw-target form), read and empty
@@ -114,7 +131,8 @@ out (AR-1).
   instance** (`DEF-410`, major): `pick<T>(c, h) { let r: String? = c ? h : null; }` with
   `T = String` reports one `E10034` at the store and no TU, matching the concrete twin; the effect
   is selected in `prepare_binding_effect` and no report is emitted at the definition; a separate
-  duplicable control (a generic whole move `let r: T = h;` at `T = i32`) stays accepted.
+  duplicable control (a generic whole move `let r: T = h;` at `T = P`, the duplicable struct used
+  by `q410dup`) stays accepted.
 - [ ] **R17 — The generic compound division guard resolves its operand type per instance**
   (`DEF-426`, major): the generic and concrete `/=`, `%=` twins emit the same guards; `/0`,
   `INT_MIN / -1`, and `INT_MIN % -1` trap `E11210` (no SIGFPE); the guard already substitutes
@@ -133,9 +151,11 @@ out (AR-1).
 - [ ] **R21 — The `len` view-length controls pin the `DEF-427` false-positive closure**
   (`DEF-427`, major, control): `len(w.items[i])` and `len(w.items[i].name)` are 2 in the concrete,
   generic, borrow, and loop-alias spellings; the filed `len(w.items[i][0])` double index is
-  accepted and runs 254 (the `u8` byte read); the scalar-`len` fold (`len` of a `u8` is the
-  compiler's `0` fallback) is pinned as an implementation output, not a frozen rule, and a
-  residual row is filed for it; the row is closed with the probe evidence and no code change.
+  accepted, builds strictly, and is ASan/LSan-clean (its exit value is not asserted in the spec
+  case); the exact `254`/`0` observations are implementation pins that document the current output,
+  and a residual row is filed for the scalar-`len` fold; the row is closed with the probe evidence
+  and no code change. A future scalar-`len` fix needs a user ruling because the residual row
+  records the current fallback.
 - [ ] **R22 — The inline read-base owning literal control pins the `DEF-447` false-positive
   closure** (`DEF-447`, major, control): the filed `G { rows: [n1(), n1()], tag: stringOf("x")
   }.rows[0][0][0]` and its call-row and view-copy variants are LSan-clean; the row is closed with

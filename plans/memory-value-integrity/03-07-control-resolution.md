@@ -36,10 +36,13 @@ the double index report 2 without changing the meaning of indexing a `str` (Ch 0
 `u8`). The row is a false positive (AR-27).
 
 The emitted `0` for `len` of a `u8` is the compiler's scalar-`len` fallback
-(`codegen/calls.rs:367`, the `_ => "0"` arm), **not** a frozen rule. The green spec case pins only
-the frozen view-length matrix (single index, member, concrete/generic/borrow/loop) plus the filed
-probe's accepted run; the `len(u8) == 0` observation moves to an implementation pin that documents
-the current output. A residual row is filed for the scalar-`len` fold (no code in this batch).
+(`codegen/calls.rs:367`, the `_ => "0"` arm), **not** a frozen rule. The green spec case asserts
+only that the frozen view-length matrix (single index, member, concrete/generic/borrow/loop) and
+the filed shape are accepted and ASan/LSan-clean; it does not assert the filed run's exit value.
+The exact `len(w.items[i][0]) == 254` and `len(u8) == 0` observations move to an implementation
+pin that documents the current output. A residual row is filed for the scalar-`len` fold (no code
+in this batch); a future scalar-`len` fix needs a user ruling because the residual row records the
+current fallback.
 
 **Probe evidence (`d427p`):**
 
@@ -49,7 +52,9 @@ func get(w: W, i: i32): i32 { return i32(len(w.items[i][0])) - 2; }
 func main(): i32 { let w: W = W { items: ["AA", "CC"] }; return get(w, 1); }
 ```
 
-Accepted; plain 254; ASan 254; the emitted expression is `(i32)((u32)(i32)(0) - (u32)2)`.
+Accepted; plain 254; ASan 254; the emitted expression is `(i32)((u32)(i32)(0) - (u32)2)`. The
+spec control records the acceptance and the sanitizer cleanliness, not this exit value; the exact
+254/0 pair is pinned in the implementation test.
 Controls: `d427y` (loop alias `len(w.items[i])`) run 0; `d427l` (`String` element) run 0; the
 concrete/generic/borrow/`str`/`String` view-length matrix (`d427a`, `d427e`, `d427i`, `d427j`,
 `d427m`, `d427q`, `d427r`, `d427t`, `d427u`, `d427v`, `d427w`) run 0; the single-index member form
@@ -77,12 +82,13 @@ clean.
 ## Control Cases (ST-21–ST-22)
 
 The controls are **green at the head** and are written first; they must fail if a future change
-regresses the behavior. (The filed `DEF-427` byte probe is accepted and ASan-clean, but its run is
-254 because it reads a `u8`; that is the recorded shape, not a green no-error control.)
+regresses the behavior. (The filed `DEF-427` byte probe is accepted and ASan/LSan-clean; its exit
+value is not a spec expectation because it reads a `u8`. The exact output is recorded in the
+implementation pin.)
 
 | ST | Row | Case | Expected |
 |----|-----|------|----------|
-| ST-21 | `DEF-427` | The frozen view-length matrix: `len(w.items[i])` (concrete, generic, borrow, loop alias) and `len(w.items[i].name)`; the filed byte-index probe `len(w.items[i][0])` as an accepted run | The view-length readings are 2 at every spelling and run 0; the filed probe is accepted and its run is 254 (ASan 254, no memory error); the scalar-`len` output (`0`) is asserted only in the implementation pin that documents the current output |
+| ST-21 | `DEF-427` | The frozen view-length matrix: `len(w.items[i])` (concrete, generic, borrow, loop alias) and `len(w.items[i].name)`; the filed byte-index probe `len(w.items[i][0])` as an accepted run | The view-length readings are 2 at every spelling and run 0; the filed probe is accepted, builds strictly, and is ASan/LSan-clean (its exit value is not asserted); the exact `254`/`0` output is asserted only in the implementation pin that documents the current output; a future scalar-`len` fix needs a user ruling |
 | ST-22 | `DEF-447` | The filed inline read-base owning literal; the call-row/nested-field, view-copy, and `String`-field variants | All build strictly and run 0; ASan/LSan clean; the body-scope read-base binding is pinned |
 
 `DEF-427`'s control lives in `compiler/tests/array_value_integrity_{spec,impl}_test.rs` (the
@@ -97,8 +103,9 @@ ASan scope to P7-427.
 1. Rebuild at the execution head; re-run the filed probes and the variants.
 2. If both remain green: record the verdicts in `05-findings.md`, close the two roadmap rows as
    false positives with the probe evidence, and add the controls. File the scalar-`len` fold as a
-   residual row (no code) at the same record. The roadmap status update is provisional until the
-   close-out task 8.1.2 recomputes the batch accounting.
+   residual row (no code) at the same record; note that a future scalar-`len` fix needs a user
+   ruling because the residual row records the current fallback. The roadmap status update is
+   provisional until the close-out task 8.1.2 recomputes the batch accounting.
 3. If a red shape appears: **stop**, reclassify the row to a fix, add it to the active phase (or a
    new phase) with the new probe, and re-enter the register before code (AR-35(d)).
 4. No compiler, spec, or registry edit in either outcome.
@@ -123,4 +130,5 @@ ASan scope to P7-427.
   the phase re-derives and probes the variants named in the row note before closing. If none
   reproduces, the closure is evidence-based (AR-27, AR-28).
 - **Risk:** a future `len`-of-a-scalar checker rule is a separate scope; the control documents
-  the current behavior and does not add a rejection.
+  the current behavior and does not add a rejection. A future scalar-`len` fix needs a user ruling
+  because the residual row records the current fallback (`0`), not a frozen rule.

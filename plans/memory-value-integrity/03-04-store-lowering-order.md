@@ -10,7 +10,8 @@
 Four store paths remain wrong after the batch-M `DEF-367`/`DEF-377` work: a `Deref`-rooted member
 store is accepted and dropped (`DEF-421`), the whole-element store reads its target index after
 the RHS (`DEF-423`), the fixed-array literal store clears the destination before the RHS reads it
-and a constant-index self-copy emits drop + copy + zero (`DEF-424`), and the whole-element/
+and a constant-index self-copy or raw self-alias emits a destructive move (`DEF-424`), and the
+whole-element/
 raw-target stores bypass the owning-deref materializer (`DEF-436`). The fixes complete the store
 target builder, the pin rule, the RHS-before-drop ordering, and the materializer call sites. No
 new place kind, no new store route, no new IR (AR-17–AR-20).
@@ -78,10 +79,17 @@ new place kind, no new store route, no new IR (AR-17–AR-20).
    store. The temporaries have one statement lifetime, start zeroed (one zeroed temp array), are
    stored once, and each is moved out once (`emit_move_zero`). The "read the saved copy"
    alternative is not chosen. For the raw self-alias `*(&x)`/`*(&a[i].inner)`, treat the identical
-   source/target as a no-op (reuse `is_exact_self_assign`, `own/expr.rs:1481-1493`). For the
-   constant-index self-copy, make the `Statement::Move` emission skip the identical source/target
-   in both the runtime and constant paths (extend the batch-M F3 rule); the concrete
-   constant-index `E10026` is a checker constraint and is unchanged.
+   source/target as a no-op with the dedicated **raw-self-alias recognizer** `is_raw_self_alias`
+   (new in `own/expr.rs` beside `is_exact_self_assign`): unwrap `Deref(AddressOf(place))` (through
+   `Unsafe`) and compare the inner place's `place_target` to the target binding/projections, or
+   compare the rendered addresses. Do not reuse `is_exact_self_assign` alone: it matches only
+   `PlaceTarget::Local` (`own/expr.rs:1481-1493`), while `*(&x)` has no place target, and AR-17
+   forbids a `Deref` arm in `place_target` (keep `place_target` `Deref`-free). The recognizer must
+   not skip a distinct place; ST-14 pins the two self-alias forms, the distinct-binding/place
+   controls (`x = *(&y)`, `a[0].inner = *(&a[1].inner)`), and a following distinct-value store
+   through each place, so a lost store is visible. For the constant-index self-copy, make the `Statement::Move` emission skip
+   the identical source/target in both the runtime and constant paths (extend the batch-M F3 rule);
+   the concrete constant-index `E10026` is a checker constraint and is unchanged.
 4. **`DEF-436`:** call the shared `materialize_owning_deref` on the RHS in `emit_indexed_store`
    and in the raw-deref target path, exactly as `prepare_store` does. The materializer pins the
    pointer once and empties the same pointee; the store then moves the value. Each pointer
@@ -96,12 +104,12 @@ case uses the inline `assert_traps` helper (precedent `borrow_store_integrity_sp
 |----|-----|------|----------|
 | ST-12 | `DEF-421` | `(*p).f`, `(*p).f.x`, `(*p).arr[i].x`, `unsafe (*p).f`; `(*p).arr[idx].y = bump()` with a call counter; the block controls; the conditional-base rejection (`d421d`); the structural `.len` target | Each store emits and reads back the stored value (run 0); the indexed form stores at the pre-call index and calls `bump` once; the conditional base keeps one `E10221`; the structural `.len` target keeps its `E10221`; the block controls stay green; hosted-amiga compiles the accepted forms |
 | ST-13 | `DEF-423` | `a[idx] = mkrow()` (mkrow sets idx = 5); `a[idx] = set_idx() ? a[idx] : Elem {...}` with a destination read-back (`at2` without a source read); the out-of-range store; the member-route control (`d423d`); the `at1` source read as a documented residual | The stores land in the pinned in-bounds element; the conditional self-store is a legal move with a correct destination read; no double free; the out-of-range store traps `E11211` on the plain and ASan builds; the member control unchanged; `at1` is recorded as an accepted use-after-move residual (no fix here) |
-| ST-14 | `DEF-424` | `a[i].names = [stringOf(a[i].names[0]), ...]`; the two-element self-read; `a[i].inner = *(&a[i].inner)`; `x = *(&x)`; the generic constant-index self-copy; the concrete constant-index control | The self-read stores run 0 with their values; the self-copy and the raw self-alias are no-ops with the value intact; the concrete `E10026` is unchanged; ASan/LSan clean; the RHS temporaries are zeroed and moved out once |
+| ST-14 | `DEF-424` | `a[i].names = [stringOf(a[i].names[0]), ...]`; the two-element self-read; `a[i].inner = *(&a[i].inner)` and `x = *(&x)`; the distinct-binding control `x = *(&y)` and the distinct-place control `a[0].inner = *(&a[1].inner)`, each with distinct contents (a lost store is visible); a following distinct-value store through each self-alias place; the generic constant-index self-copy; the concrete constant-index control | The self-read stores run 0 with their values; the self-copy and the raw self-alias (`is_raw_self_alias`) are no-ops with the value intact; the distinct-binding/place controls store the other value and read it back (a recognizer that over-matches leaves the old value and fails); the following distinct-value store lands; the concrete `E10026` is unchanged; ASan/LSan clean; the RHS temporaries are zeroed and moved out once |
 | ST-15 | `DEF-436` | `xs[i] = *alt(p,q)`; `unsafe *alt(rp,rq) = *alt(p,q)`; the named-store control; the duplicable control | Each pointer expression is called once (one for the element form, two total for the raw-target form); the stored value is correct; ASan/LSan clean; the controls stay green |
 
 The impl pins assert the emitted target projection, the index pin, the store/RHS order, the
-self-copy/self-alias skip, the per-pointer-expression call count, and a re-emission determinism
-pin.
+self-copy/self-alias skip (`is_raw_self_alias` refuses a distinct place), the per-pointer-expression
+call count, and a re-emission determinism pin.
 
 ## Verification
 
@@ -129,7 +137,9 @@ pin.
   re-pinned).
 - **Risk:** RHS-before-clear must not leak the old owners or free them twice; the save/release
   order is the ASan/LSan subject. The raw self-alias is a no-op, not a clear: the `x = *(&x)` and
-  `a[i].inner = *(&a[i].inner)` controls pin it.
+  `a[i].inner = *(&a[i].inner)` controls pin it, and their distinct-value follow-up stores pin that
+  `is_raw_self_alias` does not swallow a real store. The recognizer stays out of `place_target`, so
+  every other place consumer keeps its `Deref`-free behavior.
 - **Risk:** the `at1` source read stays accepted after the store; do not let the pin fix "repair"
   it silently. File it as a residual use-after-move row at the phase-4 record and keep ST-13 on
   the destination read (AR-18).

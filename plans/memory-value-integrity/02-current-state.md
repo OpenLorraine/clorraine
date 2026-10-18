@@ -15,19 +15,24 @@ Batches I–M built the machinery each row extends. The relevant hooks at `f6da7
 
 - **Loan bookkeeping** (`compiler/src/own/place.rs`): `set_binding_loans` (:1096) drops a
   binding's `element_loans` and replaces its binding-loan union; `replace_element_loans` (:1111)
-  replaces one path's loans, keeping a runtime-index union and only adding (the union branch is
-  :1119-1127); `move_element_loans` (:1192) snapshots the source positions, strips the read prefix
-  (`path.strip_prefix(source)` at :1212), and re-records them on the destination (the snapshot is
-  taken **after** the binding effect); `record_copy_element_loans` (:1236) builds the copy union;
-  `collect_copy_element_loans` (:1274) handles conditional arms, array literals (including the
-  fill), `Unsafe`/casts; `collect_place_copy_loans` (:1369) reads a place's recorded positions
-  with the constant/runtime rule and the prefix fallback, and the non-place branch records only
-  `view_loans` (it receives only `&Expr`, not the lowered value); `view_loans` (:1512) is the
-  loan-chain mirror; `view_owners` (:1569) and `lowered_root_bindings` (:1603) name a lowered
-  value's temp/root owners; `provenance_loan_owners` (:1435) names the owners a value's provenance
-  reaches; `recorded_position_frame_owners` (:975) reads only `element_loans`; `loan_owners` (:815)
-  expands a loan set; `place_target` (:1931) has `Name`, `Qualified`, `Member`, `Index`, and
-  `Unsafe` arms — **no `Deref`**.
+  replaces one path's loans and, for a non-constant path, keeps the runtime union and only adds
+  (the union branch is :1119-1127) — the fix also records the wildcard `Element(None)` path there;
+  `move_element_loans` (:1192) snapshots the source positions, strips the read prefix
+  (`path.strip_prefix(source)` at :1212, made wildcard-aware), and re-records them on the
+  destination (the snapshot is taken **after** the binding effect);
+  `record_copy_element_loans` (:1236) builds the copy union; `collect_copy_element_loans` (:1274)
+  handles conditional arms, array literals (including the fill), `Unsafe`/casts;
+  `collect_place_copy_loans` (:1369) reads a place's recorded positions with the constant/runtime
+  rule and the prefix fallback, where a recorded `Element(None)` step matches any `Element(_)` at
+  the same position prefix, and the non-place branch records only `view_loans` (it receives only
+  `&Expr`, not the lowered value); `place_recorded_position_owners` (:913) reads a place's recorded
+  position owners with the same wildcard match; `view_loans` (:1512) is the loan-chain mirror;
+  `view_owners` (:1569) and `lowered_root_bindings` (:1603) name a lowered value's temp/root
+  owners; `provenance_loan_owners` (:1435) names the owners a value's provenance reaches;
+  `recorded_position_frame_owners` (:975) reads only `element_loans`, with the same wildcard match;
+  `loan_owners` (:815) expands a loan set; `record_element_view_loans` (`own/expr.rs:1679`) records
+  the backing loans a view element store gives its container; `place_target` (:1931) has `Name`,
+  `Qualified`, `Member`, `Index`, and `Unsafe` arms — **no `Deref`**.
 - **Binding effects** (`compiler/src/own/statements.rs`): `bind_value` (:793) prepares and applies
   the initializer/assignment effect; `prepare_binding_effect` (:816) selects a view loan, a move, a
   conditional move (`ConditionalMove`), or a maybe-owning move (`MoveIfOwning`); this is where the
@@ -91,12 +96,12 @@ ASAN_OPTIONS=detect_leaks=1:symbolize=0 timeout 30 out/<name>.asan
 
 The probes are reproduced below and preserved under the gitignored
 `build/batchN-plan/probes/` tree: the planning probes, the preflight re-probes
-(`preflight-N/`), and this revision's re-run (`apply/`). The planning scratch was
+(`preflight-N/`), and the iteration-2 re-run (`apply/`). The planning scratch was
 `/tmp/opencode/batchN/probes/`; the preflight scratch was `/tmp/opencode/preflight-N/`. A plain
 exit that varies because it reads freed storage is recorded as "varies"; the sanitizer report is
 the oracle. `cc=1` means the strict C build failed.
 
-## Re-run record (this revision)
+## Re-run record (preflight revision)
 
 Every probe below was re-emitted with `target/debug/clc` at `100180c` and run plain and under
 `ASAN_OPTIONS=detect_leaks=1:symbolize=0`. The UAF exits vary with allocator state; the ASan
@@ -119,7 +124,7 @@ report is the oracle.
 | `q441base` | `g && eat(take (*alt(p,q)).name)` | 0 | 134 | attempting double-free | red |
 | `q441sibling` | the same take, then read the sibling member | 0 | 134 | attempting double-free | red; the root-wide empty loses the sibling |
 | `q439alias_true` | `g = true`, `p = &v` | 0 | 134 | attempting double-free | red |
-| `q439alias_false` | `g = false`, `p = &v` | 0 | 0 | clean | control |
+| `q439alias_false` | `g = false`, `p = &v` | 0 | 0 | clean | control (equal lengths; the distinct-length re-run below shows the false arm stores `y`) |
 | `q439nonalias` | `g = true`, `p = &w` (non-aliasing) | 0 | 0 | clean | control; the save must drop, not zero |
 | `q430sibling` | `xs[0] = a.v; let s = xs[1]; fill(s)` | 0 | 0 | clean | sibling acceptance control (same as `p430_sibling`) |
 | `q424self` | `x = *(&x)` | 0 | 139 | SEGV | red self-alias |
@@ -140,6 +145,23 @@ The preflight `p440_borrowarg` (`read((*p).s)` with a concrete pointer) and `p44
 preflight `p429_direct`/`p429_direct2` (constant destination, direct fill) are accepted and
 ASan-red at the head because the conditional store recorded nothing; after the `DEF-429` gate they
 become the direct-fill controls and must report `E10030`.
+
+### Iteration-2 re-run (this revision)
+
+The eight probes named by the iteration-2 corrections were re-emitted and run with the same
+method. `q439alias_false` now uses distinct lengths (`v = "vv"`, `y = "yyyy"`) so the false arm's
+store of `y` is visible; the earlier equal-length probe ran 0 and hid it.
+
+| Probe | Shape | Emit | Plain run | ASan/LSan | Observation |
+|-------|-------|------|-----------|-----------|-------------|
+| `q424self` | `x = *(&x)` | 0 | 139 | ASan SEGV | red; the raw self-alias has no `place_target` |
+| `q424inner` | `a[i].inner = *(&a[i].inner)` (`d424b`) | 0 | 139 | ASan SEGV | red; the same raw self-alias through a nested field |
+| `q429runtime_copy` | `grid[k] = c ? xs : zs; let s = grid[1][0]; fill(s)` | 0 | 242 (varies) | heap-use-after-free | red; no recorded element position |
+| `q429runtime_direct` | the same runtime store, then `fill(grid[1][0])` | 0 | 36 (varies) | heap-use-after-free | red; the direct runtime fill is the `DEF-429` blast radius |
+| `q430sibling` | `xs[0] = a.v; let s = xs[1]; fill(s)` | 0 | 0 | clean | **accepted + clean** sibling acceptance control |
+| `q439alias_false` | `g = false`, `p = &v`, `v = "vv"`, `y = "yyyy"` | 0 | 2 | clean | the false arm drops the save and stores `y`; the run reads `y`'s length (4 - 2), so the store is visible |
+| `q435runtime_direct` | `g[k] = [; a.v]; fill(g[1][0])` | 0 | 24 (varies) | heap-use-after-free | red direct runtime read; AR-35(e) blast radius |
+| `q410dup` | generic whole move `let r: T = h;` at `T = P` (duplicable struct) | 0 | 0 | clean | duplicable control; `T = P`, not `i32` |
 
 ## Probe Matrix
 
@@ -204,14 +226,14 @@ become the direct-fill controls and must report `E10030`.
 | `DEF-431` | 🔴 red | One `E10030` at the deeper-projection copy's fill; incidental if the `429` gate greens it |
 | `DEF-432` | 🔴 red | One `E10030` at the temporary-derived element's fill; the lowered owner is recorded |
 | `DEF-433` | 🔴 red | One `E10030` for both the copy and the call-argument forms; the caller-parameter control stays accepted |
-| `DEF-435` | 🔴 red | One `E10030` at the constant and runtime element-store copies' fills; incidental (constant) if the `429` gate greens it |
+| `DEF-435` | 🔴 red | One `E10030` at the constant and runtime element-store copies' fills; incidental (constant) if the `429` gate greens it; the constant direct read keeps its report and the runtime direct read is the AR-35(e) delta/residual |
 | `DEF-437` | 🔴 red | Each projection moves once through all three emission gates; read-backs correct; ASan/LSan clean |
-| `DEF-439` | 🔴 red | Both aliasing selections run 0; the non-aliasing control drops its save; no double-free |
+| `DEF-439` | 🔴 red | Both aliasing selections run 0; the false arm stores `y` (distinct lengths); the non-aliasing control drops its save; no double-free |
 | `DEF-440` | 🔴 red | No bind/release for the intrinsic or borrow argument; the loop and call paths run; ASan/LSan clean |
 | `DEF-441` | 🔴 red | The guarded take empties the selected member only; the sibling stays owned; both selections clean |
 | `DEF-421` | 🔴 red | The four `Deref`-rooted store forms emit and read back; the base/index is pinned before the RHS; the structural `.len` keeps `E10221` |
 | `DEF-423` | 🔴 red | The pinned target stores in bounds; the conditional self-store is a legal move with a correct destination read; `E11211` stays; `at1` is a filed residual |
-| `DEF-424` | 🔴 red | The literal self-read runs before the clear; the constant-index self-copy and the raw self-alias are no-ops |
+| `DEF-424` | 🔴 red | The literal self-read runs before the clear; the constant-index self-copy and the raw self-alias (`is_raw_self_alias`) are no-ops; the distinct-binding/place controls and following store make a lost store visible |
 | `DEF-436` | 🔴 red | One call per pointer expression (two total for the raw-target form); the correct value is stored; ASan/LSan clean |
 | `DEF-410` | 🔴 red | One `E10034` per owning instance; the duplicable generic whole move runs; no report at the definition |
 | `DEF-425` | ⏸ parked | Recorded as parked with the conflict evidence and the ruling request; no code |
@@ -219,7 +241,7 @@ become the direct-fill controls and must report `E10030`.
 | `DEF-445` | 🔴 red | The conditional-of-literals and mixed read bases build strictly and run 0 (OR rule) |
 | `DEF-446` | 🔴 red | The ternary-arm take literal builds strictly and runs 0 |
 | `DEF-448` | 🔴 red | The conditional array literal of places builds strictly and runs 0 |
-| `DEF-427` | 🟡 false positive | The view-length matrix reads 2; the byte double index runs 254 and its scalar `len` output is an implementation pin |
+| `DEF-427` | 🟡 false positive | The view-length matrix reads 2; the byte double index is accepted and ASan/LSan-clean, and its exact `254`/`0` output is an implementation pin |
 | `DEF-447` | 🟡 false positive | The filed inline read-base literal and variants are LSan-clean |
 
 ## Phase 1 — Loan transfer on stored copies
@@ -329,14 +351,16 @@ fill(s, borrow slot);
 destination `g[1]` goes through the ordinary store path and is blocked by the `DEF-429` gate; it
 never reaches `emit_indexed_store`. The runtime destination `g[k]` reaches `emit_indexed_store`
 (`own/expr.rs:2557-2629`), which lowers the view value and emits `StorePointer` without calling the
-collector. The direct constant read (`d435b`) reports one `E10030` at 13:5; the direct runtime
-read (`q435runtime_direct`) is accepted and ASan-red.
+collector. The **constant direct read** (`d435b`) reports one `E10030` at 13:5; the **runtime
+direct read** (`q435runtime_direct`) is accepted and ASan-red at the head.
 
 **Verdict:** 🔴 red. **Fix direction:** **verify the constant half after `DEF-429`**. If the gate
 alone greens `q435constant_copy`, close that half as incidental (it is the `DEF-431` prefix-fallback
 path); otherwise apply the `DEF-431` fallback. The runtime half needs the composite-aware collector
 in `emit_indexed_store` with the element's destination path (the `base` parameter is ready). The
-direct runtime read is recorded as the same collector's blast radius (AR-8/AR-12).
+runtime direct read is the same collector's blast radius (AR-12) and is recorded per AR-35(e):
+the intended delta is one `E10030`; if it stays accepted, the phase files a residual row with
+`q435runtime_direct`. The constant direct read is a separate control and keeps its report.
 
 **Sites:** `own/expr.rs:2557-2629` (`emit_indexed_store`, the `StorePointer` path never calls the
 collector), `:1291-1318` (the constant store gate), `own/place.rs:1236`.
@@ -439,15 +463,17 @@ unsafe {
 ```
 
 **Observed:** accepted; plain exit 134 (double free); ASan/LSan `attempting double-free`. The
-false path (`d439b`, `g = false`, still aliasing) runs 0, clean; the non-aliasing control
-(`q439nonalias`, `g = true`, `p = &w`) runs 0 and is clean.
+false path (`d439b`/`q439alias_false`, `g = false`, still aliasing) runs 0, clean in the earlier
+equal-length probe; with distinct lengths (`v = "vv"`, `y = "yyyy"`) it runs 2 and reads the
+stored `y`, which shows the false arm stores `y` rather than reusing the old `v`. The non-aliasing
+control (`q439nonalias`, `g = true`, `p = &w`) runs 0 and is clean.
 
 **Verdict:** 🔴 red. **Fix direction:** the bool `arm_consumes_target` cannot carry the runtime
 alias check. Specify the per-arm save handling directly: in the then-branch zero the save only
 when the taken value's rendered address equals the target; in the else-branch drop the save
-normally. The equivalent form is the emitted condition `take_ran && &pointee == &target`. Pin the
-emitted condition in ST-9's impl test, and keep the `g = false` aliasing case plus the non-aliasing
-control.
+normally and store `y`. The equivalent form is the emitted condition
+`take_ran && &pointee == &target`. Pin the emitted condition in ST-9's impl test, use distinct
+lengths for the false-path selection, and keep the non-aliasing control.
 
 **Sites:** `codegen/function.rs:2400-2444` (`arm_consumes_target` and the arm store),
 `compiler/src/ir.rs` (the `Materialize.value_move_outs` field).
@@ -544,15 +570,21 @@ target.
 **Verdict:** 🔴 red. **Fix direction:** evaluate the literal's self-reading element expressions
 into statement temporaries before the save/clear; the temporaries have one statement lifetime,
 start zeroed, are stored once, and each is moved out once (one zeroed temp array, store,
-save/clear, store, then `emit_move_zero`). Treat the raw self-alias `*(&x)` as the same no-op as
-the constant-index `Move` (reuse `is_exact_self_assign`, `own/expr.rs:1481-1493`). Skip the
+save/clear, store, then `emit_move_zero`). Treat the raw self-alias `*(&x)` / `*(&a[i].inner)` as
+a no-op with a dedicated recognizer: `is_raw_self_alias` (new beside `is_exact_self_assign` in
+`own/expr.rs`) unwraps `Deref(AddressOf(place))` (through `Unsafe`) and compares the inner place's
+`place_target` to the target binding/projections, or compares the rendered addresses.
+`is_exact_self_assign` alone is insufficient: it matches only `PlaceTarget::Local`
+(`own/expr.rs:1481-1493`), while the raw forms have no place target, and AR-17 forbids a `Deref`
+arm in `place_target`. Do not let the recognizer match a distinct place: ST-14 pins `x = *(&x)` and
+`a[i].inner = *(&a[i].inner)` with distinct values so a lost store is visible. Skip the
 identical constant-index `Move` (extend batch-M F3's self-copy rule). Add `x = *(&x)`, the nested
 literal, and the two-element self-read to ST-14.
 
 **Sites:** `codegen/function.rs:1557-1592` (the literal `reads_target` save/clear),
 `:659-690` (the `Statement::Move` emission, the runtime-only self-copy check),
 `own/statements.rs:445-479` (`prepare_store` returns the `Move`), `own/expr.rs:1481-1493`
-(`is_exact_self_assign`).
+(`is_exact_self_assign`; `is_raw_self_alias` is new beside it).
 
 ### `DEF-436` — The whole-element and raw-deref-target stores bypass the owning-deref materializer
 
@@ -597,8 +629,8 @@ the conditional store is the gap.
 of skipping a type-parameter arm; the effect is selected in `prepare_binding_effect`
 (`own/statements.rs:816-887`), so an owning instance reports one `E10034` (BR-5) matching the
 concrete twin, while a duplicable instance stays accepted. Do not report at the definition. The
-duplicable control must be a separate generic whole move (`let r: T = h;` at `T = i32`), because
-the `String?` body cannot take a duplicable `T`.
+duplicable control must be a separate generic whole move (`let r: T = h;` at `T = P`, the
+duplicable struct used by `q410dup`), because the `String?` body cannot take a duplicable `T`.
 
 **Sites:** `own/expr.rs:175-205` (`conditional_move_sources`, the `mentions_type_param` skip at
 :191), `own/statements.rs:816-887` (`prepare_binding_effect`), `own/place.rs:541-590`
@@ -631,7 +663,7 @@ but the batch-M origin cases pin the same body accepted at exit 0:
 (`rhsindexselfmember`/`rhsindexselfsamewhole`) and
 `..._impl_test.rs:7365-7460` (`implselfslot`) pin the generic
 `copy<T>(borrow w: T) { w.items[i].name = w.items[j].name; }` accepted. Changing an immutable
-spec-oracle case needs a user ruling (AR-33/AR-37). The plan records the conflict and the ruling
+spec-oracle case needs a user ruling (AR-22 + AR-30 + AR-33). The plan records the conflict and the ruling
 request; no compiler, test, spec, or registry edit is made here.
 
 **Sites (for the ruling, not for a fix):** `own/place.rs:629-666`
@@ -744,10 +776,12 @@ concrete/generic/borrow/`str`/`String` view-length spellings) all run 0; the sin
 form `len(w.items[i].name)` runs 0.
 
 **Verdict:** 🟡 **false positive** (AR-27). The double index selects a `u8`; the expected 2
-belongs to `len(w.items[i])`, which is green. The spec case pins only the frozen view-length
-matrix plus the filed probe's accepted run; the `len(u8) == 0` observation moves to an
-implementation pin that documents the current output. A residual row is filed for the scalar-`len`
-fold (no code in this batch). No code change here.
+belongs to `len(w.items[i])`, which is green. The spec case asserts only that the frozen
+view-length matrix and the filed shape are accepted and ASan/LSan-clean; it does not assert the
+filed run's exit value. The exact `254`/`0` observations move to an implementation pin that
+documents the current output. A residual row is filed for the scalar-`len` fold (no code in this
+batch), and a future scalar-`len` fix needs a user ruling because the residual row records the
+current fallback. No code change here.
 
 **Sites:** `codegen/calls.rs:339-370` (`intrinsic`, the `len` `_ => "0"` fallback),
 `types/mod.rs` `index_element` (`Str`/`StaticStr` → `u8`), `own/lower.rs:550` (the fixed-array
