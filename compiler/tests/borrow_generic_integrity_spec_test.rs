@@ -1322,3 +1322,95 @@ func main(): i32 {
     let output = run_host("param-collide", source);
     assert_exit("param-collide", &output, 3);
 }
+
+/// A generic conditional store of a by-value parameter obeys the lend rule.
+///
+/// `let r: String? = c ? h : null` moves `h` when the instance owns, so the
+/// owning instantiation reports one `E10034` at the store, exactly as the
+/// concrete twin. The simple generic whole move keeps its report. A
+/// duplicable instance of a whole move copies and runs, and a generic body
+/// that is never instantiated with an owning type is not reported at the
+/// definition.
+#[test]
+fn should_reject_a_generic_conditional_store_through_a_lend_parameter() {
+    let generic = r#"module spec.bgi.genericcondnull;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T): i32 {
+    let r: String? = c ? h : null;
+    if (r == null) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return pick<String>(true, h);
+}
+"#;
+    assert_rejected_once("generic-condnull", generic, "E10034", &["'h'"]);
+
+    let concrete = r#"module spec.bgi.concretecondnull;
+
+import { String, stringOf } from std.text;
+
+func pick(c: bool, h: String): i32 {
+    let r: String? = c ? h : null;
+    if (r == null) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return pick(true, h);
+}
+"#;
+    assert_rejected_once("concrete-condnull", concrete, "E10034", &["'h'"]);
+
+    let whole = r#"module spec.bgi.genericwhole;
+
+import { String, stringOf } from std.text;
+
+func take<T>(h: T): i32 {
+    let r: T = h;
+    return 0;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return take<String>(h);
+}
+"#;
+    assert_rejected_once("generic-whole", whole, "E10034", &["'h'"]);
+
+    let duplicable = r#"module spec.bgi.genericdup;
+
+struct P { x: i32; }
+
+func pick<T>(h: T): i32 {
+    let r: T = h;
+    return r.x;
+}
+
+func main(): i32 {
+    let h: P = P { x: 4 };
+    return pick<P>(h) - 4;
+}
+"#;
+    let output = run_host("generic-dup", duplicable);
+    assert_exit("generic-dup", &output, 0);
+
+    let definition = r#"module spec.bgi.genericdefinition;
+
+func pick<T>(c: bool, h: T): i32 {
+    let r: String? = c ? h : null;
+    if (r == null) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let _ = compile_accepted("generic-definition", definition);
+}

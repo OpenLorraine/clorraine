@@ -20901,3 +20901,171 @@ func main(): i32 {
 "#;
     compile_rejects("p424update", updating, "E10026", 1);
 }
+
+// ---------------------------------------------------------------------------
+// genericdivision: a compound division or remainder inside a generic body
+// keeps the same zero and minimum guards as its concrete twin.
+//
+// The operand's recorded type is a projection of the type parameter, so the
+// guard must resolve it through the instance before deciding whether the
+// operation is integer division. Both the generic and concrete twins then
+// trap `E11210` for zero and for `MIN / -1` / `MIN % -1`.
+// ---------------------------------------------------------------------------
+
+/// The generic and concrete compound divisions trap with the same guard.
+///
+/// `p426generic` and `p426concrete` divide by two and return the same value.
+/// Their zero, `MIN / -1`, and `MIN % -1` twins each trap `E11210` on the
+/// plain and sanitizer builds.
+#[test]
+fn should_guard_a_generic_compound_division_and_remainder() {
+    let generic = r#"module spec.cpr.p426generic;
+
+import { String, stringOf } from std.text;
+
+struct H { n: i32; items: i32[2]; name: String; }
+
+func go<T>(borrow h: T, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+    h.items[1] /= d;
+}
+
+func main(): i32 {
+    let h: H = H { n: 10, items: [11, 12], name: stringOf("h") };
+    go<H>(borrow h, 2);
+    return h.n + h.items[0] + h.items[1] - 12;
+}
+"#;
+    let output = run_memory("p426generic", generic);
+    assert_no_asan("p426generic", &output);
+    assert_exit("p426generic", &output, 0);
+
+    let concrete = r#"module spec.cpr.p426concrete;
+
+import { String, stringOf } from std.text;
+
+struct H { n: i32; items: i32[2]; name: String; }
+
+func go(borrow h: H, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+    h.items[1] /= d;
+}
+
+func main(): i32 {
+    let h: H = H { n: 10, items: [11, 12], name: stringOf("h") };
+    go(borrow h, 2);
+    return h.n + h.items[0] + h.items[1] - 12;
+}
+"#;
+    let output = run_memory("p426concrete", concrete);
+    assert_no_asan("p426concrete", &output);
+    assert_exit("p426concrete", &output, 0);
+
+    let generic_zero = r#"module spec.cpr.p426genzero;
+
+struct H { n: i32; items: i32[2]; }
+
+func go<T>(borrow h: T, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let h: H = H { n: 10, items: [11, 12] };
+    go<H>(borrow h, 0);
+    return 0;
+}
+"#;
+    assert_store_traps("p426genzero", generic_zero, "E11210");
+
+    let concrete_zero = r#"module spec.cpr.p426conczero;
+
+struct H { n: i32; items: i32[2]; }
+
+func go(borrow h: H, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let h: H = H { n: 10, items: [11, 12] };
+    go(borrow h, 0);
+    return 0;
+}
+"#;
+    assert_store_traps("p426conczero", concrete_zero, "E11210");
+
+    let generic_min = r#"module spec.cpr.p426genmin;
+
+struct H { n: i32; items: i32[2]; }
+
+func go<T>(borrow h: T, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let min: i32 = i32(u32(0x80000000));
+    let h: H = H { n: min, items: [11, 12] };
+    go<H>(borrow h, -1);
+    return 0;
+}
+"#;
+    assert_store_traps("p426genmin", generic_min, "E11210");
+
+    let generic_min_rem = r#"module spec.cpr.p426genminrem;
+
+struct H { n: i32; items: i32[2]; }
+
+func go<T>(borrow h: T, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let min: i32 = i32(u32(0x80000000));
+    let h: H = H { n: 10, items: [min, 12] };
+    go<H>(borrow h, -1);
+    return 0;
+}
+"#;
+    assert_store_traps("p426genminrem", generic_min_rem, "E11210");
+
+    let concrete_min = r#"module spec.cpr.p426concmin;
+
+struct H { n: i32; items: i32[2]; }
+
+func go(borrow h: H, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let min: i32 = i32(u32(0x80000000));
+    let h: H = H { n: min, items: [11, 12] };
+    go(borrow h, -1);
+    return 0;
+}
+"#;
+    assert_store_traps("p426concmin", concrete_min, "E11210");
+
+    let concrete_min_rem = r#"module spec.cpr.p426concminrem;
+
+struct H { n: i32; items: i32[2]; }
+
+func go(borrow h: H, d: i32): void {
+    h.n /= d;
+    h.items[0] %= d;
+}
+
+func main(): i32 {
+    let min: i32 = i32(u32(0x80000000));
+    let h: H = H { n: 10, items: [min, 12] };
+    go(borrow h, -1);
+    return 0;
+}
+"#;
+    assert_store_traps("p426concminrem", concrete_min_rem, "E11210");
+}
