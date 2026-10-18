@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 20/62 tasks (32%) — Phase 3 complete
+> **Progress**: 33/62 tasks (53%) — Phase 4 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -277,7 +277,7 @@ emission differential
 
 ## Phase 4: Store lowering and evaluation order
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `909e0a9`
 > **Rows**: `DEF-421` (major), `DEF-423` (major), `DEF-424` (major), `DEF-436` (major)
 > **Lenses**: correctness + semantics + memory-safety + emission-integrity (AR-31; semantics owns
 > the place rule and the order)
@@ -291,17 +291,17 @@ ST-12..ST-15 · AR-17, AR-18, AR-19, AR-20
 **Objective**: Pin the `Deref`-rooted store forms, the whole-element target order and bounds trap,
 the fixed-array self-read/self-copy, and the element/raw-target RHS materialization.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases (derefrootedstore, elementtargetorder,
+- [x] 4.1.1 [spec-author] Write the phase cases (derefrootedstore, elementtargetorder,
       fixedarrayselfread, derefrhistore) with the indexed `bump` counter, the conditional-base and
       structural-`.len` controls, the `assert_traps` bounds case, the `x = *(&x)`/nested/two-element
       self-reads with the distinct-binding/place controls and a following distinct-value store
       through each raw-self-alias place (so a lost store is visible), the `at1` residual, and the
       duplicable controls; the red cases committed first
-- [ ] 4.1.2 Run the suite and record the red phase; verify the controls green first
+- [x] 4.1.2 Run the suite and record the red phase; verify the controls green first
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Complete the store lowering: route the `Deref`-rooted `Member`/`Index` target through
+- [x] 4.2.1 Complete the store lowering: route the `Deref`-rooted `Member`/`Index` target through
       the raw-deref store path in `check_assign` (`own/expr.rs:1003-1073`), and do **not** add a
       `Deref` arm to `place_target`; pin the `Deref`-rooted target's base/index before the RHS with
       `pin_store_target` (`own/expr.rs:2393-2421`) and make the whole-element base/index pin
@@ -316,25 +316,25 @@ the fixed-array self-read/self-copy, and the element/raw-target RHS materializat
       RHS (`own/expr.rs:2603-2622`, `:1055-1076`). Keep the structural `.len` `E10221` branch
       (`own/expr.rs:1448-1461`). File the `at1` use-after-move row at the phase record; do not fix
       it here.
-- [ ] 4.2.2 Run the suite to green; on any failure STOP and fix (or stop for a profile/new-channel
+- [x] 4.2.2 Run the suite to green; on any failure STOP and fix (or stop for a profile/new-channel
       ruling per AR-35(a)(b)); run `make check`
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the target projection, the pinned base/index, the
+- [x] 4.3.1 Write the phase implementation pins (the target projection, the pinned base/index, the
       store/RHS order, the self-copy/`is_raw_self_alias` skip including a distinct-place refusal,
       the per-pointer-expression call count, and a re-emission determinism pin)
-- [ ] 4.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
+- [x] 4.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
       probes, the `assert_traps` cases, the strict builds, and the base/head differential. The
       packet includes the blast-radius step (every `place_target`, `indexed_target`,
       `emit_indexed_store`, fixed-array assign, and `Statement::Move` consumer) and the
       test-integrity step
-- [ ] 4.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
+- [x] 4.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
       rounds
 
 ### Step 4.4: Phase Record
 
-- [ ] 4.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
+- [x] 4.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
       commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the strict builds; the
@@ -342,9 +342,9 @@ the fixed-array self-read/self-copy, and the element/raw-target RHS materializat
 eligible scalar forms with the per-case `E11200` reasons; the emission differential
 
 **Deliverables**:
-- [ ] ST-12..ST-15 red then green; the member-route and conditional-base controls stay green
-- [ ] The `E11211` bounds trap and the `E10221` conditional-base rejection are unchanged
-- [ ] The `at1` source read is filed as a residual row (no fix)
+- [x] ST-12..ST-15 red then green; the member-route and conditional-base controls stay green
+- [x] The `E11211` bounds trap and the `E10221` conditional-base rejection are unchanged
+- [x] The `at1` source read is filed as a residual row (no fix)
 
 ---
 

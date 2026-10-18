@@ -172,24 +172,55 @@ place re-read), `DEF-460` (conditional self-move through a raw pointer loses the
 
 ## Phase 4 — Store lowering and evaluation order
 
-**Reviewed implementation**: _(recorded at review time)_. **Lenses**: all four (AR-31; semantics
-owns the place rule and the order).
+**Reviewed implementation**: `804e95e` (the store fixes), `e095444` (the pins), `5ccbc7d`,
+`911795d`, and `4f9b9c1` (the correction rounds). **Lenses**: all four (AR-31; semantics owns the
+place rule and the order).
 
 ### Verdicts
 
-_(to be filled: the `Deref`-rooted store shape and pinned base/index, the pin, the
-RHS-before-clear, the self-copy/self-alias skip (`is_raw_self_alias`, with the distinct-value
-controls), and the per-pointer-expression call count are recorded here; the `at1` residual row is
-filed)_
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | RV-001 (the self-copy recognizers over-matched runtime/updating indices and dropped stores, calls, updates, and bounds traps) closed by the stable-expression comparison and the emitted guards; RV-002 (unknown intermediate types emitted `.` for a raw-pointer field) closed; RV-003 (the skips bypassed writability/read-only/borrow checks) closed; RV-004 (duplicated comment) closed; RV-006 (a correction case passed at base) closed by the distinct-length cases; RV-005 closed by this record |
+| semantics | PASS — 0 blockers after correction | SR-001 (raw projected self-copies destroyed the value / emitted invalid C) closed by the same-chain recognition and the discarded read; SR-002 (runtime/updating indices were treated as stable) closed; SR-003 (a view element target consumed its owner) closed; SR-004 (raw-field intermediate render) closed; SR-005 (prefix `unsafe` target) closed; SR-006 (the lend check was bypassed) closed; SR-007 (fixed-array and call-rooted aliases lacked the runtime guard) closed in rounds 2–3 |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The raw self-copy/alias crash, the fixed-array pointer alias, the call-rooted alias, and the address-of fixed-array alias are clean; the four phase rows, the bounds trap, and the batch-M/L controls are ASan/LSan-clean; the take fixed-array-parameter alias is pre-existing and filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | The target projections, the pinned index, the literal temporary, the self-copy discard, the `void *` address guards, and the per-pointer call counts are the intended shapes; the strict matrix has no new C failure; the no-take/no-self and corpus differentials are unchanged; F1/F2/F3/N1 closed; the take-parameter address-of guard warning is pre-existing and filed |
 
-### Findings and rulings
+### Fix rounds
 
-_(to be filled)_
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `804e95e`, `e095444` | **Applied**: the raw-deref store route covers a member/element chain with a pinned pointer and index; the whole-element target pins always; the fixed-array literal fills a zeroed temporary before the save/clear; the raw self-alias and constant self-copy are no-ops; the element/raw-target RHS runs the owning-deref materializer |
+| C1 | `5ccbc7d` | **Resolved SR-001/SR-002/SR-003/SR-004/SR-005/SR-006 and RV-001/RV-002/RV-003/RV-004**: the recognizers compare stable expressions only; the no-op discards-reads the target so the guards and pointer use remain; the checks run before the skip; intermediate chain types are checked types; view targets do not consume; prefix `unsafe` is honored; a runtime address guard covers distinct raw pointers |
+| C2 | `911795d` | **Resolved SR-007/F3**: the fixed-array branch guards a stable raw-deref source by the `void *` source/target addresses; a call-rooted raw-deref value takes the aliasable path; the phase distinct cases use distinct lengths |
+| C3 | `4f9b9c1` | **Resolved the last memory finding**: an address-of fixed-array source (`*(&a.items)`) is a stable alias source and takes the same runtime guard |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (all four lenses on `e095444`) | **NOT CONFIRMED**: the recognizer over-match, the raw-field invalid C, the writability bypass, the raw projected self-copy crash, the view consume, and the fixed-array/call-rooted aliases |
+| B2 (four lenses on `5ccbc7d`) | **NOT CONFIRMED**: the fixed-array pointer alias and the address-of fixed-array alias remained; the other findings were confirmed fixed |
+| B3 (four lenses on `911795d`/`4f9b9c1`) | **CONFIRMED**: the fixed-array, call-rooted, and address-of aliases are guarded no-ops with the distinct controls moving; the bounds trap and the checks are restored; the phase closes for the four rows |
 
 ### Filed rows
 
-_(to be filled: new `DEF-` rows, or "none")_
+`DEF-461` (a take fixed-array parameter that aliases the raw target; base-equal double free), `DEF-462`
+(the raw-field target's intermediate field is not pinned before a side-effecting RHS), `DEF-463` (the
+raw-store RHS pointer binding reports a false `W10000` unused-local warning), `DEF-464` (the `at1`
+post-store source read is an accepted use-after-move), `DEF-465` (a duplicable fixed-array literal
+self-read/fill uses the cleared destination), `DEF-466` (a raw alias element store whose RHS pointee
+is the destination loses the value), `DEF-467` (an out-slot borrow raw self-assign is accepted).
 
+### Record notes
+
+- The design's boundary holds: `place_target` stays `Deref`-free; the raw chain walker is
+  store-only. The conditional-base and structural `.len` rejections are unchanged.
+- The self-copy/alias rule is: evaluate the target and value, run every index and bounds guard, then
+  skip only the transfer; a runtime address guard covers distinct pointer expressions. The stable
+  comparison never matches a call or an updating index.
+- `at1` remains the accepted post-store source read; the phase pins the destination read only.
+- The generic fixed-array parameter alias and the address-of take parameter are pre-existing
+  (base wrong/C-fail) and are filed, not fixed.
 ## Phase 5 — Per-instance generic judgments
 
 **Reviewed implementation**: _(recorded at review time)_. **Lenses**: all four (AR-31; the
@@ -400,3 +431,59 @@ the destination).
 - The frozen-spec reading: Ch 04 §5 (the chosen path only), Ch 16 §2 (a read does not move), and
   Ch 17 §5 (copy plus zero, one release per owner) decide the four rows; no spec or registry edit
   was needed.
+
+## Phase 4 — Store lowering and evaluation order
+
+**Reviewed implementation**: `804e95e` (the raw store route, the unconditional index pin, the
+fixed-array literal temporary, the self-copy skip, and the element/raw-target materializer),
+`e095444` (the pins), `5ccbc7d` (the stable-expression recognizers, the guarded no-op, the check
+ordering, the intermediate types, the view/prefix handling, and the runtime address guard),
+`911795d` (the fixed-array and call-rooted guards, the distinct-length cases), and `4f9b9c1` (the
+address-of fixed-array source). **Lenses**: correctness (N4C), semantics (N4S), memory-safety, and
+emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | RV-001 (different runtime/updating indices were treated as stable: stores, calls, updates, and bounds traps were dropped) closed; RV-002 (a raw-pointer field rendered `.` through an unknown intermediate type) closed; RV-003 (the skips bypassed const/read-only/borrow checks) closed; RV-004 (duplicated comment) closed; RV-006 (a correction case passed at base) closed by distinct lengths |
+| semantics | PASS — 0 blockers after correction | SR-001 (raw projected self-copies destroyed the value and two fixed spellings failed the strict build) closed; SR-002 (runtime/updating index self-copies were skipped) closed; SR-003 (a raw view-element store consumed its owner) closed; SR-004 (intermediate raw-field rendering) closed; SR-005 (prefix `unsafe` target) closed; SR-006 (borrow-parameter self-copy bypassed E10034) closed; SR-007 (fixed-array and call-rooted aliases) closed in C2/C3 |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The raw member/element self-copy crash, the fixed-array pointer alias, the call-rooted alias, and the address-of fixed-array alias are ASan/LSan-clean; the four rows, the bounds trap, and the batch-M/L controls are green; the take fixed-array-parameter alias is pre-existing (base 255) and filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | The target projection, the pinned index, the literal temporary, the discarded self-read, the `void *` alias guards, and the one/two-call counts are intended; the strict matrix has no new C failure; the no-take/corpus differential is unchanged; the take-parameter address-of clear warning is pre-existing and filed |
+
+### Fix rounds
+
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `804e95e`, `e095444` | **Applied**: the store route and pins; the literal temporary; the self-copy skip; the materializer |
+| C1 | `5ccbc7d` | **Resolved the first review**: stable-expression self-copies; discarded read for the no-op; checks before the skip; intermediate types; view no-consume; prefix `unsafe`; runtime alias guard; fixed-array conditional self-arm |
+| C2 | `911795d` | **Resolved SR-007/F3**: the fixed-array runtime address guard; the call-rooted aliasable path; the distinct-length cases |
+| C3 | `4f9b9c1` | **Resolved the address-of fixed-array alias** |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (on `e095444`) | **NOT CONFIRMED**: the recognizer over-match, the raw-field invalid C, the writability bypass, the raw self-copy crash, the view consume, and the fixed-array/call-rooted aliases |
+| B2 (on `5ccbc7d`) | **NOT CONFIRMED**: the fixed-array pointer alias and the address-of fixed-array alias |
+| B3 (on `911795d`/`4f9b9c1`) | **CONFIRMED**: all phase rows and the correction findings are clean; the phase closes |
+
+### Filed rows
+
+`DEF-461` (take fixed-array parameter alias), `DEF-462` (raw-field target RHS order), `DEF-463`
+(raw-store RHS unused-local warning), `DEF-464` (`at1` post-store source read), `DEF-465`
+(duplicable fixed-array literal self-read/fill), `DEF-466` (raw alias element store value loss),
+`DEF-467` (out-slot borrow raw self-assign).
+
+### Record notes
+
+- The bounds and place rules are unchanged: a runtime index still pins and traps; the conditional
+  base and structural `.len` still reject with one `E10221`.
+- A self-copy is a no-op transfer, not a no-op statement: the target/value evaluate, the index
+  guards run, and the selected storage is read (the discard read keeps the pointer used).
+- The address guards compare through `void *`, so a fixed-array parameter's C-adjusted address
+  compiles and a cast or address-of alias is recognized.
+- The `at1` source read stays accepted; the phase pins only the destination read.
+- Pre-existing residuals: the take fixed-array parameter alias (base wrong/C-fail), the raw-field
+  RHS order (host-correct but unspecified), and the raw-store unused-local warning (base has the
+  bare form).
