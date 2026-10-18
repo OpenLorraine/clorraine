@@ -924,7 +924,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match read {
             Some(read) => {
                 for (path, loans) in paths {
-                    if path.starts_with(&read) || read.starts_with(path) {
+                    if position_starts_with(path, &read) || position_covers(path, &read) {
                         self.loan_owners(loans, &mut owners);
                     }
                 }
@@ -998,7 +998,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             };
             for (path, loans) in paths {
-                if path.starts_with(&read) || read.starts_with(path) {
+                if position_starts_with(path, &read) || position_covers(path, &read) {
                     self.loan_owners(loans, &mut owners);
                 }
             }
@@ -1123,6 +1123,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !constant {
             let mut union = self.binding_loans(id);
             union.extend(loans.iter().copied());
+            // A run-time index cannot name the element it overwrote, so the
+            // record names its wildcard position and keeps the binding union
+            // it contributes to. A later constant read under the same prefix
+            // matches the wildcard and reports the backing's escape; the
+            // binding union stays for the write-conflict reading.
+            if !union.is_empty() {
+                self.state
+                    .element_loans
+                    .entry(id)
+                    .or_default()
+                    .insert(projections.to_vec(), union.clone());
+            }
             self.set_binding_loan_union(id, union);
             return;
         }
@@ -1209,7 +1221,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .unwrap_or_default();
         self.replace_element_loans(to, base, BTreeSet::new());
         for (path, loans) in snapshot {
-            let Some(rest) = path.strip_prefix(source) else {
+            let Some(rest) = position_rest(&path, source) else {
                 continue;
             };
             let mut full = base.to_vec();
@@ -1378,11 +1390,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for (path, loans) in paths {
                     let destination = match read {
                         Some(read) => {
-                            if let Some(rest) = path.strip_prefix(read) {
+                            if let Some(rest) = position_rest(path, read) {
                                 let mut full = base.to_vec();
                                 full.extend(rest.iter().cloned());
                                 Some(full)
-                            } else if read.starts_with(path.as_slice()) {
+                            } else if position_covers(path, read) {
                                 // The read selects a position a fill record
                                 // covers, so the copied value is one view at
                                 // the destination's own path.
@@ -2315,6 +2327,48 @@ fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
             ..
         })
     )
+}
+
+/// True when a recorded position path starts with a read path.
+///
+/// A recorded `Element(None)` step names any element, because a run-time index
+/// cannot record the slot it wrote; every other step compares structurally.
+/// The read is constant whenever this test runs, so only the recorded step can
+/// be the wildcard.
+fn position_starts_with(path: &[ir::Projection], read: &[ir::Projection]) -> bool {
+    path.len() >= read.len()
+        && path.iter().zip(read).all(|(recorded, read)| position_step_matches(recorded, read))
+}
+
+/// True when a recorded position path covers a read path.
+///
+/// The mirror of [`position_starts_with`], used where a fill record covers the
+/// element read through it. The recorded step still supplies the wildcard.
+fn position_covers(path: &[ir::Projection], read: &[ir::Projection]) -> bool {
+    read.len() >= path.len()
+        && path.iter().zip(read).all(|(recorded, read)| position_step_matches(recorded, read))
+}
+
+/// True when one recorded position step matches one read step.
+///
+/// Only a recorded wildcard is broad: a read whose own path carries a run-time
+/// index keeps the whole-read union instead of matching step by step.
+fn position_step_matches(recorded: &ir::Projection, read: &ir::Projection) -> bool {
+    recorded == read
+        || (matches!(recorded, ir::Projection::Element(None))
+            && matches!(read, ir::Projection::Element(Some(_))))
+}
+
+/// The recorded path's steps below a constant read, when the read selects them.
+///
+/// A recorded wildcard step matches the read's element at the same position, so
+/// a position written through a run-time index still transfers under the
+/// constant prefix that reaches it.
+fn position_rest<'path>(
+    path: &'path [ir::Projection],
+    read: &[ir::Projection],
+) -> Option<&'path [ir::Projection]> {
+    position_starts_with(path, read).then(|| &path[read.len()..])
 }
 
 /// True when every projection step names one storage position.

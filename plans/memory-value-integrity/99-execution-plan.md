@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 3/62 tasks (5%) — Phase 1 red
+> **Progress**: 5/62 tasks (8%) — Phase 1 implemented
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -93,7 +93,7 @@ projection, and the element-store nested fill, with their direct controls.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Complete the element-loan transfer in this order: (a) skip the exact self-assignment
+- [x] 1.2.1 Complete the element-loan transfer in this order: (a) skip the exact self-assignment ✅ (completed: 2026-10-18; the exact self-assignment skip `own/statements.rs:805`/`own/expr.rs:1478`; the composite gate removed + the wildcard record `own/expr.rs:1302`/`own/place.rs:1123-1139`; the position readers `place.rs:927/1001/1224/1393` with `position_starts_with`/`position_covers`/`position_step_matches`/`position_rest`; `DEF-431` and `DEF-435` closed **incidentally** under the same gate (no code); the runtime direct read now one `E10030` (the AR-35(e) intended delta)
       replacement only (`own/statements.rs`, `own/place.rs:1096`; reuse
       `is_exact_self_assign`, `own/expr.rs:1481-1493`); (b) remove the `projections.is_empty()`
       gate and pass the destination path to the collector (`own/expr.rs:1299-1306`), recording a
@@ -109,7 +109,7 @@ projection, and the element-store nested fill, with their direct controls.
       half. Record the constant direct read (`d435b`, `E10030`) and the runtime direct read
       (`q435runtime_direct`) separately per AR-35(e). Do not union every binding loan onto every
       read (the `ys[1]` sibling control).
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation (or park per
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation (or park per ✅ (completed: 2026-10-18; residue 194/194 and borrow-store 30/30 plain and under `RDC_ASAN=1`; `make check` exit 0; the differential shows the 11 intended `E10030` sites and zero emitted-C delta; the constant sibling and the in-scope reads clean)
       AR-33 if a frozen code is insufficient); run `make check`
 
 ### Step 1.3: Impl Tests & Review

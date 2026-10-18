@@ -798,6 +798,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         lowered: Option<&Value>,
         span: Span,
     ) {
+        // An exact whole-binding self-assignment copies a view value onto
+        // itself: the store is a no-op, so the binding keeps both its loans and
+        // its per-position record. Replacing them would drop the element loans
+        // the copy already carries, and a later escape would go unreported.
+        if is_view_like(target) && self.is_exact_self_assign(id, &[], value) {
+            return;
+        }
         let effect = self.prepare_binding_effect(target, value, lowered);
         self.apply_binding_effect(id, effect, span);
     }

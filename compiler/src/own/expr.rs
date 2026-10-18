@@ -1283,11 +1283,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A copy from a carrier place hands its positions over: the
                 // destination's views read the same storage, so the source's
                 // element loans follow the copy — for a whole view-like array
-                // exactly as for the single view. A value that is not a place
-                // read (a conditional or an array literal) supplies its
-                // positions arm by arm and is written as one union. A
-                // projected store keeps its own element-loan recording above,
-                // so it is not a copy.
+                // exactly as for the single view, and for a projected
+                // destination exactly as for the whole binding. A value that is
+                // not a place read (a conditional or an array literal) supplies
+                // its positions arm by arm and is written as one union. A
+                // run-time destination keeps a wildcard position, because it
+                // cannot name the element it wrote.
                 let moved = match self.place_target(value) {
                     Some(PlaceTarget::Local(source, source_projections))
                         if super::place::constant_path(&source_projections)
@@ -1298,11 +1299,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => false,
                 };
-                if !moved
-                    && is_view_like(&target_ty)
-                    && projections.is_empty()
-                    && self.collects_copy_positions(value)
-                {
+                if !moved && is_view_like(&target_ty) && self.collects_copy_positions(value) {
                     self.record_copy_element_loans(id, &projections, value, &target_ty, target.span);
                 } else if !moved && !is_view_like(&target_ty) {
                     self.replace_element_loans(id, &projections, BTreeSet::new());
@@ -1478,7 +1475,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The binding and the projection list must both match: a projected store
     /// reads or writes part of the place rather than the whole binding, and a
     /// different binding is an ordinary move or copy.
-    fn is_exact_self_assign(
+    pub(super) fn is_exact_self_assign(
         &self,
         id: usize,
         projections: &[ir::Projection],
