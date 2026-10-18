@@ -13510,3 +13510,167 @@ func main(): i32 {
         "p436element: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// Raw self-copies discard-read the target, aliases guard by address, and the
+/// runtime self-copy still emits its bounds guard.
+///
+/// `p424rawself` and `p424fixedself` emit a discarded read of the target and no
+/// destructive store. `p424rawalias` guards the store by the source and target
+/// addresses, so an alias is a no-op while a distinct pointer moves. The
+/// generic runtime self-copy keeps the index pin and the bounds trap.
+#[test]
+fn should_keep_the_raw_store_self_copies_and_guards_safe() {
+    let tag = "p424rawselfimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424rawselfimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        (*p).name = (*p).name;
+    }
+    return i32(len(s.name)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424rawselfimpl_main(void)\n{");
+    assert_contains(tag, body, "(void)((*(p)).name);");
+    assert_absent(tag, body, "(*(p)).name = NULL;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the value must stay");
+
+    let tag = "p424fixedselfimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424fixedselfimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { items: String[2]; }
+
+func main(): i32 {
+    let s: S = S { items: [stringOf("aa"), stringOf("bb")] };
+    unsafe {
+        let p: raw S = &s;
+        (*p).items = (*p).items;
+    }
+    return i32(len(s.items[0])) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424fixedselfimpl_main(void)\n{");
+    assert_contains(tag, body, "(void)((*(p)).items);");
+    assert_absent(tag, body, "memcpy(&((*(&((*(p)).items))))");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the value must stay");
+
+    let tag = "p424rawaliasimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424rawaliasimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        let q: raw S = &s;
+        (*p).name = (*q).name;
+    }
+    return i32(len(s.name)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424rawaliasimpl_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (&(*(&((*(p)).name))) != &((*(q)).name)) {",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must be a no-op");
+
+    let tag = "p424rawdistinctimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424rawdistinctimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa") };
+    let b: S = S { name: stringOf("bb") };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        (*p).name = (*q).name;
+    }
+    return i32(len(a.name)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424rawdistinctimpl_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (&(*(&((*(p)).name))) != &((*(q)).name)) {",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the move must land");
+
+    let tag = "p424genruntimeimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424genruntimeimpl;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = w.items[i];
+    return i32(len(w.items[i]));
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    return same<W>(borrow w, 1) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_same__W(ClW *w, i32 i)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = i;");
+    assert_contains(tag, body, "cl_trap(\"E11211\", \"index out of range\");");
+    assert_absent(tag, body, "= (*w).items[");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the value must stay");
+
+    let tag = "p421rawfieldimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p421rawfieldimpl;
+
+struct Node { x: i32; next: raw Node; }
+
+func main(): i32 {
+    let b: Node = Node { x: 2, next: raw Node(0) };
+    let a: Node = Node { x: 1, next: raw Node(0) };
+    unsafe {
+        a.next = &b;
+        let p: raw Node = &a;
+        (*p).next.x = 7;
+    }
+    return b.x - 7;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p421rawfieldimpl_main(void)\n{");
+    assert_contains(tag, body, "*(&((*(p)).next->x)) = 7;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the field store must run");
+}

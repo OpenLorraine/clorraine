@@ -20568,3 +20568,267 @@ func main(): i32 {
     assert_no_asan("p436dup", &output);
     assert_exit("p436dup", &output, 0);
 }
+
+/// A raw field chain, the prefix-only unsafe form, and a view element store.
+///
+/// `p421rawfield` stores through a member reached through a raw-pointer field,
+/// so the emitted C must render the intermediate `->`. `p421prefix` uses the
+/// `unsafe` prefix on the target without an enclosing block. `p421view`
+/// stores a view through a raw target and keeps the owner readable.
+#[test]
+fn should_store_through_a_raw_field_and_keep_a_view_owner_readable() {
+    let raw_field = r#"module spec.cpr.p421rawfield;
+
+struct Node { x: i32; next: raw Node; }
+
+func main(): i32 {
+    let b: Node = Node { x: 2, next: raw Node(0) };
+    let a: Node = Node { x: 1, next: raw Node(0) };
+    unsafe {
+        a.next = &b;
+        let p: raw Node = &a;
+        (*p).next.x = 7;
+    }
+    return b.x - 7;
+}
+"#;
+    let output = run_memory("p421rawfield", raw_field);
+    assert_no_asan("p421rawfield", &output);
+    assert_exit("p421rawfield", &output, 0);
+
+    let prefix = r#"module spec.cpr.p421prefix;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        unsafe (*p).f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#;
+    let output = run_memory("p421prefix", prefix);
+    assert_no_asan("p421prefix", &output);
+    assert_exit("p421prefix", &output, 0);
+
+    let view = r#"module spec.cpr.p421view;
+
+import { String, stringOf } from std.text;
+
+struct S { vs: str[2]; n: i32; }
+
+func main(): i32 {
+    let t: String = stringOf("aa");
+    let s: S = S { vs: ["", ""], n: 0 };
+    unsafe {
+        let p: raw S = &s;
+        (*p).vs[1] = t;
+    }
+    if (i32(len(s.vs[1])) != 2) { return 9; }
+    return i32(len(t)) - 2;
+}
+"#;
+    let output = run_memory("p421view", view);
+    assert_no_asan("p421view", &output);
+    assert_exit("p421view", &output, 0);
+}
+
+/// Raw self-copies, pointer aliases, and runtime self-copies keep their checks.
+///
+/// `p424rawself` and `p424rawaddrof` copy a raw-deref target onto itself and
+/// leave it intact; `p424rawalias` does the same through two pointers to the
+/// same storage, while `p424rawdistinct` moves through a distinct pointer.
+/// `p424runtimedistinct` moves between different runtime indices. The generic
+/// self-copy still runs the bounds guard (`p424genbounds` traps), and the
+/// read-only, borrow, and updating-index spellings keep their diagnostics.
+#[test]
+fn should_keep_the_raw_store_self_copies_and_checks_intact() {
+    let raw_self = r#"module spec.cpr.p424rawself;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        (*p).name = (*p).name;
+    }
+    return i32(len(s.name)) - 2;
+}
+"#;
+    let output = run_memory("p424rawself", raw_self);
+    assert_no_asan("p424rawself", &output);
+    assert_exit("p424rawself", &output, 0);
+
+    let raw_address_of = r#"module spec.cpr.p424rawaddrof;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        (*p).name = *(&(*p).name);
+    }
+    return i32(len(s.name)) - 2;
+}
+"#;
+    let output = run_memory("p424rawaddrof", raw_address_of);
+    assert_no_asan("p424rawaddrof", &output);
+    assert_exit("p424rawaddrof", &output, 0);
+
+    let raw_alias = r#"module spec.cpr.p424rawalias;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        let q: raw S = &s;
+        (*p).name = (*q).name;
+    }
+    return i32(len(s.name)) - 2;
+}
+"#;
+    let output = run_memory("p424rawalias", raw_alias);
+    assert_no_asan("p424rawalias", &output);
+    assert_exit("p424rawalias", &output, 0);
+
+    let raw_distinct = r#"module spec.cpr.p424rawdistinct;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa") };
+    let b: S = S { name: stringOf("bb") };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        (*p).name = (*q).name;
+    }
+    return i32(len(a.name)) - 2;
+}
+"#;
+    let output = run_memory("p424rawdistinct", raw_distinct);
+    assert_no_asan("p424rawdistinct", &output);
+    assert_exit("p424rawdistinct", &output, 0);
+
+    let runtime_distinct = r#"module spec.cpr.p424runtimedistinct;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("AA"), stringOf("BB")];
+    let i: i32 = 1;
+    let j: i32 = 0;
+    unsafe {
+        xs[i] = *(&xs[j]);
+    }
+    return i32(len(xs[1])) - 2;
+}
+"#;
+    let output = run_memory("p424runtimedistinct", runtime_distinct);
+    assert_no_asan("p424runtimedistinct", &output);
+    assert_exit("p424runtimedistinct", &output, 0);
+
+    let generic_runtime = r#"module spec.cpr.p424genruntime;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(borrow w: T, i: i32): i32 {
+    w.items[i] = w.items[i];
+    return i32(len(w.items[i]));
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    return same<W>(borrow w, 1) - 2;
+}
+"#;
+    let output = run_memory("p424genruntime", generic_runtime);
+    assert_no_asan("p424genruntime", &output);
+    assert_exit("p424genruntime", &output, 0);
+
+    let generic_bounds = r#"module spec.cpr.p424genbounds;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(borrow w: T, i: i32): void {
+    w.items[i] = w.items[i];
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    same<W>(borrow w, 5);
+    return 0;
+}
+"#;
+    assert_store_traps("p424genbounds", generic_bounds, "E11211");
+
+    let read_only = r#"module spec.cpr.p424readonly;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(w: T): void {
+    w.items[1] = w.items[1];
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    same<W>(w);
+    return 0;
+}
+"#;
+    compile_rejects("p424readonly", read_only, "E10024", 1);
+
+    let borrow = r#"module spec.cpr.p424borrow;
+
+import { String, stringOf } from std.text;
+
+func wipe(borrow p: String): void {
+    unsafe {
+        p = *(&p);
+    }
+}
+
+func main(): i32 {
+    let s: String = stringOf("aa");
+    wipe(borrow s);
+    return 0;
+}
+"#;
+    compile_rejects("p424borrow", borrow, "E10034", 1);
+
+    let updating = r#"module spec.cpr.p424update;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 0;
+    a[i++].names = a[i++].names;
+    return i;
+}
+"#;
+    compile_rejects("p424update", updating, "E10026", 1);
+}

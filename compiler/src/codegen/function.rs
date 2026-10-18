@@ -730,10 +730,23 @@ impl<'a> Emitter<'a> {
                     // A fixed-array element is not assignable in C, so the
                     // store goes through the byte-copy/branch-store core
                     // against the dereferenced pointer. The pointer may alias
-                    // the value, so the old bytes are always saved.
+                    // the value, so the old bytes are always saved. An
+                    // identical source and target is a self-copy: the value's
+                    // guards still run, but the aliasing copy and the clear
+                    // are skipped.
                     let target_c = format!("(*({pointer_c}))");
-                    let target = ArrayTarget::object(&target_c);
-                    self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, true);
+                    let mut self_copy = false;
+                    if value_names_storage(value) {
+                        let value_c = self.value(value);
+                        if target_object_text(&target_c) == target_object_text(&value_c) {
+                            self.emit_guards(value);
+                            self_copy = true;
+                        }
+                    }
+                    if !self_copy {
+                        let target = ArrayTarget::object(&target_c);
+                        self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, true);
+                    }
                 } else if self.needs_drop(&pointer_ty) {
                     // An owned conditional moves the chosen arm into the
                     // element per path, exactly as it does for a named
@@ -1819,6 +1832,22 @@ impl<'a> Emitter<'a> {
             // The arm names the destination. Without a save the destination
             // already holds its own value; with one, the old value is restored
             // and the save emptied so the later release is a no-op.
+            if let Some(save) = save {
+                self.push(&format!(
+                    "                memcpy({}, &({save}), {});",
+                    target.address, target.bytes
+                ));
+                self.emit_move_zero(save, ty);
+            }
+            return;
+        }
+        // An arm whose rendered lvalue is the destination object itself is a
+        // self-copy even when it spells the object through a different
+        // address form (`*(&(a[i]))` against `a[i]`). The arm's guards still
+        // run, the saved value is restored, and no aliasing copy is emitted.
+        let arm_text = self.value(arm);
+        if target_object_text(&target.text) == target_object_text(&arm_text) {
+            self.emit_guards(arm);
             if let Some(save) = save {
                 self.push(&format!(
                     "                memcpy({}, &({save}), {});",
@@ -3473,6 +3502,12 @@ fn arm_is_projected_place(value: &Value) -> bool {
 fn value_names_storage(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        // A raw-deref read names the caller's pointee: the store may alias it
+        // through a different pointer expression.
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            ..
+        } => true,
         ValueKind::Member { base, .. } => value_names_storage(base),
         ValueKind::Index { base, index } => {
             value_names_storage(base)
@@ -3492,12 +3527,31 @@ fn value_names_storage(value: &Value) -> bool {
 /// object instead of emitting an address comparison the C compiler folds to a
 /// tautology.
 fn target_object_text(target_c: &str) -> &str {
-    if let Some(rest) = target_c.strip_prefix("*(&(") {
-        if let Some(inner) = rest.strip_suffix("))") {
-            return inner;
+    let mut text = target_c;
+    loop {
+        if let Some(inner) = text
+            .strip_prefix("*(&(")
+            .and_then(|rest| rest.strip_suffix("))"))
+        {
+            text = inner;
+            continue;
         }
+        if let Some(inner) = text
+            .strip_prefix("&(")
+            .and_then(|rest| rest.strip_suffix(')'))
+        {
+            text = inner;
+            continue;
+        }
+        if let Some(inner) = text
+            .strip_prefix('(')
+            .and_then(|rest| rest.strip_suffix(')'))
+        {
+            text = inner;
+            continue;
+        }
+        return text;
     }
-    target_c
 }
 
 /// Walks a value and reports whether any place it reads matches `matches`.

@@ -995,28 +995,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.check_place_raw(target);
         self.check_store_index_nonnull(target, target.span);
-        // A raw read of the target place itself (`x = *(&x)`,
-        // `a[i].inner = *(&a[i].inner)`) copies the place onto itself. The
-        // read would empty the just-stored pointee, so the store is a no-op;
-        // a different binding or projection is an ordinary move.
-        if self.is_raw_self_alias(target, value) {
-            self.eval(target);
-            self.eval(value);
-            self.check_value_into(value, &target_ty, value.span);
-            return;
-        }
-        // An identical target and value expression (`w.items[i] = w.items[i]`)
-        // is a self-copy too. The store target is pinned before the value, so
-        // the rendered places no longer match textually; the source expression
-        // comparison catches the self-copy in both the runtime and constant
-        // index spellings. A different index expression keeps the ordinary
-        // runtime address guard, which also treats an equal pair as a no-op.
-        //
-        // The skip is limited to a projected target in a generic body (whose
-        // instance decides ownership) or to a run-time element, where the
-        // element address is the same on both sides. A concrete constant-index
-        // self-copy stays with the checker's partial-move limit (`E10026`), and
-        // a plain local or member self-assignment keeps its existing route.
+        // A raw read of the target place (`x = *(&x)`,
+        // `a[i].inner = *(&a[i].inner)`) copies the place onto itself: the
+        // read would empty the just-stored pointee. The skip runs after the
+        // target's writability and lend checks and still emits the target's
+        // index guard, so the no-op transfer keeps its observable checks.
+        let raw_self = self.is_raw_self_alias(target, value);
+        // An identical projected target and value (`w.items[i] = w.items[i]`)
+        // is a self-copy. The skip is limited to a generic body (the instance
+        // decides ownership) or a run-time element; a concrete constant-index
+        // self-copy keeps the checker's partial-move limit. A duplicable
+        // instance keeps its ordinary copy.
         let repeated = self.place_target(target);
         let (projected, runtime_element) = match &repeated {
             Some(PlaceTarget::Local(_, path)) | Some(PlaceTarget::Global(_, path)) => (
@@ -1026,23 +1015,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ),
             None => (false, false),
         };
-        if projected
+        let same_place = projected
             && (target_ty.is_unknown() || runtime_element)
             && same_place_expr(target, value)
             && (target_ty.is_unknown()
                 || !self.sema.table.duplicable(&target_ty)
-                || self.maybe_owns(&target_ty))
-        {
-            self.eval(target);
-            self.eval(value);
-            self.check_value_into(value, &target_ty, value.span);
-            return;
-        }
-        // A dereferenced raw pointer is a store target: the pointer names the
-        // storage, so the store writes through it in the same shape an indexed
-        // element store uses. The pointer expression evaluates first, an
-        // updating value settles at its own position before the store, and the
-        // read path is unchanged.
+                || self.maybe_owns(&target_ty));
+        let skip_transfer = compound.is_none() && (raw_self || same_place);
         // A dereferenced raw pointer is a store target: the pointer names the
         // storage, so the store writes through it in the same shape an indexed
         // element store uses. A member or element over the dereference selects
@@ -1062,7 +1041,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } => operand,
                     _ => unreachable!("a raw store target roots at a dereference"),
                 };
+                // A prefix `unsafe` on a projected target covers the
+                // dereference exactly as the enclosing block does. A bare
+                // prefix target keeps its existing limitation.
+                let prefixed =
+                    !projections.is_empty() && matches!(target.kind, ExprKind::Unsafe(_));
+                if prefixed {
+                    self.unsafe_depth += 1;
+                }
                 self.check_deref_raw(pointer_expr, target.span);
+                if prefixed {
+                    self.unsafe_depth -= 1;
+                }
                 // The store reads the pointer's value, so the binding that names
                 // it counts as used and its own state checks run exactly once.
                 self.eval(pointer_expr);
@@ -1089,25 +1079,46 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     },
                 );
                 for projection in projections {
-                    let kind = match projection {
-                        RawStoreProjection::Field(name) => ValueKind::Member {
-                            base: Box::new(projected),
-                            name: name.to_owned(),
-                        },
-                        RawStoreProjection::Index(index) => {
-                            let index = self.lower_value(index);
-                            ValueKind::Index {
+                    let (kind, whole) = match projection {
+                        RawStoreProjection::Field { name, whole } => (
+                            ValueKind::Member {
                                 base: Box::new(projected),
-                                index: Box::new(index),
-                            }
+                                name: name.to_owned(),
+                            },
+                            whole,
+                        ),
+                        RawStoreProjection::Index { index, whole } => {
+                            let index = self.lower_value(index);
+                            (
+                                ValueKind::Index {
+                                    base: Box::new(projected),
+                                    index: Box::new(index),
+                                },
+                                whole,
+                            )
                         }
                     };
-                    projected = Value::new(Ty::unknown(), kind);
+                    projected = Value::new(self.ty(whole), kind);
                 }
                 projected.ty = element_ty.clone();
                 // Pin every member/element base and index before the value is
                 // lowered; the pointer itself is already materialized.
                 let projected = self.pin_store_target(projected);
+                // A raw-deref target that names the same chain as its value is
+                // a self-copy. The pointer and every index still evaluate and
+                // guard; only the transfer is skipped.
+                if compound.is_none()
+                    && (same_place_expr(target, value) || raw_self)
+                {
+                    // The no-op still reads the selected storage: its pointer
+                    // and index expressions evaluate, the bounds guard runs,
+                    // and a local pointer stays visibly used in the emitted C.
+                    self.emit(Statement::Discard {
+                        value: projected,
+                    });
+                    self.check_value_into(value, &target_ty, value.span);
+                    return;
+                }
                 let pointer = Value::new(
                     element_ty.clone(),
                     ValueKind::Unary {
@@ -1132,8 +1143,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     None => {
                         // The store consumes an owned value exactly as a named
                         // destination does, so a later use of the source reports
-                        // the moved-value error and the emission moves it in.
-                        self.consume_owned_place(value, value.span);
+                        // the moved-value error and the emission moves it in. A
+                        // view target only borrows, so it leaves the owner
+                        // readable.
+                        let view_target = is_view(&element_ty)
+                            || (self.view_destination_adopts && is_view_like(&element_ty));
+                        if !view_target {
+                            self.consume_owned_place(value, value.span);
+                        }
                         let lowered = self.lower_value(value);
                         let lowered = self.materialize_owning_deref(lowered);
                         let lowered = if pin {
@@ -1296,10 +1313,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.write_place(id, &projections, target.span);
                 let lowered = if has_runtime_element(&projections) {
-                    self.emit_indexed_store(target, value, compound)
+                    self.emit_indexed_store(target, value, compound, skip_transfer)
                 } else {
                     if let Some(guards) = self.guard_statement_for_store_target(target) {
                         self.emit(guards);
+                    }
+                    if skip_transfer {
+                        self.check_value_into(value, &target_ty, value.span);
+                        return;
                     }
                     let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
                     self.emit_assigned(place, &target_ty, value, compound)
@@ -1482,10 +1503,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 if (!is_const || through_pointer) && !immutable_view_write {
                     if has_runtime_element(&projections) {
-                        self.emit_indexed_store(target, value, compound);
+                        self.emit_indexed_store(target, value, compound, skip_transfer);
                     } else {
                         if let Some(guards) = self.guard_statement_for_store_target(target) {
                             self.emit(guards);
+                        }
+                        if skip_transfer {
+                            self.check_value_into(value, &target_ty, value.span);
+                            return;
                         }
                         let place = self.target_place(&PlaceTarget::Global(id, projections));
                         let _ = self.emit_assigned(place, &target_ty, value, compound);
@@ -1585,10 +1610,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// move. `place_target` stays `Deref`-free: this recognizer runs only on
     /// the store path.
     pub(super) fn is_raw_self_alias(&self, target: &Expr, value: &Expr) -> bool {
-        let mut value = value;
-        while let ExprKind::Unsafe(inner) = &value.kind {
-            value = inner;
-        }
+        let value = unwrap_unsafe_expr(value);
         let ExprKind::Unary {
             op: UnaryOp::Deref,
             operand,
@@ -1596,10 +1618,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         else {
             return false;
         };
-        let mut operand = &**operand;
-        while let ExprKind::Unsafe(inner) = &operand.kind {
-            operand = inner;
-        }
+        let operand = unwrap_unsafe_expr(operand);
         let ExprKind::Unary {
             op: UnaryOp::AddressOf,
             operand,
@@ -1607,16 +1626,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         else {
             return false;
         };
-        let inner = &**operand;
-        match (self.place_target(target), self.place_target(inner)) {
-            (Some(PlaceTarget::Local(target, target_path)), Some(PlaceTarget::Local(inner, inner_path))) => {
-                target == inner && target_path == inner_path
-            }
-            (Some(PlaceTarget::Global(target, target_path)), Some(PlaceTarget::Global(inner, inner_path))) => {
-                target == inner && target_path == inner_path
-            }
-            _ => false,
-        }
+        same_place_expr(target, operand)
     }
 
     /// Reports a view store that escapes the frame its destination keeps.
@@ -2686,6 +2696,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         target: &'a Expr,
         value: &'a Expr,
         compound: Option<BinaryOp>,
+        skip_transfer: bool,
     ) -> Option<Value> {
         // The target's location evaluates before the right-hand side. A member
         // target pins every base and index at this position; a whole-element
@@ -2696,6 +2707,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.emit(Statement::Guards {
                 checks: vec![element],
             });
+            if skip_transfer {
+                return None;
+            }
             return self.emit_assigned(place, &element_ty, value, compound);
         }
         // The target's location evaluates before the right-hand side, so its
@@ -2707,6 +2721,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         else {
             return None;
         };
+        if skip_transfer {
+            // The no-op transfer still evaluates the target's base and index
+            // and runs the bounds guard.
+            self.emit(Statement::Guards {
+                checks: vec![pointer],
+            });
+            return None;
+        }
         let mut prepared_view = None;
         let stored = match compound {
             Some(binary) => {
@@ -2904,6 +2926,8 @@ fn store_target_place_parts(value: &Value) -> Option<Place> {
 /// match. A call or another side-effecting form never matches, so the runtime
 /// address guard still sees it. Spans are ignored.
 fn same_place_expr(left: &Expr, right: &Expr) -> bool {
+    let left = unwrap_unsafe_expr(left);
+    let right = unwrap_unsafe_expr(right);
     match (&left.kind, &right.kind) {
         (ExprKind::Int(left), ExprKind::Int(right)) => left == right,
         (ExprKind::Float(left), ExprKind::Float(right)) => left == right,
@@ -2947,17 +2971,39 @@ fn same_place_expr(left: &Expr, right: &Expr) -> bool {
                 op: right_op,
                 operand: right_operand,
             },
-        ) => left_op == right_op && same_place_expr(left_operand, right_operand),
+        ) => {
+            !left_op.is_update()
+                && left_op == right_op
+                && same_place_expr(left_operand, right_operand)
+        }
         _ => false,
     }
 }
 
+/// Strips the transparent `unsafe` prefix from a store expression.
+fn unwrap_unsafe_expr(mut expr: &Expr) -> &Expr {
+    while let ExprKind::Unsafe(inner) = &expr.kind {
+        expr = inner;
+    }
+    expr
+}
+
 /// One member or element selection over a raw-deref store target.
 enum RawStoreProjection<'a> {
-    /// A named struct field.
-    Field(&'a str),
+    /// A named struct field and the member expression it selects.
+    Field {
+        /// The field name.
+        name: &'a str,
+        /// The member expression, for its checked type.
+        whole: &'a Expr,
+    },
     /// An array or slice element with the written index expression.
-    Index(&'a Expr),
+    Index {
+        /// The written index expression.
+        index: &'a Expr,
+        /// The element expression, for its checked type.
+        whole: &'a Expr,
+    },
 }
 
 /// The dereference and projections of a `Deref`-rooted store target.
@@ -2974,12 +3020,18 @@ fn raw_deref_store_target(target: &Expr) -> Option<(&Expr, Vec<RawStoreProjectio
             ExprKind::Unsafe(inner) => walk(inner, out),
             ExprKind::Member { base, name } => {
                 let deref = walk(base, out)?;
-                out.push(RawStoreProjection::Field(name.as_str()));
+                out.push(RawStoreProjection::Field {
+                    name: name.as_str(),
+                    whole: expr,
+                });
                 Some(deref)
             }
             ExprKind::Index { base, index } => {
                 let deref = walk(base, out)?;
-                out.push(RawStoreProjection::Index(index));
+                out.push(RawStoreProjection::Index {
+                    index,
+                    whole: expr,
+                });
                 Some(deref)
             }
             ExprKind::Unary {
