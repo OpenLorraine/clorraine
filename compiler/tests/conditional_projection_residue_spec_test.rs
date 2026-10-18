@@ -19997,3 +19997,574 @@ func main(): i32 {
     assert_no_asan("p441false", &output);
     assert_exit("p441false", &output, 0);
 }
+
+/// Asserts a store trap prints `code` first on the plain and sanitizer builds.
+///
+/// The out-of-range store is the bounds contract: both builds must reach the
+/// same trap line and the sanitizer build must not report a memory error
+/// instead.
+fn assert_store_traps(tag: &str, source: &str, code: &str) {
+    for (build, output) in [
+        ("plain", run_host(tag, source)),
+        ("asan", run_asan(tag, source)),
+    ] {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let first = stderr.lines().next().unwrap_or_default();
+        assert!(
+            first.contains(code),
+            "{tag} ({build}): expected the {code} trap; stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("AddressSanitizer"),
+            "{tag} ({build}): the trap must not be a sanitizer report; stderr:\n{stderr}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// derefrootedstore: a member or element store through a raw pointer reaches
+// the pointee's selected storage.
+//
+// `(*p).f`, `(*p).f.x`, and `(*p).arr[i].x` are places (Ch 04 §4), so the store
+// must be emitted, not dropped. The indexed form pins its index before the
+// right-hand side: a call that changes the index still stores at the index the
+// target named first and runs once. The conditional base and the structural
+// `.len` target stay rejected.
+// ---------------------------------------------------------------------------
+
+/// The member, nested-index, and unsafe spellings store through the pointer.
+///
+/// Every program writes a value through a raw pointer and reads the stored
+/// value back from the pointee, so a dropped store leaves the old value and
+/// fails the run. `p421bump` additionally changes the index inside the
+/// right-hand side and checks that the store used the pre-call index.
+/// `p421condbase` and `p421len` keep their `E10221` rejection.
+#[test]
+fn should_store_a_deref_rooted_member_target() {
+    let member = r#"module spec.cpr.p421member;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        (*p).f = Inner { x: 7 };
+        (*p).f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#;
+    let output = run_memory("p421member", member);
+    assert_no_asan("p421member", &output);
+    assert_exit("p421member", &output, 0);
+
+    let nested = r#"module spec.cpr.p421nested;
+
+struct Inner { x: i32; }
+struct S { arr: Inner[2]; }
+
+func main(): i32 {
+    let s: S = S { arr: [Inner { x: 1 }, Inner { x: 2 }] };
+    let i: i32 = 1;
+    unsafe {
+        let p: raw S = &s;
+        (*p).arr[i].x = 7;
+    }
+    return s.arr[1].x - 7;
+}
+"#;
+    let output = run_memory("p421nested", nested);
+    assert_no_asan("p421nested", &output);
+    assert_exit("p421nested", &output, 0);
+
+    let unsafe_form = r#"module spec.cpr.p421unsafe;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        unsafe (*p).f = Inner { x: 7 };
+        unsafe (*p).f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#;
+    let output = run_memory("p421unsafe", unsafe_form);
+    assert_no_asan("p421unsafe", &output);
+    assert_exit("p421unsafe", &output, 0);
+
+    let bumped = r#"module spec.cpr.p421bump;
+
+struct Elem { y: i32; }
+struct S { arr: Elem[2]; }
+
+let idx: i32 = 1;
+let calls: i32 = 0;
+
+func bump(): i32 {
+    idx = 5;
+    calls = calls + 1;
+    return 9;
+}
+
+func main(): i32 {
+    let s: S = S { arr: [Elem { y: 1 }, Elem { y: 2 }] };
+    unsafe {
+        let p: raw S = &s;
+        (*p).arr[idx].y = bump();
+    }
+    if (s.arr[1].y != 9) { return 9; }
+    if (s.arr[0].y != 1) { return 8; }
+    if (calls != 1) { return 7; }
+    return 0;
+}
+"#;
+    let output = run_memory("p421bump", bumped);
+    assert_no_asan("p421bump", &output);
+    assert_exit("p421bump", &output, 0);
+
+    let conditional_base = r#"module spec.cpr.p421condbase;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let a: S = S { f: Inner { x: 1 } };
+    let b: S = S { f: Inner { x: 2 } };
+    let c: bool = true;
+    (c ? a : b).f.x = 9;
+    return 0;
+}
+"#;
+    compile_rejects("p421condbase", conditional_base, "E10221", 1);
+
+    let structural_len = r#"module spec.cpr.p421len;
+
+struct S { arr: i32[2]; }
+
+func main(): i32 {
+    let s: S = S { arr: [1, 2] };
+    unsafe {
+        let p: raw S = &s;
+        (*p).arr.len = 3;
+    }
+    return 0;
+}
+"#;
+    compile_rejects("p421len", structural_len, "E10221", 1);
+}
+
+/// A whole-element store pins its base and index before the right-hand side.
+///
+/// `p423row` changes the target index inside the row call; the store must land
+/// in the element the target named first. `p423cond` evaluates the condition
+/// (which changes the index) and then moves the element the arm reads, so the
+/// destination keeps the moved value and the source is emptied once.
+/// `p423trap` keeps the out-of-range fault, and `p423member` is the pinned
+/// member-route control.
+#[test]
+fn should_pin_the_whole_element_target_before_the_value() {
+    let row = r#"module spec.cpr.p423row;
+
+let idx: i32 = 1;
+
+func mkrow(): i32[2] {
+    idx = 5;
+    return [7, 8];
+}
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [3, 4]];
+    a[idx] = mkrow();
+    if (a[1][0] != 7 || a[1][1] != 8) { return 9; }
+    if (a[0][0] != 1 || a[0][1] != 2) { return 8; }
+    if (idx != 5) { return 7; }
+    return 0;
+}
+"#;
+    let output = run_memory("p423row", row);
+    assert_no_asan("p423row", &output);
+    assert_exit("p423row", &output, 0);
+
+    let conditional = r#"module spec.cpr.p423cond;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+let idx: i32 = 0;
+
+func set_idx(): bool {
+    idx = 1;
+    return true;
+}
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    a[idx] = set_idx() ? a[idx] : Elem { name: stringOf("zz") };
+    if (i32(len(a[0].name)) != 2) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("p423cond", conditional);
+    assert_no_asan("p423cond", &output);
+    assert_exit("p423cond", &output, 0);
+
+    let trap = r#"module spec.cpr.p423trap;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let idx: i32 = 5;
+    a[idx] = 9;
+    return 0;
+}
+"#;
+    assert_store_traps("p423trap", trap, "E11211");
+
+    let member = r#"module spec.cpr.p423member;
+
+struct Elem { y: i32; }
+
+let idx: i32 = 0;
+
+func set_idx(): i32 {
+    idx = 1;
+    return 7;
+}
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { y: 0 }, Elem { y: 0 }];
+    a[idx].y = set_idx();
+    if (a[0].y != 7) { return 9; }
+    if (a[1].y != 0) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p423member", member);
+    assert_no_asan("p423member", &output);
+    assert_exit("p423member", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fixedarrayselfstore: a fixed-array literal reads the destination before the
+// clear, and a self-copy or raw self-alias is a no-op.
+//
+// The literal's element expressions run before the destination is cleared, so
+// a self-read sees the old values. `x = *(&x)` and `a[i].inner =
+// *(&a[i].inner)` copy a place onto itself and must leave it intact, while a
+// distinct source still moves. The generic constant-index self-copy is
+// skipped; the concrete spelling keeps its `E10026` rejection.
+// ---------------------------------------------------------------------------
+
+/// The self-read, self-alias, and self-copy forms keep their values.
+///
+/// `p424selfread` and `p424two` read the destination while building its
+/// replacement; `p424raw` self-assigns a whole member and a local through
+/// `*(&...)` and then stores a distinct value; `p424distinct` and
+/// `p424distinctplace` move a different place; `p424generic` hits the generic
+/// constant-index self-copy. Every run exits 0 and is memory-clean.
+#[test]
+fn should_read_the_fixed_array_destination_before_clearing_it() {
+    let self_read = r#"module spec.cpr.p424selfread;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    a[i].names = [stringOf(a[i].names[0]), stringOf("xx")];
+    if (i32(len(a[1].names[0])) != 2) { return 9; }
+    if (i32(len(a[1].names[1])) != 2) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p424selfread", self_read);
+    assert_no_asan("p424selfread", &output);
+    assert_exit("p424selfread", &output, 0);
+
+    let two = r#"module spec.cpr.p424two;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    a[i].names = [stringOf(a[i].names[0]), stringOf(a[i].names[1])];
+    return (i32(len(a[1].names[0])) - 2) + (i32(len(a[1].names[1])) - 2);
+}
+"#;
+    let output = run_memory("p424two", two);
+    assert_no_asan("p424two", &output);
+    assert_exit("p424two", &output, 0);
+
+    let raw_member = r#"module spec.cpr.p424raw;
+
+import { String, stringOf } from std.text;
+
+struct Inner { a: String; b: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [
+        Elem { inner: Inner { a: stringOf("aa"), b: stringOf("ab") } },
+        Elem { inner: Inner { a: stringOf("bb"), b: stringOf("bc") } }
+    ];
+    let i: i32 = 1;
+    unsafe {
+        a[i].inner = *(&a[i].inner);
+    }
+    if (i32(len(a[1].inner.a)) != 2) { return 9; }
+    if (i32(len(a[1].inner.b)) != 2) { return 8; }
+    a[1].inner.a = stringOf("zz");
+    if (i32(len(a[1].inner.a)) != 2) { return 7; }
+    return 0;
+}
+"#;
+    let output = run_memory("p424raw", raw_member);
+    assert_no_asan("p424raw", &output);
+    assert_exit("p424raw", &output, 0);
+
+    let raw_local = r#"module spec.cpr.p424rawlocal;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let x: String = stringOf("aa");
+    unsafe {
+        x = *(&x);
+    }
+    if (i32(len(x)) != 2) { return 9; }
+    x = stringOf("zz");
+    if (i32(len(x)) != 2) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p424rawlocal", raw_local);
+    assert_no_asan("p424rawlocal", &output);
+    assert_exit("p424rawlocal", &output, 0);
+
+    let distinct = r#"module spec.cpr.p424distinct;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yy");
+    unsafe {
+        x = *(&y);
+    }
+    return i32(len(x)) - 2;
+}
+"#;
+    let output = run_memory("p424distinct", distinct);
+    assert_no_asan("p424distinct", &output);
+    assert_exit("p424distinct", &output, 0);
+
+    let distinct_place = r#"module spec.cpr.p424distinctplace;
+
+import { String, stringOf } from std.text;
+
+struct Inner { a: String; b: String; }
+struct Elem { inner: Inner; }
+
+func main(): i32 {
+    let a: Elem[2] = [
+        Elem { inner: Inner { a: stringOf("aa"), b: stringOf("ab") } },
+        Elem { inner: Inner { a: stringOf("bb"), b: stringOf("bc") } }
+    ];
+    unsafe {
+        a[0].inner = *(&a[1].inner);
+    }
+    return i32(len(a[0].inner.a)) - 2;
+}
+"#;
+    let output = run_memory("p424distinctplace", distinct_place);
+    assert_no_asan("p424distinctplace", &output);
+    assert_exit("p424distinctplace", &output, 0);
+
+    let generic = r#"module spec.cpr.p424generic;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(borrow w: T): void {
+    w.items[1] = w.items[1];
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    same<W>(borrow w);
+    return i32(len(w.items[1])) - 2;
+}
+"#;
+    let output = run_memory("p424generic", generic);
+    assert_no_asan("p424generic", &output);
+    assert_exit("p424generic", &output, 0);
+
+    let concrete = r#"module spec.cpr.p424concrete;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    w.items[1] = w.items[1];
+    return 0;
+}
+"#;
+    compile_rejects("p424concrete", concrete, "E10026", 1);
+}
+
+// ---------------------------------------------------------------------------
+// storematerialize: an owning raw-deref right-hand side is pinned once in the
+// element and raw-target store paths.
+//
+// The element store and the raw-target store lower their right-hand side
+// directly, so an impure `*alt(p, q)` was read once for the value and again
+// for the empty. The shared materializer pins the pointer once; the raw-target
+// form has one pointer expression on each side, so each runs once.
+// ---------------------------------------------------------------------------
+
+/// The element and raw-target stores evaluate each pointer expression once.
+///
+/// `p436element` stores an impure raw-deref read into a fixed-array element;
+/// `p436raw` stores one through a second impure raw pointer. The named store
+/// and a duplicable element are the controls. Every run exits 0 and is
+/// memory-clean.
+#[test]
+fn should_materialize_the_owning_deref_store_value() {
+    let element = r#"module spec.cpr.p436element;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let xs: String[2] = [stringOf("AA"), stringOf("BB")];
+    let i: i32 = 1;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        xs[i] = *alt(p, q);
+    }
+    if (i32(len(xs[1])) != 2) { return 9; }
+    if (calls != 1) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p436element", element);
+    assert_no_asan("p436element", &output);
+    assert_exit("p436element", &output, 0);
+
+    let raw_target = r#"module spec.cpr.p436raw;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let v: String = stringOf("vv");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let rp: raw String = &v;
+        let rq: raw String = &v;
+        unsafe *alt(rp, rq) = *alt(p, q);
+    }
+    if (i32(len(v)) != 2) { return 9; }
+    if (calls != 2) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p436raw", raw_target);
+    assert_no_asan("p436raw", &output);
+    assert_exit("p436raw", &output, 0);
+
+    let named = r#"module spec.cpr.p436named;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let v: String = *alt(p, q);
+        if (i32(len(v)) != 2) { return 9; }
+    }
+    if (calls != 1) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p436named", named);
+    assert_no_asan("p436named", &output);
+    assert_exit("p436named", &output, 0);
+
+    let duplicable = r#"module spec.cpr.p436dup;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: i32 = 3;
+    let b: i32 = 4;
+    unsafe {
+        let p: raw i32 = &a;
+        let q: raw i32 = &b;
+        let xs: i32[2] = [1, 2];
+        xs[0] = *alt(p, q);
+        if (xs[0] != 3) { return 9; }
+    }
+    if (calls != 1) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("p436dup", duplicable);
+    assert_no_asan("p436dup", &output);
+    assert_exit("p436dup", &output, 0);
+}
