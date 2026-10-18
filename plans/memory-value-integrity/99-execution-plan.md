@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 9/62 tasks (15%) — Phase 1 complete
+> **Progress**: 11/62 tasks (18%) — Phase 2 red
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -157,11 +157,11 @@ AR-8, AR-10, AR-11
 **Objective**: Pin the runtime store/constant read, the temporary-derived element, and the
 call-mediated view result, with their direct controls and the `k = 0` variant.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases (runtimestorecopy, temporaryelementcopy,
+- [x] 2.1.1 [spec-author] Write the phase cases (runtimestorecopy, temporaryelementcopy, ✅ (completed: 2026-10-18; `DEF-430` re-probed and **reclassified as an incidental closure** (the phase-1 fixed-extent wildcard already reports one `E10030` for the k=0/k=1 copies and the direct runtime reads; the constant sibling accepts clean) — ST-5 is a green control; new spec cases: the temporary-derived element copy (`[mk().v; "EE"]`; red) and the call-mediated view result (`let s = pick(xs); fill(s)` and `fill(pick(xs))`; red), with the direct twins, the in-scope reads, and the caller-parameter acceptance)
       callviewresult) with their direct controls, the `DEF-430` `k = 0` conservative variant, the
       constant-store sibling acceptance, and the caller-parameter view acceptance; the red cases
       committed first
-- [ ] 2.1.2 Run the suite and record the red phase; verify the direct controls green first and
+- [x] 2.1.2 Run the suite and record the red phase; verify the direct controls green first and ✅ (completed: 2026-10-18; the red phase recorded: residue 198 passed / 2 failed (the temporary element and call-result cases); the `DEF-430` control, the sibling, the in-scope reads, and the caller-parameter view green; the direct runtime reads pinned as the AR-8 intended delta)
       record the `DEF-430` direct-runtime-fill blast-radius outcome (accepted or rejected) per
       AR-8
 

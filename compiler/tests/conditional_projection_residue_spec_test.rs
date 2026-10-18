@@ -18446,3 +18446,489 @@ func main(): i32 {
         &[],
     );
 }
+
+// ---------------------------------------------------------------------------
+// runtimestorecopy: a constant read of an element a run-time store may have
+// written keeps that store's loan.
+//
+// A run-time index cannot name the element it writes, so the store records the
+// loan over every candidate slot of the destination's fixed extent. A later
+// constant read of such a slot copies the loaned view into a local, and the
+// out-slot store reports one `E10030` at the fill. A constant-index store names
+// its own element, so a read of the sibling element stays accepted and clean,
+// while a direct read of the written element keeps its report. A direct read
+// after a run-time store reports for the same reason as the copy: the read
+// selects storage the store may have loaned.
+// ---------------------------------------------------------------------------
+
+/// A run-time store's loan reaches a constant-read copy, and the direct read
+/// and constant-index controls keep their reports while the sibling read stays
+/// accepted.
+///
+/// `runtimestorecopyone` and `runtimestorecopyzero` write the loaned view
+/// through a run-time index and copy the constant element `xs[1]`; both report
+/// the conservative rejection, since the compiler cannot know the index. The
+/// constant store and the two direct reads report at their own fills. The
+/// sibling read after a constant store names no loan and runs 0.
+#[test]
+fn should_keep_the_loans_of_a_runtime_store_copy() {
+    let k_one = r#"module spec.cpr.runtimestorecopyone;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "runtimestorecopyone",
+        k_one,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let k_zero = r#"module spec.cpr.runtimestorecopyzero;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 0);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "runtimestorecopyzero",
+        k_zero,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let constant = r#"module spec.cpr.runtimestoreconstant;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = a.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "runtimestoreconstant",
+        constant,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let direct_one = r#"module spec.cpr.runtimestorereadone;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "runtimestorereadone",
+        direct_one,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let direct_runtime = r#"module spec.cpr.runtimestorereadruntime;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    fill(xs[k], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "runtimestorereadruntime",
+        direct_runtime,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let sibling = r#"module spec.cpr.runtimestoresibling;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[2] = ["AA", "BB"];
+    ys[0] = a.v;
+    let s: str = ys[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    let output = run_memory("runtimestoresibling", sibling);
+    assert_no_asan("runtimestoresibling", &output);
+    assert_exit("runtimestoresibling", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// temporaryelementcopy: a view of a statement temporary stored in a
+// fixed-array literal keeps the temporary's loan.
+//
+// `[mk().v; "EE"]` fills the array with views of the call result's member, and
+// the call result is a statement temporary. The element copy must record that
+// temporary as the loan's owner, so a later out-slot store of the element
+// reports one `E10030` at the fill. The direct argument reports the same
+// escape, and a length read while the array is alive stays accepted and clean.
+// ---------------------------------------------------------------------------
+
+/// A view of a statement temporary stored in a fixed-array literal reports
+/// one `E10030` at the later fill, as the direct argument does.
+///
+/// `temporaryelementcopy` copies the temporary-derived view into the array and
+/// fills from the element; `temporaryelementdirect` passes the same view
+/// straight to the callee. Both report one `E10030`; the in-scope length read
+/// names no escape and runs 0.
+#[test]
+fn should_keep_the_loans_of_a_temporary_element_copy() {
+    let copy = r#"module spec.cpr.temporaryelementcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = [mk().v; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "temporaryelementcopy",
+        copy,
+        "E10030",
+        13,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &[],
+    );
+
+    let direct = r#"module spec.cpr.temporaryelementdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    fill(mk().v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects_once_at(
+        "temporaryelementdirect",
+        direct,
+        "E10030",
+        12,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &[],
+    );
+
+    let in_scope = r#"module spec.cpr.temporaryelementinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func main(): i32 {
+    let ys: str[2] = [mk().v; "EE"];
+    return i32(len(ys[0])) - 2;
+}
+"#;
+    let output = run_memory("temporaryelementinscope", in_scope);
+    assert_no_asan("temporaryelementinscope", &output);
+    assert_exit("temporaryelementinscope", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// callviewresult: a view returned by a call keeps the loan of the storage it
+// reads.
+//
+// `pick(xs, 0)` returns the element view `xs[0]`, whose storage belongs to the
+// loaned local `a`. The call result's binding loans name that storage, so both
+// `let s = pick(xs, 0); fill(s, ...)` and `fill(pick(xs, 0), ...)` report one
+// `E10030` at the fill. The direct element fill keeps its report. A view
+// returned from a caller parameter is backed by the caller's storage, which
+// outlives the frame, and stays accepted; a length read while the owner is
+// alive stays accepted and clean.
+// ---------------------------------------------------------------------------
+
+/// A call-mediated element view reports one `E10030` at each fill, while the
+/// direct control keeps its report and a caller-backed view stays accepted.
+///
+/// `callviewcopy` copies the call result before the fill and `callviewdirect`
+/// passes the call straight to the callee; both report the escaping loan.
+/// `callviewcontrol` reads the element directly and keeps its report.
+/// `callviewparam` returns a view of a caller parameter and runs 0, and
+/// `callviewinscope` reads the result length while the owner is alive.
+#[test]
+fn should_keep_the_loans_of_a_call_view_result() {
+    let copy = r#"module spec.cpr.callviewcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = pick(xs, 0);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "callviewcopy",
+        copy,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let direct = r#"module spec.cpr.callviewdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pick(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "callviewdirect",
+        direct,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.cpr.callviewcontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "callviewcontrol",
+        control,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let caller_parameter = r#"module spec.cpr.callviewparam;
+
+func pass(p: str): str { return p; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: str, borrow slot: str?): void {
+    let s: str = pass(p);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("callviewparam", caller_parameter);
+    assert_no_asan("callviewparam", &output);
+    assert_exit("callviewparam", &output, 0);
+
+    let in_scope = r#"module spec.cpr.callviewinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = pick(xs, 0);
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let output = run_memory("callviewinscope", in_scope);
+    assert_no_asan("callviewinscope", &output);
+    assert_exit("callviewinscope", &output, 0);
+}
