@@ -19505,8 +19505,15 @@ func main(): i32 {
 /// the save are one allocation, so the save must not be freed again.
 /// `p439aliasfalse` skips the take and stores `y = "yyyy"`, so its run reads
 /// the stored value (exit 2, not 0). `p439nonalias` takes `w` through `p = &w`
-/// and still releases the old `v` through the save. Every run exits with its
-/// stated code and reports no memory error.
+/// and still releases the old `v` through the save. `p439falsecallee` runs the
+/// take but its call returns false, so the else arm stores `y` while the take
+/// already freed the saved value. `p439orskip` nests the guarded take under a
+/// disjunction whose left selects the then arm without running the take, so
+/// the save must still release. `p439crosstype` takes an unrelated struct
+/// through the pointer; the save is a different type and is released normally.
+/// `p439membertarget` stores into the member the same take consumes.
+/// `p439nestedarm` consumes the destination in a nested conditional arm.
+/// Every run exits with its stated code and reports no memory error.
 #[test]
 fn should_keep_the_consumed_save_of_a_guarded_aliasing_take() {
     let alias = r#"module spec.cpr.p439alias;
@@ -19575,6 +19582,124 @@ func main(): i32 {
     let output = run_memory("p439nonalias", nonalias);
     assert_no_asan("p439nonalias", &output);
     assert_exit("p439nonalias", &output, 0);
+
+    let false_callee = r#"module spec.cpr.p439falsecallee;
+
+import { String, stringOf } from std.text;
+
+func eat0(take x: String): i32 { return 0; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat0(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439falsecallee", false_callee);
+    assert_no_asan("p439falsecallee", &output);
+    assert_exit("p439falsecallee", &output, 2);
+
+    let or_skip = r#"module spec.cpr.p439orskip;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g1: bool = false;
+    let g2: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = ((g1 && (eat(take (unsafe *p)) == 1)) || g2) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439orskip", or_skip);
+    assert_no_asan("p439orskip", &output);
+    assert_exit("p439orskip", &output, 0);
+
+    let cross_type = r#"module spec.cpr.p439crosstype;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; other: String; }
+
+func eatS(take v: S): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let a: S = S { s: stringOf("aa"), other: stringOf("oo") };
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        v = (g && (eatS(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439crosstype", cross_type);
+    assert_no_asan("p439crosstype", &output);
+    assert_exit("p439crosstype", &output, 0);
+
+    let member_target = r#"module spec.cpr.p439membertarget;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; other: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa"), other: stringOf("oo") };
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        a.name = (g && (eat(take (*p).name) == 1)) ? x : y;
+        return i32(len(a.name)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439membertarget", member_target);
+    assert_no_asan("p439membertarget", &output);
+    assert_exit("p439membertarget", &output, 0);
+
+    let nested_arm = r#"module spec.cpr.p439nestedarm;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let z: String = stringOf("zzzzzz");
+    let g: bool = true;
+    let d: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = g ? ((d && (eat(take (unsafe *p)) == 1)) ? x : y) : z;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439nestedarm", nested_arm);
+    assert_no_asan("p439nestedarm", &output);
+    assert_exit("p439nestedarm", &output, 0);
 }
 
 // ---------------------------------------------------------------------------

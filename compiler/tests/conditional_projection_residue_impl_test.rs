@@ -12626,9 +12626,16 @@ func main(): i32 {
     );
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439alias_main(void)\n{");
     assert_contains(tag, body, "ClString __cl_save_1 = v;");
+    assert_contains(tag, body, "bool __cl_take_alias_1 = 0;");
+    assert_contains(
+        tag,
+        body,
+        "(__cl_take_alias_1 = (__cl_take_alias_1 || ((p) == (&(v)))))",
+    );
+    assert_contains(tag, body, "bool __cl_cond = (g && ");
     let alias_line = body
         .lines()
-        .position(|line| line.contains("if ((&(v)) == p) {"))
+        .position(|line| line.contains("if (__cl_take_alias_1) {"))
         .unwrap_or_else(|| panic!("{tag}: the alias test is missing; body:\n{body}"));
     let zeroing = body
         .lines()
@@ -12673,7 +12680,11 @@ func main(): i32 {
     );
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439nonalias_main(void)\n{");
     assert_contains(tag, body, "p = &(w);");
-    assert_contains(tag, body, "if ((&(v)) == p) {");
+    assert_contains(
+        tag,
+        body,
+        "(__cl_take_alias_1 = (__cl_take_alias_1 || ((p) == (&(v)))))",
+    );
     assert_contains(tag, body, "v = y;");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
 
