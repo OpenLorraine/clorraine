@@ -28,11 +28,14 @@ through the existing element-wise store form. No new ABI and no new diagnostic (
 ## Root Cause
 
 1. **`DEF-445`:** `literal_read_needs_stores` (`own/lower.rs:4839`) only accepts a `StructLit`;
-   `literal_field_read_needs_stores` (`:4849`) and `array_element_read_needs_stores` (`:4864`)
-   handle a fixed-array field/element but not a `Conditional` value at their own level. A
-   conditional-of-literals read base therefore returns false; the codegen read path keeps the
-   brace list, and a call-valued `str[2]` field is emitted as `n1()` with no destination
-   (`too few arguments`).
+   it returns false for a `Conditional` value at its own level.
+   `literal_field_read_needs_stores` (`:4849`) already returns true for a fixed-array field that is
+   not an `ArrayLit` (a conditional field included), and `array_element_read_needs_stores`
+   (`:4864`) recurses through nested literals. A conditional-of-literals read base therefore
+   returns false only at the top-level predicate; the codegen read path keeps the brace list, and
+   a call-valued `str[2]` field is emitted as `n1()` with no destination (`too few arguments`).
+   The mixed `ok ? place : literal` form is red for the same reason: the literal arm's hidden
+   destination is unbound.
 2. **`DEF-446`:** the `if`-condition/guarded path materializes the literal through
    `materialize_guard_literal` (`own/lower.rs:1726`); the eager ternary arm goes through the
    ordinary argument/ternary path (`materialize_owned_argument`, `:5238`), which keeps the
@@ -45,10 +48,16 @@ through the existing element-wise store form. No new ABI and no new diagnostic (
 
 ## Fix Approach
 
-1. **`DEF-445`:** make the three predicates recurse into a `Conditional`'s arms (both arms must
-   agree that a store is needed; if either arm needs one, use the store form). The existing
+1. **`DEF-445`:** apply the **OR** rule to the literal read/store predicates: if any conditional
+   arm needs the store form, the whole conditional uses it. Only `literal_read_needs_stores`
+   (`own/lower.rs:4839`) returns false for a `Conditional` at its own level;
+   `literal_field_read_needs_stores` (`:4849`) already returns true for a fixed-array field that is
+   not an `ArrayLit`, and `array_element_read_needs_stores` (`:4864`) recurses through nested
+   literals. Add the conditional-arm recursion to `literal_read_needs_stores` and name
+   `struct_literal_needs_stores` (`codegen/function.rs:2071`) in the codegen step. The existing
    element-wise store path already binds the destination and calls into it; the change is the
-   predicate/call site, not a new form. The nested field/element spellings recurse naturally.
+   predicate/call site, not a new form. The mixed `ok ? place : literal` read base is red and must
+   be covered: the literal arm's hidden destination is unbound even when the place arm is fine.
 2. **`DEF-446`:** route the ternary-arm literal through the guarded literal store. When the take
    argument is a conditional whose arms are literals with a call-valued fixed-array field, bind
    the destination and emit the per-arm store form (the same mechanism the `if`-condition path
@@ -59,18 +68,19 @@ through the existing element-wise store form. No new ABI and no new diagnostic (
    argument then passes the bound destination. No conditional expression of brace lists is
    emitted.
 
-## Specification-First Cases (ST-19–ST-21)
+## Specification-First Cases (ST-18–ST-20)
 
 All go to `compiler/tests/conditional_projection_residue_{spec,impl}_test.rs` (AR-30).
 
 | ST | Row | Case | Expected |
 |----|-----|------|----------|
-| ST-19 | `DEF-445` | The read base `(ok ? Inner { row: n1() } : Inner { row: n2() }).row[0][0]`; the nested field; the nested element; the concrete brace-list control | All build strictly and run 0; each call runs once; the concrete control is byte-identical |
-| ST-20 | `DEF-446` | `g ? consumeO(ok ? Outer {...n1()...} : Outer {...n2()...}) : 0`; both selections; the `if`-condition control | The ternary form builds strictly and runs 0; each call runs once; the `if`-condition control stays green |
-| ST-21 | `DEF-448` | `consume(take (ok ? [a, b] : [c, d]))` with `str[2]` places; both selections; the unconditional `[a, b]` control; the `String[2]`/`Box[2]` controls | The conditional form builds strictly and reads the chosen arm's values (run 0); the unconditional and other-type controls stay green |
+| ST-18 | `DEF-445` | The read base `(ok ? Inner { row: n1() } : Inner { row: n2() }).row[0][0]`; the mixed `(ok ? place : Inner { row: n2() }).row[0][0]`; the mixed nested field and nested element; the concrete brace-list control | All build strictly and run 0 (OR rule: any arm needing stores selects the store form); each call runs once; the concrete control is byte-identical |
+| ST-19 | `DEF-446` | `g ? consumeO(ok ? Outer {...n1()...} : Outer {...n2()...}) : 0`; both selections; the `if`-condition control | The ternary form builds strictly and runs 0; each call runs once; the `if`-condition control stays green |
+| ST-20 | `DEF-448` | `consume(take (ok ? [a, b] : [c, d]))` with `str[2]` places; both selections; the unconditional `[a, b]` control; the `String[2]`/`Box[2]` controls | The conditional form builds strictly and reads the chosen arm's values (run 0); the unconditional and other-type controls stay green |
 
 The impl pins assert the bound destination array, the call-with-destination form, the copy into
-the field/element, the per-arm store, the call counter, and a re-emission determinism pin.
+the field/element, the per-arm store, the call counter, the mixed read base's store form, and a
+re-emission determinism pin.
 
 ## Verification
 

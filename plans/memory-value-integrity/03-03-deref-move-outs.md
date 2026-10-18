@@ -30,40 +30,55 @@ IR channel, no new rejection (AR-13–AR-16).
 1. **Projection of a raw pointee (`DEF-437`).** `materialize_owning_deref_at`
    (`own/lower.rs:3699-3721`) matches only a top-level `Deref`; `let v: String = (*p).s` lowers to
    a `Member` over a `Deref`, so the pointer is not pinned and the pointee is copied without being
-   emptied (or the pointer is evaluated twice). `prepare_store` (`own/statements.rs:495`) calls the
-   materializer, but the shape does not match; the return/field/take positions share the gap.
+   emptied (or the pointer is evaluated twice). `prepare_store` (`own/statements.rs:502`) calls the
+   materializer, but the shape does not match. The same chain-blindness sits in the three
+   emission gates: `moves_pointee` (`codegen/function.rs:1382-1384`),
+   `return_source_needs_emptying` (`codegen/cleanup.rs:545-567`), and
+   `struct_literal_needs_stores`/its field loop (`codegen/function.rs:2071-2094`, `:1421-1432`).
+   The materializer alone does not empty the selected member; all three gates must cover the
+   `Deref`-rooted projection chain.
 2. **Guarded take aliasing the conditional target (`DEF-439`).** The conditional store saves the
    old target and frees the save after the branch (`codegen/function.rs`, the arm store).
-   `arm_consumes_target` (`:2400-2418`) scans `Materialize.move_outs` (places) but not
-   `value_move_outs` (a raw-deref pointee). The take's value move-out empties/frees the pointee;
-   the save still holds the same handle and frees it again.
+   `arm_consumes_target` (`:2400-2444`) scans `Materialize.move_outs` (places) but not
+   `value_move_outs` (a raw-deref pointee), and returns a bool, so it cannot carry the runtime
+   alias comparison. The take's value move-out empties/frees the pointee; the save still holds the
+   same handle and frees it again. A non-aliasing take must still drop the save.
 3. **Guarded borrowing intrinsic (`DEF-440`).** `bind_intrinsic_argument`
-   (`own/lower.rs:4171-4242`) binds an owned intrinsic argument into a released temporary. `len`
+   (`own/lower.rs:4171-4234`) binds an owned intrinsic argument into a released temporary. `len`
    is a borrowing intrinsic; a `Deref` argument must stay a read. The take path's non-take rule
-   (`own/lower.rs:5390-5401`) already returns a `Deref` unchanged; the intrinsic binding does not.
+   (`own/lower.rs:5393-5401`) already returns a top-level `Deref` unchanged; the intrinsic binding
+   does not, and the rule does not walk a `Member`/`Index` chain. The same gap rejects the
+   borrowing-argument form `read((*alt(p,q)).s)`.
 4. **Guarded take of a member over a raw pointer (`DEF-441`).** `take_pointee_move_outs`
    (`own/call.rs:804-821`) matches only a top-level `Deref`; `(*alt(p,q)).name` is a `Member` over
    a `Deref`, so the call records no `MoveOutValue` and the selected member stays owned after the
-   callee freed it.
+   callee freed it. Recording the **root** instead would empty the whole pointee and destroy the
+   sibling member; the projected member is the value to record.
 
 ## Fix Approach
 
 1. **`DEF-437`:** extend the materializer to a projection chain: walk `Member`/`Index` bases to a
    `Deref` root, pin the pointer once (using the existing eager/deferred rule), and keep the
-   projection; the consuming store/return/field/take then moves the selected member and empties
-   the pointee. Reuse `materialize_owning_deref_at`; do not add a second materializer. Under a
-   guard, the fill stays deferred (the batch-M rule).
-2. **`DEF-439`:** in `arm_consumes_target`, consult `Materialize.value_move_outs` with the same
-   rendered-address comparison the place channel uses. If the consumed value's rendered address
-   equals the target, skip the save/free. The runtime comparison is required because the pointer
-   may alias or not.
-3. **`DEF-440`:** in `bind_intrinsic_argument`, before any binding, return a `Deref` value
-   unchanged (the borrowing intrinsic only reads; a later store/return still materializes it).
-   Reuse the non-take rule; do not special-case `len` by name.
-4. **`DEF-441`:** in `take_pointee_move_outs`, record the pointee move-out for an argument whose
-   projection chain roots at a `Deref` (a `Member`/`Index` over `Deref`): push the root `Deref`
-   value so the emitter zeroes the selected member through the pointer on the evaluated path.
-   The existing `MoveOutValue` and guard placement carry it; no new channel.
+   projection. Extend all three emission gates to the same chain: `moves_pointee`,
+   `return_source_needs_emptying`, and `struct_literal_needs_stores`/its field loop. The consuming
+   store/return/field/take then moves the selected member and empties the pointee. Reuse
+   `materialize_owning_deref_at`; do not add a second materializer. Under a guard, the fill stays
+   deferred (the batch-M rule).
+2. **`DEF-439`:** replace the bool-only save decision with the per-arm runtime alias check. In the
+   then-branch zero the save only when the taken value's rendered address equals the target; in
+   the else-branch drop the save normally. The equivalent emitted condition is
+   `take_ran && &pointee == &target`. The runtime comparison is required because the pointer may
+   alias or not.
+3. **`DEF-440`:** in `bind_intrinsic_argument`, before any binding, return a `Deref`-rooted
+   projection chain unchanged (the borrowing intrinsic only reads; a later store/return still
+   materializes it). Extend the non-take rule (`own/lower.rs:5393-5401`) to walk `Member`/`Index`
+   bases to the `Deref` root, and apply it to a borrow argument as well as the intrinsic. Reuse
+   the non-take rule; do not special-case `len` by name.
+4. **`DEF-441`:** in `take_pointee_move_outs`, record the **projected member** value (the
+   `Member`/`Index` chain rooted at the `Deref`), not the root `Deref`: push that projected value
+   so the emitter zeroes only the selected member through the pointer on the evaluated path. The
+   existing `MoveOutValue` and guard placement carry it; no new channel. Extend the take-path
+   pointer pin (`own/lower.rs:5239-5262`) to the chain so an impure `alt` runs once.
 
 ## Specification-First Cases (ST-8–ST-11)
 
@@ -71,14 +86,14 @@ All go to `compiler/tests/conditional_projection_residue_{spec,impl}_test.rs` (A
 
 | ST | Row | Case | Expected |
 |----|-----|------|----------|
-| ST-8 | `DEF-437` | The store (`let v: String = (*p).s`), the return, the struct-literal field, and the take argument; the conditional-arm control (`d437b`) | Each moves the pointee once; the read-backs are correct; ASan/LSan clean; the conditional arm stays green |
-| ST-9 | `DEF-439` | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true` and `g = false`; a pure-pointer variant | Both selections run 0; ASan/LSan clean; the false path leaves v intact; the taken path does not free the consumed save |
-| ST-10 | `DEF-440` | `while (i < 2 && len(*alt(p,q)) == 2)`; the `i32(len(...))` spelling; the impure-pointer call counter | Two iterations, no double free; `alt` once per condition evaluation; ASan/LSan clean |
-| ST-11 | `DEF-441` | `g && (eat(take (*alt(p,q)).name) == 1)`; `g = true`/`false`; the member read-back from the other element | The taken member is emptied; the false path does not call; the other member stays owned; ASan/LSan clean |
+| ST-8 | `DEF-437` | The store (`let v: String = (*p).s`), the return, the struct-literal field, and the take argument; the conditional-arm control (`d437b`) | Each moves the pointee once through the materializer and all three emission gates; the read-backs are correct; ASan/LSan clean; the conditional arm stays green |
+| ST-9 | `DEF-439` | `v = (g && eat(take (unsafe *p))) ? x : y` with `p = &v`; `g = true`; `g = false` (aliasing); the non-aliasing control (`p = &w`) | Both aliasing selections run 0; the non-aliasing control drops the save; ASan/LSan clean; the false path leaves v intact; the taken path does not free the consumed save; the emitted alias condition is pinned |
+| ST-10 | `DEF-440` | `while (i < 2 && len(*alt(p,q)) == 2)`; the `i32(len(...))` spelling; `read((*alt(p,q)).s)`; the impure call counter | Two iterations, no double free; `alt` once per evaluation; the borrow argument is a read; ASan/LSan clean |
+| ST-11 | `DEF-441` | `g && (eat(take (*alt(p,q)).name) == 1)`; `g = true`/`false`; the two-owned-member sibling read; the impure call counter | The taken member is emptied, the sibling stays owned and readable; the false path does not call; the pointer runs once; ASan/LSan clean |
 
-The impl pins assert the single `cl_alt` call, the read/empty pointer identity, the
-`MoveOutValue` position inside the evaluated path, the absent false-path call, and a re-emission
-determinism pin.
+The impl pins assert the single call per pointer expression, the read/empty pointer identity, the
+projected-member `MoveOutValue` position inside the evaluated path, the absent false-path call, the
+emitted alias condition, and a re-emission determinism pin.
 
 ## Verification
 
@@ -101,4 +116,7 @@ determinism pin.
 - **Risk:** a projection materializer must not move the pointee for a discarded read or a
   non-taking argument; the batch-M `b375_discard`/`b375_arg` controls pin the no-move cases.
 - **Risk:** the raw-pointer address comparison must not skip the save for a non-aliasing pointer;
-  the false/true selections and the separate-destination variants are the oracle.
+  the `g = true`/`g = false` aliasing selections and the separate-destination non-aliasing control
+  are the oracle.
+- **Risk:** recording the root `Deref` instead of the projected member would empty the whole
+  pointee and lose the sibling; the two-owned-member sibling read is the oracle.
