@@ -6,11 +6,11 @@
 //! sometimes, so their guards embed inside the expression instead. This module
 //! owns both spellings and the conditions they share.
 
-use crate::ast::{BinaryOp, ScalarType, UnaryOp};
+use crate::ast::{BinaryOp, ScalarType};
 use crate::ir::{Value, ValueKind, ValuePiece};
 use crate::types::{is_signed_scalar, Ty, TyKind};
 
-use super::function::{arm_has_storage_root, ArrayTarget};
+use super::function::{arm_has_storage_root, value_moves_pointee, ArrayTarget};
 use super::render::{bounds_condition, signed_min};
 use super::types::scalar_of;
 use super::Emitter;
@@ -1138,16 +1138,14 @@ impl<'a> Emitter<'a> {
     ///
     /// A raw-deref `take` argument transfers its pointee, so the caller's
     /// storage is emptied through the same rendered address the read used.
-    /// The guard expression runs after the call, on the evaluated path only.
+    /// A projected member (`(*p).name`) empties only the selected member, so
+    /// the pointee's sibling fields stay owned. The guard expression runs
+    /// after the call, on the evaluated path only.
     fn deref_move_zero_expr(&self, value: &Value, ty: &Ty) -> Option<String> {
-        let ValueKind::Unary {
-            op: UnaryOp::Deref,
-            operand,
-        } = &value.kind
-        else {
+        if !value_moves_pointee(value) {
             return None;
-        };
-        let source = format!("*({})", self.value(operand));
+        }
+        let source = self.value(value);
         Some(self.move_zero_text_expr(&source, ty))
     }
 

@@ -10,6 +10,7 @@
 
 use super::*;
 use super::lower::fixed_array_extent;
+use super::place::deref_rooted;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// True when a call's callee is a dot-call with a value receiver.
@@ -799,8 +800,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `take` argument that reads through a raw pointer names no place the
     /// ordinary move-out can empty, so its value travels here and the emitter
     /// empties the pointee through the pointer after the call, exactly as the
-    /// store source is emptied. A duplicable pointee copies and the emitted
-    /// emptying is a no-op.
+    /// store source is emptied. A projected member (`(*p).name`) records the
+    /// member value, not the whole pointee, so the emitter empties only the
+    /// selected member and the pointee's sibling fields stay owned. A
+    /// duplicable pointee copies and the emitted emptying is a no-op.
     pub(super) fn take_pointee_move_outs(
         &self,
         modes: Option<&[Mode]>,
@@ -811,9 +814,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let mut values = Vec::new();
         for (arg, mode) in args.iter().zip(modes) {
-            if *mode == Mode::Take
-                && matches!(arg.kind, ValueKind::Unary { op: UnaryOp::Deref, .. })
-            {
+            if *mode == Mode::Take && deref_rooted(arg) {
                 values.push(arg.clone());
             }
         }

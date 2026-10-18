@@ -6,6 +6,7 @@
 //! an owned call result the callee only borrows is bound to a scope local so
 //! the scope cleanup releases it.
 
+use super::place::deref_rooted;
 use super::*;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
@@ -3700,25 +3701,58 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !self.owning_deref_read(&value.ty) {
             return value;
         }
-        let ValueKind::Unary {
-            op: UnaryOp::Deref,
-            operand,
-        } = &value.kind
-        else {
-            return value;
-        };
-        let operand = if defer {
-            self.defer_operand_fill((**operand).clone())
-        } else {
-            self.materialize_operand((**operand).clone())
-        };
-        Value::new(
-            value.ty.clone(),
+        self.pin_deref_projection(value, defer)
+    }
+
+    /// Pins the pointer at the root of a `Deref`-rooted projection chain.
+    ///
+    /// A `(*p).field` or `(*p).items[i].field` read consumes the member, not
+    /// only the bare dereference, so the pointer is pinned once and the
+    /// projection is kept: the consuming store empties the selected member
+    /// through the same address it read. A chain that does not root at a raw
+    /// dereference, or one whose projected value does not own, is returned
+    /// unchanged.
+    fn pin_deref_projection(&mut self, value: Value, defer: bool) -> Value {
+        match value.kind {
             ValueKind::Unary {
                 op: UnaryOp::Deref,
-                operand: Box::new(operand),
-            },
-        )
+                operand,
+            } => {
+                let operand = if defer {
+                    self.defer_operand_fill((*operand).clone())
+                } else {
+                    self.materialize_operand((*operand).clone())
+                };
+                Value::new(
+                    value.ty,
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        operand: Box::new(operand),
+                    },
+                )
+            }
+            ValueKind::Member { base, name } => {
+                let base = self.pin_deref_projection(*base, defer);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.pin_deref_projection(*base, defer);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            _ => value,
+        }
     }
 
     /// Defers an operand's evaluation to the path that reaches it.
@@ -4170,6 +4204,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the argument, and the statement's registered release frees it there.
     pub(super) fn bind_intrinsic_argument(&mut self, value: Value) -> Value {
         if is_view(&value.ty) || value.ty.is_unknown() || self.projects_from_place(&value) {
+            return value;
+        }
+        // A borrowing intrinsic only reads its argument, and a raw-deref read
+        // names the caller's own pointee. Binding the read into a released
+        // temporary would free storage the caller still owns, so a chain
+        // rooted at the dereference passes unchanged: `len(*alt(p, q))` and
+        // `len((*alt(p, q)).s)` read the pointee without consuming it.
+        if deref_rooted(&value) {
             return value;
         }
         // A projection chain rooted at a conditional that needs an arm fill
@@ -5242,24 +5284,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // defers that bind to the evaluated path: an eager statement here
         // would run the pointer even when `&&`/`||`/`?:` skips the call.
         if take && self.owning_deref_read(&value.ty) {
-            if let ValueKind::Unary {
-                op: UnaryOp::Deref,
-                operand,
-            } = &value.kind
-            {
-                let operand = if self.defer_move_outs == 0 {
-                    self.materialize_operand((**operand).clone())
-                } else {
-                    self.defer_operand_fill((**operand).clone())
-                };
-                value = Value::new(
-                    value.ty.clone(),
-                    ValueKind::Unary {
-                        op: UnaryOp::Deref,
-                        operand: Box::new(operand),
-                    },
-                );
-            }
+            value = self.pin_deref_projection(value, self.defer_move_outs > 0);
         }
         if take {
             // A `take` projection of a mixed conditional moves the selected
@@ -5389,14 +5414,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // position only reads it, so no binding is made: the store that would
         // hold the value moves an owned deref read's pointee, and only a
         // `take` parameter owns the argument. The read passes as it stands,
-        // and the pointee stays readable after the call.
-        if matches!(
-            value.kind,
-            ValueKind::Unary {
-                op: UnaryOp::Deref,
-                ..
-            }
-        ) {
+        // and the pointee stays readable after the call. The same rule covers
+        // a projection chain rooted at the dereference (`(*alt(p, q)).s`):
+        // binding the projection would release storage the callee only read.
+        if deref_rooted(&value) {
             return value;
         }
         // A conditional lend argument may mix a place-rooted arm with an

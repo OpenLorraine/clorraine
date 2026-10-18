@@ -15,6 +15,7 @@ use crate::ir::{self, BlockId, Place, Statement, Terminator, ValueKind};
 use crate::types::{Ty, TyKind};
 
 use super::control::FlowContext;
+use super::function::value_moves_pointee;
 use super::{CleanupFrame, Emitter};
 
 /// One cleanup entry of a scope, in registration order.
@@ -547,14 +548,10 @@ impl<'a> Emitter<'a> {
             return false;
         }
         // A raw-deref read returns a copy of its pointee, so the pointee must
-        // be emptied or the caller and the read would share one owner.
-        if matches!(
-            value.kind,
-            ir::ValueKind::Unary {
-                op: crate::ast::UnaryOp::Deref,
-                ..
-            }
-        ) {
+        // be emptied or the caller and the read would share one owner. A
+        // projected member (`(*p).s`) empties that member through the pointer,
+        // not the whole pointee.
+        if value_moves_pointee(value) {
             return self.needs_drop(&self.substitute(&value.ty));
         }
         let ir::ValueKind::Place(place) = &value.kind else {

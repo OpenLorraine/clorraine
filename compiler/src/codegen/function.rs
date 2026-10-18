@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, PlaceBase, Statement, Terminator, Value, ValueKind, ValuePiece};
-use crate::ast::UnaryOp;
+use crate::ast::{BinaryOp, UnaryOp};
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
@@ -1378,9 +1378,9 @@ impl<'a> Emitter<'a> {
         // A raw-deref read used as an owned store value moves the pointee: the
         // source is emptied through its own address, exactly as the raw store's
         // value is emptied, so only the destination owns the moved value. A
-        // duplicable pointee copies and stays intact.
-        let moves_pointee = self.needs_drop(&ty)
-            && matches!(value.kind, ValueKind::Unary { op: UnaryOp::Deref, .. });
+        // projected member (`(*p).s`) moves the selected member, not the whole
+        // pointee. A duplicable value copies and stays intact.
+        let moves_pointee = self.needs_drop(&ty) && value_moves_pointee(value);
         let reads_target = value_reads_base(value, target)
             || (element_target
                 && (value_reads_named_binding(value) || value_reads_alias(value)))
@@ -1419,13 +1419,7 @@ impl<'a> Emitter<'a> {
         // raw pointer is emptied here once the literal holds its value.
         if let ValueKind::StructLit { fields, .. } = &value.kind {
             for (_, field) in fields {
-                if matches!(
-                    field.kind,
-                    ValueKind::Unary {
-                        op: UnaryOp::Deref,
-                        ..
-                    }
-                ) {
+                if value_moves_pointee(field) {
                     let field_ty = self.resolved_value_ty(field);
                     if self.needs_drop(&field_ty) {
                         self.emit_arm_source_moves(field, &field_ty);
@@ -2074,13 +2068,7 @@ impl<'a> Emitter<'a> {
             if field_ty.is_fixed_array()
                 || (self.needs_drop(&field_ty)
                     && (matches!(field.kind, ValueKind::Conditional { .. })
-                        || matches!(
-                            field.kind,
-                            ValueKind::Unary {
-                                op: UnaryOp::Deref,
-                                ..
-                            }
-                        )))
+                        || value_moves_pointee(field)))
             {
                 return true;
             }
@@ -2275,6 +2263,34 @@ impl<'a> Emitter<'a> {
         }
         let condition_c = self.value(condition);
         self.push(&format!("        if ({condition_c}) {{"));
+        // A condition that consumes the destination through a raw pointer
+        // leaves the saved old value aliasing storage the callee already
+        // freed. The pointer may or may not name the destination, so the
+        // branch compares the addresses: only the aliasing path zeroes the
+        // save, and every other path keeps it for the ordinary release.
+        if let Some(save) = save {
+            let mut pointees = Vec::new();
+            self.condition_consumed_pointees(condition, &mut pointees);
+            for pointee in pointees {
+                let ValueKind::Unary {
+                    op: UnaryOp::Deref,
+                    operand,
+                } = &pointee.kind
+                else {
+                    continue;
+                };
+                if !self.needs_drop(&self.resolved_value_ty(pointee)) {
+                    continue;
+                }
+                let target_address = format!("(&({target_c}))");
+                let pointee_address = self.value(operand);
+                self.push(&format!(
+                    "            if ({target_address} == {pointee_address}) {{"
+                ));
+                self.emit_move_zero(save, ty);
+                self.push("            }");
+            }
+        }
         self.emit_conditional_move_arm(target_c, ty, then_value, save, element_target);
         self.push("        } else {");
         self.emit_conditional_move_arm(target_c, ty, else_value, save, element_target);
@@ -2463,6 +2479,106 @@ impl<'a> Emitter<'a> {
                         .any(|arg| self.arm_consumes_target(arg, target_c))
             }
             _ => false,
+        }
+    }
+
+    /// Collects the raw-deref pointees a condition's calls consume on paths
+    /// the true branch reaches.
+    ///
+    /// A `take` argument through a raw pointer records its pointee on the
+    /// call's deferred materialization. When that call sits in the condition of
+    /// an owned conditional store, the pointee may be the store's own
+    /// destination, so the branch must compare addresses before trusting the
+    /// saved old value. Only pointees that certainly run when the condition is
+    /// true are collected: both operands of a non-short-circuit operator, the
+    /// left operand of `&&`/`||` (always evaluated), and the right operand of
+    /// `&&` (evaluated whenever the whole condition is true). The right operand
+    /// of `||` and the arms of `?:` may be skipped even when the condition is
+    /// true, so they stay with the ordinary save release.
+    fn condition_consumed_pointees<'v>(&self, value: &'v Value, out: &mut Vec<&'v Value>) {
+        match &value.kind {
+            ValueKind::Binary {
+                op: BinaryOp::LogicalAnd,
+                left,
+                right,
+            } => {
+                self.condition_consumed_pointees(left, out);
+                self.condition_consumed_pointees(right, out);
+            }
+            ValueKind::Binary {
+                op: BinaryOp::LogicalOr,
+                left,
+                ..
+            } => self.condition_consumed_pointees(left, out),
+            ValueKind::Binary { left, right, .. } => {
+                self.condition_consumed_pointees(left, out);
+                self.condition_consumed_pointees(right, out);
+            }
+            // Only a conditional's controlling test always runs; an arm runs
+            // only when its own condition selects it.
+            ValueKind::Conditional { condition, .. } => {
+                self.condition_consumed_pointees(condition, out);
+            }
+            ValueKind::Materialize {
+                value: inner,
+                value_move_outs,
+                ..
+            } => {
+                out.extend(value_move_outs.iter());
+                self.condition_consumed_pointees(inner, out);
+            }
+            ValueKind::Member { base, .. } => self.condition_consumed_pointees(base, out),
+            ValueKind::Index { base, index } => {
+                self.condition_consumed_pointees(base, out);
+                self.condition_consumed_pointees(index, out);
+            }
+            ValueKind::Unary { operand, .. } => self.condition_consumed_pointees(operand, out),
+            ValueKind::Cast { value: inner, .. } => self.condition_consumed_pointees(inner, out),
+            ValueKind::Call { args, receiver, .. } => {
+                if let Some(receiver) = receiver {
+                    self.condition_consumed_pointees(receiver, out);
+                }
+                for arg in args {
+                    self.condition_consumed_pointees(arg, out);
+                }
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                for arg in args {
+                    self.condition_consumed_pointees(arg, out);
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.condition_consumed_pointees(field, out);
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.condition_consumed_pointees(element, out);
+                }
+                if let Some(fill) = fill {
+                    self.condition_consumed_pointees(fill, out);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.condition_consumed_pointees(inner, out);
+                    }
+                }
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.condition_consumed_pointees(capture, out);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.condition_consumed_pointees(callable, out);
+                for arg in args {
+                    self.condition_consumed_pointees(arg, out);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -3138,6 +3254,25 @@ fn unread_locals(
         .map(|local| local.name.clone())
         .filter(|name| !read.contains(name))
         .collect()
+}
+
+/// True when a value is a projection chain rooted at a raw dereference.
+///
+/// A `(*p).field` or `(*p).items[i].field` read consumes the caller's pointee
+/// exactly as the bare `*p` read does, so the store, return, and literal field
+/// handlers must empty the selected member through the pointer. A place or a
+/// fresh call result roots elsewhere and needs no pointee move.
+pub(super) fn value_moves_pointee(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            ..
+        } => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+            value_moves_pointee(base)
+        }
+        _ => false,
+    }
 }
 
 /// True when a lowered value reads caller-owned storage a move must empty.

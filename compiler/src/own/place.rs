@@ -2554,6 +2554,24 @@ pub(super) fn constant_path(projections: &[ir::Projection]) -> bool {
     })
 }
 
+/// True when a value is a projection chain rooted at a raw dereference.
+///
+/// A `(*p).field` or `(*p).items[i].field` read names the caller's pointee
+/// exactly as the bare `*p` read does, so every move and release rule that
+/// treats a deref read as caller storage must see the whole chain. The walk
+/// follows only projections: a field of a fresh call result (`mk().field`)
+/// roots at the call and owns its own storage.
+pub(super) fn deref_rooted(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            ..
+        } => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => deref_rooted(base),
+        _ => false,
+    }
+}
+
 /// The identity of a module-level binding the name resolver resolved.
 fn global_id(global: crate::init_graph::GlobalRef) -> ir::GlobalId {
     ir::GlobalId::new(global.module, global.name)
