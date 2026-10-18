@@ -1219,7 +1219,7 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_elementcond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_elementcond_mkBox();");
-    assert_follows(tag, body, "arr[0] = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_follows(tag, body, "__cl_rhs_1[0] = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "takecond";
@@ -3488,7 +3488,7 @@ fn should_copy_a_runtime_index_view_element_store() {
     let tag = "implruntimestore";
     let (_scratch, emitted) = emit_host(tag, RUNTIME_STORE_SOURCE);
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_implruntimestore_pick(i32 k)\n{");
-    assert_contains(tag, body, "*(&(xs[k])) = cl_string_view(b.v);");
+    assert_contains(tag, body, "*(&(xs[__cl_tmp0])) = cl_string_view(b.v);");
     assert_absent(tag, body, "= b.v;");
     assert_rejected(tag, RUNTIME_STORE_LOOP_SOURCE, "E10030", 1);
     assert_rejected_at_line(tag, RUNTIME_STORE_MUTATION_SOURCE, "E10031", 1, 11);
@@ -6076,7 +6076,7 @@ fn should_keep_the_conditional_base_controls_accepted() {
     assert_contains(
         "implcondstoreplace",
         &emitted,
-        "*(&(b1.ys[i])) = cl_spec_cpr_implcondstoreplace_bump();",
+        "*(&(b1.ys[__cl_tmp0])) = cl_spec_cpr_implcondstoreplace_bump();",
     );
     assert_contains(
         "implcondstoreplace",
@@ -6085,7 +6085,7 @@ fn should_keep_the_conditional_base_controls_accepted() {
     );
 
     let (_scratch, emitted) = emit_host("implcondstoreproj", CONDITIONAL_BASE_PROJECTION_SOURCE);
-    assert_contains("implcondstoreproj", &emitted, "*(&(h.b.ys[i])) = 7;");
+    assert_contains("implcondstoreproj", &emitted, "*(&(h.b.ys[__cl_tmp0])) = 7;");
 }
 
 /// The guarded view-array literal fills its destination on the taken path.
@@ -6138,7 +6138,7 @@ fn should_re_emit_the_conditional_base_and_guard_literal_programs_identically() 
     assert_contains(
         "reemitcondstoreplace",
         &first,
-        "*(&(b1.ys[i])) = cl_spec_cpr_implcondstoreplace_bump();",
+        "*(&(b1.ys[__cl_tmp0])) = cl_spec_cpr_implcondstoreplace_bump();",
     );
 
     let (first, second) = emit_twice("reemitguardview", GUARD_VIEW_LITERAL_TAKE_SOURCE);
@@ -6587,13 +6587,13 @@ fn should_release_the_owner_an_indexed_element_store_overwrites() {
     assert_contains(
         tag,
         body,
-        "if ((*(&((*w).items[i]))).name) { FreeString((*(&((*w).items[i]))).name); }",
+        "if ((*(&((*w).items[__cl_tmp0]))).name) { FreeString((*(&((*w).items[__cl_tmp0]))).name); }",
     );
     assert_follows(
         tag,
         body,
-        "(*(&((*w).items[i]))).name = NULL;",
-        "*(&((*w).items[i])) = (ClElem){ cl_std_text_stringOf(cl_str(\"zz\")) };",
+        "(*(&((*w).items[__cl_tmp0]))).name = NULL;",
+        "*(&((*w).items[__cl_tmp0])) = (ClElem){ cl_std_text_stringOf(cl_str(\"zz\")) };",
     );
 }
 
@@ -6921,13 +6921,31 @@ func main(): i32 {
     assert_follows(
         tag,
         body,
-        "memset(&(a[__cl_tmp0].names), 0, sizeof(a[__cl_tmp0].names));",
-        "a[__cl_tmp0].names[0] = cl_std_text_stringOf(v);",
+        "__cl_rhs_1[0] = cl_std_text_stringOf(v);",
+        "__cl_rhs_1[1] = cl_std_text_stringOf(cl_str(\"xx\"));",
     );
     assert_follows(
         tag,
         body,
-        "a[__cl_tmp0].names[1] = cl_std_text_stringOf(cl_str(\"xx\"));",
+        "__cl_rhs_1[1] = cl_std_text_stringOf(cl_str(\"xx\"));",
+        "ClString __cl_save_1[2] = {0};",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memset(&(a[__cl_tmp0].names), 0, sizeof(a[__cl_tmp0].names));",
+        "memcpy(&(a[__cl_tmp0].names), &(__cl_rhs_1), sizeof(a[__cl_tmp0].names));",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memcpy(&(a[__cl_tmp0].names), &(__cl_rhs_1), sizeof(a[__cl_tmp0].names));",
+        "memset(&(__cl_rhs_1), 0, sizeof(a[__cl_tmp0].names));",
+    );
+    assert_follows(
+        tag,
+        body,
+        "memset(&(__cl_rhs_1), 0, sizeof(a[__cl_tmp0].names));",
         "if (__cl_save_1[0]) { FreeString(__cl_save_1[0]); }",
     );
 }
@@ -7100,7 +7118,7 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "*(&(w.values[i])) = (i32)((u32)w.values[i] + (u32)1);",
+        "*(&(w.values[__cl_tmp1])) = (i32)((u32)w.values[__cl_tmp1] + (u32)1);",
     );
 }
 
@@ -7136,9 +7154,9 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&((*g).rows[i])))), v, sizeof((*(&((*g).rows[i])))));",
+        "memcpy(&((*(&((*g).rows[__cl_tmp0])))), v, sizeof((*(&((*g).rows[__cl_tmp0])))));",
     );
-    assert_absent(tag, body, "*(&((*g).rows[i])) = v;");
+    assert_absent(tag, body, "*(&((*g).rows[__cl_tmp0])) = v;");
     let body = function_body(
         tag,
         &emitted,
@@ -7147,12 +7165,12 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "memcpy(&(__cl_save_1), &((*(&((*g).rows[i])))), sizeof((*(&((*g).rows[i])))));",
+        "memcpy(&(__cl_save_1), &((*(&((*g).rows[__cl_tmp0])))), sizeof((*(&((*g).rows[__cl_tmp0])))));",
     );
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&((*g).rows[i])))), &(__cl_tmp0), sizeof((*(&((*g).rows[i])))));",
+        "memcpy(&((*(&((*g).rows[__cl_tmp0])))), &(__cl_tmp1), sizeof((*(&((*g).rows[__cl_tmp0])))));",
     );
 }
 
@@ -7345,14 +7363,14 @@ func main(): i32 {
     assert_follows(
         tag,
         body,
-        "memcpy(&((*(&(a[i])))), &(a[j]), sizeof((*(&(a[i])))));",
+        "memcpy(&((*(&(a[__cl_tmp0])))), &(a[j]), sizeof((*(&(a[__cl_tmp0])))));",
         "cl_zero(&a[j]);",
     );
     assert_follows(
         tag,
         body,
-        "if (&(a[j]) == &((*(&(a[i]))))) {",
-        "memcpy(&((*(&(a[i])))), &(__cl_save_1), sizeof((*(&(a[i])))));",
+        "if (&(a[j]) == &((*(&(a[__cl_tmp0]))))) {",
+        "memcpy(&((*(&(a[__cl_tmp0])))), &(__cl_save_1), sizeof((*(&(a[__cl_tmp0])))));",
     );
 }
 
@@ -7420,10 +7438,14 @@ func main(): i32 {
     let tag = "implselfslotsame";
     let (_scratch, emitted) = emit_host(tag, same);
     let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i)\n{");
+    // The same index expression is a static self-copy: no address comparison
+    // and no move are emitted, and the element keeps its value.
+    assert_absent(tag, body, "!= &(");
+    assert_absent(tag, body, "= (*w).items[__cl_tmp1].name;");
     assert_contains(
         tag,
         body,
-        "if (&((*w).items[__cl_tmp0].name) != &((*w).items[__cl_tmp1].name)) {",
+        "return (i32)((cl_string_view((*w).items[i].name)).len);",
     );
 
     let whole = r#"module spec.cprimpl.implselfslotwhole;
@@ -7449,12 +7471,12 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "if (&(*(&((*w).items[i]))) != &((*w).items[j])) {",
+        "if (&(*(&((*w).items[__cl_tmp0]))) != &((*w).items[j])) {",
     );
     assert_contains(
         tag,
         body,
-        "ClElem __cl_save_1 = *(&((*w).items[i]));",
+        "ClElem __cl_save_1 = *(&((*w).items[__cl_tmp0]));",
     );
 }
 
@@ -9348,7 +9370,7 @@ fn should_pin_the_owning_deref_element_materialization() {
         1,
         "the impure pointer must evaluate once in the element store; body:\n{body}"
     );
-    assert_follows(tag, body, "xs[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_follows(tag, body, "__cl_rhs_1[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The owning deref conditional arm fills the pinned pointer inside the chosen
@@ -9579,14 +9601,14 @@ fn should_pin_the_literal_sibling_order_before_a_deref_fill() {
     assert_occurs_before(
         element,
         body,
-        "xs[0].a = cl_spec_cprimpl_dereforderarray_counter;",
+        "__cl_rhs_1[0].a = cl_spec_cprimpl_dereforderarray_counter;",
         "__cl_tmp1 = cl_bump__String(rp, rq);",
     );
     assert_occurs_before(
         element,
         body,
         "__cl_tmp1 = cl_bump__String(rp, rq);",
-        "xs[1].b = *(__cl_tmp1);",
+        "__cl_rhs_1[1].b = *(__cl_tmp1);",
     );
 }
 
@@ -11499,12 +11521,12 @@ fn should_keep_the_in_scope_composite_copy_emissions() {
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&(grid2[k])))), &(xs), sizeof((*(&(grid2[k])))));",
+        "memcpy(&((*(&(grid2[__cl_tmp0])))), &(xs), sizeof((*(&(grid2[__cl_tmp0])))));",
     );
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&(grid2[k])))), &(zs), sizeof((*(&(grid2[k])))));",
+        "memcpy(&((*(&(grid2[__cl_tmp0])))), &(zs), sizeof((*(&(grid2[__cl_tmp0])))));",
     );
     assert_contains(tag, body, "s4 = grid2[1][0];");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the reads must run");
@@ -11754,7 +11776,7 @@ fn should_pin_the_clean_store_after_a_runtime_loan() {
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&(grid[k])))), &(xs), sizeof((*(&(grid[k])))));",
+        "memcpy(&((*(&(grid[__cl_tmp0])))), &(xs), sizeof((*(&(grid[__cl_tmp0])))));",
     );
     assert_contains(tag, body, "grid[0][0] = cl_str(\"II\");");
     assert_contains(tag, body, "grid[0][1] = cl_str(\"JJ\");");
@@ -11780,7 +11802,7 @@ fn should_pin_the_row_overwrite_after_a_runtime_loan() {
     assert_contains(
         tag,
         body,
-        "memcpy(&((*(&(g[k])))), &(xs), sizeof((*(&(g[k])))));",
+        "memcpy(&((*(&(g[__cl_tmp0])))), &(xs), sizeof((*(&(g[__cl_tmp0])))));",
     );
     assert_contains(tag, body, "g[0][0] = cl_str(\"CC\");");
     assert_contains(tag, body, "g[0][1] = cl_str(\"DD\");");
@@ -11805,8 +11827,8 @@ fn should_pin_the_clean_runtime_store_after_a_loan() {
     );
     assert_contains(tag, body, "memcpy(&(grid[0]), &(xs), sizeof(grid[0]));");
     assert_contains(tag, body, "memcpy(&(grid[0]), &(zs), sizeof(grid[0]));");
-    assert_contains(tag, body, "(*(&(grid[k])))[0] = cl_str(\"II\");");
-    assert_contains(tag, body, "(*(&(grid[k])))[1] = cl_str(\"JJ\");");
+    assert_contains(tag, body, "(*(&(grid[__cl_tmp0])))[0] = cl_str(\"II\");");
+    assert_contains(tag, body, "(*(&(grid[__cl_tmp0])))[1] = cl_str(\"JJ\");");
     assert_contains(
         tag,
         body,

@@ -673,7 +673,7 @@ func main(): i32 {
     assert_contains(
         "cviimpl-rowruntime",
         guarded,
-        "memcpy(&((*(&(rows[i])))), &(value), sizeof((*(&(rows[i])))));",
+        "memcpy(&((*(&(rows[__cl_tmp0])))), &(value), sizeof((*(&(rows[__cl_tmp0])))));",
     );
 }
 
@@ -695,8 +695,8 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-rowliteral", source);
-    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[i])))[0] = x;");
-    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[i])))[1] = y;");
+    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[__cl_tmp0])))[0] = x;");
+    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[__cl_tmp0])))[1] = y;");
     assert!(
         !emitted.contains("= { x, y }"),
         "cviimpl-rowliteral: an array literal must not render as a brace list in a store"
@@ -725,13 +725,13 @@ func main(): i32 {
     assert_contains(
         "cviimpl-rowcond",
         branch,
-        "memcpy(&((*(&(rows[i])))), &(a), sizeof((*(&(rows[i])))));",
+        "memcpy(&((*(&(rows[__cl_tmp0])))), &(a), sizeof((*(&(rows[__cl_tmp0])))));",
     );
     let alternate = after("cviimpl-rowcond", branch, "} else {");
     assert_contains(
         "cviimpl-rowcond",
         alternate,
-        "memcpy(&((*(&(rows[i])))), &(b), sizeof((*(&(rows[i])))));",
+        "memcpy(&((*(&(rows[__cl_tmp0])))), &(b), sizeof((*(&(rows[__cl_tmp0])))));",
     );
 }
 
@@ -882,7 +882,7 @@ func main(): i32 {
     assert_contains(
         "cviimpl-rowmov",
         &emitted,
-        "memcpy(&((*(&(rows[i])))), &(__cl_tmp0), sizeof((*(&(rows[i])))));",
+        "memcpy(&((*(&(rows[__cl_tmp0])))), &(__cl_tmp1), sizeof((*(&(rows[__cl_tmp0])))));",
     );
 }
 
@@ -909,13 +909,13 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-scalarmov", source);
-    let moved = after("cviimpl-scalarmov", &emitted, "__cl_tmp0 = s;");
+    let moved = after("cviimpl-scalarmov", &emitted, "__cl_tmp1 = s;");
     assert_contains("cviimpl-scalarmov", moved, "s = NULL;");
     let saved = emitted
-        .find("= *(&(rows[i]));")
+        .find("= *(&(rows[__cl_tmp0]));")
         .unwrap_or_else(|| panic!("cviimpl-scalarmov: the replaced element is not saved"));
     let assigned = emitted
-        .find("*(&(rows[i])) = __cl_tmp0;")
+        .find("*(&(rows[__cl_tmp0])) = __cl_tmp1;")
         .unwrap_or_else(|| panic!("cviimpl-scalarmov: the element is not assigned"));
     assert!(
         saved < assigned,

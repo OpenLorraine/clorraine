@@ -995,93 +995,172 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.check_place_raw(target);
         self.check_store_index_nonnull(target, target.span);
+        // A raw read of the target place itself (`x = *(&x)`,
+        // `a[i].inner = *(&a[i].inner)`) copies the place onto itself. The
+        // read would empty the just-stored pointee, so the store is a no-op;
+        // a different binding or projection is an ordinary move.
+        if self.is_raw_self_alias(target, value) {
+            self.eval(target);
+            self.eval(value);
+            self.check_value_into(value, &target_ty, value.span);
+            return;
+        }
+        // An identical target and value expression (`w.items[i] = w.items[i]`)
+        // is a self-copy too. The store target is pinned before the value, so
+        // the rendered places no longer match textually; the source expression
+        // comparison catches the self-copy in both the runtime and constant
+        // index spellings. A different index expression keeps the ordinary
+        // runtime address guard, which also treats an equal pair as a no-op.
+        //
+        // The skip is limited to a projected target in a generic body (whose
+        // instance decides ownership) or to a run-time element, where the
+        // element address is the same on both sides. A concrete constant-index
+        // self-copy stays with the checker's partial-move limit (`E10026`), and
+        // a plain local or member self-assignment keeps its existing route.
+        let repeated = self.place_target(target);
+        let (projected, runtime_element) = match &repeated {
+            Some(PlaceTarget::Local(_, path)) | Some(PlaceTarget::Global(_, path)) => (
+                !path.is_empty(),
+                path.iter()
+                    .any(|projection| matches!(projection, ir::Projection::Element(None))),
+            ),
+            None => (false, false),
+        };
+        if projected
+            && (target_ty.is_unknown() || runtime_element)
+            && same_place_expr(target, value)
+            && (target_ty.is_unknown()
+                || !self.sema.table.duplicable(&target_ty)
+                || self.maybe_owns(&target_ty))
+        {
+            self.eval(target);
+            self.eval(value);
+            self.check_value_into(value, &target_ty, value.span);
+            return;
+        }
         // A dereferenced raw pointer is a store target: the pointer names the
         // storage, so the store writes through it in the same shape an indexed
         // element store uses. The pointer expression evaluates first, an
         // updating value settles at its own position before the store, and the
         // read path is unchanged.
-        if let Some(pointer_expr) = raw_deref_target(target) {
-            self.check_deref_raw(pointer_expr, target.span);
-            // The store reads the pointer's value, so the binding that names
-            // it counts as used and its own state checks run exactly once.
-            self.eval(pointer_expr);
-            let pin = super::lower::contains_update(value);
-            let element_ty = target_ty.clone();
-            let pointer = self.lower_value(pointer_expr);
-            let pointer = if super::lower::contains_update(pointer_expr) {
-                self.pin_update_value(pointer)
-            } else {
-                pointer
-            };
-            // The pointer is bound once whenever it is not a trivial place: the
-            // target spelling, the release, and the clear all read the same
-            // binding, so an impure pointer expression evaluates exactly once
-            // and every use names the same address. A named place keeps its
-            // spelling.
-            let pointer = self.materialize_operand(pointer);
-            // The store target's own type decides whether the replaced pointee
-            // is released, so the pointer is spelled as the pointee's address
-            // exactly as the indexed store's element address is: the address of
-            // the dereferenced place rather than the raw pointer value.
-            let pointee = Value::new(
-                element_ty.clone(),
-                ValueKind::Unary {
-                    op: UnaryOp::Deref,
-                    operand: Box::new(pointer),
-                },
-            );
-            let pointer = Value::new(
-                element_ty.clone(),
-                ValueKind::Unary {
-                    op: UnaryOp::AddressOf,
-                    operand: Box::new(pointee.clone()),
-                },
-            );
-            let stored = match compound {
-                Some(binary) => {
-                    // The compound store reads the pointee through that same
-                    // address, before the side runs; an updating side
-                    // materializes the read first.
-                    let element = pointee;
-                    let element = if pin {
-                        self.pin_update_value(element)
-                    } else {
-                        element
-                    };
-                    let right = self.lower_value(value);
-                    let right = if pin { self.pin_update_value(right) } else { right };
-                    self.combine(binary, element, right, &element_ty)
-                }
-                None => {
-                    // The store consumes an owned value exactly as a named
-                    // destination does, so a later use of the source reports
-                    // the moved-value error and the emission moves it in.
-                    self.consume_owned_place(value, value.span);
-                    let lowered = self.lower_value(value);
-                    let lowered = if pin {
-                        self.pin_update_value(lowered)
-                    } else {
-                        lowered
-                    };
-                    if is_view(&element_ty)
-                        || (self.view_destination_adopts && is_view_like(&element_ty))
-                    {
-                        if self.projects_from_place(&lowered) {
-                            lowered
-                        } else {
-                            self.bind_view_projection_root(lowered)
+        // A dereferenced raw pointer is a store target: the pointer names the
+        // storage, so the store writes through it in the same shape an indexed
+        // element store uses. A member or element over the dereference selects
+        // part of the pointee (`(*p).f`, `(*p).arr[i].x`), so the whole chain
+        // is a place (Ch 04 §4). The pointer expression evaluates first, an
+        // updating value settles at its own position before the store, and the
+        // target's member and element selections are pinned before the
+        // right-hand side is lowered, so a side effect cannot change the slot
+        // the store reaches. The structural `.len` target keeps its own
+        // rejection below.
+        if !self.structural_len_target(target) {
+            if let Some((deref, projections)) = raw_deref_store_target(target) {
+                let pointer_expr = match &deref.kind {
+                    ExprKind::Unary {
+                        op: UnaryOp::Deref,
+                        operand,
+                    } => operand,
+                    _ => unreachable!("a raw store target roots at a dereference"),
+                };
+                self.check_deref_raw(pointer_expr, target.span);
+                // The store reads the pointer's value, so the binding that names
+                // it counts as used and its own state checks run exactly once.
+                self.eval(pointer_expr);
+                let pin = super::lower::contains_update(value);
+                let element_ty = target_ty.clone();
+                let pointer = self.lower_value(pointer_expr);
+                let pointer = if super::lower::contains_update(pointer_expr) {
+                    self.pin_update_value(pointer)
+                } else {
+                    pointer
+                };
+                // The pointer is bound once whenever it is not a trivial place:
+                // the target spelling, the release, and the clear all read the
+                // same binding, so an impure pointer expression evaluates
+                // exactly once and every use names the same address. A named
+                // place keeps its spelling.
+                let pointer = self.materialize_operand(pointer);
+                let root_ty = self.ty(deref);
+                let mut projected = Value::new(
+                    root_ty,
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        operand: Box::new(pointer),
+                    },
+                );
+                for projection in projections {
+                    let kind = match projection {
+                        RawStoreProjection::Field(name) => ValueKind::Member {
+                            base: Box::new(projected),
+                            name: name.to_owned(),
+                        },
+                        RawStoreProjection::Index(index) => {
+                            let index = self.lower_value(index);
+                            ValueKind::Index {
+                                base: Box::new(projected),
+                                index: Box::new(index),
+                            }
                         }
-                    } else {
-                        self.consume_place(lowered)
-                    }
+                    };
+                    projected = Value::new(Ty::unknown(), kind);
                 }
-            };
-            self.emit(Statement::StorePointer {
-                pointer,
-                value: stored,
-            });
-            self.check_value_into(value, &target_ty, value.span);
-            return;
+                projected.ty = element_ty.clone();
+                // Pin every member/element base and index before the value is
+                // lowered; the pointer itself is already materialized.
+                let projected = self.pin_store_target(projected);
+                let pointer = Value::new(
+                    element_ty.clone(),
+                    ValueKind::Unary {
+                        op: UnaryOp::AddressOf,
+                        operand: Box::new(projected.clone()),
+                    },
+                );
+                let stored = match compound {
+                    Some(binary) => {
+                        // The compound store reads the selected storage through
+                        // that same address, before the side runs; an updating
+                        // side materializes the read first.
+                        let element = if pin {
+                            self.pin_update_value(projected)
+                        } else {
+                            projected
+                        };
+                        let right = self.lower_value(value);
+                        let right = if pin { self.pin_update_value(right) } else { right };
+                        self.combine(binary, element, right, &element_ty)
+                    }
+                    None => {
+                        // The store consumes an owned value exactly as a named
+                        // destination does, so a later use of the source reports
+                        // the moved-value error and the emission moves it in.
+                        self.consume_owned_place(value, value.span);
+                        let lowered = self.lower_value(value);
+                        let lowered = self.materialize_owning_deref(lowered);
+                        let lowered = if pin {
+                            self.pin_update_value(lowered)
+                        } else {
+                            lowered
+                        };
+                        if is_view(&element_ty)
+                            || (self.view_destination_adopts && is_view_like(&element_ty))
+                        {
+                            if self.projects_from_place(&lowered) {
+                                lowered
+                            } else {
+                                self.bind_view_projection_root(lowered)
+                            }
+                        } else {
+                            self.consume_place(lowered)
+                        }
+                    }
+                };
+                self.emit(Statement::StorePointer {
+                    pointer,
+                    value: stored,
+                });
+                self.check_value_into(value, &target_ty, value.span);
+                return;
+            }
         }
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
@@ -1491,6 +1570,50 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match self.place_target(value) {
             Some(PlaceTarget::Local(source_id, source_projections)) => {
                 source_id == id && source_projections == projections
+            }
+            _ => false,
+        }
+    }
+
+    /// True when the store's value is a raw read of the target place itself.
+    ///
+    /// `x = *(&x)` and `a[i].inner = *(&a[i].inner)` copy a place onto itself
+    /// through a raw pointer. The read would empty the pointer's pointee after
+    /// the copy, so the store is a no-op. The recognizer unwraps
+    /// `Deref(AddressOf(place))` (through `Unsafe`) and compares the inner
+    /// place with the target; a different binding or projection is an ordinary
+    /// move. `place_target` stays `Deref`-free: this recognizer runs only on
+    /// the store path.
+    pub(super) fn is_raw_self_alias(&self, target: &Expr, value: &Expr) -> bool {
+        let mut value = value;
+        while let ExprKind::Unsafe(inner) = &value.kind {
+            value = inner;
+        }
+        let ExprKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } = &value.kind
+        else {
+            return false;
+        };
+        let mut operand = &**operand;
+        while let ExprKind::Unsafe(inner) = &operand.kind {
+            operand = inner;
+        }
+        let ExprKind::Unary {
+            op: UnaryOp::AddressOf,
+            operand,
+        } = &operand.kind
+        else {
+            return false;
+        };
+        let inner = &**operand;
+        match (self.place_target(target), self.place_target(inner)) {
+            (Some(PlaceTarget::Local(target, target_path)), Some(PlaceTarget::Local(inner, inner_path))) => {
+                target == inner && target_path == inner_path
+            }
+            (Some(PlaceTarget::Global(target, target_path)), Some(PlaceTarget::Global(inner, inner_path))) => {
+                target == inner && target_path == inner_path
             }
             _ => false,
         }
@@ -2575,8 +2698,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
             return self.emit_assigned(place, &element_ty, value, compound);
         }
+        // The target's location evaluates before the right-hand side, so its
+        // base and index are always pinned: a call in the right-hand side may
+        // change the index, and the store must reach the element the target
+        // named first.
         let Some((element, pointer, element_ty)) =
-            self.indexed_target(target, compound.is_some(), pin)
+            self.indexed_target(target, compound.is_some(), true)
         else {
             return None;
         };
@@ -2606,6 +2733,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // source and the element release the same storage.
             None => {
                 let lowered = self.lower_value(value);
+                // An owning raw-deref read moves its pointee: the pointer is
+                // pinned once, so the store and the emptying name the same
+                // address instead of evaluating an impure pointer twice.
+                let lowered = self.materialize_owning_deref(lowered);
                 let lowered = if pin {
                     self.pin_update_value(lowered)
                 } else {
@@ -2766,16 +2897,100 @@ fn store_target_place_parts(value: &Value) -> Option<Place> {
 /// the store writes through. The walk unwraps the `unsafe` expression the
 /// parser keeps around the dereference and returns the pointer operand; every
 /// other target shape returns `None`.
-fn raw_deref_target(target: &Expr) -> Option<&Expr> {
-    let mut expr = target;
-    while let ExprKind::Unsafe(inner) = &expr.kind {
-        expr = inner;
-    }
-    match &expr.kind {
-        ExprKind::Unary {
-            op: UnaryOp::Deref,
-            operand,
-        } => Some(operand),
-        _ => None,
+/// True when two store expressions name the same place.
+///
+/// The comparison is structural and conservative: identifiers, dotted names,
+/// literals, members, elements, and unary operators match when their parts
+/// match. A call or another side-effecting form never matches, so the runtime
+/// address guard still sees it. Spans are ignored.
+fn same_place_expr(left: &Expr, right: &Expr) -> bool {
+    match (&left.kind, &right.kind) {
+        (ExprKind::Int(left), ExprKind::Int(right)) => left == right,
+        (ExprKind::Float(left), ExprKind::Float(right)) => left == right,
+        (ExprKind::Char(left), ExprKind::Char(right)) => left == right,
+        (ExprKind::Str(left), ExprKind::Str(right)) => left == right,
+        (ExprKind::Bool(left), ExprKind::Bool(right)) => left == right,
+        (ExprKind::Null, ExprKind::Null) => true,
+        (ExprKind::Name(left), ExprKind::Name(right)) => left == right,
+        (ExprKind::Qualified(left), ExprKind::Qualified(right)) => {
+            left.segments == right.segments
+        }
+        (
+            ExprKind::Member {
+                base: left_base,
+                name: left_name,
+            },
+            ExprKind::Member {
+                base: right_base,
+                name: right_name,
+            },
+        ) => left_name == right_name && same_place_expr(left_base, right_base),
+        (
+            ExprKind::Index {
+                base: left_base,
+                index: left_index,
+            },
+            ExprKind::Index {
+                base: right_base,
+                index: right_index,
+            },
+        ) => {
+            same_place_expr(left_base, right_base)
+                && same_place_expr(left_index, right_index)
+        }
+        (
+            ExprKind::Unary {
+                op: left_op,
+                operand: left_operand,
+            },
+            ExprKind::Unary {
+                op: right_op,
+                operand: right_operand,
+            },
+        ) => left_op == right_op && same_place_expr(left_operand, right_operand),
+        _ => false,
     }
 }
+
+/// One member or element selection over a raw-deref store target.
+enum RawStoreProjection<'a> {
+    /// A named struct field.
+    Field(&'a str),
+    /// An array or slice element with the written index expression.
+    Index(&'a Expr),
+}
+
+/// The dereference and projections of a `Deref`-rooted store target.
+///
+/// `(*p).f`, `(*p).f.x`, and `(*p).arr[i].x` are places: the dereference names
+/// the storage and each member or element selects part of it. The walker
+/// returns the dereference expression and the projections from the root
+/// outward, or `None` when the target does not root at a raw dereference. A
+/// bare `*p` returns an empty projection list. An `unsafe` wrapper is
+/// transparent, exactly as it is for the bare target.
+fn raw_deref_store_target(target: &Expr) -> Option<(&Expr, Vec<RawStoreProjection<'_>>)> {
+    fn walk<'a>(expr: &'a Expr, out: &mut Vec<RawStoreProjection<'a>>) -> Option<&'a Expr> {
+        match &expr.kind {
+            ExprKind::Unsafe(inner) => walk(inner, out),
+            ExprKind::Member { base, name } => {
+                let deref = walk(base, out)?;
+                out.push(RawStoreProjection::Field(name.as_str()));
+                Some(deref)
+            }
+            ExprKind::Index { base, index } => {
+                let deref = walk(base, out)?;
+                out.push(RawStoreProjection::Index(index));
+                Some(deref)
+            }
+            ExprKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            } => Some(expr),
+            _ => None,
+        }
+    }
+    let mut projections = Vec::new();
+    let deref = walk(target, &mut projections)?;
+    Some((deref, projections))
+}
+

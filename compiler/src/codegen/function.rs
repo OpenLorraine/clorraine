@@ -673,10 +673,17 @@ impl<'a> Emitter<'a> {
                     && source.projections.iter().any(|projection| {
                         matches!(projection, ir::Projection::ElementTemp(_))
                     });
+                // An identical owning source and target is a self-copy: the
+                // move would release the value and then zero the place that
+                // already holds it. A duplicable instance copies instead, so
+                // its plain assignment stays. A runtime element source compares
+                // the addresses; the constant spelling is identical text.
+                if self.needs_drop(&source_ty)
+                    && target_object_text(&target_c) == target_object_text(&source_c)
+                {
+                    return;
+                }
                 if runtime_source {
-                    if target_object_text(&target_c) == target_object_text(&source_c) {
-                        return;
-                    }
                     self.push(&format!("    if (&({target_c}) != &({source_c})) {{"));
                     self.emit_move_place(target, source, &target_c, &source_c);
                     self.push("    }");
@@ -1555,13 +1562,22 @@ impl<'a> Emitter<'a> {
             // stored element by element; a `memcpy` cannot name its braces.
             if self.needs_drop(ty) {
                 if reads_target {
-                    // The literal may read the destination through a view or a
-                    // loop alias, so the old bytes are saved first and the
-                    // destination is cleared. Each element store then sees an
-                    // empty slot, and the save releases the old owners once
-                    // after the fill.
-                    let save = self.unique_local("__cl_save");
+                    // The literal may read the destination, so its elements are
+                    // evaluated into a zeroed temporary first: the reads see
+                    // the old value in the frozen left-to-right order. The old
+                    // bytes are then saved, the destination is cleared, the
+                    // filled bytes are copied in, and the temporary is zeroed
+                    // (its elements moved out) before the saved owners release.
+                    let rhs = self.unique_local("__cl_rhs");
                     self.push("    {");
+                    self.push(&format!(
+                        "        {} = {};",
+                        declarator(ty, &rhs, &self.sema.table),
+                        self.empty_state(ty)
+                    ));
+                    let rhs_target = ArrayTarget::object(&rhs);
+                    self.emit_array_assign_to(&rhs_target, ty, elements, fill);
+                    let save = self.unique_local("__cl_save");
                     self.push(&format!(
                         "        {} = {};",
                         declarator(ty, &save, &self.sema.table),
@@ -1575,7 +1591,14 @@ impl<'a> Emitter<'a> {
                         "        memset({}, 0, {});",
                         target.address, target.bytes
                     ));
-                    self.emit_array_assign_to(target, ty, elements, fill);
+                    self.push(&format!(
+                        "        memcpy({}, &({rhs}), {});",
+                        target.address, target.bytes
+                    ));
+                    self.push(&format!(
+                        "        memset(&({rhs}), 0, {});",
+                        target.bytes
+                    ));
                     self.emit_drop_expr(&save, ty);
                     self.push("    }");
                 } else {

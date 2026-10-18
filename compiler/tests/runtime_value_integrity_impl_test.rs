@@ -208,9 +208,9 @@ func main(): i32 {
     let emitted = emit_host("rviimpl-literal", source);
     assert_contains("rviimpl-literal", &emitted, "__cl_tmp0 = a;");
     assert_contains("rviimpl-literal", &emitted, "a = NULL;");
-    let first = after("rviimpl-literal", &emitted, "c[0] = __cl_tmp0;");
+    let first = after("rviimpl-literal", &emitted, "__cl_rhs_1[0] = __cl_tmp0;");
     assert_contains("rviimpl-literal", first, "__cl_tmp0 = NULL;");
-    let tail = after("rviimpl-literal", &emitted, "c[1] = __cl_tmp1;");
+    let tail = after("rviimpl-literal", &emitted, "__cl_rhs_1[1] = __cl_tmp1;");
     assert_contains("rviimpl-literal", tail, "__cl_tmp1 = NULL;");
     assert!(
         !tail.contains("FreeString(__cl_tmp0") && !tail.contains("FreeString(__cl_tmp1"),

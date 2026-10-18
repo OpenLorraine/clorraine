@@ -542,14 +542,14 @@ func main(): i32 {
     assert_contains("rdhimpl-p3condel", &emitted, "if (c) {");
     assert_contains("rdhimpl-p3condel", &emitted, "__cl_tmp0 = cl_std_text_stringOf(cl_str(\"ab\"));");
     let moves = emitted
-        .matches("__cl_tmp2[0] = __cl_tmp0;")
+        .matches("__cl_rhs_1[0] = __cl_tmp0;")
         .count();
     assert_eq!(
         moves, 1,
         "rdhimpl-p3condel: the then arm moves into the element once"
     );
     // A plain conditional copy was the double-free shape.
-    assert_absent("rdhimpl-p3condel", &emitted, "__cl_tmp2[0] = (c ?");
+    assert_absent("rdhimpl-p3condel", &emitted, "__cl_rhs_1[0] = (c ?");
 }
 
 /// An owned call trapped in an eagerly stored read still gets a temporary.
