@@ -121,7 +121,8 @@ projection, and the element-store nested fill, with their direct controls.
       the corrections; run the host ASan/LSan probes. The reviewer packet includes the
       blast-radius step (every `set_binding_loans`, `replace_element_loans`,
       `record_element_view_loans`, `place_recorded_position_owners`, `move_element_loans`,
-      `record_copy_element_loans`, and `emit_indexed_store` caller) and the test-integrity step
+      `record_copy_element_loans`, `collect_place_copy_loans`, `recorded_position_frame_owners`, and
+      the `emit_indexed_store` caller) and the test-integrity step
 - [ ] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suite after the
       corrections; record FAIL/PASS per round
 

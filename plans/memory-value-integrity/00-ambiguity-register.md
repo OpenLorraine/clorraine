@@ -178,10 +178,10 @@ frees it after the take already freed it. **Chosen fix:** specify the per-arm sa
 directly: in the then-branch zero the save only when the taken value's rendered address equals the
 target; in the else-branch drop the save normally. The equivalent emitted condition is
 `take_ran && &pointee == &target`. Expected: the taken path does not free the consumed save; the
-`g = true` and `g = false` aliasing selections and the non-aliasing control run 0 and are
-ASan/LSan-clean; the false arm drops the save normally and stores `y` (no double free), so the
-case uses distinct lengths (`v = "vv"`, `y = "yyyy"`) and the run reads `y`'s length rather than a
-same-length `v`.
+`g = true` selection and the non-aliasing control run 0 and are ASan/LSan-clean; the distinct-length
+`g = false` selection runs 2 (it reads the stored `y`); the false arm drops the save normally and
+stores `y` (no double free), so the case uses distinct lengths (`v = "vv"`, `y = "yyyy"`) and the run
+reads `y`'s length rather than a same-length `v`.
 
 **AR-15 — `DEF-440`: a borrowing intrinsic or borrow argument leaves a raw-deref read unchanged.**
 Frozen: Ch 16 §2 (a view/read lend does not move) and Ch 17 §5. `while (i < 2 && len(*alt(p,q)) ==

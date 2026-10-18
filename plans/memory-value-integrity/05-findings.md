@@ -40,7 +40,7 @@
 | `DEF-432` | 🔴 critical | Red | P2 | One `E10030` for the temporary-derived element; the direct twin keeps its report | _(to be filled)_ |
 | `DEF-433` | 🔴 critical | Red | P2 | One `E10030` for the call-mediated element view (both forms); the direct fill keeps its report | _(to be filled)_ |
 | `DEF-437` | 🔴 critical | Red | P3 | Each projection of a raw pointee moves once through all three emission gates; read-backs correct; ASan/LSan clean | _(to be filled)_ |
-| `DEF-439` | 🟠 major | Red | P3 | Both aliasing selections run 0; the false arm stores `y` under distinct lengths; the non-aliasing control drops its save; no double-free; ASan/LSan clean | _(to be filled)_ |
+| `DEF-439` | 🟠 major | Red | P3 | The `g = true` selection runs 0; the distinct-length `g = false` selection runs 2 (it reads the stored `y`); the non-aliasing control drops its save; no double-free; ASan/LSan clean | _(to be filled)_ |
 | `DEF-440` | 🔴 critical | Red | P3 | The borrowing intrinsic and borrow argument do not bind/release; the loop runs twice; ASan/LSan clean | _(to be filled)_ |
 | `DEF-441` | 🔴 critical | Red | P3 | The guarded take empties only the selected member; the sibling stays owned; both selections clean; the false path does not call | _(to be filled)_ |
 | `DEF-421` | 🟠 major | Red | P4 | The four `Deref`-rooted store forms emit and read back; the base/index is pinned before the RHS; the structural `.len` keeps `E10221` | _(to be filled)_ |

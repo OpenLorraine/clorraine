@@ -228,7 +228,7 @@ store of `y` is visible; the earlier equal-length probe ran 0 and hid it.
 | `DEF-433` | 🔴 red | One `E10030` for both the copy and the call-argument forms; the caller-parameter control stays accepted |
 | `DEF-435` | 🔴 red | One `E10030` at the constant and runtime element-store copies' fills; incidental (constant) if the `429` gate greens it; the constant direct read keeps its report and the runtime direct read is the AR-35(e) delta/residual |
 | `DEF-437` | 🔴 red | Each projection moves once through all three emission gates; read-backs correct; ASan/LSan clean |
-| `DEF-439` | 🔴 red | Both aliasing selections run 0; the false arm stores `y` (distinct lengths); the non-aliasing control drops its save; no double-free |
+| `DEF-439` | 🔴 red | The `g = true` selection runs 0; the distinct-length `g = false` selection runs 2 (it reads the stored `y`); the non-aliasing control drops its save; no double-free |
 | `DEF-440` | 🔴 red | No bind/release for the intrinsic or borrow argument; the loop and call paths run; ASan/LSan clean |
 | `DEF-441` | 🔴 red | The guarded take empties the selected member only; the sibling stays owned; both selections clean |
 | `DEF-421` | 🔴 red | The four `Deref`-rooted store forms emit and read back; the base/index is pinned before the RHS; the structural `.len` keeps `E10221` |
