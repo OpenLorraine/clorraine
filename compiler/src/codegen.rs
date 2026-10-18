@@ -266,9 +266,6 @@ pub(super) struct TakeCapture {
     pub(super) flag: String,
     /// The rendered destination lvalue the take may have consumed.
     pub(super) target: String,
-    /// The destination's resolved type; only a taken value of this type can
-    /// name the same storage, so only that value updates the flag.
-    pub(super) ty: Ty,
 }
 
 /// Emits the whole translation unit for a successful compilation.

@@ -270,6 +270,7 @@ impl<'a> Emitter<'a> {
                     if !self.needs_drop(&ty) {
                         continue;
                     }
+                    self.emit_take_alias(value, &ty);
                     self.emit_arm_source_moves(value, &ty);
                 }
             }
@@ -1150,15 +1151,14 @@ impl<'a> Emitter<'a> {
         let Some(capture) = &self.take_capture else {
             return Some(move_out);
         };
-        // Only a taken value of the saved destination's own type can name the
-        // same storage. The flag is set here, in the move-out's own comma
-        // sequence, so a skipped take never marks the save consumed.
-        if self.substitute(ty) != capture.ty {
-            return Some(move_out);
-        }
+        // The flag is set here, in the move-out's own comma sequence, so a
+        // skipped take never marks the save consumed. The addresses are cast to
+        // `void *`: a raw pointer cast can reach the destination's storage
+        // through a different nominal type, and an unrelated object simply
+        // compares unequal without a cross-type pointer warning.
         let address = self.deref_value_address(value)?;
         Some(format!(
-            "({flag} = ({flag} || (({address}) == (&({target}))))), {move_out}",
+            "({flag} = ({flag} || (((void *)({address})) == ((void *)(&({target})))))), {move_out}",
             flag = capture.flag,
             target = capture.target,
         ))

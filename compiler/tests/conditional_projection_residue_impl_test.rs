@@ -12630,9 +12630,12 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "(__cl_take_alias_1 = (__cl_take_alias_1 || ((p) == (&(v)))))",
+        "(__cl_take_alias_1 = (__cl_take_alias_1 || (((void *)(p)) == ((void *)(&(v))))))",
     );
-    assert_contains(tag, body, "bool __cl_cond = (g && ");
+    assert!(
+        body.contains("bool __cl_cond") && body.contains("= (g && "),
+        "{tag}: the condition must be evaluated into a local; body:\n{body}"
+    );
     let alias_line = body
         .lines()
         .position(|line| line.contains("if (__cl_take_alias_1) {"))
@@ -12683,7 +12686,7 @@ func main(): i32 {
     assert_contains(
         tag,
         body,
-        "(__cl_take_alias_1 = (__cl_take_alias_1 || ((p) == (&(v)))))",
+        "(__cl_take_alias_1 = (__cl_take_alias_1 || (((void *)(p)) == ((void *)(&(v))))))",
     );
     assert_contains(tag, body, "v = y;");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
@@ -12962,4 +12965,197 @@ func main(): i32 {
         first, second,
         "p441member: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// takencapture: the generated condition local and the take-only alias flag.
+//
+// The condition local is deduplicated against source bindings, and only a
+// `take` move-out records the alias flag: a plain raw-deref arm move does not
+// consume the save. The address comparison is cast to `void *`, so a pointer
+// cast that reaches the destination's storage is recognized and an unrelated
+// object simply compares unequal.
+// ---------------------------------------------------------------------------
+
+/// A source binding named like the generated condition stays distinct.
+///
+/// `p439condname` declares a local `__cl_cond` and reads it in the arm of an
+/// aliasing conditional store. The generated condition local must take a
+/// different name, the program must build under the strict flag set, and the
+/// arm must still read the source value (exit 0).
+#[test]
+fn should_keep_a_source_condition_binding_out_of_the_generated_condition() {
+    let tag = "p439condname";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439condname;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let __cl_cond: bool = false;
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? (__cl_cond ? x : y) : y;
+        if (i32(len(v)) != 4) { return 9; }
+        return 0;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p439condname_main(void)\n{",
+    );
+    assert_contains(tag, body, "bool __cl_cond = 0;");
+    assert!(
+        body.lines()
+            .any(|line| line.contains("bool __cl_cond_") && line.contains("= (g && ")),
+        "{tag}: the generated condition must take a distinct name; body:\n{body}"
+    );
+    assert_eq!(
+        run_host_c(tag, &scratch, &emitted),
+        0,
+        "{tag}: the source condition must decide the arm"
+    );
+}
+
+/// A plain raw-deref arm move does not set the take's alias flag.
+///
+/// `p439plainarm` stores `*p` in the then arm and calls a `take` in the else
+/// arm, so a capture exists. The then arm's source move must not record an
+/// alias: the only flag assignment belongs to the else arm's take. The
+/// program's value loss comes from the pre-existing self-move of `*p` into its
+/// own storage and is not pinned here.
+#[test]
+fn should_not_mark_a_plain_raw_deref_arm_as_a_take() {
+    let tag = "p439plainarm";
+    let (_scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439plainarm;
+
+import { String, stringOf } from std.text;
+
+func takeS(take x: String): String { return x; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let w: String = stringOf("ww");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        let q: raw String = &w;
+        v = g ? (*p) : takeS(take (unsafe *q));
+        if (v == null) { return 7; }
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p439plainarm_main(void)\n{",
+    );
+    assert_eq!(
+        body.matches("__cl_take_alias_1 = 1;").count(),
+        1,
+        "{tag}: only the take arm may set the alias flag; body:\n{body}"
+    );
+    assert_follows(tag, body, "v = *(p);", "*(p) = NULL;");
+    assert_contains(
+        tag,
+        body,
+        "if (((void *)(q)) == ((void *)(&(v)))) {",
+    );
+}
+
+/// Unrelated and cast-alias takes compare through a `void *` address.
+///
+/// `p439crosstype` takes a struct through the pointer into a `String`
+/// destination; the addresses cannot match as objects, so the flag stays clear
+/// and the save releases normally. `p439castalias` reaches the same `String`
+/// storage through a `raw S` cast, so the same comparison recognizes it. Both
+/// strict-build and run 0.
+#[test]
+fn should_compare_take_addresses_through_a_void_pointer() {
+    let tag = "p439crosstype";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439crosstype;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; other: String; }
+
+func eatS(take v: S): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let a: S = S { s: stringOf("aa"), other: stringOf("oo") };
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        v = (g && (eatS(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p439crosstype_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "(((void *)(p)) == ((void *)(&(v))))",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p439castalias";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439castalias;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func eatS(take x: S): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw S = raw S(&v);
+        v = (g && (eatS(take *p) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p439castalias_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "(((void *)(p)) == ((void *)(&(v))))",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
 }

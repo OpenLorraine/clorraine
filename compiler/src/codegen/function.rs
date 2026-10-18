@@ -705,6 +705,7 @@ impl<'a> Emitter<'a> {
                 // and the emptying is a no-op.
                 let ty = self.resolved_value_ty(value);
                 if self.needs_drop(&ty) {
+                    self.emit_take_alias(value, &ty);
                     self.emit_arm_source_moves(value, &ty);
                 }
             }
@@ -2264,14 +2265,12 @@ impl<'a> Emitter<'a> {
         self.consumed_pointees(then_value, &mut pointees);
         self.consumed_pointees(else_value, &mut pointees);
         let capture = save.and_then(|_| {
-            let aliases = pointees.iter().any(|pointee| {
-                self.needs_drop(&self.resolved_value_ty(pointee))
-                    && self.substitute(&pointee.ty) == self.substitute(ty)
-            });
-            aliases.then(|| TakeCapture {
+            let owns = pointees
+                .iter()
+                .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)));
+            owns.then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
                 target: target_c.to_owned(),
-                ty: self.substitute(ty),
             })
         });
         let has_capture = capture.is_some();
@@ -2296,14 +2295,17 @@ impl<'a> Emitter<'a> {
         if has_capture {
             // The condition is evaluated once into a local so the alias flag
             // is settled before the branches: a taken destination is emptied
-            // from the save before an arm can restore or overwrite it.
-            self.push(&format!("    bool __cl_cond = {condition_c};"));
+            // from the save before an arm can restore or overwrite it. The
+            // local is unique because a source binding may already use the
+            // generated spelling.
+            let cond_local = self.unique_local("__cl_cond");
+            self.push(&format!("    bool {cond_local} = {condition_c};"));
             if let (Some(save), Some(flag)) = (save, alias_flag.clone()) {
                 self.push(&format!("    if ({flag}) {{"));
                 self.emit_move_zero(save, ty);
                 self.push("    }");
             }
-            self.push("        if (__cl_cond) {");
+            self.push(&format!("        if ({cond_local}) {{"));
         } else {
             self.push(&format!("        if ({condition_c}) {{"));
         }
@@ -2617,6 +2619,36 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Records whether a consumed taken value names a conditional store's
+    /// saved destination.
+    ///
+    /// Only the `take` move-out paths call this. A plain arm source move or a
+    /// store's own source copy does not consume the save, so it must not set
+    /// the flag. The comparison uses the taken value's address and a `void *`
+    /// cast: a raw pointer cast that reaches the destination through a
+    /// different nominal type is still recognized, an unrelated object simply
+    /// compares unequal, and no cross-type pointer comparison is emitted.
+    pub(super) fn emit_take_alias(&mut self, value: &Value, ty: &Ty) {
+        if !self.needs_drop(ty) {
+            return;
+        }
+        let Some((flag, target)) = self
+            .take_capture
+            .as_ref()
+            .map(|capture| (capture.flag.clone(), capture.target.clone()))
+        else {
+            return;
+        };
+        let Some(address) = self.deref_value_address(value) else {
+            return;
+        };
+        self.push(&format!(
+            "    if (((void *)({address})) == ((void *)(&({target})))) {{"
+        ));
+        self.push(&format!("        {flag} = 1;"));
+        self.push("    }");
+    }
+
     /// Empties the storage an arm's rendered value copied into the destination.
     ///
     /// A place or compiler temporary is copied and then zeroed, so the
@@ -2631,23 +2663,6 @@ impl<'a> Emitter<'a> {
         // read no storage the store must empty.
         if self.carries_null_shape(arm) && self.carries_null_value(ty) {
             return;
-        }
-        // A raw-deref arm records whether its taken value names the storage a
-        // conditional store saved. The record sits on the arm's own path, so a
-        // skipped arm never sets it.
-        if value_moves_pointee(arm) && self.needs_drop(ty) {
-            let capture = self
-                .take_capture
-                .as_ref()
-                .filter(|capture| self.substitute(ty) == capture.ty)
-                .map(|capture| (capture.flag.clone(), capture.target.clone()));
-            if let Some((flag, target)) = capture {
-                if let Some(address) = self.deref_value_address(arm) {
-                    self.push(&format!("    if (({address}) == (&({target}))) {{"));
-                    self.push(&format!("        {flag} = 1;"));
-                    self.push("    }");
-                }
-            }
         }
         match &arm.kind {
             ValueKind::Place(place) => {

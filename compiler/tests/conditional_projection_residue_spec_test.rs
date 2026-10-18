@@ -19513,7 +19513,10 @@ func main(): i32 {
 /// through the pointer; the save is a different type and is released normally.
 /// `p439membertarget` stores into the member the same take consumes.
 /// `p439nestedarm` consumes the destination in a nested conditional arm.
-/// Every run exits with its stated code and reports no memory error.
+/// `p439condname` uses a source binding named like the generated condition
+/// local, and `p439castalias` reaches the destination through a raw pointer
+/// cast of a different nominal type. Every run exits with its stated code and
+/// reports no memory error.
 #[test]
 fn should_keep_the_consumed_save_of_a_guarded_aliasing_take() {
     let alias = r#"module spec.cpr.p439alias;
@@ -19700,6 +19703,54 @@ func main(): i32 {
     let output = run_memory("p439nestedarm", nested_arm);
     assert_no_asan("p439nestedarm", &output);
     assert_exit("p439nestedarm", &output, 0);
+
+    let cond_name = r#"module spec.cpr.p439condname;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let __cl_cond: bool = false;
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? (__cl_cond ? x : y) : y;
+        if (i32(len(v)) != 4) { return 9; }
+        return 0;
+    }
+}
+"#;
+    let output = run_memory("p439condname", cond_name);
+    assert_no_asan("p439condname", &output);
+    assert_exit("p439condname", &output, 0);
+
+    let cast_alias = r#"module spec.cpr.p439castalias;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func eatS(take x: S): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw S = raw S(&v);
+        v = (g && (eatS(take *p) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439castalias", cast_alias);
+    assert_no_asan("p439castalias", &output);
+    assert_exit("p439castalias", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
