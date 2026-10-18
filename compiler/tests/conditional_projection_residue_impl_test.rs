@@ -12390,3 +12390,565 @@ fn should_re_emit_the_loan_source_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// rawderefmoveouts: the emitted shapes of a projected raw-deref move.
+//
+// The pointer at the root of the projection is pinned once, and the selected
+// member is emptied through that pinned address. The binding, return, literal
+// field, and take argument each own the member exactly once.
+// ---------------------------------------------------------------------------
+
+/// A projected pointee move pins the pointer and empties the selected member.
+///
+/// `p437store` pins the named pointer and empties `(*(p)).s` directly after
+/// the store; `p437impure` pins the impure `alt` in one temporary, and both
+/// the read and the emptying name that temporary. The return, literal field,
+/// and take forms empty the member at their own consuming position. The
+/// impure store re-emits byte-identically.
+#[test]
+fn should_empty_the_selected_member_through_one_pinned_pointer() {
+    let tag = "p437store";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p437store;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let v: String = (*p).s;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p437store_main(void)\n{");
+    assert_contains(tag, body, "v = (*(p)).s;");
+    assert_contains(tag, body, "(*(p)).s = NULL;");
+    assert_follows(tag, body, "v = (*(p)).s;", "(*(p)).s = NULL;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p437impure";
+    let impure = r#"module spec.cprimpl.p437impure;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+let calls: i32 = 0;
+
+func alt(s: raw S, t: raw S): raw S {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    let b: S = S { s: stringOf("bb") };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let v: String = (*alt(p, q)).s;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, impure);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p437impure_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cprimpl_p437impure_alt(p, q);",
+    );
+    assert_contains(tag, body, "v = (*(__cl_tmp0)).s;");
+    assert_contains(tag, body, "(*(__cl_tmp0)).s = NULL;");
+    assert_follows(tag, body, "v = (*(__cl_tmp0)).s;", "(*(__cl_tmp0)).s = NULL;");
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p437impure_alt(").count(),
+        1,
+        "{tag}: the impure pointer must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p437return";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p437return;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func takeS(p: raw S): String {
+    unsafe { return (*p).s; }
+}
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let v: String = takeS(p);
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p437return_takeS(ClS *p)\n{",
+    );
+    assert_contains(tag, body, "ClString __cl_return_1 = (*(p)).s;");
+    assert_contains(tag, body, "(*(p)).s = NULL;");
+    assert_follows(
+        tag,
+        body,
+        "ClString __cl_return_1 = (*(p)).s;",
+        "(*(p)).s = NULL;",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the return must run");
+
+    let tag = "p437field";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p437field;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+struct Holder { t: String; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let h: Holder = Holder { t: (*p).s };
+        return i32(len(h.t)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p437field_main(void)\n{");
+    assert_contains(tag, body, "h.t = (*(p)).s;");
+    assert_contains(tag, body, "(*(p)).s = NULL;");
+    assert_follows(tag, body, "h.t = (*(p)).s;", "(*(p)).s = NULL;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the field must run");
+
+    let tag = "p437take";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p437take;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let n: i32 = eat(take (*p).s);
+        return n - 1;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p437take_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cprimpl_p437take_eat((*(p)).s);",
+    );
+    assert_contains(tag, body, "(*(p)).s = NULL;");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cprimpl_p437take_eat((*(p)).s);",
+        "(*(p)).s = NULL;",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the take must run");
+
+    let (first, second) = emit_twice("p437impure", impure);
+    assert_eq!(
+        first, second,
+        "p437impure: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// guardedtargetsave: the consumed conditional save compares the pointee
+// address with the destination.
+//
+// The guard may or may not alias the destination, so the save is zeroed only
+// on the aliasing path; every other path keeps it for the ordinary release.
+// The false guard selection skips the take and stores the else arm.
+// ---------------------------------------------------------------------------
+
+/// The then-branch compares the pointee address and zeroes the save on a match.
+///
+/// `p439alias` takes `v` through `p = &v`; the emitted branch tests
+/// `(&(v)) == p`, zeroes the saved handle on a match, stores `x` in the then
+/// arm and `y` in the else arm, and releases the save after the branch.
+/// `p439nonalias` has the same shape with `p = &(w)`, so the runtime test fails
+/// and the save is released. `p439aliasfalse` pins the else arm's store of `y`.
+#[test]
+fn should_zero_the_consumed_save_only_when_the_pointee_aliases_the_target() {
+    let tag = "p439alias";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439alias;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439alias_main(void)\n{");
+    assert_contains(tag, body, "ClString __cl_save_1 = v;");
+    let alias_line = body
+        .lines()
+        .position(|line| line.contains("if ((&(v)) == p) {"))
+        .unwrap_or_else(|| panic!("{tag}: the alias test is missing; body:\n{body}"));
+    let zeroing = body
+        .lines()
+        .nth(alias_line + 1)
+        .unwrap_or_else(|| panic!("{tag}: the alias branch has no body; body:\n{body}"));
+    assert!(
+        zeroing.contains("__cl_save_1 = NULL;"),
+        "{tag}: the aliasing branch must zero the save; line:\n{zeroing}"
+    );
+    assert_contains(tag, body, "v = x;");
+    assert_contains(tag, body, "v = y;");
+    assert_release_after(
+        tag,
+        body,
+        "v = y;",
+        "if (__cl_save_1) { FreeString(__cl_save_1); }",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p439nonalias";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439nonalias;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let w: String = stringOf("ww");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &w;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439nonalias_main(void)\n{");
+    assert_contains(tag, body, "p = &(w);");
+    assert_contains(tag, body, "if ((&(v)) == p) {");
+    assert_contains(tag, body, "v = y;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p439aliasfalse";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p439aliasfalse;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = false;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p439aliasfalse_main(void)\n{",
+    );
+    assert_contains(tag, body, "g = 0;");
+    assert_contains(tag, body, "v = y;");
+    assert_contains(tag, body, "y = NULL;");
+    assert_eq!(
+        run_host_c(tag, &scratch, &emitted),
+        2,
+        "{tag}: the false arm must store y"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// borrowingread: a borrowing intrinsic or argument leaves the raw-deref read
+// inline.
+//
+// No owned temporary and no release is emitted for the pointee: the read names
+// the caller's storage directly, and the loop's third test short-circuits
+// before the impure pointer runs.
+// ---------------------------------------------------------------------------
+
+/// The intrinsic loop and the borrow argument read the pointee directly.
+///
+/// `p440loop` emits `len(*(alt(p, q)))` inside the loop condition with one
+/// `alt` call and no `__cl_owned` binding or temporary release; `p440borrow`
+/// passes `(*(alt(p, q))).s` to the borrowing parameter the same way. The loop
+/// program re-emits byte-identically.
+#[test]
+fn should_leave_the_borrowing_read_of_a_raw_pointee_inline() {
+    let tag = "p440loop";
+    let loop_source = r#"module spec.cprimpl.p440loop;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let i: i32 = 0;
+    let total: i32 = 0;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        while (i < 2 && (i32(len(*alt(p, q))) == 2)) {
+            i = i + 1;
+            total = total + 1;
+        }
+        return calls * 10 + i * 10 + total - 42;
+    }
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, loop_source);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p440loop_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "while (((i < 2) && ((i32)((cl_string_view(*(cl_alt__String(p, q)))).len) == 2))) {",
+    );
+    assert_absent(tag, body, "__cl_owned");
+    assert_absent(tag, body, "FreeString(__cl_tmp");
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "{tag}: the impure pointer must run once per evaluation; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the loop must run");
+
+    let tag = "p440borrow";
+    let borrow_source = r#"module spec.cprimpl.p440borrow;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+let calls: i32 = 0;
+
+func alt(s: raw S, t: raw S): raw S {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read(p: String): i32 { return i32(len(p)); }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    let b: S = S { s: stringOf("bb") };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let n: i32 = read((*alt(p, q)).s);
+        return n - 2;
+    }
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, borrow_source);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p440borrow_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "n = cl_spec_cprimpl_p440borrow_read((*(cl_spec_cprimpl_p440borrow_alt(p, q))).s);",
+    );
+    assert_absent(tag, body, "__cl_owned");
+    assert_absent(tag, body, "FreeString(__cl_tmp");
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p440borrow_alt(").count(),
+        1,
+        "{tag}: the impure pointer must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+
+    let (first, second) = emit_twice("p440loop", loop_source);
+    assert_eq!(
+        first, second,
+        "p440loop: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// guardedmembermoveout: only the taken member is emptied, inside the guard.
+//
+// The projected member's move-out travels on the deferred call materialization,
+// so the zeroing appears in the same guarded comma sequence as the call. The
+// sibling member is read after the take and is never emptied at that position.
+// ---------------------------------------------------------------------------
+
+/// The guarded line empties `name` and leaves `other` to its scope release.
+///
+/// `p441member` pins the pointer in one temporary, calls `eat` on the selected
+/// member, and zeroes `(*(__cl_tmp0)).name` in the same comma sequence before
+/// the result comparison. The sibling read and the untouched `b.name` read stay
+/// in the body. The false selection keeps the same guard and returns the call
+/// count (0), so the runtime evidence is in the specification suite. The
+/// member program re-emits byte-identically.
+#[test]
+fn should_empty_only_the_taken_member_inside_the_guard() {
+    let tag = "p441member";
+    let member = r#"module spec.cprimpl.p441member;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+struct S { name: String; other: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa"), other: stringOf("oo") };
+    let b: S = S { name: stringOf("bb"), other: stringOf("pp") };
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let ok: bool = g && (eat(take (*alt(p, q)).name) == 1);
+        if (!ok) { return 99; }
+        if (calls != 1) { return 98; }
+        if (i32(len(a.other)) != 2) { return 97; }
+        return i32(len(b.name)) - 2;
+    }
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, member);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p441member_main(void)\n{");
+    let guarded = body
+        .lines()
+        .find(|line| line.contains("ok = (g && "))
+        .unwrap_or_else(|| panic!("{tag}: the guarded take is missing; body:\n{body}"));
+    assert!(
+        guarded.contains("cl_spec_cprimpl_p441member_eat((*(__cl_tmp0)).name)"),
+        "{tag}: the taken member must read through the pinned pointer; line:\n{guarded}"
+    );
+    assert!(
+        guarded.contains("((*(__cl_tmp0)).name = NULL)"),
+        "{tag}: the taken member must empty inside the guard; line:\n{guarded}"
+    );
+    assert!(
+        !guarded.contains("a.other = NULL"),
+        "{tag}: the sibling must stay owned; line:\n{guarded}"
+    );
+    assert_contains(tag, body, "if (((i32)((cl_string_view(a.other)).len) != 2)) {");
+    assert_contains(tag, body, "(cl_string_view(b.name)).len");
+    assert_eq!(
+        body.matches("cl_alt__S(").count(),
+        1,
+        "{tag}: the impure pointer must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the take must run");
+
+    let tag = "p441false";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p441false;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+struct S { name: String; other: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa"), other: stringOf("oo") };
+    let b: S = S { name: stringOf("bb"), other: stringOf("pp") };
+    let g: bool = false;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let ok: bool = g && (eat(take (*alt(p, q)).name) == 1);
+        if (ok) { return 99; }
+        return calls;
+    }
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p441false_main(void)\n{");
+    assert_contains(tag, body, "g = 0;");
+    assert_contains(tag, body, "__cl_ret = cl_spec_cprimpl_p441false_calls;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the false path must run");
+
+    let (first, second) = emit_twice("p441member", member);
+    assert_eq!(
+        first, second,
+        "p441member: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
