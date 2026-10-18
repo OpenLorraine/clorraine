@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 14/62 tasks (23%) — Phase 2 pinned
+> **Progress**: 15/62 tasks (24%) — Phase 2 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -185,17 +185,17 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
       prefix match, the temp-owner record including `__cl_owned0`, the binding-loan fallback for
       both forms, the report code/count/span, the sibling/caller-parameter acceptances, and a
       re-emission determinism pin)
-- [ ] 2.3.2 Phase review — dispatch correctness, semantics, and memory-safety; apply the
+- [x] 2.3.2 Phase review — dispatch correctness, semantics, and memory-safety; apply the ✅ (completed: 2026-10-18; the three lenses dispatched: correctness PASS WITH MINORS, semantics FAIL (N2S-1; filed `DEF-451`, claim narrowed), memory CONFIRMED (0 in-diff; `DEF-450`/`451` filed); the correction round pinned the conservative boundaries, the phrase, and the assignment/nested call forms; `DEF-453` filed)
       corrections; run the host ASan/LSan probes. The packet includes the blast-radius step
       (`replace_element_loans`, `record_element_view_loans`, `collect_place_copy_loans`,
       `move_element_loans`, `place_recorded_position_owners`, `recorded_position_frame_owners`,
       `frame_owned_view_owner`) and the test-integrity step
-- [ ] 2.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
+- [x] 2.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the ✅ (completed: 2026-10-18; the bounded confirmation CLEAN: N2S-1 scoped/filed, the minors closed, the mutation check, the suites, and `make check` green)
       rounds
 
 ### Step 2.4: Phase Record
 
-- [ ] 2.4.1 Phase record: append to `05-findings.md` (including the `DEF-430` direct-fill
+- [x] 2.4.1 Phase record: append to `05-findings.md` (including the `DEF-430` direct-fill ✅ (completed: 2026-10-18; the ledger section recorded; progress 15/62)
       outcome); update Progress; commit per the active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the ASan/LSan probes; the

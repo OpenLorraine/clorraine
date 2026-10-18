@@ -282,3 +282,46 @@ loans — a critical UAF; fixed in neither the base nor the phase).
 - **Phase-2 note**: `DEF-430` (`xs[k] = a.v; let s = xs[1]`) already rejects under the phase-1
   wildcard record (the base at the phase-2 start accepts nothing here) — the phase-2 spec author must
   re-probe it and reclassify as an incidental closure or a control, not a red case.
+
+## Phase 2 — Loan sources through runtime, temporary, and call reads
+
+**Reviewed implementation**: `2443d91` (the implementation), `9430b3c` (the pins), `938beaa` (the
+corrections). **Lenses**: correctness (N2C), semantics (N2S), memory-safety.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | N2C-1 (the owner-subject phrase changed for a pre-existing report), N2C-2 (the `check_assign` threading unpinned — a mutation kept the suites green), N2C-3 (the conservative container union unpinned); P1 (a call-mediated view stored in a global) filed as `DEF-453` |
+| semantics | FAIL — 1 blocker | N2S-1 (a call-mediated view over an inline temporary-derived array is still accepted — pre-existing and filed as `DEF-451`; the phase's claim narrowed to the pinned non-place forms); N2S-2..N2S-4 minors; PRE-1 (the generated-owner lifetime extension vs the frozen D5 rule) filed as `DEF-452` for a ruling |
+| memory-safety | CONFIRMED — 0 in-diff | The red shapes reject with no TU; the accepted controls are ASan/LSan-clean with byte-identical emission; two pre-existing critical UAFs filed (`DEF-450`, `DEF-451`) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`938beaa`) | **Resolved**: the phase claim narrowed (the non-place copy/direct forms are covered; a materialized inline temporary array is the filed `DEF-451` residual); the conservative container-call union pinned with a no-loan control; the two-site take-report parity pinned; the owner-subject phrase pinned per route; the assignment/fill/nested call-result cases and the `check_assign` impl pins added (the `None` mutation now fails them) |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| all three | **CLEAN**: N2S-1 scoped and filed (`DEF-451`), N2S-2/3/4 and N2C-1/2/3 closed; the base discrimination, the mutation check, the suites (204/204 + 204/204 plain and ASan), and `make check` green; no compiler source changed since `9430b3c` |
+
+### Filed rows
+
+`DEF-450` (a cross-frame out-slot escape through a borrowed aggregate argument), `DEF-451` (a
+call-mediated view of an inline temporary view-array), `DEF-452` (the generated-owner lifetime vs
+D5 — a ruling request), `DEF-453` (a call-mediated view stored in a global dangles).
+
+### Record notes
+
+- `DEF-430` is an **incidental closure**: the phase-1 fixed-extent wildcard already reports the
+  k=0/k=1 runtime-store copies and the direct runtime reads; the constant sibling stays accepted.
+- The deliberate conservative readings: a call-mediated view over a container reports the whole
+  binding union (the modular call model has no positional precision); the container sibling's
+  rejection is pinned with a no-loan control.
+- The two-site take report matches the base direct twin's parity and is pinned.
+- The generated-owner lifetime extension (`__cl_owned0` at body scope) contradicts the frozen D5
+  temporary rule; `DEF-452` requests the ruling (extend D5 for generated owners, or reject the
+  next-statement read).
