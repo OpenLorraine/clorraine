@@ -3529,7 +3529,16 @@ fn value_is_stable_alias_source(value: &Value) -> bool {
         ValueKind::Unary {
             op: UnaryOp::Deref,
             operand,
-        } => matches!(operand.kind, ValueKind::Place(_) | ValueKind::Temp(_)),
+        } => match &operand.kind {
+            ValueKind::Place(_) | ValueKind::Temp(_) => true,
+            // `*(&a.items)` names the same storage through an address-of; the
+            // address is stable when the inner place is.
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand,
+            } => value_is_stable_alias_source(operand),
+            _ => false,
+        },
         ValueKind::Member { base, .. } => value_is_stable_alias_source(base),
         ValueKind::Index { base, index } => {
             value_is_stable_alias_source(base)

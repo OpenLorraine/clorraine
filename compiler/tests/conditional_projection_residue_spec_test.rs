@@ -20793,6 +20793,25 @@ func main(): i32 {
     assert_no_asan("p424callalias", &output);
     assert_exit("p424callalias", &output, 0);
 
+    let array_address_of = r#"module spec.cpr.p424arrayaddrof;
+
+import { String, stringOf } from std.text;
+
+struct S { items: String[2]; }
+
+func main(): i32 {
+    let a: S = S { items: [stringOf("aa"), stringOf("bb")] };
+    unsafe {
+        let p: raw S = &a;
+        (*p).items = *(&a.items);
+    }
+    return (i32(len(a.items[0])) - 2) + (i32(len(a.items[1])) - 2);
+}
+"#;
+    let output = run_memory("p424arrayaddrof", array_address_of);
+    assert_no_asan("p424arrayaddrof", &output);
+    assert_exit("p424arrayaddrof", &output, 0);
+
     let generic_runtime = r#"module spec.cpr.p424genruntime;
 
 import { String, stringOf } from std.text;

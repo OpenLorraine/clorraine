@@ -13712,6 +13712,37 @@ func main(): i32 {
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
 
+    let tag = "p424arrayaddrofimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424arrayaddrofimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { items: String[2]; }
+
+func main(): i32 {
+    let a: S = S { items: [stringOf("aa"), stringOf("bb")] };
+    unsafe {
+        let p: raw S = &a;
+        (*p).items = *(&a.items);
+    }
+    return (i32(len(a.items[0])) - 2) + (i32(len(a.items[1])) - 2);
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p424arrayaddrofimpl_main(void)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "if (((void *)&((*(&((*(p)).items))))) != ((void *)&(*(&(a.items))))) {",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
+
     let tag = "p424callaliasimpl";
     let (scratch, emitted) = emit_host(
         tag,
