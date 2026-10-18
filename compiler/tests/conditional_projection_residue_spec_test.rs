@@ -19361,3 +19361,463 @@ func main(): i32 {
     assert_no_asan("assignedinscope", &output);
     assert_exit("assignedinscope", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// rawderefprojection: an owning member of a raw pointee moves through the
+// projection, not only through a top-level dereference.
+//
+// `(*p).s` names a member of the caller's pointee. Consuming that member must
+// pin the pointer once and empty the selected member, whether the value flows
+// into a binding, a return, a struct-literal field, or a `take` argument. A
+// copy left in place lets both the destination and the pointee release the
+// same storage. The conditional arm is the control: the batch-M arm store
+// already moves the chosen member, so it stays green.
+// ---------------------------------------------------------------------------
+
+/// The store, return, field, and take forms each move the pointee once.
+///
+/// Every program reads `a.s` through a raw pointer and consumes the member.
+/// The member must be emptied at the consuming position, so the pointee's own
+/// scope release finds nothing; a copy left in place frees the same storage a
+/// second time. The run exits 0 and reports no memory error. `p437arm` is the
+/// conditional-arm control and keeps its batch-M behavior.
+#[test]
+fn should_move_a_member_projection_of_a_raw_pointee() {
+    let store = r#"module spec.cpr.p437store;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let v: String = (*p).s;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p437store", store);
+    assert_no_asan("p437store", &output);
+    assert_exit("p437store", &output, 0);
+
+    let returned = r#"module spec.cpr.p437return;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func takeS(p: raw S): String {
+    unsafe { return (*p).s; }
+}
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let v: String = takeS(p);
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p437return", returned);
+    assert_no_asan("p437return", &output);
+    assert_exit("p437return", &output, 0);
+
+    let field = r#"module spec.cpr.p437field;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+struct Holder { t: String; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let h: Holder = Holder { t: (*p).s };
+        return i32(len(h.t)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p437field", field);
+    assert_no_asan("p437field", &output);
+    assert_exit("p437field", &output, 0);
+
+    let taken = r#"module spec.cpr.p437take;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    unsafe {
+        let p: raw S = &a;
+        let n: i32 = eat(take (*p).s);
+        return n - 1;
+    }
+}
+"#;
+    let output = run_memory("p437take", taken);
+    assert_no_asan("p437take", &output);
+    assert_exit("p437take", &output, 0);
+
+    let arm = r#"module spec.cpr.p437arm;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        let v: String = g ? (*p).s : stringOf("zz");
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p437arm", arm);
+    assert_no_asan("p437arm", &output);
+    assert_exit("p437arm", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedtargetalias: a guarded take through a raw pointer may consume the
+// value a conditional store saved.
+//
+// The conditional store saves the old destination because its condition reads
+// the destination through a `take`. When the pointer aliases the destination,
+// the callee already freed the saved value, so the saved handle must be zeroed
+// instead of released again. When the pointer does not alias, the save stays a
+// real owner and is released normally. The false guard selection skips the take
+// entirely and stores the else arm.
+// ---------------------------------------------------------------------------
+
+/// The aliasing take zeroes the consumed save; the non-aliasing take drops it.
+///
+/// `p439alias` takes `v` through `p = &v` and stores `x`; the taken value and
+/// the save are one allocation, so the save must not be freed again.
+/// `p439aliasfalse` skips the take and stores `y = "yyyy"`, so its run reads
+/// the stored value (exit 2, not 0). `p439nonalias` takes `w` through `p = &w`
+/// and still releases the old `v` through the save. Every run exits with its
+/// stated code and reports no memory error.
+#[test]
+fn should_keep_the_consumed_save_of_a_guarded_aliasing_take() {
+    let alias = r#"module spec.cpr.p439alias;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439alias", alias);
+    assert_no_asan("p439alias", &output);
+    assert_exit("p439alias", &output, 0);
+
+    let alias_false = r#"module spec.cpr.p439aliasfalse;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = false;
+    unsafe {
+        let p: raw String = &v;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439aliasfalse", alias_false);
+    assert_no_asan("p439aliasfalse", &output);
+    assert_exit("p439aliasfalse", &output, 2);
+
+    let nonalias = r#"module spec.cpr.p439nonalias;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let w: String = stringOf("ww");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &w;
+        v = (g && (eat(take (unsafe *p)) == 1)) ? x : y;
+        return i32(len(v)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p439nonalias", nonalias);
+    assert_no_asan("p439nonalias", &output);
+    assert_exit("p439nonalias", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedintrinsicderef: a borrowing intrinsic or borrow argument reads a
+// raw-deref projection and binds nothing.
+//
+// `len(*alt(p, q))` and `read((*alt(p, q)).s)` only read the pointee. Binding
+// the read into a released temporary hands the caller's storage to the
+// statement cleanup, so the pointee's own release frees it a second time. The
+// intrinsic loop must run twice, the argument call must read and return, and
+// the impure `alt` must run once per evaluation.
+// ---------------------------------------------------------------------------
+
+/// The intrinsic and borrow-argument forms read the pointee without binding it.
+///
+/// `p440loop` and `p440plain` run a two-iteration loop whose condition reads
+/// the pointee through `len`; `p440borrow` passes a projected read to a plain
+/// (borrowing) parameter. The loop spelling of the same call stays a control.
+/// Every run exits 0 and reports no memory error; the loop run also pins that
+/// `alt` runs once per evaluated condition (twice, because the third test
+/// short-circuits before it).
+#[test]
+fn should_leave_a_raw_deref_read_unbound_for_a_borrowing_intrinsic_or_argument() {
+    let loop_cast = r#"module spec.cpr.p440loop;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let i: i32 = 0;
+    let total: i32 = 0;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        while (i < 2 && (i32(len(*alt(p, q))) == 2)) {
+            i = i + 1;
+            total = total + 1;
+        }
+        return calls * 10 + i * 10 + total - 42;
+    }
+}
+"#;
+    let output = run_memory("p440loop", loop_cast);
+    assert_no_asan("p440loop", &output);
+    assert_exit("p440loop", &output, 0);
+
+    let loop_plain = r#"module spec.cpr.p440plain;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let i: i32 = 0;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        while (i < 2 && len(*alt(p, q)) == 2) {
+            i = i + 1;
+        }
+        return calls * 10 + i * 10 - 40;
+    }
+}
+"#;
+    let output = run_memory("p440plain", loop_plain);
+    assert_no_asan("p440plain", &output);
+    assert_exit("p440plain", &output, 0);
+
+    let borrow = r#"module spec.cpr.p440borrow;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+let calls: i32 = 0;
+
+func alt(s: raw S, t: raw S): raw S {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read(p: String): i32 { return i32(len(p)); }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    let b: S = S { s: stringOf("bb") };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let n: i32 = read((*alt(p, q)).s);
+        return n - 2;
+    }
+}
+"#;
+    let output = run_memory("p440borrow", borrow);
+    assert_no_asan("p440borrow", &output);
+    assert_exit("p440borrow", &output, 0);
+
+    let loop_borrow = r#"module spec.cpr.p440loopborrow;
+
+import { String, stringOf } from std.text;
+
+struct S { s: String; }
+
+let calls: i32 = 0;
+
+func alt(s: raw S, t: raw S): raw S {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read(p: String): i32 { return i32(len(p)); }
+
+func main(): i32 {
+    let a: S = S { s: stringOf("aa") };
+    let b: S = S { s: stringOf("bb") };
+    let i: i32 = 0;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        while (i < 2 && read((*alt(p, q)).s) == 2) {
+            i = i + 1;
+        }
+        return calls * 10 + i * 10 - 40;
+    }
+}
+"#;
+    let output = run_memory("p440loopborrow", loop_borrow);
+    assert_no_asan("p440loopborrow", &output);
+    assert_exit("p440loopborrow", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedmembertake: a guarded take of a member over a raw pointer moves only
+// the selected member.
+//
+// `eat(take (*alt(p, q)).name)` hands the selected member to the callee, so the
+// caller must empty that member and leave the sibling owned. Recording the
+// whole pointee instead would empty the sibling too and lose its value; not
+// recording the member at all double-frees it. The pointer expression runs once
+// on the evaluated path, and the false guard selection never calls it.
+// ---------------------------------------------------------------------------
+
+/// The taken member empties, the sibling stays owned, and the false path skips
+/// the call.
+///
+/// `p441member` takes `a.name` through an impure `alt`, then reads the sibling
+/// `a.other` and the untouched `b.name`; the run exits 0 only when the take ran
+/// once, the member was emptied, and the sibling survived. `p441false` skips
+/// the guarded call and returns the call count (0). Both runs report no memory
+/// error.
+#[test]
+fn should_move_only_the_taken_member_of_a_guarded_raw_pointee() {
+    let member = r#"module spec.cpr.p441member;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+struct S { name: String; other: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa"), other: stringOf("oo") };
+    let b: S = S { name: stringOf("bb"), other: stringOf("pp") };
+    let g: bool = true;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let ok: bool = g && (eat(take (*alt(p, q)).name) == 1);
+        if (!ok) { return 99; }
+        if (calls != 1) { return 98; }
+        if (i32(len(a.other)) != 2) { return 97; }
+        return i32(len(b.name)) - 2;
+    }
+}
+"#;
+    let output = run_memory("p441member", member);
+    assert_no_asan("p441member", &output);
+    assert_exit("p441member", &output, 0);
+
+    let guarded_false = r#"module spec.cpr.p441false;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+struct S { name: String; other: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("aa"), other: stringOf("oo") };
+    let b: S = S { name: stringOf("bb"), other: stringOf("pp") };
+    let g: bool = false;
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &b;
+        let ok: bool = g && (eat(take (*alt(p, q)).name) == 1);
+        if (ok) { return 99; }
+        return calls;
+    }
+}
+"#;
+    let output = run_memory("p441false", guarded_false);
+    assert_no_asan("p441false", &output);
+    assert_exit("p441false", &output, 0);
+}
