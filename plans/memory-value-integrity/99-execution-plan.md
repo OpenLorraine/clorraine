@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 15/62 tasks (24%) — Phase 2 complete
+> **Progress**: 20/62 tasks (32%) — Phase 3 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -209,7 +209,7 @@ strict builds
 
 ## Phase 3: Raw-deref move-outs
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `8ca7f06`
 > **Rows**: `DEF-437` (critical), `DEF-439` (major), `DEF-440` (critical), `DEF-441` (critical)
 > **Lenses**: correctness + semantics + memory-safety + emission-integrity (AR-31; the channel is
 > IR/emission)
@@ -223,17 +223,17 @@ AR-13, AR-14, AR-15, AR-16
 **Objective**: Pin the projected raw pointee, the guarded aliasing take, the borrowing intrinsic,
 and the guarded member take, with both guard selections and the false-path controls.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases (rawderefprojection, guardedtargetalias,
+- [x] 3.1.1 [spec-author] Write the phase cases (rawderefprojection, guardedtargetalias,
       guardedintrinsicderef, guardedmembertake) with the isolated store/return/field forms, both
       selections, the distinct-length false path (`v = "vv"`, `y = "yyyy"`), the non-aliasing
       control, the two-owned-member sibling read, and the batch-M discard/non-taking controls; the
       red cases committed first
-- [ ] 3.1.2 Run the suite and record the red phase (the isolated store/return/field forms, the
+- [x] 3.1.2 Run the suite and record the red phase (the isolated store/return/field forms, the
       five consuming shapes, and both guard selections); verify the controls green first
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Extend the materializer to a `Deref` anywhere in a projection chain
+- [x] 3.2.1 Extend the materializer to a `Deref` anywhere in a projection chain
       (`own/lower.rs:3699-3721`, used by the store/return/field/take paths); extend the three
       emission gates to the chain — `moves_pointee` (`codegen/function.rs:1382-1384`),
       `return_source_needs_emptying` (`codegen/cleanup.rs:545-567`), and
@@ -244,34 +244,34 @@ and the guarded member take, with both guard selections and the false-path contr
       record the projected member (not the root) for a `Deref`-rooted take in
       `take_pointee_move_outs` (`own/call.rs:804-821`) and extend the take-path pin
       (`own/lower.rs:5239-5262`) to the chain
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix (or park/record per AR-33,
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix (or park/record per AR-33,
       AR-35(b)); run `make check`
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the single call per pointer expression, the
+- [x] 3.3.1 Write the phase implementation pins (the single call per pointer expression, the
       read/empty pointer identity, the projected-member `MoveOutValue` placement inside the
       evaluated path, the emitted alias condition, the false arm's store of `y` under distinct
       lengths, the absent false-path call, and a re-emission determinism pin)
-- [ ] 3.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
+- [x] 3.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
       probes and the base/head emission differential over the P3 probe set and the corpus. The
       packet includes the blast-radius step (every `materialize_owning_deref` call,
       `take_pointee_move_outs` callee kind, `arm_consumes_target` shape) and the test-integrity
       step
-- [ ] 3.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
+- [x] 3.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
       rounds
 
 ### Step 3.4: Phase Record
 
-- [ ] 3.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
+- [x] 3.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
       commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the ASan/LSan probes; the
 emission differential
 
 **Deliverables**:
-- [ ] ST-8..ST-11 red then green; both guard selections clean
-- [ ] The batch-M `m375_*`/`m376_*` controls stay green
+- [x] ST-8..ST-11 red then green; both guard selections clean
+- [x] The batch-M `m375_*`/`m376_*` controls stay green
 
 ---
 

@@ -136,24 +136,39 @@ strict failure.
 
 ## Phase 3 — Raw-deref move-outs
 
-**Reviewed implementation**: _(recorded at review time)_. **Lenses**: correctness, semantics,
-memory-safety, and emission-integrity (AR-31).
+**Reviewed implementation**: `5eb62e6` (the projection and take fixes), `44a5b78` (the pins),
+`1a93141` and `661f42e` (the correction rounds). **Lenses**: correctness, semantics, memory-safety,
+and emission-integrity (AR-31).
 
 ### Verdicts
 
-_(to be filled; the per-pointer-expression call count, pointer identity, projected-member
-`MoveOutValue` placement, alias-condition text, and guarded-path evidence are recorded here; the
-`DEF-439` false-path expectation is corrected to "the false arm stores `y`", with the distinct-length
-re-run (`q439alias_false`, `v = "vv"`, `y = "yyyy"`, run 2))_
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | RV-001 (the alias check missed the false path, `||` right, nested arms, arm takes, and projected members) closed by the runtime flag; RV-004 (the `__cl_cond` source-binding collision) closed by `unique_local`; RV-003 (aggregate containment) filed as `DEF-456`; RV-002 (stale plan state) closed by this record |
+| semantics | PASS — 0 blockers after correction | SR-001 (the cross-type pointer comparison emitted invalid C) closed by the `void *` address test; SR-002 (the skipped-take leak under nested short-circuit contexts) closed by the runtime flag; SR-003 (a plain arm move set the take flag) closed by the take-only setter; the containment residual filed |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The four projected moves, both guard selections, the intrinsic loop and borrow argument, the guarded member take, the leak variants, the false-returning callee, the nested and arm takes, the cast alias, and the batch-M controls are ASan/LSan-clean; the containment failure mode filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | Intended deltas only (pointer pin, move-out placement, intrinsic argument, alias flag); no-take stores byte-identical; strict builds over the corpus and the probe matrix; both cross-profile legs; F1/N1 closed, R1/R2 filed |
 
 ### Findings and rulings
 
-_(to be filled)_
+- The first review found the branch-keyed alias check incomplete (RV-001/SR-002) and the
+  cross-type comparison invalid C (SR-001). The correction (`1a93141`) introduced the runtime
+  `__cl_take_alias` flag, the condition local, and the address-of-taken-value comparison.
+- The bounded confirmation found the type gate missed a cast alias and the fixed condition name
+  collided with a source binding; the second correction (`661f42e`) uses the `void *` comparison,
+  `unique_local`, and the take-only flag setter.
+- The deliberate boundary: the alias test is address equality, not containment; an aggregate or
+  subobject containment take is filed as `DEF-456`. The fixed-array conditional destination
+  (`DEF-455`), the guarded struct-literal argument/receiver field (`DEF-454`), the nested-temporary
+  materialization (`DEF-457`), the named-place `||` skip (`DEF-458`), the mutated pointer re-read
+  (`DEF-459`), and the self-move value loss (`DEF-460`) are filed.
 
 ### Filed rows
 
-_(to be filled: the projection-materializer and the three emission gates, the projected-member
-`MoveOutValue`, the runtime alias condition, or "none")_
+`DEF-454` (guarded struct-literal argument/receiver field), `DEF-455` (conditional fixed-array
+destination), `DEF-456` (aggregate containment save granularity), `DEF-457` (capture lost through a
+nested temporary), `DEF-458` (named-place take in a skipped `||` right), `DEF-459` (mutated pointer
+place re-read), `DEF-460` (conditional self-move through a raw pointer loses the destination).
 
 ## Phase 4 — Store lowering and evaluation order
 
@@ -325,3 +340,63 @@ D5 — a ruling request), `DEF-453` (a call-mediated view stored in a global dan
 - The generated-owner lifetime extension (`__cl_owned0` at body scope) contradicts the frozen D5
   temporary rule; `DEF-452` requests the ruling (extend D5 for generated owners, or reject the
   next-statement read).
+
+## Phase 3 — Raw-deref move-outs
+
+**Reviewed implementation**: `5eb62e6` (the projection materializer, the emission gates, the
+intrinsic/non-take rule, and the projected take move-out), `44a5b78` (the pins), `1a93141` (the
+runtime alias flag), `661f42e` (the take-only flag, the unique condition local, and the `void *`
+comparison). **Lenses**: correctness (N3C), semantics (N3S), memory-safety, and emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | RV-001 (the branch-keyed alias check missed the false-returning callee, `||` right, nested arm, materialize arm, and projected-member takes) closed; RV-004 (a source binding named `__cl_cond` was shadowed) closed; RV-003 (aggregate containment) filed as `DEF-456`; RV-002 (stale Progress and task state) closed by this record |
+| semantics | PASS — 0 blockers after correction | SR-001 (unrelated-type take emitted `if ((&(v)) == p)`, invalid C under `-Werror`) closed by the `void *` address test; SR-002 (a skipped `&&` take under `||`/`?:`/`!`/comparison zeroed the save and leaked) closed by the runtime flag; SR-003 (a plain arm source move set the flag and leaked the save) closed by the take-only setter |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The four projected moves, the alias/non-alias/false selections, the intrinsic loop and borrow argument, the guarded member take, the six leak variants, the false-returning callee, the nested and arm takes, the cast alias, and the batch-M `m375_*`/`m376_*` controls are ASan/LSan-clean; the containment failure-mode change is filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | The P3 differential classes are the intended pointer pin, move-out placement, intrinsic argument shape, and alias flag; no-take conditional stores are byte-identical to `44a5b78`; 121 probes strict-build with no C failure; the repository differential over the run corpus is only `d439a`/`d439b`; both cross-profile legs link; F1/N1 closed, R1/R2 filed |
+
+### Fix rounds
+
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `5eb62e6`, `44a5b78` | **Applied**: `pin_deref_projection` walks Member/Index to the Deref root; `value_moves_pointee` covers the three emission gates and the guarded move-out; `deref_rooted` covers the take move-out and the intrinsic/non-take rules; the projected member is recorded instead of the root; the conditional store adds the first alias check |
+| C1 | `1a93141` | **Resolved SR-001/SR-002**: the runtime `__cl_take_alias` flag is set in the take's own move-out comma sequence; the condition evaluates once into a local; the save is zeroed before the branches and re-checked after the arms; the address is the taken value's address, not the pointer operand |
+| C2 | `661f42e` | **Resolved NU-1/SR-003/N1**: only take move-outs set the flag; the condition local uses `unique_local`; both compared addresses cast to `void *` with no nominal-type gate, so a cast alias is recognized and an unrelated object compares unequal |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (all four lenses on `44a5b78`) | **NOT CONFIRMED**: SR-001 cross-type invalid C; SR-002 skipped-take leak; RV-001 false-path and arm takes; RV-004 condition-name collision (found in B2); F2/R1/R2 base-equal residuals |
+| B2 (four lenses on `6f6546b`) | **NOT CONFIRMED**: the cast-alias regression (the type gate dropped the cast case) and the `__cl_cond` collision; the original leak and false-path findings confirmed fixed |
+| B3 (four lenses on `661f42e`) | **CONFIRMED**: all correction repros clean; the take-only flag and `void *` comparison verified; the containment failure-mode change accepted as a filed residual (`DEF-456`); the phase closes for the four rows |
+
+### Filed rows
+
+`DEF-454` (a guarded struct-literal call argument or receiver copies a raw-deref owning field
+instead of moving it; base-equal, ASan double-free on the argument), `DEF-455` (a conditional
+fixed-array destination has no take capture; base-equal double-free), `DEF-456` (the alias test is
+address equality, not containment: a non-first-member take releases the whole save and double-frees,
+while a first-member take into a whole-struct destination zeroes the whole save and leaks the
+sibling — base-red, a failure-mode change at offset zero), `DEF-457` (the capture does not survive a
+nested temporary materialization, `y439nestedarg`), `DEF-458` (a named-place take in a skipped `||`
+right zeroes the save unconditionally), `DEF-459` (a pure pointer place mutated by the callee is
+re-read by the move-out/alias test), `DEF-460` (a conditional self-move through a raw pointer loses
+the destination).
+
+### Record notes
+
+- The alias test is deliberately an address equality over the taken value, not containment: the
+  design's `take_ran && &pointee == &target` is emitted as the flag plus the `void *` comparison.
+  The containment cases are filed in `DEF-456`; the aggregate/offset-zero sub-case changes from a
+  double free to a sibling leak, which the reviewers accepted as a residual on a base-red shape.
+- The plain-arm flag regression (SR-003) is the only setter that the take-only split needed: the
+  statement and guarded take move-out loops call `emit_take_alias`; `emit_arm_source_moves` never
+  sets the flag.
+- The condition local is created only when a qualifying pointee exists, so a no-take conditional
+  store emits the original direct condition. The batch-M conditional-store pins stay green.
+- The frozen-spec reading: Ch 04 §5 (the chosen path only), Ch 16 §2 (a read does not move), and
+  Ch 17 §5 (copy plus zero, one release per owner) decide the four rows; no spec or registry edit
+  was needed.
