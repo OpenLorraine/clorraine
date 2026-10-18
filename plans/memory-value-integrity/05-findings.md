@@ -215,3 +215,45 @@ the next-batch count recomputed; every in-execution filed row checked — AR-36)
 _(to be filled: the phase commits and the final tree)_. **Residuals**: _(to be filled: the
 `DEF-430` direct-runtime-fill outcome, the `DEF-435` runtime-direct-read outcome, the `at1`
 source-read row, and the `DEF-427` scalar-`len` row)_.
+
+## Phase 1 — Loan transfer on stored copies
+
+**Reviewed implementation**: `bd77905` (the implementation), `64e739a` (the pins), `d2338e8` (the
+corrections). **Lenses**: correctness (N1C), semantics (N1S), memory-safety.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | N1C-1 (the `Element(None)` wildcard recorded the whole binding union, so safe runtime-store programs — a later clean overwrite then a read — were falsely rejected: base accepted + ASan/LSan-clean, head `E10030`); N1C-2 (the wildcard's negative boundary unpinned) |
+| semantics | PASS WITH MINORS — 0 blockers | N1S-1 (the same over-report, a conservative reading per Ch 16 §9 but a new rejection of a safe program), N1S-2 (the AR-35(e) intended deltas recorded but unpinned) |
+| memory-safety | CONFIRMED — 0 in-diff | The 48 red shapes reject with no TU; the 33 accepted controls are ASan/LSan-clean with byte-identical emission; one pre-existing critical UAF surfaced (a conditional carrier copy of view-holding struct places) and was filed as `DEF-449` |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`d2338e8`) | **Fixed**: a runtime store expands its wildcard over the destination's declared fixed extent into concrete element paths (the wildcard only for an open extent), so a later clean store clears its slot and a safe read is not rejected; added the clean-overwrite and different-prefix acceptance pins, the direct-runtime intended-delta pins, and the `position_*` unit tests; corrected the incidental-closure wording and scoped the design's no-new-rejection sentence to the copy forms |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| correctness | **PASS WITH MINORS — 0 blockers**: N1C-1 closed for the reported shapes (the clean overwrite/direct twins accept at both indices), N1C-2 and N1S-2 closed; the sub-row candidate-granularity conservatism (a runtime row's loan union is not cleared by a constant store below it) recorded as a deliberate Ch 16 §9 reading |
+
+### Filed rows
+
+`DEF-449` (the pre-existing conditional carrier copy of view-holding struct places loses its element
+loans — a critical UAF; fixed in neither the base nor the phase).
+
+### Record notes
+
+- `DEF-431` closes incidentally under the `DEF-429` gate (the deeper-projection copy); `DEF-435`'s
+  constant half closes under the same gate and its runtime half under the `Element(None)` wildcard
+  record — recorded in task 1.2.1.
+- The deliberate conservative readings: an open extent keeps the wildcard; a clean store at the same
+  runtime index does not clear the candidates (no index identity); a constant store below a
+  runtime-written row does not clear the row's union. All are within Ch 16 §9 (`:338-339`).
+- **Phase-2 note**: `DEF-430` (`xs[k] = a.v; let s = xs[1]`) already rejects under the phase-1
+  wildcard record (the base at the phase-2 start accepts nothing here) — the phase-2 spec author must
+  re-probe it and reclassify as an incidental closure or a control, not a red case.

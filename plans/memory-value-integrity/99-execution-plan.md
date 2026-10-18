@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 6/62 tasks (10%) — Phase 1 pinned
+> **Progress**: 9/62 tasks (15%) — Phase 1 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -117,18 +117,18 @@ projection, and the element-store nested fill, with their direct controls.
 - [x] 1.3.1 Write the phase implementation pins (the loan record paths, the `Element(None)` wildcard ✅ (completed: 2026-10-18; seventeen impl pins: the self-assignment loan records (single/array), the conditional/literal element copies per arm/element, the runtime wildcard through the direct/copy/element-store/whole-row readers, the deeper projection, the constant/runtime element-store fills, and four declared controls (the in-scope emissions, the constant sibling, the byte-identical re-emission); the base discrimination 13/4 at `70ef134`; residue impl 188/188, plain and ASan)
       record and its three-reader match, the report code/count/span per shape, the accepted copy
       emissions, and a re-emission determinism pin) in `conditional_projection_residue_impl_test.rs`
-- [ ] 1.3.2 Phase review — dispatch the correctness, semantics, and memory-safety lenses; apply
+- [x] 1.3.2 Phase review — dispatch the correctness, semantics, and memory-safety lenses; apply ✅ (completed: 2026-10-18; the three lenses dispatched: correctness FAIL (the wildcard over-report blocker), semantics PASS WITH MINORS, memory CONFIRMED (0 in-diff; `DEF-449` filed); the correction round expanded the wildcard over the fixed extent, pinned the acceptances and the intended deltas, and added the position-match unit tests)
       the corrections; run the host ASan/LSan probes. The reviewer packet includes the
       blast-radius step (every `set_binding_loans`, `replace_element_loans`,
       `record_element_view_loans`, `place_recorded_position_owners`, `move_element_loans`,
       `record_copy_element_loans`, `collect_place_copy_loans`, `recorded_position_frame_owners`, and
       the `emit_indexed_store` caller) and the test-integrity step
-- [ ] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suite after the
+- [x] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suite after the ✅ (completed: 2026-10-18; the bounded confirmation: correctness PASS WITH MINORS (0 blockers; N1C-1/2, N1S-2 closed; the sub-row conservatism recorded); the ASan matrix and the focused suites green)
       corrections; record FAIL/PASS per round
 
 ### Step 1.4: Phase Record
 
-- [ ] 1.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+- [x] 1.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`; ✅ (completed: 2026-10-18; the ledger section recorded; the phase-2 note for `DEF-430`; progress 9/62)
       update the Progress block and commit per the active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan/LSan probes; the
