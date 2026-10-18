@@ -10853,3 +10853,737 @@ fn should_pin_the_call_filled_element_move_out() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Stored-copy view loans. A view copied into a binding, an element, or a
+// projected destination keeps the backing its source read, so a later escape
+// reports the owner. The exact self-assignment is a no-op that must not drop
+// the record; a composite conditional or literal copy writes the union of its
+// source positions; a run-time destination records one wildcard position that
+// every position reader matches under that path; and a deeper projection or an
+// element-store fill keeps the loan it covers. The accepted in-scope reads and
+// the constant sibling pin the untouched emission, and every accepted program
+// re-emits byte-identically.
+// ---------------------------------------------------------------------------
+
+/// A single view copied from a loaned element, assigned to itself, then
+/// passed to an out-slot: the self-assignment must keep the element's loan.
+const STORED_SELF_SINGLE_SOURCE: &str = r#"module spec.cprimpl.storedselfsingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    s = s;
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A whole view array copied from a loaned element, assigned to itself, then
+/// passed to an out-slot: the array's element loan must survive the store.
+const STORED_SELF_ARRAY_SOURCE: &str = r#"module spec.cprimpl.storedselfarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(borrow slot: str?, ys: str[2]): void { slot = ys[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    ys = ys;
+    fill(borrow slot, ys);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// Both exact self-assignments read back while the owner is alive: the copies
+/// stay accepted and keep their plain store text.
+const STORED_SELF_IN_SCOPE_SOURCE: &str = r#"module spec.cprimpl.storedselfscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    s = s;
+    let ys: str[2] = xs;
+    ys = ys;
+    return i32(s[0]) + i32(ys[0][0]) - (97 + 97);
+}
+
+func main(): i32 { return outer(); }
+"#;
+
+/// A conditional row copied into a constant element position: the first
+/// source arm carries the loan, so a later read below that position reports.
+const STORED_COND_FIRST_SOURCE: &str = r#"module spec.cprimpl.storedcondfirst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    fill(grid[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same conditional row read at the second source arm's position: the
+/// destination record keeps that arm's position beside the first.
+const STORED_COND_SECOND_SOURCE: &str = r#"module spec.cprimpl.storedcondsecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    fill(grid[0][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 98;
+}
+"#;
+
+/// An array-literal copy into a constant element position: the first literal
+/// element carries the loan, so the destination keeps that element's record.
+const STORED_LITERAL_FIRST_SOURCE: &str = r#"module spec.cprimpl.storedlitfirst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = b.w;
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[0] = [xs[0], xs[1]];
+    fill(g[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same literal copy read at its second element: the union keeps each
+/// literal element's own position.
+const STORED_LITERAL_SECOND_SOURCE: &str = r#"module spec.cprimpl.storedlitsecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = b.w;
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[0] = [xs[0], xs[1]];
+    fill(g[0][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 98;
+}
+"#;
+
+/// A conditional row copied through a run-time destination index and read
+/// directly: the wildcard record keeps the second arm's position.
+const STORED_WILDCARD_DIRECT_SOURCE: &str = r#"module spec.cprimpl.storedwilddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let b: Box = Box { v: stringOf("cc") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    zs[1] = b.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    fill(grid[1][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 99;
+}
+"#;
+
+/// The wildcard record read through a constant element copy: the first arm's
+/// loan follows the copy into the new local.
+const STORED_WILDCARD_COPY_SOURCE: &str = r#"module spec.cprimpl.storedwildcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    let s: str = grid[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The wildcard record read by an element store into another local array: the
+/// element-view record keeps the first arm's loan at the stored position.
+const STORED_WILDCARD_ELEMENT_SOURCE: &str = r#"module spec.cprimpl.storedwildelement;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = xs;
+    let h: str[2] = ["EE", "FF"];
+    h[0] = grid[1][0];
+    fill(h[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The wildcard record read through a whole row copy: the target array's
+/// element keeps the source position's loan.
+const STORED_WILDCARD_MOVE_SOURCE: &str = r#"module spec.cprimpl.storedwildmove;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    let ys: str[2] = grid[1];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The accepted copies of the same phase: a conditional row, a projected
+/// conditional element, a literal row, and a run-time row are read while the
+/// owner is alive.
+const STORED_IN_SCOPE_COPY_SOURCE: &str = r#"module spec.cprimpl.storedcopyscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(c: bool, k: i32): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = a.w;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    let s1: str = grid[0][0];
+    let out2: str[2] = ["EE", "FF"];
+    out2[0] = c ? xs[0] : zs[1];
+    let s2: str = out2[0];
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[0] = [xs[0], xs[1]];
+    let s3: str = g[0][0];
+    let grid2: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid2[k] = c ? xs : zs;
+    let s4: str = grid2[1][0];
+    return i32(s1[0]) + i32(s2[0]) + i32(s3[0]) + i32(s4[0]) - (97 + 97 + 97 + 97);
+}
+
+func main(): i32 { return outer(true, 1); }
+"#;
+
+/// A row copy read one projection below the copied row: the row's loan
+/// follows the deeper read into the new local.
+const STORED_DEEPER_SOURCE: &str = r#"module spec.cprimpl.storeddeeper;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    rows[0] = xs;
+    let s: str = rows[0][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A fill literal stored into a constant element position: every stored
+/// element carries the fill value's loan.
+const STORED_CONST_FILL_SOURCE: &str = r#"module spec.cprimpl.storedconstfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[1] = [; a.v];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same fill literal stored through a run-time element index: the
+/// wildcard position reaches the later constant read.
+const STORED_RUNTIME_FILL_SOURCE: &str = r#"module spec.cprimpl.storedrunfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[k] = [; a.v];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A constant store into one sibling element leaves the other sibling
+/// un-loaned: the later read stays accepted and clean.
+const STORED_SIBLING_SOURCE: &str = r#"module spec.cprimpl.storedsibling;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[2] = ["AA", "BB"];
+    ys[0] = a.v;
+    let s: str = ys[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+
+/// The single-view self-assignment keeps its loan: the later out-slot store
+/// reports the owner once at its own line.
+#[test]
+fn should_pin_the_exact_single_view_self_assignment() {
+    assert_rejected_once_at(
+        "storedselfsingle",
+        STORED_SELF_SINGLE_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The array self-assignment keeps its element loan: the later out-slot store
+/// reports the owner once at its own line.
+#[test]
+fn should_pin_the_exact_array_self_assignment() {
+    assert_rejected_once_at(
+        "storedselfarray",
+        STORED_SELF_ARRAY_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The in-scope self-assignments stay accepted: the single view keeps its
+/// self-store, the array self-store is elided, and both reads stay plain.
+#[test]
+fn should_keep_the_in_scope_self_assignment_emission() {
+    let tag = "storedselfscope";
+    let (scratch, emitted) = emit_host(tag, STORED_SELF_IN_SCOPE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_storedselfscope_outer(void)\n{");
+    assert_contains(tag, body, "s = xs[0];");
+    assert_contains(tag, body, "s = s;");
+    assert_contains(tag, body, "memcpy(&(ys), &(xs), sizeof(ys));");
+    assert_absent(tag, body, "memcpy(&(ys), &(ys)");
+    assert_contains(tag, body, "((s).ptr[0])");
+    assert_contains(tag, body, "((ys[0]).ptr[0])");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the reads must run");
+}
+
+/// The conditional element copy keeps the first arm's position: the later
+/// read below that position reports the first owner.
+#[test]
+fn should_pin_the_conditional_element_copy_then_arm() {
+    assert_rejected_once_at(
+        "storedcondfirst",
+        STORED_COND_FIRST_SOURCE,
+        "E10030",
+        18,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The conditional element copy keeps the second arm's position: the later
+/// read below that position reports the second owner.
+#[test]
+fn should_pin_the_conditional_element_copy_else_arm() {
+    assert_rejected_once_at(
+        "storedcondsecond",
+        STORED_COND_SECOND_SOURCE,
+        "E10030",
+        18,
+        5,
+        &["borrow of 'b' does not live long enough"],
+        &[],
+    );
+}
+
+/// The literal element copy keeps the first element's position: the later
+/// read below that position reports the first owner.
+#[test]
+fn should_pin_the_literal_element_copy_first_element() {
+    assert_rejected_once_at(
+        "storedlitfirst",
+        STORED_LITERAL_FIRST_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The literal element copy keeps the second element's position: the later
+/// read below that position reports the second owner.
+#[test]
+fn should_pin_the_literal_element_copy_second_element() {
+    assert_rejected_once_at(
+        "storedlitsecond",
+        STORED_LITERAL_SECOND_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'b' does not live long enough"],
+        &[],
+    );
+}
+
+/// A run-time destination records a wildcard position: a direct constant read
+/// below that path reaches the stored arm's owner.
+#[test]
+fn should_pin_the_runtime_element_direct_read() {
+    assert_rejected_once_at(
+        "storedwilddirect",
+        STORED_WILDCARD_DIRECT_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'b' does not live long enough"],
+        &[],
+    );
+}
+
+/// The wildcard position matches a constant element copy: the copied local
+/// keeps the loan and reports it at the later out-slot store.
+#[test]
+fn should_pin_the_runtime_element_copy_read() {
+    assert_rejected_once_at(
+        "storedwildcopy",
+        STORED_WILDCARD_COPY_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The wildcard position matches an element store into another local array:
+/// the stored position keeps the loan and reports it at the later store.
+#[test]
+fn should_pin_the_runtime_element_element_store() {
+    assert_rejected_once_at(
+        "storedwildelement",
+        STORED_WILDCARD_ELEMENT_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The wildcard position matches a whole row copy: the destination row keeps
+/// the loan and reports it at the later out-slot store.
+#[test]
+fn should_pin_the_runtime_row_whole_copy() {
+    assert_rejected_once_at(
+        "storedwildmove",
+        STORED_WILDCARD_MOVE_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The accepted copies keep their emitted store shapes: both conditional
+/// arms, the projected element, the literal elements, and the run-time row.
+#[test]
+fn should_keep_the_in_scope_composite_copy_emissions() {
+    let tag = "storedcopyscope";
+    let (scratch, emitted) = emit_host(tag, STORED_IN_SCOPE_COPY_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_storedcopyscope_outer(bool c, i32 k)\n{",
+    );
+    assert_contains(tag, body, "memcpy(&(grid[0]), &(xs), sizeof(grid[0]));");
+    assert_contains(tag, body, "memcpy(&(grid[0]), &(zs), sizeof(grid[0]));");
+    assert_contains(tag, body, "out2[0] = (c ? xs[0] : zs[1]);");
+    assert_contains(tag, body, "g[0][0] = xs[0];");
+    assert_contains(tag, body, "g[0][1] = xs[1];");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&(grid2[k])))), &(xs), sizeof((*(&(grid2[k])))));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&(grid2[k])))), &(zs), sizeof((*(&(grid2[k])))));",
+    );
+    assert_contains(tag, body, "s4 = grid2[1][0];");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the reads must run");
+}
+
+/// A copy read one projection below a copied row keeps the row's loan: the
+/// later out-slot store reports the owner.
+#[test]
+fn should_pin_the_deeper_projection_copy() {
+    assert_rejected_once_at(
+        "storeddeeper",
+        STORED_DEEPER_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// A fill literal stored into a constant element position keeps the fill
+/// value's loan: the later element read reports the owner.
+#[test]
+fn should_pin_the_constant_element_store_fill() {
+    assert_rejected_once_at(
+        "storedconstfill",
+        STORED_CONST_FILL_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The same fill literal stored through a run-time index keeps the fill
+/// value's loan through the wildcard position.
+#[test]
+fn should_pin_the_runtime_element_store_fill() {
+    assert_rejected_once_at(
+        "storedrunfill",
+        STORED_RUNTIME_FILL_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The constant sibling store leaves the un-stored sibling clean: the read
+/// stays accepted and keeps its plain stores.
+#[test]
+fn should_keep_the_constant_sibling_emission() {
+    let tag = "storedsibling";
+    let (scratch, emitted) = emit_host(tag, STORED_SIBLING_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_storedsibling_outer(ClStr *slot)\n{");
+    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
+    assert_contains(tag, body, "s = ys[1];");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_storedsibling_fill(s, &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}
+
+/// The accepted stored-copy programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_stored_copy_programs_byte_identically() {
+    for (tag, source) in [
+        ("storedselfscope", STORED_SELF_IN_SCOPE_SOURCE),
+        ("storedcopyscope", STORED_IN_SCOPE_COPY_SOURCE),
+        ("storedsibling", STORED_SIBLING_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(
+            first, second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

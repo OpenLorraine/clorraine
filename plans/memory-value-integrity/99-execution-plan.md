@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 5/62 tasks (8%) — Phase 1 implemented
+> **Progress**: 6/62 tasks (10%) — Phase 1 pinned
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -114,7 +114,7 @@ projection, and the element-store nested fill, with their direct controls.
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the loan record paths, the `Element(None)` wildcard
+- [x] 1.3.1 Write the phase implementation pins (the loan record paths, the `Element(None)` wildcard ✅ (completed: 2026-10-18; seventeen impl pins: the self-assignment loan records (single/array), the conditional/literal element copies per arm/element, the runtime wildcard through the direct/copy/element-store/whole-row readers, the deeper projection, the constant/runtime element-store fills, and four declared controls (the in-scope emissions, the constant sibling, the byte-identical re-emission); the base discrimination 13/4 at `70ef134`; residue impl 188/188, plain and ASan)
       record and its three-reader match, the report code/count/span per shape, the accepted copy
       emissions, and a re-emission determinism pin) in `conditional_projection_residue_impl_test.rs`
 - [ ] 1.3.2 Phase review — dispatch the correctness, semantics, and memory-safety lenses; apply
