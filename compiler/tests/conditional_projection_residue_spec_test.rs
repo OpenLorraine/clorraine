@@ -18932,3 +18932,432 @@ func main(): i32 { return outer(); }
     assert_no_asan("callviewinscope", &output);
     assert_exit("callviewinscope", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// containerunion: a call-mediated view over a mixed-backing container carries
+// the container's loan union.
+//
+// The modular call model gives a call result no positional precision: when a
+// view is returned from a container, the result carries the loans recorded on
+// the container, which are the union over every element. A later fill of any
+// element therefore reports the loaned sibling's owner, even when the read
+// selects an element that is clean. The soundness stance allows this
+// conservative report (Ch 16 section 9: when the checker cannot prove a loan
+// safe, it rejects), and a container with no loan keeps its acceptance.
+// ---------------------------------------------------------------------------
+
+/// A call result over a container with a loaned sibling reports that sibling's
+/// owner at the fill, while a container with no loan stays accepted and clean.
+///
+/// `containerunionpick` reads the clean element `xs[1]` after `xs[0]` holds a
+/// view of `a`, and `containerunionarray` copies the whole container through a
+/// call and reads its second element. Both report one `E10030` naming `a`, not
+/// the container `xs`, because the call result carries the container's union.
+/// `containerunionclean` is the acceptance control: it has no loaned sibling
+/// and runs 0.
+#[test]
+fn should_report_the_conservative_container_union() {
+    let pick = r#"module spec.cpr.containerunionpick;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pick(xs, 1), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    compile_rejects_once_at(
+        "containerunionpick",
+        pick,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+
+    let array = r#"module spec.cpr.containerunionarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pickArr(xs: str[2]): str[2] { return xs; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = pickArr(xs);
+    fill(ys[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    compile_rejects_once_at(
+        "containerunionarray",
+        array,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+
+    let clean = r#"module spec.cpr.containerunionclean;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    fill(pick(xs, 1), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    let output = run_memory("containerunionclean", clean);
+    assert_no_asan("containerunionclean", &output);
+    assert_exit("containerunionclean", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// takesites: a taken temporary element reports at both stores.
+//
+// A temporary-derived view handed to a `take` parameter escapes twice: the
+// callee stores the take parameter's view into the caller's out-slot, and the
+// caller's statement temporary backs the argument. The array spelling
+// `take ys[0]` reaches both sites exactly as the direct `take mk().v` twin
+// does, so the two-report parity is the contract for both spellings.
+// ---------------------------------------------------------------------------
+
+/// A taken temporary element and its direct twin each report twice: once at
+/// the callee's take-parameter store and once at the caller's call.
+///
+/// `takesiteselement` passes `take ys[0]` from an array filled with views of
+/// `mk()`; `takesitesdirect` is the control that passes `take mk().v`. Both
+/// carry one report at the callee store and one at the caller call, naming the
+/// take parameter and the statement temporary respectively.
+#[test]
+fn should_report_both_sites_of_a_taken_temporary_element() {
+    let element = r#"module spec.cpr.takesiteselement;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func consume(take p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = [mk().v; "EE"];
+    consume(take ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_at_sites(
+        "takesiteselement",
+        element,
+        "E10030",
+        &[(9, 54), (13, 5)],
+        &[
+            "borrow of 'p' does not live long enough",
+            "borrow of a statement temporary does not live long enough",
+        ],
+    );
+
+    let direct = r#"module spec.cpr.takesitesdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func consume(take p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    consume(take mk().v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_at_sites(
+        "takesitesdirect",
+        direct,
+        "E10030",
+        &[(9, 54), (12, 5)],
+        &[
+            "borrow of 'p' does not live long enough",
+            "borrow of a statement temporary does not live long enough",
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ownerphrase: a generated owner borrowed out of an element store renders as
+// a statement temporary.
+//
+// An element store of `mk().v` records the generated owner under the element
+// path. A later fill of that element is a recorded-position escape, and its
+// message must use the same phrase as the direct `fill(mk().v)` value route:
+// `a statement temporary`. The internal `__cl_` spelling is never shown.
+// ---------------------------------------------------------------------------
+
+/// The recorded-position and value-route escapes name the same phrase.
+///
+/// `ownerphraserecorded` stores a temporary-derived view into `ys[0]` and
+/// fills from that element; `ownerphrasevalue` passes `mk().v` straight to the
+/// callee. The recorded-position case is the discriminator and the value-route
+/// case is the control. Both report one `E10030` naming `a statement
+/// temporary`, and neither mentions `a compiler-generated owner` or an
+/// internal name.
+#[test]
+fn should_render_the_statement_temporary_phrase_for_recorded_and_value_routes() {
+    let recorded = r#"module spec.cpr.ownerphraserecorded;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = ["AA", "BB"];
+    ys[0] = mk().v;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "ownerphraserecorded",
+        recorded,
+        "E10030",
+        14,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["a compiler-generated owner", "__cl_"],
+    );
+
+    let value = r#"module spec.cpr.ownerphrasevalue;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    fill(mk().v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects_once_at(
+        "ownerphrasevalue",
+        value,
+        "E10030",
+        12,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["a compiler-generated owner", "__cl_"],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// assignedcopy: an assignment and its fill and nested spellings keep the
+// lowered owner.
+//
+// A `let` declaration is not the only store that copies a temporary-derived
+// element view: `ys = [mk().v; "EE"]` replaces the array through the assignment
+// path, and the array-literal fill spelling `["EE"; mk().v]` stores the same
+// view. A nested call `pass(pick(xs, 0))` forwards a call result's binding
+// loans through another call. Every spelling keeps the owner, so a later fill
+// reports the escape; an in-scope read of the assigned element stays accepted
+// and clean.
+// ---------------------------------------------------------------------------
+
+/// The assignment, fill-value, and nested call spellings keep their loans.
+///
+/// `assignedcopy` assigns a temporary-derived array to an existing binding
+/// and fills from its first element; `assignedfill` uses the fill value of an
+/// array literal; both report one `E10030` naming the statement temporary.
+/// `assignednested` forwards a call result through `pass` and reports one
+/// `E10030` naming the loaned binding `a`, not the container `xs`.
+/// `assignedinscope` reads the assigned element while the owner is alive and
+/// runs 0.
+#[test]
+fn should_keep_the_loans_of_an_assigned_and_nested_temporary_view() {
+    let assigned = r#"module spec.cpr.assignedcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = ["AA", "BB"];
+    ys = [mk().v; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "assignedcopy",
+        assigned,
+        "E10030",
+        14,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["'ys'", "__cl_"],
+    );
+
+    let fill = r#"module spec.cpr.assignedfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = ["EE"; mk().v];
+    fill(ys[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "assignedfill",
+        fill,
+        "E10030",
+        13,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["'ys'", "__cl_"],
+    );
+
+    let nested = r#"module spec.cpr.assignednested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func pass(p: str): str { return p; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pass(pick(xs, 0)), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "assignednested",
+        nested,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+
+    let in_scope = r#"module spec.cpr.assignedinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func main(): i32 {
+    let ys: str[2] = ["AA", "BB"];
+    ys = [mk().v; "EE"];
+    return i32(len(ys[0])) - 2;
+}
+"#;
+    let output = run_memory("assignedinscope", in_scope);
+    assert_no_asan("assignedinscope", &output);
+    assert_exit("assignedinscope", &output, 0);
+}

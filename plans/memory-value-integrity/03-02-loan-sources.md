@@ -12,8 +12,11 @@ shapes: a runtime-indexed store read back at a constant index, a temporary-deriv
 view-array literal, and a call-mediated element-view result. Each fix teaches an existing loan
 lookup one more source: the runtime store's wildcard position, the provenance owners of a
 non-place value (including a lowered temporary), and the binding-loan owners of a call result
-(including the direct call form). No new rejection surface: the copies stay accepted; the escape
-reports the frozen `E10030` (AR-8–AR-11).
+(including the direct call form). The binding-loan route covers the non-place copy and direct
+forms pinned by ST-7. A call argument that is a **place** carrying a materialized inline temporary
+array — the lowering binds the array to a generated owner the source-level value walk cannot name
+— is the filed `DEF-451` residual; this phase does not change the lowering. No new rejection
+surface: the copies stay accepted; the escape reports the frozen `E10030` (AR-8–AR-11).
 
 ## Frozen Rule
 
@@ -79,7 +82,10 @@ reports the frozen `E10030` (AR-8–AR-11).
    expand them with `loan_owners` under the frame filter before the provenance fallback; consult
    the binding-loan owners (`binding_loan_owners` / `view_loan_destination_owners`) before the
    provenance walk. Both the `let` copy and the direct call argument take the same fallback. A
-   caller-parameter view must stay accepted.
+   caller-parameter view must stay accepted. The fallback covers the non-place copy and direct
+   forms; a place carrying a materialized inline temporary array
+   (`pick([mk().v; "EE"], 0)`) is the filed `DEF-451` residual, with no lowering change in this
+   phase.
 
 ## Specification-First Cases (ST-5–ST-7)
 

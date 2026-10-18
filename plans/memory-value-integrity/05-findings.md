@@ -109,6 +109,31 @@ _(to be filled)_
 _(to be filled: include the `DEF-430` direct-runtime-fill blast-radius outcome and the filed
 residual if it stays accepted, AR-8; the `p430_sibling`/`q430sibling` acceptance is recorded)_
 
+### Correction round (N2S-1–N2S-4, N2C-1–N2C-3)
+
+The phase-2 lens review filed these corrections against the fix tree and its pins. This round adds
+tests and design/ledger notes only; the compiler sources do not change.
+
+| Item | Evidence | Decision and pin |
+|------|----------|------------------|
+| N2S-1 (semantics blocker) — inline temporary view-array through a call | `let s: str = pick([mk().v; "EE"], 0); fill(s, borrow slot)` (and the direct and element-store forms) is accepted at base `f1ab264` and at the reviewed head `c479e67`; the read is an ASan
+heap-use-after-free in both. The lowering materializes the inline array to a generated local (`__cl_owned1`), so `view_owners`/`lowered_*` stop at that place and never name `__cl_owned0`; `frame_owned_view_owner` then sees no positions and a static provenance. | Filed as `DEF-451` (pre-existing; the fix direction is recorded in the roadmap). **No lowering change in this phase.** The design claim is narrowed in `03-02-loan-sources.md`: the binding-loan fallback covers the non-place copy/direct forms pinned by ST-7; a place carrying a materialized inline temporary array is the residual. |
+| N2S-2 / N2C-3 — conservative container-call union | `xs[0] = a.v; fill(pick(xs, 1), slot)` and `ys: str[2] = pickArr(xs); fill(ys[1], slot)` accept and run ASan-clean at base; head rejects `E10030` naming the loaned sibling `a` (not `xs`). | **Intended conservative boundary**: the modular call model has no positional precision, so a call result carries the container's loan union; Ch 16 §9's soundness stance rejects when the checker cannot prove the read safe. Pinned by both spellings plus a no-loan container control that runs 0. |
+| N2S-3 — take-materialized array-element parity | `consume(take ys[0], slot)` with `ys = [mk().v; ...]` reports two `E10030` at head (the callee take-parameter store at `9:54` and the caller temporary at `13:5`); the direct twin `consume(take mk().v, slot)` reports the same two at base. The array spelling reported only the callee site at base. | **Contractual parity**: the element copy now records the lowered owner, so both spellings carry the same two-site judgment. Pinned as a two-site assertion for both spellings. |
+| N2S-4 / N2C-1 — owner-subject phrase | The pre-existing element-store shape `ys[0] = mk().v; fill(ys[0], slot)` reported `a compiler-generated owner` at base and now reports `a statement temporary` at head; the direct `fill(mk().v, slot)` value route reported `a statement temporary` at both. | **Contractual phrase**: `frame_view_owner` maps a generated owner to the statement-temporary phrase, matching the direct twin. The recorded-position case is the discriminator, the value-route case is the control, and both are pinned with the internal `__cl_` spelling and the old phrase absent. |
+| N2C-2 — unpinned `check_assign` and spelling breadth | A mutation at `expr.rs:1303` passing `None` instead of the lowered value kept the suites green while `let ys: str[2] = ["AA","BB"]; ys = [mk().v; "EE"]; fill(ys[0], slot)` regressed to acceptance. | Added the assignment spec case, the array-fill and nested-call spellings, and the `check_assign`/nested impl pins. All fail at base `f1ab264`; the mutation now fails the assignment pin while the declaration pin stays green. |
+
+**Round verification**: the six new test functions fail at base `f1ab264` (an accepted program, one
+report instead of two, or the old phrase) and pass at head; the controls (the no-loan container,
+the direct take twin, the value-route phrase, and the in-scope assignment read) pass at both. The
+compiler sources are untouched, so this round changes no emission. The wider probe set it pins
+records these base/head differences, all intended: two container-union reject rows
+(`containerunionpick`, `containerunionarray`), three temporary-copy reject rows (`assignedcopy`,
+`assignedfill`, `assignednested`), one extra take-materialized report site (`takesiteselement`),
+and one owner-phrase normalization (`ownerphraserecorded`). The accepted controls re-emit
+byte-identically, the emission over accepted programs shows no delta, and there is no head-only
+strict failure.
+
 ## Phase 3 — Raw-deref move-outs
 
 **Reviewed implementation**: _(recorded at review time)_. **Lenses**: correctness, semantics,

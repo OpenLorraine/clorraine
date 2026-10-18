@@ -11878,6 +11878,32 @@ func main(): i32 {
 }
 "#;
 
+/// The same temporary-derived element stored by assignment instead of a
+/// declaration: the assignment store must record the lowered owner too.
+const TEMPORARY_OWNER_ASSIGN_SOURCE: &str = r#"module spec.cprimpl.temporaryownerassign;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = ["AA", "BB"];
+    ys = [mk().v; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
 /// The same temporary-derived element read while its owner is alive: the
 /// lowered call result binds to the generated owner `__cl_owned0`, the array
 /// element views that owner, and the owner releases after the read.
@@ -11940,6 +11966,35 @@ func outer(borrow slot: str?): void {
     let xs: str[2] = ["AA", "BB"];
     xs[0] = a.v;
     fill(pick(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same call result forwarded through another call before the out-slot
+/// store: the outer call keeps the inner call's binding loans.
+const CALL_RESULT_NESTED_SOURCE: &str = r#"module spec.cprimpl.callresultnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func pass(p: str): str { return p; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pass(pick(xs, 0)), borrow slot);
 }
 
 func main(): i32 {
@@ -12136,6 +12191,23 @@ fn should_pin_the_temporary_element_owner() {
     );
 }
 
+/// The assignment spelling records the same lowered owner as the declaration
+/// spelling, so a fix that threads the value only through a declaration fails
+/// this case. The escape reports one `E10030` at the later fill and names the
+/// statement temporary, never the destination or the internal owner.
+#[test]
+fn should_pin_the_assignment_copy_owner() {
+    assert_rejected_once_at(
+        "temporaryownerassign",
+        TEMPORARY_OWNER_ASSIGN_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["'ys'", "__cl_owned0"],
+    );
+}
+
 /// The in-scope temporary element stays accepted: the lowering names the call
 /// result's owner `__cl_owned0`, copies a view of its member into the array,
 /// and releases the owner once after the read.
@@ -12192,6 +12264,22 @@ fn should_pin_the_call_result_binding_loan_direct() {
         CALL_RESULT_DIRECT_SOURCE,
         "E10030",
         15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+}
+
+/// A call result forwarded through a second call keeps the first call's
+/// binding loans: the outer argument reports one `E10030` naming the loaned
+/// binding `a`, not the container the inner call read.
+#[test]
+fn should_pin_the_nested_call_result_binding_loan() {
+    assert_rejected_once_at(
+        "callresultnested",
+        CALL_RESULT_NESTED_SOURCE,
+        "E10030",
+        17,
         5,
         &["borrow of 'a' does not live long enough"],
         &["'xs'"],
