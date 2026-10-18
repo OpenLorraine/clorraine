@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 0/62 tasks (0%) — Planning
+> **Progress**: 3/62 tasks (5%) — Phase 1 red
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -72,7 +72,7 @@ ledger item, not a fix task.
 
 ### Step 1.0: Pre-flight
 
-- [ ] 1.0.1 [orchestrator] Run `analyze-agents` before phase 1 and record the specialist-check
+- [x] 1.0.1 [orchestrator] Run `analyze-agents` before phase 1 and record the specialist-check ✅ (completed: 2026-10-18; `analyze-agents` ran before phase 1 — outcome None (the four project agents cover the recurring areas); `codeops/specialist-check.json` refreshed with 39 plans; the close-out 8.1.4 refreshes it again)
       state (the `AGENTS.md` rule after new plans land); the close-out refreshes it again in 8.1.4
 
 ### Step 1.1: Specification Tests
@@ -82,12 +82,12 @@ AR-6, AR-7, AR-9, AR-12
 **Objective**: Pin the exact self-assignment, the composite element/projected copy, the deeper
 projection, and the element-store nested fill, with their direct controls.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases in
+- [x] 1.1.1 [spec-author] Write the phase cases in ✅ (completed: 2026-10-18; four spec cases added: the exact self-assignment (`s = s`, `ys = ys`) with the direct and in-scope controls; the composite element/projected/literal/runtime copy destinations with the direct conditional fill, the runtime direct/copy forms, and the constant sibling; the deeper projection copy with its direct control; the element-store constant/runtime fill copies with the constant direct read; the runtime direct read is a recorded probe (AR-35(e)), not a spec assertion)
       `compiler/tests/conditional_projection_residue_spec_test.rs` (selfassignloans,
       compositeelementstore with the runtime-destination and constant-sibling controls,
       deeperprojectioncopy, elementstorenestedfill with the constant and runtime halves) with their
       direct controls; the red cases committed first
-- [ ] 1.1.2 Run the suite and record the red phase: the red cases fail without the fix (the
+- [x] 1.1.2 Run the suite and record the red phase: the red cases fail without the fix (the ✅ (completed: 2026-10-18; the red phase recorded: residue 190 passed / 4 failed; every red shape accepted at head with an ASan heap-use-after-free; the direct reads (13:5/15:5), the in-scope reads, the constant sibling, and the batch-M `E10031` controls green)
       expected `E10030` is absent), the direct controls are verified green first, and the
       batch-M loan/E10031 controls stay green (AR-3)
 

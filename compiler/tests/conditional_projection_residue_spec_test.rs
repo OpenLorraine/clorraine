@@ -17591,3 +17591,609 @@ fn should_move_a_call_filled_element_into_an_owning_binding() {
         assert_exit(tag, &output, 0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// selfassignloans: an exact self-assignment keeps the loans of a copied view.
+//
+// A `str` local or a `str[N]` local copied from a loaned element carries that
+// element's loan. Assigning the binding to itself copies the view onto itself,
+// so the assignment is a no-op and the loan record must survive it; a later
+// out-slot store is then the same escape the direct element argument reports.
+// A read of the copy while its owner is alive names no escape and stays
+// accepted. The direct element argument and the write-conflict cases elsewhere
+// in this suite are the controls.
+// ---------------------------------------------------------------------------
+
+/// An exact self-assignment keeps the copied element's loan, so the later
+/// out-slot store reports one `E10030` as the direct element argument does.
+///
+/// The single-view and the array forms are accepted at the head and read the
+/// released storage. `selfassignsingle` and `selfassignarray` expect the
+/// rejection at their `fill`; `selfassigninscope` reads both copies while the
+/// owner is alive and must run 0 with no memory report; `selfassigndirect`
+/// keeps the direct element argument's report.
+#[test]
+fn should_keep_the_loans_of_an_exact_self_assignment() {
+    let control = r#"module spec.cpr.selfassigndirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "selfassigndirect",
+        control,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let in_scope = r#"module spec.cpr.selfassigninscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    s = s;
+    let ys: str[2] = xs;
+    ys = ys;
+    return i32(s[0]) + i32(ys[0][0]) - (97 + 97);
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let output = run_memory("selfassigninscope", in_scope);
+    assert_no_asan("selfassigninscope", &output);
+    assert_exit("selfassigninscope", &output, 0);
+
+    let single = r#"module spec.cpr.selfassignsingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    s = s;
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "selfassignsingle",
+        single,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let array = r#"module spec.cpr.selfassignarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(borrow slot: str?, ys: str[2]): void { slot = ys[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    ys = ys;
+    fill(borrow slot, ys);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "selfassignarray",
+        array,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// compositeelementstore: a composite copy into an element, a projected
+// element, or a runtime element keeps every source position.
+//
+// `grid[0] = c ? xs : zs`, `out2[0] = c ? xs[0] : zs[0]`, and
+// `g[0] = [xs[0], xs[1]]` copy views into a destination element. The
+// destination's loan record must be the union of the source positions, so a
+// later read of a loaned element reports one `E10030` at its out-slot store,
+// whether the read is direct or through a local copy. A runtime destination
+// `grid[k]` cannot name its element, so it records a wildcard position that
+// matches a constant read under the same path. A constant store into a sibling
+// element loans only that element; a read of the sibling stays accepted and
+// clean, and the copies stay accepted.
+// ---------------------------------------------------------------------------
+
+/// A composite copy into an element, a projected element, or a runtime element
+/// reports one `E10030` at the later out-slot store, while the constant
+/// sibling control stays accepted and clean.
+#[test]
+fn should_keep_the_loans_of_a_composite_element_store() {
+    let sibling = r#"module spec.cpr.compsibling;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[2] = ["AA", "BB"];
+    ys[0] = a.v;
+    let s: str = ys[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    let output = run_memory("compsibling", sibling);
+    assert_no_asan("compsibling", &output);
+    assert_exit("compsibling", &output, 0);
+
+    let in_scope = r#"module spec.cpr.compinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(c: bool, k: i32): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = a.w;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    let s1: str = grid[0][0];
+    let out2: str[2] = ["EE", "FF"];
+    out2[0] = c ? xs[0] : zs[1];
+    let s2: str = out2[0];
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[0] = [xs[0], xs[1]];
+    let s3: str = g[0][0];
+    let grid2: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid2[k] = c ? xs : zs;
+    let s4: str = grid2[1][0];
+    return i32(s1[0]) + i32(s2[0]) + i32(s3[0]) + i32(s4[0]) - (97 + 97 + 97 + 97);
+}
+
+func main(): i32 { return outer(true, 1); }
+"#;
+    let output = run_memory("compinscope", in_scope);
+    assert_no_asan("compinscope", &output);
+    assert_exit("compinscope", &output, 0);
+
+    let conditional_row = r#"module spec.cpr.compcondrow;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = a.w;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    fill(grid[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "compcondrow",
+        conditional_row,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let projected = r#"module spec.cpr.compprojected;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = a.w;
+    let out2: str[2] = ["EE", "FF"];
+    out2[0] = c ? xs[0] : zs[0];
+    fill(out2[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "compprojected",
+        projected,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let literal = r#"module spec.cpr.complitarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[0] = [xs[0], xs[1]];
+    fill(g[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "complitarray",
+        literal,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let runtime_direct = r#"module spec.cpr.compruntimedirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    fill(grid[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "compruntimedirect",
+        runtime_direct,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let runtime_copy = r#"module spec.cpr.compruntimecopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    let s: str = grid[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "compruntimecopy",
+        runtime_copy,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// deeperprojectioncopy: a read one projection below a copied row keeps the
+// row's loan.
+//
+// `rows[0] = xs` copies the loaned elements of `xs` into the row `rows[0]`.
+// A later read of `rows[0][0]` is one projection below the copied row, so the
+// copy transfer must keep the recorded position that covers the read. The
+// direct read of the same element reports the escape already; the copy must
+// report it at the same point.
+// ---------------------------------------------------------------------------
+
+/// A copy read one projection deeper than the copied row keeps the loan, so
+/// its out-slot store reports one `E10030` as the direct read does.
+#[test]
+fn should_keep_the_loans_of_a_deeper_projection_copy() {
+    let direct = r#"module spec.cpr.deeperprojdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    rows[0] = xs;
+    fill(rows[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "deeperprojdirect",
+        direct,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let copy = r#"module spec.cpr.deeperprojcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    rows[0] = xs;
+    let s: str = rows[0][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "deeperprojcopy",
+        copy,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// elementstorenestedfill: an element store of a fill literal keeps the
+// literal value's loan.
+//
+// `g[1] = [; a.v]` stores a view of the local `a` in every element of the
+// constant destination element, and `g[k] = [; a.v]` does the same through a
+// runtime index. A later constant read of `g[1][0]`, direct or through a local
+// copy, reads the loaned view, so the out-slot store reports one `E10030` at
+// the fill. The constant destination is the direct-read control; the runtime
+// destination records a wildcard position that reaches the constant read.
+// ---------------------------------------------------------------------------
+
+/// An element store whose value is a fill literal keeps the value's loan, so a
+/// later constant read reports one `E10030` whether the destination index is
+/// constant or runtime.
+#[test]
+fn should_keep_the_loans_of_an_element_store_fill() {
+    let direct = r#"module spec.cpr.elemstoreconstdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[1] = [; a.v];
+    fill(g[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemstoreconstdirect",
+        direct,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let constant_copy = r#"module spec.cpr.elemstoreconstcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[1] = [; a.v];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemstoreconstcopy",
+        constant_copy,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let runtime_copy = r#"module spec.cpr.elemstoreruntimecopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[k] = [; a.v];
+    let s: str = g[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemstoreruntimecopy",
+        runtime_copy,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
