@@ -20712,13 +20712,13 @@ struct S { name: String; }
 
 func main(): i32 {
     let a: S = S { name: stringOf("aa") };
-    let b: S = S { name: stringOf("bb") };
+    let b: S = S { name: stringOf("bbbb") };
     unsafe {
         let p: raw S = &a;
         let q: raw S = &b;
         (*p).name = (*q).name;
     }
-    return i32(len(a.name)) - 2;
+    return i32(len(a.name)) - 4;
 }
 "#;
     let output = run_memory("p424rawdistinct", raw_distinct);
@@ -20730,18 +20730,68 @@ func main(): i32 {
 import { String, stringOf } from std.text;
 
 func main(): i32 {
-    let xs: String[2] = [stringOf("AA"), stringOf("BB")];
+    let xs: String[2] = [stringOf("AAAA"), stringOf("BB")];
     let i: i32 = 1;
     let j: i32 = 0;
     unsafe {
         xs[i] = *(&xs[j]);
     }
-    return i32(len(xs[1])) - 2;
+    return i32(len(xs[1])) - 4;
 }
 "#;
     let output = run_memory("p424runtimedistinct", runtime_distinct);
     assert_no_asan("p424runtimedistinct", &output);
     assert_exit("p424runtimedistinct", &output, 0);
+
+    let fixed_alias = r#"module spec.cpr.p424fixedalias;
+
+import { String, stringOf } from std.text;
+
+struct S { items: String[2]; other: i32; }
+
+func main(): i32 {
+    let a: S = S { items: [stringOf("aa"), stringOf("ab")], other: 1 };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &a;
+        (*p).items = (*q).items;
+    }
+    if (a.items[0] == null) { return 9; }
+    return i32(len(a.items[0])) - 2;
+}
+"#;
+    let output = run_memory("p424fixedalias", fixed_alias);
+    assert_no_asan("p424fixedalias", &output);
+    assert_exit("p424fixedalias", &output, 0);
+
+    let call_alias = r#"module spec.cpr.p424callalias;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i % 2 == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        (*alt(p, p)).name = (*alt(p, p)).name;
+    }
+    if (calls != 2) { return 8; }
+    return i32(len(s.name)) - 2;
+}
+"#;
+    let output = run_memory("p424callalias", call_alias);
+    assert_no_asan("p424callalias", &output);
+    assert_exit("p424callalias", &output, 0);
 
     let generic_runtime = r#"module spec.cpr.p424genruntime;
 

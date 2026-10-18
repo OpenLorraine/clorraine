@@ -13674,3 +13674,85 @@ func main(): i32 {
     assert_contains(tag, body, "*(&((*(p)).next->x)) = 7;");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the field store must run");
 }
+
+/// A fixed-array raw alias and a call-rooted raw alias compare addresses.
+///
+/// `p424fixedalias` guards the whole-array copy by the source and target
+/// addresses, so two pointers to the same storage skip the copy and the clear.
+/// `p424callalias` pins each call-rooted pointer once and guards the scalar
+/// store by their addresses.
+#[test]
+fn should_guard_a_raw_fixed_array_and_a_call_rooted_alias() {
+    let tag = "p424fixedaliasimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424fixedaliasimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { items: String[2]; other: i32; }
+
+func main(): i32 {
+    let a: S = S { items: [stringOf("aa"), stringOf("ab")], other: 1 };
+    unsafe {
+        let p: raw S = &a;
+        let q: raw S = &a;
+        (*p).items = (*q).items;
+    }
+    if (a.items[0] == null) { return 9; }
+    return i32(len(a.items[0])) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424fixedaliasimpl_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "if (((void *)&((*(&((*(p)).items))))) != ((void *)&((*(q)).items))) {",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
+
+    let tag = "p424callaliasimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424callaliasimpl;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i % 2 == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let s: S = S { name: stringOf("aa") };
+    unsafe {
+        let p: raw S = &s;
+        (*alt(p, p)).name = (*alt(p, p)).name;
+    }
+    if (calls != 2) { return 8; }
+    return i32(len(s.name)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424callaliasimpl_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = cl_alt__S(p, p);");
+    assert_contains(tag, body, "__cl_tmp1 = cl_alt__S(p, p);");
+    assert_contains(
+        tag,
+        body,
+        "if (&(*(&((*(__cl_tmp0)).name))) != &((*(__cl_tmp1)).name)) {",
+    );
+    assert_eq!(
+        body.matches("cl_alt__S(").count(),
+        2,
+        "{tag}: each call-rooted pointer must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
+}

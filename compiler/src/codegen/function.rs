@@ -735,15 +735,31 @@ impl<'a> Emitter<'a> {
                     // guards still run, but the aliasing copy and the clear
                     // are skipped.
                     let target_c = format!("(*({pointer_c}))");
-                    let mut self_copy = false;
-                    if value_names_storage(value) {
+                    if value_names_storage(value) && value_is_stable_alias_source(value) {
                         let value_c = self.value(value);
                         if target_object_text(&target_c) == target_object_text(&value_c) {
                             self.emit_guards(value);
-                            self_copy = true;
+                        } else {
+                            // The source and target may name the same array
+                            // through different pointer expressions. Compare
+                            // the addresses first; a stable source has no
+                            // guard to run twice, so the inner assignment can
+                            // keep its own value handling.
+                            self.emit_guards(value);
+                            self.push(&format!(
+                                "    if (((void *)&({target_c})) != ((void *)&({value_c}))) {{"
+                            ));
+                            let target = ArrayTarget::object(&target_c);
+                            self.emit_fixed_array_assign_to(
+                                &target,
+                                &pointer_ty,
+                                value,
+                                true,
+                                true,
+                            );
+                            self.push("    }");
                         }
-                    }
-                    if !self_copy {
+                    } else {
                         let target = ArrayTarget::object(&target_c);
                         self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, true);
                     }
@@ -767,7 +783,10 @@ impl<'a> Emitter<'a> {
                             else_value,
                             true,
                         );
-                    } else if value_reads_named_binding(value) || value_reads_alias(value) {
+                    } else if value_reads_named_binding(value)
+                        || value_reads_alias(value)
+                        || value_moves_pointee(value)
+                    {
                         // The pointer addresses the container the element
                         // belongs to, so a right-hand side that reads a named
                         // binding can read the element itself through a
@@ -3499,6 +3518,30 @@ fn arm_is_projected_place(value: &Value) -> bool {
 /// Such a value can be named twice — once for an address comparison and once
 /// for the move — without running a side effect or filling a deferred
 /// temporary. A call, literal, or deferred operand returns false.
+/// True when a value's storage address is a stable, side-effect-free place.
+///
+/// A runtime alias guard may re-read the source address after the value's
+/// guards; a pointer operand that is a place or a temporary is stable, while a
+/// call or a materialized expression may run again.
+fn value_is_stable_alias_source(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } => matches!(operand.kind, ValueKind::Place(_) | ValueKind::Temp(_)),
+        ValueKind::Member { base, .. } => value_is_stable_alias_source(base),
+        ValueKind::Index { base, index } => {
+            value_is_stable_alias_source(base)
+                && matches!(
+                    index.kind,
+                    ValueKind::Int(_) | ValueKind::Place(_) | ValueKind::Temp(_)
+                )
+        }
+        _ => false,
+    }
+}
+
 fn value_names_storage(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Place(_) | ValueKind::Temp(_) => true,
