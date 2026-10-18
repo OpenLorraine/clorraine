@@ -11843,3 +11843,462 @@ fn should_pin_the_direct_runtime_element_rejection() {
         &[],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Loan sources through runtime, temporary, and call reads. A run-time store
+// records a wildcard position that a later constant read matches; a view of a
+// statement temporary records the lowered owner the compiler generated; and a
+// view returned by a call records the loans its binding carries. The report
+// names the owner that dies with the frame, the accepted twins keep their
+// lowering and release, and every accepted program re-emits byte-identically.
+// ---------------------------------------------------------------------------
+
+/// A view of a call result's member stored in a fixed-array literal, then
+/// passed to an out-slot: the copy keeps the statement temporary's loan.
+const TEMPORARY_OWNER_ESCAPE_SOURCE: &str = r#"module spec.cprimpl.temporaryowner;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let ys: str[2] = [mk().v; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same temporary-derived element read while its owner is alive: the
+/// lowered call result binds to the generated owner `__cl_owned0`, the array
+/// element views that owner, and the owner releases after the read.
+const TEMPORARY_OWNER_IN_SCOPE_SOURCE: &str = r#"module spec.cprimpl.temporaryownerscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func main(): i32 {
+    let ys: str[2] = [mk().v; "EE"];
+    return i32(len(ys[0])) - 2;
+}
+"#;
+
+/// A call result copied into a local, then passed to an out-slot: the local
+/// keeps the binding loans of the element the call reborrows.
+const CALL_RESULT_COPY_SOURCE: &str = r#"module spec.cprimpl.callresultcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = pick(xs, 0);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same call result passed straight to the out-slot: the argument has no
+/// binding, so the value's own carried loans name the owner.
+const CALL_RESULT_DIRECT_SOURCE: &str = r#"module spec.cprimpl.callresultdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pick(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A view returned from a caller parameter before the out-slot store: the
+/// backing belongs to the caller, so the store stays accepted.
+const CALL_RESULT_PARAM_SOURCE: &str = r#"module spec.cprimpl.callresultparam;
+
+func pass(p: str): str { return p; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: str, borrow slot: str?): void {
+    let s: str = pass(p);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+
+/// The call result read while its owner is alive: the binding keeps its call
+/// and the length read stays inside the frame.
+const CALL_RESULT_IN_SCOPE_SOURCE: &str = r#"module spec.cprimpl.callresultscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = pick(xs, 0);
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 { return outer(); }
+"#;
+
+/// A run-time element store of a loaned view followed by a constant read of a
+/// candidate slot, with the caller passing the written index zero.
+const RUNTIME_LOAN_COPY_ZERO_SOURCE: &str = r#"module spec.cprimpl.runtimeloancopyzero;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 0);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The same program with the caller passing the written index one: the compiler
+/// cannot know the index, so the conservative report stays.
+const RUNTIME_LOAN_COPY_ONE_SOURCE: &str = r#"module spec.cprimpl.runtimeloancopyone;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A constant read of the written candidate passed straight to the out-slot
+/// after a run-time store: the read selects the storage the store may loan.
+const RUNTIME_LOAN_DIRECT_SOURCE: &str = r#"module spec.cprimpl.runtimeloandirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A run-time read of the written candidate passed straight to the out-slot:
+/// the wildcard store position covers the run-time read too.
+const RUNTIME_LOAN_RUNTIME_READ_SOURCE: &str = r#"module spec.cprimpl.runtimeloanrt;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    fill(xs[k], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A constant store into one sibling element followed by a read of the other:
+/// the constant store names its own slot, so the read stays accepted and clean.
+const RUNTIME_LOAN_SIBLING_SOURCE: &str = r#"module spec.cprimpl.runtimeloansibling;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[2] = ["AA", "BB"];
+    ys[0] = a.v;
+    let s: str = ys[1];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+
+/// The temporary-derived element copy reports one `E10030` at the fill and
+/// names the statement temporary the lowered value reads through, not the
+/// array binding the view is stored in.
+#[test]
+fn should_pin_the_temporary_element_owner() {
+    assert_rejected_once_at(
+        "temporaryowner",
+        TEMPORARY_OWNER_ESCAPE_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of a statement temporary does not live long enough"],
+        &["'ys'", "__cl_owned0"],
+    );
+}
+
+/// The in-scope temporary element stays accepted: the lowering names the call
+/// result's owner `__cl_owned0`, copies a view of its member into the array,
+/// and releases the owner once after the read.
+#[test]
+fn should_keep_the_temporary_owner_emission() {
+    let tag = "temporaryownerscope";
+    let (scratch, emitted) = emit_host(tag, TEMPORARY_OWNER_IN_SCOPE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_temporaryownerscope_main(void)\n{",
+    );
+    assert_contains(tag, body, "ClBox __cl_owned0 = {0};");
+    let bind = "__cl_owned0 = cl_spec_cprimpl_temporaryownerscope_mk();";
+    assert_contains(tag, body, bind);
+    assert_contains(tag, body, "ys[0] = cl_string_view(__cl_owned0.v);");
+    assert_contains(tag, body, "ys[1] = cl_str(\"EE\");");
+    assert_eq!(
+        body.matches(bind).count(),
+        1,
+        "{tag}: the call result must bind the generated owner once; body:\n{body}"
+    );
+    assert_release_after(
+        tag,
+        body,
+        "ys[0] = cl_string_view(__cl_owned0.v);",
+        "if (__cl_owned0.v) { FreeString(__cl_owned0.v); }",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}
+
+/// The call-result copy reports one `E10030` at the fill and names the loaned
+/// binding `a`, not the container `xs` the call's provenance names, so the
+/// binding-loan route is consulted before the provenance walk.
+#[test]
+fn should_pin_the_call_result_binding_loan_copy() {
+    assert_rejected_once_at(
+        "callresultcopy",
+        CALL_RESULT_COPY_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+}
+
+/// The direct call-result argument reports the same one `E10030` at its fill
+/// and names the loaned binding `a` rather than the container `xs`.
+#[test]
+fn should_pin_the_call_result_binding_loan_direct() {
+    assert_rejected_once_at(
+        "callresultdirect",
+        CALL_RESULT_DIRECT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &["'xs'"],
+    );
+}
+
+/// The caller-parameter view stays accepted: the call keeps its plain binding
+/// and the out-slot store keeps its plain shape.
+#[test]
+fn should_keep_the_caller_parameter_view() {
+    let tag = "callresultparam";
+    let (scratch, emitted) = emit_host(tag, CALL_RESULT_PARAM_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_callresultparam_outer(ClStr p, ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "s = cl_spec_cprimpl_callresultparam_pass(p);");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_callresultparam_fill(s, &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+}
+
+/// Both run-time store copies report one `E10030` at the constant read's fill,
+/// because the wildcard store position matches the constant read's path. The
+/// `k = 0` and `k = 1` callers differ only at run time; the compiler reports
+/// both.
+#[test]
+fn should_pin_the_runtime_store_copy_loans() {
+    for (tag, source) in [
+        ("runtimeloancopyzero", RUNTIME_LOAN_COPY_ZERO_SOURCE),
+        ("runtimeloancopyone", RUNTIME_LOAN_COPY_ONE_SOURCE),
+    ] {
+        assert_rejected_once_at(
+            tag,
+            source,
+            "E10030",
+            14,
+            5,
+            &["borrow of 'a' does not live long enough"],
+            &[],
+        );
+    }
+}
+
+/// A direct read of a slot a run-time store may have written reports one
+/// `E10030` at the fill, both at a constant index and at the run-time index
+/// itself.
+#[test]
+fn should_pin_the_direct_runtime_store_read_loans() {
+    assert_rejected_once_at(
+        "runtimeloandirect",
+        RUNTIME_LOAN_DIRECT_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "runtimeloanrt",
+        RUNTIME_LOAN_RUNTIME_READ_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The constant store into one sibling element leaves the read of the other
+/// sibling accepted: the store keeps its plain view write and the fill runs.
+#[test]
+fn should_keep_the_constant_store_sibling_emission() {
+    let tag = "runtimeloansibling";
+    let (scratch, emitted) = emit_host(tag, RUNTIME_LOAN_SIBLING_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_runtimeloansibling_outer(ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
+    assert_contains(tag, body, "s = ys[1];");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_runtimeloansibling_fill(s, &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}
+
+/// The accepted loan-source programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_loan_source_programs_byte_identically() {
+    for (tag, source) in [
+        ("temporaryownerscope", TEMPORARY_OWNER_IN_SCOPE_SOURCE),
+        ("callresultparam", CALL_RESULT_PARAM_SOURCE),
+        ("callresultscope", CALL_RESULT_IN_SCOPE_SOURCE),
+        ("runtimeloansibling", RUNTIME_LOAN_SIBLING_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(
+            first, second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

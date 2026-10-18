@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 13/62 tasks (21%) — Phase 2 implemented
+> **Progress**: 14/62 tasks (23%) — Phase 2 pinned
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -181,7 +181,7 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the wildcard `Element(None)` record and its
+- [x] 2.3.1 Write the phase implementation pins (the wildcard `Element(None)` record and its ✅ (completed: 2026-10-18; nine impl pins: the temporary-element owner (`__cl_owned0`/statement-temporary), the call-result binding loans (copy and direct, fallback-before-provenance), and six declared controls (the temporary emission, the caller-parameter view, the runtime-store copies/direct reads, the constant sibling, the byte-identical re-emission); the base discrimination 3/6 at `f1ab264`; residue impl 202/202)
       prefix match, the temp-owner record including `__cl_owned0`, the binding-loan fallback for
       both forms, the report code/count/span, the sibling/caller-parameter acceptances, and a
       re-emission determinism pin)
