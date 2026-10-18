@@ -858,6 +858,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return BindingEffect::MoveIfOwning { sources };
         }
+        // A conditional with a type-parameter arm owns only at some
+        // instances. Record the arm as a maybe-owning source so the
+        // per-instance audit reports for an owning instantiation and stays
+        // silent at the definition; a plain conditional source would report
+        // immediately.
+        if matches!(value.kind, ExprKind::Conditional { .. }) {
+            let sources = self.maybe_owning_move_sources(value);
+            if !sources.is_empty() {
+                return BindingEffect::MoveIfOwning { sources };
+            }
+        }
         if is_view_like(target) {
             // A view array's elements are independent loans, so the binding
             // records one loan per element owner instead of sharing only the

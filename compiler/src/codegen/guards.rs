@@ -1455,7 +1455,10 @@ impl<'a> Emitter<'a> {
 
     /// The condition under which an integer division or modulo aborts.
     fn division_guard_condition(&self, left: &Value, right: &Value) -> Option<String> {
-        let ty = self.substitute(&left.ty);
+        // A generic body records the operand as an unresolved projection, so
+        // the instance's concrete scalar decides whether the operation is an
+        // integer division that needs the guard.
+        let ty = self.resolved_value_ty(left);
         if !ty.is_integer() {
             return None;
         }

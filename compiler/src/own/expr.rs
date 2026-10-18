@@ -94,7 +94,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             }
             let ty = self.ty(arm);
-            if !self.maybe_owns(&ty) {
+            // A type-parameter arm owns only at some instances, so the
+            // per-instance audit decides: record the arm as a maybe-owning
+            // source instead of dropping it at the definition.
+            if !self.maybe_owns(&ty) && !super::lower::mentions_type_param(&ty) {
                 continue;
             }
             if let Some(target) = self.place_target(arm) {
