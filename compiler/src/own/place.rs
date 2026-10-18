@@ -1329,16 +1329,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// arm's positions. A position whose value derives directly (`[a.v]`)
     /// creates its shared loan at the copy site, exactly as an element store
     /// does.
+    ///
+    /// `lowered` is the store's lowered value when it has one. A non-place
+    /// element such as a call's member borrows storage from the statement
+    /// temporary the lowering created, and only the lowered chain names that
+    /// owner; the collector records it under the destination's path.
     pub(super) fn record_copy_element_loans(
         &mut self,
         to: usize,
         base: &[ir::Projection],
         value: &Expr,
+        lowered: Option<&Value>,
         position: &Ty,
         span: Span,
     ) {
         let mut copied = CopyLoans::default();
-        self.collect_copy_element_loans(value, Some(position), base, &mut copied);
+        self.collect_copy_element_loans(value, lowered, Some(position), base, &mut copied);
         let mut paths = copied.recorded;
         for (path, owners) in copied.owners {
             let loans = paths.entry(path).or_default();
@@ -1363,13 +1369,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A conditional contributes both arms, an array literal each element and
     /// the fill value, and a projection or cast its inner value. `position` is
     /// the declared type of the copied value, which names the fixed extent a
-    /// fill covers; without one the fill stays one aggregate record. Every
-    /// other expression is read as a place: the positions it selects are
-    /// translated onto the destination's path, and a place with no recorded
-    /// position contributes the real owners its storage derives from.
+    /// fill covers; without one the fill stays one aggregate record.
+    /// `lowered` is the same value after lowering, so each recursive step keeps
+    /// the lowered chain that names a statement temporary the source reads
+    /// through. Every other expression is read as a place: the positions it
+    /// selects are translated onto the destination's path, and a place with no
+    /// recorded position contributes the real owners its storage derives from.
     fn collect_copy_element_loans(
         &self,
         value: &Expr,
+        lowered: Option<&Value>,
         position: Option<&Ty>,
         base: &[ir::Projection],
         copied: &mut CopyLoans,
@@ -1380,8 +1389,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 else_value,
                 ..
             } => {
-                self.collect_copy_element_loans(then_value, position, base, copied);
-                self.collect_copy_element_loans(else_value, position, base, copied);
+                let (then_lowered, else_lowered) = match lowered.map(|lowered| &lowered.kind) {
+                    Some(ValueKind::Conditional {
+                        then_value,
+                        else_value,
+                        ..
+                    }) => (Some(then_value.as_ref()), Some(else_value.as_ref())),
+                    _ => (None, None),
+                };
+                self.collect_copy_element_loans(
+                    then_value,
+                    then_lowered,
+                    position,
+                    base,
+                    copied,
+                );
+                self.collect_copy_element_loans(
+                    else_value,
+                    else_lowered,
+                    position,
+                    base,
+                    copied,
+                );
             }
             ExprKind::ArrayLiteral { elements, fill } => {
                 let extent = match position.map(|position| &position.kind) {
@@ -1390,6 +1419,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => None,
                 };
+                let (lowered_elements, lowered_fill) = match lowered.map(|lowered| &lowered.kind) {
+                    Some(ValueKind::ArrayLit { elements, fill }) => {
+                        (Some(elements.as_slice()), fill.as_deref())
+                    }
+                    _ => (None, None),
+                };
                 // The element at this nesting level keeps the remaining
                 // extents, so a nested literal expands its own fill at its own
                 // dimension instead of collapsing to the folded leaf type.
@@ -1397,7 +1432,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for (index, element_value) in elements.iter().enumerate() {
                     let mut path = base.to_vec();
                     path.push(ir::Projection::Element(Some(index)));
-                    self.collect_copy_element_loans(element_value, element.as_ref(), &path, copied);
+                    let lowered_element = lowered_elements.and_then(|elements| elements.get(index));
+                    self.collect_copy_element_loans(
+                        element_value,
+                        lowered_element,
+                        element.as_ref(),
+                        &path,
+                        copied,
+                    );
                 }
                 if let Some(fill) = fill {
                     match extent {
@@ -1410,6 +1452,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 path.push(ir::Projection::Element(Some(index)));
                                 self.collect_copy_element_loans(
                                     fill,
+                                    lowered_fill,
                                     element.as_ref(),
                                     &path,
                                     copied,
@@ -1419,28 +1462,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // An open extent keeps one record across the
                         // aggregate, which covers every remaining element.
                         None => {
-                            self.collect_copy_element_loans(fill, element.as_ref(), base, copied)
+                            self.collect_copy_element_loans(
+                                fill,
+                                lowered_fill,
+                                element.as_ref(),
+                                base,
+                                copied,
+                            )
                         }
                     }
                 }
             }
             ExprKind::Unsafe(inner) => {
-                self.collect_copy_element_loans(inner, position, base, copied)
+                self.collect_copy_element_loans(inner, lowered, position, base, copied)
             }
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
-                self.collect_copy_element_loans(value, position, base, copied);
+                let inner_lowered = match lowered.map(|lowered| &lowered.kind) {
+                    Some(ValueKind::Cast { value, .. }) => Some(value.as_ref()),
+                    _ => lowered,
+                };
+                self.collect_copy_element_loans(value, inner_lowered, position, base, copied);
             }
-            _ => self.collect_place_copy_loans(value, base, copied),
+            _ => self.collect_place_copy_loans(value, lowered, base, copied),
         }
     }
 
     /// True when a copy source names its view positions arm by arm.
     ///
     /// A conditional or an array literal — under any cast or unsafe wrapper —
-    /// contributes independent positions, and a run-time element read names no
-    /// single recorded position. Every other value keeps the binding effect's
-    /// own loan creation, so a call result's exclusive view keeps its kind and
-    /// its single loan request.
+    /// contributes independent positions, a run-time element read names no
+    /// single recorded position, and a call that reborrows its argument's
+    /// storage carries that argument's loans. Every other value keeps the
+    /// binding effect's own loan creation, so a call result's exclusive view
+    /// keeps its kind and its single loan request.
     pub(super) fn collects_copy_positions(&self, value: &Expr) -> bool {
         match &value.kind {
             ExprKind::Conditional { .. } | ExprKind::ArrayLiteral { .. } => true,
@@ -1448,6 +1502,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.collects_copy_positions(value)
             }
+            ExprKind::Call { .. } => !self.view_loans(value).is_empty(),
             _ => self.place_target(value).is_some(),
         }
     }
@@ -1460,11 +1515,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// contributes every recorded position at the destination's own path. A
     /// local place with no recorded position contributes the loans the value
     /// already carries, or else the real owners of its storage; a value that
-    /// names no place contributes only its carried loans, because the binding
-    /// effect already creates the loan a fresh derivation owes.
+    /// names no place contributes the loans it carries, or else the owners its
+    /// lowered chain reads through. That last route names a statement
+    /// temporary the source expression cannot, such as the call result behind
+    /// `mk().v`, so a later read of the destination reports the temporary's
+    /// release. A value that derives a fresh view without an owner — a literal,
+    /// or a module backing — still contributes nothing.
     fn collect_place_copy_loans(
         &self,
         value: &Expr,
+        lowered: Option<&Value>,
         base: &[ir::Projection],
         copied: &mut CopyLoans,
     ) {
@@ -1521,6 +1581,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .entry(base.to_vec())
                 .or_default()
                 .extend(loans);
+            return;
+        }
+        // A non-place value that reads no loan still derives its view from
+        // storage the expression walk cannot name: a projection of a lowered
+        // call result reads the statement temporary the lowering created.
+        // The lowered chain names that owner, so the destination loans it and
+        // a later escape reports the temporary's release.
+        let owners = self.view_owners(value, lowered);
+        if !owners.is_empty() {
+            copied.owners.entry(base.to_vec()).or_default().extend(owners);
         }
     }
 
@@ -1652,6 +1722,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => BTreeSet::new(),
         }
+    }
+
+    /// The frame-dying owners a value's carried loans name.
+    ///
+    /// A view value that already carries loans reads the storage those loans
+    /// point into, exactly as a view binding does. A caller-backed owner
+    /// outlives this frame, so only a frame-dying owner makes an escape, while
+    /// a statement temporary always dies with the statement that created it.
+    /// This is the direct spelling's route: a call result reborrows its
+    /// argument's loans on the value itself and records no binding positions.
+    pub(super) fn value_loan_frame_owners(&self, expr: &Expr) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        self.loan_owners(&self.view_loans(expr), &mut owners);
+        owners.retain(|owner| self.owner_dies_with_frame(*owner));
+        owners
     }
 
     /// The owners a view value's storage derives from.

@@ -577,17 +577,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// positions are authoritative — the storage its views actually read — so
     /// a position loaned to this frame's storage reports while one loaned to
     /// the caller's parameters or module storage keeps the acceptance; a
-    /// binding without recorded positions is judged by its own provenance; and
-    /// an ownerless chain that roots at a fresh call result, a struct literal,
-    /// or a conditional or array of either reads statement storage, which dies
-    /// with the frame. `Some(None)` names statement storage, `Some(Some(id))`
-    /// a frame binding, and `None` no frame-owned storage at all.
+    /// value with no place of its own carries its loans on the value itself,
+    /// exactly as a reborrow call result does; a binding without recorded
+    /// positions is judged by its own provenance; and an ownerless chain that
+    /// roots at a fresh call result, a struct literal, or a conditional or
+    /// array of either reads statement storage, which dies with the frame.
+    /// `Some(None)` names statement storage, `Some(Some(id))` a frame binding,
+    /// and `None` no frame-owned storage at all.
     fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
         if let Some(owners) = self.recorded_position_frame_owners(expr) {
-            return owners.into_iter().next().map(|owner| match owner {
-                LoanOwner::Binding(id) => Some(id),
-                LoanOwner::Temp(_) => None,
-            });
+            return owners
+                .into_iter()
+                .next()
+                .map(|owner| self.frame_view_owner(owner));
+        }
+        // A value that names no place carries its loans on the value itself:
+        // a call result reborrows its argument's storage, and a conditional or
+        // an array of such results carries every arm's or element's loans.
+        // A binding records the same loans as positions above, so only a
+        // non-place value consults the carried set here; a binding's union
+        // spans every element its container holds and would name storage the
+        // selected element does not read.
+        if self.place_target(expr).is_none() {
+            if let Some(owner) = self.value_loan_frame_owners(expr).into_iter().next() {
+                return Some(self.frame_view_owner(owner));
+            }
         }
         // An alias reads the iterable element, so its storage is the
         // container's: the container binding's provenance names it.
@@ -613,6 +627,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return Some(None);
         }
         None
+    }
+
+    /// The report subject a frame-dying view owner names.
+    ///
+    /// A compiler-generated owner is backing the checker created for a
+    /// statement's value. It has no written name, so it renders as the same
+    /// statement-temporary phrase a lowered temporary does; a written binding
+    /// keeps its own identity.
+    fn frame_view_owner(&self, owner: LoanOwner) -> Option<usize> {
+        match owner {
+            LoanOwner::Binding(id) if !self.bindings[id].generated => Some(id),
+            _ => None,
+        }
     }
 
     /// True when a view expression reads into fresh statement storage.

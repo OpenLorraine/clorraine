@@ -1300,7 +1300,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => false,
                 };
                 if !moved && is_view_like(&target_ty) && self.collects_copy_positions(value) {
-                    self.record_copy_element_loans(id, &projections, value, &target_ty, target.span);
+                    self.record_copy_element_loans(
+                        id,
+                        &projections,
+                        value,
+                        lowered.as_ref(),
+                        &target_ty,
+                        target.span,
+                    );
                 } else if !moved && !is_view_like(&target_ty) {
                     self.replace_element_loans(id, &projections, BTreeSet::new());
                     let positions = self.literal_view_loan_positions(value);

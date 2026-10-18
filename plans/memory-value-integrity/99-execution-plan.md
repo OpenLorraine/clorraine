@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 11/62 tasks (18%) — Phase 2 red
+> **Progress**: 13/62 tasks (21%) — Phase 2 implemented
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -167,7 +167,7 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Extend the loan sources: record the wildcard `Element(None)` runtime position and
+- [x] 2.2.1 Extend the loan sources: record the wildcard `Element(None)` runtime position and ✅ (completed: 2026-10-18; `DEF-432`: the lowered value/root-owner map threaded through `record_copy_element_loans`/`collect_copy_element_loans`/`collect_place_copy_loans` (`own/place.rs:1337/1378/1524`), with `frame_view_owner` rendering the generated owner; `DEF-433`: the reborrow-call position source (`place.rs:1498`), `value_loan_frame_owners` (`:1735`), and the cross-frame fallback (`own/call_check.rs:587`); `DEF-430` incidental (no code); a take-materialized temp element reports two `E10030`s (mirroring the pre-existing single-view twin) — recorded for the review)
       match only reads under the runtime-written path (`own/place.rs:1119-1127`, `:1369`,
       `:1192`; the non-constant branch records the wildcard and keeps the binding union for
       `E10031`, and `place_recorded_position_owners`/`recorded_position_frame_owners` share the
@@ -176,7 +176,7 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
       `check_let`/`check_assign` and record the non-place owner (`:1421-1428`); consult
       `view_loans`/`loan_owners` for the direct call form and the binding-loan owners in the
       cross-frame fallback (`own/call_check.rs:585`; `own/place.rs:1512`, `:815`)
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix (or park per AR-33); run
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix (or park per AR-33); run ✅ (completed: 2026-10-18; residue 200/200 and impl 193/193 plain and under `RDC_ASAN=1`; borrow-store 30/11; `make check` exit 0; the differential: 6 new reject rows (3 unique sources), zero emission deltas, zero head-accepts, no head-only strict failure)
       `make check`
 
 ### Step 2.3: Impl Tests & Review

@@ -400,7 +400,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => false,
                 };
                 if !copied && is_view_like(&target) && self.collects_copy_positions(value) {
-                    self.record_copy_element_loans(id, &[], value, &target, decl.span);
+                    self.record_copy_element_loans(
+                        id,
+                        &[],
+                        value,
+                        prepared.lowered(),
+                        &target,
+                        decl.span,
+                    );
                 }
             }
             let place = self.binding_place(id);
@@ -757,7 +764,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => false,
         };
         if !copied && is_view_like(&target) && self.collects_copy_positions(&decl.value) {
-            self.record_copy_element_loans(id, &[], &decl.value, &target, decl.span);
+            self.record_copy_element_loans(
+                id,
+                &[],
+                &decl.value,
+                prepared.lowered(),
+                &target,
+                decl.span,
+            );
         }
         let place = self.binding_place(id);
         self.emit_prepared_store(place, prepared);
