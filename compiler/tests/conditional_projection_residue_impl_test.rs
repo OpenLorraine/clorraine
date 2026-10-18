@@ -13787,3 +13787,69 @@ func main(): i32 {
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
 }
+
+/// The generic compound division emits the same three guards as its twin.
+///
+/// `p426genericimpl` and `p426concreteimpl` each contain three `E11210` trap
+/// calls, and the generic body re-emits byte-identically.
+#[test]
+fn should_emit_the_generic_compound_division_guards() {
+    let source = |module: &str, generic: bool| {
+        format!(
+            "module spec.cprimpl.{module};\n\n\
+             import {{ String, stringOf }} from std.text;\n\n\
+             struct H {{ n: i32; items: i32[2]; name: String; }}\n\n\
+             func go{g}(borrow h: H, d: i32): void {{\n\
+             \x20   h.n /= d;\n\
+             \x20   h.items[0] %= d;\n\
+             \x20   h.items[1] /= d;\n\
+             }}\n\n\
+             func main(): i32 {{\n\
+             \x20   let h: H = H {{ n: 10, items: [11, 12], name: stringOf(\"h\") }};\n\
+             \x20   go{call}(borrow h, 2);\n\
+             \x20   return h.n + h.items[0] + h.items[1] - 12;\n\
+             }}\n",
+            module = module,
+            g = if generic { "<T>" } else { "" },
+            call = if generic { "<H>" } else { "" },
+        )
+    };
+    let generic = source("p426genericimpl", true);
+    let concrete = source("p426concreteimpl", false);
+    let (scratch, emitted) = emit_host("p426genericimpl", &generic);
+    let body = function_body(
+        "p426genericimpl",
+        &emitted,
+        "cl_go__H(ClH *h, i32 d)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_trap(\"E11210\"").count(),
+        3,
+        "p426genericimpl: expected three division guards; body:\n{body}"
+    );
+    assert_contains("p426genericimpl", body, "d == 0");
+    assert_contains("p426genericimpl", body, "&& d == -1");
+    assert_eq!(
+        run_host_c("p426genericimpl", &scratch, &emitted),
+        0,
+        "p426genericimpl: the value must match"
+    );
+
+    let (_scratch, emitted) = emit_host("p426concreteimpl", &concrete);
+    let body = function_body(
+        "p426concreteimpl",
+        &emitted,
+        "cl_spec_cprimpl_p426concreteimpl_go(ClH *h, i32 d)\n{",
+    );
+    assert_eq!(
+        body.matches("cl_trap(\"E11210\"").count(),
+        3,
+        "p426concreteimpl: expected three division guards; body:\n{body}"
+    );
+
+    let (first, second) = emit_twice("p426genericimpl", &generic);
+    assert_eq!(
+        first, second,
+        "p426genericimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}

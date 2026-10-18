@@ -612,3 +612,93 @@ func main(): i32 {
     );
     drop(scratch);
 }
+
+/// A generic conditional store reports once at the owning instance.
+///
+/// The report is the concrete store site (`:6:5`) and no translation unit is
+/// written. A body with no owning instantiation is accepted and emits, and the
+/// duplicable whole-move instance runs.
+#[test]
+fn should_report_the_generic_conditional_store_once_at_the_instance() {
+    let tag = "generic-conditional-store";
+    let source = r#"module spec.bgiimpl.genericconditional;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T): i32 {
+    let r: String? = c ? h : null;
+    if (r == null) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return pick<String>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the owning instance must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "{tag}: expected one E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'h'"),
+        "{tag}: the report must name the lend parameter; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(":6:5"),
+        "{tag}: the report must sit at the store site; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected instance must not produce a translation unit"
+    );
+
+    let definition = r#"module spec.bgiimpl.genericdefinition;
+
+func pick<T>(c: bool, h: T): i32 {
+    let r: String? = c ? h : null;
+    if (r == null) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("generic-definition", definition);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "generic-definition: the definition must not be reported; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        c_path.exists(),
+        "generic-definition: an accepted definition must emit"
+    );
+
+    let duplicable = r#"module spec.bgiimpl.genericduplicable;
+
+struct P { x: i32; }
+
+func pick<T>(h: T): i32 {
+    let r: T = h;
+    return r.x;
+}
+
+func main(): i32 {
+    let h: P = P { x: 4 };
+    return pick<P>(h) - 4;
+}
+"#;
+    let emitted = emit_host("generic-duplicable", duplicable);
+    assert_contains("generic-duplicable", &emitted, "cl_pick__P");
+}

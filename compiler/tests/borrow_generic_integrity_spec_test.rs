@@ -1371,14 +1371,14 @@ func main(): i32 {
 
 import { String, stringOf } from std.text;
 
-func take<T>(h: T): i32 {
+func whole<T>(h: T): i32 {
     let r: T = h;
     return 0;
 }
 
 func main(): i32 {
     let h: String = stringOf("ab");
-    return take<String>(h);
+    return whole<String>(h);
 }
 "#;
     assert_rejected_once("generic-whole", whole, "E10034", &["'h'"]);
