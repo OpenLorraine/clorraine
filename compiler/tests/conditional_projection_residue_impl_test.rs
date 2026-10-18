@@ -13181,3 +13181,332 @@ func main(): i32 {
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
 }
+
+// ---------------------------------------------------------------------------
+// storelowering: the emitted shapes of the phase's store completions.
+//
+// The deref-rooted target renders the selected member or element through the
+// pointer, the target index is pinned before the right-hand side, the
+// fixed-array literal fills a temporary before the clear, the self-copy and
+// raw self-alias emit no move, and the element/raw-target stores pin the
+// owning deref value once.
+// ---------------------------------------------------------------------------
+
+/// The deref-rooted store renders the selected projection and pins its index.
+///
+/// `p421member` stores through `(*(p)).f` and `(*(p)).f.x`; `p421nested` pins
+/// the element index into a temporary and stores through
+/// `(*(p)).arr[__cl_tmp0].x`; `p421bump` reads the global index once before the
+/// call and stores at the pinned element.
+#[test]
+fn should_emit_the_deref_store_target_projection() {
+    let tag = "p421member";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p421member;
+
+struct Inner { x: i32; }
+struct S { f: Inner; }
+
+func main(): i32 {
+    let s: S = S { f: Inner { x: 0 } };
+    unsafe {
+        let p: raw S = &s;
+        (*p).f = Inner { x: 7 };
+        (*p).f.x = 7;
+    }
+    return s.f.x - 7;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p421member_main(void)\n{");
+    assert_contains(tag, body, "*(&((*(p)).f)) = (ClInner){ 7 };");
+    assert_contains(tag, body, "*(&((*(p)).f.x)) = 7;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p421nested";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p421nested;
+
+struct Inner { x: i32; }
+struct S { arr: Inner[2]; }
+
+func main(): i32 {
+    let s: S = S { arr: [Inner { x: 1 }, Inner { x: 2 }] };
+    let i: i32 = 1;
+    unsafe {
+        let p: raw S = &s;
+        (*p).arr[i].x = 7;
+    }
+    return s.arr[1].x - 7;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p421nested_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = i;");
+    assert_contains(tag, body, "*(&((*(p)).arr[__cl_tmp0].x)) = 7;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p421bump";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p421bump;
+
+struct Elem { y: i32; }
+struct S { arr: Elem[2]; }
+
+let idx: i32 = 1;
+let calls: i32 = 0;
+
+func bump(): i32 {
+    idx = 5;
+    calls = calls + 1;
+    return 9;
+}
+
+func main(): i32 {
+    let s: S = S { arr: [Elem { y: 1 }, Elem { y: 2 }] };
+    unsafe {
+        let p: raw S = &s;
+        (*p).arr[idx].y = bump();
+    }
+    return s.arr[1].y - 9;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p421bump_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = cl_spec_cprimpl_p421bump_idx;");
+    assert_contains(
+        tag,
+        body,
+        "*(&((*(p)).arr[__cl_tmp0].y)) = cl_spec_cprimpl_p421bump_bump();",
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p421bump_bump();").count(),
+        1,
+        "{tag}: the value call must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+}
+
+/// The whole-element store pins its index before the row call.
+///
+/// `p423row` reads the index into `__cl_tmp0`, guards it, runs `mkrow` once,
+/// and copies the call result into the pinned element. The emitted order puts
+/// the pin before the call and the store after it.
+#[test]
+fn should_pin_the_whole_element_store_before_the_value() {
+    let tag = "p423row";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p423row;
+
+let idx: i32 = 1;
+
+func mkrow(): i32[2] {
+    idx = 5;
+    return [7, 8];
+}
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [3, 4]];
+    a[idx] = mkrow();
+    return a[1][0] - 7;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p423row_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = cl_spec_cprimpl_p423row_idx;");
+    let pin = body.find("__cl_tmp0 = cl_spec_cprimpl_p423row_idx;").unwrap();
+    let call = body.find("cl_spec_cprimpl_p423row_mkrow(").unwrap();
+    let store = body
+        .find("memcpy(&((*(&(a[__cl_tmp0])))), &(__cl_call_1)")
+        .unwrap();
+    assert!(
+        pin < call && call < store,
+        "{tag}: the index, call, and store must run in that order; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+}
+
+/// A raw self-alias and a projected self-copy emit no move.
+///
+/// `p424rawlocal` does not emit a store for `x = *(&x)` and still stores the
+/// following distinct value; `p424generic` emits no address comparison or move
+/// for the identical generic element copy. The fixed-array self-read fills
+/// `__cl_rhs_1` before the save and clear.
+#[test]
+fn should_skip_the_raw_self_alias_and_the_projected_self_copy() {
+    let tag = "p424rawlocal";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424rawlocal;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let x: String = stringOf("aa");
+    unsafe {
+        x = *(&x);
+    }
+    if (i32(len(x)) != 2) { return 9; }
+    x = stringOf("zz");
+    return i32(len(x)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424rawlocal_main(void)\n{");
+    assert_absent(tag, body, "*(&(x))");
+    assert_contains(tag, body, "x = cl_std_text_stringOf(cl_str(\"zz\"));");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the value must stay");
+
+    let tag = "p424generic";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424generic;
+
+import { String, stringOf } from std.text;
+
+struct W { items: String[2]; }
+
+func same<T>(borrow w: T): void {
+    w.items[1] = w.items[1];
+}
+
+func main(): i32 {
+    let w: W = W { items: [stringOf("aa"), stringOf("bb")] };
+    same<W>(borrow w);
+    return i32(len(w.items[1])) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_same__W(ClW *w)\n{");
+    assert_absent(tag, body, "!= &(");
+    assert_absent(tag, body, "= (*w).items[1];");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the value must stay");
+
+    let tag = "p424selfread";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p424selfread;
+
+import { String, stringOf } from std.text;
+
+struct Elem { names: String[2]; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let i: i32 = 1;
+    a[i].names = [stringOf(a[i].names[0]), stringOf("xx")];
+    return i32(len(a[1].names[0])) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p424selfread_main(void)\n{");
+    assert_contains(tag, body, "ClString __cl_rhs_1[2] = {0};");
+    assert_contains(tag, body, "__cl_rhs_1[0] = cl_std_text_stringOf(cl_string_view(a[i].names[0]));");
+    let save = body.find("ClString __cl_save_1[2] = {0};").unwrap();
+    let fill = body.find("__cl_rhs_1[1] = cl_std_text_stringOf(cl_str(\"xx\"));").unwrap();
+    assert!(
+        fill < save,
+        "{tag}: the literal must fill before the save and clear; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+}
+
+/// The element and raw-target stores call each impure pointer once.
+///
+/// `p436element` pins the index and the `alt` call, then reads and empties the
+/// same pointer temporary. `p436raw` has two `alt` expressions, one per side,
+/// and both run once. The element program re-emits byte-identically.
+#[test]
+fn should_materialize_the_owning_deref_store_value_once() {
+    let tag = "p436element";
+    let source = r#"module spec.cprimpl.p436element;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let xs: String[2] = [stringOf("AA"), stringOf("BB")];
+    let i: i32 = 1;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        xs[i] = *alt(p, q);
+    }
+    return i32(len(xs[1])) - 2;
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, source);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p436element_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = i;");
+    assert_contains(tag, body, "__cl_tmp1 = cl_alt__String(p, q);");
+    assert_contains(tag, body, "*(&(xs[__cl_tmp0])) = *(__cl_tmp1);");
+    assert_contains(tag, body, "*(__cl_tmp1) = NULL;");
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        1,
+        "{tag}: the pointer must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let tag = "p436raw";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p436raw;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let v: String = stringOf("vv");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let rp: raw String = &v;
+        let rq: raw String = &v;
+        unsafe *alt(rp, rq) = *alt(p, q);
+    }
+    return i32(len(v)) - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p436raw_main(void)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = cl_alt__String(rp, rq);");
+    assert_contains(tag, body, "__cl_tmp1 = cl_alt__String(p, q);");
+    assert_contains(tag, body, "*(&(*(__cl_tmp0))) = *(__cl_tmp1);");
+    assert_eq!(
+        body.matches("cl_alt__String(").count(),
+        2,
+        "{tag}: each pointer expression must run once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
+
+    let (first, second) = emit_twice("p436element", source);
+    assert_eq!(
+        first, second,
+        "p436element: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
