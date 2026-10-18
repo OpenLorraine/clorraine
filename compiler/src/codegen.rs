@@ -246,8 +246,29 @@ pub(super) struct Emitter<'a> {
     /// True while a planning pass runs; it suppresses output but records the
     /// labels the real pass needs.
     pub(super) suppress_output: bool,
+    /// The taking conditional store currently being emitted, when its saved
+    /// destination may be consumed through a raw pointer.
+    ///
+    /// A raw-deref `take` in the store's condition or arms may empty the same
+    /// storage the store saved. The move-out records an alias flag in its own
+    /// comma sequence, so the flag is set only when that take actually ran and
+    /// its taken value names the saved destination. The store then zeroes the
+    /// save before either arm runs. The capture is restored after one store,
+    /// so a later store starts without a stale flag.
+    pub(super) take_capture: Option<TakeCapture>,
     /// The diagnostic sink, for the large-stack-frame warning.
     diagnostics: &'a mut crate::diag::Diagnostics,
+}
+
+/// The runtime alias record of one conditional store's saved destination.
+pub(super) struct TakeCapture {
+    /// The boolean local that records whether an aliasing take ran.
+    pub(super) flag: String,
+    /// The rendered destination lvalue the take may have consumed.
+    pub(super) target: String,
+    /// The destination's resolved type; only a taken value of this type can
+    /// name the same storage, so only that value updates the flag.
+    pub(super) ty: Ty,
 }
 
 /// Emits the whole translation unit for a successful compilation.
@@ -317,6 +338,7 @@ impl<'a> Emitter<'a> {
             copy_region: None,
             loop_entry: BTreeMap::new(),
             suppress_output: false,
+            take_capture: None,
             diagnostics,
         };
         emitter.collect();

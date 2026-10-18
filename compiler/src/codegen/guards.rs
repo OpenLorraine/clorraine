@@ -1146,7 +1146,22 @@ impl<'a> Emitter<'a> {
             return None;
         }
         let source = self.value(value);
-        Some(self.move_zero_text_expr(&source, ty))
+        let move_out = self.move_zero_text_expr(&source, ty);
+        let Some(capture) = &self.take_capture else {
+            return Some(move_out);
+        };
+        // Only a taken value of the saved destination's own type can name the
+        // same storage. The flag is set here, in the move-out's own comma
+        // sequence, so a skipped take never marks the save consumed.
+        if self.substitute(ty) != capture.ty {
+            return Some(move_out);
+        }
+        let address = self.deref_value_address(value)?;
+        Some(format!(
+            "({flag} = ({flag} || (({address}) == (&({target}))))), {move_out}",
+            flag = capture.flag,
+            target = capture.target,
+        ))
     }
 
     /// The plain rendering of a value and its always-evaluated operand guards.

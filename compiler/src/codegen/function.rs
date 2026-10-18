@@ -14,13 +14,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, PlaceBase, Statement, Terminator, Value, ValueKind, ValuePiece};
-use crate::ast::{BinaryOp, UnaryOp};
+use crate::ast::UnaryOp;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
 use super::types::{declarator, function_declarator, is_struct_view};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
+    TakeCapture,
 };
 
 impl<'a> Emitter<'a> {
@@ -2252,6 +2253,32 @@ impl<'a> Emitter<'a> {
         save: Option<&str>,
         element_target: bool,
     ) {
+        // A raw-deref `take` in the condition or either arm may consume the
+        // value the store saved. The taken value records an alias flag in the
+        // same comma sequence that empties its pointee, so the flag is set
+        // only when that take actually ran and its address named the
+        // destination. The store then zeroes the save before either arm runs,
+        // exactly when the callee already freed the saved storage.
+        let mut pointees = Vec::new();
+        self.consumed_pointees(condition, &mut pointees);
+        self.consumed_pointees(then_value, &mut pointees);
+        self.consumed_pointees(else_value, &mut pointees);
+        let capture = save.and_then(|_| {
+            let aliases = pointees.iter().any(|pointee| {
+                self.needs_drop(&self.resolved_value_ty(pointee))
+                    && self.substitute(&pointee.ty) == self.substitute(ty)
+            });
+            aliases.then(|| TakeCapture {
+                flag: self.unique_local("__cl_take_alias"),
+                target: target_c.to_owned(),
+                ty: self.substitute(ty),
+            })
+        });
+        let has_capture = capture.is_some();
+        if let Some(capture) = &capture {
+            self.push(&format!("    bool {} = 0;", capture.flag));
+        }
+        let saved_capture = std::mem::replace(&mut self.take_capture, capture);
         self.emit_guards(condition);
         // A condition whose evaluation consumed the destination already
         // transferred the old value to the callee, so the saved old value must
@@ -2262,39 +2289,38 @@ impl<'a> Emitter<'a> {
             }
         }
         let condition_c = self.value(condition);
-        self.push(&format!("        if ({condition_c}) {{"));
-        // A condition that consumes the destination through a raw pointer
-        // leaves the saved old value aliasing storage the callee already
-        // freed. The pointer may or may not name the destination, so the
-        // branch compares the addresses: only the aliasing path zeroes the
-        // save, and every other path keeps it for the ordinary release.
-        if let Some(save) = save {
-            let mut pointees = Vec::new();
-            self.condition_consumed_pointees(condition, &mut pointees);
-            for pointee in pointees {
-                let ValueKind::Unary {
-                    op: UnaryOp::Deref,
-                    operand,
-                } = &pointee.kind
-                else {
-                    continue;
-                };
-                if !self.needs_drop(&self.resolved_value_ty(pointee)) {
-                    continue;
-                }
-                let target_address = format!("(&({target_c}))");
-                let pointee_address = self.value(operand);
-                self.push(&format!(
-                    "            if ({target_address} == {pointee_address}) {{"
-                ));
+        let alias_flag = self
+            .take_capture
+            .as_ref()
+            .map(|capture| capture.flag.clone());
+        if has_capture {
+            // The condition is evaluated once into a local so the alias flag
+            // is settled before the branches: a taken destination is emptied
+            // from the save before an arm can restore or overwrite it.
+            self.push(&format!("    bool __cl_cond = {condition_c};"));
+            if let (Some(save), Some(flag)) = (save, alias_flag.clone()) {
+                self.push(&format!("    if ({flag}) {{"));
                 self.emit_move_zero(save, ty);
-                self.push("            }");
+                self.push("    }");
             }
+            self.push("        if (__cl_cond) {");
+        } else {
+            self.push(&format!("        if ({condition_c}) {{"));
         }
         self.emit_conditional_move_arm(target_c, ty, then_value, save, element_target);
         self.push("        } else {");
         self.emit_conditional_move_arm(target_c, ty, else_value, save, element_target);
         self.push("        }");
+        // An arm that consumes the destination through a raw pointer records
+        // its alias only while the arm runs, so the save is checked again after
+        // the branch. A condition take already settled the flag above; the
+        // second check is then a no-op.
+        if let (Some(save), Some(flag)) = (save, alias_flag) {
+            self.push(&format!("    if ({flag}) {{"));
+            self.emit_move_zero(save, ty);
+            self.push("    }");
+        }
+        self.take_capture = saved_capture;
     }
 
     /// Emits one arm of an owned conditional store.
@@ -2482,42 +2508,27 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Collects the raw-deref pointees a condition's calls consume on paths
-    /// the true branch reaches.
+    /// Collects the raw-deref pointees a conditional store's values consume.
     ///
-    /// A `take` argument through a raw pointer records its pointee on the
-    /// call's deferred materialization. When that call sits in the condition of
-    /// an owned conditional store, the pointee may be the store's own
-    /// destination, so the branch must compare addresses before trusting the
-    /// saved old value. Only pointees that certainly run when the condition is
-    /// true are collected: both operands of a non-short-circuit operator, the
-    /// left operand of `&&`/`||` (always evaluated), and the right operand of
-    /// `&&` (evaluated whenever the whole condition is true). The right operand
-    /// of `||` and the arms of `?:` may be skipped even when the condition is
-    /// true, so they stay with the ordinary save release.
-    fn condition_consumed_pointees<'v>(&self, value: &'v Value, out: &mut Vec<&'v Value>) {
+    /// A `take` argument through a raw pointer records its taken value on the
+    /// call's deferred materialization. When that call sits in the store's
+    /// condition or either arm, the taken value may name the store's own
+    /// destination, so the store must know whether the call actually ran
+    /// before it trusts the saved old value. The walk visits every child — the
+    /// right operand of `||` and the arms of `?:` included — because the
+    /// alias flag is recorded at the move-out itself, so a skipped path simply
+    /// leaves the flag clear. The flag is never inferred from the condition's
+    /// shape.
+    fn consumed_pointees<'v>(&self, value: &'v Value, out: &mut Vec<&'v Value>) {
         match &value.kind {
-            ValueKind::Binary {
-                op: BinaryOp::LogicalAnd,
-                left,
-                right,
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
             } => {
-                self.condition_consumed_pointees(left, out);
-                self.condition_consumed_pointees(right, out);
-            }
-            ValueKind::Binary {
-                op: BinaryOp::LogicalOr,
-                left,
-                ..
-            } => self.condition_consumed_pointees(left, out),
-            ValueKind::Binary { left, right, .. } => {
-                self.condition_consumed_pointees(left, out);
-                self.condition_consumed_pointees(right, out);
-            }
-            // Only a conditional's controlling test always runs; an arm runs
-            // only when its own condition selects it.
-            ValueKind::Conditional { condition, .. } => {
-                self.condition_consumed_pointees(condition, out);
+                self.consumed_pointees(condition, out);
+                self.consumed_pointees(then_value, out);
+                self.consumed_pointees(else_value, out);
             }
             ValueKind::Materialize {
                 value: inner,
@@ -2525,60 +2536,84 @@ impl<'a> Emitter<'a> {
                 ..
             } => {
                 out.extend(value_move_outs.iter());
-                self.condition_consumed_pointees(inner, out);
+                self.consumed_pointees(inner, out);
             }
-            ValueKind::Member { base, .. } => self.condition_consumed_pointees(base, out),
+            ValueKind::Binary { left, right, .. } => {
+                self.consumed_pointees(left, out);
+                self.consumed_pointees(right, out);
+            }
+            ValueKind::Member { base, .. } => self.consumed_pointees(base, out),
             ValueKind::Index { base, index } => {
-                self.condition_consumed_pointees(base, out);
-                self.condition_consumed_pointees(index, out);
+                self.consumed_pointees(base, out);
+                self.consumed_pointees(index, out);
             }
-            ValueKind::Unary { operand, .. } => self.condition_consumed_pointees(operand, out),
-            ValueKind::Cast { value: inner, .. } => self.condition_consumed_pointees(inner, out),
+            ValueKind::Unary { operand, .. } => self.consumed_pointees(operand, out),
+            ValueKind::Cast { value: inner, .. } => self.consumed_pointees(inner, out),
             ValueKind::Call { args, receiver, .. } => {
                 if let Some(receiver) = receiver {
-                    self.condition_consumed_pointees(receiver, out);
+                    self.consumed_pointees(receiver, out);
                 }
                 for arg in args {
-                    self.condition_consumed_pointees(arg, out);
+                    self.consumed_pointees(arg, out);
                 }
             }
             ValueKind::Intrinsic { args, .. } => {
                 for arg in args {
-                    self.condition_consumed_pointees(arg, out);
+                    self.consumed_pointees(arg, out);
                 }
             }
             ValueKind::StructLit { fields, .. } => {
                 for (_, field) in fields {
-                    self.condition_consumed_pointees(field, out);
+                    self.consumed_pointees(field, out);
                 }
             }
             ValueKind::ArrayLit { elements, fill } => {
                 for element in elements {
-                    self.condition_consumed_pointees(element, out);
+                    self.consumed_pointees(element, out);
                 }
                 if let Some(fill) = fill {
-                    self.condition_consumed_pointees(fill, out);
+                    self.consumed_pointees(fill, out);
                 }
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
                     if let ValuePiece::Placeholder(inner) = piece {
-                        self.condition_consumed_pointees(inner, out);
+                        self.consumed_pointees(inner, out);
                     }
                 }
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {
-                    self.condition_consumed_pointees(capture, out);
+                    self.consumed_pointees(capture, out);
                 }
             }
             ValueKind::ClosureCall { callable, args } => {
-                self.condition_consumed_pointees(callable, out);
+                self.consumed_pointees(callable, out);
                 for arg in args {
-                    self.condition_consumed_pointees(arg, out);
+                    self.consumed_pointees(arg, out);
                 }
             }
             _ => {}
+        }
+    }
+
+    /// The rendered address of a consumed raw-deref value.
+    ///
+    /// A bare `*p` names the whole pointee, whose address is the pointer
+    /// value; a projected `(*p).name` or `(*p).items[i]` names one member or
+    /// element, whose address is taken from the projection. The store compares
+    /// this address with the saved destination, so only a value of the
+    /// destination's own type is a candidate (the caller filters by type).
+    pub(super) fn deref_value_address(&self, value: &Value) -> Option<String> {
+        match &value.kind {
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => Some(self.value(operand)),
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                Some(format!("&({})", self.value(value)))
+            }
+            _ => None,
         }
     }
 
@@ -2596,6 +2631,23 @@ impl<'a> Emitter<'a> {
         // read no storage the store must empty.
         if self.carries_null_shape(arm) && self.carries_null_value(ty) {
             return;
+        }
+        // A raw-deref arm records whether its taken value names the storage a
+        // conditional store saved. The record sits on the arm's own path, so a
+        // skipped arm never sets it.
+        if value_moves_pointee(arm) && self.needs_drop(ty) {
+            let capture = self
+                .take_capture
+                .as_ref()
+                .filter(|capture| self.substitute(ty) == capture.ty)
+                .map(|capture| (capture.flag.clone(), capture.target.clone()));
+            if let Some((flag, target)) = capture {
+                if let Some(address) = self.deref_value_address(arm) {
+                    self.push(&format!("    if (({address}) == (&({target}))) {{"));
+                    self.push(&format!("        {flag} = 1;"));
+                    self.push("    }");
+                }
+            }
         }
         match &arm.kind {
             ValueKind::Place(place) => {
