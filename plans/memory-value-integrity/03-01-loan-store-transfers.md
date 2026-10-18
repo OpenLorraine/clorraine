@@ -15,8 +15,9 @@ replacement, write the composite source's positions onto the destination path (e
 or runtime), and keep the collector's prefix fallback in the move transfer. `DEF-431` and
 `DEF-435` are verification branches after that gate: if it alone greens them they close as
 incidental; if not, the prefix fallback and the runtime-element collector complete them. No new
-rejection surface, no new store route, no new IR: every accepted copy stays accepted; the escape
-reports the frozen `E10030` (AR-6–AR-9, AR-12).
+store route and no new IR: every accepted copy form stays accepted; the direct run-time read forms
+that the wildcard now reaches reject legitimately (the intended delta), and the escape reports the
+frozen `E10030` (AR-6–AR-9, AR-12).
 
 ## Frozen Rule
 

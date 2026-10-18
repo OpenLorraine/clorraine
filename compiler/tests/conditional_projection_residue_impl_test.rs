@@ -11579,6 +11579,9 @@ fn should_re_emit_the_stored_copy_programs_byte_identically() {
         ("storedselfscope", STORED_SELF_IN_SCOPE_SOURCE),
         ("storedcopyscope", STORED_IN_SCOPE_COPY_SOURCE),
         ("storedsibling", STORED_SIBLING_SOURCE),
+        ("storedrunoverwrite", STORED_RUNTIME_OVERWRITE_SOURCE),
+        ("storedrowoverwrite", STORED_RUNTIME_ROW_OVERWRITE_SOURCE),
+        ("storedrunclean", STORED_RUNTIME_CLEAN_SOURCE),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
@@ -11586,4 +11589,257 @@ fn should_re_emit_the_stored_copy_programs_byte_identically() {
             "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Run-time candidate loans. A run-time store on a fixed extent names every
+// candidate element it may write, so a later constant store clears exactly
+// its own slot and a clean run-time store adds no loan. The direct run-time
+// fill and the direct run-time element read reject because the run-time store
+// may have written the read slot; both were accepted before the candidate
+// record. A slice destination keeps one conservative wildcard record.
+// ---------------------------------------------------------------------------
+
+/// A conditional row written through a run-time index, then the first row
+/// overwritten with literals: the overwrite clears that candidate's loan, so
+/// the fill below it stays accepted and runs.
+const STORED_RUNTIME_OVERWRITE_SOURCE: &str = r#"module spec.cprimpl.storedrunoverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    grid[0] = ["II", "JJ"];
+    fill(grid[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+
+/// A whole row written through a run-time index, then the first row
+/// overwritten with literals: the same candidate record leaves the read of
+/// the overwritten slot clean.
+const STORED_RUNTIME_ROW_OVERWRITE_SOURCE: &str = r#"module spec.cprimpl.storedrowoverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let g: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    g[k] = xs;
+    g[0] = ["CC", "DD"];
+    fill(g[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 67;
+}
+"#;
+
+/// A clean literal row written through a run-time index after a constant
+/// loan: the run-time store contributes no loan of its own, so the read of
+/// the untouched row stays accepted and runs.
+const STORED_RUNTIME_CLEAN_SOURCE: &str = r#"module spec.cprimpl.storedrunclean;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    grid[k] = ["II", "JJ"];
+    fill(grid[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+
+/// A direct fill of an element a run-time view store may have written: the
+/// store records the loan at every candidate, so the fill reports it once.
+const STORED_RUNTIME_DIRECT_FILL_SOURCE: &str = r#"module spec.cprimpl.storedrundirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A direct read of an element written by a run-time element store of a fill
+/// literal: the store records the fill value's loan at every candidate, so
+/// the read reports it once.
+const STORED_RUNTIME_ELEMENT_DIRECT_SOURCE: &str = r#"module spec.cprimpl.storedrunelemdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let g: str[2][2] = [["AA", "BB"], ["CC", "DD"]];
+    g[k] = [; a.v];
+    fill(g[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The clean store after a run-time loan stays accepted: the constant
+/// overwrite keeps its plain element stores, and the fill runs.
+#[test]
+fn should_pin_the_clean_store_after_a_runtime_loan() {
+    let tag = "storedrunoverwrite";
+    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_OVERWRITE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_storedrunoverwrite_outer(ClStr *slot, i32 k, bool c)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&(grid[k])))), &(xs), sizeof((*(&(grid[k])))));",
+    );
+    assert_contains(tag, body, "grid[0][0] = cl_str(\"II\");");
+    assert_contains(tag, body, "grid[0][1] = cl_str(\"JJ\");");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_storedrunoverwrite_fill(grid[0][0], &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+}
+
+/// The whole-row run-time store with a constant overwrite stays accepted:
+/// the first row's literal stores and the fill keep their plain shapes.
+#[test]
+fn should_pin_the_row_overwrite_after_a_runtime_loan() {
+    let tag = "storedrowoverwrite";
+    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_ROW_OVERWRITE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_storedrowoverwrite_outer(ClStr *slot, i32 k)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&((*(&(g[k])))), &(xs), sizeof((*(&(g[k])))));",
+    );
+    assert_contains(tag, body, "g[0][0] = cl_str(\"CC\");");
+    assert_contains(tag, body, "g[0][1] = cl_str(\"DD\");");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_storedrowoverwrite_fill(g[0][0], &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+}
+
+/// A clean run-time store after a constant loan stays accepted: the store
+/// keeps its per-element literal writes, and the untouched row's read runs.
+#[test]
+fn should_pin_the_clean_runtime_store_after_a_loan() {
+    let tag = "storedrunclean";
+    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_CLEAN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_storedrunclean_outer(ClStr *slot, i32 k, bool c)\n{",
+    );
+    assert_contains(tag, body, "memcpy(&(grid[0]), &(xs), sizeof(grid[0]));");
+    assert_contains(tag, body, "memcpy(&(grid[0]), &(zs), sizeof(grid[0]));");
+    assert_contains(tag, body, "(*(&(grid[k])))[0] = cl_str(\"II\");");
+    assert_contains(tag, body, "(*(&(grid[k])))[1] = cl_str(\"JJ\");");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_storedrunclean_fill(grid[1][0], &((*slot)));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}
+
+/// The direct run-time fill reports the candidate loan once at its fill.
+#[test]
+fn should_pin_the_direct_runtime_fill_rejection() {
+    assert_rejected_once_at(
+        "storedrundirect",
+        STORED_RUNTIME_DIRECT_FILL_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The direct run-time element-store read reports the fill value's loan once
+/// at its read.
+#[test]
+fn should_pin_the_direct_runtime_element_rejection() {
+    assert_rejected_once_at(
+        "storedrunelemdirect",
+        STORED_RUNTIME_ELEMENT_DIRECT_SOURCE,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
 }

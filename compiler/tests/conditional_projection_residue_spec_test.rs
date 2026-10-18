@@ -18197,3 +18197,252 @@ func main(): i32 {
         &[],
     );
 }
+
+// ---------------------------------------------------------------------------
+// runtimeoverwrite: a clean store after a run-time loan, and a clean
+// run-time store before a safe read.
+//
+// A run-time element store cannot name the slot it wrote, so its loan is
+// recorded per candidate element of the destination's fixed extent. A later
+// constant store replaces exactly its own candidate slot, and a clean
+// run-time store adds no loan, so both safe reads stay accepted. A read under
+// a genuinely different prefix names no candidate and stays accepted too;
+// an open destination extent keeps one conservative wildcard record.
+// ---------------------------------------------------------------------------
+
+/// A clean constant overwrite clears the candidate slot its run-time loan may
+/// have written, so the later read of that slot stays accepted and clean.
+///
+/// `runtimeoverwrite` writes a conditional row through a run-time index and
+/// then overwrites the first row with literals before the fill.
+/// `cleanruntimestore` loans the first row, writes literals through a
+/// run-time index, and reads the second row, which the loan never named.
+#[test]
+fn should_accept_a_clean_store_after_a_runtime_loan() {
+    let overwrite = r#"module spec.cpr.runtimeoverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    grid[0] = ["II", "JJ"];
+    fill(grid[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+    let output = run_memory("runtimeoverwrite", overwrite);
+    assert_exit("runtimeoverwrite", &output, 0);
+    assert_no_asan("runtimeoverwrite", &output);
+
+    let clean_store = r#"module spec.cpr.runtimeclean;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    grid[k] = ["II", "JJ"];
+    fill(grid[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+    let output = run_memory("runtimeclean", clean_store);
+    assert_exit("runtimeclean", &output, 0);
+    assert_no_asan("runtimeclean", &output);
+
+    let overwrite_copy = r#"module spec.cpr.runtimeoverwritecopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[k] = c ? xs : zs;
+    grid[0] = ["II", "JJ"];
+    let s: str = grid[0][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+    let output = run_memory("runtimeoverwritecopy", overwrite_copy);
+    assert_exit("runtimeoverwritecopy", &output, 0);
+    assert_no_asan("runtimeoverwritecopy", &output);
+
+    let clean_copy = r#"module spec.cpr.runtimecleancopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32, c: bool): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0] = c ? xs : zs;
+    grid[k] = ["II", "JJ"];
+    let s: str = grid[1][0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 73;
+}
+"#;
+    let output = run_memory("runtimecleancopy", clean_copy);
+    assert_exit("runtimecleancopy", &output, 0);
+    assert_no_asan("runtimecleancopy", &output);
+}
+
+/// A read under another prefix names no candidate slot the run-time store may
+/// have written, so it stays accepted and clean.
+///
+/// `otherprefix` writes one element below the constant first row and reads the
+/// second row; `otherbinding` writes a full row through a run-time index and
+/// reads a different array entirely.
+#[test]
+fn should_accept_a_read_under_another_prefix() {
+    let other_prefix = r#"module spec.cpr.otherprefix;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    grid[0][k] = xs[0];
+    fill(grid[1][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 71;
+}
+"#;
+    let output = run_memory("otherprefix", other_prefix);
+    assert_exit("otherprefix", &output, 0);
+    assert_no_asan("otherprefix", &output);
+
+    let other_binding = r#"module spec.cpr.otherbinding;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
+    let rows2: str[2][2] = [["II", "JJ"], ["KK", "LL"]];
+    rows[k] = xs;
+    fill(rows2[1][1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 76;
+}
+"#;
+    let output = run_memory("otherbinding", other_binding);
+    assert_exit("otherbinding", &output, 0);
+    assert_no_asan("otherbinding", &output);
+}
+
+/// A slice destination has no fixed extent, so its run-time store keeps one
+/// conservative wildcard record and the later constant read reports.
+#[test]
+fn should_keep_the_wildcard_for_an_open_extent() {
+    let source = r#"module spec.cpr.openextent;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, k: i32): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let base: str[2] = ["AA", "BB"];
+    let xs: str[] = slice(base, 0, 2);
+    xs[k] = a.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, 1);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "openextent",
+        source,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}

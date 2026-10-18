@@ -1106,8 +1106,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// positions record under their own field path, so a field overwrite drops
     /// every position the field held. A loan another element path also carries
     /// stays, because that element still reads it. A path with a run-time index
-    /// cannot name the element it overwrote, so it keeps the union and only
-    /// adds.
+    /// cannot name the element it overwrote: a fixed extent names its
+    /// candidate elements so a later constant store can replace one of them,
+    /// while an open or unknown extent keeps the union and only adds.
     pub(super) fn replace_element_loans(
         &mut self,
         id: usize,
@@ -1123,17 +1124,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !constant {
             let mut union = self.binding_loans(id);
             union.extend(loans.iter().copied());
-            // A run-time index cannot name the element it overwrote, so the
-            // record names its wildcard position and keeps the binding union
-            // it contributes to. A later constant read under the same prefix
-            // matches the wildcard and reports the backing's escape; the
-            // binding union stays for the write-conflict reading.
-            if !union.is_empty() {
-                self.state
-                    .element_loans
-                    .entry(id)
-                    .or_default()
-                    .insert(projections.to_vec(), union.clone());
+            // A run-time index names no single element it overwrote. When the
+            // destination's declared type fixes the extent at every wildcard
+            // step, the store can write only those elements: record the new
+            // loans at each candidate. A later constant store then replaces
+            // exactly the slot it overwrote, and a clean run-time store adds
+            // no loan of its own. An existing candidate record stays, because
+            // the store may have hit another element. An open or unknown
+            // extent has no finite candidate set, so the record keeps its
+            // wildcard position and the binding union: a later constant read
+            // under the same prefix matches the wildcard and reports the
+            // backing's escape, and the binding union stays for the
+            // write-conflict reading.
+            match self.fixed_runtime_positions(id, projections) {
+                Some(candidates) => {
+                    if !loans.is_empty() {
+                        for candidate in candidates {
+                            self.state
+                                .element_loans
+                                .entry(id)
+                                .or_default()
+                                .entry(candidate)
+                                .or_default()
+                                .extend(loans.iter().copied());
+                        }
+                    }
+                }
+                None => {
+                    if !union.is_empty() {
+                        self.state
+                            .element_loans
+                            .entry(id)
+                            .or_default()
+                            .insert(projections.to_vec(), union.clone());
+                    }
+                }
             }
             self.set_binding_loan_union(id, union);
             return;
@@ -1184,6 +1209,65 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .insert(path, loans);
         }
         self.set_binding_loan_union(id, union);
+    }
+
+    /// The concrete element paths a run-time store may write.
+    ///
+    /// A run-time index cannot name the element it wrote, so the loan record
+    /// would otherwise name a wildcard position. When the destination's
+    /// declared type fixes the extent at every wildcard step, the store can
+    /// write only those elements: naming each one lets a later constant store
+    /// replace exactly the slot it overwrote, while every other candidate
+    /// keeps its own record. A field step follows the struct's declared field
+    /// type, so a wildcard below a field is expanded at the field's extent.
+    /// An open, unknown, or non-array extent has no finite candidate set, so
+    /// `None` tells the caller to keep one conservative wildcard record across
+    /// the aggregate.
+    fn fixed_runtime_positions(
+        &self,
+        id: usize,
+        projections: &[ir::Projection],
+    ) -> Option<Vec<Vec<ir::Projection>>> {
+        let mut candidates = vec![(self.bindings[id].ty.clone(), Vec::new())];
+        for projection in projections {
+            let mut next = Vec::new();
+            for (ty, path) in candidates {
+                match projection {
+                    ir::Projection::Element(Some(index)) => {
+                        let mut full = path;
+                        full.push(ir::Projection::Element(Some(*index)));
+                        next.push((crate::types::index_element(&ty), full));
+                    }
+                    ir::Projection::Element(None) | ir::Projection::ElementTemp(_) => {
+                        let TyKind::Array { extents, .. } = &ty.kind else {
+                            return None;
+                        };
+                        let extent = (*extents.first()?)?;
+                        let element = crate::types::index_element(&ty);
+                        for index in 0..extent {
+                            let mut full = path.clone();
+                            full.push(ir::Projection::Element(Some(index)));
+                            next.push((element.clone(), full));
+                        }
+                    }
+                    ir::Projection::Field(field) => {
+                        let TyKind::Struct(name, _) = &ty.kind else {
+                            return None;
+                        };
+                        let field_ty = self
+                            .instance_fields(&ty, name)
+                            .into_iter()
+                            .find(|(candidate, _)| candidate == field)?
+                            .1;
+                        let mut full = path;
+                        full.push(ir::Projection::Field(field.clone()));
+                        next.push((field_ty, full));
+                    }
+                }
+            }
+            candidates = next;
+        }
+        Some(candidates.into_iter().map(|(_, path)| path).collect())
     }
 
     /// Moves a carrier's recorded view positions onto another binding.
@@ -2451,5 +2535,76 @@ fn merge_view_provenances(atoms: Vec<Provenance>, prefer_local: bool) -> Provena
             }
             Provenance::Composite(unique)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ir::Projection::{Element, Field};
+
+    /// The recorded position is the broad side of the match.
+    ///
+    /// A store through a run-time index records the wildcard step, so the
+    /// recorded step matches any constant element index. The read side is
+    /// always constant: a read wildcard is not recorded and must not match a
+    /// concrete recorded step.
+    #[test]
+    fn position_step_matches_accepts_only_a_recorded_wildcard() {
+        assert!(position_step_matches(&Element(None), &Element(Some(3))));
+        assert!(position_step_matches(&Element(Some(3)), &Element(Some(3))));
+        assert!(!position_step_matches(&Element(Some(3)), &Element(None)));
+        assert!(!position_step_matches(&Element(Some(1)), &Element(Some(2))));
+        assert!(!position_step_matches(
+            &Field("rows".to_owned()),
+            &Element(Some(0))
+        ));
+    }
+
+    /// A path matches itself at equal length, and the remainder is empty.
+    #[test]
+    fn position_prefix_and_cover_agree_at_equal_length() {
+        let path = [Element(Some(0)), Field("rows".to_owned())];
+        assert!(position_starts_with(&path, &path));
+        assert!(position_covers(&path, &path));
+        assert_eq!(position_rest(&path, &path), Some(&[][..]));
+    }
+
+    /// A recorded path below the read starts with it; the reader keeps the
+    /// steps below the read to translate them onto the destination.
+    #[test]
+    fn position_starts_with_keeps_the_steps_below_the_read() {
+        let path = [Element(None), Element(Some(2))];
+        let read = [Element(Some(1))];
+        assert!(position_starts_with(&path, &read));
+        assert!(!position_covers(&path, &read));
+        assert_eq!(position_rest(&path, &read), Some(&[Element(Some(2))][..]));
+        assert!(position_starts_with(&[Element(Some(0))], &[]));
+        assert!(!position_starts_with(&read, &path));
+    }
+
+    /// A recorded fill prefix covers a deeper read; the read selects one
+    /// element of what the fill stored.
+    #[test]
+    fn position_covers_accepts_a_recorded_fill_prefix() {
+        let path = [Element(Some(0))];
+        let read = [Element(Some(0)), Element(Some(1))];
+        assert!(position_covers(&path, &read));
+        assert!(!position_starts_with(&path, &read));
+        assert_eq!(position_rest(&path, &read), None);
+    }
+
+    /// A read wildcard never matches a concrete recorded step.
+    ///
+    /// The readers only pass constant read paths; this pins the direction so a
+    /// later reader cannot broaden a recorded concrete position by mistake.
+    #[test]
+    fn position_read_wildcard_is_not_recorded() {
+        assert!(!position_starts_with(&[Element(Some(0))], &[Element(None)]));
+        assert!(!position_covers(
+            &[Element(Some(0)), Element(Some(1))],
+            &[Element(None)]
+        ));
+        assert_eq!(position_rest(&[Element(Some(0))], &[Element(None)]), None);
     }
 }
