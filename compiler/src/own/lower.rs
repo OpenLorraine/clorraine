@@ -3581,12 +3581,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         // A projection of a conditional is a read. Materializing an owning
-        // conditional would move the chosen place arm out of caller storage,
-        // so only a copy type takes this path; an owning mixed base stays a
-        // projection of the conditional (and its unbound literal destination
-        // remains a separately filed residual).
+        // conditional that has a caller-storage arm would move that arm out of
+        // its owner; key the skip on the arm's storage root, not on ownership:
+        // an all-fresh owning conditional (a literal or call in every arm) may
+        // be materialized, and a duplicable conditional copies its arms. An
+        // owning mixed base stays a projection (a filed residual).
         if matches!(value.kind, ValueKind::Conditional { .. })
             && !self.sema.table.duplicable(&value.ty)
+            && self.conditional_has_storage_arm(&value)
         {
             return value;
         }
@@ -3615,6 +3617,60 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             value,
         });
         Value::new(place.ty.clone(), ValueKind::Place(place))
+    }
+
+    /// True when one arm of a conditional names caller storage.
+    ///
+    /// A place-rooted arm (a local, parameter, global, raw-deref read, or a
+    /// projection of one) is caller storage: a read base must not move it. A
+    /// fresh call, a temporary, or a literal whose fields are fresh owns no
+    /// caller storage and may be materialized. The walk enters literals so a
+    /// place-valued field counts.
+    fn conditional_has_storage_arm(&self, value: &Value) -> bool {
+        let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        else {
+            return false;
+        };
+        self.arm_roots_in_storage(then_value) || self.arm_roots_in_storage(else_value)
+    }
+
+    /// True when a value or one of its aggregate fields names caller storage.
+    fn arm_roots_in_storage(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(_) => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.arm_roots_in_storage(base)
+            }
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            } => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.arm_roots_in_storage(then_value) || self.arm_roots_in_storage(else_value)
+            }
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.arm_roots_in_storage(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements.iter().any(|element| self.arm_roots_in_storage(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.arm_roots_in_storage(fill))
+            }
+            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                ValuePiece::Placeholder(inner) => self.arm_roots_in_storage(inner),
+                _ => false,
+            }),
+            _ => false,
+        }
     }
 
     /// Stores a value into a fresh temporary and returns the temporary value.

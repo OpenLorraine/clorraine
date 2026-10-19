@@ -21347,6 +21347,31 @@ func main(): i32 {
     assert_no_asan("p446order", &output);
     assert_exit("p446order", &output, 0);
 
+    let owned_read = r#"module spec.cpr.p445ownedread;
+
+import { String, stringOf } from std.text;
+
+struct Inner { row: str[2]; name: String; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    return i32((ok ? Inner { row: n1(), name: stringOf("x") } : Inner { row: n2(), name: stringOf("y") }).row[0][0]) - (ok ? 65 : 67);
+}
+
+func guard(g: bool, ok: bool): i32 {
+    return g ? use(ok) : 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + guard(true, true) + guard(false, true);
+}
+"#;
+    let output = run_memory("p445ownedread", owned_read);
+    assert_no_asan("p445ownedread", &output);
+    assert_exit("p445ownedread", &output, 0);
+
     let guarded = r#"module spec.cpr.p448guard;
 
 let calls: i32 = 0;
