@@ -1490,3 +1490,324 @@ func main(): i32 {
         &["cannot modify 'b' while it is shared-borrowed"],
     );
 }
+
+/// A `const` conditional carrier copy keeps both arms' element loans.
+///
+/// The let form already reports the concrete twin's `E10031`; the `const` path
+/// must record the same union, so a write through the loaned owner still finds
+/// the live loan. The all-static control stays accepted and clean.
+#[test]
+fn should_transfer_the_element_loans_of_a_const_conditional_carrier_copy() {
+    let source = r#"module spec.bsi.constcond;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    const h2: Holder = c ? h1 : h3;
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "constcond",
+        source,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let control = r#"module spec.bsi.constcondok;
+
+struct Holder { names: str[2]; }
+
+func use(c: bool): i32 {
+    let h1: Holder = Holder { names: ["AA", "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    const h2: Holder = c ? h1 : h3;
+    return i32(h2.names[0][0]) - 65;
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    let output = run_memory("constcondok", control);
+    assert_no_asan("constcondok", &output);
+    assert_exit("constcondok", &output, 0);
+}
+
+/// A global conditional carrier copy is judged arm by arm at the store.
+///
+/// The direct local-carrier store to a global reports `E10033`; the conditional
+/// spelling must report the same code once at the store. An all-static
+/// conditional keeps the global assignment accepted and clean.
+#[test]
+fn should_reject_a_global_conditional_carrier_copy_from_frame_storage() {
+    let source = r#"module spec.bsi.globalcond;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func set(c: bool): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["FF", "GG"] };
+    g = c ? h1 : h3;
+}
+
+func main(): i32 {
+    set(true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once("globalcond", source, "E10033", &["escapes its scope"]);
+
+    let control = r#"module spec.bsi.globalcondok;
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func set(c: bool): void {
+    g = c ? Holder { names: ["AA", "BB"] } : Holder { names: ["EE", "FF"] };
+}
+
+func main(): i32 {
+    set(true);
+    return i32(g.names[0][0]) - 65;
+}
+"#;
+    let output = run_memory("globalcondok", control);
+    assert_no_asan("globalcondok", &output);
+    assert_exit("globalcondok", &output, 0);
+}
+
+/// A plain carrier copy from a carrier-returning call transfers its source's
+/// view positions.
+///
+/// `makeHolder(b.v)` hands back a carrier whose view reads `b`; a later write
+/// through `b` must report `E10031` once. A parameter-backed source keeps the
+/// copy accepted and clean.
+#[test]
+fn should_transfer_the_view_positions_of_a_call_carrier_copy() {
+    let source = r#"module spec.bsi.callcarriercopy;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeHolder(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = makeHolder(b.v);
+    b.v = stringOf("zz");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected_once(
+        "callcarriercopy",
+        source,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let control = r#"module spec.bsi.callcarriercopyok;
+
+struct Holder { names: str[2]; }
+
+func makeHolder(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func use(p: str): i32 {
+    let h: Holder = makeHolder(p);
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 {
+    return use("AA");
+}
+"#;
+    let output = run_memory("callcarriercopyok", control);
+    assert_no_asan("callcarriercopyok", &output);
+    assert_exit("callcarriercopyok", &output, 0);
+}
+
+/// A mixed aggregate carrier is judged field by field at the call boundary.
+///
+/// The carrier records a known-safe static `tag` position; its owned `name`
+/// field still dies with the caller's frame, so storing a view of it into a
+/// caller slot reports `E10030` once. A view-only carrier over static storage
+/// stays accepted and clean.
+#[test]
+fn should_reject_a_mixed_aggregate_carrier_through_its_owned_field() {
+    let source = r#"module spec.bsi.mixedcarrier;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func store(h: H, borrow slot: str?): void { slot = h.name; }
+
+func outer(p: static str, borrow slot: str?): void {
+    let h: H = H { name: stringOf("aa"), tag: p };
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("tag", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once("mixedcarrier", source, "E10030", &["does not live long enough"]);
+
+    let control = r#"module spec.bsi.mixedcarrierok;
+
+struct V { tag: static str; }
+
+func storeV(h: V, borrow slot: str?): void { slot = h.tag; }
+
+func outer(p: static str, borrow slot: str?): void {
+    let v: V = V { tag: p };
+    storeV(v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("mixedcarrierok", control);
+    assert_no_asan("mixedcarrierok", &output);
+    assert_exit("mixedcarrierok", &output, 0);
+}
+
+/// A conditional shadow copy snapshots its arm sources before the declaration.
+///
+/// The initializer names the outer `h`, so both arms carry the outer binding's
+/// view loan; the later write through `b` reports `E10031` once. A static outer
+/// binding keeps the shadow copy accepted and clean.
+#[test]
+fn should_transfer_the_element_loans_of_a_conditional_shadow_copy() {
+    let source = r#"module spec.bsi.condshadowcopy;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        let h: Holder = true ? h : h;
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected_once(
+        "condshadowcopy",
+        source,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let control = r#"module spec.bsi.condshadowcopyok;
+
+struct Holder { names: str[2]; }
+
+func use(): i32 {
+    let h: Holder = Holder { names: ["AA", "EE"] };
+    {
+        let h: Holder = true ? h : h;
+        return i32(h.names[0][0]) - 65;
+    }
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("condshadowcopyok", control);
+    assert_no_asan("condshadowcopyok", &output);
+    assert_exit("condshadowcopyok", &output, 0);
+}
+
+/// An alias element return resolves the container's element loans.
+///
+/// Returning the element read through `for (borrow e in xs)` hands the caller
+/// a view that `xs`'s element loan backs with `b`; the return reports `E10030`
+/// once. A parameter-backed container keeps the alias return accepted and
+/// clean.
+#[test]
+fn should_resolve_the_element_loans_of_an_alias_return() {
+    let source = r#"module spec.bsi.aliasreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+func use(): Holder {
+    let b: Box = Box { v: stringOf("aa") };
+    let hs: Holder[1] = [Holder { names: [b.v, "EE"] }];
+    for (borrow e in hs) {
+        return e;
+    }
+    return Holder { names: ["CC", "DD"] };
+}
+
+func main(): i32 {
+    let h: Holder = use();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once("aliasreturn", source, "E10030", &["does not live long enough"]);
+
+    let control = r#"module spec.bsi.aliasreturnok;
+
+struct Holder { names: str[2]; }
+
+func use(p: str): Holder {
+    let hs: Holder[1] = [Holder { names: [p, "EE"] }];
+    for (borrow e in hs) {
+        return e;
+    }
+    return Holder { names: ["CC", "DD"] };
+}
+
+func main(): i32 {
+    let h: Holder = use("AA");
+    return i32(h.names[0][0]) - 65;
+}
+"#;
+    let output = run_memory("aliasreturnok", control);
+    assert_no_asan("aliasreturnok", &output);
+    assert_exit("aliasreturnok", &output, 0);
+}
