@@ -1682,3 +1682,270 @@ func main(): i32 {
         &["cannot release or store borrowed parameter 'xs'"],
     );
 }
+
+/// Asserts the front end rejects the program with exactly `count` `code`
+/// diagnostics and writes no translation unit.
+fn assert_rejected_count(tag: &str, source: &str, code: &str, count: usize, fragments: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let marker = format!("error {code}:");
+    assert_eq!(
+        stderr.matches(&marker).count(),
+        count,
+        "{tag}: expected exactly {count} {code}; stderr:\n{stderr}"
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A generic conditional take of an opaque projected member records the
+/// instance duty.
+///
+/// At `T = H { name: String }` the selected member is an owning lend, so
+/// `sink(take (c ? h.name : null))` reports `E10034` once; a duplicable member
+/// instance stays accepted and clean.
+#[test]
+fn should_reject_a_generic_conditional_take_of_an_owning_member() {
+    let source = r#"module spec.bgi.generictakemember;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: i32; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, h: T): i32 { return sink(take (c ? h.name : null)); }
+
+func use(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: 1 };
+    return f<H>(true, h);
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "generictakemember",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let control = r#"module spec.bgi.generictakememberok;
+
+struct HD { name: i32; tag: i32; }
+
+func sinkI(take s: i32?): i32 { return 0; }
+
+func f<T>(c: bool, h: T): i32 { return sinkI(take (c ? h.name : null)); }
+
+func main(): i32 {
+    let h: HD = HD { name: 1, tag: 2 };
+    return f<HD>(true, h);
+}
+"#;
+    let output = run_memory("generictakememberok", control);
+    assert_no_asan("generictakememberok", &output);
+    assert_exit("generictakememberok", &output, 0);
+}
+
+/// A lend field projection through a raw pointer is judged at the instance.
+///
+/// At `T = raw H` the projection selects the pointee's owning `name` member, so
+/// the take reports `E10034` once; a duplicable selected member stays accepted
+/// and clean.
+#[test]
+fn should_reject_a_generic_take_field_projection_through_a_raw_pointer() {
+    let source = r#"module spec.bgi.generictakeraw;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: i32; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, xs: T): i32 { return sink(take (c ? (unsafe xs.name) : null)); }
+
+func use(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: 1 };
+    let p: raw H = unsafe &h;
+    return f<raw H>(true, p);
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "generictakeraw",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'xs'"],
+    );
+
+    let control = r#"module spec.bgi.generictakerawok;
+
+struct HD { name: i32; tag: i32; }
+
+func sinkI(take s: i32?): i32 { return 0; }
+
+func f<T>(c: bool, xs: T): i32 { return sinkI(take (c ? (unsafe xs.name) : null)); }
+
+func main(): i32 {
+    let h: HD = HD { name: 1, tag: 2 };
+    let p: raw HD = unsafe &h;
+    return f<raw HD>(true, p);
+}
+"#;
+    let output = run_memory("generictakerawok", control);
+    assert_no_asan("generictakerawok", &output);
+    assert_exit("generictakerawok", &output, 0);
+}
+
+/// A generic conditional arm in an owning struct-literal field or projected
+/// assignment records the instance duty.
+///
+/// Both forms report `E10034` once at `T = H { name: String }`; the duplicable
+/// field instance stays accepted and clean.
+#[test]
+fn should_reject_a_generic_conditional_arm_in_an_owning_struct_field() {
+    let literal = r#"module spec.bgi.genericlitfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: c ? h.name : null, tag: 1 };
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func use(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "genericlitfield",
+        literal,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let assignment = r#"module spec.bgi.genericasgnfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: null, tag: 1 };
+    s.name = c ? h.name : null;
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func use(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "genericasgnfield",
+        assignment,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let control = r#"module spec.bgi.genericfieldok;
+
+struct HD { name: i32; }
+struct S { name: i32?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: c ? h.name : null, tag: 1 };
+    if (s.name == null) { return 9; }
+    return s.name - 1;
+}
+
+func main(): i32 {
+    let h: HD = HD { name: 1 };
+    return f<HD>(true, h);
+}
+"#;
+    let output = run_memory("genericfieldok", control);
+    assert_no_asan("genericfieldok", &output);
+    assert_exit("genericfieldok", &output, 0);
+}
+
+/// A projection over a conditional of type-parameter places reports each lend
+/// arm.
+///
+/// At `T = H { name: String }` both `h1.name` and `h2.name` are owning lend
+/// moves, so the return reports `E10034` twice; the duplicable instance copies
+/// both members and stays clean.
+#[test]
+fn should_reject_a_projection_over_a_conditional_of_type_parameter_places() {
+    let source = r#"module spec.bgi.genericprojcond;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, d: bool, h1: T, h2: T): String? {
+    return c ? (d ? h1 : h2).name : null;
+}
+
+func use(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    let r: String? = f<H>(true, true, h1, h2);
+    if (r == null) { return 9; }
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_count(
+        "genericprojcond",
+        source,
+        "E10034",
+        2,
+        &["'h1'", "'h2'"],
+    );
+
+    let control = r#"module spec.bgi.genericprojcondok;
+
+struct HD { name: i32; }
+
+func f<T, U>(c: bool, d: bool, h1: T, h2: T, z: U): U {
+    return c ? (d ? h1 : h2).name : z;
+}
+
+func main(): i32 {
+    let h1: HD = HD { name: 1 };
+    let h2: HD = HD { name: 2 };
+    return f<HD, i32>(true, true, h1, h2, 0);
+}
+"#;
+    let output = run_memory("genericprojcondok", control);
+    assert_no_asan("genericprojcondok", &output);
+    assert_exit("genericprojcondok", &output, 0);
+}
