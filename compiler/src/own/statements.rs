@@ -70,7 +70,13 @@ enum BindingEffect {
     /// as consumed: an owning instance moves it and a later use is rejected by
     /// the per-instance audit, while a duplicable instance copies and the use
     /// stays accepted.
-    MoveIfOwning { sources: Vec<PlaceTarget> },
+    MoveIfOwning {
+        sources: Vec<PlaceTarget>,
+        /// True when a concrete local or `take` source moves definitely
+        /// because the destination is a concrete owned type; a maybe-owning
+        /// destination keeps every source on the per-instance path.
+        definite_sources: bool,
+    },
     /// A duplicable copy or a fresh value: no ownership effect.
     None,
 }
@@ -849,9 +855,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 sources.push(source);
             } else {
                 sources.extend(self.maybe_owning_move_sources(value));
-                // Concrete owning arms keep their ordinary conditional duty
-                // beside the type-parameter arms.
-                sources.extend(self.conditional_move_sources(value));
                 if sources.is_empty() {
                     sources.extend(self.maybe_owning_projection_move_sources(value));
                 }
@@ -859,7 +862,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if sources.is_empty() {
                 return BindingEffect::None;
             }
-            return BindingEffect::MoveIfOwning { sources };
+            return BindingEffect::MoveIfOwning {
+                sources,
+                definite_sources: false,
+            };
         }
         if is_view_like(target) {
             // A view array's elements are independent loans, so the binding
@@ -897,7 +903,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // conditional move below.
             if !sources.is_empty() {
                 sources.extend(self.conditional_move_sources(value));
-                return BindingEffect::MoveIfOwning { sources };
+                return BindingEffect::MoveIfOwning {
+                    sources,
+                    definite_sources: true,
+                };
             }
         }
         if self.sema.table.duplicable(target) {
@@ -917,6 +926,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         BindingEffect::None
     }
 
+    /// True when a conditional source binding is a lend parameter.
+    ///
+    /// A by-value, `const`, or `borrow` parameter is call-scoped; a local and
+    /// a `take` parameter own their value and move definitely.
+    fn source_is_lend(&self, source: &PlaceTarget) -> bool {
+        let PlaceTarget::Local(id, _) = source else {
+            return false;
+        };
+        let binding = &self.bindings[*id];
+        matches!(binding.kind, BindingKind::Param | BindingKind::OutSlot)
+            && binding.mode != Mode::Take
+    }
+
     /// Records a prepared ownership effect on the binding that just declared.
     fn apply_binding_effect(&mut self, id: usize, effect: BindingEffect, span: Span) {
         match effect {
@@ -934,7 +956,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.move_target(source, span);
                 }
             }
-            BindingEffect::MoveIfOwning { sources } => {
+            BindingEffect::MoveIfOwning {
+                sources,
+                definite_sources,
+            } => {
                 // A move whose destination is a writable parameter slot may be
                 // the `borrow T?` out-slot carve-out at some instance, so the
                 // per-instance audit exempts a nullable substitution there.
@@ -951,6 +976,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     if into_slot {
                         self.mark_moved_into_slot_if_owning(source, span);
+                    } else if definite_sources && !self.source_is_lend(&source) {
+                        // A concrete destination moves a local or take source
+                        // definitely; a later use reports the moved value as
+                        // the concrete twin does. A lend parameter keeps the
+                        // per-instance duty (E10034 for an owning instance).
+                        self.move_target(source, span);
                     } else {
                         self.mark_moved_if_owning(source, span);
                     }

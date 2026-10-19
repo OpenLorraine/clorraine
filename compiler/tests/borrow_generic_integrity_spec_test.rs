@@ -1464,4 +1464,60 @@ func main(): i32 {
         !c_path.exists(),
         "generic-mixed: a rejected program must not produce a translation unit"
     );
+
+    let mixed_local = r#"module spec.bgi.genericmixedlocal;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T): i32 {
+    let s: String = stringOf("cd");
+    let r: String? = c ? h : s;
+    let n: i32 = i32(len(s));
+    return n - 2;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return pick<String>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("generic-mixed-local", mixed_local);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "generic-mixed-local: the owning instance must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10034:").count(),
+        1,
+        "generic-mixed-local: expected the lend duty for 'h'; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10020:").count(),
+        1,
+        "generic-mixed-local: expected the later local use; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "generic-mixed-local: a rejected program must not produce a translation unit"
+    );
+
+    let maybe_view = r#"module spec.bgi.genericmaybeview;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T, s: String): i32 {
+    let r: T = c ? h : s;
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 {
+    let h: str = "ab";
+    let s: String = stringOf("cd");
+    return pick<str>(true, h, s);
+}
+"#;
+    let output = run_host("generic-maybe-view", maybe_view);
+    assert_exit("generic-maybe-view", &output, 0);
 }
