@@ -21069,3 +21069,218 @@ func main(): i32 {
 "#;
     assert_store_traps("p426concminrem", concrete_min_rem, "E11210");
 }
+
+// ---------------------------------------------------------------------------
+// literaldestinations: a conditional literal read base, a take conditional
+// literal in an eager ternary arm, and a take of a conditional array literal
+// bind their hidden fixed-array destinations.
+//
+// A `str[2]` field is returned through a hidden destination, so a literal
+// reachable through a conditional must select the per-arm store form. The
+// conditional array of view places is stored element by element into a bound
+// destination before the take call.
+// ---------------------------------------------------------------------------
+
+/// The conditional literal read bases store each arm through its destination.
+///
+/// `p445both` and `p445nested` build both arms; `p445mixed` mixes a place arm
+/// with a literal arm. Each run returns the chosen arm's first byte and calls
+/// the chosen arm's function once.
+#[test]
+fn should_bind_the_conditional_literal_read_base() {
+    let both = r#"module spec.cpr.p445both;
+
+struct Inner { row: str[2]; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    return i32((ok ? Inner { row: n1() } : Inner { row: n2() }).row[0][0]);
+}
+
+func main(): i32 {
+    return (use(true) - 65) + (use(false) - 67);
+}
+"#;
+    let output = run_memory("p445both", both);
+    assert_no_asan("p445both", &output);
+    assert_exit("p445both", &output, 0);
+
+    let nested = r#"module spec.cpr.p445nested;
+
+struct Inner { row: str[2]; }
+struct Outer { inner: Inner; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    let o: Outer = Outer { inner: ok ? Inner { row: n1() } : Inner { row: n2() } };
+    return i32(o.inner.row[0][0]);
+}
+
+func main(): i32 {
+    return (use(true) - 65) + (use(false) - 67);
+}
+"#;
+    let output = run_memory("p445nested", nested);
+    assert_no_asan("p445nested", &output);
+    assert_exit("p445nested", &output, 0);
+
+    let mixed = r#"module spec.cpr.p445mixed;
+
+struct Inner { row: str[2]; }
+
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool, inner: Inner): i32 {
+    return i32((ok ? inner : Inner { row: n2() }).row[0][0]);
+}
+
+func main(): i32 {
+    let inner: Inner = Inner { row: ["AA", "BB"] };
+    return (use(true, inner) - 65) + (use(false, inner) - 67);
+}
+"#;
+    let output = run_memory("p445mixed", mixed);
+    assert_no_asan("p445mixed", &output);
+    assert_exit("p445mixed", &output, 0);
+
+    let control = r#"module spec.cpr.p445control;
+
+struct Inner { row: str[2]; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+
+func use(ok: bool): i32 {
+    let inner: Inner = Inner { row: n1() };
+    return i32(inner.row[0][0]);
+}
+
+func main(): i32 {
+    return (use(true) - 65) + (use(false) - 65);
+}
+"#;
+    let output = run_memory("p445control", control);
+    assert_no_asan("p445control", &output);
+    assert_exit("p445control", &output, 0);
+}
+
+/// A take conditional literal in an eager ternary arm stores per arm.
+///
+/// `p446tern` selects `consumeO` with a conditional literal argument; the
+/// chosen arm's call runs once and the unchosen arm never runs.
+#[test]
+fn should_store_a_take_conditional_literal_in_an_eager_ternary_arm() {
+    let ternary = r#"module spec.cpr.p446tern;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consumeO(take o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consumeO(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                                : Outer { inner: Inner { names: n2() }, tag: stringOf("y") })
+                   : 0;
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(false, true);
+    let c: i32 = use(true, false);
+    return (a - 65) + (b - 0) + (c - 67) + calls - 2;
+}
+"#;
+    let output = run_memory("p446tern", ternary);
+    assert_no_asan("p446tern", &output);
+    assert_exit("p446tern", &output, 0);
+
+    let control = r#"module spec.cpr.p446control;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+
+func consumeO(take o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func main(): i32 {
+    return consumeO(Outer { inner: Inner { names: n1() }, tag: stringOf("x") }) - 65;
+}
+"#;
+    let output = run_memory("p446control", control);
+    assert_no_asan("p446control", &output);
+    assert_exit("p446control", &output, 0);
+}
+
+/// A take of a conditional array literal of places stores element by element.
+///
+/// `p448cond` passes `ok ? [a, b] : [c, d]` to a take parameter; each choice
+/// reads its own first byte. The unconditional and owned-element controls
+/// stay green.
+#[test]
+fn should_store_a_take_conditional_view_array_literal() {
+    let conditional = r#"module spec.cpr.p448cond;
+
+func consume(take xs: str[2]): i32 { return i32(xs[0][0]) - 65; }
+
+func use(ok: bool): i32 {
+    let a: str = "AA";
+    let b: str = "BB";
+    let c: str = "CC";
+    let d: str = "DD";
+    return consume(take (ok ? [a, b] : [c, d]));
+}
+
+func main(): i32 {
+    return (use(true) - 0) + (use(false) - 2);
+}
+"#;
+    let output = run_memory("p448cond", conditional);
+    assert_no_asan("p448cond", &output);
+    assert_exit("p448cond", &output, 0);
+
+    let plain = r#"module spec.cpr.p448plain;
+
+func consume(take xs: str[2]): i32 { return i32(xs[0][0]) - 65; }
+
+func main(): i32 {
+    let a: str = "AA";
+    let b: str = "BB";
+    return consume(take [a, b]);
+}
+"#;
+    let output = run_memory("p448plain", plain);
+    assert_no_asan("p448plain", &output);
+    assert_exit("p448plain", &output, 0);
+
+    let owned = r#"module spec.cpr.p448owned;
+
+import { String, stringOf } from std.text;
+
+func consume(take xs: String[2]): i32 { return i32(len(xs[0])) - 2; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let c: String = stringOf("cc");
+    let d: String = stringOf("dd");
+    return consume(take (true ? [a, b] : [c, d]));
+}
+"#;
+    let output = run_memory("p448owned", owned);
+    assert_no_asan("p448owned", &output);
+    assert_exit("p448owned", &output, 0);
+}
