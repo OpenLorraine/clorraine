@@ -509,13 +509,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // parameter type decides too: `b.v: String` passed as `str` hands
             // the callee a view of `b`'s storage exactly as a `str` argument
             // would.
-            let view_parameter = params
-                .get(index)
-                .is_some_and(|(_, param_ty)| is_view_like(param_ty));
+            // An aggregate parameter can carry a view in one of its fields
+            // (`Box { v: String }` passed to a callee that reads `h.v`), so
+            // the whole aggregate is a view source for this judgment.
+            let Some((_, param_ty)) = params.get(index) else {
+                continue;
+            };
+            let view_parameter =
+                self.may_carry_view(param_ty) || self.may_view_from_storage(param_ty);
             if !view_parameter && !is_view_like(&self.ty(&arg.value)) {
                 continue;
             }
-            if let Some(owner) = self.frame_owned_view_owner(&arg.value) {
+            let owner = self.frame_owned_view_owner(&arg.value).or_else(|| {
+                // A whole aggregate carries no view itself, but a view of one
+                // of its retaining fields (`Box.v: String`) derives from the
+                // aggregate's storage. A local aggregate dies with this frame,
+                // so the callee's out-slot store would dangle; a parameter or
+                // a module value outlives the call and stays accepted.
+                if !is_view_like(&self.ty(&arg.value)) && self.may_view_from_storage(param_ty) {
+                    self.frame_owned_place_owner(&arg.value)
+                } else {
+                    None
+                }
+            });
+            if let Some(owner) = owner {
                 failing = Some(owner);
                 break;
             }
@@ -585,11 +602,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// `Some(None)` names statement storage, `Some(Some(id))` a frame binding,
     /// and `None` no frame-owned storage at all.
     fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
+        // A view returned through a single-lend call reads its source's
+        // storage; the source decides whether the backing dies with this
+        // frame. Walk it here so a call-mediated view of an inline temporary
+        // reports at the caller's out-slot store.
+        if let ExprKind::Call { callee, args, .. } = &expr.kind {
+            if let Some(super::place::ViewCallSource::Expr(source)) = self.call_view_source(callee, args) {
+                if let Some(owner) = self.frame_owned_view_owner(source) {
+                    return Some(owner);
+                }
+            }
+        }
         if let Some(owners) = self.recorded_position_frame_owners(expr) {
             return owners
                 .into_iter()
                 .next()
                 .map(|owner| self.frame_view_owner(owner));
+        }
+        // A single view binding records its loans in the binding's loan set,
+        // not in the carrier's element-position map. A call-mediated view of a
+        // generated owner (`pick([mk().v; ...], 0)`) names that owner here, so
+        // the binding's own loans must be judged too.
+        if let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) {
+            if is_view(&self.bindings[id].ty) {
+                if let Some(owner) = self
+                    .binding_loan_owners(id)
+                    .into_iter()
+                    .find(|owner| self.owner_dies_with_frame(*owner))
+                {
+                    return Some(self.frame_view_owner(owner));
+                }
+            }
         }
         // A value that names no place carries its loans on the value itself:
         // a call result reborrows its argument's storage, and a conditional or
@@ -627,6 +670,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return Some(None);
         }
         None
+    }
+
+    /// True when a type owns storage a view can be derived from.
+    ///
+    /// A handle (`String`), a view, a raw pointer, a struct containing any of
+    /// them, or an array of them is a possible source of a view the callee can
+    /// store into an out-slot. The caller-side pass-through check cannot see
+    /// which field the callee views, so it treats the owned argument as a
+    /// potential source.
+    fn may_view_from_storage(&self, ty: &Ty) -> bool {
+        match &ty.kind {
+            TyKind::Str | TyKind::CString | TyKind::StaticStr | TyKind::Handle(_) => true,
+            TyKind::Raw(_) => true,
+            TyKind::Struct(name, _) => self
+                .instance_fields(ty, name)
+                .iter()
+                .any(|(_, field_ty)| self.may_view_from_storage(field_ty)),
+            TyKind::Array { element, .. } => self.may_view_from_storage(element),
+            _ => false,
+        }
+    }
+
+    /// The owner of a place whose storage dies with this frame, when the
+    /// place is a local aggregate handed to a view-carrying parameter.
+    ///
+    /// A parameter or out-slot roots in a further-out frame and stays
+    /// accepted; a module value names no binding and owns no frame storage.
+    fn frame_owned_place_owner(&self, expr: &Expr) -> Option<Option<usize>> {
+        let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) else {
+            return None;
+        };
+        self.owner_dies_with_frame(LoanOwner::Binding(id))
+            .then_some(Some(id))
     }
 
     /// The report subject a frame-dying view owner names.

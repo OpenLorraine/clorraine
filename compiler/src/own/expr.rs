@@ -1422,6 +1422,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             target.span,
                         );
                     }
+                    // A conditional copy of a carrier supplies its view
+                    // positions arm by arm; the composite collector records
+                    // the union, exactly as the let path does.
+                    if matches!(value.kind, ExprKind::Conditional { .. })
+                        && self.collects_copy_positions(value)
+                    {
+                        self.record_copy_element_loans(
+                            id,
+                            &projections,
+                            value,
+                            lowered.as_ref(),
+                            &target_ty,
+                            target.span,
+                        );
+                    }
                 }
                 self.view_destination_adopts = saved_adopts;
             }

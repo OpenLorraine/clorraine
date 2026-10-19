@@ -414,6 +414,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         &target,
                         decl.span,
                     );
+                } else if !copied
+                    && matches!(value.kind, ExprKind::Conditional { .. })
+                    && self.collects_copy_positions(value)
+                {
+                    // A conditional copy of a carrier hands each arm's view
+                    // positions to the destination. The destination is a
+                    // struct, not a single view, so the view-like branch above
+                    // does not run; the composite collector reads both arms
+                    // and records the union under this binding.
+                    self.record_copy_element_loans(
+                        id,
+                        &[],
+                        value,
+                        prepared.lowered(),
+                        &target,
+                        decl.span,
+                    );
                 }
             }
             let place = self.binding_place(id);

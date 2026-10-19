@@ -5640,10 +5640,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         );
         self.bindings[id].used = true;
         let place = self.binding_place(id);
+        // The argument value's view positions read storage owned by another
+        // generated binding (`mk().v` inside the array names `mk()`'s owner).
+        // Record those owners on this carrier before the value moves into the
+        // assignment, so a view later returned through the call names the leaf
+        // owner rather than stopping at the carrier.
+        let owners = self.carried_view_owners(&value, false);
         self.emit(Statement::Assign {
             target: place.clone(),
             value,
         });
+        let mut loans = BTreeSet::new();
+        for owner in owners {
+            if let Some(loan) = self.record_view_loan(owner, LoanKind::Shared, self.current_span) {
+                loans.insert(loan);
+            }
+        }
+        if !loans.is_empty() {
+            self.replace_element_loans(id, &[], loans);
+        }
         Value::new(place.ty.clone(), ValueKind::Place(place))
     }
 

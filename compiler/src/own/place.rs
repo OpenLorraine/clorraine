@@ -960,6 +960,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
         }
+        // A call-mediated view records its loans on the value itself rather
+        // than on a name, so the expression-root walk above cannot see it.
+        // Consult the value-loan route too; a global destination reports every
+        // loaned owner, and a caller slot keeps only a frame-dying one.
+        let mut value_owners = BTreeSet::new();
+        self.loan_owners(&self.view_loans(expr), &mut value_owners);
+        for owner in value_owners {
+            if global || self.owner_dies_with_frame(owner) {
+                owners.insert(owner);
+            }
+        }
         owners
     }
 
@@ -1764,8 +1775,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // every element's root, so each contributes a loan.
             let mut roots = BTreeSet::new();
             self.lowered_root_bindings(lowered, &mut roots);
+            roots.extend(self.lowered_owner_bindings(lowered));
             for id in roots {
                 owners.insert(LoanOwner::Binding(id));
+                // A generated view-array carrier owns no storage itself; the
+                // views it holds loan the owners its binding records, so the
+                // leaf owner is the one a later use must outlive.
+                owners.extend(self.binding_loan_owners(id));
             }
         }
         owners
@@ -1783,17 +1799,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// element and fill value.
     fn lowered_root_bindings(&self, value: &Value, roots: &mut BTreeSet<usize>) {
         match &value.kind {
-            ValueKind::Place(place) => {
-                if let ir::PlaceBase::Local(name) = &place.base {
-                    if let Some(id) = self
-                        .bindings
-                        .iter()
-                        .position(|binding| binding.ir_name == *name)
-                    {
-                        roots.insert(id);
-                    }
-                }
-            }
+            ValueKind::Place(place) => self.note_lowered_place_root(place, roots),
             ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
                 self.lowered_root_bindings(base, roots);
             }
@@ -1806,7 +1812,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.lowered_root_bindings(fill, roots);
                 }
             }
+            // A call result the lowering bound to an owner keeps the owner's
+            // spelling in the call's arguments, so the walk must enter the
+            // arguments: a view returned through `pick([mk().v; "EE"], 0)`
+            // reads the `mk()` owner the argument chain names.
+            ValueKind::Call { args, receiver, .. } => {
+                for arg in args {
+                    self.lowered_root_bindings(arg, roots);
+                }
+                if let Some(receiver) = receiver {
+                    self.lowered_root_bindings(receiver, roots);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.lowered_root_bindings(callable, roots);
+                for arg in args {
+                    self.lowered_root_bindings(arg, roots);
+                }
+            }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.lowered_root_bindings(then_value, roots);
+                self.lowered_root_bindings(else_value, roots);
+            }
+            // A materialized owner fills a named destination; that binding is
+            // the storage the view reads. A temporary materialization keeps
+            // the value chain below it.
+            ValueKind::Materialize {
+                destination: Some(place),
+                ..
+            } => self.note_lowered_place_root(place, roots),
+            ValueKind::Materialize { value: inner, .. } => {
+                self.lowered_root_bindings(inner, roots);
+            }
             _ => {}
+        }
+    }
+
+    /// Adds one lowered place's local root binding to `roots`.
+    fn note_lowered_place_root(&self, place: &ir::Place, roots: &mut BTreeSet<usize>) {
+        if let ir::PlaceBase::Local(name) = &place.base {
+            if let Some(id) = self
+                .bindings
+                .iter()
+                .position(|binding| binding.ir_name == *name)
+            {
+                roots.insert(id);
+            }
         }
     }
 
