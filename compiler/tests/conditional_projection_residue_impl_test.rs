@@ -4129,11 +4129,20 @@ fn should_bind_the_fixed_array_take_projection_root() {
     let (_scratch, emitted) = emit_host(tag, FIXED_ARRAY_TAKE_SOURCE);
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_implxfarrtake_probe(bool c, ClBox b)\n{");
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cprimpl_implxfarrtake_mk();");
-    assert_contains(tag, body, "(__cl_tmp0 ? b.ys : __cl_tmp1.ys)");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_tmp2), &(b.ys), sizeof(__cl_tmp2));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_tmp2), &(__cl_tmp1.ys), sizeof(__cl_tmp2));",
+    );
     assert_release_after(
         tag,
         body,
-        "holdArr((__cl_tmp0 ? b.ys : __cl_tmp1.ys));",
+        "cl_spec_cprimpl_implxfarrtake_holdArr(__cl_tmp2);",
         "if (__cl_tmp1.v) { FreeString(__cl_tmp1.v); }",
     );
 }
@@ -13852,5 +13861,223 @@ fn should_emit_the_generic_compound_division_guards() {
     assert_eq!(
         first, second,
         "p426genericimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// literalconditional: the conditional literal read base, the ternary take
+// literal, and the conditional array literal bind their hidden destinations.
+// ---------------------------------------------------------------------------
+
+/// The conditional literal read base stores each arm through its destination.
+///
+/// `p445both` passes a call-filled `str[2]` destination per arm, copies the row
+/// into the arm, and selects the filled arm; `p445mixed` stores the place arm
+/// plainly and the literal arm through its destination; `p445nested` stores
+/// the field conditional per arm.
+#[test]
+fn should_bind_the_conditional_literal_destination() {
+    let tag = "p445bothimpl";
+    let both = r#"module spec.cprimpl.p445bothimpl;
+
+struct Inner { row: str[2]; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    return i32((ok ? Inner { row: n1() } : Inner { row: n2() }).row[0][0]);
+}
+
+func main(): i32 {
+    return (use(true) - 65) + (use(false) - 67);
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, both);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p445bothimpl_use(bool ok)\n{");
+    assert_contains(tag, body, "ClStr __cl_call_2[2] = {0};");
+    assert_contains(tag, body, "cl_spec_cprimpl_p445bothimpl_n1(__cl_call_2);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_arm_2.row), &(__cl_call_2), sizeof(__cl_arm_2.row));",
+    );
+    assert_contains(tag, body, "__cl_tmp0 = __cl_arm_2;");
+    assert_contains(tag, body, "cl_spec_cprimpl_p445bothimpl_n2(__cl_call_3);");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read base must run");
+
+    let tag = "p445mixedimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p445mixedimpl;
+
+struct Inner { row: str[2]; }
+
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool, inner: Inner): i32 {
+    return i32((ok ? inner : Inner { row: n2() }).row[0][0]);
+}
+
+func main(): i32 {
+    let inner: Inner = Inner { row: ["AA", "BB"] };
+    return (use(true, inner) - 65) + (use(false, inner) - 67);
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p445mixedimpl_use(bool ok, ClInner inner)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = inner;");
+    assert_contains(tag, body, "cl_spec_cprimpl_p445mixedimpl_n2(__cl_call_1);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_arm_1.row), &(__cl_call_1), sizeof(__cl_arm_1.row));",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the mixed base must run");
+
+    let tag = "p445nestedimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p445nestedimpl;
+
+struct Inner { row: str[2]; }
+struct Outer { inner: Inner; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+func n2(): str[2] { return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    let o: Outer = Outer { inner: ok ? Inner { row: n1() } : Inner { row: n2() } };
+    return i32(o.inner.row[0][0]);
+}
+
+func main(): i32 {
+    return (use(true) - 65) + (use(false) - 67);
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p445nestedimpl_use(bool ok)\n{");
+    assert_contains(tag, body, "cl_spec_cprimpl_p445nestedimpl_n1(__cl_call_2);");
+    assert_contains(tag, body, "o.inner = __cl_arm_2;");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the nested field must run");
+
+    let (first, second) = emit_twice("p445bothimpl", both);
+    assert_eq!(
+        first, second,
+        "p445bothimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+/// A take literal in an eager ternary arm stores per arm into the carrier.
+///
+/// `p446tern` writes the call-filled row directly into the carrier's field and
+/// assigns the tag per arm; the call counter shows one call per selected arm.
+#[test]
+fn should_store_the_ternary_take_literal_per_arm() {
+    let tag = "p446ternimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p446ternimpl;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consumeO(take o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consumeO(ok ? Outer { inner: Inner { names: n1() }, tag: stringOf("x") }
+                                : Outer { inner: Inner { names: n2() }, tag: stringOf("y") })
+                   : 0;
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(false, true);
+    let c: i32 = use(true, false);
+    return (a - 65) + (b - 0) + (c - 67) + calls - 2;
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p446ternimpl_use(bool g, bool ok)\n{",
+    );
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_p446ternimpl_n1(__cl_tmp0.inner.names)",
+    );
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_p446ternimpl_n2(__cl_tmp0.inner.names)",
+    );
+    assert_contains(tag, body, "x = (g ? ");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_p446ternimpl_consumeO(__cl_tmp0)",
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p446ternimpl_n1(").count(),
+        1,
+        "{tag}: n1 must run once in the emitted tern; body:\n{body}"
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p446ternimpl_n2(").count(),
+        1,
+        "{tag}: n2 must run once in the emitted tern; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the tern must run");
+}
+
+/// A conditional array literal of view places stores into a destination array.
+///
+/// `p448cond` allocates a `ClStr[2]` temporary, stores the chosen arm's two
+/// elements, and passes it to the take call.
+#[test]
+fn should_store_the_conditional_view_array_into_a_destination() {
+    let tag = "p448condimpl";
+    let source = r#"module spec.cprimpl.p448condimpl;
+
+func consume(take xs: str[2]): i32 { return i32(xs[0][0]) - 65; }
+
+func use(ok: bool): i32 {
+    let a: str = "AA";
+    let b: str = "BB";
+    let c: str = "CC";
+    let d: str = "DD";
+    return consume(take (ok ? [a, b] : [c, d]));
+}
+
+func main(): i32 {
+    return (use(true) - 0) + (use(false) - 2);
+}
+"#;
+    let (scratch, emitted) = emit_host(tag, source);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p448condimpl_use(bool ok)\n{");
+    assert_contains(tag, body, "ClStr __cl_tmp0[2] = {0};");
+    assert_contains(tag, body, "__cl_tmp0[0] = a;");
+    assert_contains(tag, body, "__cl_tmp0[0] = c;");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_p448condimpl_consume(__cl_tmp0);",
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the conditional array must run");
+
+    let (first, second) = emit_twice(tag, source);
+    assert_eq!(
+        first, second,
+        "p448condimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
