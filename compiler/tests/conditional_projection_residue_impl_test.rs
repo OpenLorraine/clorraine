@@ -14241,7 +14241,12 @@ func main(): i32 {
 "#,
     );
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p447impl_use(void)\n{");
-    assert_contains(tag, body, "ClG __cl_owned0 = {0};");
+    // The declaration must sit at the function body's own scope, not in a
+    // nested block: a view derived from the literal outlives the read.
+    assert!(
+        body.trim_start().starts_with("ClG __cl_owned0 = {0};"),
+        "{tag}: the literal must bind at body scope; body:\n{body}"
+    );
     assert_contains(
         tag,
         body,

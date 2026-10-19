@@ -144,7 +144,13 @@ fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
 /// fails, so a regression that loops forever surfaces as one failing case
 /// instead of a frozen suite.
 fn run_with_timeout(tag: &str, program: &Path) -> Output {
+    run_with_timeout_env(tag, program, &[])
+}
+
+/// Runs a built program with a time limit and the given environment.
+fn run_with_timeout_env(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
     let mut child = Command::new(program)
+        .envs(env.iter().copied())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -204,11 +210,7 @@ fn run_asan(tag: &str, source: &str) -> Output {
     let scratch = ScratchDir::new(tag);
     let emitted = emit_host(tag, &scratch, source);
     let program = build_host_c_asan(tag, &scratch, &emitted);
-    let output = Command::new(&program)
-        .env("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")
-        .output()
-        .unwrap_or_else(|err| panic!("{tag}: cannot run the sanitizer program: {err}"));
-    output
+    run_with_timeout_env(tag, &program, &[("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")])
 }
 
 /// Runs a memory-safety case under AddressSanitizer when `RDC_ASAN` is set,

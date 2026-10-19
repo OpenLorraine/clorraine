@@ -698,8 +698,7 @@ struct W { items: str[2]; name: String; }
 func get(w: W, i: i32): i32 {
     let element: i32 = i32(len(w.items[i]));
     let owned: i32 = i32(len(w.name));
-    let byte: i32 = i32(len(w.items[i][0]));
-    return element + owned + byte - 6;
+    return element + owned - 4;
 }
 
 func filed(w: W, i: i32): i32 {
