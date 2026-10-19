@@ -606,3 +606,167 @@ func main(): i32 {
         "ccimplaccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// The batch-P copy destinations each report the concrete twin's code once.
+///
+/// The `const` copy, the global conditional, the call-carrier copy, the mixed
+/// aggregate, the conditional shadow, and the alias return keep one code per
+/// site; the accepted static copy re-emits byte-identically.
+#[test]
+fn should_report_one_code_per_copy_destination() {
+    let const_form = r#"module impl.bsi.pconst;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    const h2: Holder = c ? h1 : h3;
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected("pconst", const_form, &["E10031"]);
+
+    let global = r#"module impl.bsi.pglobal;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func set(c: bool): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["FF", "GG"] };
+    g = c ? h1 : h3;
+}
+
+func main(): i32 {
+    set(true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected("pglobal", global, &["E10033"]);
+
+    let call = r#"module impl.bsi.pcall;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeHolder(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = makeHolder(b.v);
+    b.v = stringOf("zz");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected("pcall", call, &["E10031"]);
+
+    let mixed = r#"module impl.bsi.pmixed;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func store(h: H, borrow slot: str?): void { slot = h.name; }
+
+func outer(p: static str, borrow slot: str?): void {
+    let h: H = H { name: stringOf("aa"), tag: p };
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("tag", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected("pmixed", mixed, &["E10030"]);
+
+    let shadow = r#"module impl.bsi.pshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        let h: Holder = true ? h : h;
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected("pshadow", shadow, &["E10031"]);
+
+    let alias = r#"module impl.bsi.palias;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+func use(): Holder {
+    let b: Box = Box { v: stringOf("aa") };
+    let hs: Holder[1] = [Holder { names: [b.v, "EE"] }];
+    for (borrow e in hs) {
+        return e;
+    }
+    return Holder { names: ["CC", "DD"] };
+}
+
+func main(): i32 {
+    let h: Holder = use();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected("palias", alias, &["E10030"]);
+
+    let accepted = r#"module impl.bsi.paccepted;
+
+struct Holder { names: str[2]; }
+
+func use(c: bool): i32 {
+    let h1: Holder = Holder { names: ["AA", "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    const h2: Holder = c ? h1 : h3;
+    return i32(h2.names[0][0]) - 65;
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    let (first, second) = emit_twice("paccepted", accepted);
+    assert_eq!(
+        first, second,
+        "paccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}

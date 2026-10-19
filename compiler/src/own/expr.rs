@@ -1552,23 +1552,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // store would. Its loans name the backings those
                     // positions read, and every one of them dies with a
                     // frame.
-                    if let Some(PlaceTarget::Local(source_id, _)) = self.place_target(value) {
-                        if !self.binding_loan_owners(source_id).is_empty() {
-                            self.error(
-                                "E10033",
-                                format!("borrow of '{}' escapes its scope", id.name),
-                                "derive the view from a parameter or take ownership",
-                                target.span,
-                            );
-                        }
-                    } else if self.literal_view_loan_positions(value).is_empty()
-                        && self.names_fresh_view_storage(value, &target_ty)
+                    let frame_backed = if let Some(PlaceTarget::Local(source_id, _)) =
+                        self.place_target(value)
                     {
+                        !self.binding_loan_owners(source_id).is_empty()
+                    } else {
                         // A value that creates its own view storage — a fresh
                         // call result, or a literal or conditional of them —
                         // dies with the statement, so the global cannot keep
                         // it. A local- or parameter-backed position already
-                        // reported through its field's own judgment.
+                        // reported through its field's own judgment. A
+                        // conditional contributes each arm the same way, so a
+                        // local carrier arm is judged even though no single
+                        // place names the whole value.
+                        (self.literal_view_loan_positions(value).is_empty()
+                            && self.names_fresh_view_storage(value, &target_ty))
+                            || self.carrier_copy_escapes(value)
+                    };
+                    if frame_backed {
                         self.error(
                             "E10033",
                             format!("borrow of '{}' escapes its scope", id.name),
@@ -2024,6 +2025,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
             }
+        }
+    }
+
+    /// True when a carrier copy hands frame-backed views to a global.
+    ///
+    /// A conditional contributes every arm, an `unsafe` or cast wrapper its
+    /// inner value, a local carrier its binding loans, a literal its view
+    /// positions, and a call its single source's storage. A parameter- or
+    /// module-backed arm contributes nothing, so the all-safe control keeps
+    /// its acceptance.
+    fn carrier_copy_escapes(&self, value: &Expr) -> bool {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.carrier_copy_escapes(then_value) || self.carrier_copy_escapes(else_value)
+            }
+            ExprKind::Unsafe(inner) => self.carrier_copy_escapes(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.carrier_copy_escapes(value)
+            }
+            ExprKind::Name(_) | ExprKind::Qualified(_) => {
+                match self.place_target(value) {
+                    Some(PlaceTarget::Local(id, _)) => {
+                        !self.binding_loan_owners(id).is_empty()
+                    }
+                    _ => false,
+                }
+            }
+            // A literal's own field judgment already reports a frame-backed
+            // view at the field site; adding the destination's report would
+            // repeat one store's rejection. Only a place arm, a call arm, or a
+            // nested conditional contributes the destination report.
+            ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. } => false,
+            ExprKind::Call { .. } => {
+                self.frame_owned_view_owner(value).is_some()
+                    || self.names_fresh_view_storage(value, &self.ty(value))
+            }
+            _ => false,
         }
     }
 

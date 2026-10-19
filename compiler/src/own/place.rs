@@ -847,6 +847,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut roots = BTreeSet::new();
         self.lowered_root_bindings(lowered, &mut roots);
         for id in roots {
+            // A loop alias has no storage of its own: its element loans live
+            // on the container under the alias root's projections. Resolve the
+            // chain so returning the alias hands out the container's views,
+            // exactly as a direct element return does.
+            let id = self.alias_resolved_root(id);
             for owner in self.binding_loan_owners(id) {
                 if self.owner_dies_with_frame(owner) {
                     owners.insert(owner);
@@ -1368,8 +1373,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         position: &Ty,
         span: Span,
     ) {
+        let copied = self.snapshot_copy_element_loans(value, lowered, position, base);
+        self.apply_copy_element_loans(to, base, copied, span);
+    }
+
+    /// Collects a copy source's position loans without touching the
+    /// destination.
+    ///
+    /// The collector names bindings through the scope it runs in, so gathering
+    /// the loans before a shadowing declaration keeps each arm tied to the
+    /// outer binding the initializer reads. The result is applied to the fresh
+    /// destination once it exists.
+    pub(super) fn snapshot_copy_element_loans(
+        &self,
+        value: &Expr,
+        lowered: Option<&Value>,
+        position: &Ty,
+        base: &[ir::Projection],
+    ) -> CopyLoans {
         let mut copied = CopyLoans::default();
         self.collect_copy_element_loans(value, lowered, Some(position), base, &mut copied);
+        copied
+    }
+
+    /// Applies a collected copy's position loans to a destination binding.
+    pub(super) fn apply_copy_element_loans(
+        &mut self,
+        to: usize,
+        base: &[ir::Projection],
+        copied: CopyLoans,
+        span: Span,
+    ) {
         let mut paths = copied.recorded;
         for (path, owners) in copied.owners {
             let loans = paths.entry(path).or_default();
@@ -1681,6 +1715,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .or_default()
                 .extend(loans);
             return;
+        }
+        // A carrier-returning call with one lend candidate hands back the view
+        // positions of that argument. The copy reads those views, so the
+        // destination loans the argument's backings exactly as a direct place
+        // copy would; a later write through the backing reports the live loan.
+        if let ExprKind::Call { callee, args, .. } = &value.kind {
+            if let Some(source) = self.call_carrier_source(callee, args) {
+                self.collect_copy_element_loans(source, None, None, base, copied);
+                if !copied.owners.is_empty() || !copied.recorded.is_empty() {
+                    return;
+                }
+            }
         }
         // A non-place value that reads no loan still derives its view from
         // storage the expression walk cannot name: a projection of a lowered
@@ -2066,48 +2112,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// of that candidate's loans; every other call yields a fresh view whose
     /// loan the caller creates.
     pub(super) fn call_loans(&self, callee: &Expr, args: &[Arg]) -> BTreeSet<LoanId> {
-        let Some(name) = self.callee_name(callee) else {
-            return BTreeSet::new();
-        };
-        let is_dot = self.is_dot_call(callee);
-        let source_loans = |index: usize| -> BTreeSet<LoanId> {
-            if is_dot && index == 0 {
-                return self.dot_receiver_loans(callee);
-            }
-            let written_index = if is_dot { index - 1 } else { index };
-            args.get(written_index)
-                .map(|arg| self.view_loans(&arg.value))
-                .unwrap_or_default()
-        };
-        match self.resolved_callee(&name) {
-            Some(Callee::User(decl)) => {
-                let type_params: Vec<String> =
-                    decl.type_params.iter().map(|p| p.name.clone()).collect();
-                let returns = self.resolve_with(&decl.returns, &type_params);
-                if !is_elided_view(&returns) {
-                    return BTreeSet::new();
-                }
-                let candidates: Vec<usize> = decl
-                    .params
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, param)| {
-                        param.mode != Mode::Take
-                            && is_lend_candidate(&self.resolve_with(&param.ty, &type_params))
-                    })
-                    .map(|(index, _)| index)
-                    .collect();
-                if candidates.len() == 1 {
-                    source_loans(candidates[0])
-                } else {
-                    BTreeSet::new()
-                }
-            }
-            Some(Callee::Stdlib {
-                effect: StdlibEffect::ViewOf { arg, .. },
-                ..
-            }) => source_loans(arg),
-            _ => BTreeSet::new(),
+        match self.call_view_source(callee, args) {
+            Some(ViewCallSource::Expr(source)) => self.view_loans(source),
+            Some(ViewCallSource::Receiver(_)) => self.dot_receiver_loans(callee),
+            None => BTreeSet::new(),
         }
     }
 
@@ -2224,8 +2232,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// a qualified receiver — which names a place rather than an expression —
     /// yields its provenance. Every other call yields none: without a single
     /// reborrowed source there is no storage a view could derive from.
+    ///
+    /// A value callable — a `func`-typed binding, a closure, or a
+    /// call-returned callable — resolves through its own signature, in the same
+    /// order as the call check, so a closure or wrapper call names the same
+    /// source a direct named call does. A generic declaration whose return or
+    /// parameter mentions a type parameter is resolved at its instance by the
+    /// call-site substitution, exactly as the lowered walk does.
     pub(super) fn call_view_source<'e>(&self, callee: &'e Expr, args: &'e [Arg]) -> Option<ViewCallSource<'e>> {
-        let name = self.callee_name(callee)?;
         let is_dot = self.is_dot_call(callee);
         let source = |index: usize| -> Option<ViewCallSource<'e>> {
             if is_dot && index == 0 {
@@ -2241,12 +2255,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             args.get(written_index)
                 .map(|arg| ViewCallSource::Expr(&arg.value))
         };
+        if let Some((params, returns)) = self.callable_call_signature(callee) {
+            if !Self::returns_a_view(&returns) {
+                return None;
+            }
+            let candidates: Vec<usize> = params
+                .iter()
+                .enumerate()
+                .filter(|(_, (mode, ty))| {
+                    *mode != Mode::Take
+                        && (is_lend_candidate(ty) || super::lower::mentions_type_param(ty))
+                })
+                .map(|(index, _)| index)
+                .collect();
+            return if candidates.len() == 1 {
+                source(candidates[0])
+            } else {
+                None
+            };
+        }
+        let name = self.callee_name(callee)?;
         match self.resolved_callee(&name) {
             Some(Callee::User(decl)) => {
                 let type_params: Vec<String> =
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
                 let returns = self.resolve_with(&decl.returns, &type_params);
-                if !is_elided_view(&returns) {
+                if !Self::returns_a_view(&returns) {
                     return None;
                 }
                 let candidates: Vec<usize> = decl
@@ -2254,8 +2288,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .enumerate()
                     .filter(|(_, param)| {
+                        let ty = self.resolve_with(&param.ty, &type_params);
                         param.mode != Mode::Take
-                            && is_lend_candidate(&self.resolve_with(&param.ty, &type_params))
+                            && (is_lend_candidate(&ty)
+                                || super::lower::mentions_type_param(&ty))
                     })
                     .map(|(index, _)| index)
                     .collect();
@@ -2271,6 +2307,151 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }) => source(arg),
             _ => None,
         }
+    }
+
+    /// The source a carrier-returning call derives its view positions from.
+    ///
+    /// A carrier return may hold a view of the call's single lend candidate —
+    /// `func make(v: str): Holder { return Holder { names: [v, "EE"] }; }` hands
+    /// back a carrier whose view reads the argument. Resolving that source lets
+    /// a copy record the argument's positions and lets the call-boundary escape
+    /// judgment name the argument's storage. A view return is handled by
+    /// [`Self::call_view_source`]; a call with zero or several lend candidates
+    /// names no single source and contributes nothing.
+    pub(super) fn call_carrier_source<'e>(
+        &self,
+        callee: &'e Expr,
+        args: &'e [Arg],
+    ) -> Option<&'e Expr> {
+        let is_dot = self.is_dot_call(callee);
+        let source = |index: usize| -> Option<&'e Expr> {
+            if is_dot && index == 0 {
+                return match &callee.kind {
+                    ExprKind::Member { base, .. } => Some(base),
+                    _ => None,
+                };
+            }
+            let written_index = if is_dot { index - 1 } else { index };
+            args.get(written_index).map(|arg| &arg.value)
+        };
+        if let Some((params, returns)) = self.callable_call_signature(callee) {
+            if is_view_like(&returns) || !self.may_carry_view(&returns) {
+                return None;
+            }
+            let candidates: Vec<usize> = params
+                .iter()
+                .enumerate()
+                .filter(|(_, (mode, ty))| {
+                    *mode != Mode::Take
+                        && (is_lend_candidate(ty) || super::lower::mentions_type_param(ty))
+                })
+                .map(|(index, _)| index)
+                .collect();
+            return if candidates.len() == 1 {
+                source(candidates[0])
+            } else {
+                None
+            };
+        }
+        let name = self.callee_name(callee)?;
+        let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
+            return None;
+        };
+        let type_params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        let returns = self.resolve_with(&decl.returns, &type_params);
+        if is_view_like(&returns) || !self.may_carry_view(&returns) {
+            return None;
+        }
+        let candidates: Vec<usize> = decl
+            .params
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| {
+                let ty = self.resolve_with(&param.ty, &type_params);
+                param.mode != Mode::Take
+                    && (is_lend_candidate(&ty) || super::lower::mentions_type_param(&ty))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if candidates.len() == 1 {
+            source(candidates[0])
+        } else {
+            None
+        }
+    }
+
+    /// The parameter list and return type of a value callable.
+    ///
+    /// A dot-call field, a call-returned callable, a `func`-typed binding, and
+    /// a closure each carry their own signature. A `func`-typed parameter reads
+    /// its bound's signature. A named module function is not a value callable
+    /// and is resolved by its declaration instead.
+    fn callable_call_signature(&self, callee: &Expr) -> Option<(Vec<(Mode, Ty)>, Ty)> {
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if let Some(signature) = self.callable_type_signature(&field_ty) {
+                return Some(signature);
+            }
+        }
+        if matches!(callee.kind, ExprKind::Call { .. }) {
+            if let Some(signature) = self.callable_type_signature(&self.ty(callee)) {
+                return Some(signature);
+            }
+        }
+        let ExprKind::Name(written) = &callee.kind else {
+            return None;
+        };
+        let id = self.lookup(written)?;
+        self.callable_type_signature(&self.bindings[id].ty)
+    }
+
+    /// The signature a callable type spells, if any.
+    fn callable_type_signature(&self, ty: &Ty) -> Option<(Vec<(Mode, Ty)>, Ty)> {
+        match &ty.kind {
+            TyKind::Func(signature) => Some((
+                signature
+                    .params
+                    .iter()
+                    .map(|param| (param.mode, param.ty.clone()))
+                    .collect(),
+                (*signature.returns).clone(),
+            )),
+            TyKind::Closure(closure) => Some((
+                closure
+                    .params
+                    .iter()
+                    .map(|param| (Mode::None, param.clone()))
+                    .collect(),
+                (*closure.returns).clone(),
+            )),
+            TyKind::Param(name) => {
+                let bound = self
+                    .decl
+                    .type_params
+                    .iter()
+                    .find(|param| &param.name == name)?
+                    .bound
+                    .as_ref()?;
+                Some((
+                    bound
+                        .params
+                        .iter()
+                        .map(|param| (Mode::None, self.resolve_with(param, &self.type_params)))
+                        .collect(),
+                    self.resolve_with(&bound.returns, &self.type_params),
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// True when a callable return participates in view elision.
+    ///
+    /// A concrete view and a view-like fixed array participate directly. A
+    /// type parameter is a view only at some instances, so the per-instance
+    /// judgment decides; the call's single-source walk still names the
+    /// argument, exactly as the lowered walk does.
+    fn returns_a_view(ty: &Ty) -> bool {
+        is_elided_view(ty) || ty.is_param() || super::lower::mentions_type_param(ty)
     }
 
     /// The provenance of a dot-call receiver's storage.
@@ -2781,7 +2962,7 @@ fn owner_of(provenance: &Provenance) -> Option<LoanOwner> {
 /// loan at the copy site. Keeping both apart until the destination record is
 /// written lets the copy union every arm before it replaces the old record.
 #[derive(Default)]
-struct CopyLoans {
+pub(super) struct CopyLoans {
     /// Recorded source loans, translated onto the destination's paths.
     recorded: BTreeMap<Vec<ir::Projection>, BTreeSet<LoanId>>,
     /// Owners of positions the copy derives directly.

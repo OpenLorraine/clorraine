@@ -364,11 +364,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         // A shadowing initializer names the outer binding, so the copy source
         // is captured before the new name is declared; resolving it after the
-        // declaration would read the fresh destination.
+        // declaration would read the fresh destination. A conditional
+        // carrier's arms are collected here for the same reason: the
+        // collector names the outer binding each arm reads, and the collected
+        // loans are applied to the fresh destination after it exists.
         let copy_source = decl
             .value
             .as_ref()
             .and_then(|value| self.place_target(value));
+        let conditional_copy = decl
+            .value
+            .as_ref()
+            .filter(|value| {
+                !is_view_like(&target)
+                    && self.may_carry_view(&target)
+                    && matches!(value.kind, ExprKind::Conditional { .. })
+            })
+            .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
@@ -402,8 +414,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // selects (`let s: str = xs[0];` included), while a conditional,
             // an array literal, or a run-time read supplies its positions arm
             // by arm and is written as one union.
+            let conditional_copy_recorded = if let Some(copied) = conditional_copy {
+                self.apply_copy_element_loans(id, &[], copied, decl.span);
+                true
+            } else {
+                false
+            };
             if let Some(value) = &decl.value {
-                let copied = match copy_source.clone() {
+                let copied_from_source = match copy_source.clone() {
                     Some(PlaceTarget::Local(source, projections)) => {
                         // A `for` alias has no storage of its own: its element
                         // loans live on the container under the alias root's
@@ -457,6 +475,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => false,
                 };
+                let copied = conditional_copy_recorded || copied_from_source;
                 if !copied && is_view_like(&target) && self.collects_copy_positions(value) {
                     self.record_copy_element_loans(
                         id,
@@ -848,6 +867,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => false,
         };
         if !copied && is_view_like(&target) && self.collects_copy_positions(&decl.value) {
+            self.record_copy_element_loans(
+                id,
+                &[],
+                &decl.value,
+                prepared.lowered(),
+                &target,
+                decl.span,
+            );
+        } else if !copied
+            && !is_view_like(&target)
+            && self.may_carry_view(&target)
+            && matches!(
+                decl.value.kind,
+                ExprKind::Conditional { .. }
+                    | ExprKind::StructLiteral { .. }
+                    | ExprKind::ArrayLiteral { .. }
+                    | ExprKind::Call { .. }
+            )
+            && (self.collects_copy_positions(&decl.value)
+                || matches!(decl.value.kind, ExprKind::Call { .. }))
+        {
+            // A `const` carrier copy records the same positions a `let` copy
+            // does: the destination's views read the arms' backings, so a
+            // later write through one of those owners still finds the live
+            // loan.
             self.record_copy_element_loans(
                 id,
                 &[],
@@ -1713,6 +1757,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 let mut owners = self.carried_view_owners(&lowered, is_view_like(&returns));
                 owners.extend(self.carrier_return_owners(&lowered, &returns));
+                // An alias return lowers through a compiler temporary that
+                // names the container element, so the lowered chain roots at no
+                // binding. The source expression still names the alias, whose
+                // loans resolve through the container; consult it for a
+                // carrier return exactly as a view return does.
+                if !is_view_like(&returns) && self.may_carry_view(&returns) {
+                    owners.extend(
+                        self.view_frame_loan_owners(value)
+                            .into_iter()
+                            .map(LoanOwner::Binding),
+                    );
+                }
                 owners
                     .into_iter()
                     .filter_map(|owner| self.record_view_loan(owner, LoanKind::Shared, span))

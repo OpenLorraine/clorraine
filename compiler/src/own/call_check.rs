@@ -618,23 +618,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// or a conditional or array of either reads statement storage, which dies
     /// with the frame. `Some(None)` names statement storage, `Some(Some(id))` a
     /// frame binding, and `None` no frame-owned storage at all.
-    fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
+    pub(super) fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
         // A view returned through a single-lend call reads its source's
         // storage; the source decides whether the backing dies with this
         // frame. Walk it here so a call-mediated view of an inline temporary
-        // reports at the caller's out-slot store.
+        // reports at the caller's out-slot store. A carrier-returning call
+        // hands back the view positions of its single lend source, so the same
+        // walk names the argument's backing.
         if let ExprKind::Call { callee, args, .. } = &expr.kind {
             if let Some(super::place::ViewCallSource::Expr(source)) = self.call_view_source(callee, args) {
                 if let Some(owner) = self.frame_owned_view_owner(source) {
                     return Some(owner);
                 }
             }
+            if let Some(source) = self.call_carrier_source(callee, args) {
+                if let Some(owner) = self.frame_owned_view_owner(source) {
+                    return Some(owner);
+                }
+            }
         }
         if let Some(owners) = self.recorded_position_frame_owners(expr) {
-            return owners
-                .into_iter()
-                .next()
-                .map(|owner| self.frame_view_owner(owner));
+            if let Some(owner) = owners.into_iter().next() {
+                return Some(self.frame_view_owner(owner));
+            }
+            // Every recorded view position is known-safe, but an aggregate can
+            // still own storage a view reads: a `tag: static str` position
+            // accepted above does not cover the owned `name: String` field.
+            // The whole-place judgment names the aggregate's frame when it
+            // owns reachable storage, and stays silent for a parameter- or
+            // module-backed carrier.
+            if self.has_owned_viewable_storage(&self.ty(expr)) {
+                if let Some(owner) = self.frame_owned_place_owner(expr) {
+                    return Some(owner);
+                }
+            }
+            return None;
         }
         // A single view binding records its loans in the binding's loan set,
         // not in the carrier's element-position map. A call-mediated view of a
