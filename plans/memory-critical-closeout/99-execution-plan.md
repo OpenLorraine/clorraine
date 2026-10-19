@@ -1,6 +1,6 @@
 # Execution Plan — Memory and Borrow Critical Closeout (Batch O)
 
-> **Progress**: 0/23 tasks
+> **Progress**: 9/23 tasks
 > **Rows**: `DEF-449`, `DEF-450`, `DEF-451`, `DEF-452`, `DEF-453`, `DEF-459`, `DEF-468`, `DEF-469`
 > **Baseline**: `d19a467`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -13,30 +13,30 @@
 
 ### Step 1.1: Red cases
 
-- [ ] 1.1.1 Write the red cases: the conditional carrier copy (`DEF-449`) in
+- [x] 1.1.1 Write the red cases: the conditional carrier copy (`DEF-449`) in
       `borrow_store_integrity_spec_test.rs`; the aggregate out-slot escape (`DEF-450`) and the
       call-mediated inline/global views (`DEF-451`, `DEF-453`) in
       `eval_emission_integrity_spec_test.rs`. Each case asserts the concrete twin's existing
       diagnostic, one report per site, and the accepted control stays green
-- [ ] 1.1.2 Confirm the cases fail at the baseline (accepted+UAF or wrong report), then commit the
+- [x] 1.1.2 Confirm the cases fail at the baseline (accepted+UAF or wrong report), then commit the
       red cases
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Record copy element loans for a carrier destination in the let and assignment paths
+- [x] 1.2.1 Record copy element loans for a carrier destination in the let and assignment paths
       (`DEF-449`)
-- [ ] 1.2.2 Extend the cross-frame judgment to aggregate arguments whose parameter can carry a view
+- [x] 1.2.2 Extend the cross-frame judgment to aggregate arguments whose parameter can carry a view
       (`DEF-450`)
-- [ ] 1.2.3 Add the `Call`/`ClosureCall` arm to the lowered root and value-loan walks; route the
+- [x] 1.2.3 Add the `Call`/`ClosureCall` arm to the lowered root and value-loan walks; route the
       global fallback through the value loans (`DEF-451`, `DEF-453`)
-- [ ] 1.2.4 Run the focused suites and `make check`; commit the fix
+- [x] 1.2.4 Run the focused suites and `make check`; commit the fix
 
 ### Step 1.3: Pins and review
 
-- [ ] 1.3.1 Add the implementation pins (the destination positions, the emitted owner binding, the
+- [x] 1.3.1 Add the implementation pins (the destination positions, the emitted owner binding, the
       report count/text, byte-identical accepted controls)
-- [ ] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
-- [ ] 1.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
+- [x] 1.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 2: Take alias capture
 
