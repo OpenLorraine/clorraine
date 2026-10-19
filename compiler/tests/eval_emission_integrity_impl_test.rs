@@ -2325,3 +2325,174 @@ func main(): i32 {
     );
     assert_run_exit("callstaticimpl", source, 0);
 }
+
+/// The batch-P call-mediated escapes report their code once per site.
+///
+/// The local view return reports `E10035` once; the closure, func-typed,
+/// wrapper, conditional, inline-carrier, conditional-carrier, and dot-receiver
+/// shapes report `E10030` once; the caller-backed controls re-emit
+/// byte-identically and run.
+#[test]
+fn should_report_one_call_mediated_escape_per_site() {
+    let view_return = r#"module impl.eei.preturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(): str {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    return pick(xs, 0);
+}
+
+func main(): i32 {
+    let s: str = outer();
+    return i32(s[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("preturn", view_return);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10035:"),
+        1,
+        "preturn: expected one E10035; stderr:\n{stderr}"
+    );
+
+    let closure = r#"module impl.eei.pclosure;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let f = (ys: str[2], i: i32) => ys[i];
+    fill(f(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pclosure", closure);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pclosure: expected one E10030; stderr:\n{stderr}"
+    );
+
+    let wrapped = r#"module impl.eei.pwrapped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    fill(true ? unsafe (pick([mk().v; "EE"], 0)) : "XX", borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pwrapped", wrapped);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pwrapped: expected one E10030; stderr:\n{stderr}"
+    );
+
+    let dot = r#"module impl.eei.pdot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(h: Box, borrow slot: str?): void { slot = h.v; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    b.store(borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pdot", dot);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pdot: expected one E10030; stderr:\n{stderr}"
+    );
+
+    let inline_carrier = r#"module impl.eei.pinline;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    store(make(a.v), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pinline", inline_carrier);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pinline: expected one E10030; stderr:\n{stderr}"
+    );
+
+    let accepted = r#"module impl.eei.preturnok;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(borrow xs: str[2]): str {
+    return pick(xs, 0);
+}
+
+func main(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let s: str = outer(borrow xs);
+    return i32(s[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("preturnok", accepted);
+    assert_eq!(
+        first, second,
+        "preturnok: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("preturnok", accepted, 0);
+}

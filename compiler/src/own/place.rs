@@ -1073,6 +1073,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.expr_view_roots(fill, roots);
                 }
             }
+            // A view returned through a call reads the storage of the call's
+            // single lend source, so the return's loan walk follows that
+            // source. Its element loans name the frame backing a local or
+            // overwritten container holds.
+            ExprKind::Call { callee, args, .. } => {
+                if let Some(ViewCallSource::Expr(source)) =
+                    self.call_view_source(callee, args)
+                {
+                    self.expr_view_roots(source, roots);
+                }
+            }
             _ => {}
         }
     }

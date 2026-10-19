@@ -501,10 +501,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !slot_lives_further_out {
             return;
         }
-        // One report per call site: the first view argument whose backing
-        // dies with this frame names the escape.
+        // One report per call site: the first view source whose backing dies
+        // with this frame names the escape. A dot call's receiver is parameter
+        // zero and is not a written argument, so it is judged first.
         let mut failing: Option<Option<usize>> = None;
+        if let Some((callee, (mode, param_ty))) = receiver {
+            let view_parameter =
+                self.may_carry_view(param_ty) || self.may_view_from_storage(param_ty);
+            if *mode != Mode::Take || is_view_like(param_ty) {
+                if view_parameter {
+                    failing = match &callee.kind {
+                        ExprKind::Member { base, .. } => self.frame_owned_view_owner(base),
+                        // A dotted receiver names the head binding and then the
+                        // fields selected from it; the head's storage is the
+                        // receiver's storage, and a head that resolves to no
+                        // local is module-level or a parameter the walk keeps.
+                        ExprKind::Qualified(name) => name
+                            .segments
+                            .first()
+                            .and_then(|first| self.lookup(first))
+                            .map(|id| self.alias_resolved_root(id))
+                            .filter(|id| {
+                                self.owner_dies_with_frame(LoanOwner::Binding(*id))
+                            })
+                            .map(Some),
+                        _ => None,
+                    };
+                }
+            }
+        }
         for (index, arg) in args.iter().enumerate() {
+            if failing.is_some() {
+                break;
+            }
             // An owned value widens to the view its parameter declares, so the
             // parameter type decides too: `b.v: String` passed as `str` hands
             // the callee a view of `b`'s storage exactly as a `str` argument
@@ -619,6 +648,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// with the frame. `Some(None)` names statement storage, `Some(Some(id))` a
     /// frame binding, and `None` no frame-owned storage at all.
     pub(super) fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
+        // A wrapper contributes no storage of its own: an `unsafe` block, a
+        // cast, and a conditional each hand back what their inner value reads,
+        // so the judgment descends to the wrapped value. A conditional may
+        // select either arm, so both are judged.
+        match &expr.kind {
+            ExprKind::Unsafe(inner) => return self.frame_owned_view_owner(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                return self.frame_owned_view_owner(value);
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                return self
+                    .frame_owned_view_owner(then_value)
+                    .or_else(|| self.frame_owned_view_owner(else_value));
+            }
+            _ => {}
+        }
         // A view returned through a single-lend call reads its source's
         // storage; the source decides whether the backing dies with this
         // frame. Walk it here so a call-mediated view of an inline temporary
