@@ -327,14 +327,13 @@ is the destination loses the value), `DEF-467` (an out-slot borrow raw self-assi
 
 ## Close-out
 
-**Verification**: _(to be filled: `make check`, `make verify`, the focused ASan legs, the strict
-sweep, the per-phase emission differentials, and the freestanding `E11200` record)_.
-**Row accounting**: _(to be filled: 20 red rows Done, 2 false-positive controls Done, `DEF-425`
-parked with its ruling request, the two other parked majors open, the two recorded residuals filed,
-the next-batch count recomputed; every in-execution filed row checked — AR-36)_. **Code record**:
-_(to be filled: the phase commits and the final tree)_. **Residuals**: _(to be filled: the
-`DEF-430` direct-runtime-fill outcome, the `DEF-435` runtime-direct-read outcome, the `at1`
-source-read row, and the `DEF-427` scalar-`len` row)_.
+**Verification**: `make check` exit 0 (the frozen `spec/check.sh` reports 27 files and 110 compile-fail cases; the workspace suites pass). `make verify` exit 0, covering the full `make check` plus every hosted-amiga cross-toolchain leg: the portable corpus under `m68k-amigaos-gcc` and `vamos`, the vbcc build-only leg, and the build-only interrupt-counter and graphics programs. The focused sanitizer legs are green: residue spec 220/220 with `RDC_ASAN=1`; array-value spec 34/34 with `RDC_ASAN=1`; residue impl 223/223; array-value impl 16/16. The strict-build sweeps over the corpus, the examples, the P1–P7 probes, and the batch-M/L controls report no new C failure; every per-phase emission differential is recorded in its phase section (P3: the projected moves, the alias flag, the intrinsic argument; P4: the target projection, the pinned index, the literal temporary, the guarded aliases; P5: the guard count/text and the view parity; P6: the bound destinations, the per-arm stores, and the source order). The freestanding compile-only legs for the eligible scalar P4/P6 forms build; the ineligible forms report the recorded `E11200` reason (no libc/console surface), and `host`/`hosted-amiga` build the same forms. The specialist check was refreshed with `analyze-agents`: outcome **None** (the existing correctness, semantics, memory-safety, and emission-integrity agents cover the batch; no new specialist recurrence), 39 plans recorded in `codeops/specialist-check.json`.
+
+**Row accounting**: all **22/22 active rows are Done** — the 20 red rows are fixed with the per-phase spec/impl/ASan evidence and the two false-positive controls (`DEF-427`, `DEF-447`) are Done with their control and probe evidence. `DEF-425` is **Deferred (parked)** pending the user's ruling: the pinned batch-M cases accept the generic borrow-element move while frozen BR-5 and the concrete/take twins require `E10034`/`E10026`. The other parked majors (`DEF-167`, `DEF-171`) stay open. The rows filed during execution (`DEF-449`..`DEF-483`, 35 rows) are present in the roadmap with a reproduction, base evidence, and a fix direction; `DEF-481` is the pre-existing call-arm read-base leak class and `DEF-483` the scalar-`len` current-output fold. The roadmap now holds 472 `DEF-` tracker rows: 332 Done, 139 open, and 1 Deferred; the next batch is the 139-row open backlog. The batch accounting is explicit in the roadmap's `## Batch N accounting` section and the execution plan's close-out tasks.
+
+**Code record**: phases 1–7 and the close-out are committed on `main` (phase 1 `70ef134`..`1efa342`; phase 2 `f1ab264`..`8ca7f06`; phase 3 `99a4c7e`..`909e0a9`; phase 4 `87040fb`..`06409cc`; phase 5 `4a113c3`..`a88e3dd`; phase 6 `98ace8c`..`796fcf5`; phase 7 `1b054b4`..`3795224`; the close-out commit is the final tree). The working tree is clean apart from the untracked `.opencode/` tooling catalog; no `spec/` oracle, registry, or generated C was edited, and no new crate or build script exists.
+
+**Residuals**: the phase-1/2 incidental closures: `DEF-430` (the call-result binding) and `DEF-431`/`DEF-435` (the phase-1 gate) closed without code of their own. The phase-4 `at1` source read is `DEF-464`; the phase-7 scalar-`len` fold is `DEF-483`; the phase-6 read-base/nested/guarded residuals are `DEF-475`..`DEF-482`; the phase-2/3 residuals are `DEF-449`..`DEF-460`; the phase-4/5 residuals are `DEF-461`..`DEF-474`. No residual was silently fixed or reopened.
 
 ## Phase 1 — Loan transfer on stored copies
 

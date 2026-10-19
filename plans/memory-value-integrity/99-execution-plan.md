@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 58/62 tasks (94%) — Phase 7 complete
+> **Progress**: 62/62 tasks (100%) — Batch N complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -543,37 +543,37 @@ builds
 
 ## Phase 8: Close-out
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `3795224`
 > **Lenses**: none new (per the `AGENTS.md` dispatch matrix)
 > **Reasoning**: low — verification and bookkeeping
 
 ### Step 8.1: Verification and Sync
 
-- [ ] 8.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, the
+- [x] 8.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, the
       focused ASan legs, the per-phase emission differentials, and the freestanding compile-only
       leg for the eligible scalar P4/P6 forms with the per-case `E11200` ineligibility reasons;
       record the evidence
-- [ ] 8.1.2 Update the roadmap rows: the 20 red rows move to Done with per-row evidence; the two
+- [x] 8.1.2 Update the roadmap rows: the 20 red rows move to Done with per-row evidence; the two
       false-positive controls (`DEF-427`, `DEF-447`) move to Done with their control/probe
       evidence; `DEF-425` stays **parked** with its conflict evidence and ruling request; the two
       other parked majors (`DEF-167`, `DEF-171`) stay open. Add/check every row filed during
       execution (including the `DEF-435` runtime direct read, the `at1` source read, and the
       scalar-`len` fold) with its reproduction and evidence; recompute the next-batch count and
       state the accounting explicitly (AR-36)
-- [ ] 8.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
+- [x] 8.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
       `00-index.md`
-- [ ] 8.1.4 Refresh the specialist check (`analyze-agents`) and record its state; update the
+- [x] 8.1.4 Refresh the specialist check (`analyze-agents`) and record its state; update the
       `AGENTS.md` test map only if the batch wording needs it
 
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 22 active rows accounted for: 20 Done with fix evidence plus 2 controls Done with
+- [x] The 22 active rows accounted for: 20 Done with fix evidence plus 2 controls Done with
       false-positive evidence
-- [ ] `DEF-425` carried as parked with its ruling request; the two other parked majors open
-- [ ] Every in-execution filed row checked (incidental vs open); the `at1` and scalar-`len`
+- [x] `DEF-425` carried as parked with its ruling request; the two other parked majors open
+- [x] Every in-execution filed row checked (incidental vs open); the `at1` and scalar-`len`
       residuals filed; the next-batch count recomputed
-- [ ] The plan marked Complete; the specialist check recorded
+- [x] The plan marked Complete; the specialist check recorded
 
 ---
 

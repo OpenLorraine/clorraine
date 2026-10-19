@@ -6,7 +6,7 @@
 > `DEF-426`, `DEF-427`, `DEF-435`, `DEF-436`, `DEF-439`, `DEF-445`, `DEF-446`, `DEF-447`,
 > `DEF-448`. `DEF-425` is **parked** pending the user's ruling on a frozen-spec conflict, leaving
 > **22 active rows** (9 criticals + 13 majors).
-> **Status**: Planning
+> **Status**: Complete
 > **Created**: 2026-10-18
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
