@@ -3571,8 +3571,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// fill is deferred to the path that evaluates the operand, so a skipped
     /// guard never runs the field's call.
     fn materialize_literal_read_base(&mut self, value: Value) -> Value {
-        if !matches!(value.kind, ValueKind::StructLit { .. })
-            || !self.literal_read_needs_stores(&value)
+        if !matches!(
+            value.kind,
+            ValueKind::StructLit { .. } | ValueKind::Conditional { .. }
+        ) || !self.literal_read_needs_stores(&value)
         {
             return value;
         }
@@ -4879,6 +4881,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// whose elements only need the binding store is left to the eager view
     /// machinery, so its existing adoption is unchanged.
     fn literal_read_needs_stores(&self, value: &Value) -> bool {
+        if let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        {
+            // Any arm that needs the store form selects it for the whole
+            // conditional, including a mixed place/literal arm.
+            return self.literal_read_needs_stores(then_value)
+                || self.literal_read_needs_stores(else_value);
+        }
         let ValueKind::StructLit { fields, .. } = &value.kind else {
             return false;
         };
@@ -5369,11 +5382,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A fixed-array conditional keeps its array-decay spelling, which
             // is already a C expression; every other place-less value is
             // stored into an argument temporary first.
-            if self.value_needs_place(&value)
-                && !(value.ty.is_fixed_array()
-                    && matches!(value.kind, ValueKind::Conditional { .. }))
-                && !value.ty.is_unknown()
-            {
+            if self.value_needs_place(&value) && !value.ty.is_unknown() {
                 return self.materialize_take_place(value);
             }
             // A `take` argument transfers ownership to the callee, so an owned

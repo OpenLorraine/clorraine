@@ -2154,6 +2154,18 @@ impl<'a> Emitter<'a> {
             if let ValueKind::StructLit { fields, .. } = &field.kind {
                 return self.struct_literal_needs_stores(fields);
             }
+            if let ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } = &field.kind
+            {
+                return self.conditional_struct_needs_stores(
+                    &field_ty,
+                    then_value,
+                    else_value,
+                );
+            }
             false
         })
     }
@@ -2220,6 +2232,23 @@ impl<'a> Emitter<'a> {
             if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
                 if self.struct_literal_needs_stores(inner) {
                     self.emit_struct_literal_fields(&field_c, &field_ty, inner);
+                    continue;
+                }
+            }
+            if let ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } = &field.kind
+            {
+                if self.conditional_struct_needs_stores(&field_ty, then_value, else_value) {
+                    self.emit_struct_conditional_assign(
+                        &field_c,
+                        &field_ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
                     continue;
                 }
             }

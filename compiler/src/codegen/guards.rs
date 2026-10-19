@@ -567,7 +567,7 @@ impl<'a> Emitter<'a> {
             let hands_over = fields.iter().any(|(field, value)| {
                 self.value_hands_over_storage(&self.field_type(ty, field), value)
             });
-            if hands_over {
+            if hands_over || self.struct_literal_needs_guard_stores(ty, fields) {
                 if let Some(stored) = self.struct_assign_expr(target_c, ty, name, fields) {
                     return stored;
                 }
