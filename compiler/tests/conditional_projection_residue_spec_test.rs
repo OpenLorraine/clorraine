@@ -21510,3 +21510,39 @@ func main(): i32 {
     assert_no_asan("p447direct", &output);
     assert_exit("p447direct", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// puretakepointer: a pure pointer place used by a take is captured before the
+// call, so a callee that mutates its index cannot redirect the move-out.
+// ---------------------------------------------------------------------------
+
+/// A pointer-index take whose callee mutates the index moves the captured slot.
+///
+/// `pureptrindex` takes `*ps[idx]`; the callee sets `idx = 1`, so the move-out
+/// and alias test must keep the element selected before the call. The program
+/// runs clean and the conditional selects `x`.
+#[test]
+fn should_capture_a_pure_pointer_take_before_the_call() {
+    let source = r#"module spec.cpr.pureptrindex;
+
+import { String, stringOf } from std.text;
+
+let idx: i32 = 0;
+
+func eat(take s: String): i32 { idx = 1; return 1; }
+
+func main(): i32 {
+    let arr: String[2] = [stringOf("aa"), stringOf("bb")];
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    let ps: raw String[2] = [unsafe &arr[0], unsafe &arr[1]];
+    v = (g && (eat(take (unsafe *ps[idx])) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("pureptrindex", source);
+    assert_no_asan("pureptrindex", &output);
+    assert_exit("pureptrindex", &output, 0);
+}

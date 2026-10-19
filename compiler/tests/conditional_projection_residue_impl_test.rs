@@ -5836,7 +5836,7 @@ fn should_empty_the_owned_deref_store_source_through_its_own_address() {
         1,
         "the impure pointer must evaluate exactly once in the body; body:\n{body}"
     );
-    assert_follows(impure, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_follows(impure, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
 }
 
 /// The conditional take's carrier shape and the deref store's emptied pointee
@@ -9311,7 +9311,7 @@ fn should_pin_the_owning_deref_store_materialization() {
         1,
         "the impure pointer must evaluate once in the store; body:\n{body}"
     );
-    assert_follows(tag, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_follows(tag, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
 }
 
 /// The owning deref return evaluates its pointer once and reads and empties
@@ -9334,7 +9334,7 @@ fn should_pin_the_owning_deref_return_materialization() {
         tag,
         body,
         "ClString __cl_return_1 = *(__cl_tmp0);",
-        "*(__cl_tmp0) = NULL;",
+        "*(__cl_tmp0) = NULL",
     );
 }
 
@@ -9354,7 +9354,7 @@ fn should_pin_the_owning_deref_field_materialization() {
         tag,
         body,
         "__cl_return_1.s = *(__cl_tmp0);",
-        "*(__cl_tmp0) = NULL;",
+        "*(__cl_tmp0) = NULL",
     );
     assert_eq!(
         body.matches("cl_alt__String(").count(),
@@ -9379,7 +9379,7 @@ fn should_pin_the_owning_deref_element_materialization() {
         1,
         "the impure pointer must evaluate once in the element store; body:\n{body}"
     );
-    assert_follows(tag, body, "__cl_rhs_1[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_follows(tag, body, "__cl_rhs_1[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
 }
 
 /// The owning deref conditional arm fills the pinned pointer inside the chosen
@@ -9404,7 +9404,7 @@ fn should_pin_the_owning_deref_arm_materialization() {
         "if (flag) {",
         "__cl_tmp0 = cl_alt__String(p, q);",
     );
-    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
 }
 
 /// The guarded take of a place-pointer deref empties the pointee on the
@@ -14254,4 +14254,54 @@ func main(): i32 {
     );
     assert_contains(tag, body, "__cl_ret = (i32)((cl_string_view(__cl_owned0.s)).len);");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}
+
+// ---------------------------------------------------------------------------
+// pureptr: a pure indexed pointer is captured before the take call.
+// ---------------------------------------------------------------------------
+
+/// The take captures the indexed pointer in a temporary, then reuses it.
+///
+/// The callee mutates the global index; the call, the alias test, and the
+/// move-out all read the captured `__cl_tmp0`, so the pointee emptied is the
+/// one the callee received.
+#[test]
+fn should_capture_a_pure_index_pointer_before_the_take_call() {
+    let tag = "pureptrimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.pureptrimpl;
+
+import { String, stringOf } from std.text;
+
+let idx: i32 = 0;
+
+func eat(take s: String): i32 { idx = 1; return 1; }
+
+func main(): i32 {
+    let arr: String[2] = [stringOf("aa"), stringOf("bb")];
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    let ps: raw String[2] = [unsafe &arr[0], unsafe &arr[1]];
+    v = (g && (eat(take (unsafe *ps[idx])) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_pureptrimpl_main(void)\n{",
+    );
+    assert_contains(tag, body, "ClString *__cl_tmp0 = NULL;");
+    assert_contains(
+        tag,
+        &emitted,
+        "__cl_tmp0 = ps[cl_spec_cprimpl_pureptrimpl_idx])",
+    );
+    assert_contains(tag, &emitted, "cl_spec_cprimpl_pureptrimpl_eat(*(__cl_tmp0))");
+    assert_contains(tag, &emitted, "*(__cl_tmp0) = NULL");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the call must run");
 }
