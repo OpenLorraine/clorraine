@@ -81,6 +81,12 @@ None for `DEF-459`; the broader pointer spellings are fixed. The filed row is Do
 
 **Control**: `should_accept_a_next_statement_read_of_a_generated_owner` (residue spec) is green plain and under `RDC_ASAN=1`. No code change. `DEF-452` is Done with the ruling.
 
-## Phase 4 — Ruling, controls, and close-out
+## Close-out
 
-_(to be recorded)_
+**Verification**: `make check` exit 0 (frozen `spec/check.sh` reports 27 files and 110 compile-fail cases; all workspace suites pass). `make verify` exit 0 (the full check plus every hosted-amiga cross-toolchain leg; the FS-UAE output leg included). Focused legs: residue spec 224/224 plain and 224/224 with `RDC_ASAN=1`; residue impl 224/224; borrow-generic spec 30/30; def-backlog spec 33/33; the stdlib view unit passes. The P2 pointer cases and the P3 generic cases are ASan-clean; the filed P1 shapes reject once with no translation unit; the accepted carrier/view controls are base-identical or base-accepted and clean.
+
+**Row accounting**: batch O closes **8/8 rows**: the seven criticals `DEF-449`, `DEF-450`, `DEF-451`, `DEF-453`, `DEF-459`, `DEF-468`, `DEF-469` and the generated-owner ruling `DEF-452`. `DEF-470` closed incidentally under P3. The plan is **26/26 tasks**. During execution, 22 residual rows were filed: `DEF-484`..`DEF-500` (P1 sibling shapes, strict-build classes) and `DEF-501`..`DEF-505` (generic take/struct/assignment/projection-over-conditional and the nested projection). The roadmap now holds 494 tracker rows: **340 Done, 153 open, 1 Deferred** (`DEF-425`); the next batch is the open backlog.
+
+**Code record**: plan `7e7049f`; P1 `8e15ed1`..`80f8ae0`, correction `5741d5c`..`dd0eab5`, record `985c103`; P2 `f4de6ae`; P3 `0b5acd5`; P2/P3 correction `d01484e`; the P4 control and phase record are in the final close-out commit. The working tree is clean apart from the untracked `.opencode/` tooling catalog; no `spec/` oracle, registry, or generated C was edited, and the workspace remains std-only.
+
+**Residuals**: the filed rows above. The P1 family: const/global conditional carrier copies, function-returned and inline call-result views, the static/call carrier mix, the inline static literal, the frame-backed literal arm, the zero-argument static factory, the plain call carrier copy, the taken-view double report, the direct call view closure/wrapper/generic gaps, the dot receiver, the mixed aggregate carrier, the conditional shadow copy, the alias element return, the static local alias, and the strict-build classes. The P2/P3 family: the generic conditional take, the raw field audit, the owning struct-literal/projected-assignment arm, the projection over a conditional, and the nested projection. None is silently fixed or reopened.
