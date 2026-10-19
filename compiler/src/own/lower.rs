@@ -3643,7 +3643,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &value.kind {
             ValueKind::Place(_) => true,
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-                self.arm_roots_in_storage(base)
+                if self.arm_roots_in_storage(base) {
+                    return true;
+                }
+                // A projection of a fresh aggregate that owns (or is opaque)
+                // would materialize only the selected part and lose the
+                // root's unselected fields. Keep the projection form for that
+                // shape (a filed residual) rather than leak the root.
+                !self.sema.table.duplicable(&base.ty)
+                    || self.maybe_owns(&base.ty)
+                    || base.ty.is_unknown()
             }
             ValueKind::Unary {
                 op: UnaryOp::Deref,
