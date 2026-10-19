@@ -1905,7 +1905,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if self.bindings[id].generated && self.bindings[id].needs_drop {
                     owners.insert(LoanOwner::Binding(id));
                 }
-                owners.extend(self.binding_loan_owners(id));
+                // The leaf loans a generated view carrier holds are the
+                // storage a call-mediated view reads. A named source's loans
+                // are already contributed by the value walk, and adding the
+                // binding's existing loan here would request it twice.
+                if self.bindings[id].generated {
+                    owners.extend(self.binding_loan_owners(id));
+                }
             }
         }
         owners

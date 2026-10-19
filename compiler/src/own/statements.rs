@@ -467,6 +467,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         decl.span,
                     );
                 } else if !copied
+                    && !is_view_like(&target)
                     && self.may_carry_view(&target)
                     && matches!(
                         value.kind,

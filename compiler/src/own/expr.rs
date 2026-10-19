@@ -1425,7 +1425,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // A conditional copy of a carrier supplies its view
                     // positions arm by arm; the composite collector records
                     // the union, exactly as the let path does.
-                    if self.may_carry_view(&target_ty)
+                    if !is_view_like(&target_ty)
+                        && self.may_carry_view(&target_ty)
                         && matches!(
                             value.kind,
                             ExprKind::Conditional { .. }
