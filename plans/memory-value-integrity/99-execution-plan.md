@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 33/62 tasks (53%) — Phase 4 complete
+> **Progress**: 42/62 tasks (68%) — Phase 5 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -350,7 +350,7 @@ eligible scalar forms with the per-case `E11200` reasons; the emission different
 
 ## Phase 5: Per-instance generic judgments
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `06409cc`
 > **Rows**: `DEF-410` (major), `DEF-426` (major); `DEF-425` (major) is parked with its evidence
 > and ruling request
 > **Lenses**: all four (AR-31; the rejection is memory/ownership; the guard is emission)
@@ -365,17 +365,17 @@ ST-16..ST-17 · AR-21, AR-22, AR-23
 duplicable generic whole move, the concrete twin, and the generic division guard; record the
 `DEF-425` park evidence.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases in
+- [x] 5.1.1 [spec-author] Write the phase cases in
       `borrow_generic_integrity_spec_test.rs` (genericconditionalstore) and
       `conditional_projection_residue_spec_test.rs` (genericdivisionguard), with the owning, the
       duplicable-generic-whole-move at `T = P` (`q410dup`), and concrete controls; the red cases
       committed first
-- [ ] 5.1.2 Run the suites and record the red phase (the generic body accepted; the concrete twin
+- [x] 5.1.2 Run the suites and record the red phase (the generic body accepted; the concrete twin
       rejecting; the generic guard absent); verify the controls green first
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Record the conditional type-parameter arm as a maybe-owning source in
+- [x] 5.2.1 Record the conditional type-parameter arm as a maybe-owning source in
       `prepare_binding_effect` (`own/statements.rs:816-887`; `RequiresNotLend`, the per-instance
       audit `check_not_lend_requirements`), not by calling `move_place` at the definition
       (`conditional_move_sources`, `own/expr.rs:175-205`); resolve the division guard's unknown
@@ -384,28 +384,28 @@ duplicable generic whole move, the concrete twin, and the generic division guard
       scope is `DEF-410`/`DEF-426` only; `DEF-425` is parked. The parked route, if the user rules
       for a fix, is `RequiresNotLend` + `project_place_path` + `check_not_lend_requirements` — not
       the `E10026` duty.
-- [ ] 5.2.2 Run the suites to green; on any failure STOP and fix (or record per AR-35(f)); run
+- [x] 5.2.2 Run the suites to green; on any failure STOP and fix (or record per AR-35(f)); run
       `make check`
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the `E10034` record/count/span, the duplicable
+- [x] 5.3.1 Write the phase implementation pins (the `E10034` record/count/span, the duplicable
       generic whole-move acceptance, the no-report-at-the-definition pin, the guard count/text in
       the generic and concrete emissions through the resolved projection type, and a re-emission
       determinism pin)
-- [ ] 5.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan probes
+- [x] 5.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan probes
       and the `assert_traps` division cases; run the generic/concrete emission differential. The
       packet includes the blast-radius step (`conditional_move_sources` arms,
       `mark_moved_if_owning_at`/`note_borrowed_element_move` callers, the not-lend/element duty
       consumers, every division guard site) and the test-integrity step
-- [ ] 5.3.3 Bounded confirmation: re-run the phase probes and the focused suites; record the
+- [x] 5.3.3 Bounded confirmation: re-run the phase probes and the focused suites; record the
       rounds
 
 ### Step 5.4: Phase Record
 
-- [ ] 5.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
+- [x] 5.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
       commit mode
-- [ ] 5.4.2 [orchestrator] Record the `DEF-425` park: the frozen BR-5 conflict, the pinned
+- [x] 5.4.2 [orchestrator] Record the `DEF-425` park: the frozen BR-5 conflict, the pinned
       batch-M spec/impl case paths, the `d425a`/`d425b`/`d425d` probes, and the explicit ruling
       request; no code/spec/test edit. Carry the park to the close-out (8.1.2)
 
@@ -413,9 +413,9 @@ duplicable generic whole move, the concrete twin, and the generic division guard
 `assert_traps` `E11210` cases; the emission differential
 
 **Deliverables**:
-- [ ] ST-16..ST-17 red then green; the concrete/take twins keep their reports
-- [ ] The generic and concrete division emissions agree
-- [ ] The `DEF-425` park and its ruling request are recorded; no code change
+- [x] ST-16..ST-17 red then green; the concrete/take twins keep their reports
+- [x] The generic and concrete division emissions agree
+- [x] The `DEF-425` park and its ruling request are recorded; no code change
 
 ---
 

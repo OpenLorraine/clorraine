@@ -223,22 +223,47 @@ is the destination loses the value), `DEF-467` (an out-slot borrow raw self-assi
   (base wrong/C-fail) and are filed, not fixed.
 ## Phase 5 — Per-instance generic judgments
 
-**Reviewed implementation**: _(recorded at review time)_. **Lenses**: all four (AR-31; the
-rejections are memory/ownership; the guard is emission).
+**Reviewed implementation**: `2f6ad0d` (the conditional effect and the resolved division guard), `8a71022` (the pins), `22600b9` (the view effect, the mixed arms, the generic pin), `0462780` (the source-kind split), and `f09a0f8` (the out-slot source and the duplicable target). **Lenses**: all four (AR-31).
 
 ### Verdicts
 
-_(to be filled: the `E10034` records/spans, the duplicable generic whole-move acceptance, the
-guard parity, and the `DEF-425` park evidence with the ruling request are recorded here)_
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | RV-001 (the deferred effect preempted the view effect and rejected a generic view conditional) closed by the placement; RV-002 (the division pin used a concrete parameter) closed; RV-003/SR-001 (the mixed arms lost the concrete source) closed by the merge; RV-004 closed by this record |
+| semantics | PASS — 0 blockers after correction | SR-001 (mixed arms) closed; SR-002 (a concrete local/take source lost its definite move) closed by the source-kind split; SR-003 (the out-slot source was treated as a lend) closed by excluding out-slots; the pre-existing return/field/deref residuals filed |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The `T = str` view instance is accepted; the duplicable-target take source copies; the out-slot source moves and reports; no base-clean → head-red memory defect; the maybe-target concrete-lend double-free is base-equal and filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | The generic/concrete division guards are three/three with identical text and order; the view conditional emission matches the concrete twin; the no-take/corpus differential is unchanged; the DEF-426 pin is generic and base-red |
 
-### Findings and rulings
+### Fix rounds
 
-_(to be filled)_
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `2f6ad0d`, `8a71022` | **Applied**: the deferred conditional effect and the resolved division guard; the pins |
+| C1 | `22600b9` | **Resolved RV-001/RV-002/RV-003**: the effect runs after the view effect; only a type-parameter arm takes it; concrete arms merge; the division pin is generic |
+| C2 | `0462780` | **Resolved SR-002 and the T=str view instance**: the sources split by binding kind; the maybe-target branch keeps only type-parameter sources |
+| C3 | `f09a0f8` | **Resolved SR-003 and the duplicable-target regression**: out-slot sources move definitely; a duplicable destination copies |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (on `8a71022`) | **NOT CONFIRMED**: the view effect was preempted, the mixed arms lost a source, the DEF-426 pin was not generic |
+| B2 (on `22600b9`) | **NOT CONFIRMED**: the concrete local/take later move was lost, the `T = str` view instance was rejected, the out-slot source was accepted, the duplicable target was rejected |
+| B3 (on `f09a0f8`) | **CONFIRMED**: the two rows and the controls are clean; the phase closes |
 
 ### Filed rows
 
-_(to be filled: the `DEF-425` park record and the ruling request; no new fix row)_
+`DEF-468` (generic conditional return double-free), `DEF-469` (generic field-projection conditional arm), `DEF-470` (generic field-projected take later move), `DEF-471` (hidden generic deref-chain division), `DEF-472` (maybe-target concrete lend double-free), `DEF-473` (maybe-target take + concrete local use-after-move), `DEF-474` (generic view conditional return divergence).
 
+### Parked row
+
+`DEF-425` remains **PARKED** pending the user's ruling: the batch-M cases accept the generic borrow-element move, while frozen BR-5 and the concrete/take twins require `E10034`/`E10026`. No code, test, spec, or registry change was made for it; the park evidence is the existing batch-M case paths and the `d425a`/`d425b`/`d425d` probes.
+
+### Record notes
+
+- The deferred effect is per-instance: a lend parameter reports `E10034` at an owning instance; a local/take source moves definitely at a concrete destination; a maybe-owning destination keeps the per-instance path so a duplicable instance copies.
+- The division guard resolves the operand through the instance; float division stays unguarded.
+- The view effect remains ahead of the deferred effect, so a view target records its loans rather than an owning move.
 ## Phase 6 — Literal destinations and conditional arrays
 
 **Reviewed implementation**: _(recorded at review time)_. **Lenses**: all four (AR-31).
@@ -487,3 +512,46 @@ emission-integrity.
 - Pre-existing residuals: the take fixed-array parameter alias (base wrong/C-fail), the raw-field
   RHS order (host-correct but unspecified), and the raw-store unused-local warning (base has the
   bare form).
+
+## Phase 5 — Per-instance generic judgments
+
+**Reviewed implementation**: `2f6ad0d` (the deferred conditional effect and the resolved division guard),
+`8a71022` (the pins), `22600b9` (the view effect, the mixed-arm merge, the generic division pin),
+`0462780` (the source-kind split), and `f09a0f8` (the out-slot source and the duplicable target).
+**Lenses**: correctness (N5C), semantics (N5S), memory-safety, and emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers after correction | The deferred effect preempted the view effect (RV-001); the division pin used a concrete parameter (RV-002); the mixed arms lost the concrete source (RV-003/SR-001); all closed |
+| semantics | PASS — 0 blockers after correction | The mixed arms report both sources; a concrete local/take source moves definitely (E10020); an out-slot source moves; a view target records loans |
+| memory-safety | CONFIRMED — 0 in-diff | The `T = str` view instance, the duplicable target, and the out-slot rejection are clean; no base-clean → head-red defect |
+| emission-integrity | CONFIRMED — 0 in-diff | The generic/concrete division guards are identical; the view conditional emission matches the concrete twin; the corpus/no-take differential is unchanged |
+
+### Fix rounds
+
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `2f6ad0d`, `8a71022` | The deferred conditional effect and the resolved guard; the pins |
+| C1 | `22600b9` | The view effect runs first; only a type-parameter arm defers; the concrete arms merge; the division pin is generic |
+| C2 | `0462780` | The sources split by binding kind; the maybe-target branch keeps only type-parameter sources |
+| C3 | `f09a0f8` | The out-slot source moves; a duplicable destination copies |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (on `8a71022`) | **NOT CONFIRMED**: view preemption, mixed-arm loss, non-generic pin |
+| B2 (on `22600b9`) | **NOT CONFIRMED**: local/take move lost, `T = str` rejected, out-slot accepted, duplicable target rejected |
+| B3 (on `f09a0f8`) | **CONFIRMED** |
+
+### Filed rows
+
+`DEF-468` (generic conditional return), `DEF-469` (field-projection arm), `DEF-470` (field-projected take later move), `DEF-471` (hidden deref-chain division), `DEF-472` (maybe-target concrete lend), `DEF-473` (maybe-target take + concrete local), `DEF-474` (generic view conditional return divergence).
+
+### Record notes
+
+- `DEF-425` stays parked with the batch-M evidence and the ruling request; no oracle edit.
+- The simple generic take later move is fixed incidentally by the phase (base accepted; head reports `E10020`); it is not a residual.
+- The duplicable-instance later use stays accepted because the maybe-owning destination keeps every source on the per-instance path.
