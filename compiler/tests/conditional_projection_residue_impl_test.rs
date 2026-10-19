@@ -14214,3 +14214,39 @@ func main(): i32 {
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the guarded take must run");
 }
+
+/// An inline owning read-base literal binds at body scope and releases once.
+///
+/// `p447impl` reads `.s` from an inline `G` literal; the literal is stored in
+/// `__cl_owned0` so the view outlives the read, and the scope release frees the
+/// fields exactly once.
+#[test]
+fn should_bind_the_inline_read_base_literal_at_body_scope() {
+    let tag = "p447impl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p447impl;
+
+import { String, stringOf } from std.text;
+
+struct G { s: String; tag: String; }
+
+func use(): i32 {
+    return i32(len(G { s: stringOf("aa"), tag: stringOf("x") }.s));
+}
+
+func main(): i32 {
+    return use() - 2;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_p447impl_use(void)\n{");
+    assert_contains(tag, body, "ClG __cl_owned0 = {0};");
+    assert_contains(
+        tag,
+        body,
+        "__cl_owned0 = (ClG){ cl_std_text_stringOf(cl_str(\"aa\")), cl_std_text_stringOf(cl_str(\"x\")) };",
+    );
+    assert_contains(tag, body, "__cl_ret = (i32)((cl_string_view(__cl_owned0.s)).len);");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+}

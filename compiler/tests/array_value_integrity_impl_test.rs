@@ -675,3 +675,63 @@ func main(): i32 {
         "ai15: the help should name the remedy; stderr:\n{stderr}"
     );
 }
+
+/// The view-length matrix and the scalar-`len` fallback are pinned.
+///
+/// `len(w.items[i])` reads the element's view length, `len(w.name)` the owned
+/// string length, and `len(w.items[i][0])` folds to the compiler's scalar `0`
+/// fallback, so the filed probe returns `0 - 2 = 254`. The fold is current
+/// output, not a frozen rule: a future scalar-`len` change needs a user ruling.
+#[test]
+fn should_pin_the_view_length_matrix_and_scalar_len_fallback() {
+    let tag = "viewlengthimpl";
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(
+        tag,
+        &scratch,
+        r#"module spec.avi.viewlengthimpl;
+
+import { String, stringOf } from std.text;
+
+struct W { items: str[2]; name: String; }
+
+func get(w: W, i: i32): i32 {
+    let element: i32 = i32(len(w.items[i]));
+    let owned: i32 = i32(len(w.name));
+    let byte: i32 = i32(len(w.items[i][0]));
+    return element + owned + byte - 6;
+}
+
+func filed(w: W, i: i32): i32 {
+    return i32(len(w.items[i][0])) - 2;
+}
+
+func main(): i32 {
+    let w: W = W { items: ["AA", "CC"], name: stringOf("dd") };
+    let matrix: i32 = get(w, 1);
+    if (matrix != 0) { return matrix; }
+    return filed(w, 1);
+}
+"#,
+    );
+    assert!(
+        emitted.contains("((w.items[i]).len)"),
+        "{tag}: the element length must read the view length"
+    );
+    assert!(
+        emitted.contains("(cl_string_view(w.name)).len"),
+        "{tag}: the owned string length must read the string view"
+    );
+    assert!(
+        emitted.contains("(i32)((u32)(i32)(0) - (u32)2)"),
+        "{tag}: the scalar length must fold to the current 0 fallback"
+    );
+    let program = build_host_c(tag, &scratch, &emitted);
+    let output = run_with_timeout(tag, &program);
+    assert_eq!(
+        output.status.code(),
+        Some(254),
+        "{tag}: the filed probe's current output is 254; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

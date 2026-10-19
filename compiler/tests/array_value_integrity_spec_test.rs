@@ -169,6 +169,67 @@ fn run_with_timeout(tag: &str, program: &Path) -> Output {
         .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
 }
 
+/// Builds the emitted C with AddressSanitizer and the strict flag set.
+fn build_host_c_asan(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
+    let c_path = scratch.path().join("build-asan.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog-asan");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=address",
+            "-no-pie",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the sanitizer build; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    program
+}
+
+/// Emits a program, builds it with AddressSanitizer, and runs it with leak
+/// detection on, returning its output.
+fn run_asan(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, &scratch, source);
+    let program = build_host_c_asan(tag, &scratch, &emitted);
+    let output = Command::new(&program)
+        .env("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")
+        .output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the sanitizer program: {err}"));
+    output
+}
+
+/// Runs a memory-safety case under AddressSanitizer when `RDC_ASAN` is set,
+/// otherwise as an ordinary strict host build.
+fn run_memory(tag: &str, source: &str) -> Output {
+    if std::env::var_os("RDC_ASAN").is_some() {
+        run_asan(tag, source)
+    } else {
+        run_host(tag, source)
+    }
+}
+
+/// Asserts the run produced no AddressSanitizer report.
+fn assert_no_asan(tag: &str, output: &Output) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("AddressSanitizer"),
+        "{tag}: the run reported a memory error; stderr:\n{stderr}"
+    );
+}
+
 /// Emits, builds, and runs one host program, returning its output.
 fn run_host(tag: &str, source: &str) -> Output {
     let scratch = ScratchDir::new(tag);
@@ -966,4 +1027,57 @@ func main(): i32 {
 }
 "#;
     assert_rejected("av30", source, "E10026");
+}
+
+// ---------------------------------------------------------------------------
+// viewlengthcontrol: the frozen view-length matrix and the filed scalar-`len`
+// probe.
+// ---------------------------------------------------------------------------
+
+/// The view-length matrix is green and the filed double-index probe is clean.
+///
+/// `viewlengthmatrix` checks the single-index element length, the concrete and
+/// runtime index, the owned `String` length, and a loop-alias element read.
+/// The filed `viewlengthfiled` reads `len(w.items[i][0])`, a `u8`; the run is
+/// accepted and memory-clean, while its scalar fallback value is recorded in
+/// the implementation pin rather than asserted here.
+#[test]
+fn should_report_the_view_length_matrix_and_accept_the_filed_scalar_len_probe() {
+    let matrix = r#"module spec.avi.viewlengthcontrol;
+
+import { String, stringOf } from std.text;
+
+struct W { items: str[2]; name: String; }
+
+func main(): i32 {
+    let w: W = W { items: ["AA", "CC"], name: stringOf("dd") };
+    let i: i32 = 1;
+    if (i32(len(w.items[i])) != 2) { return 1; }
+    if (i32(len(w.items[0])) != 2) { return 2; }
+    if (i32(len(w.name)) != 2) { return 3; }
+    for (borrow e in w.items) {
+        if (i32(len(e)) != 2) { return 4; }
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("viewlengthcontrol", matrix);
+    assert_no_asan("viewlengthcontrol", &output);
+    assert_exit("viewlengthcontrol", &output, 0);
+
+    let filed = r#"module spec.avi.viewlengthfiled;
+
+struct W { items: str[2]; }
+
+func get(w: W, i: i32): i32 {
+    return i32(len(w.items[i][0])) - 2;
+}
+
+func main(): i32 {
+    let w: W = W { items: ["AA", "CC"] };
+    return get(w, 1);
+}
+"#;
+    let output = run_memory("viewlengthfiled", filed);
+    assert_no_asan("viewlengthfiled", &output);
 }

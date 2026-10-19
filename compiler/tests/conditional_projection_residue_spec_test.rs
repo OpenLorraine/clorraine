@@ -21397,3 +21397,116 @@ func main(): i32 {
     assert_no_asan("p448guard", &output);
     assert_exit("p448guard", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// inlineownedliteral: a read/projection of an inline owning literal keeps the
+// literal's storage alive for the read and releases it once.
+// ---------------------------------------------------------------------------
+
+/// The inline owning literal and its variants run clean.
+///
+/// `p447rows` reads a nested `str[2][2]` field; `p447nested` nests the literal
+/// in a field; `p447string` reads an owned `String`; `p447grid` projects a
+/// `String[2][2]` row; and `p447direct` binds the projected `String` first.
+#[test]
+fn should_keep_the_inline_read_base_literal_clean() {
+    let rows = r#"module spec.cpr.p447rows;
+
+import { String, stringOf } from std.text;
+
+struct G { rows: str[2][2]; tag: String; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+
+func use(): i32 {
+    return i32(G { rows: [n1(), n1()], tag: stringOf("x") }.rows[0][0][0]);
+}
+
+func main(): i32 {
+    return use() - 65;
+}
+"#;
+    let output = run_memory("p447rows", rows);
+    assert_no_asan("p447rows", &output);
+    assert_exit("p447rows", &output, 0);
+
+    let nested = r#"module spec.cpr.p447nested;
+
+import { String, stringOf } from std.text;
+
+struct Inner { rows: str[2][2]; }
+struct Outer { inner: Inner; tag: String; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+
+func use(): i32 {
+    return i32(Outer { inner: Inner { rows: [n1(), n1()] }, tag: stringOf("x") }.inner.rows[0][0][0]);
+}
+
+func main(): i32 {
+    return use() - 65;
+}
+"#;
+    let output = run_memory("p447nested", nested);
+    assert_no_asan("p447nested", &output);
+    assert_exit("p447nested", &output, 0);
+
+    let string = r#"module spec.cpr.p447string;
+
+import { String, stringOf } from std.text;
+
+struct G { s: String; tag: String; }
+
+func use(): i32 {
+    return i32(len(G { s: stringOf("aa"), tag: stringOf("x") }.s));
+}
+
+func main(): i32 {
+    return use() - 2;
+}
+"#;
+    let output = run_memory("p447string", string);
+    assert_no_asan("p447string", &output);
+    assert_exit("p447string", &output, 0);
+
+    let grid = r#"module spec.cpr.p447grid;
+
+import { String, stringOf } from std.text;
+
+struct G { rows: String[2][2]; tag: String; }
+
+func n1(): String[2] { return [stringOf("AA"), stringOf("BB")]; }
+
+func use(): i32 {
+    return i32(len(G { rows: [n1(), n1()], tag: stringOf("x") }.rows[0][0]));
+}
+
+func main(): i32 {
+    return use() - 2;
+}
+"#;
+    let output = run_memory("p447grid", grid);
+    assert_no_asan("p447grid", &output);
+    assert_exit("p447grid", &output, 0);
+
+    let direct = r#"module spec.cpr.p447direct;
+
+import { String, stringOf } from std.text;
+
+struct G { rows: String[2][2]; tag: String; }
+
+func n1(): String[2] { return [stringOf("AA"), stringOf("BB")]; }
+
+func use(): i32 {
+    let s: String = G { rows: [n1(), n1()], tag: stringOf("x") }.rows[0][0];
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("p447direct", direct);
+    assert_no_asan("p447direct", &output);
+    assert_exit("p447direct", &output, 0);
+}
