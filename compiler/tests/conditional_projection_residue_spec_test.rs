@@ -21623,8 +21623,9 @@ import { String, stringOf } from std.text;
 struct Holder { ptr: raw String; }
 
 let gq: raw String = null;
+let gb: Holder = Holder { ptr: null };
 
-func eat(take s: String, borrow hs: Holder): i32 { hs.ptr = gq; return 1; }
+func eat(take s: String): i32 { gb.ptr = gq; return 1; }
 
 func main(): i32 {
     let a: String = stringOf("aa");
@@ -21634,8 +21635,8 @@ func main(): i32 {
     let v: String = stringOf("vv");
     let g: bool = true;
     gq = unsafe &b;
-    let h: Holder = Holder { ptr: unsafe &a };
-    v = (g && (eat(take (unsafe *h.ptr), borrow h) == 1)) ? x : y;
+    gb.ptr = unsafe &a;
+    v = (g && (eat(take (unsafe *gb.ptr)) == 1)) ? x : y;
     return i32(len(v)) - 2;
 }
 "#;

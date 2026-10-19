@@ -45,11 +45,41 @@
 
 ## Phase 2 — Take alias capture
 
-_(to be recorded)_
+**Reviewed implementation**: `f4de6ae` (indexed pointer capture), `d01484e` (conditional, member, computed-address, module-global, writable-parameter, and alias captures; stable bare local/by-value parameter). **Lenses**: correctness, semantics, memory-safety.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS — the filed and sibling pointer shapes are captured | The index, member, conditional, global, and computed-address cases are ASan-clean; the bare local and by-value parameter stay direct; the six weakened assertions are restored; the impl pin checks the captured temp, call, alias test, and move-out. |
+| semantics | PASS | The callee, alias test, and move-out read one captured pointer; guarded operands defer the fill; a skipped path never evaluates the pointer. |
+| memory-safety | CONFIRMED | The base double-free shapes are clean at head; no base-clean → head-red memory defect; accepted controls are LSan-clean. |
+
+### Residuals
+
+None for `DEF-459`; the broader pointer spellings are fixed. The filed row is Done.
 
 ## Phase 3 — Generic conditional duties
 
-_(to be recorded)_
+**Reviewed implementation**: `0b5acd5` (type-parameter conditional sources at a return and a binding), `d01484e` (selected member/element resolution in the duty, raw pointee included). **Lenses**: correctness, semantics, memory-safety.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS for the filed rows; base-identical sibling shapes filed | The generic return and field-let report one `E10034` at the instance; a duplicable member is accepted; a view/raw element reports. The take, struct-literal, projected-assignment, and projection-over-conditional forms remain base-identical and are filed (`DEF-501`..`DEF-505`). |
+| semantics | PASS for the filed rows | The concrete twins and the generic instances agree on the selected member; the `T = raw u8`/view controls stay accepted. |
+| memory-safety | CONFIRMED for the filed rows; the pre-existing take/projection classes are filed | The filed repros no longer double-free; no base-clean → head-red defect. |
+
+### Incidental closure
+
+`DEF-470` (a generic field-projected take later move) now reports the concrete twin's `E10020` at the later whole use; closed incidentally by the per-instance duty.
+
+## Phase 4 — Ruling, controls, and close-out
+
+**Ruling**: a generated owner (`__cl_owned<N>`) is a compiler binding that holds the value captured by a local or a literal, not a `__cl_tmp<N>` source temporary. Ch 03 D5 governs source temporaries; a generated owner lives in the binding's frame and is released at that scope's exit. The body-scope binding is conformant, and a same-scope read stays accepted; a later fill that stores a temporary-derived view still reports the escape.
+
+**Control**: `should_accept_a_next_statement_read_of_a_generated_owner` (residue spec) is green plain and under `RDC_ASAN=1`. No code change. `DEF-452` is Done with the ruling.
 
 ## Phase 4 — Ruling, controls, and close-out
 

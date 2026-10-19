@@ -1,6 +1,6 @@
 # Execution Plan — Memory and Borrow Critical Closeout (Batch O)
 
-> **Progress**: 9/23 tasks
+> **Progress**: 24/26 tasks
 > **Rows**: `DEF-449`, `DEF-450`, `DEF-451`, `DEF-452`, `DEF-453`, `DEF-459`, `DEF-468`, `DEF-469`
 > **Baseline**: `d19a467`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -46,23 +46,23 @@
 
 ### Step 2.1: Red case
 
-- [ ] 2.1.1 Write the red case in `conditional_projection_residue_spec_test.rs`: the pure-index
+- [x] 2.1.1 Write the red case in `conditional_projection_residue_spec_test.rs`: the pure-index
       pointer take under a mutating callee; assert ASan-clean, expected exit, and the captured
       pointer shape
-- [ ] 2.1.2 Confirm the baseline failure and commit the red case
+- [x] 2.1.2 Confirm the baseline failure and commit the red case
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Capture the raw-deref pointer for an owning take, including pure places; keep the
+- [x] 2.2.1 Capture the raw-deref pointer for an owning take, including pure places; keep the
       guarded deferral
-- [ ] 2.2.2 Run the focused suites and `make check`; commit the fix
+- [x] 2.2.2 Run the focused suites and `make check`; commit the fix
 
 ### Step 2.3: Pins and review
 
-- [ ] 2.3.1 Add the implementation pins (the captured local, the move-out and alias use, the
+- [x] 2.3.1 Add the implementation pins (the captured local, the move-out and alias use, the
       unchanged non-mutating twin)
-- [ ] 2.3.2 Dispatch the three-lens review; apply corrections and bounded confirmation
-- [ ] 2.3.3 Record the phase
+- [x] 2.3.2 Dispatch the three-lens review; apply corrections and bounded confirmation
+- [x] 2.3.3 Record the phase
 
 ## Phase 3: Generic conditional duties
 
@@ -72,30 +72,30 @@
 
 ### Step 3.1: Red cases
 
-- [ ] 3.1.1 Write the red cases in `borrow_generic_integrity_spec_test.rs`: the generic conditional
+- [x] 3.1.1 Write the red cases in `borrow_generic_integrity_spec_test.rs`: the generic conditional
       return of a lend arm and the generic field-projection arm; assert the instance report and the
       duplicable-instance acceptance
-- [ ] 3.1.2 Confirm the baseline failure and commit the red cases
+- [x] 3.1.2 Confirm the baseline failure and commit the red cases
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Collect the type-parameter conditional arms for a return and record the per-instance
+- [x] 3.2.1 Collect the type-parameter conditional arms for a return and record the per-instance
       move duty (return and projection forms; the take path if missing)
-- [ ] 3.2.2 Run the focused suites and `make check`; commit the fix
+- [x] 3.2.2 Run the focused suites and `make check`; commit the fix
 
 ### Step 3.3: Pins and review
 
-- [ ] 3.3.1 Add the implementation pins (the duty, one report, the accepted duplicable instance,
+- [x] 3.3.1 Add the implementation pins (the duty, one report, the accepted duplicable instance,
       byte-identical concrete twins)
-- [ ] 3.3.2 Dispatch the three-lens review; apply corrections and bounded confirmation
-- [ ] 3.3.3 Record the phase
+- [x] 3.3.2 Dispatch the three-lens review; apply corrections and bounded confirmation
+- [x] 3.3.3 Record the phase
 
 ## Phase 4: Ruling, controls, and close-out
 
 > **Row**: `DEF-452` (minor)
 > **Lenses**: correctness, semantics
 
-- [ ] 4.1.1 Record the generated-owner ruling and add the green same-statement/later-fill control
+- [x] 4.1.1 Record the generated-owner ruling and add the green same-statement/later-fill control
 - [ ] 4.1.2 Run `make check`, `make verify`, the focused ASan legs, and the emission differentials
 - [ ] 4.1.3 Update the roadmap rows (`DEF-449`, `450`, `451`, `453`, `459`, `468`, `469` Done;
       `DEF-452` Done with the ruling), the ledger, and the plan status; push

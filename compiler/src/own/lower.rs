@@ -3881,11 +3881,11 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
 
     /// Captures a take argument's raw-deref pointer before the call runs.
     ///
-    /// A pure pointer expression is not stable across a call: the callee can
-    /// mutate a global index, a pointee field, or a pointer binding, so the
-    /// move-out and alias test must read the same pointer value the call read.
-    /// An existing compiler temporary or materialization already names that
-    /// value and is left alone.
+    /// A pointer expression that can change across a call is not stable: the
+    /// callee can mutate a global index, a pointee field, a module binding, or
+    /// a writable parameter, so the move-out and alias test must read the same
+    /// pointer value the call read. A bare by-value parameter, a bare local,
+    /// and an existing compiler temporary are stable and stay direct.
     fn capture_pointer_operand(&mut self, value: Value) -> Value {
         if !self.pointer_capture_needed(&value) {
             return value;
@@ -3895,12 +3895,11 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
 
     /// Defers an operand's evaluation to the path that reaches it.
     ///
-    /// A pure operand names a stable value, so reading it again cannot run a
-    /// side effect and no temporary is created. Every other operand fills a
-    /// temporary in the guard's expression; the construct that reads it names
-    /// the temporary. The pointer fill of a guarded raw-deref take travels
-    /// here, so the skipped path of `&&`/`||`/`?:` never evaluates the
-    /// pointer.
+    /// A bare local, by-value parameter, or existing temporary names a stable
+    /// value; every other operand fills a temporary in the guard's expression,
+    /// and the construct that reads it names the temporary. The pointer fill of
+    /// a guarded raw-deref take travels here, so the skipped path of
+    /// `&&`/`||`/`?:` never evaluates the pointer.
     fn defer_operand_fill(&mut self, value: Value) -> Value {
         if !self.pointer_capture_needed(&value) {
             return value;
