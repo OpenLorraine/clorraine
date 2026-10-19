@@ -307,23 +307,23 @@ is the destination loses the value), `DEF-467` (an out-slot borrow raw self-assi
 - No spec/registry edit; the frozen rules (Ch 04 §3/§5, Ch 17 §5) decide the phase.
 ## Phase 7 — Control resolution
 
-**Reviewed implementation**: none (fix-free). **Lenses**: correctness and memory-safety (AR-31).
+**Reviewed implementation**: none (fix-free; controls and pins only: `1b054b4`, `6c9c4f5`). **Lenses**: correctness and memory-safety (AR-31).
 
 ### Verdicts
 
-_(to be filled: the `DEF-427` view-length matrix and the `DEF-447` LSan matrix at the
-execution head; the filed byte probe's acceptance and sanitizer-cleanliness, with the exact
-`254`/`0` output in the implementation pin; green or reclassified per AR-35(d))_
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS — 0 blockers | The `DEF-427` double index is a `u8` (Ch 08 §4), so `len` of it is not the element length; the frozen view-length matrix (runtime/constant/owned/loop) is green; the filed probe is accepted and sanitizer-clean; the spec control does not assert its exit, and the impl pin records the `254`/`0` fallback with the future-ruling note. `DEF-447` and its nested/owned/grid/direct variants are LSan-clean; the inline literal binds at the function body's own scope and releases once. The three review minors (the body-scope anchor, the exact filed-function run, and the bounded ASan helper) are closed. No compiler/spec/registry edit. |
+| memory-safety | CONFIRMED — 0 findings | `d427p` is 254 plain and ASan with no sanitizer output; `d447a` and the variants are 0 and LSan-clean; a deliberate leak was detected, so the ASan leg is real. |
 
 ### Findings and rulings
 
-_(to be filled: the false-positive closure evidence, or the reclassification ruling; the
-scalar-`len` implementation pin is a current-output record, not a frozen rule)_
+- **`DEF-427` closes as a false positive.** The filed `len(w.items[i][0])` indexes a `str` twice: the second index yields a `u8`, and `len` of a byte is not the element length. The expected `2` belongs to `len(w.items[i])`, which is green in every matrix spelling. The scalar-`len` fold is current output, not a frozen rule; `DEF-483` files it, and a future fix needs a user ruling.
+- **`DEF-447` closes as a false positive.** The filed inline literal and every named variant are LSan-clean at the execution head; the body-scope binding is the mechanism the row described. No reproduction exists to fix.
 
 ### Filed rows
 
-_(to be filled: the two rows close as false positives; the scalar-`len` fold is filed as a residual
-row with no code; any new red shape becomes a filed row and re-enters the register)_
+`DEF-483` (the scalar-`len` fold for a `u8` argument; current `0` fallback, future fix needs a user ruling). `DEF-427` and `DEF-447` move to Done with the control/probe evidence.
 
 ## Close-out
 
