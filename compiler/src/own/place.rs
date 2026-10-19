@@ -578,6 +578,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 self.projected_type(id, &projections)
             };
+            // A member of a type-parameter place has an opaque projected type,
+            // but moving any part of the lend is still judged by the instance:
+            // the duty carries the root parameter type, which substitutes to
+            // the owning instance the concrete twin rejects.
+            let ty = if ty.is_unknown() && super::lower::mentions_type_param(&binding.ty) {
+                binding.ty.clone()
+            } else {
+                ty
+            };
             if ty.is_unknown() || !self.recorded_not_lend.insert((ir_name, span.start, span.end)) {
                 return;
             }

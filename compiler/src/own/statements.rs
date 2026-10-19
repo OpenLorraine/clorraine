@@ -1493,6 +1493,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     }
                 }
+                // A concrete owning return can still select a type-parameter
+                // arm (or a member of one); the instance audit judges that arm
+                // exactly as the concrete twin's lend move.
+                if !maybe_owning && matches!(value.kind, ExprKind::Conditional { .. }) {
+                    for source in self.type_param_conditional_sources(value) {
+                        self.mark_moved_if_owning(source, span);
+                    }
+                }
             }
         }
     }

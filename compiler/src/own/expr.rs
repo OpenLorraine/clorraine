@@ -96,11 +96,60 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let ty = self.ty(arm);
             // A type-parameter arm owns only at some instances, so the
             // per-instance audit decides: record the arm as a maybe-owning
-            // source instead of dropping it at the definition.
-            if !self.maybe_owns(&ty) && !super::lower::mentions_type_param(&ty) {
+            // source instead of dropping it at the definition. A projected
+            // member of a type-parameter place has an opaque member type, so
+            // the root's declaration decides.
+            let parameter_root = self.place_target(arm).is_some_and(|target| match target {
+                PlaceTarget::Local(id, _) => {
+                    super::lower::mentions_type_param(&self.bindings[id].ty)
+                }
+                PlaceTarget::Global(_, _) => false,
+            });
+            if !self.maybe_owns(&ty)
+                && !super::lower::mentions_type_param(&ty)
+                && !parameter_root
+            {
                 continue;
             }
             if let Some(target) = self.place_target(arm) {
+                sources.push(target);
+            }
+        }
+        sources
+    }
+
+    /// The conditional arms whose type or root declaration mentions a type
+    /// parameter.
+    ///
+    /// A concrete owned arm is judged at the definition; these arms are the
+    /// ones an instance must resolve. The walk mirrors
+    /// [`Self::maybe_owning_move_sources`] and keeps a projected member of a
+    /// type-parameter place.
+    pub(super) fn type_param_conditional_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                sources.extend(self.type_param_conditional_sources(arm));
+                continue;
+            }
+            let Some(target) = self.place_target(arm) else {
+                continue;
+            };
+            let root_param = match &target {
+                PlaceTarget::Local(id, _) => {
+                    super::lower::mentions_type_param(&self.bindings[*id].ty)
+                }
+                PlaceTarget::Global(_, _) => false,
+            };
+            if root_param || super::lower::mentions_type_param(&self.ty(arm)) {
                 sources.push(target);
             }
         }

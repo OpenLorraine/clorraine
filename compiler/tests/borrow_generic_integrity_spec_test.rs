@@ -1575,3 +1575,81 @@ func main(): i32 {
         "generic-outslot: a rejected program must not produce a translation unit"
     );
 }
+
+// ---------------------------------------------------------------------------
+// genericcondlend: a generic conditional return/projection of a lend arm is
+// judged per instance, exactly as the concrete twin.
+// ---------------------------------------------------------------------------
+
+/// A generic conditional return and a projected field report `E10034`.
+///
+/// `genericreturn` returns `c ? h : null`; `genericfield` copies
+/// `c ? h.name : null` into an owned local. At `T = String`/`T = H` the
+/// concrete twins report `E10034` at the return and the local store, so each
+/// generic body records the duty once.
+#[test]
+fn should_reject_a_generic_conditional_return_of_a_lend_arm() {
+    let generic_return = r#"module spec.bgi.genericreturn;
+
+import { String, stringOf } from std.text;
+
+func f<T>(c: bool, h: T): String? { return c ? h : null; }
+
+func use(): i32 {
+    let s: String = stringOf("aa");
+    let r: String? = f<String>(true, s);
+    if (r == null) { return 9; }
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "genericreturn",
+        generic_return,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let generic_field = r#"module spec.bgi.genericfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func g<T>(c: bool, h: T): String? {
+    let r: String? = c ? h.name : null;
+    return r;
+}
+
+func use(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    let r: String? = g<H>(true, h);
+    if (r == null) { return 9; }
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    assert_rejected_once(
+        "genericfield",
+        generic_field,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    // The duplicable instance copies instead of moving, so it stays accepted.
+    let duplicable = r#"module spec.bgi.genericdup;
+
+func f<T>(c: bool, h: T): raw u8? { return c ? h : null; }
+
+func main(): i32 {
+    let r: raw u8? = f<raw u8>(true, raw u8(1));
+    if (r == null) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("genericdup", duplicable);
+    assert_no_asan("genericdup", &output);
+    assert_exit("genericdup", &output, 0);
+}
