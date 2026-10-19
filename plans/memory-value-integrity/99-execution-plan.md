@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 42/62 tasks (68%) — Phase 5 complete
+> **Progress**: 50/62 tasks (81%) — Phase 6 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -421,7 +421,7 @@ duplicable generic whole move, the concrete twin, and the generic division guard
 
 ## Phase 6: Literal destinations and conditional arrays
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `a88e3dd`
 > **Rows**: `DEF-445` (major), `DEF-446` (major), `DEF-448` (major)
 > **Lenses**: all four (AR-31; the literal store form is emission and ordering)
 > **Reasoning**: high — the predicates and the guarded/conditional store form decide whether the
@@ -435,39 +435,39 @@ ST-18..ST-20 · AR-24, AR-25, AR-26
 **Objective**: Pin the conditional-of-literals read base (and nested field/element), the
 ternary-arm take literal, and the conditional array literal of places, with their controls.
 
-- [ ] 6.1.1 [spec-author] Write the phase cases (conditionalliteralread, ternarytakeliteral,
+- [x] 6.1.1 [spec-author] Write the phase cases (conditionalliteralread, ternarytakeliteral,
       conditionalarraytake) with the mixed place/literal read base, the brace-list, `if`-condition,
       `String[2]`/`Box[2]`, and unconditional controls; the red cases committed first
-- [ ] 6.1.2 Run the suite and record the red phase (the strict C failures); verify the controls
+- [x] 6.1.2 Run the suite and record the red phase (the strict C failures); verify the controls
       green first
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Recurse into conditional arms in the literal read/store predicates with the OR rule
+- [x] 6.2.1 Recurse into conditional arms in the literal read/store predicates with the OR rule
       (`own/lower.rs:4839`; only `literal_read_needs_stores` returns false for a `Conditional` at
       its own level) and name `struct_literal_needs_stores` in the codegen fix
       (`codegen/function.rs:2071`); route the ternary-arm literal through the guarded literal store
       (`own/lower.rs:5238-5270`, `:1726`); route the conditional array literal of places through
       the element-wise store form (`codegen/function.rs:1723`, the conditional value lowering)
-- [ ] 6.2.2 Run the suite to green; on any failure STOP and fix (or park per AR-33); run
+- [x] 6.2.2 Run the suite to green; on any failure STOP and fix (or park per AR-33); run
       `make check`
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the bound destination array, the call-with-
+- [x] 6.3.1 Write the phase implementation pins (the bound destination array, the call-with-
       destination form, the per-arm store, the call counter, the trailing-owner release, and a
       re-emission determinism pin)
-- [ ] 6.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
+- [x] 6.3.2 Phase review — dispatch all four lenses; apply the corrections; run the ASan/LSan
       probes, the strict builds, the hosted-amiga compile-only leg, and the base/head
       differential. The packet includes the blast-radius step (every literal predicate caller, the
       unguarded codegen read path, the take argument carrier, the conditional fixed-array assign)
       and the test-integrity step
-- [ ] 6.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
+- [x] 6.3.3 Bounded confirmation: re-run the phase probes and the focused suite; record the
       rounds
 
 ### Step 6.4: Phase Record
 
-- [ ] 6.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
+- [x] 6.4.1 Phase record: append to `05-findings.md`; update Progress; commit per the active
       commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the strict builds; the
@@ -475,8 +475,8 @@ hosted-amiga compile leg; the freestanding compile-only leg for the eligible sca
 per-case `E11200` reasons; the emission differential
 
 **Deliverables**:
-- [ ] ST-18..ST-20 red then green; the brace-list and `if`-condition controls stay green
-- [ ] The phase-7 and batch-M literal controls stay green
+- [x] ST-18..ST-20 red then green; the brace-list and `if`-condition controls stay green
+- [x] The phase-7 and batch-M literal controls stay green
 
 ---
 

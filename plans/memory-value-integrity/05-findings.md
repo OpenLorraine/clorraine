@@ -266,21 +266,45 @@ is the destination loses the value), `DEF-467` (an out-slot borrow raw self-assi
 - The view effect remains ahead of the deferred effect, so a view target records its loans rather than an owning move.
 ## Phase 6 — Literal destinations and conditional arrays
 
-**Reviewed implementation**: _(recorded at review time)_. **Lenses**: all four (AR-31).
+**Reviewed implementation**: `9a44220` (the predicate recursion, the fixed-array take route, and the guard-store arm), `9a1c0b2` (the pins), `020fd4c` (the owned-field gate, the guarded take deferral, and the source order), `589bb0d` (the read-base storage-arm key), and `61c1572` (the fresh-root projection guard). **Lenses**: all four (AR-31).
 
 ### Verdicts
 
-_(to be filled; the destination form, call counts, per-arm stores, and byte-identity controls are
-recorded here)_
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 in-diff blockers after correction | RV-001 (the owned conditional field used the copy form and double-freed) closed; RV-002 (the read base moved a place arm) closed by the storage-arm key; RV-003 (the guarded take filled eagerly) closed; RV-004/RV-005 and the nested/shape gaps are base-red residuals; RV-006 closed; RV-007 closed by this record |
+| semantics | PASS — 0 in-diff blockers after correction | SR-001 (the owned mixed read base moved the place) closed; SR-002 (the guarded conditional array filled before the guard) closed; SR-003 (the expression-form field order) closed, also fixing the pre-existing PRE-1 order/use; the owned all-literal read base stays green |
+| memory-safety | CONFIRMED — 0 in-diff after correction | The owned conditional-field double free/UAF, the read-base place move, and the fresh-root projection leak are closed; no base-clean → head-red leak/double-free/UAF; the pre-existing call-arm leaks and the base-red no-TU shapes are filed |
+| emission-integrity | CONFIRMED — 0 in-diff after correction | The hidden destinations are bound, no brace-list value survives, the guarded fill is inside the evaluated arm, the source order matches Ch 04 §3, the strict matrix has no new C failure, re-emission is byte-identical, and both profiles build |
 
-### Findings and rulings
+### Fix rounds
 
-_(to be filled)_
+| Round | Commits | Outcome |
+|-------|---------|---------|
+| I1 | `9a44220`, `9a1c0b2` | The literal-read recursion and read-base materialization; the fixed-array conditional take temp; the guard-store arm; the pins |
+| C1 | `020fd4c` | The owned-field gate; the guarded take deferral; the source-order field loop; the read-base restriction |
+| C2 | `589bb0d` | The read-base skip keyed on a caller-storage arm, restoring the owned all-literal base |
+| C3 | `61c1572` | An owning fresh-root projection keeps the projection form, so the root's unselected fields are not lost |
+
+### Confirmations
+
+| Round | Result |
+|-------|--------|
+| B1 (on `9a1c0b2`) | **NOT CONFIRMED**: the owned conditional field double-freed, the owned mixed read base moved the place, the guarded take filled eagerly, and the expression-form order was declaration order |
+| B2 (on `020fd4c`) | **NOT CONFIRMED**: the owned all-literal read base regressed to a C failure; the mixed-place read-base fix was over-broad |
+| B3 (on `589bb0d`/`61c1572`) | **CONFIRMED**: all named rows and the owned/guarded/order cases are green; the fresh-root projection no longer leaks; the remaining shapes are base-red or base-equal and filed |
 
 ### Filed rows
 
-_(to be filled)_
+`DEF-475` (owned mixed conditional read base), `DEF-476` (guarded duplicable conditional read base), `DEF-477` (nested conditional arms), `DEF-478` (duplicable struct conditional take in a guard), `DEF-479` (guarded nested-literal field order), `DEF-480` (owning fresh-root projection read base), `DEF-481` (call-arm read-base leaks), `DEF-482` (all-fresh guarded read base with mixed call/literal arms).
 
+### Record notes
+
+- The guarded literal forms are deferred on the evaluated path, so a skipped outer arm never runs the arm's calls. The expression-form field store follows the written field order; the statement form already did.
+- The read-base rule is: materialize a conditional when every arm is fresh (a literal or call); a caller-storage arm keeps the projection form, and a projection of a fresh owning root also keeps it. The owned mixed and fresh-projection shapes are base-red C failures (no memory defect).
+- The owned conditional field keeps the save/move/`cl_zero` route; only a non-owning field uses the per-arm copy.
+- The `struct_assign_expr` source-order fix closes the pre-existing PRE-1 move-before-borrow SEGV.
+- No spec/registry edit; the frozen rules (Ch 04 §3/§5, Ch 17 §5) decide the phase.
 ## Phase 7 — Control resolution
 
 **Reviewed implementation**: none (fix-free). **Lenses**: correctness and memory-safety (AR-31).
