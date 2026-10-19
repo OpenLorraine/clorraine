@@ -2301,3 +2301,27 @@ func main(): i32 {
         "pin-composite-take: expected one report; stderr:\n{stderr}"
     );
 }
+
+/// The static call-mediated view control re-emits byte-identically and runs.
+#[test]
+fn should_preserve_the_accepted_call_view_control() {
+    let source = r#"module impl.eei.callstaticimpl;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func use(): i32 {
+    let s: str = pick(["AA", "BB"], 0);
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let (first, second) = emit_twice("callstaticimpl", source);
+    assert_eq!(
+        first, second,
+        "callstaticimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("callstaticimpl", source, 0);
+}

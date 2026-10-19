@@ -546,3 +546,63 @@ func main(): i32 {
     );
     assert_eq!(first, second, "the two emissions must be byte-identical");
 }
+
+/// The conditional carrier copy's loan write reports once in every form.
+///
+/// The both-place, mixed place/literal, and assignment forms each report the
+/// concrete twin's `E10031`; the accepted control (the same copy without the
+/// later write) emits a stable translation unit.
+#[test]
+fn should_report_one_write_through_a_conditional_carrier_loan() {
+    let both = r#"module impl.bsi.ccboth;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    let h2: Holder = c ? h1 : h3;
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected("ccimplboth", both, &["E10031"]);
+
+    let mixed = both
+        .replace("ccboth", "ccimplmixed")
+        .replace("c ? h1 : h3", "c ? h1 : Holder { names: [\"CC\", \"DD\"] }");
+    assert_rejected("ccimplmixed", &mixed, &["E10031"]);
+
+    let accepted = r#"module impl.bsi.ccaccepted;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    let h2: Holder = c ? h1 : h3;
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    let (first, second) = emit_twice("ccimplaccepted", accepted);
+    assert_eq!(
+        first, second,
+        "ccimplaccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
