@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-18
-> **Progress**: 50/62 tasks (81%) — Phase 6 complete
+> **Progress**: 58/62 tasks (94%) — Phase 7 complete
 > **Planning baseline**: `f6da78f` (the batch-M close-out commit); the preflight audits ran on
 > `100180c` (the plan commit; compiler sources unchanged)
 > **CodeOps Artifact Schema**: 1
@@ -482,7 +482,7 @@ per-case `E11200` reasons; the emission differential
 
 ## Phase 7: Control resolution (`DEF-427`, `DEF-447`)
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `796fcf5`
 > **Rows**: `DEF-427` (major, false positive), `DEF-447` (major, false positive)
 > **Lenses**: correctness + memory-safety (AR-31; no code change)
 > **Reasoning**: medium — the closure is evidence-based; a wrong closure hides a defect, and a
@@ -495,49 +495,49 @@ ST-21..ST-22 · AR-27, AR-28
 **Objective**: Pin the view-length matrix and the inline read-base literal as green controls, and
 record the false-positive probe evidence.
 
-- [ ] 7.1.1 [spec-author] Write the controls: `viewlengthcontrol` in
+- [x] 7.1.1 [spec-author] Write the controls: `viewlengthcontrol` in
       `array_value_integrity_spec_test.rs` (the frozen view-length matrix; the filed byte probe as
       an accepted, sanitizer-clean run, without asserting its exit value) and `inlineownedliteral`
       in `conditional_projection_residue_spec_test.rs` (the filed shape and its variants); both
       controls are green at the head. Add the array-value suite's `run_memory` helper so the ASan
       leg is real
-- [ ] 7.1.2 Run the controls and record the green baseline; re-run the adversarial probes
+- [x] 7.1.2 Run the controls and record the green baseline; re-run the adversarial probes
       (`d427p`, the `DEF-447` variants) and confirm the false-positive evidence at the execution
       head
 
 ### Step 7.2: Closure Ruling
 
-- [ ] 7.2.1 Record the control-resolution ruling: both rows close as false positives with the
+- [x] 7.2.1 Record the control-resolution ruling: both rows close as false positives with the
       probe evidence; no compiler, spec, or registry edit; update the roadmap status
       **provisionally** until the close-out accounting (8.1.2) recomputes the batch
-- [ ] 7.2.2 Run `make check` and the focused suites to confirm the controls and no regression
+- [x] 7.2.2 Run `make check` and the focused suites to confirm the controls and no regression
 
 ### Step 7.3: Impl Pins & Review
 
-- [ ] 7.3.1 Write the control implementation pins: the view matrix's emitted `.len` and the
+- [x] 7.3.1 Write the control implementation pins: the view matrix's emitted `.len` and the
       **scalar-`len` fallback** (`len(u8) == 0`, with the filed probe's exact `254` run) as a
       current-output record, plus the body-scope literal binding / no leak for `DEF-447`, in the
       two `_impl_test.rs` files; note that a future scalar-`len` fix needs a user ruling
-- [ ] 7.3.2 Phase review — dispatch correctness and memory-safety over the closure evidence;
+- [x] 7.3.2 Phase review — dispatch correctness and memory-safety over the closure evidence;
       confirm the probe record and the control expectations; reclassify to a fix if a red shape
       appears (AR-35(d))
-- [ ] 7.3.3 Bounded confirmation: re-run the controls and the closure probes after the review;
+- [x] 7.3.3 Bounded confirmation: re-run the controls and the closure probes after the review;
       record the rounds
 
 ### Step 7.4: Phase Record
 
-- [ ] 7.4.1 Phase record: append the closure evidence and the filed-row outcome to
+- [x] 7.4.1 Phase record: append the closure evidence and the filed-row outcome to
       `05-findings.md`; update Progress; commit per the active commit mode
 
 **Verify**: `make check`; the array-value and residue suites plain and `RDC_ASAN=1`; the strict
 builds
 
 **Deliverables**:
-- [ ] ST-21..ST-22 green; the false-positive evidence recorded; the filed byte probe accepted and
+- [x] ST-21..ST-22 green; the false-positive evidence recorded; the filed byte probe accepted and
       sanitizer-clean (exact output in the impl pin)
-- [ ] The scalar-`len` fold filed as a residual row (no code); a future scalar-`len` fix needs a
+- [x] The scalar-`len` fold filed as a residual row (no code); a future scalar-`len` fix needs a
       user ruling
-- [ ] No code change; a red execution-head shape reclassifies the row instead of closing it
+- [x] No code change; a red execution-head shape reclassifies the row instead of closing it
 
 ---
 
