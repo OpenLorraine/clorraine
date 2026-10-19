@@ -21284,3 +21284,91 @@ func main(): i32 {
     assert_no_asan("p448owned", &output);
     assert_exit("p448owned", &output, 0);
 }
+
+/// An owned conditional field and a guarded conditional take keep their order.
+///
+/// `p445ownedfield` selects each arm of an owned field with a fixed-array row
+/// and a trailing tag: the place arm moves into the field and the literal arm
+/// stores its row through the hidden destination. `p446order` writes `inner`
+/// before `tag` even though `tag` is declared first. `p448guard` fills the
+/// conditional array only on the evaluated outer arm.
+#[test]
+fn should_keep_the_owned_literal_field_and_guarded_take_safe() {
+    let owned_field = r#"module spec.cpr.p445ownedfield;
+
+import { String, stringOf } from std.text;
+
+struct Inner { row: str[2]; tag: String; }
+struct Outer { inner: Inner; }
+
+func use(ok: bool): i32 {
+    let existing: Inner = Inner { row: ["CC", "DD"], tag: stringOf("yy") };
+    let o: Outer = Outer { inner: ok ? Inner { row: ["AA", "BB"], tag: stringOf("xx") } : existing };
+    return i32(len(o.inner.tag)) - 2;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("p445ownedfield", owned_field);
+    assert_no_asan("p445ownedfield", &output);
+    assert_exit("p445ownedfield", &output, 0);
+
+    let order = r#"module spec.cpr.p446order;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { tag: String; inner: Inner; }
+
+let order: i32 = 0;
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; order = order * 10 + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; order = order * 10 + 2; return ["CC", "DD"]; }
+func tagOf(): String { order = order * 10 + 2; return stringOf("x"); }
+
+func consumeO(take o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consumeO(ok ? Outer { inner: Inner { names: n1() }, tag: tagOf() }
+                                : Outer { inner: Inner { names: n2() }, tag: tagOf() })
+                   : 0;
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    return (a - 65) + (order - 12) * 10 + (calls - 1) * 100;
+}
+"#;
+    let output = run_memory("p446order", order);
+    assert_no_asan("p446order", &output);
+    assert_exit("p446order", &output, 0);
+
+    let guarded = r#"module spec.cpr.p448guard;
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(take xs: str[2]): i32 { return i32(xs[0][0]) - 65; }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consume(take (ok ? n1() : n2())) : 0;
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(false, true);
+    let c: i32 = use(true, false);
+    return (a - 0) + b + (c - 2) + calls - 2;
+}
+"#;
+    let output = run_memory("p448guard", guarded);
+    assert_no_asan("p448guard", &output);
+    assert_exit("p448guard", &output, 0);
+}

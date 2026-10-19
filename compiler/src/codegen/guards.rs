@@ -1049,20 +1049,12 @@ impl<'a> Emitter<'a> {
             return None;
         }
         let mut parts: Vec<String> = Vec::new();
-        for (field, _) in &declared {
+        // The literal's fields evaluate in source order (Ch 04 §3), so the
+        // stores follow the written order, not the declaration order. Omitted
+        // fields are zeroed afterwards; zeroing has no side effects.
+        for (field, value) in fields {
             let field_ty = self.field_type(ty, field);
             let sub = format!("{target_c}.{field}");
-            let Some((_, value)) = fields.iter().find(|(written, _)| written == field) else {
-                // C cannot assign an array, so an omitted fixed-array field is
-                // zeroed through its address; every other omitted field takes
-                // its empty state as a store.
-                if field_ty.is_fixed_array() {
-                    parts.push(format!("cl_zero(&{sub})"));
-                } else {
-                    parts.push(format!("{sub} = {}", self.empty_state(&field_ty)));
-                }
-                continue;
-            };
             if field_ty.is_fixed_array() {
                 if let ValueKind::ArrayLit { elements, fill } = &value.kind {
                     if let Some(stored) = self.array_assign_expr(&sub, &field_ty, elements, fill) {
@@ -1131,6 +1123,21 @@ impl<'a> Emitter<'a> {
             } else {
                 format!("(({}), {})", guards.join(", "), store)
             });
+        }
+        for (field, _) in &declared {
+            if fields.iter().any(|(written, _)| written == field) {
+                continue;
+            }
+            let field_ty = self.field_type(ty, field);
+            let sub = format!("{target_c}.{field}");
+            // C cannot assign an array, so an omitted fixed-array field is
+            // zeroed through its address; every other omitted field takes its
+            // empty state as a store.
+            if field_ty.is_fixed_array() {
+                parts.push(format!("cl_zero(&{sub})"));
+            } else {
+                parts.push(format!("{sub} = {}", self.empty_state(&field_ty)));
+            }
         }
         Some(parts.join(", "))
     }

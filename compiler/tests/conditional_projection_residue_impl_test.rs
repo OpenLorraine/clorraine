@@ -14081,3 +14081,136 @@ func main(): i32 {
         "p448condimpl: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// An owned conditional field saves and moves, and a guarded take fills late.
+///
+/// `p445ownedfield` saves the field, moves the place arm with `cl_zero` and
+/// releases the save. `p446order` stores `inner` before `tag`. `p448guard`
+/// fills the conditional array inside the evaluated ternary arm.
+#[test]
+fn should_keep_the_owned_conditional_field_and_guarded_take_shapes() {
+    let tag = "p445ownedfieldimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p445ownedfieldimpl;
+
+import { String, stringOf } from std.text;
+
+struct Inner { row: str[2]; tag: String; }
+struct Outer { inner: Inner; }
+
+func use(ok: bool): i32 {
+    let existing: Inner = Inner { row: ["CC", "DD"], tag: stringOf("yy") };
+    let o: Outer = Outer { inner: ok ? Inner { row: ["AA", "BB"], tag: stringOf("xx") } : existing };
+    return i32(len(o.inner.tag)) - 2;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p445ownedfieldimpl_use(bool ok)\n{",
+    );
+    assert_contains(tag, body, "ClInner __cl_save_1 = o.inner;");
+    assert_contains(tag, body, "ClInner __cl_arm_1 = {0};");
+    assert_contains(tag, body, "o.inner = __cl_arm_1;");
+    assert_contains(tag, body, "o.inner = existing;");
+    assert_contains(tag, body, "cl_zero(&existing);");
+    assert_contains(tag, body, "if (__cl_save_1.tag) { FreeString(__cl_save_1.tag); }");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the field must run");
+
+    let tag = "p446orderimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p446orderimpl;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; }
+struct Outer { tag: String; inner: Inner; }
+
+let order: i32 = 0;
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; order = order * 10 + 1; return ["AA", "BB"]; }
+func tagOf(): String { order = order * 10 + 2; return stringOf("x"); }
+
+func consumeO(take o: Outer): i32 { return i32(o.inner.names[0][0]); }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consumeO(Outer { inner: Inner { names: n1() }, tag: tagOf() }) : 0;
+    return x;
+}
+
+func main(): i32 {
+    return use(true, true) - 65 + (order - 12) * 10;
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p446orderimpl_use(bool g, bool ok)\n{",
+    );
+    let inner = body
+        .find("cl_spec_cprimpl_p446orderimpl_n1(__cl_tmp0.inner.names)")
+        .unwrap_or_else(|| panic!("{tag}: the inner call is missing; body:\n{body}"));
+    let tag_store = body
+        .find("__cl_tmp0.tag = cl_spec_cprimpl_p446orderimpl_tagOf(),")
+        .unwrap_or_else(|| panic!("{tag}: the tag store is missing; body:\n{body}"));
+    assert!(
+        inner < tag_store,
+        "{tag}: the source order must store inner before tag; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the order must match");
+
+    let tag = "p448guardimpl";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.cprimpl.p448guardimpl;
+
+let calls: i32 = 0;
+
+func n1(): str[2] { calls = calls + 1; return ["AA", "BB"]; }
+func n2(): str[2] { calls = calls + 1; return ["CC", "DD"]; }
+
+func consume(take xs: str[2]): i32 { return i32(xs[0][0]) - 65; }
+
+func use(g: bool, ok: bool): i32 {
+    let x: i32 = g ? consume(take (ok ? n1() : n2())) : 0;
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(false, true);
+    let c: i32 = use(true, false);
+    return (a - 0) + b + (c - 2) + calls - 2;
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_p448guardimpl_use(bool g, bool ok)\n{",
+    );
+    assert_contains(tag, body, "x = (g ? (");
+    assert_contains(tag, body, "cl_spec_cprimpl_p448guardimpl_n1(__cl_tmp0)");
+    assert_contains(tag, body, "cl_spec_cprimpl_p448guardimpl_n2(__cl_tmp0)");
+    assert_contains(tag, body, "cl_spec_cprimpl_p448guardimpl_consume(__cl_tmp0)");
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p448guardimpl_n1(").count(),
+        1,
+        "{tag}: n1 must appear once in the evaluated path; body:\n{body}"
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p448guardimpl_n2(").count(),
+        1,
+        "{tag}: n2 must appear once in the evaluated path; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the guarded take must run");
+}

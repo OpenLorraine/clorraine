@@ -2235,21 +2235,26 @@ impl<'a> Emitter<'a> {
                     continue;
                 }
             }
-            if let ValueKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } = &field.kind
-            {
-                if self.conditional_struct_needs_stores(&field_ty, then_value, else_value) {
-                    self.emit_struct_conditional_assign(
-                        &field_c,
-                        &field_ty,
-                        condition,
-                        then_value,
-                        else_value,
-                    );
-                    continue;
+            // The per-arm copy form below owns nothing: a place arm would be
+            // copied while its source still owns the value. An owning field
+            // keeps the save/move branch further down.
+            if !self.needs_drop(&field_ty) {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &field.kind
+                {
+                    if self.conditional_struct_needs_stores(&field_ty, then_value, else_value) {
+                        self.emit_struct_conditional_assign(
+                            &field_c,
+                            &field_ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
+                        continue;
+                    }
                 }
             }
             if self.needs_drop(&field_ty) {

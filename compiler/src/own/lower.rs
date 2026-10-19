@@ -2429,7 +2429,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let deferred = self.defer_move_outs > 0
             && match &value.kind {
                 ValueKind::Conditional { .. } => {
-                    !self.sema.table.duplicable(&value.ty) || value.ty.is_unknown()
+                    value.ty.is_fixed_array()
+                        || !self.sema.table.duplicable(&value.ty)
+                        || value.ty.is_unknown()
                 }
                 ValueKind::ArrayLit { .. }
                 | ValueKind::Call { .. }
@@ -3575,6 +3577,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             value.kind,
             ValueKind::StructLit { .. } | ValueKind::Conditional { .. }
         ) || !self.literal_read_needs_stores(&value)
+        {
+            return value;
+        }
+        // A projection of a conditional is a read. Materializing an owning
+        // conditional would move the chosen place arm out of caller storage,
+        // so only a copy type takes this path; an owning mixed base stays a
+        // projection of the conditional (and its unbound literal destination
+        // remains a separately filed residual).
+        if matches!(value.kind, ValueKind::Conditional { .. })
+            && !self.sema.table.duplicable(&value.ty)
         {
             return value;
         }
@@ -5374,14 +5386,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 value
             };
             // A `take` argument must reach the callee with a C place. A value
-            // that has none — a fixed-array literal, a by-value fixed-array
-            // call, or a struct literal whose field is a fixed array — is
-            // stored into an argument temporary. A conditional fixed-array
-            // value keeps its array-decay spelling, which is already a C
-            // expression.
-            // A fixed-array conditional keeps its array-decay spelling, which
-            // is already a C expression; every other place-less value is
-            // stored into an argument temporary first.
+            // that has none — a fixed-array literal, a fixed-array
+            // conditional, a by-value fixed-array call, or a struct literal
+            // whose field is a fixed array — is stored into an argument
+            // temporary. A guarded operand defers that fill to the evaluated
+            // path, so the conditional's calls run only when the operand does.
             if self.value_needs_place(&value) && !value.ty.is_unknown() {
                 return self.materialize_take_place(value);
             }
