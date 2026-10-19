@@ -167,8 +167,12 @@ pub struct RequiresNotLend {
     pub function: String,
     /// The lend parameter's source name, for the diagnostic text.
     pub parameter: String,
-    /// The moved value's declared type, substituted per instance by the audit.
+    /// The moved value's declared root type, substituted per instance by the
+    /// audit.
     pub ty: Ty,
+    /// The projection from the root to the moved value, applied after the
+    /// substitution so a duplicable member of an owning lend stays a copy.
+    pub projections: Vec<super::Projection>,
     /// True when the moved source is a writable lend (`borrow`) parameter.
     ///
     /// Only a writable lend can be the `borrow T?` out-parameter slot that

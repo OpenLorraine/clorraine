@@ -3834,6 +3834,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+/// True when a raw-deref take's pointer operand can change across the call.
+///
+/// A bare place, an address-of, and a literal are stable values the callee
+/// cannot redirect without naming the same binding; an index, a member, a
+/// call, a cast, or a compound expression can select a different pointee after
+/// a callee mutates an index, a field, or a pointer. The capture binds that
+/// expression before the call so the move-out and alias test read one value.
+fn pointer_capture_needed(&self, value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Index { .. }
+        | ValueKind::Member { .. }
+        | ValueKind::Call { .. }
+        | ValueKind::ClosureCall { .. }
+        | ValueKind::Binary { .. }
+        | ValueKind::Cast { .. }
+        | ValueKind::Conditional { .. } => true,
+        ValueKind::Unary { op, operand } => {
+            op.is_update()
+                || matches!(op, UnaryOp::Deref)
+                || (matches!(op, UnaryOp::AddressOf) && self.pointer_capture_needed(operand))
+        }
+        // A direct member lowers to a place with projections; a module global,
+        // a writable parameter, or an aliased element can be redirected by the
+        // callee. A bare by-value parameter and a local are stable copies.
+        ValueKind::Place(place) => {
+            !place.projections.is_empty()
+                || matches!(
+                    place.base,
+                    ir::PlaceBase::Global(_)
+                        | ir::PlaceBase::EnvField { .. }
+                        | ir::PlaceBase::DerefTemp { .. }
+                )
+                || match &place.base {
+                    ir::PlaceBase::Param(name) => self
+                        .bindings
+                        .iter()
+                        .find(|binding| binding.ir_name == *name)
+                        .is_some_and(|binding| binding.mode == Mode::Borrow),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
+
     /// Captures a take argument's raw-deref pointer before the call runs.
     ///
     /// A pure pointer expression is not stable across a call: the callee can
@@ -3842,7 +3887,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// An existing compiler temporary or materialization already names that
     /// value and is left alone.
     fn capture_pointer_operand(&mut self, value: Value) -> Value {
-        if !pointer_capture_needed(&value) {
+        if !self.pointer_capture_needed(&value) {
             return value;
         }
         self.materialize_value(value)
@@ -3857,7 +3902,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// here, so the skipped path of `&&`/`||`/`?:` never evaluates the
     /// pointer.
     fn defer_operand_fill(&mut self, value: Value) -> Value {
-        if !pointer_capture_needed(&value) {
+        if !self.pointer_capture_needed(&value) {
             return value;
         }
         let ty = self.materialized_ty(&value);
@@ -5747,25 +5792,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 }
 
-/// True when a raw-deref take's pointer operand can change across the call.
-///
-/// A bare place, an address-of, and a literal are stable values the callee
-/// cannot redirect without naming the same binding; an index, a member, a
-/// call, a cast, or a compound expression can select a different pointee after
-/// a callee mutates an index, a field, or a pointer. The capture binds that
-/// expression before the call so the move-out and alias test read one value.
-fn pointer_capture_needed(value: &Value) -> bool {
-    match &value.kind {
-        ValueKind::Index { .. }
-        | ValueKind::Member { .. }
-        | ValueKind::Call { .. }
-        | ValueKind::ClosureCall { .. }
-        | ValueKind::Binary { .. }
-        | ValueKind::Cast { .. } => true,
-        ValueKind::Unary { op, .. } => op.is_update() || matches!(op, UnaryOp::Deref),
-        _ => false,
-    }
-}
 
 /// True when a type mentions a generic type parameter anywhere.
 ///

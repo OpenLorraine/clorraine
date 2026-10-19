@@ -1638,18 +1638,47 @@ func main(): i32 { return use(); }
         &["cannot release or store borrowed parameter 'h'"],
     );
 
-    // The duplicable instance copies instead of moving, so it stays accepted.
-    let duplicable = r#"module spec.bgi.genericdup;
+    // A duplicable member of an owning lend is a copy; only the selected
+    // member's duplicability is judged.
+    let duplicable_member = r#"module spec.bgi.genericdupfield;
 
-func f<T>(c: bool, h: T): raw u8? { return c ? h : null; }
+import { String, stringOf } from std.text;
+
+struct H { name: i32; tag: String; }
+
+func g<T, U>(c: bool, h: T, d: U): U { return c ? h.name : d; }
 
 func main(): i32 {
-    let r: raw u8? = f<raw u8>(true, raw u8(1));
-    if (r == null) { return 9; }
-    return 0;
+    let h: H = H { name: 1, tag: stringOf("x") };
+    let r: i32 = g<H, i32>(true, h, 2);
+    return r - 1;
 }
 "#;
-    let output = run_memory("genericdup", duplicable);
-    assert_no_asan("genericdup", &output);
-    assert_exit("genericdup", &output, 0);
+    let output = run_memory("genericdupfield", duplicable_member);
+    assert_no_asan("genericdupfield", &output);
+    assert_exit("genericdupfield", &output, 0);
+
+    // The element of a view is an owned String at the instance, so the generic
+    // body reports the concrete twin's E10034.
+    let view_element = r#"module spec.bgi.genericvielelem;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func f<T>(c: bool, xs: T, i: i32): String? { return c ? xs[i] : null; }
+
+func main(): i32 {
+    let fixed: String[1] = [stringOf("aa")];
+    let xs: String[] = slice(fixed, 0, 1);
+    let r: String? = f<String[]>(true, xs, 0);
+    if (r == null) { return 9; }
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "genericvielelem",
+        view_element,
+        "E10034",
+        &["cannot release or store borrowed parameter 'xs'"],
+    );
 }

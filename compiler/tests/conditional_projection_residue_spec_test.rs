@@ -21546,3 +21546,152 @@ func main(): i32 {
     assert_no_asan("pureptrindex", &output);
     assert_exit("pureptrindex", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// generatedownerread: a generated owner is a compiler binding, not a `__cl_tmp`
+// source temporary, so a same-scope read of its view stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A next-statement read of a generated owner's view runs clean.
+///
+/// Ch 03 D5 governs source temporaries (`__cl_tmp<N>`). The generated owner
+/// (`__cl_owned<N>`) is the binding that holds the value captured by `ys`, so
+/// it lives in the binding's frame; the next-statement length read is a use of
+/// that binding, not of a dropped temporary.
+#[test]
+fn should_accept_a_next_statement_read_of_a_generated_owner() {
+    let source = r#"module spec.cpr.genownerread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+
+func use(): i32 {
+    let ys: str[2] = [mk().v, "EE"];
+    return i32(len(ys[0])) - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("genownerread", source);
+    assert_no_asan("genownerread", &output);
+    assert_exit("genownerread", &output, 0);
+}
+
+/// A conditional, member, or global pointer is captured before a take call.
+///
+/// The callee flips the condition, mutates the member, or reassigns the global;
+/// the capture keeps the pointer the call read, so the move-out empties that
+/// pointee only.
+#[test]
+fn should_capture_conditional_member_and_global_pointer_takes() {
+    let conditional = r#"module spec.cpr.ptrcond;
+
+import { String, stringOf } from std.text;
+
+let gp: raw String = null;
+let gq: raw String = null;
+let which: bool = true;
+
+func eat(take s: String): i32 { which = false; return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    gp = unsafe &a;
+    gq = unsafe &b;
+    v = (g && (eat(take (unsafe *(which ? gp : gq))) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("ptrcond", conditional);
+    assert_no_asan("ptrcond", &output);
+    assert_exit("ptrcond", &output, 0);
+
+    let member = r#"module spec.cpr.ptrmember;
+
+import { String, stringOf } from std.text;
+
+struct Holder { ptr: raw String; }
+
+let gq: raw String = null;
+
+func eat(take s: String, borrow hs: Holder): i32 { hs.ptr = gq; return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    gq = unsafe &b;
+    let h: Holder = Holder { ptr: unsafe &a };
+    v = (g && (eat(take (unsafe *h.ptr), borrow h) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("ptrmember", member);
+    assert_no_asan("ptrmember", &output);
+    assert_exit("ptrmember", &output, 0);
+
+    let global = r#"module spec.cpr.ptrglobal;
+
+import { String, stringOf } from std.text;
+
+let gp: raw String = null;
+let gq: raw String = null;
+
+func eat(take s: String): i32 { gp = gq; return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    gp = unsafe &a;
+    gq = unsafe &b;
+    v = (g && (eat(take (unsafe *gp)) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("ptrglobal", global);
+    assert_no_asan("ptrglobal", &output);
+    assert_exit("ptrglobal", &output, 0);
+}
+
+/// A computed address take is captured before the callee mutates its index.
+#[test]
+fn should_capture_a_computed_address_take() {
+    let source = r#"module spec.cpr.ptraddress;
+
+import { String, stringOf } from std.text;
+
+let idx: i32 = 0;
+
+func eat(take s: String): i32 { idx = 1; return 1; }
+
+func main(): i32 {
+    let arr: String[2] = [stringOf("aa"), stringOf("bb")];
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let v: String = stringOf("vv");
+    let g: bool = true;
+    v = (g && (eat(take (unsafe *(&arr[idx]))) == 1)) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("ptraddress", source);
+    assert_no_asan("ptraddress", &output);
+    assert_exit("ptraddress", &output, 0);
+}

@@ -573,20 +573,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let writable_source = binding.mode == Mode::Borrow;
             let parameter = binding.name.clone();
             let ir_name = binding.ir_name.clone();
-            let ty = if projections.is_empty() {
-                binding.ty.clone()
-            } else {
-                self.projected_type(id, &projections)
-            };
-            // A member of a type-parameter place has an opaque projected type,
-            // but moving any part of the lend is still judged by the instance:
-            // the duty carries the root parameter type, which substitutes to
-            // the owning instance the concrete twin rejects.
-            let ty = if ty.is_unknown() && super::lower::mentions_type_param(&binding.ty) {
-                binding.ty.clone()
-            } else {
-                ty
-            };
+            // The duty carries the root parameter type and the projection:
+            // the instance audit substitutes the root and then resolves the
+            // selected member, so a duplicable member of an owning lend stays
+            // a copy while an owning member reports.
+            let ty = binding.ty.clone();
             if ty.is_unknown() || !self.recorded_not_lend.insert((ir_name, span.start, span.end)) {
                 return;
             }
@@ -594,6 +585,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 function: self.decl.name.clone(),
                 parameter,
                 ty,
+                projections: projections.to_vec(),
                 writable_source,
                 stores_into_slot,
                 span,

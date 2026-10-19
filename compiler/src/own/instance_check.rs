@@ -223,6 +223,34 @@ fn check_not_lend_requirements(
                 continue;
             }
             let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            // The duty names the root parameter; apply the projection after
+            // the substitution so the selected member's duplicability is the
+            // one judged. A raw-pointer element selects the pointee, which
+            // `project_place_path` does not model; the other steps reuse its
+            // field/element resolution.
+            let mut selected = substituted.clone();
+            for projection in &requirement.projections {
+                selected = match projection {
+                    crate::ir::Projection::Field(name) => crate::types::project_place_path(
+                        &selected,
+                        &[crate::types::PlacePathStep::Field(name.clone())],
+                        &sema.table,
+                    ),
+                    crate::ir::Projection::Element(_)
+                    | crate::ir::Projection::ElementTemp(_) => match &selected.kind {
+                        crate::types::TyKind::Raw(inner) => (**inner).clone(),
+                        _ => selected.iterated_element(),
+                    },
+                };
+                if selected.is_unknown() {
+                    break;
+                }
+            }
+            let substituted = if selected.is_unknown() {
+                substituted
+            } else {
+                selected
+            };
             // A nullable substitution is the `borrow T?` out-slot carve-out,
             // so a move stays legal where the concrete spelling is — but only
             // for a writable lend moved into a slot that may be that out-slot.

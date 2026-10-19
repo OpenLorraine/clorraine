@@ -5836,7 +5836,7 @@ fn should_empty_the_owned_deref_store_source_through_its_own_address() {
         1,
         "the impure pointer must evaluate exactly once in the body; body:\n{body}"
     );
-    assert_follows(impure, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
+    assert_follows(impure, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The conditional take's carrier shape and the deref store's emptied pointee
@@ -9311,7 +9311,7 @@ fn should_pin_the_owning_deref_store_materialization() {
         1,
         "the impure pointer must evaluate once in the store; body:\n{body}"
     );
-    assert_follows(tag, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
+    assert_follows(tag, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The owning deref return evaluates its pointer once and reads and empties
@@ -9334,7 +9334,7 @@ fn should_pin_the_owning_deref_return_materialization() {
         tag,
         body,
         "ClString __cl_return_1 = *(__cl_tmp0);",
-        "*(__cl_tmp0) = NULL",
+        "*(__cl_tmp0) = NULL;",
     );
 }
 
@@ -9354,7 +9354,7 @@ fn should_pin_the_owning_deref_field_materialization() {
         tag,
         body,
         "__cl_return_1.s = *(__cl_tmp0);",
-        "*(__cl_tmp0) = NULL",
+        "*(__cl_tmp0) = NULL;",
     );
     assert_eq!(
         body.matches("cl_alt__String(").count(),
@@ -9379,7 +9379,7 @@ fn should_pin_the_owning_deref_element_materialization() {
         1,
         "the impure pointer must evaluate once in the element store; body:\n{body}"
     );
-    assert_follows(tag, body, "__cl_rhs_1[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
+    assert_follows(tag, body, "__cl_rhs_1[0] = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The owning deref conditional arm fills the pinned pointer inside the chosen
@@ -9404,7 +9404,7 @@ fn should_pin_the_owning_deref_arm_materialization() {
         "if (flag) {",
         "__cl_tmp0 = cl_alt__String(p, q);",
     );
-    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL");
+    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The guarded take of a place-pointer deref empties the pointee on the
@@ -13745,10 +13745,11 @@ func main(): i32 {
         &emitted,
         "cl_spec_cprimpl_p424arrayaddrofimpl_main(void)\n{",
     );
+    assert_contains(tag, body, "__cl_tmp0 = &(a.items);");
     assert_contains(
         tag,
         body,
-        "if (((void *)&((*(&((*(p)).items))))) != ((void *)&(*(&(a.items))))) {",
+        "if (((void *)&((*(&((*(p)).items))))) != ((void *)&(*(__cl_tmp0)))) {",
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the alias must stay intact");
 
