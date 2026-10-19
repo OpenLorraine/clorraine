@@ -1426,7 +1426,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // positions arm by arm; the composite collector records
                     // the union, exactly as the let path does.
                     if self.may_carry_view(&target_ty)
-                        && matches!(value.kind, ExprKind::Conditional { .. })
+                        && matches!(
+                            value.kind,
+                            ExprKind::Conditional { .. }
+                                | ExprKind::StructLiteral { .. }
+                                | ExprKind::ArrayLiteral { .. }
+                        )
                         && self.collects_copy_positions(value)
                     {
                         self.record_copy_element_loans(

@@ -416,7 +416,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 } else if !copied
                     && self.may_carry_view(&target)
-                    && matches!(value.kind, ExprKind::Conditional { .. })
+                    && matches!(
+                        value.kind,
+                        ExprKind::Conditional { .. }
+                            | ExprKind::StructLiteral { .. }
+                            | ExprKind::ArrayLiteral { .. }
+                    )
                     && self.collects_copy_positions(value)
                 {
                     // A conditional copy of a carrier hands each arm's view
