@@ -512,9 +512,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // An aggregate parameter can carry a view in one of its fields
             // (`Box { v: String }` passed to a callee that reads `h.v`), so
             // the whole aggregate is a view source for this judgment.
-            let Some((_, param_ty)) = params.get(index) else {
+            let Some((mode, param_ty)) = params.get(index) else {
                 continue;
             };
+            // A take aggregate's storage belongs to the callee, so the
+            // callee-side out-slot rule owns the judgment; the caller does not
+            // add a second report for the same argument. A taken view is
+            // different: its backing is still the caller's storage, so the
+            // caller's escape report stays.
+            if *mode == Mode::Take && !is_view_like(param_ty) {
+                continue;
+            }
             let view_parameter =
                 self.may_carry_view(param_ty) || self.may_view_from_storage(param_ty);
             if !view_parameter && !is_view_like(&self.ty(&arg.value)) {
@@ -532,6 +540,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !is_view_like(&self.ty(&arg.value))
                     && !self.may_carry_view(&self.ty(&arg.value))
                     && self.may_view_from_storage(param_ty)
+                    && self.has_owned_viewable_storage(param_ty)
                 {
                     self.frame_owned_place_owner(&arg.value)
                 } else {
@@ -596,17 +605,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The frame-owned storage a view argument reads, when it reads any.
     ///
-    /// The view's owners are resolved in order: a binding's recorded view
-    /// positions are authoritative — the storage its views actually read — so
-    /// a position loaned to this frame's storage reports while one loaned to
-    /// the caller's parameters or module storage keeps the acceptance; a
-    /// value with no place of its own carries its loans on the value itself,
-    /// exactly as a reborrow call result does; a binding without recorded
-    /// positions is judged by its own provenance; and an ownerless chain that
-    /// roots at a fresh call result, a struct literal, or a conditional or
-    /// array of either reads statement storage, which dies with the frame.
-    /// `Some(None)` names statement storage, `Some(Some(id))` a frame binding,
-    /// and `None` no frame-owned storage at all.
+    /// The view's owners are resolved in order: a single-lend call walks its
+    /// source; a binding's recorded view positions are authoritative — the
+    /// storage its views actually read — so a position loaned to this frame's
+    /// storage reports while one loaned to the caller's parameters or module
+    /// storage keeps the acceptance; a view-only aggregate with no owned handle
+    /// or raw field owns no frame storage of its own; a single view binding
+    /// consults the loans its generated or temporary leaf owners record; a
+    /// value with no place of its own carries its loans on the value itself; a
+    /// binding without recorded positions is judged by its own provenance; and
+    /// an ownerless chain that roots at a fresh call result, a struct literal,
+    /// or a conditional or array of either reads statement storage, which dies
+    /// with the frame. `Some(None)` names statement storage, `Some(Some(id))` a
+    /// frame binding, and `None` no frame-owned storage at all.
     fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
         // A view returned through a single-lend call reads its source's
         // storage; the source decides whether the backing dies with this
@@ -624,6 +635,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .into_iter()
                 .next()
                 .map(|owner| self.frame_view_owner(owner));
+        }
+        // A view-only aggregate (a struct or array whose view positions hold
+        // static, module, or parameter-backed storage) owns no frame storage
+        // of its own. Its binding identity is not a loan owner; only the leaf
+        // storage is, and the recorded-position walk above already judged it.
+        let value_ty = self.ty(expr);
+        if !is_view_like(&value_ty)
+            && self.may_carry_view(&value_ty)
+            && !self.has_owned_viewable_storage(&value_ty)
+        {
+            return None;
         }
         // A single view binding records its loans in the binding's loan set,
         // not in the carrier's element-position map. A call-mediated view of a
@@ -688,6 +710,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         None
     }
 
+    /// True when a type contains an owned handle or raw field a view can
+    /// retain, so a local aggregate of this type may back a view that dies
+    /// with the frame.
+    ///
+    /// A view-only struct (`str[N]`) names storage it does not own: a
+    /// static-only or parameter-backed field contributes no frame owner and
+    /// keeps its acceptance. An owned handle (`String`) or a raw field does
+    /// own reachable storage.
+    fn has_owned_viewable_storage(&self, ty: &Ty) -> bool {
+        match &ty.kind {
+            TyKind::Handle(_) | TyKind::Raw(_) => true,
+            TyKind::Struct(name, _) => self
+                .instance_fields(ty, name)
+                .iter()
+                .any(|(_, field_ty)| self.has_owned_viewable_storage(field_ty)),
+            TyKind::Array { element, .. } => self.has_owned_viewable_storage(element),
+            _ => false,
+        }
+    }
+
     /// True when a type owns storage a view can be derived from.
     ///
     /// A handle (`String`), a view, a raw pointer, a struct containing any of
@@ -717,6 +759,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) else {
             return None;
         };
+        // A `for (borrow e in xs)` alias names the iterable's storage, not its
+        // own binding: a parameter- or module-backed container outlives this
+        // frame and keeps its acceptance.
+        let id = self.alias_container_binding(expr).unwrap_or(id);
         self.owner_dies_with_frame(LoanOwner::Binding(id))
             .then_some(Some(id))
     }

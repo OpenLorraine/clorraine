@@ -3453,7 +3453,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// source argument directly. The lowered argument list already carries a
     /// dot call's receiver first, so the parameter index is the argument
     /// index.
-    fn lowered_lend_source(&self, callee: &str) -> Option<usize> {
+    pub(super) fn lowered_lend_source(&self, callee: &str) -> Option<usize> {
         // A callee that names a local binding is a call through its func
         // value, so the value's own type decides any reborrow; a same-named
         // module function must not claim the call, or its declared lend would

@@ -1402,3 +1402,91 @@ func main(): i32 {
         &["cannot modify 'b' while it is shared-borrowed"],
     );
 }
+
+/// The accepted conditional carrier copy runs clean under the sanitizer.
+#[test]
+fn should_run_the_accepted_conditional_carrier_copy_clean() {
+    let source = r#"module spec.bsi.ccaccepted;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    let h2: Holder = c ? h1 : h3;
+    return i32(h2.names[0][0]) - 97;
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    let output = run_memory("ccaccepted", source);
+    assert_no_asan("ccaccepted", &output);
+    assert_exit("ccaccepted", &output, 0);
+}
+
+/// Both literal arms of a conditional carrier copy contribute their owners.
+///
+/// `ccbothlit` copies two fresh `Holder` literals whose `names[0]` views two
+/// distinct locals; writing through either owner reports `E10031` once. The
+/// assignment form (`ccbothlitasgn`) does the same through a whole store.
+#[test]
+fn should_union_the_view_positions_of_both_literal_carrier_arms() {
+    let let_form = r#"module spec.bsi.ccbothlit;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let d: Box = Box { v: stringOf("dd") };
+    let h2: Holder = c ? Holder { names: [b.v, "EE"] } : Holder { names: [d.v, "FF"] };
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "ccbothlit",
+        let_form,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let assign_form = r#"module spec.bsi.ccbothlitasgn;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let d: Box = Box { v: stringOf("dd") };
+    let h2: Holder = Holder { names: ["CC", "DD"] };
+    h2 = c ? Holder { names: [b.v, "EE"] } : Holder { names: [d.v, "FF"] };
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "ccbothlitasgn",
+        assign_form,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+}

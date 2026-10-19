@@ -1423,6 +1423,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     copied,
                 );
             }
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let struct_name = name.segments.last().cloned().unwrap_or_default();
+                let mut declared = position
+                    .map(|position| self.instance_fields(position, &struct_name))
+                    .unwrap_or_default();
+                if declared.is_empty() {
+                    declared = self.instance_fields(&self.ty(value), &struct_name);
+                }
+                let lowered_fields = match lowered.map(|lowered| &lowered.kind) {
+                    Some(ValueKind::StructLit { fields, .. }) => Some(fields.as_slice()),
+                    _ => None,
+                };
+                for field in fields {
+                    let field_ty = declared
+                        .iter()
+                        .find(|(declared, _)| declared == &field.name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    let mut path = base.to_vec();
+                    path.push(ir::Projection::Field(field.name.clone()));
+                    let lowered_field = lowered_fields.and_then(|fields| {
+                        fields
+                            .iter()
+                            .find(|(written, _)| written == &field.name)
+                            .map(|(_, value)| value)
+                    });
+                    self.collect_copy_element_loans(
+                        &field.value,
+                        lowered_field,
+                        Some(&field_ty),
+                        &path,
+                        copied,
+                    );
+                }
+            }
             ExprKind::ArrayLiteral { elements, fill } => {
                 let extent = match position.map(|position| &position.kind) {
                     Some(TyKind::Array { extents, .. }) => {
@@ -1777,10 +1812,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.lowered_root_bindings(lowered, &mut roots);
             roots.extend(self.lowered_owner_bindings(lowered));
             for id in roots {
-                owners.insert(LoanOwner::Binding(id));
-                // A generated view-array carrier owns no storage itself; the
-                // views it holds loan the owners its binding records, so the
-                // leaf owner is the one a later use must outlive.
+                // Only a generated owning owner is itself storage a view can
+                // name. A generated view carrier and a named source container
+                // own no storage of their own: the views they hold loan the
+                // owners their binding records, so the leaf owner is the one a
+                // later use must outlive.
+                if self.bindings[id].generated && self.bindings[id].needs_drop {
+                    owners.insert(LoanOwner::Binding(id));
+                }
                 owners.extend(self.binding_loan_owners(id));
             }
         }
@@ -1812,24 +1851,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.lowered_root_bindings(fill, roots);
                 }
             }
-            // A call result the lowering bound to an owner keeps the owner's
-            // spelling in the call's arguments, so the walk must enter the
-            // arguments: a view returned through `pick([mk().v; "EE"], 0)`
-            // reads the `mk()` owner the argument chain names.
-            ValueKind::Call { args, receiver, .. } => {
-                for arg in args {
-                    self.lowered_root_bindings(arg, roots);
-                }
-                if let Some(receiver) = receiver {
-                    self.lowered_root_bindings(receiver, roots);
-                }
-            }
-            ValueKind::ClosureCall { callable, args } => {
-                self.lowered_root_bindings(callable, roots);
-                for arg in args {
-                    self.lowered_root_bindings(arg, roots);
+            // A view returned through a call reads the storage of the call's
+            // single lend source, not every argument: an unrelated scalar or
+            // aggregate argument is not a loan. A func-typed or closure call
+            // has no declared lend source, so it contributes no root here.
+            ValueKind::Call {
+                callee,
+                args,
+                receiver: None,
+                ..
+            } => {
+                if let Some(index) = self.lowered_lend_source(callee) {
+                    if let Some(source) = args.get(index) {
+                        self.lowered_root_bindings(source, roots);
+                    }
                 }
             }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {}
             ValueKind::Conditional {
                 then_value,
                 else_value,

@@ -1866,6 +1866,121 @@ func main(): i32 {
         &[],
     );
 
+    let scalar = r#"module spec.eei.callscalar;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func use(): i32 {
+    let n: i32 = 0;
+    let s: str = pick(["AA", "BB"], n);
+    n = 1;
+    return i32(len(s)) - 2 + n - 1;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("callscalar", scalar);
+    assert_no_asan("callscalar", &output);
+    assert_exit("callscalar", &output, 0);
+
+    let static_bound = r#"module spec.eei.callstaticbound;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let s: str = pick(["AA", "BB"], 0);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("callstaticbound", static_bound);
+    assert_no_asan("callstaticbound", &output);
+    assert_exit("callstaticbound", &output, 0);
+
+    let static_aggregate = r#"module spec.eei.aggstatic;
+
+struct Holder { names: str[2]; }
+
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("aggstatic", static_aggregate);
+    assert_no_asan("aggstatic", &output);
+    assert_exit("aggstatic", &output, 0);
+
+    let alias = r#"module spec.eei.aggalias;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(boxes: Box[1], borrow slot: str?): void {
+    let hs: Holder[1] = [Holder { names: [boxes[0].v, "EE"] }];
+    for (borrow e in hs) { store(e, borrow slot); }
+}
+
+func main(): i32 {
+    let b: Box[1] = [Box { v: stringOf("aa") }];
+    let out: str? = null;
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("aggalias", alias);
+    assert_no_asan("aggalias", &output);
+    assert_exit("aggalias", &output, 0);
+
+    let take_aggregate = r#"module spec.eei.aggtake;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(take h: Box, borrow slot: str?): void { slot = h.v; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    store(b, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "aggtake",
+        take_aggregate,
+        "E10030",
+        &["borrow of 'h' does not live long enough"],
+        &[],
+    );
+
     let static_view = r#"module spec.eei.callstatic;
 
 func pick(xs: str[2], i: i32): str { return xs[i]; }
