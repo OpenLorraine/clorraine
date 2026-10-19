@@ -13799,7 +13799,7 @@ fn should_emit_the_generic_compound_division_guards() {
             "module spec.cprimpl.{module};\n\n\
              import {{ String, stringOf }} from std.text;\n\n\
              struct H {{ n: i32; items: i32[2]; name: String; }}\n\n\
-             func go{g}(borrow h: H, d: i32): void {{\n\
+             func go{g}(borrow h: {param}, d: i32): void {{\n\
              \x20   h.n /= d;\n\
              \x20   h.items[0] %= d;\n\
              \x20   h.items[1] /= d;\n\
@@ -13811,6 +13811,7 @@ fn should_emit_the_generic_compound_division_guards() {
              }}\n",
             module = module,
             g = if generic { "<T>" } else { "" },
+            param = if generic { "T" } else { "H" },
             call = if generic { "<H>" } else { "" },
         )
     };

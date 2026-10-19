@@ -849,6 +849,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 sources.push(source);
             } else {
                 sources.extend(self.maybe_owning_move_sources(value));
+                // Concrete owning arms keep their ordinary conditional duty
+                // beside the type-parameter arms.
+                sources.extend(self.conditional_move_sources(value));
                 if sources.is_empty() {
                     sources.extend(self.maybe_owning_projection_move_sources(value));
                 }
@@ -857,17 +860,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return BindingEffect::None;
             }
             return BindingEffect::MoveIfOwning { sources };
-        }
-        // A conditional with a type-parameter arm owns only at some
-        // instances. Record the arm as a maybe-owning source so the
-        // per-instance audit reports for an owning instantiation and stays
-        // silent at the definition; a plain conditional source would report
-        // immediately.
-        if matches!(value.kind, ExprKind::Conditional { .. }) {
-            let sources = self.maybe_owning_move_sources(value);
-            if !sources.is_empty() {
-                return BindingEffect::MoveIfOwning { sources };
-            }
         }
         if is_view_like(target) {
             // A view array's elements are independent loans, so the binding
@@ -891,6 +883,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 sources,
                 owners: self.view_owners(value, lowered),
             };
+        }
+        // A conditional with a type-parameter arm owns only at some
+        // instances. Record the arm as a maybe-owning source so the
+        // per-instance audit reports for an owning instantiation and stays
+        // silent at the definition; a plain conditional source would report
+        // immediately. Concrete owning arms keep their ordinary conditional
+        // duty, so a mixed T + concrete store matches the concrete twin.
+        if matches!(value.kind, ExprKind::Conditional { .. }) {
+            let mut sources = self.maybe_owning_move_sources(value);
+            // Only a conditional with a type-parameter arm needs the deferred
+            // per-instance effect; a concrete conditional keeps the immediate
+            // conditional move below.
+            if !sources.is_empty() {
+                sources.extend(self.conditional_move_sources(value));
+                return BindingEffect::MoveIfOwning { sources };
+            }
         }
         if self.sema.table.duplicable(target) {
             return BindingEffect::None;

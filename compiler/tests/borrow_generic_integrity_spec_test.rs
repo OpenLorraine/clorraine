@@ -1413,4 +1413,55 @@ func main(): i32 {
 }
 "#;
     let _ = compile_accepted("generic-definition", definition);
+
+    let view_binding = r#"module spec.bgi.genericview;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T): i32 {
+    let v: str = c ? h : h;
+    return i32(len(v)) - 2;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    return pick<String>(true, h);
+}
+"#;
+    let output = run_host("generic-view", view_binding);
+    assert_exit("generic-view", &output, 0);
+
+    let mixed = r#"module spec.bgi.genericmixed;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T, s: String): i32 {
+    let r: String? = c ? h : s;
+    return 0;
+}
+
+func main(): i32 {
+    let h: String = stringOf("ab");
+    let s: String = stringOf("cd");
+    return pick<String>(true, h, s);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("generic-mixed", mixed);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "generic-mixed: the owning instance must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10034:").count(),
+        2,
+        "generic-mixed: expected one report per lend arm; stderr:\n{stderr}"
+    );
+    assert!(stderr.contains("'h'"), "generic-mixed: missing 'h'; stderr:\n{stderr}");
+    assert!(stderr.contains("'s'"), "generic-mixed: missing 's'; stderr:\n{stderr}");
+    assert!(
+        !c_path.exists(),
+        "generic-mixed: a rejected program must not produce a translation unit"
+    );
 }
