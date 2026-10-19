@@ -1520,4 +1520,58 @@ func main(): i32 {
 "#;
     let output = run_host("generic-maybe-view", maybe_view);
     assert_exit("generic-maybe-view", &output, 0);
+
+    let duplicable_target = r#"module spec.bgi.genericduptarget;
+
+struct P { x: i32; }
+
+func pick<T>(c: bool, take h: T): i32 {
+    let r: P = c ? h : h;
+    let n: i32 = h.x;
+    return n + r.x - 8;
+}
+
+func main(): i32 {
+    let h: P = P { x: 4 };
+    return pick<P>(true, h);
+}
+"#;
+    let output = run_host("generic-duplicable-target", duplicable_target);
+    assert_exit("generic-duplicable-target", &output, 0);
+
+    let outslot = r#"module spec.bgi.genericoutslot;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, take h: T, borrow slot: String?): i32 {
+    let r: String = c ? h : slot;
+    let n: i32 = i32(len(slot));
+    return n - 1;
+}
+
+func main(): i32 {
+    let slot: String? = null;
+    return pick<String>(false, take stringOf("xx"), borrow slot);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("generic-outslot", outslot);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "generic-outslot: the moved out-slot must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10020:").count(),
+        1,
+        "generic-outslot: expected the out-slot's later use; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'slot'"),
+        "generic-outslot: the report must name the out-slot; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "generic-outslot: a rejected program must not produce a translation unit"
+    );
 }

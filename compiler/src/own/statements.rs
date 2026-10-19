@@ -896,11 +896,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // silent at the definition; a plain conditional source would report
         // immediately. Concrete owning arms keep their ordinary conditional
         // duty, so a mixed T + concrete store matches the concrete twin.
-        if matches!(value.kind, ExprKind::Conditional { .. }) {
+        if matches!(value.kind, ExprKind::Conditional { .. })
+            && !self.sema.table.duplicable(target)
+        {
             let mut sources = self.maybe_owning_move_sources(value);
             // Only a conditional with a type-parameter arm needs the deferred
             // per-instance effect; a concrete conditional keeps the immediate
-            // conditional move below.
+            // conditional move below, and a duplicable destination copies.
             if !sources.is_empty() {
                 sources.extend(self.conditional_move_sources(value));
                 return BindingEffect::MoveIfOwning {
@@ -935,8 +937,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return false;
         };
         let binding = &self.bindings[*id];
-        matches!(binding.kind, BindingKind::Param | BindingKind::OutSlot)
-            && binding.mode != Mode::Take
+        // An out-slot owns its incoming value; the `borrow T?` carve-out is a
+        // destination rule, not a source exemption.
+        binding.kind == BindingKind::Param && binding.mode != Mode::Take
     }
 
     /// Records a prepared ownership effect on the binding that just declared.
