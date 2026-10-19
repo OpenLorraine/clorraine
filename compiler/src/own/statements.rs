@@ -415,6 +415,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         decl.span,
                     );
                 } else if !copied
+                    && self.may_carry_view(&target)
                     && matches!(value.kind, ExprKind::Conditional { .. })
                     && self.collects_copy_positions(value)
                 {

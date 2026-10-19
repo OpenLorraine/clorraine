@@ -5645,7 +5645,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // Record those owners on this carrier before the value moves into the
         // assignment, so a view later returned through the call names the leaf
         // owner rather than stopping at the carrier.
-        let owners = self.carried_view_owners(&value, false);
+        let owners = if self.may_carry_view(&value.ty) {
+            self.carried_view_owners(&value, false)
+        } else {
+            BTreeSet::new()
+        };
         self.emit(Statement::Assign {
             target: place.clone(),
             value,

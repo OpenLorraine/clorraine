@@ -526,7 +526,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // aggregate's storage. A local aggregate dies with this frame,
                 // so the callee's out-slot store would dangle; a parameter or
                 // a module value outlives the call and stays accepted.
-                if !is_view_like(&self.ty(&arg.value)) && self.may_view_from_storage(param_ty) {
+                // Only an owned aggregate takes this fallback. A view-carrying
+                // aggregate names its backings through the recorded positions
+                // above; a caller-backed backing keeps its acceptance.
+                if !is_view_like(&self.ty(&arg.value))
+                    && !self.may_carry_view(&self.ty(&arg.value))
+                    && self.may_view_from_storage(param_ty)
+                {
                     self.frame_owned_place_owner(&arg.value)
                 } else {
                     None
@@ -628,7 +634,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if let Some(owner) = self
                     .binding_loan_owners(id)
                     .into_iter()
-                    .find(|owner| self.owner_dies_with_frame(*owner))
+                    .find(|owner| match owner {
+                        // A generated owner is the leaf storage behind a
+                        // call-mediated view. A loan of a named local keeps
+                        // the existing one-report behavior of its own write
+                        // or direct-argument check.
+                        LoanOwner::Binding(owner_id) => {
+                            self.bindings[*owner_id].generated
+                                && self.owner_dies_with_frame(*owner)
+                        }
+                        LoanOwner::Temp(_) => self.owner_dies_with_frame(*owner),
+                    })
                 {
                     return Some(self.frame_view_owner(owner));
                 }
