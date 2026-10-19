@@ -636,17 +636,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .next()
                 .map(|owner| self.frame_view_owner(owner));
         }
-        // A view-only aggregate (a struct or array whose view positions hold
-        // static, module, or parameter-backed storage) owns no frame storage
-        // of its own. Its binding identity is not a loan owner; only the leaf
-        // storage is, and the recorded-position walk above already judged it.
-        let value_ty = self.ty(expr);
-        if !is_view_like(&value_ty)
-            && self.may_carry_view(&value_ty)
-            && !self.has_owned_viewable_storage(&value_ty)
-        {
-            return None;
-        }
         // A single view binding records its loans in the binding's loan set,
         // not in the carrier's element-position map. A call-mediated view of a
         // generated owner (`pick([mk().v; ...], 0)`) names that owner here, so
@@ -693,6 +682,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for atom in Self::storage_atoms(&provenance) {
             match atom {
                 Provenance::Local(id) | Provenance::Param(id) => {
+                    // A projected loop alias (`e.v`) names the iterable's
+                    // storage, not the alias binding: resolve it to the
+                    // container before the frame judgment.
+                    let id = self.alias_resolved_root(id);
                     if self.owner_dies_with_frame(LoanOwner::Binding(id)) {
                         return Some(Some(id));
                     }

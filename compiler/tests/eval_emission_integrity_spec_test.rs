@@ -1954,6 +1954,108 @@ func main(): i32 {
     assert_no_asan("aggalias", &output);
     assert_exit("aggalias", &output, 0);
 
+    let temporary_aggregate = r#"module spec.eei.aggtemporary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let h: Holder = Holder { names: [mk().v, "EE"] };
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "aggtemporary",
+        temporary_aggregate,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let call_carrier = r#"module spec.eei.aggcallcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h: Holder = make(a.v);
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "aggcallcarrier",
+        call_carrier,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let mixed_scalar = r#"module spec.eei.aggmixedscalar;
+
+struct Mixed { names: str[2]; n: i32; }
+
+func use(c: bool): i32 {
+    let q: i32 = 1;
+    let h2: Mixed = c ? Mixed { names: ["AA", "BB"], n: q } : Mixed { names: ["CC", "DD"], n: 2 };
+    q = 3;
+    return h2.n + q - 4;
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    let output = run_memory("aggmixedscalar", mixed_scalar);
+    assert_no_asan("aggmixedscalar", &output);
+    assert_exit("aggmixedscalar", &output, 0);
+
+    let projected_alias = r#"module spec.eei.aggaliasprojected;
+
+import { String, stringOf } from std.text;
+
+struct S { v: String; }
+
+func store(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(ss: S[1], borrow slot: str?): void {
+    for (borrow e in ss) { store(e.v, borrow slot); }
+}
+
+func main(): i32 {
+    let ss: S[1] = [S { v: stringOf("aa") }];
+    let out: str? = null;
+    outer(ss, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("aggaliasprojected", projected_alias);
+    assert_no_asan("aggaliasprojected", &output);
+    assert_exit("aggaliasprojected", &output, 0);
+
     let take_aggregate = r#"module spec.eei.aggtake;
 
 import { String, stringOf } from std.text;

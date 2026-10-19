@@ -1076,7 +1076,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// An alias binding has no storage of its own: its place reaches the
     /// iterable element, so every owner walk follows the alias chain to the
     /// container exactly as the element-loan records do.
-    fn alias_resolved_root(&self, mut id: usize) -> usize {
+    pub(super) fn alias_resolved_root(&self, mut id: usize) -> usize {
         while let Some(PlaceTarget::Local(root, _)) = self.bindings[id].alias_root {
             if root == id {
                 break;
@@ -1369,7 +1369,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // record there is dropped once before the collected union is written.
         self.replace_element_loans(to, base, BTreeSet::new());
         for (path, loans) in paths {
-            if !loans.is_empty() {
+            if loans.is_empty() {
+                // A view position whose backing is static, module-level, or
+                // caller-backed is known and carries no loan. Recording the
+                // empty position keeps the later judgment from treating the
+                // carrier's own binding as the backing.
+                self.state
+                    .element_loans
+                    .entry(to)
+                    .or_default()
+                    .entry(path)
+                    .or_default();
+            } else {
                 self.replace_element_loans(to, &path, loans);
             }
         }
@@ -1441,6 +1452,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .find(|(declared, _)| declared == &field.name)
                         .map(|(_, ty)| ty.clone())
                         .unwrap_or_else(|| self.ty(&field.value));
+                    if !self.may_carry_view(&field_ty) {
+                        continue;
+                    }
                     let mut path = base.to_vec();
                     path.push(ir::Projection::Field(field.name.clone()));
                     let lowered_field = lowered_fields.and_then(|fields| {
@@ -1543,7 +1557,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// keeps its kind and its single loan request.
     pub(super) fn collects_copy_positions(&self, value: &Expr) -> bool {
         match &value.kind {
-            ExprKind::Conditional { .. } | ExprKind::ArrayLiteral { .. } => true,
+            ExprKind::Conditional { .. }
+            | ExprKind::StructLiteral { .. }
+            | ExprKind::ArrayLiteral { .. } => true,
             ExprKind::Unsafe(inner) => self.collects_copy_positions(inner),
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.collects_copy_positions(value)
@@ -1577,6 +1593,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
             if let Some(paths) = self.state.element_loans.get(&source) {
                 let read = constant_path(&projections).then_some(projections.as_slice());
+                let mut recorded = false;
                 for (path, loans) in paths {
                     let destination = match read {
                         Some(read) => {
@@ -1601,7 +1618,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .entry(destination)
                             .or_default()
                             .extend(loans.iter().copied());
+                        recorded = true;
                     }
+                }
+                if !recorded {
+                    // The selected position exists but names no loan, so it
+                    // is known caller-, module-, or static-backed.
+                    copied.recorded.entry(base.to_vec()).or_default();
                 }
                 return;
             }
@@ -1617,7 +1640,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let owners = self.provenance_loan_owners(value);
             if !owners.is_empty() {
                 copied.owners.entry(base.to_vec()).or_default().extend(owners);
+                return;
             }
+            // A parameter-backed view position is caller storage and carries
+            // no frame loan. A local with no recorded position stays unknown,
+            // so the binding's own provenance judges it instead.
+            if matches!(
+                self.bindings[source].kind,
+                BindingKind::Param | BindingKind::OutSlot
+            ) {
+                copied.recorded.entry(base.to_vec()).or_default();
+            }
+            return;
+        }
+        if let Some(PlaceTarget::Global(_, _)) = self.place_target(value) {
+            copied.recorded.entry(base.to_vec()).or_default();
             return;
         }
         let loans = self.view_loans(value);
@@ -1637,6 +1674,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let owners = self.view_owners(value, lowered);
         if !owners.is_empty() {
             copied.owners.entry(base.to_vec()).or_default().extend(owners);
+            return;
+        }
+        // A static literal view names no owner, but its position is known and
+        // safe. Mark it so the carrier's own binding is not mistaken for the
+        // backing. A call-derived view keeps its lower-chain judgment: an
+        // unrecorded owner there is not assumed static.
+        if matches!(self.view_provenance(value), Provenance::Static)
+            || matches!(value.kind, ExprKind::Str(_))
+        {
+            copied.recorded.entry(base.to_vec()).or_default();
         }
     }
 
