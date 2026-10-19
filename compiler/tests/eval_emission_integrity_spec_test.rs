@@ -1732,3 +1732,154 @@ func main(): i32 {
     assert_exit("back-edge-preempt", &output, 2);
     assert_no_asan("back-edge-preempt", &output);
 }
+
+// ---------------------------------------------------------------------------
+// callviewescapes: an aggregate argument whose view reaches an out-slot and a
+// call-mediated view of an inline temporary or a local source are judged at
+// the call.
+// ---------------------------------------------------------------------------
+
+/// The aggregate out-slot escape and the call-mediated view escapes report.
+///
+/// `aggoutslot` passes a local `Box` to a callee that stores `h.v` into the
+/// caller's out-slot; `callinline` and `callinlinedirect` take a view through a
+/// call of an inline temporary array; `callglobal` stores a call-mediated view
+/// of a local source in a global. Each reports the concrete twin's existing
+/// diagnostic once. `callstatic` reads a call-mediated view of a module-level
+/// literal and stays accepted.
+#[test]
+fn should_reject_view_escapes_through_calls_and_aggregates() {
+    let aggregate = r#"module spec.eei.aggoutslot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(h: Box, borrow slot: str?): void { slot = h.v; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    store(b, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "aggoutslot",
+        aggregate,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let inline = r#"module spec.eei.callinline;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let s: str = pick([mk().v; "EE"], 0);
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "callinline",
+        inline,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let inline_direct = r#"module spec.eei.callinlinedirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("aa") }; }
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    fill(pick([mk().v; "EE"], 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "callinlinedirect",
+        inline_direct,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let global = r#"module spec.eei.callglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+let g: str = "AA";
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func set(): void {
+    let a: Box = Box { v: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    g = pick(xs, 0);
+}
+
+func main(): i32 {
+    set();
+    return i32(g[0]) - 122;
+}
+"#;
+    assert_rejected_once(
+        "callglobal",
+        global,
+        "E10033",
+        &["borrow of 'g' escapes its scope"],
+        &[],
+    );
+
+    let static_view = r#"module spec.eei.callstatic;
+
+func pick(xs: str[2], i: i32): str { return xs[i]; }
+
+func use(): i32 {
+    let s: str = pick(["AA", "BB"], 0);
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("callstatic", static_view);
+    assert_no_asan("callstatic", &output);
+    assert_exit("callstatic", &output, 0);
+}

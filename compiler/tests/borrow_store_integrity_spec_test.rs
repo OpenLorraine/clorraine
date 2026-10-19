@@ -1307,3 +1307,98 @@ func main(): i32 {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// condcarrierloans: a conditional (or plain) copy of a view-holding carrier
+// transfers its element loans to the destination.
+// ---------------------------------------------------------------------------
+
+/// A write through the loaned owner after a conditional carrier copy reports.
+///
+/// `condcarrierboth` copies either of two carriers whose `names[0]` views
+/// `b.v`; `condcarriermixed` copies one place arm and one literal arm;
+/// `condcarrierassign` overwrites a carrier through an assignment. Each later
+/// `b.v = ...` is a write through the loaned owner, so the concrete twin's
+/// `E10031` reports once and the program is not emitted.
+#[test]
+fn should_transfer_the_element_loans_of_a_conditional_carrier_copy() {
+    let both = r#"module spec.bsi.ccboth;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    let h2: Holder = c ? h1 : h3;
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "ccboth",
+        both,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let mixed = r#"module spec.bsi.ccmixed;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h2: Holder = c ? h1 : Holder { names: ["CC", "DD"] };
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "ccmixed",
+        mixed,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let assign = r#"module spec.bsi.ccassign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h2: Holder = Holder { names: ["CC", "DD"] };
+    h2 = c ? h1 : h2;
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "ccassign",
+        assign,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+}
