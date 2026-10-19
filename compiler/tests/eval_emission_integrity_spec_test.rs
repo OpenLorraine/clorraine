@@ -2032,6 +2032,129 @@ func main(): i32 {
     assert_no_asan("aggmixedscalar", &output);
     assert_exit("aggmixedscalar", &output, 0);
 
+    let static_str = r#"module spec.eei.aggstaticstr;
+
+struct H { name: static str; }
+
+func store(h: H, borrow slot: str?): void { slot = h.name; }
+
+func outer(borrow slot: str?): void {
+    let p: static str = "aa";
+    let h: H = H { name: p };
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("aggstaticstr", static_str);
+    assert_no_asan("aggstaticstr", &output);
+    assert_exit("aggstaticstr", &output, 0);
+
+    let shadow_static = r#"module spec.eei.aggshadowstatic;
+
+struct Holder { names: str[2]; }
+
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let h: Holder = Holder { names: ["AA", "EE"] };
+    {
+        let h: Holder = h;
+        store(h, borrow slot);
+    }
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("aggshadowstatic", shadow_static);
+    assert_no_asan("aggshadowstatic", &output);
+    assert_exit("aggshadowstatic", &output, 0);
+
+    let alias_copy = r#"module spec.eei.aggaliscopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(boxes: Box[1], borrow slot: str?): void {
+    let hs: Holder[1] = [Holder { names: [boxes[0].v, "EE"] }];
+    for (borrow e in hs) {
+        let h2: Holder = e;
+        store(h2, borrow slot);
+    }
+}
+
+func main(): i32 {
+    let b: Box[1] = [Box { v: stringOf("aa") }];
+    let out: str? = null;
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("aggaliscopy", alias_copy);
+    assert_no_asan("aggaliscopy", &output);
+    assert_exit("aggaliscopy", &output, 0);
+
+    let call_static = r#"module spec.eei.aggcallstatic;
+
+struct Holder { names: str[2]; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let h: Holder = make("AA");
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("aggcallstatic", call_static);
+    assert_no_asan("aggcallstatic", &output);
+    assert_exit("aggcallstatic", &output, 0);
+
+    let call_param = r#"module spec.eei.aggcallparam;
+
+struct Holder { names: str[2]; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(p: str, borrow slot: str?): void {
+    let h: Holder = make(p);
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("aggcallparam", call_param);
+    assert_no_asan("aggcallparam", &output);
+    assert_exit("aggcallparam", &output, 0);
+
     let projected_alias = r#"module spec.eei.aggaliasprojected;
 
 import { String, stringOf } from std.text;

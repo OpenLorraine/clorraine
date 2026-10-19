@@ -685,7 +685,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // A projected loop alias (`e.v`) names the iterable's
                     // storage, not the alias binding: resolve it to the
                     // container before the frame judgment.
-                    let id = self.alias_resolved_root(id);
+                    let resolved = self.alias_resolved_root(id);
+                    let id = resolved;
                     if self.owner_dies_with_frame(LoanOwner::Binding(id)) {
                         return Some(Some(id));
                     }
@@ -754,8 +755,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         // A `for (borrow e in xs)` alias names the iterable's storage, not its
         // own binding: a parameter- or module-backed container outlives this
-        // frame and keeps its acceptance.
-        let id = self.alias_container_binding(expr).unwrap_or(id);
+        // frame and keeps its acceptance. Resolve the chain for a projected
+        // alias too (`e.v`).
+        let id = self.alias_resolved_root(id);
         self.owner_dies_with_frame(LoanOwner::Binding(id))
             .then_some(Some(id))
     }

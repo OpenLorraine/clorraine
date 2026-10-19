@@ -1321,7 +1321,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             let mut full = base.to_vec();
             full.extend(rest.iter().cloned());
-            self.replace_element_loans(to, &full, loans);
+            if loans.is_empty() {
+                // A known position with no loan (static, module, or caller
+                // storage) moves with the copy; the destination must keep the
+                // known-empty record so its own binding is not mistaken for
+                // the backing.
+                self.state
+                    .element_loans
+                    .entry(to)
+                    .or_default()
+                    .entry(full)
+                    .or_default();
+            } else {
+                self.replace_element_loans(to, &full, loans);
+            }
         }
     }
 
@@ -1643,12 +1656,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
             // A parameter-backed view position is caller storage and carries
-            // no frame loan. A local with no recorded position stays unknown,
-            // so the binding's own provenance judges it instead.
+            // no frame loan. A static-str local points at static storage. A
+            // local with no recorded position stays unknown, so the binding's
+            // own provenance judges it instead.
             if matches!(
                 self.bindings[source].kind,
                 BindingKind::Param | BindingKind::OutSlot
-            ) {
+            ) || matches!(self.ty(value).kind, TyKind::StaticStr)
+            {
                 copied.recorded.entry(base.to_vec()).or_default();
             }
             return;
@@ -1676,12 +1691,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             copied.owners.entry(base.to_vec()).or_default().extend(owners);
             return;
         }
+        // A carrier-returning call whose view-like arguments are all static,
+        // module, or caller-backed hands back a view of that storage. Mark the
+        // destination position known so the carrier binding is not mistaken
+        // for the backing; a local or fresh argument keeps the frame judgment.
+        if let ExprKind::Call { args, .. } = &value.kind {
+            let view_args: Vec<&Expr> = args
+                .iter()
+                .map(|arg| &arg.value)
+                .filter(|arg| self.may_carry_view(&self.ty(arg)))
+                .collect();
+            if !view_args.is_empty()
+                && view_args.iter().all(|arg| {
+                    matches!(
+                        self.view_provenance(arg),
+                        Provenance::Static | Provenance::Global(_) | Provenance::Param(_)
+                    )
+                })
+            {
+                copied.recorded.entry(base.to_vec()).or_default();
+                return;
+            }
+        }
         // A static literal view names no owner, but its position is known and
         // safe. Mark it so the carrier's own binding is not mistaken for the
         // backing. A call-derived view keeps its lower-chain judgment: an
         // unrecorded owner there is not assumed static.
         if matches!(self.view_provenance(value), Provenance::Static)
             || matches!(value.kind, ExprKind::Str(_))
+            || matches!(self.ty(value).kind, TyKind::StaticStr)
         {
             copied.recorded.entry(base.to_vec()).or_default();
         }

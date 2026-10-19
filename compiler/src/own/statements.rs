@@ -362,6 +362,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(value) = &decl.value {
             self.check_value_into(value, &target, decl.span);
         }
+        // A shadowing initializer names the outer binding, so the copy source
+        // is captured before the new name is declared; resolving it after the
+        // declaration would read the fresh destination.
+        let copy_source = decl
+            .value
+            .as_ref()
+            .and_then(|value| self.place_target(value));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
@@ -396,12 +403,57 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // an array literal, or a run-time read supplies its positions arm
             // by arm and is written as one union.
             if let Some(value) = &decl.value {
-                let copied = match self.place_target(value) {
-                    Some(PlaceTarget::Local(source, projections))
-                        if super::place::constant_path(&projections) =>
-                    {
-                        self.move_element_loans(source, &projections, id, &[]);
-                        true
+                let copied = match copy_source.clone() {
+                    Some(PlaceTarget::Local(source, projections)) => {
+                        // A `for` alias has no storage of its own: its element
+                        // loans live on the container under the alias root's
+                        // projections. Copy from the root so the destination
+                        // inherits the views the element actually reads.
+                        let (loan_source, loan_projections) =
+                            match &self.bindings[source].alias_root {
+                                Some(PlaceTarget::Local(root, root_projections)) => {
+                                    (*root, root_projections.clone())
+                                }
+                                _ => (source, projections.clone()),
+                            };
+                        // A source that reaches a caller-backed container
+                        // (a parameter, an out-slot, or an alias of either)
+                        // contributes no frame loan even when the source
+                        // binding itself records no position.
+                        let root = self.alias_resolved_root(source);
+                        let caller_backed = matches!(
+                            self.bindings[root].kind,
+                            BindingKind::Param | BindingKind::OutSlot
+                        );
+                        if super::place::constant_path(&loan_projections) {
+                            self.move_element_loans(loan_source, &loan_projections, id, &[]);
+                            if caller_backed
+                                && self.state.element_loans.get(&loan_source).is_none()
+                            {
+                                self.state
+                                    .element_loans
+                                    .entry(id)
+                                    .or_default()
+                                    .entry(projections)
+                                    .or_default();
+                            }
+                        } else {
+                            // A run-time selection may read any element; copy
+                            // the container's loan union, or record the
+                            // caller-backed selection as known-safe.
+                            let union = self.binding_loans(loan_source);
+                            if !union.is_empty() {
+                                self.replace_element_loans(id, &[], union);
+                            } else if caller_backed {
+                                self.state
+                                    .element_loans
+                                    .entry(id)
+                                    .or_default()
+                                    .entry(projections)
+                                    .or_default();
+                            }
+                        }
+                        self.state.element_loans.get(&id).is_some()
                     }
                     _ => false,
                 };
@@ -421,8 +473,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         ExprKind::Conditional { .. }
                             | ExprKind::StructLiteral { .. }
                             | ExprKind::ArrayLiteral { .. }
+                            | ExprKind::Call { .. }
                     )
-                    && self.collects_copy_positions(value)
+                    && (self.collects_copy_positions(value)
+                        || matches!(value.kind, ExprKind::Call { .. }))
                 {
                     // A conditional copy of a carrier hands each arm's view
                     // positions to the destination. The destination is a

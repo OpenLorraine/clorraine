@@ -1431,8 +1431,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             ExprKind::Conditional { .. }
                                 | ExprKind::StructLiteral { .. }
                                 | ExprKind::ArrayLiteral { .. }
+                                | ExprKind::Call { .. }
                         )
-                        && self.collects_copy_positions(value)
+                        && (self.collects_copy_positions(value)
+                            || matches!(value.kind, ExprKind::Call { .. }))
                     {
                         self.record_copy_element_loans(
                             id,
