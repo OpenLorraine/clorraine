@@ -1692,3 +1692,32 @@ func main(): i32 {
     assert_no_asan("lencompositearm", &output);
     assert_exit("lencompositearm", &output, 0);
 }
+
+/// A discarded struct conditional runs a fresh call arm.
+///
+/// A duplicable struct returned by a call has no cleanup temporary, so the
+/// discard must still evaluate the selected call. The statement form and the
+/// `len` member-root form each run the selected arm once; a skipped arm does
+/// not run.
+#[test]
+fn should_evaluate_a_fresh_call_arm_of_a_discarded_struct_conditional() {
+    let source = r#"module spec.avi.discardstructcall;
+
+struct Box { rows: i32[2]; }
+
+let hits: i32 = 0;
+
+func mkA(): Box { hits = hits + 1; return Box { rows: [1, 2] }; }
+func mkB(): Box { hits = hits + 10; return Box { rows: [3, 4] }; }
+
+func main(): i32 {
+    let flag: bool = false;
+    (flag ? mkA() : mkB());
+    let n: usize = len((flag ? mkA() : mkB()).rows);
+    return i32(n) - 2 + hits - 20;
+}
+"#;
+    let output = run_memory("discardstructcall", source);
+    assert_no_asan("discardstructcall", &output);
+    assert_exit("discardstructcall", &output, 0);
+}

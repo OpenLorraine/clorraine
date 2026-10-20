@@ -1996,13 +1996,21 @@ impl<'a> Emitter<'a> {
 
     /// True when a discarded struct conditional can store both arms safely.
     ///
-    /// A struct literal with only fresh or duplicable-place fields may be
-    /// stored into the discard destination and released; a literal with an
-    /// owning place field must not be copied there, because the destination's
-    /// release would free storage the caller still owns.
+    /// A fresh call or a struct literal with only fresh or duplicable-place
+    /// fields may be stored into the discard destination and released; an arm
+    /// with an owning place field must not be copied there, because the
+    /// destination's release would free storage the caller still owns. A
+    /// nested conditional keeps the fallback because its per-arm fields are not
+    /// distributed here.
     fn struct_conditional_discard_safe(&self, then_value: &Value, else_value: &Value) -> bool {
         [then_value, else_value].into_iter().all(|arm| {
-            matches!(&arm.kind, ValueKind::StructLit { .. }) && !self.arm_roots_at_place(arm)
+            !self.arm_roots_at_place(arm)
+                && !matches!(
+                    &arm.kind,
+                    ValueKind::Conditional { .. }
+                        | ValueKind::Materialize { .. }
+                        | ValueKind::Temp(_)
+                )
         })
     }
 
