@@ -10130,3 +10130,79 @@ func main(): i32 {
         &["E10200"],
     );
 }
+
+/// A self-qualified generic call reaches the direct-call checker.
+///
+/// A generic function is legal only from its declaring module, so the
+/// self-qualified spelling is the qualified form. Its written type arguments,
+/// arity, argument conversions, and substituted return type must match the
+/// direct spelling; a fixed-array result used as a loop iterable names the
+/// concrete element.
+#[test]
+fn should_check_a_self_qualified_generic_call() {
+    let looped = r#"module spec.cc.qgenericloop;
+
+func id<T>(x: T): T { return x; }
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let s: i32 = 0;
+    for (v in spec.cc.qgenericloop.id<i32[2]>(a)) {
+        s = s + v;
+    }
+    return s - 41;
+}
+"#;
+    let output = run_memory("qgenericloop", looped);
+    assert_no_asan("qgenericloop", &output);
+    assert_exit("qgenericloop", &output, 0);
+
+    let mismatch = r#"module spec.cc.qgenericmismatch;
+
+func id<T>(x: T): T { return x; }
+
+func main(): i32 {
+    let x: str = spec.cc.qgenericmismatch.id<i32>("x");
+    return i32(x[0]) - 120;
+}
+"#;
+    assert_rejected_once(
+        "qgenericmismatch",
+        mismatch,
+        "E10200",
+        &["cannot convert"],
+        &[],
+    );
+
+    let arity = r#"module spec.cc.qgenericarity;
+
+func id<T>(x: T): T { return x; }
+
+func main(): i32 {
+    return spec.cc.qgenericarity.id<i32>() - 5;
+}
+"#;
+    assert_rejected_once(
+        "qgenericarity",
+        arity,
+        "E10308",
+        &["wrong number of arguments"],
+        &[],
+    );
+
+    let type_count = r#"module spec.cc.qgenericcount;
+
+func id<T>(x: T): T { return x; }
+
+func main(): i32 {
+    return spec.cc.qgenericcount.id<i32, i32>(5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "qgenericcount",
+        type_count,
+        "E10300",
+        &["wrong number of type arguments"],
+        &[],
+    );
+}
