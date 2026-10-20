@@ -2531,6 +2531,15 @@ impl<'a> Emitter<'a> {
                 }
             }
             ExprKind::Qualified(name) => {
+                // A module function value names the function symbol, even
+                // when an imported value shares the head's spelling. The
+                // module path wins in a module initializer exactly as it does
+                // in a function body.
+                if let Some(info) = self.resolve_function(&name.segments.join(".")) {
+                    if info.decl.type_params.is_empty() {
+                        return Value::new(ty, ValueKind::Path(name.segments.clone()));
+                    }
+                }
                 match crate::init_graph::resolve_global(self.loaded, module, name) {
                     Some(global) => {
                         let identity = GlobalId::new(global.module, global.name);
@@ -3066,30 +3075,14 @@ impl<'a> Emitter<'a> {
     /// receiver-taking `len` are the intrinsics a module initializer can
     /// spell.
     fn global_intrinsic_call(&mut self, module: &Module, callee: &Expr) -> Option<String> {
-        let written = callee_name(callee)?;
-        let (target_module, name) = match written.rsplit_once('.') {
-            Some((target, simple)) => (Some(target), simple),
-            None => (None, written.as_str()),
-        };
-        if !matches!(name, "len" | "rawSlice" | "rawStr" | "slice") {
+        // The compiler-known names are reserved, so the simple segment is the
+        // declaration identity. A user or `ffi` declaration, and a callable
+        // field or func-typed global, keep their own symbol.
+        let name = callee_name(callee)?;
+        if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
             return None;
         }
-        if let Some(target_module) = target_module {
-            // A module-qualified call names that module's declaration. Only
-            // the compiler intrinsic there lowers as the built-in helper; a
-            // user or `ffi` declaration keeps its own symbol, and a lexical
-            // binding cannot reach a module initializer.
-            let intrinsic = self
-                .loaded
-                .module(target_module)
-                .and_then(|target| target.decl(name))
-                .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Intrinsic))
-                || (crate::stdlib::is_standard_module(target_module)
-                    && crate::stdlib::is_compiler_intrinsic(name));
-            if !intrinsic {
-                return None;
-            }
-        } else if self.ffi_callee_signature(&written).is_some()
+        if self.ffi_callee_signature(&name).is_some()
             || self
                 .functions
                 .keys()
@@ -3097,12 +3090,10 @@ impl<'a> Emitter<'a> {
         {
             return None;
         }
-        // A callable field or func-typed global shadows the built-in name too:
-        // `b.len()` calls the field, not the length intrinsic.
         if self.init_callable_value(module, callee).is_some() {
             return None;
         }
-        Some(name.to_owned())
+        Some(name)
     }
 
     /// True when a module-initializer callee is a dot call.

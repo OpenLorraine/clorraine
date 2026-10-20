@@ -10466,9 +10466,81 @@ func main(): i32 {
     return i32(n) - 2;
 }
 "#;
+    let (_scratch, output, c_path) = compile_only("qunread", unread);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "qunread: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("warning W10000"),
+        "qunread: the folded operand must still count as a use; stderr:\n{stderr}"
+    );
+    assert!(c_path.exists());
     let output = run_memory("qunread", unread);
     assert_no_asan("qunread", &output);
     assert_exit("qunread", &output, 0);
+
+    let side_effect = r#"module spec.cc.qsidefree;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let n: usize = std.mem.len(mk());
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("qsidefree", side_effect);
+    assert_no_asan("qsidefree", &output);
+    assert_exit("qsidefree", &output, 0);
+
+    let row = r#"module spec.cc.qrowlen;
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = std.mem.len(a[0]);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("qrowlen", row);
+    assert_no_asan("qrowlen", &output);
+    assert_exit("qrowlen", &output, 0);
+}
+
+/// A bare global receiver is still a global borrow.
+///
+/// The module-qualified receiver shape keeps the existing member-call rule,
+/// but a bare module-level receiver reports `E10038` exactly as the free twin
+/// does.
+#[test]
+fn should_reject_a_bare_global_dot_call_receiver() {
+    let source = r#"module spec.cc.qglobalborrow;
+
+struct S { x: i32; }
+
+let G: S = S { x: 1 };
+
+func bump(borrow s: S): void { s.x = s.x + 1; }
+
+func main(): i32 {
+    G.bump();
+    return G.x - 1;
+}
+"#;
+    assert_rejected_once(
+        "qglobalborrow",
+        source,
+        "E10038",
+        &["cannot borrow global 'G'"],
+        &[],
+    );
 }
 
 /// A qualified intrinsic and `ffi` declaration are call-only.
@@ -10682,6 +10754,25 @@ func main(): i32 {
     let output = run_memory_pair("qvaluable", holder, caller);
     assert_no_asan("qvaluable", &output);
     assert_exit("qvaluable", &output, 0);
+
+    let init_holder = r#"module spec.cc.qinitvalue.lib;
+
+export func helper(): i32 { return 5; }
+export let probe: i32 = 0;
+"#;
+    let init_caller = r#"module spec.cc.qinitvalue.user;
+
+import { probe } from spec.cc.qinitvalue.lib;
+
+let g: func(): i32 = spec.cc.qinitvalue.lib.helper;
+
+func main(): i32 {
+    return g() - 5 + probe;
+}
+"#;
+    let output = run_memory_pair("qinitvalue", init_holder, init_caller);
+    assert_no_asan("qinitvalue", &output);
+    assert_exit("qinitvalue", &output, 0);
 
     let global_holder = r#"module spec.cc.qglobalfunc.lib;
 

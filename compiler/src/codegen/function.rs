@@ -926,6 +926,42 @@ impl<'a> Emitter<'a> {
                 // arm, because a `?:` cannot pass the hidden out-parameter a
                 // fixed-array call arm needs.
                 if value.ty.is_fixed_array() {
+                    // A plain fixed-array call returns through a hidden
+                    // trailing destination, so a discarded call needs a
+                    // statement-local destination too. The `(void)` read keeps
+                    // the destination from tripping the unused-variable
+                    // warning when its elements are duplicable.
+                    if let ValueKind::Call {
+                        callee,
+                        type_args,
+                        args,
+                        receiver,
+                    } = &value.kind
+                    {
+                        self.emit_guards(value);
+                        let ty = self.substitute(&value.ty);
+                        let dest = self.unique_local("__cl_discard");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = {};",
+                            declarator(&ty, &dest, &self.sema.table),
+                            self.empty_state(&ty)
+                        ));
+                        let call = self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver.as_deref(),
+                            &dest,
+                        );
+                        self.push(&format!("        {call};"));
+                        self.push(&format!("        (void)({dest});"));
+                        if self.needs_drop(&ty) {
+                            self.emit_drop_expr(&dest, &ty);
+                        }
+                        self.push("    }");
+                        return;
+                    }
                     if let ValueKind::ClosureCall { callable, args } = &value.kind {
                         self.emit_guards(value);
                         let ty = self.substitute(&value.ty);

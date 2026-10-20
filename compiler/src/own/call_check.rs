@@ -381,12 +381,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn check_qualified_intrinsic_call(&mut self, name: &str, args: &'a [Arg], span: Span) {
         if name == "len" {
             for (index, arg) in args.iter().enumerate() {
-                let folded = index == 0
-                    && super::is_pure_place(&arg.value)
-                    && super::lower::fixed_array_extent(&self.ty(&arg.value)).is_some();
-                if !folded {
-                    self.eval(&arg.value);
-                }
+                // The operand is a read even when its length folds, so a local
+                // used only here is used. The lowering still emits no read for
+                // a pure fixed-array place, which keeps the C unused marker.
+                self.eval(&arg.value);
                 if index == 0 && self.ty(&arg.value).nullable {
                     self.check_nonnull_expr(&arg.value, span);
                 }
@@ -1616,6 +1614,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             None => (Mode::None, None),
         };
         self.eval_dot_receiver(callee);
+        // A receiver reached through a module path is the module-binding
+        // shape the existing member-call rule accepts. A bare module-level
+        // receiver is still a written global borrow, so it reports exactly as
+        // the free twin does.
+        let module_receiver = match &callee.kind {
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let receiver = &name.segments[..name.segments.len() - 1];
+                self.module_prefix_len(receiver).is_some()
+            }
+            _ => false,
+        };
         let receiver = match &callee.kind {
             ExprKind::Member { .. } => None,
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
@@ -1648,7 +1657,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
-                    true,
+                    module_receiver,
                 );
             }
             Some(receiver) => {
@@ -1660,7 +1669,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
-                    true,
+                    module_receiver,
                 );
             }
         }
@@ -1823,9 +1832,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.note_maybe_moved_use(id, &projections, span);
                 }
                 if let Some(PlaceTarget::Global(id, _)) = &target {
-                    // A dot-call receiver is read by the call, not lent out as
-                    // a written argument, so a module global can be the
-                    // receiver of a borrowing method.
+                    // A receiver reached through a module path is read by the
+                    // call, not lent out as a written argument, so the
+                    // module-binding member-call shape stays accepted. A bare
+                    // global receiver still reports like the free twin.
                     if !receiver && !self.global_is_const(id) {
                         self.error(
                             "E10038",

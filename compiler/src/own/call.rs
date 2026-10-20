@@ -18,7 +18,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A module path must name a loaded module; a single-segment module (`m`)
     /// counts as much as a nested one (`a.b`). The search runs from the longest
     /// candidate down so a nested module wins over its parent's prefix.
-    fn module_prefix_len(&self, segments: &[String]) -> Option<usize> {
+    pub(super) fn module_prefix_len(&self, segments: &[String]) -> Option<usize> {
         (1..segments.len())
             .rev()
             .find(|split| self.loaded.has_module(&segments[..*split].join(".")))
@@ -712,10 +712,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // literal is still lowered because it may have effects or
                 // own a temporary.
                 if let Some(arg) = args.first() {
-                    if super::is_pure_place(&arg.value) {
-                        if let Some(extent) = fixed_array_extent(&self.ty(&arg.value)) {
+                    if let Some(extent) = fixed_array_extent(&self.ty(&arg.value)) {
+                        if super::is_pure_place(&arg.value) {
                             return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                         }
+                        // The length is structural, but the operand may have
+                        // effects: evaluate it as a discarded statement (and
+                        // release an owning result) before folding.
+                        self.lower_discarded(&arg.value);
+                        return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                     }
                 }
                 let value = match args.first() {

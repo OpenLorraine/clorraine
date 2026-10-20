@@ -6926,6 +6926,40 @@ func main(): i32 {
     assert_contains("qunreadimpl", &emitted, "if (sizeof(a)) { }");
     assert_contains("qunreadimpl", &emitted, "n = 2u;");
 
+    let side_effect = r#"module spec.cc.impl.qsidefree;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let n: usize = std.mem.len(mk());
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let emitted = emit_host("qsidefreeimpl", side_effect);
+    assert_contains(
+        "qsidefreeimpl",
+        &emitted,
+        "cl_spec_cc_impl_qsidefree_mk(__cl_discard",
+    );
+    assert_contains("qsidefreeimpl", &emitted, "(void)(__cl_discard");
+
+    let row = r#"module spec.cc.impl.qrowlen;
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = std.mem.len(a[0]);
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("qrowlenimpl", row);
+    assert_contains("qrowlenimpl", &emitted, "if (sizeof(a)) { }");
+    assert_contains("qrowlenimpl", &emitted, "n = 2u;");
+
     let initializer = r#"module spec.cc.impl.qinitlen;
 
 let a: i32[2] = [20, 21];
@@ -6979,6 +7013,28 @@ func main(): i32 {
     assert!(
         !emitted.contains("cl_spec_cc_impl_qvaluable_lib_spec.cc"),
         "qvalueimpl: the imported value was projected as the function"
+    );
+
+    let init_holder = r#"module spec.cc.impl.qinitvalue.lib;
+
+export func helper(): i32 { return 5; }
+export let probe: i32 = 0;
+"#;
+    let init_caller = r#"module spec.cc.impl.qinitvalue.user;
+
+import { probe } from spec.cc.impl.qinitvalue.lib;
+
+let g: func(): i32 = spec.cc.impl.qinitvalue.lib.helper;
+
+func main(): i32 {
+    return g() - 5 + probe;
+}
+"#;
+    let emitted = emit_host_pair("qinitvalueimpl", init_holder, init_caller);
+    assert_contains(
+        "qinitvalueimpl",
+        &emitted,
+        "g = cl_spec_cc_impl_qinitvalue_lib_helper;",
     );
 
     let single_holder = r#"module libm;

@@ -1696,6 +1696,11 @@ fn is_pure_place(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Name(_) | ExprKind::Qualified(_) => true,
         ExprKind::Member { base, .. } => is_pure_place(base),
+        // A constant-index read evaluates no call of its own; a run-time
+        // index may, so it stays out of the structural fold.
+        ExprKind::Index { base, index } => {
+            is_pure_place(base) && matches!(index.kind, ExprKind::Int(_) | ExprKind::Char(_))
+        }
         _ => false,
     }
 }
