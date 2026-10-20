@@ -1191,3 +1191,193 @@ func main(): i32 {
     assert_no_asan("lenindex", &output);
     assert_exit("lenindex", &output, 0);
 }
+
+/// Every `len` spelling evaluates a non-call operand's effects.
+///
+/// The bare `len(...)`, the dot `xs.len()`, and the qualified `std.mem.len`
+/// agree: a conditional runs only the selected arm, a literal runs each
+/// element once, and a run-time index runs its index expression and bounds
+/// guard once. A call receiver evaluates its call once, and an owned call
+/// result is released. A conditional with a caller-backed arm never moves that
+/// arm: its live view stays valid.
+#[test]
+fn should_evaluate_a_non_call_folded_len_operand_in_every_spelling() {
+    let bare_conditional = r#"module spec.avi.lenbarecond;
+
+let hits: i32 = 0;
+let which: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; which = 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; which = 2; return [20, 21]; }
+
+func main(): i32 {
+    let run: bool = true;
+    let n: usize = len(run ? mkA() : mkB());
+    return i32(n) - 2 + hits - 1 + which - 1;
+}
+"#;
+    let output = run_memory("lenbarecond", bare_conditional);
+    assert_no_asan("lenbarecond", &output);
+    assert_exit("lenbarecond", &output, 0);
+
+    let bare_literal = r#"module spec.avi.lenbarelit;
+
+let hits: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let n: usize = len([mkA(), mkB()]);
+    return i32(n) - 2 + hits - 2;
+}
+"#;
+    let output = run_memory("lenbarelit", bare_literal);
+    assert_no_asan("lenbarelit", &output);
+    assert_exit("lenbarelit", &output, 0);
+
+    let bare_index = r#"module spec.avi.lenbareidx;
+
+let hits: i32 = 0;
+
+func bump(): i32 { hits = hits + 1; return 0; }
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = len(a[bump()]);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenbareidx", bare_index);
+    assert_no_asan("lenbareidx", &output);
+    assert_exit("lenbareidx", &output, 0);
+
+    let dot_conditional = r#"module spec.avi.lendotcond;
+
+let hits: i32 = 0;
+let which: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; which = 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; which = 2; return [20, 21]; }
+
+func main(): i32 {
+    let run: bool = true;
+    let n: usize = (run ? mkA() : mkB()).len();
+    return i32(n) - 2 + hits - 1 + which - 1;
+}
+"#;
+    let output = run_memory("lendotcond", dot_conditional);
+    assert_no_asan("lendotcond", &output);
+    assert_exit("lendotcond", &output, 0);
+
+    let dot_call = r#"module spec.avi.lendotcall;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let n: usize = mk().len();
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lendotcall", dot_call);
+    assert_no_asan("lendotcall", &output);
+    assert_exit("lendotcall", &output, 0);
+
+    let dot_index = r#"module spec.avi.lendotidx;
+
+let hits: i32 = 0;
+
+func bump(): i32 { hits = hits + 1; return 0; }
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = a[bump()].len();
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lendotidx", dot_index);
+    assert_no_asan("lendotidx", &output);
+    assert_exit("lendotidx", &output, 0);
+
+    let owned_bare = r#"module spec.avi.lenownedbare;
+
+import { String, stringOf } from std.text;
+
+let hits: i32 = 0;
+
+func mk(): String[2] {
+    hits = hits + 1;
+    return [stringOf("aa"), stringOf("bb")];
+}
+
+func main(): i32 {
+    let n: usize = len(mk());
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenownedbare", owned_bare);
+    assert_no_asan("lenownedbare", &output);
+    assert_exit("lenownedbare", &output, 0);
+
+    let owned_dot = r#"module spec.avi.lenowneddot;
+
+import { String, stringOf } from std.text;
+
+let hits: i32 = 0;
+
+func mk(): String[2] {
+    hits = hits + 1;
+    return [stringOf("aa"), stringOf("bb")];
+}
+
+func main(): i32 {
+    let n: usize = mk().len();
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenowneddot", owned_dot);
+    assert_no_asan("lenowneddot", &output);
+    assert_exit("lenowneddot", &output, 0);
+
+    let mixed_bare = r#"module spec.avi.lenmixedbare;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("cc"), stringOf("dd")];
+}
+
+func main(): i32 {
+    let a: String[2] = [stringOf("aa"), stringOf("bb")];
+    let v: str = a[0];
+    let flag: bool = true;
+    let n: usize = len(flag ? a : mk());
+    return i32(n) - 2 + i32(v[0]) - 97;
+}
+"#;
+    let output = run_memory("lenmixedbare", mixed_bare);
+    assert_no_asan("lenmixedbare", &output);
+    assert_exit("lenmixedbare", &output, 0);
+
+    let mixed_dot = r#"module spec.avi.lenmixeddot;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("cc"), stringOf("dd")];
+}
+
+func main(): i32 {
+    let a: String[2] = [stringOf("aa"), stringOf("bb")];
+    let v: str = a[0];
+    let flag: bool = true;
+    let n: usize = (flag ? a : mk()).len();
+    return i32(n) - 2 + i32(v[0]) - 97;
+}
+"#;
+    let output = run_memory("lenmixeddot", mixed_dot);
+    assert_no_asan("lenmixeddot", &output);
+    assert_exit("lenmixeddot", &output, 0);
+}

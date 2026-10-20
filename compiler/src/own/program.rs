@@ -278,10 +278,10 @@ pub fn type_name_matches(ty: &crate::ast::Type, name: &str) -> bool {
 ///
 /// There are no drops at process exit, so a global must be duplicable; a
 /// `const` is exempt because it cannot own a released resource.
-pub(super) fn check_globals(
-    module: &Module,
-    loaded: &Loaded,
-    program: &ProgramInfo<'_>,
+pub(super) fn check_globals<'a>(
+    module: &'a Module,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
     sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
 ) {
@@ -326,11 +326,11 @@ pub(super) fn check_globals(
 /// parameter mode: a non-`const` module global passed to a `borrow`, `const`,
 /// or unmarked parameter reports `E10038`. A module-qualified receiver, a
 /// `const` global, and a non-place argument stay accepted.
-fn check_initializer_calls(
+fn check_initializer_calls<'a>(
     expr: &Expr,
-    module: &Module,
-    loaded: &Loaded,
-    program: &ProgramInfo<'_>,
+    module: &'a Module,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
     sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
 ) {
@@ -478,60 +478,188 @@ fn initializer_call<'a>(callee: &'a Expr, loaded: &Loaded) -> Option<Initializer
     }
 }
 
-/// Resolves the declared parameters of an initializer callee.
-///
-/// The bool is true when the callee is non-generic. A generic callee needs its
-/// instance to judge the parameter types; this focused walk leaves it to the
-/// ordinary function route.
-fn initializer_params<'a>(
-    call: &InitializerCall<'_>,
-    program: &ProgramInfo<'a>,
-) -> Option<(&'a [Param], bool)> {
-    if call.module_path.is_some() {
-        if let Some(decl) = program.user_function(&call.written) {
-            return Some((&decl.params, decl.type_params.is_empty()));
+/// One initializer callee's declaration and its declaring module.
+enum InitializerDecl<'a> {
+    /// A user function with a body.
+    User(&'a FuncDecl, String),
+    /// An `ffi` signature.
+    Ffi(&'a FuncSignature, String),
+}
+
+impl<'a> InitializerDecl<'a> {
+    /// The declared parameters.
+    fn params(&self) -> &'a [Param] {
+        match self {
+            Self::User(decl, _) => &decl.params,
+            Self::Ffi(signature, _) => &signature.params,
         }
-        if let Some(signature) = program.ffi_function(&call.written) {
-            return Some((&signature.params, true));
+    }
+
+    /// The declared type-parameter names.
+    fn type_params(&self) -> Vec<String> {
+        match self {
+            Self::User(decl, _) => decl.type_params.iter().map(|p| p.name.clone()).collect(),
+            Self::Ffi(..) => Vec::new(),
+        }
+    }
+
+    /// The declaring module's name.
+    fn module_name(&self) -> &str {
+        match self {
+            Self::User(_, module) | Self::Ffi(_, module) => module,
+        }
+    }
+}
+
+/// Resolves an initializer callee by the call checker's scope order.
+///
+/// A module-qualified name resolves in that module only. A simple name keeps
+/// the caller's own module first, then an import binding under its original
+/// name, and only then the program-wide map. This is the same order the
+/// function-body call checker uses; the simple-name map alone would pick the
+/// first module in load order.
+fn initializer_decl<'a>(
+    name: &str,
+    module: &'a Module,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
+) -> Option<InitializerDecl<'a>> {
+    if let Some((target, simple)) = name.rsplit_once('.') {
+        let target = loaded.module(target)?;
+        if let Some(decl) = declared_function(target, simple) {
+            return Some(InitializerDecl::User(decl, target.name.clone()));
+        }
+        if let Some(signature) = declared_ffi(target, simple) {
+            return Some(InitializerDecl::Ffi(signature, target.name.clone()));
         }
         return None;
     }
-    match program.callee(&call.simple) {
-        Some(Callee::User(decl)) => Some((&decl.params, decl.type_params.is_empty())),
-        Some(Callee::Ffi(signature)) => Some((&signature.params, true)),
+    if let Some(decl) = declared_function(module, name) {
+        return Some(InitializerDecl::User(decl, module.name.clone()));
+    }
+    if let Some(signature) = declared_ffi(module, name) {
+        return Some(InitializerDecl::Ffi(signature, module.name.clone()));
+    }
+    if let Some(binding) = module.import(name) {
+        if !binding.poisoned {
+            if let Some(target) = loaded.module(&binding.module) {
+                if let Some(decl) = declared_function(target, &binding.original) {
+                    return Some(InitializerDecl::User(decl, target.name.clone()));
+                }
+                if let Some(signature) = declared_ffi(target, &binding.original) {
+                    return Some(InitializerDecl::Ffi(signature, target.name.clone()));
+                }
+            }
+        }
+    }
+    match program.callee(name) {
+        Some(Callee::User(decl)) => {
+            let declaring = declaring_function_module(decl, loaded).unwrap_or(module);
+            Some(InitializerDecl::User(decl, declaring.name.clone()))
+        }
+        Some(Callee::Ffi(signature)) => {
+            let declaring = declaring_ffi_module(signature, loaded).unwrap_or(module);
+            Some(InitializerDecl::Ffi(signature, declaring.name.clone()))
+        }
         _ => None,
     }
 }
 
+/// Finds the module that declares one user function.
+///
+/// `ProgramInfo` keys user functions by their simple name, so the shared map
+/// does not carry the declaring module. The parameter types must still resolve
+/// in the module that wrote them; pointer identity recovers it.
+fn declaring_function_module<'a>(decl: &'a FuncDecl, loaded: &'a Loaded) -> Option<&'a Module> {
+    loaded.modules.values().find(|module| {
+        module
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Func(candidate) if std::ptr::eq(candidate, decl)))
+    })
+}
+
+/// Finds the module that declares one `ffi` signature.
+fn declaring_ffi_module<'a>(
+    signature: &'a FuncSignature,
+    loaded: &'a Loaded,
+) -> Option<&'a Module> {
+    loaded.modules.values().find(|module| {
+        module.items.iter().any(|item| match item {
+            Item::Ffi(block) => block
+                .decls
+                .iter()
+                .any(|candidate| std::ptr::eq(candidate, signature)),
+            _ => false,
+        })
+    })
+}
+
+/// Finds a function declaration in one module.
+fn declared_function<'a>(module: &'a Module, name: &str) -> Option<&'a FuncDecl> {
+    module.items.iter().find_map(|item| match item {
+        Item::Func(decl) if decl.name == name => Some(decl),
+        _ => None,
+    })
+}
+
+/// Finds an `ffi` signature in one module.
+fn declared_ffi<'a>(module: &'a Module, name: &str) -> Option<&'a FuncSignature> {
+    module.items.iter().find_map(|item| match item {
+        Item::Ffi(block) => block.decls.iter().find(|signature| signature.name == name),
+        _ => None,
+    })
+}
+
+/// Resolves the declared parameters of an initializer callee.
+fn initializer_params<'a>(
+    call: &InitializerCall<'_>,
+    module: &'a Module,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
+) -> Option<(&'a [Param], Vec<String>, String)> {
+    let name = if call.module_path.is_some() {
+        call.written.as_str()
+    } else {
+        call.simple.as_str()
+    };
+    let decl = initializer_decl(name, module, loaded, program)?;
+    Some((
+        decl.params(),
+        decl.type_params(),
+        decl.module_name().to_owned(),
+    ))
+}
+
 /// Checks one initializer call's written arguments and dot receiver.
-fn check_initializer_call(
+fn check_initializer_call<'a>(
     callee: &Expr,
     args: &[Arg],
-    module: &Module,
-    loaded: &Loaded,
-    program: &ProgramInfo<'_>,
+    module: &'a Module,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
     sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
 ) {
     let Some(call) = initializer_call(callee, loaded) else {
         return;
     };
-    let Some((params, non_generic)) = initializer_params(&call, program) else {
+    let Some((params, type_params, callee_module_name)) =
+        initializer_params(&call, module, loaded, program)
+    else {
         return;
     };
-    // A direct call names a free function, so its written arguments are judged
-    // without a receiver-type match. A generic dot call needs the instance to
-    // resolve the receiver, so this focused walk leaves it to the ordinary
-    // function route.
-    let direct = matches!(call.receiver, InitializerReceiver::None);
-    if !non_generic && !direct {
-        return;
+    let callee_module = loaded.module(&callee_module_name).unwrap_or(module);
+    let receiver_ty =
+        initializer_receiver_type(&call.receiver, module, loaded, program, sema);
+    // A func-typed field call resolves the field, not a free function of the
+    // same name. The field's own signature is outside this focused walk; do
+    // not judge the call against the free function's parameters.
+    if let Some(ty) = &receiver_ty {
+        if receiver_has_field(ty, &call.simple, sema) {
+            return;
+        }
     }
-    let callee_module = call
-        .module_path
-        .as_deref()
-        .and_then(|name| loaded.module(name))
-        .unwrap_or(module);
     match &call.receiver {
         InitializerReceiver::None => {
             for (index, arg) in args.iter().enumerate() {
@@ -542,8 +670,8 @@ fn check_initializer_call(
                     &arg.value,
                     arg.span,
                     param,
-                    callee_module,
-                    false,
+                    &type_params,
+                    &callee_module,
                     module,
                     loaded,
                     program,
@@ -554,19 +682,17 @@ fn check_initializer_call(
         }
         InitializerReceiver::Path { segments, span } => {
             if longest_module_prefix(loaded, segments).is_none() {
-                let name = QualifiedName {
-                    segments: segments.clone(),
-                    span: *span,
-                };
-                if let Some(global) = crate::init_graph::resolve_global(loaded, module, &name) {
-                    if let Some(param) = params.first() {
-                        check_initializer_global(
+                if let Some(param) = params.first() {
+                    if let Some((global, global_span)) =
+                        initializer_global_path(segments, *span, module, loaded)
+                    {
+                        check_initializer_receiver(
                             global,
-                            *span,
+                            global_span,
                             param,
-                            callee_module,
-                            true,
-                            &call.simple,
+                            &type_params,
+                            &callee_module,
+                            receiver_ty.as_ref(),
                             loaded,
                             program,
                             sema,
@@ -583,8 +709,8 @@ fn check_initializer_call(
                     &arg.value,
                     arg.span,
                     param,
-                    callee_module,
-                    false,
+                    &type_params,
+                    &callee_module,
                     module,
                     loaded,
                     program,
@@ -594,20 +720,19 @@ fn check_initializer_call(
             }
         }
         InitializerReceiver::Expr(base) => {
-            let segments = initializer_place_segments(base);
-            if segments
+            let module_qualified = initializer_place_segments(base)
                 .as_ref()
-                .is_some_and(|segments| longest_module_prefix(loaded, segments).is_none())
-            {
-                if let Some((global, span)) = initializer_global(base, module, loaded) {
-                    if let Some(param) = params.first() {
-                        check_initializer_global(
+                .is_some_and(|segments| longest_module_prefix(loaded, segments).is_some());
+            if !module_qualified {
+                if let Some(param) = params.first() {
+                    if let Some((global, span)) = initializer_global(base, module, loaded) {
+                        check_initializer_receiver(
                             global,
                             span,
                             param,
-                            callee_module,
-                            true,
-                            &call.simple,
+                            &type_params,
+                            &callee_module,
+                            receiver_ty.as_ref(),
                             loaded,
                             program,
                             sema,
@@ -624,8 +749,8 @@ fn check_initializer_call(
                     &arg.value,
                     arg.span,
                     param,
-                    callee_module,
-                    false,
+                    &type_params,
+                    &callee_module,
                     module,
                     loaded,
                     program,
@@ -637,14 +762,71 @@ fn check_initializer_call(
     }
 }
 
+/// True when a parameter's declared type has no concrete instantiation here.
+///
+/// A generic callee's parameter type (`T`) cannot be resolved without the
+/// call's type arguments, so this focused walk has no concrete type to match.
+/// An explicit `borrow`/`const` still reports by declaration; an unmarked
+/// parameter keeps the existing initializer oracle (the dot-receiver keying
+/// cases) because the frozen call checker's body route judges the resolved
+/// instance instead.
+fn initializer_param_unresolved(
+    param: &Param,
+    type_params: &[String],
+    callee_module: &Module,
+    loaded: &Loaded,
+    sema: &SemaOutput,
+) -> bool {
+    let expected = resolve_ty_folded(&param.ty, type_params, &sema.table, callee_module, loaded);
+    expected.is_unknown() || crate::types::contains_param(&expected)
+}
+
+/// Checks a dot receiver's global borrow.
+#[allow(clippy::too_many_arguments)]
+fn check_initializer_receiver(
+    global: crate::init_graph::GlobalRef,
+    span: Span,
+    param: &Param,
+    type_params: &[String],
+    callee_module: &Module,
+    receiver_ty: Option<&Ty>,
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    sema: &SemaOutput,
+    diagnostics: &mut Diagnostics,
+) {
+    if param.mode == Mode::Take {
+        return;
+    }
+    if param.mode == Mode::None
+        && initializer_param_unresolved(param, type_params, callee_module, loaded, sema)
+    {
+        return;
+    }
+    if let Some(receiver_ty) = receiver_ty {
+        let expected = resolve_ty_folded(&param.ty, type_params, &sema.table, callee_module, loaded);
+        // A generic parameter or an unresolved type has no concrete gate; the
+        // declaration-level mode still applies. A concrete mismatch is a
+        // different callee (for example a func field that shares the name).
+        if !expected.is_unknown()
+            && !crate::types::contains_param(&expected)
+            && !receiver_ty.is_unknown()
+            && expected != *receiver_ty
+        {
+            return;
+        }
+    }
+    check_initializer_global(global, span, param, program, diagnostics);
+}
+
 /// Checks a written argument for a global borrowed by the declared mode.
 #[allow(clippy::too_many_arguments)]
 fn check_initializer_global_borrow(
     expr: &Expr,
     span: Span,
     param: &Param,
+    type_params: &[String],
     callee_module: &Module,
-    receiver: bool,
     module: &Module,
     loaded: &Loaded,
     program: &ProgramInfo<'_>,
@@ -654,41 +836,28 @@ fn check_initializer_global_borrow(
     if param.mode == Mode::Take {
         return;
     }
+    if param.mode == Mode::None
+        && initializer_param_unresolved(param, type_params, callee_module, loaded, sema)
+    {
+        return;
+    }
     let Some((global, _)) = initializer_global(expr, module, loaded) else {
         return;
     };
-    check_initializer_global(
-        global,
-        span,
-        param,
-        callee_module,
-        receiver,
-        "",
-        loaded,
-        program,
-        sema,
-        diagnostics,
-    );
+    check_initializer_global(global, span, param, program, diagnostics);
 }
 
 /// Reports a non-`const` global borrowed by one parameter.
-#[allow(clippy::too_many_arguments)]
 fn check_initializer_global(
     global: crate::init_graph::GlobalRef,
     span: Span,
     param: &Param,
-    callee_module: &Module,
-    receiver: bool,
-    callee_name: &str,
-    loaded: &Loaded,
     program: &ProgramInfo<'_>,
-    sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
 ) {
     if param.mode == Mode::Take {
         return;
     }
-    let projected = !global.fields.is_empty();
     let id = GlobalId::new(global.module, global.name);
     let Some(info) = program.globals.get(&id) else {
         return;
@@ -706,20 +875,6 @@ fn check_initializer_global(
     {
         return;
     }
-    if receiver && !projected {
-        // A dot callee may be a func-typed field that shares a free
-        // function's name. A field of the receiver's own type wins; otherwise
-        // the receiver's declared type must match the first parameter before
-        // the borrow rule applies. A projected receiver (a field of a global)
-        // keeps the rule: the root binding is still a global.
-        if receiver_has_field(&info.ty, callee_name, program) {
-            return;
-        }
-        let expected = resolve_ty_folded(&param.ty, &[], &sema.table, callee_module, loaded);
-        if expected.is_unknown() || info.ty.is_unknown() || expected != info.ty {
-            return;
-        }
-    }
     diagnostics.push(
         Diagnostic::error(
             "E10038",
@@ -728,6 +883,65 @@ fn check_initializer_global(
         )
         .with_help("borrow from a local owner"),
     );
+}
+
+/// The type of a dot receiver, when the type stage recorded it.
+///
+/// A member expression carries its own recorded type, so a projected receiver
+/// (`g.h`) uses the projected type. A qualified receiver path has no separate
+/// expression node; the global's declared type is projected through the
+/// resolved fields.
+fn initializer_receiver_type(
+    receiver: &InitializerReceiver<'_>,
+    module: &Module,
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    sema: &SemaOutput,
+) -> Option<Ty> {
+    match receiver {
+        InitializerReceiver::None => None,
+        InitializerReceiver::Expr(base) => sema
+            .expr_types
+            .get(&(*base as *const Expr as usize))
+            .cloned(),
+        InitializerReceiver::Path { segments, span } => {
+            let name = QualifiedName {
+                segments: segments.clone(),
+                span: *span,
+            };
+            let global = crate::init_graph::resolve_global(loaded, module, &name)?;
+            projected_global_type(&global, program, sema)
+        }
+    }
+}
+
+/// Projects a global binding's type through the resolved field path.
+fn projected_global_type(
+    global: &crate::init_graph::GlobalRef,
+    program: &ProgramInfo<'_>,
+    sema: &SemaOutput,
+) -> Option<Ty> {
+    let id = GlobalId::new(global.module.clone(), global.name.clone());
+    let info = program.globals.get(&id)?;
+    let mut ty = info.ty.clone();
+    for field in &global.fields {
+        ty = sema.table.instance_field(&ty, field)?;
+    }
+    Some(ty)
+}
+
+/// Resolves a qualified receiver path to a module global.
+fn initializer_global_path(
+    segments: &[String],
+    span: Span,
+    module: &Module,
+    loaded: &Loaded,
+) -> Option<(crate::init_graph::GlobalRef, Span)> {
+    let name = QualifiedName {
+        segments: segments.to_vec(),
+        span,
+    };
+    crate::init_graph::resolve_global(loaded, module, &name).map(|global| (global, span))
 }
 
 /// Resolves an expression's place to a module global.
@@ -764,18 +978,13 @@ fn initializer_place_segments(expr: &Expr) -> Option<Vec<String>> {
 }
 
 /// True when a struct type declares a field with the given name.
-///
-/// A func-typed field call resolves to the field, not to a free function of the
-/// same name, so the initializer walk must not apply the free function's
-/// parameter modes to the receiver.
-fn receiver_has_field(ty: &Ty, name: &str, program: &ProgramInfo<'_>) -> bool {
+fn receiver_has_field(ty: &Ty, field_name: &str, sema: &SemaOutput) -> bool {
     let TyKind::Struct(struct_name, _) = &ty.kind else {
         return false;
     };
-    program
-        .structs
-        .get(struct_name)
-        .is_some_and(|decl| decl.fields.iter().any(|field| field.name == name))
+    sema.table
+        .struct_fields(struct_name)
+        .is_some_and(|fields| fields.iter().any(|(name, _)| name == field_name))
 }
 
 /// The length of the longest leading module path in a qualified name.

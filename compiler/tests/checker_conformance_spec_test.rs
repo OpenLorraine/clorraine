@@ -11089,3 +11089,196 @@ func main(): i32 {
     assert_no_asan("qinitfield2", &output);
     assert_exit("qinitfield2", &output, 0);
 }
+
+/// A field call and a same-named free function stay apart in an initializer.
+///
+/// The receiver's projected type owns the field, so the call is a field call,
+/// not a borrow of the root global: `o.inner.call(5)` accepts even when a free
+/// `call` declares a borrow of `Inner`. A same-named struct loaded from another
+/// module must not hide the field either: the module's own `Holder` declares
+/// `call`, and the initializer accepts.
+#[test]
+fn should_keep_a_field_call_and_a_same_named_struct_apart_in_an_initializer() {
+    let projected = r#"module spec.cc.qinitprojfield;
+
+struct Inner { call: func(i32): i32; }
+struct Outer { inner: Inner; }
+
+func call(borrow h: Inner, x: i32): i32 { return 0; }
+
+let o: Outer = Outer { inner: Inner { call: (x: i32) => x + 1 } };
+let g: i32 = o.inner.call(5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let output = run_memory("qinitprojfield", projected);
+    assert_no_asan("qinitprojfield", &output);
+    assert_exit("qinitprojfield", &output, 0);
+
+    let holder = r#"module spec.cc.qinitstructname.holder;
+
+export struct Holder { other: i32; }
+"#;
+    let main = r#"module spec.cc.qinitstructname.main;
+
+import { Holder as OtherHolder } from spec.cc.qinitstructname.holder;
+
+struct Holder { call: func(i32): i32; }
+
+func call(borrow h: Holder, x: i32): i32 { return 0; }
+
+let h: Holder = Holder { call: (x: i32) => x + 1 };
+let other: OtherHolder = OtherHolder { other: 1 };
+let g: i32 = h.call(5);
+
+func main(): i32 {
+    return (g - 6) + (other.other - 1);
+}
+"#;
+    // The two loaded modules declare `Holder` with different fields. The
+    // checker resolves the field against the initializer module's struct, so
+    // this program is accepted; the shared simple type name is a separate
+    // pre-existing type-table/emission defect (DEF-416), so this case stops at
+    // the front end.
+    let (_scratch, _emitted) = emit_pair("qinitstructname", holder, main);
+
+    let order_holder = r#"module spec.cc.qinitorder;
+
+export struct N { v: i32; }
+
+export func peek(borrow n: N): i32 {
+    return n.v;
+}
+"#;
+    let order_main = r#"module spec.cc.qinitordermain;
+
+import { N } from spec.cc.qinitorder;
+
+func peek(take n: N): i32 {
+    return n.v;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = peek(n);
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let output = run_memory_pair("qinitorder", order_holder, order_main);
+    assert_no_asan("qinitorder", &output);
+    assert_exit("qinitorder", &output, 0);
+}
+
+/// The initializer walk resolves an aliased, fallback, generic-dot, or
+/// index-projected callee before judging a global borrow.
+///
+/// Each program reports `E10038` once, exactly as the function-body twin does:
+/// an import alias, the program-map fallback with a type alias, a generic dot
+/// receiver with an explicit `borrow`, and a receiver indexed out of a global
+/// array.
+#[test]
+fn should_apply_the_initializer_borrow_rule_through_the_resolved_callee() {
+    let alias_holder = r#"module spec.cc.qinitalias;
+
+export struct N { v: i32; }
+
+export func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+"#;
+    let alias_main = r#"module spec.cc.qinitaliasmain;
+
+import { N, peek as p } from spec.cc.qinitalias;
+
+let n: N = N { v: 1 };
+let g: i32 = p(n, 5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("qinitalias", alias_holder, alias_main);
+    assert_rejected_output(
+        "qinitalias",
+        &output,
+        &c_path,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let fallback_holder = r#"module spec.cc.qinitfallback;
+
+export struct N { v: i32; }
+
+export func peek(borrow n: N): i32 {
+    return n.v;
+}
+"#;
+    let fallback_main = r#"module spec.cc.qinitfallbackmain;
+
+import { N as M } from spec.cc.qinitfallback;
+
+let n: M = M { v: 1 };
+let g: i32 = n.peek();
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let (_scratch, output, c_path) =
+        compile_pair("qinitfallback", fallback_holder, fallback_main);
+    assert_rejected_output(
+        "qinitfallback",
+        &output,
+        &c_path,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let generic_dot = r#"module spec.cc.qinitgenericdot;
+
+struct N { v: i32; }
+
+func id<T>(borrow x: T): i32 { return 0; }
+
+let n: N = N { v: 1 };
+let g: i32 = n.id();
+
+func main(): i32 {
+    return g;
+}
+"#;
+    assert_rejected_once(
+        "qinitgenericdot",
+        generic_dot,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let index_projection = r#"module spec.cc.qinitindexproj;
+
+struct E { v: i32; }
+
+func peek(borrow e: E): i32 { return e.v; }
+
+let es: E[1] = [E { v: 1 }];
+let g: i32 = es[0].peek();
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "qinitindexproj",
+        index_projection,
+        "E10038",
+        &["cannot borrow global 'es'"],
+        &[],
+    );
+}

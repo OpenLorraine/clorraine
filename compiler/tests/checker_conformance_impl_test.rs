@@ -398,35 +398,37 @@ func main(): i32 {
 fn should_store_an_impure_index_base_once_in_an_initializer() {
     let source = r#"module spec.cc.impl.initbase;
 
-let calls: i32 = 0;
+import { slice } from std.mem;
 
-func v(s: str): str {
+let calls: i32 = 0;
+let xs: i32[4] = [1, 2, 3, 4];
+
+func v(s: i32[]): i32[] {
     calls = calls + 1;
     return s;
 }
 
-let e: i32 = i32(v("abcd")[1]);
+let sl: i32[] = slice(xs, 0, 4);
+let e: i32 = v(sl)[1];
 
 func main(): i32 {
     return calls * 10 + e;
 }
 "#;
     let emitted = emit_host("initbase", source);
-    assert_contains(
-        "initbase",
+    assert_contains("initbase",
         &emitted,
-        "ClStr __cl_itmp0 = cl_spec_cc_impl_initbase_v(cl_str(\"abcd\"));",
+        "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_initbase_v(cl_spec_cc_impl_initbase_sl);",
     );
     assert_contains("initbase", &emitted, "((usize)(1) >= (usize)((__cl_itmp0).len))");
-    assert_contains(
-        "initbase",
+    assert_contains("initbase",
         &emitted,
-        "cl_spec_cc_impl_initbase_e = (i32)((__cl_itmp0).ptr[1]);",
+        "cl_spec_cc_impl_initbase_e = (__cl_itmp0).ptr[1];",
     );
     assert_eq!(
         count(
             &emitted,
-            "cl_spec_cc_impl_initbase_v(cl_str(\"abcd\"))"
+            "cl_spec_cc_impl_initbase_v(cl_spec_cc_impl_initbase_sl)"
         ),
         1
     );
@@ -569,14 +571,18 @@ func main(): i32 {
 fn should_re_emit_a_stored_initializer_identically() {
     let source = r#"module spec.cc.impl.reemit;
 
-let calls: i32 = 0;
+import { slice } from std.mem;
 
-func v(s: str): str {
+let calls: i32 = 0;
+let xs: i32[4] = [1, 2, 3, 4];
+
+func v(s: i32[]): i32[] {
     calls = calls + 1;
     return s;
 }
 
-let e: i32 = i32(v("abcd")[1]);
+let sl: i32[] = slice(xs, 0, 4);
+let e: i32 = v(sl)[1];
 
 func main(): i32 {
     return calls * 10 + e;
@@ -590,7 +596,7 @@ func main(): i32 {
     assert_contains(
         "reemit",
         &first,
-        "ClStr __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_str(\"abcd\"));",
+        "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_spec_cc_impl_reemit_sl);",
     );
 }
 

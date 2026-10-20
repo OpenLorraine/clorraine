@@ -819,3 +819,86 @@ func main(): i32 {
         "lenindeximpl: the extent did not fold"
     );
 }
+
+/// The `len` effect evaluation never moves a caller-backed conditional arm.
+///
+/// A fresh conditional is discarded path-aware, but the mixed case emits no
+/// destination copy or source clear for the caller place. The dot call
+/// receiver keeps its hidden destination, and the bare literal emits both
+/// element calls.
+#[test]
+fn should_emit_a_len_operand_without_moving_a_caller_place() {
+    let scratch = ScratchDir::new("lenmixedimpl");
+    let mixed = r#"module codegen.av.impl.lenmixed;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("cc"), stringOf("dd")];
+}
+
+func main(): i32 {
+    let a: String[2] = [stringOf("aa"), stringOf("bb")];
+    let v: str = a[0];
+    let flag: bool = true;
+    let n: usize = len(flag ? a : mk());
+    return i32(n) - 2 + i32(v[0]) - 97;
+}
+"#;
+    let emitted = emit_host("lenmixedimpl", &scratch, mixed);
+    assert!(
+        !emitted.contains("memcpy(&(__cl_discard"),
+        "lenmixedimpl: the caller place arm was copied into the discard destination"
+    );
+    assert!(
+        !emitted.contains("cl_zero(&a)"),
+        "lenmixedimpl: the caller place arm was zeroed"
+    );
+    assert!(
+        emitted.contains("n = 2u;"),
+        "lenmixedimpl: the extent did not fold"
+    );
+
+    let dotcall = r#"module codegen.av.impl.lendotcall;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let n: usize = mk().len();
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let emitted = emit_host("lendotcallimpl", &scratch, dotcall);
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lendotcall_mk(__cl_tmp0)"),
+        "lendotcallimpl: the call receiver was not materialized"
+    );
+    assert!(
+        emitted.contains("n = 2;"),
+        "lendotcallimpl: the extent did not fold"
+    );
+
+    let literal = r#"module codegen.av.impl.lenlit;
+
+let hits: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let n: usize = len([mkA(), mkB()]);
+    return i32(n) - 2 + hits - 2;
+}
+"#;
+    let emitted = emit_host("lenlitimpl2", &scratch, literal);
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lenlit_mkA("),
+        "lenlitimpl2: the first literal element was not emitted"
+    );
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lenlit_mkB("),
+        "lenlitimpl2: the second literal element was not emitted"
+    );
+}

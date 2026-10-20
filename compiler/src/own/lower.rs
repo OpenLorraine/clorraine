@@ -551,6 +551,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if name == "len" {
                     if let Some(IntrinsicArg::Expr(inner)) = args.first() {
                         if let Some(extent) = fixed_array_extent(&self.ty(inner)) {
+                            if super::is_pure_place(inner) {
+                                return Value {
+                                    ty: Ty::usize_ty(),
+                                    kind: ValueKind::Int(extent as i128),
+                                };
+                            }
+                            if matches!(inner.kind, ExprKind::Call { .. }) {
+                                let value = self.lower_value(inner);
+                                let value = self.materialize_guard_operand(value);
+                                return Value {
+                                    ty: Ty::usize_ty(),
+                                    kind: ValueKind::Intrinsic {
+                                        name: "len".to_owned(),
+                                        args: vec![value],
+                                        type_arg: None,
+                                    },
+                                };
+                            }
+                            if self.defer_move_outs == 0 && !self.in_loop_condition {
+                                self.evaluate_len_operand_effects(inner);
+                            }
                             return Value {
                                 ty: Ty::usize_ty(),
                                 kind: ValueKind::Int(extent as i128),
@@ -1386,6 +1407,55 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // a place leaf stays a read.
         let value = self.materialize_discarded_literal(value);
         self.emit(Statement::Discard { value });
+    }
+
+    /// Evaluates the side effects of a fixed-array `len` operand.
+    ///
+    /// The extent is structural, so the operand's value is not needed. This
+    /// evaluates only what the language would run: a call's side effects, an
+    /// index's bounds guard and index expression, and a conditional's
+    /// condition. A conditional with a caller-backed arm never discards the
+    /// whole value; that would move the place arm and free the caller's
+    /// storage. A conditional whose arms are all fresh discards the selected
+    /// arm path-aware.
+    pub(super) fn evaluate_len_operand_effects(&mut self, expr: &'a Expr) {
+        if super::is_pure_place(expr) {
+            return;
+        }
+        match &expr.kind {
+            ExprKind::Call { .. } => self.lower_discarded(expr),
+            ExprKind::Conditional { condition, .. } => {
+                if super::is_fresh_len_operand(expr) {
+                    self.lower_discarded(expr);
+                } else {
+                    // The condition always runs; the selected arm is a caller
+                    // place or a mixed fresh/place pair, so the discard would
+                    // move it. The arm's fresh effects are the recorded
+                    // residual.
+                    self.lower_discarded(condition);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.evaluate_len_operand_effects(element);
+                }
+                if let Some(fill) = fill {
+                    self.evaluate_len_operand_effects(fill);
+                }
+            }
+            ExprKind::Index { .. } => {
+                // The read evaluates the base and index and runs the bounds
+                // guard; it moves no storage.
+                self.lower_discarded(expr);
+            }
+            ExprKind::Member { base, .. } => self.evaluate_len_operand_effects(base),
+            ExprKind::Cast { .. } | ExprKind::RawCast { .. } => self.lower_discarded(expr),
+            ExprKind::Unsafe(inner) => self.evaluate_len_operand_effects(inner),
+            ExprKind::IntrinsicCall { .. } => self.lower_discarded(expr),
+            // Literals and lambda values have no run-time effect; a pure
+            // name/member was handled by the first check.
+            _ => {}
+        }
     }
 
     /// Gives a discarded literal's fresh leaves their own released temporaries.

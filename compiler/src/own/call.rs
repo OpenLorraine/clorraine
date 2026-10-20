@@ -700,6 +700,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // compile-time constant, so nothing is bound and the receiver
             // reads no storage.
             if let Some(extent) = self.structural_len_extent(callee) {
+                if let ExprKind::Member { base, .. } = &callee.kind {
+                    if !super::is_pure_place(base) {
+                        if matches!(base.kind, ExprKind::Call { .. }) {
+                            let value = self.lower_value(base);
+                            let value = self.materialize_guard_operand(value);
+                            return Some((
+                                Ty::usize_ty(),
+                                ValueKind::Intrinsic {
+                                    name: "len".to_owned(),
+                                    args: vec![value],
+                                    type_arg: None,
+                                },
+                            ));
+                        }
+                        if self.defer_move_outs == 0 && !self.in_loop_condition {
+                            self.evaluate_len_operand_effects(base);
+                        }
+                    }
+                }
                 return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
             }
             // A qualified free call (`mod.len(value)`) takes its argument
@@ -723,11 +742,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // released there. The emitter reads the extent from
                         // the fixed-array type.
                         //
-                        // A non-call effectful shape (a conditional, an array
-                        // literal, or a run-time index) has no expression form
-                        // the emitter can fold and discard safely; those
-                        // shapes keep the structural fold and their evaluation
-                        // is tracked separately.
+                        // A conditional, array literal, or run-time index is
+                        // evaluated effects-only: a fresh arm or element is
+                        // discarded path-aware, while a caller place is never
+                        // moved by the structural fold. The evaluated position
+                        // must be unconditional; a conditionally evaluated
+                        // operand keeps the fold and its effects are the
+                        // recorded residual.
                         if matches!(arg.value.kind, ExprKind::Call { .. }) {
                             let value = self.lower_value(&arg.value);
                             let value = self.materialize_guard_operand(value);
@@ -748,7 +769,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // conditionally evaluated position would run on a path
                         // that skips the call, so that shape keeps the fold.
                         if self.defer_move_outs == 0 && !self.in_loop_condition {
-                            self.lower_discarded(&arg.value);
+                            self.evaluate_len_operand_effects(&arg.value);
                         }
                         return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                     }
