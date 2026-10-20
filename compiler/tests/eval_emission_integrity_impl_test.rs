@@ -2704,3 +2704,79 @@ func main(): i32 {
     );
     assert_contains_all("pqcapture", &first, &["cl_lambda_", "slot"]);
 }
+
+/// A carrier helper's unused owned argument is not a view source.
+///
+/// `make("AA", b)` returns a static carrier that never reads `b`, so the
+/// caller's store stays accepted even though `b` is a local aggregate. The
+/// return-expression summary filters the argument out.
+#[test]
+fn should_keep_an_unused_owned_carrier_argument_accepted() {
+    let source = r#"module impl.eei.pqunusedowned;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(v: str, b: Box): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = make("AA", b);
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqunusedowned", source);
+    assert_eq!(
+        first, second,
+        "pqunusedowned: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("pqunusedowned", source, 0);
+
+    // A view that reaches the return through a local still names its source.
+    let local_hop = r#"module impl.eei.pqlocalhop;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(b: Box): Holder {
+    let v: str = b.v;
+    return Holder { names: [v, "EE"] };
+}
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = make(b);
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pqlocalhop", local_hop);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pqlocalhop: expected the frame-backed source once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("does not live long enough"),
+        "pqlocalhop: expected the escape report; stderr:\n{stderr}"
+    );
+}

@@ -2538,8 +2538,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             args.get(written_index)
                 .map(|arg| ViewCallSource::Expr(&arg.value))
         };
-        let (params, returns) = if let Some(signature) = self.callable_call_signature(callee) {
-            signature
+        let (params, returns, filter) = if let Some((params, returns)) =
+            self.callable_call_signature(callee)
+        {
+            let filter = match &super::expr::structural_wrapper_inner(callee).kind {
+                ExprKind::Lambda { params, body, .. } => {
+                    let mut mentioned = BTreeSet::new();
+                    collect_lambda_body_names(body, &mut mentioned);
+                    Some((
+                        params.iter().map(|param| param.name.clone()).collect(),
+                        mentioned,
+                    ))
+                }
+                // A conditional or bound value callee may name its parameters
+                // differently per arm; keep every candidate rather than filter
+                // by a name that belongs to only one arm.
+                _ => None,
+            };
+            (params, returns, filter)
         } else {
             let Some(name) = self.callee_name(callee) else {
                 return Vec::new();
@@ -2555,16 +2571,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .iter()
                 .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
                 .collect();
-            (params, returns)
+            let names: Vec<String> = decl
+                .params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect();
+            (params, returns, Some((names, body_mentioned_names(&decl.body))))
         };
         if is_view_like(&returns) || !self.may_carry_view(&returns) {
             return Vec::new();
         }
         let effective = self.call_effective_params(callee, args, is_dot, &params);
-        self.carrier_candidates(&effective, &params)
-            .into_iter()
-            .filter_map(source)
-            .collect()
+        let mut candidates = self.carrier_candidates(&effective, &params);
+        // A parameter the callee's return expressions never mention cannot
+        // contribute a position to the returned carrier. Filtering by that
+        // summary keeps an unused owned argument from being treated as a
+        // source, while a pass-through, a field read, and a call argument all
+        // mention the parameter and stay candidates.
+        if let Some((names, mentioned)) = filter {
+            candidates.retain(|index| {
+                names
+                    .get(*index)
+                    .is_some_and(|name| mentioned.contains(name))
+            });
+        }
+        candidates.into_iter().filter_map(source).collect()
     }
 
     /// The parameter indices a carrier return may derive a view position from.
@@ -3185,6 +3216,194 @@ fn written_path_clears(written: &[ir::Projection], path: &[ir::Projection]) -> b
         return false;
     }
     path.starts_with(written)
+}
+
+/// The parameter names a function body mentions.
+///
+/// A carrier return can hand back a view position of a parameter the body
+/// reads, directly or through a local that carries the view. The name set is a
+/// may-read summary over the whole body: a parameter the summary omits is never
+/// read, so it cannot back a returned position and is not treated as a carrier
+/// source. A body that only forwards a parameter to a call still mentions it,
+/// which keeps the conservative source set for an indirect derivation.
+fn body_mentioned_names(body: &Block) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    collect_block_names(body, &mut names);
+    names
+}
+
+/// Collects every name a block mentions.
+fn collect_block_names(block: &Block, names: &mut BTreeSet<String>) {
+    for statement in &block.statements {
+        collect_stmt_names(statement, names);
+    }
+}
+
+/// Collects every name one statement mentions.
+fn collect_stmt_names(stmt: &Stmt, names: &mut BTreeSet<String>) {
+    match stmt {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                collect_expr_names(value, names);
+            }
+        }
+        Stmt::Const(decl) => collect_expr_names(&decl.value, names),
+        Stmt::Expr(expr) => collect_expr_names(expr, names),
+        Stmt::If(decl) => collect_if_names(decl, names),
+        Stmt::While(decl) => {
+            collect_expr_names(&decl.condition, names);
+            collect_block_names(&decl.body, names);
+        }
+        Stmt::DoWhile(decl) => {
+            collect_block_names(&decl.body, names);
+            collect_expr_names(&decl.condition, names);
+        }
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(ForInit::Expr(expressions)) => {
+                    for expression in expressions {
+                        collect_expr_names(expression, names);
+                    }
+                }
+                Some(ForInit::Let(binding)) => {
+                    if let Some(value) = &binding.value {
+                        collect_expr_names(value, names);
+                    }
+                }
+                Some(ForInit::Const(binding)) => collect_expr_names(&binding.value, names),
+                None => {}
+            }
+            if let Some(condition) = &decl.condition {
+                collect_expr_names(condition, names);
+            }
+            for step in &decl.step {
+                collect_expr_names(step, names);
+            }
+            collect_block_names(&decl.body, names);
+        }
+        Stmt::ForIn(decl) => {
+            collect_expr_names(&decl.iterable, names);
+            collect_block_names(&decl.body, names);
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_expr_names(value, names);
+            }
+        }
+        Stmt::Switch(decl) => {
+            collect_expr_names(&decl.scrutinee, names);
+            for clause in &decl.clauses {
+                for statement in &clause.statements {
+                    collect_stmt_names(statement, names);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            collect_block_names(block, names)
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
+    }
+}
+
+/// Collects every name an `if` statement mentions, including a chained
+/// `else if`.
+fn collect_if_names(decl: &IfStmt, names: &mut BTreeSet<String>) {
+    collect_expr_names(&decl.condition, names);
+    collect_block_names(&decl.then_block, names);
+    match &decl.else_branch {
+        Some(ElseBranch::If(nested)) => collect_if_names(nested, names),
+        Some(ElseBranch::Block(block)) => collect_block_names(block, names),
+        None => {}
+    }
+}
+
+/// Collects every name an expression mentions.
+fn collect_expr_names(expr: &Expr, names: &mut BTreeSet<String>) {
+    match &expr.kind {
+        ExprKind::Name(name) => {
+            names.insert(name.clone());
+        }
+        ExprKind::Qualified(name) => {
+            if let Some(first) = name.segments.first() {
+                names.insert(first.clone());
+            }
+        }
+        ExprKind::Call { callee, args, .. } => {
+            collect_expr_names(callee, names);
+            for arg in args {
+                collect_expr_names(&arg.value, names);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            collect_expr_names(base, names);
+            collect_expr_names(index, names);
+        }
+        ExprKind::Member { base, .. } => collect_expr_names(base, names),
+        ExprKind::Unary { operand, .. } => collect_expr_names(operand, names),
+        ExprKind::Binary { left, right, .. } => {
+            collect_expr_names(left, names);
+            collect_expr_names(right, names);
+        }
+        ExprKind::Assign { target, value, .. } => {
+            collect_expr_names(target, names);
+            collect_expr_names(value, names);
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            collect_expr_names(condition, names);
+            collect_expr_names(then_value, names);
+            collect_expr_names(else_value, names);
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            collect_expr_names(value, names)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_expr_names(&field.value, names);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                collect_expr_names(element, names);
+            }
+            if let Some(fill) = fill {
+                collect_expr_names(fill, names);
+            }
+        }
+        // A returned lambda's captures are read in its body, so the body's
+        // names are part of what the returned value may hold.
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Expr(value) => collect_expr_names(value, names),
+            LambdaBody::Block(block) => collect_block_names(block, names),
+        },
+        ExprKind::Unsafe(inner) => collect_expr_names(inner, names),
+        ExprKind::IntrinsicCall { args, .. } => {
+            for arg in args {
+                if let IntrinsicArg::Expr(inner) = arg {
+                    collect_expr_names(inner, names);
+                }
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(inner) = piece {
+                    collect_expr_names(inner, names);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collects the names a lambda body's return value mentions.
+fn collect_lambda_body_names(body: &LambdaBody, names: &mut BTreeSet<String>) {
+    match body {
+        LambdaBody::Expr(value) => collect_expr_names(value, names),
+        LambdaBody::Block(block) => collect_block_names(block, names),
+    }
 }
 
 /// True when a recorded position path starts with a read path.
