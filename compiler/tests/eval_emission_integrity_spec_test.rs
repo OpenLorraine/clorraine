@@ -4021,7 +4021,8 @@ struct Box { v: String; }
 
 func f<T>(take h: T): T {
     let a: Box = Box { v: stringOf("aa") };
-    h.names[0] = a.v;
+    let s: str = a.v;
+    h.names[0] = s;
     h = h;
     return h;
 }
@@ -4035,6 +4036,67 @@ func main(): i32 {
     assert_rejected_once(
         "opaqueviewsoreself",
         self_assign,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let conditional_self = r#"module spec.eei.opaqueviewsoreselfcond;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T, take h2: T, c: bool): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    h = c ? h : h2;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let h2: Holder = Holder { names: ["GG", "HH"] };
+    let g: Holder = f<Holder>(take h, take h2, true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreselfcond",
+        conditional_self,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let relay_self = r#"module spec.eei.opaqueviewsoreselfrelay;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func echo<T>(take h: T): T { return h; }
+
+func f<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    h = echo<T>(take h);
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreselfrelay",
+        relay_self,
         "E10030",
         &["does not live long enough"],
         &[],
@@ -4141,6 +4203,176 @@ func main(): i32 {
         partial,
         "E10026",
         &["partial moves are limited"],
+        &[],
+    );
+
+    let dotted_copy = r#"module spec.eei.opaqueviewsorestdotted;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Wrap<T> { inner: T; }
+struct Box { v: String; }
+
+func f<T>(take h: T): Wrap<T> {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    let w: Wrap<T> = Wrap<T> { inner: h };
+    w.inner = h;
+    return w;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Wrap<Holder> = f<Holder>(take h);
+    return i32(g.inner.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestdotted",
+        dotted_copy,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let constant_copy = r#"module spec.eei.opaqueviewsorestconst;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take w: Wrap<T>): T {
+    let a: Box = Box { v: stringOf("aa") };
+    w.items[0].names[0] = a.v;
+    let out: T = w.items[0];
+    return out;
+}
+
+func main(): i32 {
+    let w: Wrap<Holder> = Wrap<Holder> {
+        items: [
+            Holder { names: ["EE", "FF"] },
+            Holder { names: ["GG", "HH"] },
+        ],
+    };
+    let g: Holder = f<Holder>(take w);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestconst",
+        constant_copy,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let concrete_copy = r#"module spec.eei.opaqueviewsorestconcrete;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): Holder {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    let out: Holder = h;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestconcrete",
+        concrete_copy,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let runtime_pair = r#"module spec.eei.opaqueviewsorestruntime;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T, i: i32, j: i32): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[i] = s;
+    h.names[j] = "OK";
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h, 0, 1);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestruntime",
+        runtime_pair,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let borrow_slot = r#"module spec.eei.opaqueviewsorestborrow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(borrow h: T): void {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    f<Holder>(borrow h);
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestborrow",
+        borrow_slot,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let null_raw = r#"module spec.eei.opaqueviewsorestnullraw;
+
+struct Holder { p: raw u8; }
+
+func f<T>(take h: T): i32 {
+    let n = null;
+    h.p = n;
+    return 0;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { p: raw u8(0) };
+    return f<Holder>(take h);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorestnullraw",
+        null_raw,
+        "E10012",
+        &["'null' is not allowed here"],
         &[],
     );
 

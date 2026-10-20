@@ -350,6 +350,11 @@ pub struct RequiresOpaqueStore {
     /// A superseded duty keeps its owned-source judgment and any use already
     /// recorded before the overwrite, but its future view watches end.
     pub superseded: bool,
+    /// True when the destination root is a slot the caller keeps.
+    ///
+    /// A stored frame-backed view in a caller slot escapes at the store; the
+    /// audit reports it there rather than waiting for a return.
+    pub caller_slot: bool,
     /// The store site, for the conversion diagnostic.
     pub store_span: Span,
     /// The return site once the destination root is returned.

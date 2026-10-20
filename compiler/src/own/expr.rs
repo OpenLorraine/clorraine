@@ -1307,8 +1307,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.view_array_literal_depth -= 1;
                 }
                 self.literal_views = saved_literal_views;
-                let deferred_owned_move =
-                    self.record_opaque_store(id, &projections, value, &target_ty, target.span);
+                let deferred_owned_move = self.record_opaque_store(
+                    id,
+                    &projections,
+                    value,
+                    &target_ty,
+                    caller_slot,
+                    target.span,
+                );
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
@@ -1398,17 +1404,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
                 self.write_place(id, &projections, target.span);
-                if projections.is_empty() {
+                if !projections.is_empty() || !is_view_like(&target_ty) {
+                    let root = self.bindings[id].ir_name.clone();
                     let mut roots = BTreeSet::new();
                     self.expr_view_roots(value, &mut roots);
-                    let root = self.bindings[id].ir_name.clone();
                     let aliases_target = roots
                         .iter()
                         .any(|source| self.bindings[*source].ir_name == root);
-                    if !aliases_target {
+                    // A whole-root assignment replaces the target's view even
+                    // when the right side carries no duty of its own. A
+                    // projected store only replaces a carrier position when
+                    // the value is itself a carrier.
+                    let source_has_duties = roots.iter().any(|source| {
+                        let name = &self.bindings[*source].ir_name;
+                        self.opaque_store_requirements
+                            .iter()
+                            .any(|duty| duty.root == *name)
+                    });
+                    if projections.is_empty() && !aliases_target {
                         self.supersede_opaque_duties(&root, &[]);
+                    } else if !projections.is_empty() && source_has_duties {
+                        self.supersede_opaque_duties(&root, &projections);
                     }
-                    self.transfer_opaque_store_duties(id, &roots, value, target.span);
+                    if source_has_duties {
+                        self.transfer_opaque_store_duties(
+                            id,
+                            &roots,
+                            value,
+                            &projections,
+                            target.span,
+                        );
+                    }
                 }
                 let lowered = if has_runtime_element(&projections) {
                     self.emit_indexed_store(target, value, compound, skip_transfer)
@@ -1775,6 +1801,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         projections: &[ir::Projection],
         value: &Expr,
         target_ty: &Ty,
+        caller_slot: bool,
         span: Span,
     ) -> bool {
         if self.speculative_lowering {
@@ -1903,6 +1930,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             superseded: false,
             store_span: span,
             return_span: None,
+            caller_slot,
             root,
         });
         owned_source && has_source_place
@@ -3575,11 +3603,16 @@ pub(super) fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Proj
 
 /// True when one projection step covers another position.
 ///
-/// Only the same step covers: a run-time element store *may* write any element,
-/// so it cannot replace a constant element's view, and a constant store cannot
-/// replace a run-time record.
+/// Only a field with the same name or the same constant element covers: a
+/// run-time element store *may* write any element, so it cannot replace a
+/// constant element's view, and two run-time stores cannot prove they reach the
+/// same position.
 fn projection_step_covers(left: &ir::Projection, right: &ir::Projection) -> bool {
-    left == right
+    match (left, right) {
+        (ir::Projection::Field(a), ir::Projection::Field(b)) => a == b,
+        (ir::Projection::Element(Some(a)), ir::Projection::Element(Some(b))) => a == b,
+        _ => false,
+    }
 }
 
 /// True when two projection paths select an overlapping position.

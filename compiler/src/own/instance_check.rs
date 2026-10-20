@@ -446,10 +446,7 @@ fn check_opaque_store_requirements(
                 continue;
             }
             if crate::types::is_null_shaped(&requirement.value) {
-                let null_capable = destination.nullable
-                    || is_view(&destination)
-                    || matches!(destination.kind, TyKind::Handle(_) | TyKind::Raw(_));
-                if !null_capable {
+                if !destination.nullable {
                     if reported_use.insert((
                         requirement.function.clone(),
                         requirement.store_span.start,
@@ -492,6 +489,18 @@ fn check_opaque_store_requirements(
             }
             if is_view_like(&destination) && !requirement.superseded {
                 let subject = requirement.frame_owner.as_deref();
+                if requirement.caller_slot {
+                    if let Some(subject) = subject {
+                        if reported_use.insert((
+                            requirement.function.clone(),
+                            requirement.store_span.start,
+                            "E10030",
+                        )) {
+                            diagnostics.push(opaque_escape(subject, requirement.store_span));
+                        }
+                        break;
+                    }
+                }
                 if let (Some(subject), Some(span)) = (subject, requirement.return_span) {
                     let site = (
                         requirement.function.clone(),

@@ -389,7 +389,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let Some(value) = &decl.value {
-            self.transfer_opaque_store_duties(id, &copy_roots, value, value.span);
+            self.transfer_opaque_store_duties(id, &copy_roots, value, &[], value.span);
         }
         if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
@@ -850,7 +850,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut copy_roots = BTreeSet::new();
         self.expr_view_roots(&decl.value, &mut copy_roots);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
-        self.transfer_opaque_store_duties(id, &copy_roots, &decl.value, decl.span);
+        self.transfer_opaque_store_duties(id, &copy_roots, &decl.value, &[], decl.span);
         self.set_place(
             id,
             PlaceState {
@@ -1891,6 +1891,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         target: usize,
         roots: &BTreeSet<usize>,
         value: &Expr,
+        target_path: &[ir::Projection],
         span: Span,
     ) {
         if self.opaque_store_requirements.is_empty()
@@ -1906,7 +1907,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let view_alias = is_view_like(&target_ty);
         if !(view_alias
             || target_ty.is_unknown()
-            || crate::types::contains_param(&target_ty))
+            || crate::types::contains_param(&target_ty)
+            || matches!(target_ty.kind, TyKind::Struct(..) | TyKind::Array { .. }))
         {
             return;
         }
@@ -1928,24 +1930,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 {
                     continue;
                 }
-                let path = if view_alias {
+                let mut path = target_path.to_vec();
+                if view_alias {
                     if !super::expr::projection_paths_overlap(&position, &duty.path) {
                         continue;
                     }
-                    Vec::new()
                 } else if embed {
-                    let mut path = position.clone();
+                    path.extend_from_slice(&position);
                     path.extend_from_slice(&duty.path);
-                    path
                 } else {
                     if !super::expr::projection_path_covers(&position, &duty.path) {
                         continue;
                     }
-                    duty.path[position.len()..].to_vec()
-                };
+                    path.extend_from_slice(&duty.path[position.len()..]);
+                }
                 let mut copy = duty.clone();
                 copy.root = target_root.clone();
-                copy.ty = target_ty.clone();
+                copy.ty = self.bindings[target].ty.clone();
                 copy.path = path;
                 copy.return_span = None;
                 copy.later_uses.clear();

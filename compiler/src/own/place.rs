@@ -1225,6 +1225,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         path: &mut Vec<ir::Projection>,
         out: &mut Vec<(usize, Vec<ir::Projection>)>,
     ) {
+        // A place expression already carries its complete root-to-leaf path,
+        // in order, including constant indices. Use it directly so a member
+        // over an index (`w.items[0]`) does not rebuild the steps out of
+        // order.
+        if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
+            let mut full = path.clone();
+            full.extend(projections);
+            out.push((self.alias_resolved_root(id), full));
+            return;
+        }
         match &expr.kind {
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {
@@ -1246,8 +1256,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.expr_view_positions(base, path, out);
                 path.pop();
             }
-            ExprKind::Index { base, .. } => {
-                path.push(ir::Projection::Element(None));
+            ExprKind::Index { base, index } => {
+                // A constant index names one position; a run-time index may
+                // reach any element.
+                let element = crate::types::int_literal_value(index)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .map(Some)
+                    .unwrap_or(None);
+                path.push(ir::Projection::Element(element));
                 self.expr_view_positions(base, path, out);
                 path.pop();
             }
