@@ -3589,6 +3589,121 @@ func main(): i32 {
         &["does not live long enough"],
         &[],
     );
+
+    let const_copy = r#"module spec.eei.opaqueviewsoreconst;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    const out: T = h;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreconst",
+        const_copy,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let assigned = r#"module spec.eei.opaqueviewsoreassign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T, take h2: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    let out: T = h2;
+    out = h;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let h2: Holder = Holder { names: ["GG", "HH"] };
+    let g: Holder = id<Holder>(take h, take h2);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreassign",
+        assigned,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let conditional_init = r#"module spec.eei.opaqueviewsorecondinit;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T, take h2: T, c: bool): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    let out: T = c ? h : h2;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let h2: Holder = Holder { names: ["GG", "HH"] };
+    let g: Holder = id<Holder>(take h, take h2, true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorecondinit",
+        conditional_init,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let temporary = r#"module spec.eei.opaqueviewsoretemporary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T): T {
+    h.names[0] = stringOf("aa");
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoretemporary",
+        temporary,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
 }
 
 /// A stored view's backing is watched after the store.
@@ -3732,6 +3847,131 @@ func main(): i32 {
     let output = run_memory("opaqueviewsoresibling", sibling);
     assert_no_asan("opaqueviewsoresibling", &output);
     assert_exit("opaqueviewsoresibling", &output, 0);
+
+    let sibling_store = r#"module spec.eei.opaqueviewsoresiblingstore;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    h.names[1] = "OK";
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoresiblingstore",
+        sibling_store,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let lambda_store = r#"module spec.eei.opaqueviewsorelambda;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    ([borrow h] () => {
+        let a: Box = Box { v: stringOf("aa") };
+        h.names[0] = a.v;
+        return 0;
+    })();
+    let v: str = h.names[0];
+    return i32(v[0]) - 97;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorelambda",
+        lambda_store,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let source_reset = r#"module spec.eei.opaqueviewsoresourcewrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.v = a.v;
+    a = Box { v: stringOf("bb") };
+    return i32(len(a.v)) - 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    return f<Box>(take b);
+}
+"#;
+    let output = run_memory("opaqueviewsoresourcewrite", source_reset);
+    assert_no_asan("opaqueviewsoresourcewrite", &output);
+    assert_exit("opaqueviewsoresourcewrite", &output, 0);
+
+    let whole_array = r#"module spec.eei.opaqueviewsorewholearray;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T, p: str[2]): i32 {
+    h.names = p;
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let p: str[2] = ["AA", "BB"];
+    return f<Holder>(take h, p);
+}
+"#;
+    let output = run_memory("opaqueviewsorewholearray", whole_array);
+    assert_no_asan("opaqueviewsorewholearray", &output);
+    assert_exit("opaqueviewsorewholearray", &output, 0);
+
+    let whole_root = r#"module spec.eei.opaqueviewsorewholeroot;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T, take h2: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    h = h2;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let h2: Holder = Holder { names: ["GG", "HH"] };
+    let g: Holder = f<Holder>(take h, take h2);
+    return i32(g.names[0][0]) - 71;
+}
+"#;
+    let output = run_memory("opaqueviewsorewholeroot", whole_root);
+    assert_no_asan("opaqueviewsorewholeroot", &output);
+    assert_exit("opaqueviewsorewholeroot", &output, 0);
 }
 
 /// The instance's member kind also decides the store's move and widening.

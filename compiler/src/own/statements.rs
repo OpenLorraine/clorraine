@@ -368,6 +368,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // carrier's arms are collected here for the same reason: the
         // collector names the outer binding each arm reads, and the collected
         // loans are applied to the fresh destination after it exists.
+        let mut copy_roots = BTreeSet::new();
+        if let Some(value) = &decl.value {
+            self.expr_view_roots(value, &mut copy_roots);
+        }
         let copy_source = decl
             .value
             .as_ref()
@@ -384,10 +388,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
-        if let Some(PlaceTarget::Local(source, source_path)) = copy_source.clone() {
-            if source_path.is_empty() {
-                self.transfer_opaque_store_duties(id, source);
-            }
+        if let Some(value) = &decl.value {
+            self.transfer_opaque_store_duties(id, &copy_roots, value, value.span);
         }
         if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
@@ -845,7 +847,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A shadowing place source names the outer binding, so it is captured
         // before the new name is declared, exactly as in `check_let`.
         let copy_source = self.place_target(&decl.value);
+        let mut copy_roots = BTreeSet::new();
+        self.expr_view_roots(&decl.value, &mut copy_roots);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
+        self.transfer_opaque_store_duties(id, &copy_roots, &decl.value, decl.span);
         self.set_place(
             id,
             PlaceState {
@@ -1881,31 +1886,62 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// binding, so a later return or read of the copy judges the same stored
     /// views. The source's own later uses stay with the source duty; the copy
     /// keeps the backing watches and drops the source-move fields.
-    fn transfer_opaque_store_duties(&mut self, target: usize, source: usize) {
-        if self.opaque_store_requirements.is_empty() {
+    pub(super) fn transfer_opaque_store_duties(
+        &mut self,
+        target: usize,
+        roots: &BTreeSet<usize>,
+        value: &Expr,
+        span: Span,
+    ) {
+        if self.opaque_store_requirements.is_empty() || roots.is_empty() {
             return;
         }
         let target_ty = self.bindings[target].ty.clone();
-        if !(target_ty.is_unknown() || crate::types::contains_param(&target_ty)) {
+        let view_alias = is_view_like(&target_ty);
+        if !(view_alias
+            || target_ty.is_unknown()
+            || crate::types::contains_param(&target_ty))
+        {
             return;
         }
-        let source = self.alias_resolved_root(source);
-        let source_root = self.bindings[source].ir_name.clone();
+        let root_names: BTreeSet<String> = roots
+            .iter()
+            .map(|id| self.bindings[*id].ir_name.clone())
+            .collect();
         let target_root = self.bindings[target].ir_name.clone();
+        // A view alias selects one stored position; a carrier copy takes the
+        // whole binding, so every position matches.
+        let direct = self.place_target(value);
         let mut copied = Vec::new();
         for duty in &self.opaque_store_requirements {
-            if duty.function != self.decl.name || duty.root != source_root {
+            if duty.function != self.decl.name || !root_names.contains(&duty.root) {
                 continue;
+            }
+            if view_alias {
+                let Some(PlaceTarget::Local(root, path)) = &direct else {
+                    continue;
+                };
+                if self.bindings[self.alias_resolved_root(*root)].ir_name != duty.root
+                    || !super::expr::projection_paths_overlap(path, &duty.path)
+                {
+                    continue;
+                }
             }
             let mut copy = duty.clone();
             copy.root = target_root.clone();
             copy.ty = target_ty.clone();
             copy.return_span = None;
             copy.later_uses.clear();
-            copy.source = None;
+            copy.source_ir = None;
             copy.source_name = None;
             copy.source_path.clear();
             copy.source_param = false;
+            copy.superseded = false;
+            if view_alias {
+                copy.path.clear();
+                copy.value = target_ty.clone();
+                copy.store_span = span;
+            }
             copied.push(copy);
         }
         self.opaque_store_requirements.extend(copied);

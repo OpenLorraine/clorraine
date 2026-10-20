@@ -1398,6 +1398,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
                 self.write_place(id, &projections, target.span);
+                if projections.is_empty() {
+                    let root = self.bindings[id].ir_name.clone();
+                    self.supersede_opaque_duties(&root, &[]);
+                    let mut roots = BTreeSet::new();
+                    self.expr_view_roots(value, &mut roots);
+                    self.transfer_opaque_store_duties(id, &roots, value, target.span);
+                }
                 let lowered = if has_runtime_element(&projections) {
                     self.emit_indexed_store(target, value, compound, skip_transfer)
                 } else {
@@ -1783,9 +1790,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !view_source && !owned_source {
             return false;
         }
-        // An owned source is judged only when it is a place: a call result or
-        // a literal has no later use to report and keeps its existing store
-        // path.
+        // An owned source that names a place can be moved or widened; a call
+        // result or literal has no later use to report but still records the
+        // view's frame so a returned carrier reports the escape.
         let source_place = if owned_source {
             match self.place_target(value) {
                 Some(PlaceTarget::Local(source, source_path)) => {
@@ -1797,9 +1804,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             None
         };
-        if owned_source && source_place.is_none() {
-            return false;
-        }
         // A `for (borrow e in xs)` alias has no storage of its own: the store
         // reaches the container element, so the duty roots at the container
         // with the alias's own path followed by the written path.
@@ -1816,60 +1820,103 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return false;
         }
         // A store at or above an earlier path replaces whatever view that path
-        // held, so the earlier duty no longer describes the carrier.
-        self.opaque_store_requirements.retain(|duty| {
-            !(duty.function == self.decl.name
-                && duty.root == root
-                && projection_path_covers(&path, &duty.path))
-        });
-        let frame_atom = Self::storage_atoms(&self.view_provenance(value))
-            .into_iter()
-            .find(|atom| !self.provenance_fits_destination(atom, false));
-        let (frame_owner, owner, owner_name) = match frame_atom {
-            Some(Provenance::Local(owner) | Provenance::Param(owner)) => {
-                let name = self.bindings[owner].name.clone();
-                (
-                    Some(super::liveness::owner_subject(
-                        &name,
-                        self.bindings[owner].generated,
-                    )),
-                    Some(owner),
-                    Some(name),
-                )
+        // held. A duty that already recorded a use or a backing write keeps
+        // that report; a duty that carries an owned-source move keeps the move
+        // judgment; every other overwritten duty is dropped.
+        self.supersede_opaque_duties(&root, &path);
+        let mut frames: Vec<ir::OpaqueFrame> = Vec::new();
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if self.provenance_fits_destination(&atom, false) {
+                continue;
             }
-            Some(_) => (Some("a statement temporary".to_owned()), None, None),
-            None => (None, None, None),
-        };
-        let (source, source_path, source_param) = match source_place {
+            let frame = match atom {
+                Provenance::Local(owner) | Provenance::Param(owner) => {
+                    let name = self.bindings[owner].name.clone();
+                    ir::OpaqueFrame {
+                        binding: Some(self.bindings[owner].ir_name.clone()),
+                        name: Some(name.clone()),
+                        subject: super::liveness::owner_subject(
+                            &name,
+                            self.bindings[owner].generated,
+                        ),
+                        scope_end: self.bindings[owner].scope_end,
+                    }
+                }
+                _ => ir::OpaqueFrame {
+                    binding: None,
+                    name: None,
+                    subject: "a statement temporary".to_owned(),
+                    scope_end: Span::default(),
+                },
+            };
+            if !frames.contains(&frame) {
+                frames.push(frame);
+            }
+        }
+        let frame_owner = frames.first().map(|frame| frame.subject.clone());
+        let has_source_place = source_place.is_some();
+        let (source_ir, source_name, source_path, source_param) = match source_place {
             Some((source, source_path)) => {
                 let binding = &self.bindings[source];
                 let parameter =
                     binding.kind == BindingKind::Param && binding.mode != Mode::Take;
-                (Some(source), source_path, parameter)
+                (
+                    Some(binding.ir_name.clone()),
+                    Some(binding.name.clone()),
+                    source_path,
+                    parameter,
+                )
             }
-            None => (None, Vec::new(), false),
+            None => (None, None, Vec::new(), false),
         };
-        let source_name = source.map(|id| self.bindings[id].name.clone());
         self.opaque_store_requirements.push(ir::RequiresOpaqueStore {
             function: self.decl.name.clone(),
             ty: declared_root,
             path,
             value: value_ty,
             frame_owner,
-            owner,
-            owner_name,
-            source,
+            frames,
+            source_ir,
             source_name,
             source_path,
             source_param,
             later_uses: Vec::new(),
             late_uses: Vec::new(),
             invalidations: Vec::new(),
+            moved_owner: Vec::new(),
+            superseded: false,
             store_span: span,
             return_span: None,
             root,
         });
-        owned_source
+        owned_source && has_source_place
+    }
+
+    /// Ends the view watches a replaced opaque store no longer owns.
+    ///
+    /// A duty that already recorded a use or a backing write keeps that
+    /// report, and a duty that carries an owned-source move keeps the move
+    /// judgment; every other overwritten duty is dropped.
+    fn supersede_opaque_duties(&mut self, root: &str, path: &[ir::Projection]) {
+        let mut kept = Vec::new();
+        for mut duty in std::mem::take(&mut self.opaque_store_requirements) {
+            let replaced = duty.function == self.decl.name
+                && duty.root == root
+                && projection_path_covers(path, &duty.path);
+            if !replaced {
+                kept.push(duty);
+                continue;
+            }
+            if !duty.late_uses.is_empty() || !duty.invalidations.is_empty() {
+                kept.push(duty);
+                continue;
+            }
+            if duty.source_ir.is_some() {
+                duty.superseded = true;
+                kept.push(duty);
+            }
+        }
+        self.opaque_store_requirements = kept;
     }
 
     /// Records a read that reaches an opaque store's destination or source.
@@ -1891,14 +1938,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if duty.function != self.decl.name {
                 continue;
             }
-            if duty.root == root {
-                if let Some(owner) = duty.owner {
-                    if self.bindings[owner].scope_end.end <= span.start {
-                        push_opaque_span(&mut duty.late_uses, span);
-                    }
+            if duty.root == root && !duty.superseded {
+                // A temporary backing dies at the store's statement, so every
+                // later read is dangling. A named backing dies at its scope's
+                // close.
+                let dying = duty
+                    .frames
+                    .iter()
+                    .find(|frame| match &frame.binding {
+                        Some(_) => frame.scope_end.end <= span.start,
+                        None => true,
+                    });
+                if let Some(frame) = dying {
+                    push_opaque_use(&mut duty.late_uses, span, &frame.subject);
                 }
             }
-            if duty.source == Some(id)
+            if duty.source_ir.as_deref() == Some(root.as_str())
                 && projection_paths_overlap(&duty.source_path, &projections)
             {
                 push_opaque_span(&mut duty.later_uses, span);
@@ -1910,29 +1965,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Writing the backing after a view was stored into the carrier frees or
     /// replaces the storage the view reads. At a view instance the write is
-    /// the concrete shared-loan conflict; at an owning instance the same write
-    /// is a use after the move the store performed.
+    /// the concrete shared-loan conflict and a move the borrow conflict; at an
+    /// owning instance the same access is a use after the move the store
+    /// performed. A write that re-initializes the owned source ends its moved
+    /// state instead.
     pub(super) fn note_opaque_owner_write(
         &mut self,
         id: usize,
         projections: &[ir::Projection],
         span: Span,
+        moved: bool,
     ) {
         if self.speculative_lowering || self.opaque_store_requirements.is_empty() {
             return;
         }
         let id = self.alias_resolved_root(id);
+        let root = self.bindings[id].ir_name.clone();
         for duty in &mut self.opaque_store_requirements {
             if duty.function != self.decl.name {
                 continue;
             }
-            if duty.owner == Some(id) {
-                push_opaque_span(&mut duty.invalidations, span);
+            let frame = duty
+                .frames
+                .iter()
+                .find(|frame| frame.binding.as_deref() == Some(root.as_str()))
+                .map(|frame| frame.subject.clone());
+            if let Some(subject) = frame {
+                if moved {
+                    push_opaque_use(&mut duty.moved_owner, span, &subject);
+                } else {
+                    push_opaque_use(&mut duty.invalidations, span, &subject);
+                }
             }
-            if duty.source == Some(id)
+            if duty.source_ir.as_deref() == Some(root.as_str())
                 && projection_paths_overlap(&duty.source_path, projections)
             {
-                push_opaque_span(&mut duty.later_uses, span);
+                if moved {
+                    push_opaque_span(&mut duty.later_uses, span);
+                } else if projection_path_covers(projections, &duty.source_path) {
+                    // The write re-initializes the moved source, so its move
+                    // judgment and later uses no longer apply.
+                    duty.later_uses.clear();
+                    duty.source_ir = None;
+                    duty.source_name = None;
+                    duty.source_path.clear();
+                    duty.source_param = false;
+                }
             }
         }
     }
@@ -3456,10 +3534,22 @@ fn push_opaque_span(list: &mut Vec<Span>, span: Span) {
     }
 }
 
-/// True when one projection path covers another.
+/// Appends one span and its subject to an opaque-store watch list, once.
+fn push_opaque_use(list: &mut Vec<(Span, String)>, span: Span, subject: &str) {
+    if !list
+        .iter()
+        .any(|(known, _)| known.start == span.start && known.end == span.end)
+    {
+        list.push((span, subject.to_owned()));
+    }
+}
+
+/// True when one projection path definitely covers another.
 ///
 /// A store at a path replaces every position below it, so a prefix covers the
-/// longer path. A run-time element step covers any element step.
+/// longer path. A run-time element step covers every element; a constant step
+/// covers only the same constant, because writing one element leaves its
+/// siblings' views in place.
 fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) -> bool {
     prefix.len() <= path.len()
         && prefix
@@ -3468,14 +3558,28 @@ fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) ->
             .all(|(left, right)| projection_step_covers(left, right))
 }
 
-/// True when two projection paths select an overlapping position.
-pub(super) fn projection_paths_overlap(left: &[ir::Projection], right: &[ir::Projection]) -> bool {
-    projection_path_covers(left, right) || projection_path_covers(right, left)
-}
-
-/// True when one projection step reaches every position the other names.
+/// True when one projection step covers another position.
 fn projection_step_covers(left: &ir::Projection, right: &ir::Projection) -> bool {
     left == right
-        || (matches!(left, ir::Projection::Element(_))
+        || (matches!(left, ir::Projection::Element(None))
             && matches!(right, ir::Projection::Element(_)))
+}
+
+/// True when two projection paths select an overlapping position.
+pub(super) fn projection_paths_overlap(left: &[ir::Projection], right: &[ir::Projection]) -> bool {
+    left.is_empty()
+        || right.is_empty()
+        || left
+            .iter()
+            .zip(right)
+            .all(|(a, b)| projection_step_overlaps(a, b))
+}
+
+/// True when one projection step may reach the same position as another.
+fn projection_step_overlaps(left: &ir::Projection, right: &ir::Projection) -> bool {
+    left == right
+        || (matches!(left, ir::Projection::Element(_))
+            && matches!(right, ir::Projection::Element(_))
+            && (matches!(left, ir::Projection::Element(None))
+                || matches!(right, ir::Projection::Element(None))))
 }

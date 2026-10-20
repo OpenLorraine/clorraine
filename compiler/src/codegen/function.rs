@@ -1505,7 +1505,7 @@ impl<'a> Emitter<'a> {
         // A fixed-array parameter is adjusted to a pointer to its
         // first element, so the parameter name already is the array's
         // address and the byte count comes from the element type.
-        if self.substitute(&target.ty).is_fixed_array() {
+        if self.resolved_place_ty(target).is_fixed_array() {
             let target_param = self.is_array_param_place(target);
             let source_param = self.is_array_param_place(source);
             let target_value = if target_param {
@@ -1523,20 +1523,20 @@ impl<'a> Emitter<'a> {
             } else if !source_param {
                 format!("sizeof({source_c})")
             } else {
-                let target_ty = self.substitute(&target.ty);
+                let target_ty = self.resolved_place_ty(target);
                 self.array_param_bytes(target_c, &target_ty)
             };
             self.push(&format!(
                 "    memcpy({target_value}, {source_value}, {bytes});"
             ));
-        } else if crate::types::is_null_shaped(&self.substitute(&source.ty))
-            && !crate::types::is_null_shaped(&self.substitute(&target.ty))
-            && self.carries_null_value(&target.ty)
+        } else if crate::types::is_null_shaped(&self.resolved_place_ty(source))
+            && !crate::types::is_null_shaped(&self.resolved_place_ty(target))
+            && self.carries_null_value(&self.resolved_place_ty(target))
         {
             // A null-shaped source lowers to the target's own empty
             // value: a view target needs its zero view and a handle
             // target its null, not the shape's `void *`.
-            let empty = self.null_value(&self.substitute(&target.ty));
+            let empty = self.null_value(&self.resolved_place_ty(target));
             self.push(&format!("    {target_c} = {empty};"));
         } else {
             self.push(&format!("    {target_c} = {source_c};"));

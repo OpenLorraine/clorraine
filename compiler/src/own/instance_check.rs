@@ -407,6 +407,7 @@ fn check_opaque_store_requirements(
 ) {
     let mut reported_conversion = BTreeSet::new();
     let mut reported_escape = BTreeSet::new();
+    let mut reported_use: BTreeSet<(String, u32, &'static str)> = BTreeSet::new();
     for requirement in mono.opaque_store_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -466,7 +467,7 @@ fn check_opaque_store_requirements(
                 }
                 break;
             }
-            if is_view_like(&destination) {
+            if is_view_like(&destination) && !requirement.superseded {
                 let subject = requirement.frame_owner.as_deref();
                 if let (Some(subject), Some(span)) = (subject, requirement.return_span) {
                     let site = (
@@ -479,25 +480,60 @@ fn check_opaque_store_requirements(
                     }
                     break;
                 }
-                if let (Some(subject), Some(span)) = (subject, requirement.late_uses.first()) {
-                    diagnostics.push(opaque_escape(subject, *span));
+                if let Some((span, subject)) = requirement.late_uses.first() {
+                    if reported_use.insert((
+                        requirement.function.clone(),
+                        span.start,
+                        "E10030",
+                    )) {
+                        diagnostics.push(opaque_escape(subject, *span));
+                    }
                     break;
                 }
-                if let Some(span) = requirement.invalidations.first() {
-                    let name = requirement
-                        .owner_name
-                        .as_deref()
-                        .unwrap_or("the owner");
-                    diagnostics.push(
-                        Diagnostic::error(
-                            "E10031",
-                            format!("cannot modify '{name}' while it is shared-borrowed"),
-                            *span,
-                        )
-                        .with_help("end the shared borrow first"),
-                    );
+                if let Some((span, subject)) = requirement.invalidations.first() {
+                    if reported_use.insert((
+                        requirement.function.clone(),
+                        span.start,
+                        "E10031",
+                    )) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10031",
+                                format!(
+                                    "cannot modify '{}' while it is shared-borrowed",
+                                    subject.trim_matches('\'')
+                                ),
+                                *span,
+                            )
+                            .with_help("end the shared borrow first"),
+                        );
+                    }
                     break;
                 }
+                if let Some((span, subject)) = requirement.moved_owner.first() {
+                    if reported_use.insert((
+                        requirement.function.clone(),
+                        span.start,
+                        "E10022",
+                    )) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10022",
+                                format!(
+                                    "cannot move '{}' while it is borrowed",
+                                    subject.trim_matches('\'')
+                                ),
+                                *span,
+                            )
+                            .with_help("end the borrow first"),
+                        );
+                    }
+                    break;
+                }
+                continue;
+            }
+            if is_view_like(&destination) {
+                // A replaced view keeps only its owned-source judgment.
                 continue;
             }
             // An owning destination keeps the concrete move judgment: a
@@ -523,6 +559,13 @@ fn check_opaque_store_requirements(
                 break;
             }
             if let Some(span) = requirement.later_uses.first() {
+                if !reported_use.insert((
+                    requirement.function.clone(),
+                    span.start,
+                    "E10020",
+                )) {
+                    break;
+                }
                 let name = requirement
                     .source_name
                     .as_deref()

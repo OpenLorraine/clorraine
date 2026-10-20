@@ -3176,4 +3176,60 @@ func main(): i32 {
         "oqsparam: a view store must not move the owned parameter"
     );
     assert_run_exit("oqsparam", by_value, 0);
+
+    let temporary = r#"module impl.eei.oqstemporary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T): T {
+    h.names[0] = stringOf("aa");
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("oqstemporary", temporary);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "oqstemporary: expected one temporary escape; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("statement temporary"),
+        "oqstemporary: expected the temporary subject; stderr:\n{stderr}"
+    );
+
+    let whole_array = r#"module impl.eei.oqswholearray;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T, p: str[2]): i32 {
+    h.names = p;
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let p: str[2] = ["AA", "BB"];
+    return f<Holder>(take h, p);
+}
+"#;
+    let (first, second) = emit_twice("oqswholearray", whole_array);
+    assert_eq!(
+        first,
+        second,
+        "oqswholearray: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "oqswholearray",
+        &first,
+        &["memcpy(&(h.names), p, sizeof(h.names));"],
+    );
+    assert_run_exit("oqswholearray", whole_array, 0);
 }

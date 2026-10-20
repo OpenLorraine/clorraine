@@ -316,21 +316,18 @@ pub struct RequiresOpaqueStore {
     /// already quoted for a binding, and `Some("a statement temporary")` for a
     /// value the walk cannot name.
     pub frame_owner: Option<String>,
-    /// The backing binding whose storage the stored view reads.
+    /// Every frame-dying backing the stored value may read.
     ///
-    /// The body's scope and write hooks use it to record an invalidating write
-    /// or a use after the backing's scope ends. The audit reads only the spans
-    /// the hooks record.
-    pub owner: Option<usize>,
-    /// The backing binding's source name, for the invalidation report.
-    pub owner_name: Option<String>,
+    /// A conditional contributes one frame per arm, so a later read after any
+    /// of them dies is judged. A frame with no binding names a temporary.
+    pub frames: Vec<OpaqueFrame>,
     /// The owned source binding whose move waits for the instance.
     ///
     /// A store of an owned place into an opaque member moves the source at an
     /// owned destination and widens it at a view destination. The body records
     /// the source and its later reads; the audit reports the concrete
     /// moved-value error only when the instance's destination owns.
-    pub source: Option<usize>,
+    pub source_ir: Option<String>,
     /// The owned source binding's source name, for the moved-value report.
     pub source_name: Option<String>,
     /// The projection from the owned source binding to the stored value.
@@ -342,14 +339,34 @@ pub struct RequiresOpaqueStore {
     pub source_param: bool,
     /// Reads of the owned source after the store, for the owned instance.
     pub later_uses: Vec<Span>,
-    /// Reads of the destination after the backing's scope ends.
-    pub late_uses: Vec<Span>,
-    /// Writes or moves of the backing after the store.
-    pub invalidations: Vec<Span>,
+    /// Reads of the destination after a backing's scope ends.
+    pub late_uses: Vec<(Span, String)>,
+    /// Writes or moves of a backing after the store.
+    pub invalidations: Vec<(Span, String)>,
+    /// Moves of a backing after the store, for the borrow-conflict report.
+    pub moved_owner: Vec<(Span, String)>,
+    /// True when a later store replaced this one's view before any read.
+    ///
+    /// A superseded duty keeps its owned-source judgment and any use already
+    /// recorded before the overwrite, but its future view watches end.
+    pub superseded: bool,
     /// The store site, for the conversion diagnostic.
     pub store_span: Span,
     /// The return site once the destination root is returned.
     pub return_span: Option<Span>,
+}
+
+/// One frame-dying backing a stored view reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpaqueFrame {
+    /// The backing binding's unique IR spelling, when it names one.
+    pub binding: Option<String>,
+    /// The backing binding's source name, for the conflict report.
+    pub name: Option<String>,
+    /// The diagnostic subject, already quoted for a binding.
+    pub subject: String,
+    /// The source range where the binding's scope closes.
+    pub scope_end: Span,
 }
 
 /// One emitted specialization of a lifted lambda.
