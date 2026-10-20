@@ -26,7 +26,8 @@ rejection at a view instance is filed as `DEF-535`.
 **Rows**: `DEF-531`.
 **Status**: Done (2026-10-20).
 **Commits**: `ca0ba15` (red), `0e3b74e` (free spelling), `8786f23` (review
-corrections: every spelling, effects-only walk, pins).
+corrections: every spelling, effects-only walk, pins), `7fee974` (confirmation
+corrections: discarded leaf/root binding).
 
 A free, bare, or dot `len` of a fixed-array conditional, array literal, or
 run-time index evaluates the operand's effects and still folds the structural
@@ -53,11 +54,22 @@ structural fold and drops its effects. The guard is
 `defer_move_outs == 0 && !in_loop_condition`; this is the narrower shape allowed
 by T-R7 and is filed as `DEF-534`.
 
+**Confirmation review**: the first effects-only walk lowered each array-literal
+element separately, so an owning call leaf (`stringOf(...)`) emitted a bare
+`(void)(call)` and leaked; a member/element chain rooted at a call leaked its
+root the same way. The correction binds a discarded bare call result to a
+statement temporary, binds an ownerless projection root before the discard, and
+binds a fixed-array projection arm's root on that arm's path. The last change
+also fixes the invalid `memcpy(&(mk().rows), ...)` emission for a conditional of
+fresh member arms; the skipped arm no longer runs. The owned and member-root
+cases are pinned in the every-spelling test under ASan.
+
 ## Phase 3 — Module initializer call rule (`DEF-532`)
 
 **Rows**: `DEF-532`.
 **Status**: Done (2026-10-20).
-**Commits**: `1afd3ab` (red), `88b73b4` (fix), `8786f23` (review corrections).
+**Commits**: `1afd3ab` (red), `88b73b4` (fix), `8786f23` (review
+corrections), `7fee974` (widened receiver).
 
 Module initializers now resolve their calls the way the function-body checker
 does: the current module first, then an import binding under its original name,
@@ -81,7 +93,9 @@ the existing initializer oracle.
 (projected field, same-named struct, current-module order),
 `should_apply_the_initializer_borrow_rule_through_the_resolved_callee` (import
 alias, program fallback with a type alias, generic dot, index-projected
-receiver), the focused suites, `make check`, and the host ASan controls.
+receiver), `should_apply_the_borrow_rule_to_a_widened_initializer_receiver`
+(static-str, projected static-str, and scalar widening), the focused suites,
+`make check`, and the host ASan controls.
 
 **Review corrections**:
 
@@ -94,6 +108,7 @@ receiver), the focused suites, `make check`, and the host ASan controls.
 | T5 parameter types resolved in the caller module | Fixed: the declaring module supplies them |
 | T6 generic dot callee was skipped | Fixed: the declaration-level receiver mode applies; only an unresolved unmarked parameter is exempt |
 | N5b indexed receiver was dropped | Fixed: the receiver's sema type is the element type and the root global is still judged |
+| Widened receiver (`static str`/`u8`) skipped the report | Fixed: the call has already been type-checked, so the walk no longer compares the receiver type; the func-field guard is the only exclusion |
 | T7/N4 func-typed global/field call arguments are not judged | Filed as `DEF-537` |
 | T9 two implementation pins were retargeted unnecessarily | Restored to the original global-slice shapes |
 

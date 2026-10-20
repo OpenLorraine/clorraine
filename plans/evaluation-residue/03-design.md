@@ -84,10 +84,17 @@ initializer false positives and false negatives:
 
 - the `len` correction evaluates effects only and never moves a caller place
   arm; a mixed conditional runs only its condition;
+- a discarded bare call result binds to a statement temporary, an ownerless
+  projection root binds before the discard, and a fixed-array projection arm
+  binds its root on the arm's path, so an owning call leaf or member root
+  releases and a skipped arm never runs;
 - the initializer walk resolves the callee scope-first and uses the projected
   receiver type, the semantic field table, and the declaring module;
 - an explicit `borrow` on a generic dot callee reports, while an unresolved
-  unmarked parameter keeps the oracle shape.
+  unmarked parameter keeps the oracle shape;
+- the receiver's written type is not compared with the declared parameter type:
+  the call is already type-checked, and a valid widening still borrows the
+  global. The func-field guard is the only exclusion.
 
 The residual conditionally evaluated `len` operand and the func-typed
 initializer call arguments are recorded as `DEF-534` and `DEF-537`.
