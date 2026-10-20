@@ -1385,3 +1385,64 @@ func main(): i32 {
         "pqunsafeassign: a rejected program must not produce a translation unit"
     );
 }
+
+/// A generic dot call emits its substituted return type.
+///
+/// The callee is `pick<T>(...): T` at `T = String`, so the result temporary is
+/// the `String` handle, never `ClT`. The explicit-argument route reports the
+/// direct-call codes once.
+#[test]
+fn should_emit_the_generic_dot_calls_substituted_result() {
+    let returned = r#"module spec.bgi.impl.dotreturn;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { v: T; }
+
+func pick<T>(take a: Wrap<T>, take b: T, take c: T): T { return a.v; }
+
+func main(): i32 {
+    let s1: String = stringOf("ab");
+    let s2: String = stringOf("cd");
+    let s3: String = stringOf("ef");
+    let w: Wrap<String> = Wrap<String> { v: s1 };
+    let x: String = w.pick(s2, s3);
+    return i32(len(x)) - 2;
+}
+"#;
+    let (first, second) = emit_twice("dotreturn", returned);
+    assert_eq!(
+        first, second,
+        "dotreturn: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert!(
+        !first.contains("ClT "),
+        "dotreturn: the result temporary kept the declared parameter type"
+    );
+    assert!(
+        first.contains("ClString __cl_tmp"),
+        "dotreturn: the result temporary is not the substituted String"
+    );
+
+    let mismatch = r#"module spec.bgi.impl.dotexplicit;
+
+struct Box { v: i32; }
+
+func pick<T>(take b: Box, take x: T): T { return x; }
+
+func main(): i32 {
+    let b: Box = Box { v: 1 };
+    let x: str = b.pick<str>(5);
+    return i32(x[0]) - 53;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("dotexplicit", mismatch);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10200:"),
+        1,
+        "dotexplicit: expected one conversion report; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
+}

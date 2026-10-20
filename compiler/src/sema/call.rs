@@ -40,7 +40,7 @@ impl Checker<'_, '_> {
         }
         if let ExprKind::Member { base, name } = &callee.kind {
             let base_ty = self.check_value(base, None);
-            return self.check_dot_call(Some(base), base_ty, name, args, callee.span);
+            return self.check_dot_call(Some(base), base_ty, name, type_args, args, callee.span);
         }
         if let ExprKind::Qualified(name) = &callee.kind {
             // A dotted callee whose head is a value in scope is a dot-call,
@@ -49,7 +49,7 @@ impl Checker<'_, '_> {
                 let receiver = self.qualified_receiver_type(name);
                 if let Some(member) = name.segments.last() {
                     let member = member.clone();
-                    return self.check_dot_call(None, receiver, &member, args, name.span);
+                    return self.check_dot_call(None, receiver, &member, type_args, args, name.span);
                 }
             }
         }
@@ -511,6 +511,7 @@ impl Checker<'_, '_> {
         receiver_expr: Option<&Expr>,
         receiver: Ty,
         name: &str,
+        type_args: &[Type],
         args: &[Arg],
         span: Span,
     ) -> Ty {
@@ -562,10 +563,11 @@ impl Checker<'_, '_> {
                     // parameter would accept anything, and recording the
                     // declared parameter against the enclosing function would
                     // judge the callee's parameter with the caller's instance.
-                    self.check_generic_dot_call(
+                    return self.check_generic_dot_call(
                         receiver_expr,
                         &receiver,
                         name,
+                        type_args,
                         args,
                         &signature,
                         span,
@@ -685,10 +687,11 @@ impl Checker<'_, '_> {
         receiver_expr: Option<&Expr>,
         receiver: &Ty,
         name: &str,
+        type_args: &[Type],
         args: &[Arg],
         signature: &FuncSig,
         span: Span,
-    ) {
+    ) -> Ty {
         let declared: Vec<String> = signature
             .type_params
             .iter()
@@ -702,6 +705,27 @@ impl Checker<'_, '_> {
         let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
         let rest = signature.params.get(1..).unwrap_or(&[]);
         let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
+        if !type_args.is_empty() {
+            let mut resolved = Vec::with_capacity(type_args.len());
+            for ty in type_args {
+                resolved.push(self.resolve_type_argument(ty));
+            }
+            if type_args.len() != declared.len() {
+                self.error(
+                    "E10300",
+                    format!(
+                        "wrong number of type arguments for '{name}': expected {}, found {}",
+                        declared.len(),
+                        type_args.len()
+                    ),
+                    "list all type arguments",
+                    span,
+                );
+            }
+            for (param, ty) in declared.iter().zip(resolved) {
+                bindings.insert(param.clone(), ty);
+            }
+        }
         if let Some(param) = signature.params.first() {
             match_param(param, receiver, &declared, &mut bindings);
         }
@@ -730,7 +754,7 @@ impl Checker<'_, '_> {
                 &bindings,
                 span,
             );
-            return;
+            return signature.returns.clone();
         }
         // Walk the written arguments once. A parameter the receiver already
         // fixed is judged here; the others contribute their type to the
@@ -817,6 +841,7 @@ impl Checker<'_, '_> {
             // conditional's null arm faces its destination only now.
             self.judge_conditional_argument(&arg.value, &param);
         }
+        substitute(&signature.returns, &bindings)
     }
 
     /// Checks the receiver of a generic dot call against its resolved first
