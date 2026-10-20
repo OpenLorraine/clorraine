@@ -29,7 +29,8 @@ rejection at a view instance is filed as `DEF-535`.
 corrections: every spelling, effects-only walk, pins), `7fee974` (confirmation
 corrections: discarded leaf/root binding), `98cb4cb` (indexed and nested member
 arms), `a42b398` (discard place-arm safety and struct-literal effects), `f96981a`
-(fresh struct and composite discard arms).
+(fresh struct and composite discard arms), `1face7f` (fresh call arm of a
+discarded struct conditional).
 
 A free, bare, or dot `len` of a fixed-array conditional, array literal, or
 run-time index evaluates the operand's effects and still folds the structural
@@ -53,8 +54,9 @@ indexed-arm, and nested-member-conditional cases; run under `RDC_ASAN=1`),
 `should_emit_a_len_operand_without_moving_a_caller_place` (emitted shape),
 `should_keep_a_place_arm_in_a_discarded_fixed_array_conditional` (place and
 fresh selections under ASan), `should_evaluate_a_struct_or_composite_len_operand`
-(struct-root conditional, template field, composite arm), the focused suites,
-and `make check`.
+(struct-root conditional, template field, composite arm), and
+`should_evaluate_a_fresh_call_arm_of_a_discarded_struct_conditional`, the
+focused suites, and `make check`.
 
 **Residual**: a non-call operand in a conditionally evaluated position (an outer
 conditional arm, a short-circuit right side, or a loop condition) keeps the
@@ -96,7 +98,13 @@ skipped; and a composite arm with a duplicable place element skipped its fresh
 element calls. An all-fresh struct conditional now stores through a discard
 destination; the walk evaluates template placeholders; and a composite counts
 as owning-place only when a place leaf needs a drop. The cases are pinned by
-`lenstructrootcond`, `lentemplatefield`, and `lencompositearm`.
+`lenstructrootcond`, `lentemplatefield`, and `lencompositearm`. A third
+re-review found that a duplicable struct call arm (`flag ? mkA() : mkB()`) had
+no cleanup temporary and was skipped by the fallback; a fresh call or
+struct-literal arm now stores into the struct discard destination, while a
+materialized temp, nested conditional, or owning place arm keeps the per-arm
+fallback. Pinned by
+`should_evaluate_a_fresh_call_arm_of_a_discarded_struct_conditional`.
 
 ## Phase 3 — Module initializer call rule (`DEF-532`)
 
