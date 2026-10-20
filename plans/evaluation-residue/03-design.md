@@ -93,6 +93,9 @@ initializer false positives and false negatives:
 - the freshness classification treats an index of fresh storage as fresh, and
   a projection whose base is a nested conditional distributes into its arms so
   each names an lvalue and only the selected arm evaluates;
+- an all-fresh struct conditional stores through a discard destination, a
+  template field's placeholders are evaluated, and a composite arm is
+  owning-place only when a place leaf needs a drop;
 - the initializer walk resolves the callee scope-first and uses the projected
   receiver type, the semantic field table, and the declaring module;
 - an explicit `borrow` on a generic dot callee reports, while an unresolved

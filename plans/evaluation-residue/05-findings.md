@@ -28,7 +28,8 @@ rejection at a view instance is filed as `DEF-535`.
 **Commits**: `ca0ba15` (red), `0e3b74e` (free spelling), `8786f23` (review
 corrections: every spelling, effects-only walk, pins), `7fee974` (confirmation
 corrections: discarded leaf/root binding), `98cb4cb` (indexed and nested member
-arms), `a42b398` (discard place-arm safety and struct-literal effects).
+arms), `a42b398` (discard place-arm safety and struct-literal effects), `f96981a`
+(fresh struct and composite discard arms).
 
 A free, bare, or dot `len` of a fixed-array conditional, array literal, or
 run-time index evaluates the operand's effects and still folds the structural
@@ -51,7 +52,9 @@ place-arm, owned-literal, member-root, member-dot, fresh-member-conditional,
 indexed-arm, and nested-member-conditional cases; run under `RDC_ASAN=1`),
 `should_emit_a_len_operand_without_moving_a_caller_place` (emitted shape),
 `should_keep_a_place_arm_in_a_discarded_fixed_array_conditional` (place and
-fresh selections under ASan), the focused suites, and `make check`.
+fresh selections under ASan), `should_evaluate_a_struct_or_composite_len_operand`
+(struct-root conditional, template field, composite arm), the focused suites,
+and `make check`.
 
 **Residual**: a non-call operand in a conditionally evaluated position (an outer
 conditional arm, a short-circuit right side, or a loop condition) keeps the
@@ -85,6 +88,15 @@ fixed-array conditional move (`DEF-536`): `(flag ? a : mk());` leaves `a`
 readable. The mixed qualified `len` fresh arm and a struct-literal operand or
 arm now evaluate as well (`lenmixedfresh`, `lenstructroot`, `lenstructcond`,
 and `should_keep_a_place_arm_in_a_discarded_fixed_array_conditional`).
+
+A second emission re-review found three remaining fresh-effect gaps: a
+conditional-root struct literal with a fixed-array call field emitted the call
+without its hidden destination; a template field's placeholder calls were
+skipped; and a composite arm with a duplicable place element skipped its fresh
+element calls. An all-fresh struct conditional now stores through a discard
+destination; the walk evaluates template placeholders; and a composite counts
+as owning-place only when a place leaf needs a drop. The cases are pinned by
+`lenstructrootcond`, `lentemplatefield`, and `lencompositearm`.
 
 ## Phase 3 — Module initializer call rule (`DEF-532`)
 
