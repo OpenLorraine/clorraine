@@ -3116,3 +3116,58 @@ func main(): i32 {
     assert_no_asan("qualifiedcontrol", &output);
     assert_exit("qualifiedcontrol", &output, 0);
 }
+
+/// A run-time-index view store keeps an owned source place alive.
+///
+/// The generic body sees an opaque element and defers the move. At a `str`
+/// instance the store is a view: it widens the source place and leaves the
+/// caller's owner readable. The constant-index twin stays accepted. At the
+/// phase base the run-time lowering consumed the source into a transfer
+/// temporary, emptied the caller's field, and left the view over the
+/// temporary.
+#[test]
+fn should_keep_an_owned_source_place_alive_at_a_runtime_view_store() {
+    let runtime = r#"module spec.cri.runtimeviewstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap<T>, borrow a: Box, i: i32): void {
+    w.items[i] = a.v;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["", ""], tag: stringOf("t") };
+    let a: Box = Box { v: stringOf("ab") };
+    store(w, a, 1);
+    return i32(len(w.items[1])) - 2 + i32(len(a.v)) - 2;
+}
+"#;
+    let output = run_memory("runtimeviewstore", runtime);
+    assert_no_asan("runtimeviewstore", &output);
+    assert_exit("runtimeviewstore", &output, 0);
+
+    let constant = r#"module spec.cri.constantviewstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap<T>, borrow a: Box): void {
+    w.items[0] = a.v;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["", ""], tag: stringOf("t") };
+    let a: Box = Box { v: stringOf("ab") };
+    store(w, a);
+    return i32(len(w.items[0])) - 2 + i32(len(a.v)) - 2;
+}
+"#;
+    let output = run_memory("constantviewstore", constant);
+    assert_no_asan("constantviewstore", &output);
+    assert_exit("constantviewstore", &output, 0);
+}
