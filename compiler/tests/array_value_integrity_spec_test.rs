@@ -1516,4 +1516,114 @@ func main(): i32 {
     let output = run_memory("lennestedmember", nested_member_conditional);
     assert_no_asan("lennestedmember", &output);
     assert_exit("lennestedmember", &output, 0);
+
+    let mixed_fresh = r#"module spec.avi.lenmixedfresh;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let flag: bool = false;
+    let n: usize = len(flag ? a : mk());
+    return i32(n) - 2 + hits - 1 + a[0] - 1;
+}
+"#;
+    let output = run_memory("lenmixedfresh", mixed_fresh);
+    assert_no_asan("lenmixedfresh", &output);
+    assert_exit("lenmixedfresh", &output, 0);
+
+    let struct_root = r#"module spec.avi.lenstructroot;
+
+let hits: i32 = 0;
+
+struct Box { rows: i32[2]; }
+
+func mkRows(): i32[2] { hits = hits + 1; return [1, 2]; }
+
+func main(): i32 {
+    let n: usize = len(Box { rows: mkRows() }.rows);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenstructroot", struct_root);
+    assert_no_asan("lenstructroot", &output);
+    assert_exit("lenstructroot", &output, 0);
+
+    let struct_conditional = r#"module spec.avi.lenstructcond;
+
+let hits: i32 = 0;
+
+struct Box { rows: i32[2]; }
+
+func mkA(): i32[2] { hits = hits + 1; return [1, 2]; }
+func mkB(): i32[2] { hits = hits + 10; return [3, 4]; }
+
+func main(): i32 {
+    let flag: bool = false;
+    let n: usize = len(flag ? Box { rows: mkA() }.rows : Box { rows: mkB() }.rows);
+    return i32(n) - 2 + hits - 10;
+}
+"#;
+    let output = run_memory("lenstructcond", struct_conditional);
+    assert_no_asan("lenstructcond", &output);
+    assert_exit("lenstructcond", &output, 0);
+}
+
+/// A discarded fixed-array conditional leaves a place arm in place.
+///
+/// The statement's value is unused, so a place-rooted arm is a read: the
+/// caller's row stays owned and readable after the statement. A fresh arm still
+/// evaluates on its path and releases. Red at the pre-fix head: the place arm
+/// was copied into the discard temporary, zeroed, and freed, so the later view
+/// read freed storage (ASan use-after-free).
+#[test]
+fn should_keep_a_place_arm_in_a_discarded_fixed_array_conditional() {
+    let place = r#"module spec.avi.discardplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { rows: String[2]; }
+
+func mk(): Box {
+    return Box { rows: [stringOf("ba"), stringOf("bb")] };
+}
+
+func main(): i32 {
+    let a: Box = Box { rows: [stringOf("aa"), stringOf("ab")] };
+    let flag: bool = true;
+    (flag ? a.rows : mk().rows);
+    let v: str = a.rows[0];
+    return i32(v[0]) - 97;
+}
+"#;
+    let output = run_memory("discardplace", place);
+    assert_no_asan("discardplace", &output);
+    assert_exit("discardplace", &output, 0);
+
+    let fresh = r#"module spec.avi.discardfresh;
+
+import { String, stringOf } from std.text;
+
+let hits: i32 = 0;
+
+struct Box { rows: String[2]; }
+
+func mk(): Box {
+    hits = hits + 1;
+    return Box { rows: [stringOf("ba"), stringOf("bb")] };
+}
+
+func main(): i32 {
+    let a: Box = Box { rows: [stringOf("aa"), stringOf("ab")] };
+    let flag: bool = false;
+    (flag ? a.rows : mk().rows);
+    let v: str = a.rows[0];
+    return i32(v[0]) - 97 + hits - 1;
+}
+"#;
+    let output = run_memory("discardfresh", fresh);
+    assert_no_asan("discardfresh", &output);
+    assert_exit("discardfresh", &output, 0);
 }

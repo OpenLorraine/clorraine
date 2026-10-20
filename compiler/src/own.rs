@@ -1704,38 +1704,3 @@ fn is_pure_place(expr: &Expr) -> bool {
         _ => false,
     }
 }
-
-/// True when an expression's value is fresh storage, not a caller place.
-///
-/// The structural `len` fold can discard a fresh conditional or array literal:
-/// its arms or elements are calls and literals, so the discard moves only
-/// storage the expression itself created. An arm that names a caller place is
-/// not fresh; discarding the whole conditional would move that place out from
-/// under its owner.
-fn is_fresh_len_operand(expr: &Expr) -> bool {
-    match &expr.kind {
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Char(_)
-        | ExprKind::Str(_)
-        | ExprKind::Bool(_)
-        | ExprKind::Null
-        | ExprKind::Call { .. } => true,
-        ExprKind::ArrayLiteral { elements, fill } => {
-            elements.iter().all(is_fresh_len_operand)
-                && fill.as_deref().is_none_or(is_fresh_len_operand)
-        }
-        ExprKind::Conditional {
-            then_value,
-            else_value,
-            ..
-        } => is_fresh_len_operand(then_value) && is_fresh_len_operand(else_value),
-        ExprKind::Member { base, .. } => is_fresh_len_operand(base),
-        ExprKind::Index { base, .. } => is_fresh_len_operand(base),
-        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-            is_fresh_len_operand(value)
-        }
-        ExprKind::Unsafe(inner) => is_fresh_len_operand(inner),
-        _ => false,
-    }
-}

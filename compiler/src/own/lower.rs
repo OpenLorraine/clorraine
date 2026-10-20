@@ -1445,23 +1445,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         match &expr.kind {
             ExprKind::Call { .. } => self.lower_discarded(expr),
-            ExprKind::Conditional { condition, .. } => {
-                if super::is_fresh_len_operand(expr) {
-                    self.lower_discarded(expr);
-                } else {
-                    // The condition always runs; the selected arm is a caller
-                    // place or a mixed fresh/place pair, so the discard would
-                    // move it. The arm's fresh effects are the recorded
-                    // residual.
-                    self.lower_discarded(condition);
-                }
-            }
+            // A discarded conditional evaluates the selected arm. The discard
+            // emitter keeps a place-rooted arm a read and releases only a fresh
+            // arm, so a mixed conditional runs the fresh path without moving
+            // the caller's storage.
+            ExprKind::Conditional { .. } => self.lower_discarded(expr),
             ExprKind::ArrayLiteral { elements, fill } => {
                 for element in elements {
                     self.evaluate_len_operand_effects(element);
                 }
                 if let Some(fill) = fill {
                     self.evaluate_len_operand_effects(fill);
+                }
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.evaluate_len_operand_effects(&field.value);
                 }
             }
             ExprKind::Index { .. } => {

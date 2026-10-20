@@ -988,26 +988,12 @@ impl<'a> Emitter<'a> {
                     } = &value.kind
                     {
                         let ty = self.substitute(&value.ty);
-                        let dest = self.unique_local("__cl_discard");
-                        self.push("    {");
-                        self.push(&format!(
-                            "        {} = {};",
-                            declarator(&ty, &dest, &self.sema.table),
-                            self.empty_state(&ty)
-                        ));
-                        let target = ArrayTarget::object(&dest);
-                        self.emit_fixed_array_conditional_assign(
-                            &target,
+                        self.emit_fixed_array_conditional_discard(
                             &ty,
                             condition,
                             then_value,
                             else_value,
-                            false,
                         );
-                        if self.needs_drop(&ty) {
-                            self.emit_drop_expr(&dest, &ty);
-                        }
-                        self.push("    }");
                         return;
                     }
                 }
@@ -1876,6 +1862,146 @@ impl<'a> Emitter<'a> {
         self.push("        }");
         self.emit_drop_expr(&save, ty);
         self.push("    }");
+    }
+
+    /// Emits a discarded fixed-array conditional.
+    ///
+    /// The conditional's value is unused, so a place-rooted arm is a read, not
+    /// a move: copying it into a discard temporary and zeroing the place would
+    /// empty a binding the surrounding code still owns. Only a fresh arm is
+    /// evaluated into a temporary and released, and a nested conditional
+    /// recurses on the selected path.
+    pub(super) fn emit_fixed_array_conditional_discard(
+        &mut self,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) {
+        let needs_dest =
+            self.discard_arm_needs_dest(then_value) || self.discard_arm_needs_dest(else_value);
+        let mut target = None;
+        if needs_dest {
+            let dest = self.unique_local("__cl_discard");
+            self.push("    {");
+            self.push(&format!(
+                "        {} = {};",
+                declarator(ty, &dest, &self.sema.table),
+                self.empty_state(ty)
+            ));
+            target = Some(ArrayTarget::object(&dest));
+        }
+        self.emit_guards(condition);
+        let condition_c = self.value(condition);
+        self.push(&format!("    if ({condition_c}) {{"));
+        self.emit_fixed_array_discard_arm(ty, then_value, target.as_ref());
+        self.push("    } else {");
+        self.emit_fixed_array_discard_arm(ty, else_value, target.as_ref());
+        self.push("    }");
+        if let Some(target) = &target {
+            if self.needs_drop(ty) {
+                self.emit_drop_expr(&target.text, ty);
+            }
+        }
+        if needs_dest {
+            self.push("    }");
+        }
+    }
+
+    /// True when a discarded arm needs a destination to evaluate its fresh
+    /// value.
+    fn discard_arm_needs_dest(&self, arm: &Value) -> bool {
+        if let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &arm.kind
+        {
+            return self.discard_arm_needs_dest(then_value)
+                || self.discard_arm_needs_dest(else_value);
+        }
+        !arm_roots_at_place(arm)
+    }
+
+    /// Emits one arm of a discarded fixed-array conditional.
+    fn emit_fixed_array_discard_arm(
+        &mut self,
+        ty: &Ty,
+        arm: &Value,
+        target: Option<&ArrayTarget>,
+    ) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("        if ({condition_c}) {{"));
+            self.emit_fixed_array_discard_arm(ty, then_value, target);
+            self.push("        } else {");
+            self.emit_fixed_array_discard_arm(ty, else_value, target);
+            self.push("        }");
+            return;
+        }
+        if arm_roots_at_place(arm) {
+            // The selector and any index guards still run; the bytes stay with
+            // the caller. The `sizeof` marker keeps the C build warning-free
+            // when the arm's only source use is the skipped read.
+            self.emit_guards(arm);
+            self.emit_place_use_marker(arm);
+            return;
+        }
+        let Some(target) = target else {
+            return;
+        };
+        self.emit_fixed_array_assign_arm(target, ty, arm, None, false);
+    }
+
+    /// Marks the caller storage a discarded place arm reads as used.
+    ///
+    /// The discard never evaluates the place, so without a marker the C
+    /// compiler can report the source binding as set but never used. A
+    /// `sizeof` marker names the storage without reading it or running an
+    /// index expression; the guards already ran separately.
+    fn emit_place_use_marker(&mut self, value: &Value) {
+        match &value.kind {
+            ValueKind::Place(_) => {
+                let text = self.value(value);
+                self.push(&format!("        if (sizeof({text})) {{ }}"));
+            }
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.emit_place_use_marker(base);
+            }
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => self.emit_place_use_marker(operand),
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.emit_place_use_marker(then_value);
+                self.emit_place_use_marker(else_value);
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.emit_place_use_marker(element);
+                }
+                if let Some(fill) = fill {
+                    self.emit_place_use_marker(fill);
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.emit_place_use_marker(field);
+                }
+            }
+            ValueKind::Cast { value, .. } => self.emit_place_use_marker(value),
+            _ => {}
+        }
     }
 
     /// Emits one arm of a fixed-array conditional assignment.
@@ -3605,6 +3731,39 @@ fn arm_is_projected_place(value: &Value) -> bool {
             !place.projections.is_empty()
                 || matches!(place.base, PlaceBase::DerefTemp { .. })
         }
+        _ => false,
+    }
+}
+
+/// True when an arm reads storage the caller already owns.
+///
+/// A discarded conditional copies no value, so an arm rooted at a place must
+/// stay a read: moving it into the discard temporary and zeroing it would
+/// empty a binding the surrounding code still uses. A call, literal, or
+/// compiler-owned temporary is fresh and may be evaluated and released.
+fn arm_roots_at_place(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+            arm_roots_at_place(base)
+        }
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } => arm_roots_at_place(operand),
+        ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => arm_roots_at_place(then_value) || arm_roots_at_place(else_value),
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.iter().any(arm_roots_at_place)
+                || fill.as_deref().is_some_and(arm_roots_at_place)
+        }
+        ValueKind::StructLit { fields, .. } => {
+            fields.iter().any(|(_, field)| arm_roots_at_place(field))
+        }
+        ValueKind::Cast { value, .. } => arm_roots_at_place(value),
         _ => false,
     }
 }

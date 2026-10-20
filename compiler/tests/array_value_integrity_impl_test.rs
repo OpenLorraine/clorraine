@@ -847,7 +847,7 @@ func main(): i32 {
 "#;
     let emitted = emit_host("lenmixedimpl", &scratch, mixed);
     assert!(
-        !emitted.contains("memcpy(&(__cl_discard"),
+        !emitted.contains("memcpy(&(__cl_discard_1), &(a)"),
         "lenmixedimpl: the caller place arm was copied into the discard destination"
     );
     assert!(
