@@ -22,9 +22,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &callee.kind {
             ExprKind::Member { .. } => true,
             ExprKind::Qualified(name) => {
-                name.segments.len() >= 2
-                    && (self.lookup(&name.segments[0]).is_some()
-                        || self.resolve_global_id(&name.segments[0]).is_some())
+                if name.segments.len() < 2 {
+                    return false;
+                }
+                // A module path that names a user or `ffi` function wins over
+                // an imported value head; a lexical binding of the head still
+                // shadows the path.
+                let head = &name.segments[0];
+                if self.lookup(head).is_none()
+                    && matches!(
+                        self.resolved_callee(&name.segments.join(".")),
+                        Some(Callee::User(_)) | Some(Callee::Ffi(_))
+                    )
+                {
+                    return false;
+                }
+                self.lookup(head).is_some() || self.resolve_global_id(head).is_some()
             }
             _ => false,
         }
@@ -668,6 +681,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // reads no storage.
             if let Some(extent) = self.structural_len_extent(callee) {
                 return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
+            }
+            // A qualified free call (`mod.len(value)`) takes its argument
+            // directly; the dot spelling (`xs.len()`) takes the receiver.
+            if !self.is_dot_call(callee) {
+                let value = match args.first() {
+                    Some(arg) => self.lower_value(&arg.value),
+                    None => Value::new(Ty::unknown(), ValueKind::Aggregate),
+                };
+                let value = self.bind_intrinsic_argument(value);
+                return Some((
+                    Ty::usize_ty(),
+                    ValueKind::Intrinsic {
+                        name: "len".to_owned(),
+                        args: vec![value],
+                        type_arg: None,
+                    },
+                ));
             }
             // `xs.len()` is the dot-call spelling of `len(xs)`; the receiver
             // becomes the intrinsic's argument. The intrinsic borrows the

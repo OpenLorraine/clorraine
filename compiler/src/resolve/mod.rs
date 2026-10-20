@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 
 use crate::ast::*;
 use crate::diag::{Diagnostic, Diagnostics};
-use crate::load::{Loaded, Module};
+use crate::load::{DeclKind, Loaded, Module};
 
 /// Resolves every name in the loaded program.
 pub fn resolve(loaded: &Loaded, diagnostics: &mut Diagnostics) {
@@ -470,16 +470,8 @@ impl Resolver<'_, '_> {
     fn resolve_qualified(&self, name: &QualifiedName) -> bool {
         if let Some((last, head)) = name.segments.split_last() {
             let module = head.join(".");
-            if !module.is_empty() {
-                if module == self.module.name {
-                    if self.module.decls.contains_key(last) {
-                        return true;
-                    }
-                } else if self.loaded.has_module(&module)
-                    && self.loaded.module_exports(&module, last)
-                {
-                    return true;
-                }
+            if !module.is_empty() && self.qualified_visible(&module, last) {
+                return true;
             }
         }
         // A module path may reach one of its bindings and then a field of it,
@@ -492,6 +484,29 @@ impl Resolver<'_, '_> {
         name.segments
             .first()
             .is_some_and(|first| self.resolve_name(first))
+    }
+
+    /// True when a name is visible through a module path.
+    ///
+    /// A module's own declarations are visible to its qualified spelling. For
+    /// another module the export surface is the usual rule; a compiler
+    /// intrinsic or an `ffi` declaration is additionally visible because both
+    /// are implemented by the compiler rather than exported as ordinary
+    /// bindings, and qualified access reaches them (MOD-13).
+    fn qualified_visible(&self, module: &str, name: &str) -> bool {
+        if module == self.module.name {
+            return self.module.decls.contains_key(name);
+        }
+        if !self.loaded.has_module(module) {
+            return false;
+        }
+        if self.loaded.module_exports(module, name) {
+            return true;
+        }
+        self.loaded
+            .module(module)
+            .and_then(|target| target.decl(name))
+            .is_some_and(|decl| matches!(decl.kind, DeclKind::Ffi | DeclKind::Intrinsic))
     }
 
     /// True when a dotted name is a module path, one of the module's bindings,
@@ -511,7 +526,7 @@ impl Resolver<'_, '_> {
             let declared = if module == self.module.name {
                 self.module.decls.contains_key(binding)
             } else if self.loaded.has_module(&module) {
-                self.loaded.module_exports(&module, binding)
+                self.qualified_visible(&module, binding)
             } else {
                 false
             };

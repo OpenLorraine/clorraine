@@ -10261,7 +10261,7 @@ fn should_resolve_a_qualified_intrinsic_and_ffi_declaration() {
 func main(): i32 {
     let a: i32[2] = [20, 21];
     let n: usize = std.mem.len(a);
-    return i32(n) - 2;
+    return i32(n) + i32(a[0]) - 22;
 }
 "#;
     let output = run_memory("qintrlen", length);

@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{Arg, Expr, ExprKind, ScalarType, Type};
+use crate::load::DeclKind;
 use crate::span::Span;
 use crate::types::{implicit_conversion, substitute, view_type, FuncParam, FuncSig, Ty, TyKind};
 
@@ -61,6 +62,62 @@ impl Checker<'_, '_> {
                         return signature.returns.clone();
                     }
                     return self.check_generic_call(&last, &signature, type_args, args, span);
+                }
+                // An intrinsic or `ffi` declaration is not in the function
+                // table. Qualified access reaches both: the compiler-known
+                // helpers keep their intrinsic judgments, and an `ffi` call
+                // uses the target module's written signature.
+                match self.qualified_decl_kind(&module, &last) {
+                    Some(DeclKind::Intrinsic) => match last.as_str() {
+                        "len" => {
+                            for ty in type_args {
+                                self.resolve_type_argument(ty);
+                            }
+                            for arg in args {
+                                self.check_value(&arg.value, None);
+                            }
+                            return Ty::usize_ty();
+                        }
+                        "slice" | "rawSlice" => {
+                            return self.check_view_builder(type_args, args);
+                        }
+                        "rawStr" => {
+                            for ty in type_args {
+                                self.resolve_type_argument(ty);
+                            }
+                            for arg in args {
+                                self.check_value(&arg.value, None);
+                            }
+                            return Ty {
+                                kind: TyKind::Str,
+                                nullable: false,
+                            };
+                        }
+                        _ => {}
+                    },
+                    Some(DeclKind::Ffi) => {
+                        let signature = self
+                            .qualified_ffi_signature(&module, &last)
+                            .map(|signature| {
+                                (
+                                    signature
+                                        .params
+                                        .iter()
+                                        .map(|param| &param.ty)
+                                        .collect::<Vec<&crate::ast::Type>>(),
+                                    &signature.returns,
+                                )
+                            });
+                        if let Some((param_types, returns)) = signature {
+                            let params: Vec<Ty> = param_types
+                                .iter()
+                                .map(|ty| self.resolve_type(ty))
+                                .collect();
+                            self.check_ffi_arguments(&last, &params, args, span);
+                            return Self::ffi_abi_result(self.resolve_type(returns));
+                        }
+                    }
+                    _ => {}
                 }
             }
             // A dotted callee whose head is a value in scope is a dot-call,

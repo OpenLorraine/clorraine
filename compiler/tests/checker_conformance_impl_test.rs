@@ -6780,3 +6780,87 @@ func main(): i32 {
         "qgenericloop: the element type kept its placeholder"
     );
 }
+
+/// Qualified access emits the target module's identity.
+///
+/// A qualified function value names the emitted symbol, a qualified intrinsic
+/// keeps its intrinsic lowering (the fixed-array length folds to its extent),
+/// a cross-module `ffi` call reaches the C declaration, and an imported-value
+/// head does not shadow the module function.
+#[test]
+fn should_emit_qualified_function_intrinsic_and_ffi_identities() {
+    let function_value = r#"module spec.cc.impl.qfuncvalue;
+
+func helper(): i32 { return 5; }
+
+func main(): i32 {
+    let g: func(): i32 = spec.cc.impl.qfuncvalue.helper;
+    return g() - 5;
+}
+"#;
+    let emitted = emit_host("qfuncvalue", function_value);
+    assert_contains(
+        "qfuncvalue",
+        &emitted,
+        "g = cl_spec_cc_impl_qfuncvalue_helper;",
+    );
+    assert!(
+        !emitted.contains("spec.cc.impl.qfuncvalue.helper"),
+        "qfuncvalue: the raw dotted path reached the C"
+    );
+
+    let length = r#"module spec.cc.impl.qintrlen;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) + i32(a[0]) - 22;
+}
+"#;
+    let emitted = emit_host("qintrlen", length);
+    assert_contains("qintrlen", &emitted, "n = 2;");
+
+    let holder = r#"module spec.cc.impl.qffi.lib;
+
+import { String } from std.text;
+
+ffi api {
+    func cl_string_len(borrow s: String): usize;
+}
+"#;
+    let caller = r#"module spec.cc.impl.qffi.user;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let n: usize = spec.cc.impl.qffi.lib.cl_string_len(stringOf("abcd"));
+    return i32(n) - 4;
+}
+"#;
+    let emitted = emit_host_pair("qffi", holder, caller);
+    assert_contains("qffi", &emitted, "n = cl_string_len(");
+
+    let coll_holder = r#"module spec.cc.impl.qcoll.lib;
+
+export func f(): i32 { return 5; }
+export let spec: i32 = 0;
+"#;
+    let coll_caller = r#"module spec.cc.impl.qcoll.user;
+
+import { spec } from spec.cc.impl.qcoll.lib;
+
+func main(): i32 {
+    return spec.cc.impl.qcoll.lib.f() - 5 + spec;
+}
+"#;
+    let emitted = emit_host_pair("qcollpath", coll_holder, coll_caller);
+    assert_contains(
+        "qcollpath",
+        &emitted,
+        "cl_spec_cc_impl_qcoll_lib_f()",
+    );
+    assert!(
+        !emitted.contains("spec.cc.impl.qcoll.lib.f"),
+        "qcollpath: the raw dotted path reached the C"
+    );
+}

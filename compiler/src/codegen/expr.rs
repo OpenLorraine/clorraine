@@ -562,6 +562,18 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A module-qualified function value names the module's emitted symbol,
+        // exactly as the bare identifier does. The resolver has already typed
+        // the value; the last segment is the declaration and the leading
+        // segments are the module. A lexical binding of the head still shadows
+        // the path, exactly as it does for a global binding.
+        if !self.local_names.contains_key(first) && segments.len() >= 2 {
+            if let Some(info) = self.resolve_function(&segments.join(".")) {
+                if info.decl.type_params.is_empty() {
+                    return self.function_symbol(&info.module, &info.decl.name);
+                }
+            }
+        }
         // A name that is not a local names a module-level binding: the head
         // is the binding with its fields, or the leading segments are the
         // declaring module and the last segment is the binding. Either way

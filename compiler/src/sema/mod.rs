@@ -1025,6 +1025,46 @@ impl<'a, 'd> Checker<'a, 'd> {
             .decl(&binding.original)
             .map(|decl| decl.kind)
     }
+
+    /// The kind of a declaration reached through a module path.
+    ///
+    /// The own module answers from its declaration table. A standard module's
+    /// compiler intrinsic is known from the intrinsic table because the
+    /// embedded source may not be loaded as a user module. A loaded module
+    /// answers from its own declarations, which covers a cross-module `ffi`
+    /// function.
+    fn qualified_decl_kind(&self, module: &str, name: &str) -> Option<DeclKind> {
+        if module == self.module.name {
+            return self.module.decl(name).map(|decl| decl.kind);
+        }
+        if let Some(target) = self.loaded.module(module) {
+            if let Some(decl) = target.decl(name) {
+                return Some(decl.kind);
+            }
+        }
+        if crate::stdlib::is_standard_module(module)
+            && crate::stdlib::is_compiler_intrinsic(name)
+        {
+            return Some(DeclKind::Intrinsic);
+        }
+        None
+    }
+
+    /// The `ffi` signature a module path names.
+    fn qualified_ffi_signature(
+        &self,
+        module: &str,
+        name: &str,
+    ) -> Option<&'a crate::ast::FuncSignature> {
+        let loaded: &'a Loaded = self.loaded;
+        let target = loaded.module(module)?;
+        target.items.iter().find_map(|item| match item {
+            crate::ast::Item::Ffi(block) => {
+                block.decls.iter().find(|signature| signature.name == name)
+            }
+            _ => None,
+        })
+    }
 }
 
 /// True when a type mentions the heap-backed `String` handle anywhere.
