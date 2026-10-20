@@ -1629,7 +1629,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // the report that rejects the site, so emitting the local-owner
             // judgment too would double-report one site.
             let mut local_view_owner: Option<usize> = None;
-            if is_view_like(&returns) {
+            // A return type that still mentions a type parameter becomes a view
+            // at its view instantiation. When the returned value is already a
+            // view, the local-owner judgment applies now: the instance cannot
+            // make a view of this frame's storage outlive the frame.
+            let view_return = is_view_like(&returns)
+                || (super::lower::mentions_type_param(&returns)
+                    && is_view_like(&self.ty(value)));
+            if view_return {
                 let provenance = self.view_provenance(value);
                 match provenance {
                     Provenance::Local(id) => {

@@ -1194,8 +1194,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // view return. Several sources each contribute their roots, so a
             // pair or an owned/taken argument is followed instead of ignored.
             ExprKind::Call { callee, args, .. } => {
-                if let Some(source) = self.call_view_source(callee, args) {
-                    self.expr_view_roots_source(callee, source, roots);
+                let view_sources = self.call_view_sources(callee, args);
+                if !view_sources.is_empty() {
+                    for source in view_sources {
+                        self.expr_view_roots_source(callee, source, roots);
+                    }
                 } else {
                     for source in self.call_carrier_sources(callee, args) {
                         self.expr_view_roots_source(callee, source, roots);
@@ -2334,11 +2337,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// of that candidate's loans; every other call yields a fresh view whose
     /// loan the caller creates.
     pub(super) fn call_loans(&self, callee: &Expr, args: &[Arg]) -> BTreeSet<LoanId> {
-        match self.call_view_source(callee, args) {
-            Some(ViewCallSource::Expr(source)) => self.view_loans(source),
-            Some(ViewCallSource::Receiver(_)) => self.dot_receiver_loans(callee),
-            Some(ViewCallSource::Capture(_)) | None => BTreeSet::new(),
+        let mut loans = BTreeSet::new();
+        for source in self.call_view_sources(callee, args) {
+            match source {
+                ViewCallSource::Expr(source) => loans.extend(self.view_loans(source)),
+                ViewCallSource::Receiver(_) => {
+                    loans.extend(self.dot_receiver_loans(callee));
+                }
+                ViewCallSource::Capture(provenance) => {
+                    if let Provenance::Param(id) | Provenance::Local(id) = provenance {
+                        loans.extend(self.binding_loans(id));
+                    }
+                }
+            }
         }
+        loans
     }
 
     /// The loans a dot-call receiver's view value carries.
@@ -2395,11 +2408,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The call resolves its single reborrowed source through
     /// [`Self::call_view_source`]; the view's provenance is that source's.
     pub(super) fn call_provenance(&self, callee: &Expr, args: &[Arg]) -> Provenance {
-        match self.call_view_source(callee, args) {
-            Some(ViewCallSource::Expr(source)) => self.view_provenance(source),
-            Some(ViewCallSource::Receiver(provenance))
-            | Some(ViewCallSource::Capture(provenance)) => provenance,
-            None => Provenance::None,
+        let mut atoms = Vec::new();
+        for source in self.call_view_sources(callee, args) {
+            atoms.push(match source {
+                ViewCallSource::Expr(source) => self.view_provenance(source),
+                ViewCallSource::Receiver(provenance)
+                | ViewCallSource::Capture(provenance) => provenance,
+            });
+        }
+        match atoms.len() {
+            0 => Provenance::None,
+            1 => atoms.pop().unwrap_or(Provenance::None),
+            _ => Provenance::Composite(atoms),
         }
     }
 
@@ -2438,11 +2458,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // A view-returning call reborrows its single lend source, so a
             // chain through the call is as mixed as the source itself.
-            ExprKind::Call { callee, args, .. } => match self.call_view_source(callee, args) {
-                Some(ViewCallSource::Expr(source)) => self.view_is_mixed(source),
-                Some(ViewCallSource::Receiver(_)) | Some(ViewCallSource::Capture(_)) => false,
-                None => false,
-            },
+            ExprKind::Call { callee, args, .. } => {
+                let sources = self.call_view_sources(callee, args);
+                if sources.len() > 1 {
+                    // Several value sources are mixed whenever their storage
+                    // differs; a destination cannot attribute one backing.
+                    let mut provenances = Vec::new();
+                    for source in &sources {
+                        provenances.push(match source {
+                            ViewCallSource::Expr(source) => self.view_provenance(source),
+                            ViewCallSource::Receiver(provenance)
+                            | ViewCallSource::Capture(provenance) => provenance.clone(),
+                        });
+                    }
+                    return provenances
+                        .windows(2)
+                        .any(|pair| pair[0] != pair[1])
+                        || sources.iter().any(|source| match source {
+                            ViewCallSource::Expr(source) => self.view_is_mixed(source),
+                            _ => false,
+                        });
+                }
+                match sources.into_iter().next() {
+                    Some(ViewCallSource::Expr(source)) => self.view_is_mixed(source),
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }
@@ -2609,6 +2650,81 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 (then_index == else_index).then_some(then_index)
             }
             _ => None,
+        }
+    }
+
+    /// Every source a view-returning call may read.
+    ///
+    /// A named view return elides exactly one parameter. A lambda's return may
+    /// read several parameters or captures, so every value-position source is
+    /// collected; a destination judges each one. The single-source helper is
+    /// the first component and keeps the named-function rule unchanged.
+    pub(super) fn call_view_sources<'e>(
+        &self,
+        callee: &'e Expr,
+        args: &'e [Arg],
+    ) -> Vec<ViewCallSource<'e>> {
+        let mut sources = Vec::new();
+        if let Some(source) = self.call_view_source(callee, args) {
+            sources.push(source);
+        }
+        for source in self.lambda_view_sources(callee, args) {
+            sources.push(source);
+        }
+        sources
+    }
+
+    /// The parameters and captures a lambda's returned value reads.
+    ///
+    /// Only value positions count. A conditional over lambdas contributes both
+    /// arms, and a non-lambda callee contributes nothing.
+    fn lambda_view_sources<'e>(
+        &self,
+        callee: &'e Expr,
+        args: &'e [Arg],
+    ) -> Vec<ViewCallSource<'e>> {
+        match &super::expr::structural_wrapper_inner(callee).kind {
+            ExprKind::Lambda {
+                captures,
+                params,
+                body,
+                ..
+            } => {
+                let mut names = BTreeSet::new();
+                collect_lambda_return_names(body, &mut names);
+                let mut sources = Vec::new();
+                for (index, param) in params.iter().enumerate() {
+                    if !names.contains(&param.name) {
+                        continue;
+                    }
+                    if let Some(arg) = args.get(index) {
+                        sources.push(ViewCallSource::Expr(&arg.value));
+                    }
+                }
+                for capture in captures {
+                    if !names.contains(&capture.name) {
+                        continue;
+                    }
+                    let Some(id) = self.lookup(&capture.name) else {
+                        continue;
+                    };
+                    let provenance = self.place_provenance(id);
+                    if provenance != Provenance::None {
+                        sources.push(ViewCallSource::Capture(provenance));
+                    }
+                }
+                sources
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let mut sources = self.lambda_view_sources(then_value, args);
+                sources.extend(self.lambda_view_sources(else_value, args));
+                sources
+            }
+            _ => Vec::new(),
         }
     }
 
@@ -3422,15 +3538,11 @@ fn propagate_stmt_names(stmt: &Stmt, live: &mut BTreeSet<String>, changed: &mut 
     match stmt {
         Stmt::Let(decl) => {
             if let Some(value) = &decl.value {
-                if expr_mentions_live(value, live) {
-                    *changed |= live.insert(decl.name.clone());
-                }
+                propagate_initializer_names(&decl.name, value, live, changed);
             }
         }
         Stmt::Const(decl) => {
-            if expr_mentions_live(&decl.value, live) {
-                *changed |= live.insert(decl.name.clone());
-            }
+            propagate_initializer_names(&decl.name, &decl.value, live, changed);
         }
         Stmt::Expr(expr) => propagate_expr_names(expr, live, changed),
         Stmt::If(decl) => {
@@ -3454,15 +3566,11 @@ fn propagate_stmt_names(stmt: &Stmt, live: &mut BTreeSet<String>, changed: &mut 
                 }
                 Some(ForInit::Let(binding)) => {
                     if let Some(value) = &binding.value {
-                        if expr_mentions_live(value, live) {
-                            *changed |= live.insert(binding.name.clone());
-                        }
+                        propagate_initializer_names(&binding.name, value, live, changed);
                     }
                 }
                 Some(ForInit::Const(binding)) => {
-                    if expr_mentions_live(&binding.value, live) {
-                        *changed |= live.insert(binding.name.clone());
-                    }
+                    propagate_initializer_names(&binding.name, &binding.value, live, changed);
                 }
                 None => {}
             }
@@ -3477,9 +3585,7 @@ fn propagate_stmt_names(stmt: &Stmt, live: &mut BTreeSet<String>, changed: &mut 
         Stmt::ForIn(decl) => {
             // The loop binding aliases the iterable's element, so a live use of
             // the alias reaches the iterable's names.
-            if expr_mentions_live(&decl.iterable, live) {
-                *changed |= live.insert(decl.name.clone());
-            }
+            propagate_initializer_names(&decl.name, &decl.iterable, live, changed);
             propagate_block_names(&decl.body, live, changed);
         }
         Stmt::Switch(decl) => {
@@ -3516,9 +3622,7 @@ fn propagate_expr_names(expr: &Expr, live: &mut BTreeSet<String>, changed: &mut 
     match &expr.kind {
         ExprKind::Assign { target, value, .. } => {
             if let ExprKind::Name(name) = &target.kind {
-                if expr_mentions_live(value, live) {
-                    *changed |= live.insert(name.clone());
-                }
+                propagate_initializer_names(name, value, live, changed);
             }
             propagate_expr_names(target, live, changed);
             propagate_expr_names(value, live, changed);
@@ -3583,11 +3687,26 @@ fn propagate_expr_names(expr: &Expr, live: &mut BTreeSet<String>, changed: &mut 
     }
 }
 
-/// True when an expression mentions a name in the live set.
-fn expr_mentions_live(expr: &Expr, live: &BTreeSet<String>) -> bool {
+/// Adds an initializer's names when the defined name is live.
+///
+/// The propagation is backward: a local used by a return makes the names its
+/// initializer reads live too, so a parameter that reaches the return through
+/// a local stays a carrier source. The reverse direction would only mark the
+/// local from an unrelated read.
+fn propagate_initializer_names(
+    defined: &str,
+    value: &Expr,
+    live: &mut BTreeSet<String>,
+    changed: &mut bool,
+) {
+    if !live.contains(defined) {
+        return;
+    }
     let mut names = BTreeSet::new();
-    collect_expr_names(expr, &mut names);
-    names.iter().any(|name| live.contains(name))
+    collect_expr_names(value, &mut names);
+    for name in names {
+        *changed |= live.insert(name);
+    }
 }
 
 /// Collects every name a block mentions.
@@ -3765,10 +3884,116 @@ fn collect_lambda_body_names(body: &LambdaBody, names: &mut BTreeSet<String>) {
 }
 
 /// Collects the names a lambda body's return value mentions.
+///
+/// Only value positions count: a conditional's condition and an index or
+/// callee expression never supply the returned storage, so a capture used only
+/// there must not displace the parameter the value actually reads.
 fn collect_lambda_return_names(body: &LambdaBody, names: &mut BTreeSet<String>) {
     match body {
-        LambdaBody::Expr(value) => collect_expr_names(value, names),
-        LambdaBody::Block(block) => collect_return_block_names(block, names),
+        LambdaBody::Expr(value) => collect_expr_value_names(value, names),
+        LambdaBody::Block(block) => collect_return_value_block_names(block, names),
+    }
+}
+
+/// Collects every name one expression mentions in a value position.
+fn collect_expr_value_names(expr: &Expr, names: &mut BTreeSet<String>) {
+    match &expr.kind {
+        ExprKind::Name(name) => {
+            names.insert(name.clone());
+        }
+        ExprKind::Qualified(name) => {
+            if let Some(first) = name.segments.first() {
+                names.insert(first.clone());
+            }
+        }
+        // The chosen arm supplies the returned value; the condition does not.
+        ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => {
+            collect_expr_value_names(then_value, names);
+            collect_expr_value_names(else_value, names);
+        }
+        // A callee is a function value, not the returned storage; the written
+        // arguments may carry the view a helper reborrows.
+        ExprKind::Call { args, .. } => {
+            for arg in args {
+                collect_expr_value_names(&arg.value, names);
+            }
+        }
+        // The base names the storage; the index does not.
+        ExprKind::Index { base, .. } => collect_expr_value_names(base, names),
+        ExprKind::Member { base, .. } => collect_expr_value_names(base, names),
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            collect_expr_value_names(value, names)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_expr_value_names(&field.value, names);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                collect_expr_value_names(element, names);
+            }
+            if let Some(fill) = fill {
+                collect_expr_value_names(fill, names);
+            }
+        }
+        ExprKind::Unsafe(inner) => collect_expr_value_names(inner, names),
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(inner) = piece {
+                    collect_expr_value_names(inner, names);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collects the names every `return` in a block mentions in a value position.
+fn collect_return_value_block_names(block: &Block, names: &mut BTreeSet<String>) {
+    for statement in &block.statements {
+        collect_return_value_stmt_names(statement, names);
+    }
+}
+
+/// Collects the names one statement's reachable returns mention in a value
+/// position.
+fn collect_return_value_stmt_names(stmt: &Stmt, names: &mut BTreeSet<String>) {
+    match stmt {
+        Stmt::Return {
+            value: Some(value), ..
+        } => collect_expr_value_names(value, names),
+        Stmt::If(decl) => collect_return_value_if_names(decl, names),
+        Stmt::While(decl) => collect_return_value_block_names(&decl.body, names),
+        Stmt::DoWhile(decl) => collect_return_value_block_names(&decl.body, names),
+        Stmt::ForC(decl) => collect_return_value_block_names(&decl.body, names),
+        Stmt::ForIn(decl) => collect_return_value_block_names(&decl.body, names),
+        Stmt::Switch(decl) => {
+            for clause in &decl.clauses {
+                for statement in &clause.statements {
+                    collect_return_value_stmt_names(statement, names);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            collect_return_value_block_names(block, names)
+        }
+        _ => {}
+    }
+}
+
+/// Collects the names an `if` statement's returns mention in a value position,
+/// including a chained `else if`.
+fn collect_return_value_if_names(decl: &IfStmt, names: &mut BTreeSet<String>) {
+    collect_return_value_block_names(&decl.then_block, names);
+    match &decl.else_branch {
+        Some(ElseBranch::If(nested)) => collect_return_value_if_names(nested, names),
+        Some(ElseBranch::Block(block)) => collect_return_value_block_names(block, names),
+        None => {}
     }
 }
 

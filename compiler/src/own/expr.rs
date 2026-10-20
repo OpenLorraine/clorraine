@@ -2194,16 +2194,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !is_view_like(&self.ty(expr)) {
                     return false;
                 }
-                match self.call_view_source(callee, args) {
-                    Some(super::place::ViewCallSource::Expr(source)) => {
-                        matches!(self.view_provenance(source), Provenance::None)
-                            || self.names_fresh_view_storage(source, &self.ty(source))
-                    }
-                    Some(super::place::ViewCallSource::Receiver(provenance))
-                    | Some(super::place::ViewCallSource::Capture(provenance)) => {
-                        matches!(provenance, Provenance::None)
-                    }
-                    None => true,
+                let sources = self.call_view_sources(callee, args);
+                if sources.is_empty() {
+                    true
+                } else {
+                    sources.iter().any(|source| match source {
+                        super::place::ViewCallSource::Expr(source) => {
+                            matches!(self.view_provenance(source), Provenance::None)
+                                || self.names_fresh_view_storage(source, &self.ty(source))
+                        }
+                        super::place::ViewCallSource::Receiver(provenance)
+                        | super::place::ViewCallSource::Capture(provenance) => {
+                            matches!(provenance, Provenance::None)
+                        }
+                    })
                 }
             }
             _ => false,

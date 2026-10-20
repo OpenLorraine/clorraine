@@ -3206,6 +3206,74 @@ func main(): i32 {
         &[],
     );
 
+    let local_view_return = r#"module spec.eei.takecarrierlocalview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    return s;
+}
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(borrow slot: str?): void {
+    let p: str = "PP";
+    store(id<str>(take p), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    assert_rejected_once(
+        "takecarrierlocalview",
+        local_view_return,
+        "E10035",
+        &["cannot return a view of local 'a'"],
+        &[],
+    );
+
+    // A view carried through a local still reaches its parameter.
+    let local_hop = r#"module spec.eei.takecarrierlocalhop;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(b: Box): Holder {
+    let v: str = b.v;
+    return Holder { names: [v, "EE"] };
+}
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    store(make(b), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "takecarrierlocalhop",
+        local_hop,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let control = r#"module spec.eei.takecarrierok;
 
 struct Holder { names: str[2]; }
@@ -3482,6 +3550,97 @@ func main(): i32 {
     assert_no_asan("lambdatwoviewok", &output);
     assert_exit("lambdatwoviewok", &output, 0);
 
+    // A conditional return over two view parameters judges every value
+    // source, not just the first.
+    let mixed_view = r#"module spec.eei.lambdamixedview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(c: bool, p: str, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(([c] (ys: str, zs: str) => (c ? ys : zs))(p, av), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(false, "ZZ", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdamixedview",
+        mixed_view,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    // A conditional return over two view parameters and a multi-capture
+    // return judge every value source, not the first one.
+    let mixed_params = r#"module spec.eei.lambdamixedparams;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(([c] (ys: str, zs: str) => c ? ys : zs)(p, av, c), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("PP", false, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdamixedparams",
+        mixed_params,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let capture_order = r#"module spec.eei.lambdacaptureorder;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    store(([p, s, c] () => c ? p : s)(), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("PP", false, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdacaptureorder",
+        capture_order,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let local_destination = r#"module spec.eei.lambdalocaldest;
 
 import { String, stringOf } from std.text;
@@ -3674,4 +3833,34 @@ func main(): i32 {
     let output = run_memory("captureoutslotviewstatic", static_view);
     assert_no_asan("captureoutslotviewstatic", &output);
     assert_exit("captureoutslotviewstatic", &output, 0);
+
+    // A view written into a captured local and then handed to the caller is
+    // still an escape.
+    let destination_escape = r#"module spec.eei.capturedestination;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let r: str = "";
+    ([a, borrow r] () => { r = a.v; })();
+    slot = r;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "capturedestination",
+        destination_escape,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
 }

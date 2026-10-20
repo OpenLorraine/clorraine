@@ -87,6 +87,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.callee_name(callee).is_none() {
             if let Some(params) = self.value_callee_signature(&self.ty(callee)) {
                 self.eval(callee);
+                self.mark_written_captures(callee);
                 self.check_marker_matches("the callable value", args, &params);
                 // A closure's parameters are unmarked read-only lends. The
                 // closure-call lowering materializes an owned argument itself,
@@ -358,6 +359,46 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             TyKind::Func(_) | TyKind::Param(_)
         )
         .then_some(id)
+    }
+
+    /// Marks an enclosing local written through a lambda capture as unknown.
+    ///
+    /// A write-borrow capture can replace the local with a view the closure
+    /// computed. The closure body is checked in its lifted function, so the
+    /// enclosing checker would otherwise keep the local's initial provenance
+    /// and miss a later escape. Conservatively marking the local's own frame as
+    /// its backing rejects that escape; a later read inside the frame is
+    /// unaffected.
+    fn mark_written_captures(&mut self, callee: &Expr) {
+        if !matches!(
+            super::expr::structural_wrapper_inner(callee).kind,
+            ExprKind::Lambda { .. }
+        ) {
+            return;
+        }
+        let TyKind::Closure(closure) = &self.ty(callee).kind else {
+            return;
+        };
+        let captures = self
+            .sema
+            .closures
+            .get(&closure.id)
+            .map(|site| site.captures.clone())
+            .unwrap_or_default();
+        for capture in captures {
+            if capture.mode != CaptureMode::WriteBorrow {
+                continue;
+            }
+            let Some(id) = self.lookup(&capture.name) else {
+                continue;
+            };
+            let binding = &self.bindings[id];
+            let owns_frame_storage = binding.kind == BindingKind::Local
+                || (binding.kind == BindingKind::Param && binding.mode == Mode::Take);
+            if owns_frame_storage {
+                self.bindings[id].provenance = Provenance::Local(id);
+            }
+        }
     }
 
     /// The parameters of a value callee's signature.
@@ -776,7 +817,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // hands back the view positions of every source argument it may read,
         // so the same walk names the backing.
         if let ExprKind::Call { callee, args, .. } = &expr.kind {
-            if let Some(source) = self.call_view_source(callee, args) {
+            for source in self.call_view_sources(callee, args) {
                 match source {
                     super::place::ViewCallSource::Expr(source) => {
                         if let Some(owner) = self.frame_owned_view_owner(source) {
