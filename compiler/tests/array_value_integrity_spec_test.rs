@@ -1398,15 +1398,21 @@ func main(): i32 {
 
 import { String, stringOf } from std.text;
 
-struct Box { name: String; rows: String[2]; }
+let hits: i32 = 0;
+
+struct Box { name: String; rows: String[2][2]; }
 
 func mk(): Box {
-    return Box { name: stringOf("n"), rows: [stringOf("aa"), stringOf("bb")] };
+    hits = hits + 1;
+    return Box {
+        name: stringOf("n"),
+        rows: [[stringOf("aa"), stringOf("ab")], [stringOf("ba"), stringOf("bb")]],
+    };
 }
 
 func main(): i32 {
     let n: usize = len(mk().rows[0]);
-    return i32(n) - 2;
+    return i32(n) - 2 + hits - 1;
 }
 "#;
     let output = run_memory("lenmemberroot", member_root);
@@ -1417,20 +1423,54 @@ func main(): i32 {
 
 import { String, stringOf } from std.text;
 
-struct Box { name: String; rows: String[2]; }
+let hits: i32 = 0;
+
+struct Box { name: String; rows: String[2][2]; }
 
 func mk(): Box {
-    return Box { name: stringOf("n"), rows: [stringOf("aa"), stringOf("bb")] };
+    hits = hits + 1;
+    return Box {
+        name: stringOf("n"),
+        rows: [[stringOf("aa"), stringOf("ab")], [stringOf("ba"), stringOf("bb")]],
+    };
 }
 
 func main(): i32 {
     let n: usize = mk().rows.len();
-    return i32(n) - 2;
+    return i32(n) - 2 + hits - 1;
 }
 "#;
     let output = run_memory("lenmemberdot", member_dot);
     assert_no_asan("lenmemberdot", &output);
     assert_exit("lenmemberdot", &output, 0);
+
+    let index_conditional = r#"module spec.avi.lenindexcond;
+
+import { String, stringOf } from std.text;
+
+let hits: i32 = 0;
+
+struct Box { rows: String[2][2]; }
+
+func mkA(): Box {
+    hits = hits + 1;
+    return Box { rows: [[stringOf("aa"), stringOf("ab")], [stringOf("ba"), stringOf("bb")]] };
+}
+
+func mkB(): Box {
+    hits = hits + 1;
+    return Box { rows: [[stringOf("ca"), stringOf("cb")], [stringOf("da"), stringOf("db")]] };
+}
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = len(flag ? mkA().rows[0] : mkB().rows[0]);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenindexcond", index_conditional);
+    assert_no_asan("lenindexcond", &output);
+    assert_exit("lenindexcond", &output, 0);
 
     let fresh_member_conditional = r#"module spec.avi.lenmembercond;
 
@@ -1455,4 +1495,25 @@ func main(): i32 {
     let output = run_memory("lenmembercond", fresh_member_conditional);
     assert_no_asan("lenmembercond", &output);
     assert_exit("lenmembercond", &output, 0);
+
+    let nested_member_conditional = r#"module spec.avi.lennestedmember;
+
+let hits: i32 = 0;
+
+struct Box { rows: i32[2]; }
+
+func mkA(): Box { hits = hits + 1; return Box { rows: [1, 2] }; }
+func mkB(): Box { hits = hits + 10; return Box { rows: [3, 4] }; }
+func mkC(): Box { hits = hits + 100; return Box { rows: [5, 6] }; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let flag2: bool = false;
+    let n: usize = len(flag ? (flag2 ? mkA() : mkB()).rows : mkC().rows);
+    return i32(n) - 2 + hits - 10;
+}
+"#;
+    let output = run_memory("lennestedmember", nested_member_conditional);
+    assert_no_asan("lennestedmember", &output);
+    assert_exit("lennestedmember", &output, 0);
 }

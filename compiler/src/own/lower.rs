@@ -4535,6 +4535,12 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
     /// its root. A duplicable root still needs the temporary because the copy
     /// needs an lvalue; its release is a no-op.
     fn bind_guarded_fixed_array_root(&mut self, value: Value) -> Value {
+        // A projection whose chain roots at a conditional has no single C
+        // lvalue. Distribute the projection into the arms first; each arm's
+        // root then binds on its own path through the guarded materialization.
+        if self.roots_in_conditional(&value) {
+            return self.bind_fixed_array_root(value);
+        }
         match value.kind {
             ValueKind::Member { base, name } => {
                 let base = self.bind_guarded_fixed_array_root(*base);

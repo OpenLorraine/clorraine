@@ -1731,6 +1731,7 @@ fn is_fresh_len_operand(expr: &Expr) -> bool {
             ..
         } => is_fresh_len_operand(then_value) && is_fresh_len_operand(else_value),
         ExprKind::Member { base, .. } => is_fresh_len_operand(base),
+        ExprKind::Index { base, .. } => is_fresh_len_operand(base),
         ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
             is_fresh_len_operand(value)
         }
