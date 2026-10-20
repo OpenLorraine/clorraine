@@ -1149,6 +1149,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             base: None,
             alias_root: None,
             generated: false,
+            capture_dies_with_frame: false,
         });
         if let Some(scope) = self.scopes.last_mut() {
             if register_name {

@@ -334,7 +334,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             self.func_global_callee_path(callee).unwrap_or(name)
         };
-        let receiver = self.func_field_receiver(callee);
+        // A callee expression with no name but a callable type — a conditional
+        // over func values, a cast, or an indexed callable — is the callable
+        // itself. Lower it as a value and attach it as the call's receiver, so
+        // the emitter calls the value the callee produced instead of spelling
+        // the raw expression as if it were a function name. A closure value
+        // keeps its own two-word call path.
+        let expression_callee = self.callee_name(callee).is_none()
+            && !self.is_closure_callee(callee)
+            && self.callable_modes(&self.ty(callee)).is_some();
+        let receiver = if expression_callee {
+            Some(self.lower_value(callee))
+        } else {
+            self.func_field_receiver(callee)
+        };
         // The dot receiver is the call's argument position zero, so its
         // evaluation position matters exactly like a written argument's: an
         // update in the receiver must run where it is written, and an update in

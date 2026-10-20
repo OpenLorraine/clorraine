@@ -126,6 +126,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// [`Self::maybe_owning_move_sources`] and keeps a projected member of a
     /// type-parameter place.
     pub(super) fn type_param_conditional_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let expr = structural_wrapper_inner(expr);
         let ExprKind::Conditional {
             then_value,
             else_value,
@@ -136,6 +137,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let mut sources = Vec::new();
         for arm in [then_value.as_ref(), else_value.as_ref()] {
+            let arm = structural_wrapper_inner(arm);
             if matches!(arm.kind, ExprKind::Conditional { .. }) {
                 sources.extend(self.type_param_conditional_sources(arm));
                 continue;
@@ -169,6 +171,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &self,
         expr: &Expr,
     ) -> Option<Vec<(PlaceTarget, Ty)>> {
+        let expr = structural_wrapper_inner(expr);
         let ExprKind::Conditional {
             then_value,
             else_value,
@@ -179,6 +182,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let mut arms = Vec::new();
         for arm in [then_value.as_ref(), else_value.as_ref()] {
+            let arm = structural_wrapper_inner(arm);
             if matches!(arm.kind, ExprKind::Conditional { .. }) {
                 arms.extend(self.unresolved_conditional_place_arms(arm)?);
                 continue;
@@ -814,6 +818,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 }
                             }
                         }
+                    }
+                    // An element whose arm is rooted at a type parameter owns
+                    // only at some instances, so the store records the
+                    // per-instance duty exactly as a struct-literal field does.
+                    for source in self.type_param_conditional_sources(element) {
+                        self.mark_moved_if_owning(source, element.span);
+                    }
+                    for source in self.maybe_owning_projection_move_sources(element) {
+                        self.mark_moved_if_owning(source, element.span);
                     }
                 }
                 if let Some(fill) = fill {
@@ -1820,7 +1833,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn provenance_fits_destination(&self, provenance: &Provenance, global: bool) -> bool {
         match provenance {
             Provenance::Static | Provenance::Global(_) => true,
-            Provenance::Param(id) => !global && self.bindings[*id].mode != Mode::Take,
+            Provenance::Param(id) => !global && !self.binding_dies_with_frame(*id),
             _ => false,
         }
     }
@@ -2088,11 +2101,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // nested conditional contributes the destination report.
             ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. } => false,
             ExprKind::Call { callee, args, .. } => {
-                if let Some(source) = self.call_carrier_source(callee, args) {
+                let sources = self.call_carrier_sources(callee, args);
+                if !sources.is_empty() {
                     // A global outlives every caller, so a caller-backed
                     // parameter escapes it exactly as this frame's local does;
-                    // only static and module storage survive.
-                    return match source {
+                    // only static and module storage survive. Every source the
+                    // carrier may read is judged.
+                    return sources.iter().any(|source| match source {
                         super::place::ViewCallSource::Expr(source) => !matches!(
                             self.view_provenance(source),
                             Provenance::Static | Provenance::Global(_)
@@ -2101,7 +2116,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             provenance,
                             Provenance::Static | Provenance::Global(_)
                         ),
-                    };
+                    });
                 }
                 self.frame_owned_view_owner(value).is_some()
                     || self.names_fresh_view_storage(value, &self.ty(value))
@@ -3145,6 +3160,21 @@ fn unwrap_unsafe_expr(mut expr: &Expr) -> &Expr {
         expr = inner;
     }
     expr
+}
+
+/// Strips the transparent structural wrappers from an expression.
+///
+/// `unsafe` and the raw/scalar casts keep the operand's storage, so a
+/// conditional behind one is the same conditional for every source and move
+/// judgment. The walk returns the innermost unwrapped expression.
+fn structural_wrapper_inner(mut expr: &Expr) -> &Expr {
+    loop {
+        match &expr.kind {
+            ExprKind::Unsafe(inner) => expr = inner,
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => expr = value,
+            _ => return expr,
+        }
+    }
 }
 
 /// One member or element selection over a raw-deref store target.

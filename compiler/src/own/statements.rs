@@ -1803,12 +1803,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .into_iter()
                             .map(LoanOwner::Binding),
                     );
-                    // A carrier-returning call hands back a view of its single
-                    // lend source; when that source is this frame's storage,
-                    // the return escapes even though no binding has recorded a
-                    // loan for the call's result yet.
+                    // A carrier-returning call hands back a view of every
+                    // source argument it may read; when one of those sources is
+                    // this frame's storage, the return escapes even though no
+                    // binding has recorded a loan for the call's result yet. A
+                    // returned `take` parameter is the value itself, so moving
+                    // it out transfers its storage too; only a source behind it
+                    // can dangle.
                     if let Some(Some(owner)) = self.frame_owned_view_owner(value) {
-                        owners.insert(LoanOwner::Binding(owner));
+                        if !self.is_returned_take_parameter(value, owner) {
+                            owners.insert(LoanOwner::Binding(owner));
+                        }
                     }
                 }
                 owners
@@ -1851,6 +1856,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 releases,
             });
         }
+    }
+
+    /// True when a returned value is a `take` parameter being moved out.
+    ///
+    /// Returning the parameter itself — or a projection of it — hands the
+    /// callee-owned storage back to the caller, so the parameter's own binding
+    /// is not a frame-dying backing of the returned views. A view the callee
+    /// stored into that parameter was already judged at its store, and a view
+    /// inherited from the caller points at storage that outlives the return.
+    fn is_returned_take_parameter(&self, value: &Expr, owner: usize) -> bool {
+        let Some(PlaceTarget::Local(id, _)) = self.place_target(value) else {
+            return false;
+        };
+        let id = self.alias_resolved_root(id);
+        id == owner
+            && self.bindings[id].kind == BindingKind::Param
+            && self.bindings[id].mode == Mode::Take
     }
 }
 

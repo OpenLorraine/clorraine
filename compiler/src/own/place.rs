@@ -221,6 +221,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
+        // A nested write below a moved field only re-initializes the written
+        // sub-path; the moved prefix still owns the rest of the field. Reporting
+        // here keeps the field's moved state intact, so a later read of a
+        // sibling path cannot observe the storage the move handed away.
+        if projections.len() > 1 {
+            if let Some(ir::Projection::Field(field)) = projections.first() {
+                if self.state.place(id).partial.contains(field) {
+                    let name = self.bindings[id].name.clone();
+                    self.report_state_once(
+                        id,
+                        projections,
+                        span,
+                        "E10020",
+                        format!("'{name}.{field}' was moved and cannot be used"),
+                        "re-initialize the field or use a view",
+                    );
+                    return;
+                }
+            }
+            let maybe_moved_prefix = self.state.place(id).moved_if_owning.iter().any(|path| {
+                path.len() < projections.len() && projections.starts_with(path)
+            });
+            if maybe_moved_prefix {
+                // The instance decides whether the prefix owns. Record the
+                // later-use duty without clearing the prefix, so an owning
+                // instance reports the move and a duplicable one stays
+                // accepted.
+                self.note_maybe_moved_use(id, projections, span);
+                return;
+            }
+        }
         let first = projections.first().cloned();
         self.with_place(id, |place| {
             match &first {
@@ -236,11 +267,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if !place.initialized {
                         place.initialized_fields.insert(field.clone());
                     }
-                    place.partial.remove(field);
+                    // A whole-field write re-initializes the field; a nested
+                    // write leaves the moved prefix in place.
+                    if projections.len() == 1 {
+                        place.partial.remove(field);
+                    }
                     place.moved = false;
-                    place.moved_if_owning
-                        .retain(|path| path.first() != first.as_ref());
-                    place.narrowed.retain(|path| path.first() != first.as_ref());
+                    place.moved_if_owning.retain(|path| {
+                        !written_path_clears(projections, path)
+                    });
+                    place
+                        .narrowed
+                        .retain(|path| !written_path_clears(projections, path));
                 }
                 Some(ir::Projection::Element(_)) | Some(ir::Projection::ElementTemp(_)) => {
                     place.initialized = true;
@@ -251,12 +289,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // cannot change it, so it survives the write exactly as it
                     // survives a field write — the guarded block keeps the
                     // narrowed value usable (TY-6).
-                    place
-                        .moved_if_owning
-                        .retain(|path| path.first() != first.as_ref());
+                    place.moved_if_owning.retain(|path| {
+                        !written_path_clears(projections, path)
+                    });
                     place
                         .narrowed
-                        .retain(|path| path.first() != first.as_ref());
+                        .retain(|path| !written_path_clears(projections, path));
                 }
             }
         });
@@ -904,15 +942,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// statement, well before the caller reads a returned view.
     pub(super) fn owner_dies_with_frame(&self, owner: LoanOwner) -> bool {
         match owner {
-            LoanOwner::Binding(id) => {
-                let binding = &self.bindings[id];
-                match binding.kind {
-                    BindingKind::Local => true,
-                    BindingKind::Param => binding.mode == Mode::Take,
-                    BindingKind::OutSlot => false,
-                }
-            }
+            LoanOwner::Binding(id) => self.binding_dies_with_frame(id),
             LoanOwner::Temp(_) => true,
+        }
+    }
+
+    /// True when a binding's storage dies with the current frame.
+    ///
+    /// A local dies with its frame, and so does a `take` parameter, whose
+    /// value the callee owns. A capture aliases the enclosing binding named in
+    /// its capture list, so its lifespan is that binding's: a captured local
+    /// dies with the enclosing frame, while a captured parameter or global
+    /// outlives it. A plain or `borrow` parameter and an out-slot name the
+    /// caller's storage, which outlives the current frame.
+    pub(super) fn binding_dies_with_frame(&self, id: usize) -> bool {
+        let binding = &self.bindings[id];
+        match binding.kind {
+            BindingKind::Local => true,
+            BindingKind::Param => {
+                binding.mode == Mode::Take || binding.capture_dies_with_frame
+            }
+            BindingKind::OutSlot => false,
         }
     }
 
@@ -1111,38 +1161,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // single lend source, so the return's loan walk follows that
             // source. Its element loans name the frame backing a local or
             // overwritten container holds.
-            // A carrier-returning call hands back the view positions of its
-            // single lend source; consult it when the call is not a view
-            // return.
-            ExprKind::Call { callee, args, .. } => match self
-                .call_view_source(callee, args)
-                .or_else(|| self.call_carrier_source(callee, args))
-            {
-                Some(ViewCallSource::Expr(source)) => self.expr_view_roots(source, roots),
-                Some(ViewCallSource::Receiver(provenance)) => {
-                    if let Some(owner) = owner_of(&provenance) {
-                        if let LoanOwner::Binding(id) = owner {
+            // A carrier-returning call hands back the view positions of every
+            // source argument it may read; consult them when the call is not a
+            // view return. Several sources each contribute their roots, so a
+            // pair or an owned/taken argument is followed instead of ignored.
+            ExprKind::Call { callee, args, .. } => {
+                if let Some(source) = self.call_view_source(callee, args) {
+                    self.expr_view_roots_source(callee, source, roots);
+                } else {
+                    for source in self.call_carrier_sources(callee, args) {
+                        self.expr_view_roots_source(callee, source, roots);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Adds the roots one resolved call source reaches.
+    fn expr_view_roots_source(
+        &self,
+        callee: &Expr,
+        source: ViewCallSource<'_>,
+        roots: &mut BTreeSet<usize>,
+    ) {
+        match source {
+            ViewCallSource::Expr(source) => self.expr_view_roots(source, roots),
+            ViewCallSource::Receiver(provenance) => {
+                if let Some(owner) = owner_of(&provenance) {
+                    if let LoanOwner::Binding(id) = owner {
+                        roots.insert(self.alias_resolved_root(id));
+                    }
+                }
+                // A receiver whose own provenance is static (a view array of
+                // literals, for example) still reads that binding's element
+                // loans; name the receiver root itself.
+                match &callee.kind {
+                    ExprKind::Member { base, .. } => self.expr_view_roots(base, roots),
+                    ExprKind::Qualified(name) => {
+                        if let Some(id) = name.segments.first().and_then(|first| self.lookup(first))
+                        {
                             roots.insert(self.alias_resolved_root(id));
                         }
                     }
-                    // A receiver whose own provenance is static (a view array
-                    // of literals, for example) still reads that binding's
-                    // element loans; name the receiver root itself.
-                    match &callee.kind {
-                        ExprKind::Member { base, .. } => self.expr_view_roots(base, roots),
-                        ExprKind::Qualified(name) => {
-                            if let Some(id) =
-                                name.segments.first().and_then(|first| self.lookup(first))
-                            {
-                                roots.insert(self.alias_resolved_root(id));
-                            }
-                        }
-                        _ => {}
-                    }
+                    _ => {}
                 }
-                None => {}
-            },
-            _ => {}
+            }
         }
     }
 
@@ -1817,23 +1881,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .extend(loans);
             return;
         }
-        // A carrier-returning call with one lend candidate hands back the view
-        // positions of that argument. The copy reads those views, so the
-        // destination loans the argument's backings exactly as a direct place
-        // copy would; a later write through the backing reports the live loan.
-        if let ExprKind::Call { callee, args, .. } = &value.kind {
-            if let Some(source) = self.call_carrier_source(callee, args) {
-                match source {
-                    ViewCallSource::Expr(source) => {
-                        self.collect_copy_element_loans(source, None, None, base, copied);
-                    }
-                    ViewCallSource::Receiver(provenance) => {
-                        if let Some(owner) = owner_of(&provenance) {
-                            copied
-                                .owners
-                                .entry(base.to_vec())
-                                .or_default()
-                                .insert(owner);
+        // A carrier-returning call hands back the view positions of every
+        // argument it may read. The copy reads those views, so the destination
+        // loans each argument's backings exactly as a direct place copy would;
+        // a later write through a backing reports the live loan. A projected
+        // chain rooted at the call (`make(a.v).names`) reads the same positions,
+        // so the walk resolves its call root too.
+        if let Some((callee, args)) = self.carrier_call_root(value) {
+            let sources = self.call_carrier_sources(callee, args);
+            if !sources.is_empty() {
+                for source in sources {
+                    match source {
+                        ViewCallSource::Expr(source) => {
+                            self.collect_copy_element_loans(source, None, None, base, copied);
+                        }
+                        ViewCallSource::Receiver(provenance) => {
+                            if let Some(owner) = owner_of(&provenance) {
+                                copied
+                                    .owners
+                                    .entry(base.to_vec())
+                                    .or_default()
+                                    .insert(owner);
+                            }
                         }
                     }
                 }
@@ -2381,7 +2450,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             let effective = self.call_effective_params(callee, args, is_dot, &params);
             return self
-                .single_lend_candidate(&effective, &params, false)
+                .single_lend_candidate(&effective, &params)
                 .and_then(source);
         }
         let name = self.callee_name(callee)?;
@@ -2399,7 +2468,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
                     .collect();
                 let effective = self.call_effective_params(callee, args, is_dot, &params);
-                self.single_lend_candidate(&effective, &params, false)
+                self.single_lend_candidate(&effective, &params)
                     .and_then(source)
             }
             Some(Callee::Stdlib {
@@ -2410,20 +2479,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// The source a carrier-returning call derives its view positions from.
+    /// The call at the root of a projection chain, when the chain has one.
     ///
-    /// A carrier return may hold a view of the call's single lend candidate —
-    /// `func make(v: str): Holder { return Holder { names: [v, "EE"] }; }` hands
-    /// back a carrier whose view reads the argument. Resolving that source lets
-    /// a copy record the argument's positions and lets the call-boundary escape
-    /// judgment name the argument's storage. A view return is handled by
-    /// [`Self::call_view_source`]; a call with zero or several lend candidates
-    /// names no single source and contributes nothing.
-    pub(super) fn call_carrier_source<'e>(
+    /// A carrier-returning call's view positions are read through a member or
+    /// element projection exactly as the whole value is: `make(a.v).names`
+    /// reads the returned carrier's `names` position. Wrappers contribute no
+    /// storage of their own, so they are stripped too. A fixed array's `.len`
+    /// is its structural extent, not a position, and yields no call root.
+    pub(super) fn carrier_call_root<'e>(&self, expr: &'e Expr) -> Option<(&'e Expr, &'e [Arg])> {
+        match &expr.kind {
+            ExprKind::Call { callee, args, .. } => Some((callee, args)),
+            ExprKind::Member { base, name } => {
+                if name == "len" && self.ty(base).is_fixed_array() {
+                    return None;
+                }
+                self.carrier_call_root(base)
+            }
+            ExprKind::Index { base, .. } => self.carrier_call_root(base),
+            ExprKind::Unsafe(inner) => self.carrier_call_root(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.carrier_call_root(value)
+            }
+            _ => None,
+        }
+    }
+
+    /// The source arguments a carrier-returning call derives view positions
+    /// from.
+    ///
+    /// A carrier return may hold a view of any argument whose storage a view
+    /// can read: a view-like lend parameter, an owned aggregate with a
+    /// handle-bearing field, or a `take` argument, whose storage the callee
+    /// owns and may hand back through the returned value. Every such argument
+    /// contributes its positions, so a call with several candidates records
+    /// each one instead of contributing nothing. A view return is handled by
+    /// [`Self::call_view_source`]; a call that cannot carry a view contributes
+    /// no source.
+    pub(super) fn call_carrier_sources<'e>(
         &self,
         callee: &'e Expr,
         args: &'e [Arg],
-    ) -> Option<ViewCallSource<'e>> {
+    ) -> Vec<ViewCallSource<'e>> {
         let field_call = self
             .callee_field_type(callee)
             .is_some_and(|ty| self.callable_type_signature(&ty).is_some());
@@ -2442,32 +2538,62 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             args.get(written_index)
                 .map(|arg| ViewCallSource::Expr(&arg.value))
         };
-        if let Some((params, returns)) = self.callable_call_signature(callee) {
-            if is_view_like(&returns) || !self.may_carry_view(&returns) {
-                return None;
-            }
-            let effective = self.call_effective_params(callee, args, is_dot, &params);
-            return self
-                .single_lend_candidate(&effective, &params, true)
-                .and_then(source);
-        }
-        let name = self.callee_name(callee)?;
-        let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
-            return None;
+        let (params, returns) = if let Some(signature) = self.callable_call_signature(callee) {
+            signature
+        } else {
+            let Some(name) = self.callee_name(callee) else {
+                return Vec::new();
+            };
+            let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
+                return Vec::new();
+            };
+            let type_params: Vec<String> =
+                decl.type_params.iter().map(|p| p.name.clone()).collect();
+            let returns = self.resolve_with(&decl.returns, &type_params);
+            let params: Vec<(Mode, Ty)> = decl
+                .params
+                .iter()
+                .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
+                .collect();
+            (params, returns)
         };
-        let type_params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-        let returns = self.resolve_with(&decl.returns, &type_params);
         if is_view_like(&returns) || !self.may_carry_view(&returns) {
-            return None;
+            return Vec::new();
         }
-        let params: Vec<(Mode, Ty)> = decl
-            .params
-            .iter()
-            .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
-            .collect();
         let effective = self.call_effective_params(callee, args, is_dot, &params);
-        self.single_lend_candidate(&effective, &params, true)
-            .and_then(source)
+        self.carrier_candidates(&effective, &params)
+            .into_iter()
+            .filter_map(source)
+            .collect()
+    }
+
+    /// The parameter indices a carrier return may derive a view position from.
+    ///
+    /// A concrete call-site type decides: a view-like parameter or an owned
+    /// aggregate whose storage a view can read is a candidate, and a `take`
+    /// parameter is one too because the callee may hand its storage back. A
+    /// call made inside a generic body whose argument still mentions a type
+    /// parameter adds the declared parameter as well, so the per-instance
+    /// judgment sees the same source its concrete twin does.
+    fn carrier_candidates(&self, effective: &[(Mode, Ty)], declared: &[(Mode, Ty)]) -> Vec<usize> {
+        let candidate = |ty: &Ty| is_lend_candidate(ty) || self.may_view_from_storage(ty);
+        let mut candidates: Vec<usize> = effective
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, ty))| candidate(ty))
+            .map(|(index, _)| index)
+            .collect();
+        let unresolved = effective
+            .iter()
+            .any(|(_, ty)| super::lower::mentions_type_param(ty));
+        if unresolved {
+            for (index, (_, ty)) in declared.iter().enumerate() {
+                if super::lower::mentions_type_param(ty) && !candidates.contains(&index) {
+                    candidates.push(index);
+                }
+            }
+        }
+        candidates
     }
 
     /// The single non-`take` lend candidate a call may reborrow.
@@ -2482,11 +2608,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &self,
         effective: &[(Mode, Ty)],
         declared: &[(Mode, Ty)],
-        carrier: bool,
     ) -> Option<usize> {
-        let candidate = |ty: &Ty| {
-            is_lend_candidate(ty) || (carrier && self.may_view_from_storage(ty))
-        };
+        let candidate = is_lend_candidate;
         let concrete: Vec<usize> = effective
             .iter()
             .enumerate()
@@ -2558,6 +2681,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         if matches!(callee.kind, ExprKind::Call { .. }) {
+            if let Some(signature) = self.callable_type_signature(&self.ty(callee)) {
+                return Some(signature);
+            }
+        }
+        // A lambda literal, a conditional over callables, a cast, and an
+        // indexed callable all carry their signature on the expression's own
+        // recorded type. The type stage types each of them, so the value
+        // callee resolves exactly as a func-typed binding does.
+        if matches!(
+            callee.kind,
+            ExprKind::Lambda { .. }
+                | ExprKind::Conditional { .. }
+                | ExprKind::Unsafe(_)
+                | ExprKind::RawCast { .. }
+                | ExprKind::Cast { .. }
+                | ExprKind::Index { .. }
+        ) {
             if let Some(signature) = self.callable_type_signature(&self.ty(callee)) {
                 return Some(signature);
             }
@@ -3032,6 +3172,19 @@ fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
             ..
         })
     )
+}
+
+/// True when a write clears a recorded moved or narrowed path.
+///
+/// A write to a path replaces that path and everything below it, but a strict
+/// prefix of the write stays valid: writing `h.name.x` re-initializes `x`
+/// while `h.name` itself is still the value that was moved or narrowed. An
+/// unrelated path is untouched.
+fn written_path_clears(written: &[ir::Projection], path: &[ir::Projection]) -> bool {
+    if path.len() < written.len() && written.starts_with(path) {
+        return false;
+    }
+    path.starts_with(written)
 }
 
 /// True when a recorded position path starts with a read path.

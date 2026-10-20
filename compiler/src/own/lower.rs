@@ -1001,6 +1001,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 mode: Mode::None,
             })
             .collect();
+        // A capture aliases the enclosing binding it names, so its lifespan
+        // comes from that binding, not from the lifted function's own table.
+        // Record it before the enclosing bindings are saved: a view stored
+        // through a captured out-slot escapes the enclosing frame exactly when
+        // the captured source dies with that frame.
+        let capture_dies: BTreeMap<String, bool> = self
+            .sema
+            .closures
+            .get(&site)
+            .map(|closure| {
+                closure
+                    .captures
+                    .iter()
+                    .filter_map(|info| {
+                        self.lookup(&info.name)
+                            .map(|id| (info.name.clone(), self.binding_dies_with_frame(id)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let saved_builder = std::mem::replace(
             &mut self.builder,
             Builder::new(format!("cl_lambda_{site}"), lambda_params, ret.clone()),
@@ -1060,7 +1080,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for (param, ty) in params.iter().zip(param_tys) {
             self.declare_lambda_param(&param.name, ty.clone());
         }
-        self.declare_captures(site);
+        self.declare_captures(site, &capture_dies);
         match body {
             LambdaBody::Expr(value) if self.returns.is_void() => {
                 // A void expression body is a statement: the expression
@@ -1241,7 +1261,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `Copy` capture is a by-value field; a read-only or writable borrow is
     /// a pointer field, and a writable borrow is declared `borrow` so the body
     /// may assign through it.
-    fn declare_captures(&mut self, site: usize) {
+    fn declare_captures(&mut self, site: usize, capture_dies: &BTreeMap<String, bool>) {
         let infos: Vec<CaptureInfo> = self
             .sema
             .closures
@@ -1280,6 +1300,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 base: Some(base),
                 alias_root: None,
                 generated: false,
+                capture_dies_with_frame: capture_dies
+                    .get(&info.name)
+                    .copied()
+                    .unwrap_or(false),
             });
             if let Some(scope) = self.scopes.last_mut() {
                 scope.names.insert(info.name.clone(), id);
@@ -2746,30 +2770,61 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// True when every reachable arm of a conditional projects out of owned
-    /// storage.
+    /// True when a `take` conditional needs the shared carrier per arm.
     ///
-    /// The per-arm move-out empties the chosen arm's root, so a `take`
-    /// argument whose member type is still unresolved only takes that route
-    /// when every arm's root owns its value: a local or a `take`/out
-    /// parameter. A borrowed element, a read-only lend parameter, a capture,
-    /// a global, or a temporary keeps the existing copy, because the move
-    /// rules do not allow emptying it.
-    fn conditional_owns_place_arms(&self, value: &Value) -> bool {
+    /// A conditional whose member type is still unresolved can own at the
+    /// instance. When at least one arm projects out of an owned place, that
+    /// arm must move its selected member out before the call, and an arm that
+    /// owns nothing (a `null`, a literal, or a duplicable value) fills the
+    /// carrier as a plain store. Requiring every arm to own would lose the
+    /// move-out whenever the other arm is `null`, which is the common spelling.
+    fn conditional_take_needs_carrier(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Conditional {
                 then_value,
                 else_value,
                 ..
             } => {
-                self.conditional_owns_place_arms(then_value)
-                    && self.conditional_owns_place_arms(else_value)
+                (self.take_arm_needs_move(then_value) || self.take_arm_needs_move(else_value))
+                    && self.take_arm_can_fill(then_value)
+                    && self.take_arm_can_fill(else_value)
             }
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-                self.conditional_owns_place_arms(base)
+                self.conditional_take_needs_carrier(base)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a take arm projects out of a place a move may empty.
+    fn take_arm_needs_move(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.take_arm_needs_move(base)
             }
             ValueKind::Place(place) => self.owned_place_root(place),
+            ValueKind::Conditional { .. } => self.conditional_take_needs_carrier(value),
             _ => false,
+        }
+    }
+
+    /// True when a take arm can fill the shared carrier.
+    ///
+    /// A place copies into the carrier and is emptied only when it owns; a
+    /// value that owns nothing stores as-is. A nested conditional recurses on
+    /// both of its arms.
+    fn take_arm_can_fill(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.take_arm_can_fill(base)
+            }
+            ValueKind::Place(_) => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => self.take_arm_can_fill(then_value) && self.take_arm_can_fill(else_value),
+            _ => !self.owns_drop(&value.ty) && !self.maybe_owns(&value.ty),
         }
     }
 
@@ -5545,7 +5600,7 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
             // to the evaluated path, exactly as an owned conditional does.
             if value.ty.is_unknown()
                 && matches!(value.kind, ValueKind::Conditional { .. })
-                && self.conditional_owns_place_arms(&value)
+                && self.conditional_take_needs_carrier(&value)
             {
                 return self.materialize_take_place(value);
             }

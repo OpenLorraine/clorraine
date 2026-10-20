@@ -80,6 +80,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
         }
+        // A non-name callee whose recorded type is callable — an inline lambda
+        // or a conditional over func values — is called through its value. The
+        // expression's own signature types the call and carries its parameter
+        // modes exactly as a func-typed binding's does.
+        if self.callee_name(callee).is_none() {
+            if let Some(params) = self.callable_signature(&self.ty(callee)) {
+                self.eval(callee);
+                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                let mut lent: BTreeSet<usize> = BTreeSet::new();
+                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                return;
+            }
+        }
         let callee_name = self.callee_name(callee);
         let Some(name) = callee_name else {
             self.eval(callee);
@@ -668,51 +681,89 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .frame_owned_view_owner(then_value)
                     .or_else(|| self.frame_owned_view_owner(else_value));
             }
+            // A projection chain rooted at a carrier-returning call reads the
+            // returned view positions exactly as the whole call does. The call
+            // at the root decides the backing; a chain rooted anywhere else
+            // keeps the ordinary place judgment below.
+            ExprKind::Member { .. } | ExprKind::Index { .. } => {
+                if let Some((callee, args)) = self.carrier_call_root(expr) {
+                    if let Some(owner) = self.frame_owned_carrier_source_owner(callee, args) {
+                        return Some(owner);
+                    }
+                }
+            }
+            // A literal materializes its fields in this frame. A view-carrying
+            // position whose value derives from frame storage hands that
+            // backing to the destination, so the same judgment descends each
+            // such field or element.
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let struct_name = name.segments.last().cloned().unwrap_or_default();
+                let declared = self.instance_fields(&self.ty(expr), &struct_name);
+                for field in fields {
+                    let position = declared
+                        .iter()
+                        .find(|(declared, _)| declared == &field.name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    if !self.may_carry_view(&position) {
+                        continue;
+                    }
+                    // A field whose provenance already names a frame binding is
+                    // reported by the literal's own field judgment; adding the
+                    // destination's report would repeat one site. Only an
+                    // ownerless derivation — a carrier call behind a
+                    // conditional — needs this walk.
+                    if Self::storage_atoms(&self.view_provenance(&field.value))
+                        .iter()
+                        .any(|atom| {
+                            matches!(atom, Provenance::Local(_) | Provenance::Param(_))
+                        })
+                    {
+                        continue;
+                    }
+                    if let Some(owner) = self.frame_owned_view_owner(&field.value) {
+                        return Some(owner);
+                    }
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                if self.may_carry_view(&self.ty(expr).iterated_element()) {
+                    for element in elements {
+                        if Self::storage_atoms(&self.view_provenance(element))
+                            .iter()
+                            .any(|atom| {
+                                matches!(atom, Provenance::Local(_) | Provenance::Param(_))
+                            })
+                        {
+                            continue;
+                        }
+                        if let Some(owner) = self.frame_owned_view_owner(element) {
+                            return Some(owner);
+                        }
+                    }
+                    if let Some(fill) = fill {
+                        if let Some(owner) = self.frame_owned_view_owner(fill) {
+                            return Some(owner);
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         // A view returned through a single-lend call reads its source's
         // storage; the source decides whether the backing dies with this
         // frame. Walk it here so a call-mediated view of an inline temporary
         // reports at the caller's out-slot store. A carrier-returning call
-        // hands back the view positions of its single lend source, so the same
-        // walk names the argument's backing.
+        // hands back the view positions of every source argument it may read,
+        // so the same walk names the backing.
         if let ExprKind::Call { callee, args, .. } = &expr.kind {
             if let Some(super::place::ViewCallSource::Expr(source)) = self.call_view_source(callee, args) {
                 if let Some(owner) = self.frame_owned_view_owner(source) {
                     return Some(owner);
                 }
             }
-            if let Some(source) = self.call_carrier_source(callee, args) {
-                match source {
-                    super::place::ViewCallSource::Expr(source) => {
-                        if let Some(owner) = self.frame_owned_view_owner(source) {
-                            return Some(owner);
-                        }
-                    }
-                    super::place::ViewCallSource::Receiver(provenance) => {
-                        if let Some(owner) = self.frame_owner_of_provenance(&provenance) {
-                            return Some(owner);
-                        }
-                        // A receiver whose own provenance is static still reads
-                        // its binding's element loans, so judge the receiver
-                        // place itself as well.
-                        match &callee.kind {
-                            ExprKind::Member { base, .. } => {
-                                if let Some(owner) = self.frame_owned_view_owner(base) {
-                                    return Some(owner);
-                                }
-                            }
-                            ExprKind::Qualified(name) => {
-                                if let Some(owner) =
-                                    self.qualified_receiver_frame_owner(name)
-                                {
-                                    return Some(owner);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+            if let Some(owner) = self.frame_owned_carrier_source_owner(callee, args) {
+                return Some(owner);
             }
         }
         if let Some(owners) = self.recorded_position_frame_owners(expr) {
@@ -796,6 +847,48 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if self.view_reads_fresh_root(expr) {
             return Some(None);
+        }
+        None
+    }
+
+    /// The frame-owned backing a carrier-returning call's sources name.
+    ///
+    /// Every source the returned positions may read is judged; the first one
+    /// whose storage dies with this frame supplies the report. A dot call's
+    /// receiver is a source at parameter zero, and a receiver whose own
+    /// provenance is static still reads its binding's element loans, so its
+    /// place is judged as well.
+    fn frame_owned_carrier_source_owner(
+        &self,
+        callee: &Expr,
+        args: &[Arg],
+    ) -> Option<Option<usize>> {
+        for source in self.call_carrier_sources(callee, args) {
+            match source {
+                super::place::ViewCallSource::Expr(source) => {
+                    if let Some(owner) = self.frame_owned_view_owner(source) {
+                        return Some(owner);
+                    }
+                }
+                super::place::ViewCallSource::Receiver(provenance) => {
+                    if let Some(owner) = self.frame_owner_of_provenance(&provenance) {
+                        return Some(owner);
+                    }
+                    match &callee.kind {
+                        ExprKind::Member { base, .. } => {
+                            if let Some(owner) = self.frame_owned_view_owner(base) {
+                                return Some(owner);
+                            }
+                        }
+                        ExprKind::Qualified(name) => {
+                            if let Some(owner) = self.qualified_receiver_frame_owner(name) {
+                                return Some(owner);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
         None
     }

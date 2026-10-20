@@ -86,6 +86,15 @@ pub(super) struct Binding {
     /// view, so the escape checks recognize it without matching on the
     /// generated spelling.
     pub(super) generated: bool,
+    /// True when a lifted lambda's capture points at storage that dies with
+    /// the enclosing frame.
+    ///
+    /// A capture has no declaration of its own: it aliases the enclosing
+    /// binding named in the capture list. The lifted body judges an escape to
+    /// the enclosing caller, so the captured binding's lifespan decides
+    /// whether the escape is frame-backed. Every non-capture binding leaves
+    /// this false.
+    pub(super) capture_dies_with_frame: bool,
 }
 
 /// One lexical scope and the bindings declared in it.

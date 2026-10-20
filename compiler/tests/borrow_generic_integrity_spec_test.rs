@@ -2354,9 +2354,9 @@ func main(): i32 {
 /// A nested write below a partially moved field keeps the moved prefix.
 ///
 /// `h.name` was moved into `n`, so writing `h.name.x` is a use of the moved
-/// value and reports `E10020` once; the later read of `h.name.s` never runs.
-/// The concrete twin reports the same code. A whole-field re-initialization
-/// stays accepted and clean.
+/// value and reports `E10020` at the write; the later read of `h.name.s` is a
+/// second use site and reports the same code. The concrete twin reports the
+/// same two sites. A whole-field re-initialization stays accepted and clean.
 #[test]
 fn should_reject_a_nested_write_below_a_moved_field() {
     let generic = r#"module spec.bgi.nestedwritemoved;
@@ -2377,7 +2377,7 @@ func main(): i32 {
     return f<H>(h);
 }
 "#;
-    assert_rejected_count("nestedwritemoved", generic, "E10020", 1, &["was moved"]);
+    assert_rejected_count("nestedwritemoved", generic, "E10020", 2, &["was moved"]);
 
     let concrete = r#"module spec.bgi.nestedwritemovedconc;
 
@@ -2401,7 +2401,7 @@ func main(): i32 {
         "nestedwritemovedconc",
         concrete,
         "E10020",
-        1,
+        2,
         &["was moved"],
     );
 

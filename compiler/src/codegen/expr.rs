@@ -434,6 +434,25 @@ impl<'a> Emitter<'a> {
                 else_value,
                 ..
             } => {
+                // A `null` arm carries the other arm's nullable type. The type
+                // stage leaves the conditional opaque when the owning arm is
+                // still a generic projection, so resolving the non-null arm
+                // here gives the temporary the instance's concrete shape.
+                if matches!(then_value.kind, ValueKind::Null)
+                    || matches!(else_value.kind, ValueKind::Null)
+                {
+                    let other = if matches!(then_value.kind, ValueKind::Null) {
+                        else_value
+                    } else {
+                        then_value
+                    };
+                    let mut other_ty = self.resolved_value_ty(other);
+                    if !other_ty.is_unknown() {
+                        other_ty.nullable = true;
+                        return other_ty;
+                    }
+                    return ty;
+                }
                 let then_ty = self.resolved_value_ty(then_value);
                 let else_ty = self.resolved_value_ty(else_value);
                 if then_ty.is_unknown() || then_ty != else_ty {
