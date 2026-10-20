@@ -920,3 +920,260 @@ func main(): i32 {
         "pbaredup: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Generic conditional wrappers and moved state (Batch Q)
+// ---------------------------------------------------------------------------
+
+/// The generic conditional take fills one carrier the instance types.
+///
+/// Each arm moves the selected member out of the `take` parameter into a
+/// `String` carrier, and the post-call move-out empties the carrier. The bare
+/// and `unsafe`-wrapped spellings emit the same shape and re-emit
+/// byte-identically.
+#[test]
+fn should_emit_the_per_arm_move_out_for_a_conditional_take() {
+    let bare = r#"module impl.bgi.pqtake;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 { return sink(take (c ? h.name : null)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (first, second) = emit_twice("pqtake", bare);
+    assert_eq!(
+        first, second,
+        "pqtake: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(
+        "pqtake",
+        &first,
+        "ClString __cl_tmp0 = NULL;",
+    );
+    assert!(
+        count_occurrences(&first, "h.name = NULL;") >= 3,
+        "pqtake: expected the two arm move-outs and the cleanup; unit:\n{first}"
+    );
+    assert_contains("pqtake", &first, "__cl_tmp0 = h.name;");
+    assert_contains("pqtake", &first, "__cl_tmp0 = NULL;");
+
+    let wrapped = r#"module impl.bgi.pqtakeunsafe;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 {
+    return sink(take (unsafe (c ? h.name : null)));
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (first, second) = emit_twice("pqtakeunsafe", wrapped);
+    assert_eq!(
+        first, second,
+        "pqtakeunsafe: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains("pqtakeunsafe", &first, "ClString __cl_tmp0 = NULL;");
+    assert!(
+        count_occurrences(&first, "h.name = NULL;") >= 3,
+        "pqtakeunsafe: expected the two arm move-outs and the cleanup; unit:\n{first}"
+    );
+}
+
+/// The owning array element and the wrapped generic source report once.
+#[test]
+fn should_report_the_generic_array_and_wrapped_source_once() {
+    let element = r#"module impl.bgi.pqarrayelem;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let arr: String[1] = [c ? h.name : h.name];
+    return i32(len(arr[0])) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqarrayelem", element);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqarrayelem: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqarrayelem: expected one E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqarrayelem: expected the lend report; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqarrayelem: a rejected program must not produce a translation unit"
+    );
+
+    let wrapped = r#"module impl.bgi.pqwrapped;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: unsafe (c ? h.name : null), tag: 1 };
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqwrapped", wrapped);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqwrapped: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqwrapped: expected one E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqwrapped: a rejected program must not produce a translation unit"
+    );
+}
+
+/// The nested write reports at the write and at the later read.
+///
+/// Both use sites report `E10020` naming the moved field, in the generic body
+/// and in its concrete twin. The whole-field re-initialization control keeps
+/// its assignments and re-emits byte-identically.
+#[test]
+fn should_report_a_nested_write_below_a_moved_field_at_each_use() {
+    let generic = r#"module impl.bgi.pqnestedwrite;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f<T>(take h: T): i32 {
+    let n: Inner = h.name;
+    h.name.x = 7;
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f<H>(h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqnestedwrite", generic);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqnestedwrite: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10020:"),
+        2,
+        "pqnestedwrite: expected the write and the later read; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        count_occurrences(&stderr, "'h.name' was moved and cannot be used"),
+        2,
+        "pqnestedwrite: expected both reports to name the moved field; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqnestedwrite: a rejected program must not produce a translation unit"
+    );
+
+    let concrete = r#"module impl.bgi.pqnestedwriteconc;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f(take h: H): i32 {
+    let n: Inner = h.name;
+    h.name.x = 7;
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f(h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqnestedwriteconc", concrete);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqnestedwriteconc: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10020:"),
+        2,
+        "pqnestedwriteconc: expected the write and the later read; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqnestedwriteconc: a rejected program must not produce a translation unit"
+    );
+
+    let control = r#"module impl.bgi.pqnestedinit;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f(take h: H): i32 {
+    let n: Inner = h.name;
+    h.name = Inner { x: 7, s: stringOf("cd") };
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f(h) - 3;
+}
+"#;
+    let (first, second) = emit_twice("pqnestedinit", control);
+    assert_eq!(
+        first, second,
+        "pqnestedinit: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains("pqnestedinit", &first, "h.name = (ClInner)");
+}

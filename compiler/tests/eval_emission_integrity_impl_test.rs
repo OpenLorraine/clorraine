@@ -2557,3 +2557,150 @@ func main(): i32 {
     );
     assert_run_exit("preturnok", accepted, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Carrier sources and callable expressions (Batch Q)
+// ---------------------------------------------------------------------------
+
+/// The accepted carrier and callable controls keep one emission.
+///
+/// A projected carrier call, a two-source carrier, the identity carrier
+/// return, and the inline lambda and conditional func-value calls are emitted
+/// twice with byte-identical text. The conditional function call renders the
+/// selected value instead of its raw conditional expression.
+#[test]
+fn should_emit_the_carrier_and_callable_controls_byte_identically() {
+    let projected = r#"module impl.eei.pqproj;
+
+struct Holder { names: str[2]; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: str[2], borrow slot: str?): void { slot = h[0]; }
+
+func outer(borrow slot: str?): void {
+    store(make("AA").names, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqproj", projected);
+    assert_eq!(
+        first, second,
+        "pqproj: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "pqproj",
+        &first,
+        &[
+            "cl_impl_eei_pqproj_make(",
+            ".names",
+            "cl_impl_eei_pqproj_store(",
+        ],
+    );
+
+    let pair = r#"module impl.eei.pqpair;
+
+struct Holder { names: str[2]; }
+
+func makePair(x: str, y: str): Holder { return Holder { names: [x, y] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    store(makePair("AA", "BB"), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqpair", pair);
+    assert_eq!(
+        first, second,
+        "pqpair: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "pqpair",
+        &first,
+        &[
+            "cl_impl_eei_pqpair_makePair(",
+            "cl_str(\"AA\")",
+            "cl_str(\"BB\")",
+        ],
+    );
+
+    let identity = r#"module impl.eei.pqidentity;
+
+struct Holder { names: str[2]; }
+
+func id(take h: Holder): Holder { return h; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    let g: Holder = id(take h);
+    return i32(g.names[0][0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqidentity", identity);
+    assert_eq!(
+        first, second,
+        "pqidentity: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all("pqidentity", &first, &["cl_impl_eei_pqidentity_id("]);
+
+    let conditional = r#"module impl.eei.pqcondfunc;
+
+func first(s: str, j: i32): str { return s; }
+func second(s: str, j: i32): str { return s; }
+
+func outer(c: bool, p: str): i32 {
+    let s: str = (c ? first : second)(p, 0);
+    return i32(s[0]) - 65;
+}
+
+func main(): i32 {
+    return outer(true, "AA");
+}
+"#;
+    let (first, second) = emit_twice("pqcondfunc", conditional);
+    assert_eq!(
+        first, second,
+        "pqcondfunc: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "pqcondfunc",
+        &first,
+        &[
+            "((c ? cl_impl_eei_pqcondfunc_first : cl_impl_eei_pqcondfunc_second))(p, 0)",
+        ],
+    );
+
+    let captured = r#"module impl.eei.pqcapture;
+
+func outer(p: str, borrow slot: str?): void {
+    ([p, borrow slot] () => {
+        slot = p;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqcapture", captured);
+    assert_eq!(
+        first, second,
+        "pqcapture: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all("pqcapture", &first, &["cl_lambda_", "slot"]);
+}
