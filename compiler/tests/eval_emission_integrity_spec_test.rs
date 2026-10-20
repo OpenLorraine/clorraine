@@ -3274,6 +3274,40 @@ func main(): i32 {
         &[],
     );
 
+    let projected_hop = r#"module spec.eei.takecarrierprojected;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(b: Box): Holder {
+    let h: Holder = Holder { names: ["AA", "EE"] };
+    h.names = [b.v, "EE"];
+    return h;
+}
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    store(make(b), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "takecarrierprojected",
+        projected_hop,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let control = r#"module spec.eei.takecarrierok;
 
 struct Holder { names: str[2]; }
@@ -3641,6 +3675,64 @@ func main(): i32 {
         &[],
     );
 
+    let conditional_return = r#"module spec.eei.lambdacondreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(((ys: str, zs: str) => true ? ys : zs)(av, "ZZ"), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdacondreturn",
+        conditional_return,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let capture_param = r#"module spec.eei.lambdacaptureparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(([p] (ys: str) => false ? p : ys)(av), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("PP", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdacaptureparam",
+        capture_param,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let local_destination = r#"module spec.eei.lambdalocaldest;
 
 import { String, stringOf } from std.text;
@@ -3859,6 +3951,60 @@ func main(): i32 {
     assert_rejected_once(
         "capturedestination",
         destination_escape,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let returned_local = r#"module spec.eei.capturedreturnlocal;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func outer(): Holder {
+    let a: Box = Box { v: stringOf("aa") };
+    let slot: Holder = Holder { names: ["AA", "EE"] };
+    ([a, borrow slot] () => { slot.names[0] = a.v; })();
+    return slot;
+}
+
+func main(): i32 {
+    let g: Holder = outer();
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "capturedreturnlocal",
+        returned_local,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let returned_take = r#"module spec.eei.capturedreturntake;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func outer(take h: Holder): Holder {
+    let local: String = stringOf("zz");
+    let av: str = local;
+    ([av, borrow h] () => { h.names[0] = av; })();
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["AA", "EE"] };
+    let g: Holder = outer(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "capturedreturntake",
+        returned_take,
         "E10030",
         &["does not live long enough"],
         &[],

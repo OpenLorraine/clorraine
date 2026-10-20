@@ -3621,8 +3621,10 @@ fn propagate_if_names(decl: &IfStmt, live: &mut BTreeSet<String>, changed: &mut 
 fn propagate_expr_names(expr: &Expr, live: &mut BTreeSet<String>, changed: &mut bool) {
     match &expr.kind {
         ExprKind::Assign { target, value, .. } => {
-            if let ExprKind::Name(name) = &target.kind {
-                propagate_initializer_names(name, value, live, changed);
+            // A projected assignment writes the root binding, so a live root
+            // makes the assigned value's names live too.
+            if let Some(root) = assignment_root_name(target) {
+                propagate_initializer_names(root, value, live, changed);
             }
             propagate_expr_names(target, live, changed);
             propagate_expr_names(value, live, changed);
@@ -3684,6 +3686,19 @@ fn propagate_expr_names(expr: &Expr, live: &mut BTreeSet<String>, changed: &mut 
             }
         }
         _ => {}
+    }
+}
+
+/// The root binding name of an assignment target, when it has one.
+fn assignment_root_name(expr: &Expr) -> Option<&str> {
+    match &expr.kind {
+        ExprKind::Name(name) => Some(name),
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+            assignment_root_name(base)
+        }
+        ExprKind::Qualified(name) => name.segments.first().map(|segment| segment.as_str()),
+        ExprKind::Unsafe(inner) => assignment_root_name(inner),
+        _ => None,
     }
 }
 

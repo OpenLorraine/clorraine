@@ -1884,6 +1884,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let id = self.alias_resolved_root(id);
             self.bindings[id].kind == BindingKind::Param
                 && self.bindings[id].mode == Mode::Take
+                && !self.bindings[id].capture_written
         };
         let take_root = |expr: &Expr| {
             let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) else {

@@ -397,6 +397,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 || (binding.kind == BindingKind::Param && binding.mode == Mode::Take);
             if owns_frame_storage {
                 self.bindings[id].provenance = Provenance::Local(id);
+                self.bindings[id].capture_written = true;
+                // A recorded static position from the initializer no longer
+                // describes the value the closure wrote.
+                self.state.element_loans.remove(&id);
             }
         }
     }
@@ -809,6 +813,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             _ => {}
+        }
+        // A binding a lambda wrote through a capture may now hold a view the
+        // enclosing frame cannot attribute. Judge it as frame-backed before
+        // any recorded initializer position can mask it.
+        if let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) {
+            let id = self.alias_resolved_root(id);
+            if self.bindings[id].capture_written {
+                return Some(Some(id));
+            }
         }
         // A view returned through a single-lend call reads its source's
         // storage; the source decides whether the backing dies with this

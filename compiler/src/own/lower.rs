@@ -1339,6 +1339,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .get(&info.name)
                     .copied()
                     .unwrap_or(false),
+                capture_written: false,
             });
             if let Some(scope) = self.scopes.last_mut() {
                 scope.names.insert(info.name.clone(), id);

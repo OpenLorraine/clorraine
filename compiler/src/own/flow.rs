@@ -102,6 +102,13 @@ pub(super) struct Binding {
     /// frame. The lifted body cannot tell the origin from the capture mode
     /// alone, so the enclosing checker records the destination's frame here.
     pub(super) capture_caller_slot: bool,
+    /// True when a lambda wrote through a capture of this binding.
+    ///
+    /// The closure body is checked separately, so the enclosing frame cannot
+    /// see which view the write stored. The binding is treated as possibly
+    /// holding frame-backed storage afterwards: a later escape rejects, while a
+    /// read inside the frame stays accepted.
+    pub(super) capture_written: bool,
 }
 
 /// One lexical scope and the bindings declared in it.
