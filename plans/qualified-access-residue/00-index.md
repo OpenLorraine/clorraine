@@ -2,9 +2,10 @@
 
 > **Feature**: Close the four qualified-access residue rows left by batches M and R:
 > `DEF-397`, `DEF-398`, `DEF-399`, and `DEF-400`.
-> **Status**: In progress (2026-10-20)
+> **Status**: Done (2026-10-20)
 > **Created**: 2026-10-20
 > **Planning baseline**: `5830521` (the batch-R close-out).
+> **Head**: `0fac18e`; 26/26 tasks; `make check` and `make verify` pass.
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).
 
 ## Why this batch exists
@@ -50,3 +51,19 @@ registry entry, or `spec/` edit.
   it.
 - Every red case is a specification test in the suite that owns the neighboring
   shape, and it must fail at `5830521`.
+
+## Close-out
+
+`DEF-397`, `DEF-398`, `DEF-399`, and `DEF-400` are Done. The batch head is
+`0fac18e`; `make check` and `make verify` pass (all legs).
+
+The completed work is recorded in [05-findings.md](05-findings.md), including
+the three review rounds and the per-phase rulings. The follow-up rows are:
+
+| Row | Disposition |
+|-----|-------------|
+| `DEF-531` | Backlog — non-call effectful fixed-array `len` operands and the bare/dot call spellings still fold without evaluation |
+| `DEF-532` | Backlog — module initializers skip the own call check |
+| `DEF-533` | Deferred — the module-qualified global-borrow oracle conflicts with BR-9 and needs a user ruling |
+
+No `spec/` file, diagnostic registry entry, or generated C was edited.
