@@ -1162,6 +1162,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for source in self.type_param_conditional_sources(expr) {
                     self.mark_moved_if_owning(source, span);
                 }
+                // A projection over a conditional names each inner lend arm
+                // even when the projected conditional is the whole argument.
+                for source in self.maybe_owning_projection_move_sources(expr) {
+                    self.mark_moved_if_owning(source, span);
+                }
                 if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {
                         if maybe_owning {

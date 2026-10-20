@@ -443,7 +443,24 @@ fn check_duplicable_requirements(
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
             let substituted = crate::types::substitute(declared, &bound);
-            if sema.table.duplicable(&substituted) {
+            // A projected use names the member the move selected; resolve it
+            // after substitution so a duplicable member of an owning root
+            // stays a copy. An empty path is the whole-binding use.
+            let judged = if requirement.path.is_empty() {
+                substituted.clone()
+            } else {
+                let selected = crate::types::project_place_path(
+                    &substituted,
+                    &requirement.path,
+                    &sema.table,
+                );
+                if selected.is_unknown() {
+                    substituted.clone()
+                } else {
+                    selected
+                }
+            };
+            if sema.table.duplicable(&judged) {
                 continue;
             }
             if requirement.partial {

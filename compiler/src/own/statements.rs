@@ -1051,10 +1051,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.sema.table.duplicable(target) {
             return BindingEffect::None;
         }
+        // A projection over a conditional owns at some instances even when the
+        // value is not itself a conditional node (`(c ? a : b).field`).
+        let mut projected = self.maybe_owning_projection_move_sources(value);
+        if !projected.is_empty() {
+            projected.extend(self.conditional_projection_move_sources(value));
+            return BindingEffect::MoveIfOwning {
+                sources: projected,
+                definite_sources: true,
+            };
+        }
         if let Some(source) = self.place_target(value) {
             return BindingEffect::Move { source };
         }
-        let sources = self.conditional_move_sources(value);
+        let mut sources = self.conditional_move_sources(value);
+        if sources.is_empty() {
+            sources = self.conditional_projection_move_sources(value);
+        }
         if !sources.is_empty() {
             return BindingEffect::ConditionalMove { sources };
         }
@@ -1555,13 +1568,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A concrete owning return can still select a type-parameter
                 // arm (or a member of one); the instance audit judges that arm
                 // exactly as the concrete twin's lend move.
-                if !maybe_owning && matches!(value.kind, ExprKind::Conditional { .. }) {
+                if !maybe_owning {
                     for source in self.type_param_conditional_sources(value) {
                         self.mark_moved_if_owning(source, span);
                     }
-                    // A projection over a nested conditional of
-                    // type-parameter places names each inner lend arm, so both
-                    // selected members record their own duty.
+                    // A projection over a conditional of type-parameter
+                    // places names each inner lend arm, whether the
+                    // projection is bare (`(c ? a : b).field`) or sits under
+                    // an outer conditional.
                     for source in self.maybe_owning_projection_move_sources(value) {
                         self.mark_moved_if_owning(source, span);
                     }

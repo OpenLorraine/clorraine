@@ -1950,3 +1950,159 @@ func main(): i32 {
     assert_no_asan("genericprojcondok", &output);
     assert_exit("genericprojcondok", &output, 0);
 }
+
+/// A bare projection over a conditional of type-parameter places reports each
+/// lend arm at every consumed position.
+///
+/// The take, return, binding, struct-literal field, and projected assignment
+/// forms each report `E10034` twice; the three-arm return reports three. A
+/// duplicable member's later read stays accepted.
+#[test]
+fn should_reject_every_bare_projection_over_a_type_parameter_conditional() {
+    let take = r#"module spec.bgi.baretake;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 { return sink(take ((d ? h1 : h2).name)); }
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    assert_rejected_count("baretake", take, "E10034", 2, &["'h1'", "'h2'"]);
+
+    let ret = r#"module spec.bgi.barereturn;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(d: bool, h1: T, h2: T): String? { return (d ? h1 : h2).name; }
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    let s: String? = f<H>(true, h1, h2);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_count("barereturn", ret, "E10034", 2, &["'h1'", "'h2'"]);
+
+    let binding = r#"module spec.bgi.barebinding;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 {
+    let s: String? = (d ? h1 : h2).name;
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    assert_rejected_count("barebinding", binding, "E10034", 2, &["'h1'", "'h2'"]);
+
+    let field = r#"module spec.bgi.barefield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 {
+    let s: S = S { name: (d ? h1 : h2).name, tag: 1 };
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    assert_rejected_count("barefield", field, "E10034", 2, &["'h1'", "'h2'"]);
+
+    let assignment = r#"module spec.bgi.bareassign;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 {
+    let s: S = S { name: null, tag: 1 };
+    s.name = (d ? h1 : h2).name;
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    assert_rejected_count("bareassign", assignment, "E10034", 2, &["'h1'", "'h2'"]);
+
+    let three_arm = r#"module spec.bgi.barethree;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, d: bool, h1: T, h2: T, h3: T): String? {
+    return c ? (d ? h1 : h2).name : h3.name;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    let h3: H = H { name: stringOf("cc") };
+    let s: String? = f<H>(true, true, h1, h2, h3);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_count(
+        "barethree",
+        three_arm,
+        "E10034",
+        3,
+        &["'h1'", "'h2'", "'h3'"],
+    );
+
+    let duplicable_read = r#"module spec.bgi.baredup;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: raw u8; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: raw u8? = c ? h.tag : null;
+    if (h.tag == null) { return 0; }
+    return 1;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: null };
+    return f<H>(true, h);
+}
+"#;
+    let output = run_memory("baredup", duplicable_read);
+    assert_no_asan("baredup", &output);
+    assert_exit("baredup", &output, 0);
+}

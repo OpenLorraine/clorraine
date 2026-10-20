@@ -503,7 +503,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .moved_if_owning
                     .iter()
                     .all(|path| matches!(path.as_slice(), [ir::Projection::Field(_)]));
-            self.record_requires_duplicable(id, span, partial);
+            let path: Vec<crate::types::PlacePathStep> = projections
+                .iter()
+                .map(|projection| match projection {
+                    ir::Projection::Field(field) => {
+                        crate::types::PlacePathStep::Field(field.clone())
+                    }
+                    ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                        crate::types::PlacePathStep::Element
+                    }
+                })
+                .collect();
+            self.record_requires_duplicable(id, span, partial, path);
         }
     }
 
@@ -599,7 +610,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// duty; the per-instance audit reports when the substituted type owns.
     /// `partial` marks a whole-binding use whose conflicting moves are member
     /// paths, which the audit reports with the partial-move code.
-    pub(super) fn record_requires_duplicable(&mut self, id: usize, span: Span, partial: bool) {
+    pub(super) fn record_requires_duplicable(
+        &mut self,
+        id: usize,
+        span: Span,
+        partial: bool,
+        path: Vec<crate::types::PlacePathStep>,
+    ) {
         if !self.recorded_requirements.insert(id) {
             return;
         }
@@ -613,6 +630,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             binding: ir_name,
             ty: declared,
             partial,
+            path,
             span,
         });
     }

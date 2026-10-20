@@ -123,6 +123,11 @@ pub struct RequiresDuplicable {
     /// The concrete spelling reports that whole-binding use of a partially
     /// moved value as `E10025`; a whole-binding move keeps `E10020`.
     pub partial: bool,
+    /// The projected use path, empty for a whole-binding use.
+    ///
+    /// The audit substitutes the root and projects this path so a duplicable
+    /// member of an owning generic root stays a copy.
+    pub path: Vec<crate::types::PlacePathStep>,
     /// The conflicting use, for the body-site diagnostic.
     pub span: Span,
 }

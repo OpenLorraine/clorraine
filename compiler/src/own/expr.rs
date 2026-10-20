@@ -768,6 +768,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     for source in self.type_param_conditional_sources(&field.value) {
                         self.mark_moved_if_owning(source, field.value.span);
                     }
+                    for source in self.maybe_owning_projection_move_sources(&field.value) {
+                        self.mark_moved_if_owning(source, field.value.span);
+                    }
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => {
@@ -1331,6 +1334,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // move only at some instances; the projected store
                         // records the per-instance duty for the audit.
                         for source in self.type_param_conditional_sources(value) {
+                            self.mark_moved_if_owning(source, value.span);
+                        }
+                        for source in self.maybe_owning_projection_move_sources(value) {
                             self.mark_moved_if_owning(source, value.span);
                         }
                     }
