@@ -3175,6 +3175,37 @@ func main(): i32 {
         &[],
     );
 
+    let generic_identity = r#"module spec.eei.takecarriergeneric;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T { return h; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [a.v, "EE"] };
+    store(id<Holder>(take h1), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "takecarriergeneric",
+        generic_identity,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let control = r#"module spec.eei.takecarrierok;
 
 struct Holder { names: str[2]; }
@@ -3190,6 +3221,42 @@ func main(): i32 {
     let output = run_memory("takecarrierok", control);
     assert_no_asan("takecarrierok", &output);
     assert_exit("takecarrierok", &output, 0);
+
+    // An identity relay forwards the take parameter and hands it back.
+    let relay = r#"module spec.eei.takecarrierrelay;
+
+struct Holder { names: str[2]; }
+
+func id(take h: Holder): Holder { return h; }
+func relay(take h: Holder): Holder { return id(take h); }
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    let g: Holder = relay(take h);
+    return i32(g.names[0][0]) - 65;
+}
+"#;
+    let output = run_memory("takecarrierrelay", relay);
+    assert_no_asan("takecarrierrelay", &output);
+    assert_exit("takecarrierrelay", &output, 0);
+
+    // A conditional of two take parameters moves the selected arm out.
+    let selected = r#"module spec.eei.takecarrierselect;
+
+struct Holder { names: str[2]; }
+
+func id(c: bool, take h1: Holder, take h2: Holder): Holder { return c ? h1 : h2; }
+
+func main(): i32 {
+    let a: Holder = Holder { names: ["AA", "BB"] };
+    let b: Holder = Holder { names: ["CC", "DD"] };
+    let g: Holder = id(true, take a, take b);
+    return i32(g.names[0][0]) - 65;
+}
+"#;
+    let output = run_memory("takecarrierselect", selected);
+    assert_no_asan("takecarrierselect", &output);
+    assert_exit("takecarrierselect", &output, 0);
 }
 
 /// A carrier call nested in a returned struct literal is judged at the return.
@@ -3244,6 +3311,37 @@ func main(): i32 {
     let output = run_memory("literalcarrierreturnok", control);
     assert_no_asan("literalcarrierreturnok", &output);
     assert_exit("literalcarrierreturnok", &output, 0);
+
+    // The parameter-backed arm must not hide the carrier call in the other
+    // arm: the carrier still reads the local `a`.
+    let parameter_arm = r#"module spec.eei.literalcarrierparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+struct S { h: Holder; }
+
+func makeFrom(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+
+func outer(c: bool, p: S): S {
+    let a: Box = Box { v: stringOf("aa") };
+    return S { h: c ? makeFrom(a) : p.h };
+}
+
+func main(): i32 {
+    let p: S = S { h: Holder { names: ["CC", "DD"] } };
+    let s: S = outer(true, p);
+    return i32(s.h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "literalcarrierparam",
+        parameter_arm,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
 }
 
 /// An inline lambda callee resolves its own signature in the source walks.
@@ -3300,6 +3398,128 @@ func main(): i32 {
     let output = run_memory("lambdaviewok", control);
     assert_no_asan("lambdaviewok", &output);
     assert_exit("lambdaviewok", &output, 0);
+
+    // A capturing lambda's returned view reads the capture's backing, not a
+    // parameter, so the escaping store reports the frame-local source.
+    let captured = r#"module spec.eei.lambdacaptureview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    store(([s] () => s)(), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdacaptureview",
+        captured,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    // A write through a captured local stays in the same frame, so the view
+    // does not escape.
+    // A lambda with two view parameters still resolves the one its return
+    // names.
+    let two_view = r#"module spec.eei.lambdatwoview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(z: str, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(((ys: str, zs: str) => zs)(z, av), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("ZZ", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdatwoview",
+        two_view,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let two_view_control = r#"module spec.eei.lambdatwoviewok;
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, q: str, borrow slot: str?): void {
+    store(((ys: str, zs: str) => ys)(p, q), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", "ZZ", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("lambdatwoviewok", two_view_control);
+    assert_no_asan("lambdatwoviewok", &output);
+    assert_exit("lambdatwoviewok", &output, 0);
+
+    let local_destination = r#"module spec.eei.lambdalocaldest;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let r: str = "";
+    ([a, borrow r] () => { r = a.v; })();
+    return i32(r[0]) - 97;
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let output = run_memory("lambdalocaldest", local_destination);
+    assert_no_asan("lambdalocaldest", &output);
+    assert_exit("lambdalocaldest", &output, 0);
+}
+
+/// A marker that contradicts a value callee's signature reports `E10039`.
+#[test]
+fn should_validate_a_marker_on_a_value_callee() {
+    let source = r#"module spec.eei.valuemarker;
+
+func outer(s: str): i32 {
+    return i32(((ys: str) => ys)(take s)[0]) - 65;
+}
+
+func main(): i32 { return outer("AA"); }
+"#;
+    assert_rejected_once(
+        "valuemarker",
+        source,
+        "E10039",
+        &["does not match the declaration"],
+        &[],
+    );
 }
 
 /// A conditional over func values resolves the common signature and lowers

@@ -1908,10 +1908,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// owns its value in this frame, and a read-only lend rejects the write on
     /// its own, so both take the frame path.
     fn is_caller_slot(&self, id: usize) -> bool {
+        if matches!(
+            self.bindings[id].base,
+            Some(ir::PlaceBase::EnvField { .. })
+        ) {
+            // A capture aliases the enclosing binding: a captured out-slot or
+            // writable parameter is the caller's destination, while a captured
+            // local stays in the enclosing frame.
+            return self.bindings[id].capture_caller_slot;
+        }
         self.bindings[id].kind == BindingKind::OutSlot
             || (self.bindings[id].kind == BindingKind::Param
                 && self.bindings[id].mode == Mode::Borrow)
-            || matches!(self.bindings[id].base, Some(ir::PlaceBase::EnvField { .. }))
     }
 
     /// Records the backing loans a view element store gives its container.
@@ -2112,7 +2120,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             self.view_provenance(source),
                             Provenance::Static | Provenance::Global(_)
                         ),
-                        super::place::ViewCallSource::Receiver(provenance) => !matches!(
+                        super::place::ViewCallSource::Receiver(provenance)
+                        | super::place::ViewCallSource::Capture(provenance) => !matches!(
                             provenance,
                             Provenance::Static | Provenance::Global(_)
                         ),
@@ -2190,7 +2199,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         matches!(self.view_provenance(source), Provenance::None)
                             || self.names_fresh_view_storage(source, &self.ty(source))
                     }
-                    Some(super::place::ViewCallSource::Receiver(provenance)) => {
+                    Some(super::place::ViewCallSource::Receiver(provenance))
+                    | Some(super::place::ViewCallSource::Capture(provenance)) => {
                         matches!(provenance, Provenance::None)
                     }
                     None => true,
@@ -3167,7 +3177,7 @@ fn unwrap_unsafe_expr(mut expr: &Expr) -> &Expr {
 /// `unsafe` and the raw/scalar casts keep the operand's storage, so a
 /// conditional behind one is the same conditional for every source and move
 /// judgment. The walk returns the innermost unwrapped expression.
-fn structural_wrapper_inner(mut expr: &Expr) -> &Expr {
+pub(super) fn structural_wrapper_inner(mut expr: &Expr) -> &Expr {
     loop {
         match &expr.kind {
             ExprKind::Unsafe(inner) => expr = inner,

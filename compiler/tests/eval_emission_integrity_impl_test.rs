@@ -2834,3 +2834,159 @@ func main(): i32 {
     );
     assert_run_exit("pqcapturestatic", static_view, 0);
 }
+
+/// A generic identity return and a capturing lambda return both name their
+/// frame-backed source at the caller's store.
+///
+/// `id<Holder>(take h1)` hands `h1`'s views back; the lambda's return reads its
+/// capture. Both stores report `E10030` once and write no translation unit.
+#[test]
+fn should_report_the_generic_identity_and_lambda_capture_sources() {
+    let identity = r#"module impl.eei.pqgenericid;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T { return h; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [a.v, "EE"] };
+    store(id<Holder>(take h1), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pqgenericid", identity);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pqgenericid: expected the generic identity source once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("does not live long enough"),
+        "pqgenericid: expected the escape report; stderr:\n{stderr}"
+    );
+
+    let captured = r#"module impl.eei.pqlambdacap;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    store(([s] () => s)(), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pqlambdacap", captured);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pqlambdacap: expected the capture source once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("does not live long enough"),
+        "pqlambdacap: expected the escape report; stderr:\n{stderr}"
+    );
+
+    // A write through a captured same-frame local is not an escape.
+    let local_destination = r#"module impl.eei.pqlambdalocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let r: str = "";
+    ([a, borrow r] () => { r = a.v; })();
+    return i32(r[0]) - 97;
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let (first, second) = emit_twice("pqlambdalocal", local_destination);
+    assert_eq!(
+        first, second,
+        "pqlambdalocal: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("pqlambdalocal", local_destination, 0);
+
+    // A lambda with two view parameters resolves the one its return names.
+    let two_view = r#"module impl.eei.pqlambdatwo;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(z: str, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let av: str = a.v;
+    store(((ys: str, zs: str) => zs)(z, av), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("ZZ", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pqlambdatwo", two_view);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pqlambdatwo: expected the returned parameter's source once; stderr:\n{stderr}"
+    );
+
+    // A parameter-backed literal arm does not hide the carrier call in the
+    // other arm.
+    let parameter_arm = r#"module impl.eei.pqliteralparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+struct S { h: Holder; }
+
+func makeFrom(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+
+func outer(c: bool, p: S): S {
+    let a: Box = Box { v: stringOf("aa") };
+    return S { h: c ? makeFrom(a) : p.h };
+}
+
+func main(): i32 {
+    let p: S = S { h: Holder { names: ["CC", "DD"] } };
+    let s: S = outer(true, p);
+    return i32(s.h.names[0][0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pqliteralparam", parameter_arm);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pqliteralparam: expected the carrier source once; stderr:\n{stderr}"
+    );
+}

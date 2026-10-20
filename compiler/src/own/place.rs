@@ -1235,6 +1235,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => {}
                 }
             }
+            ViewCallSource::Capture(provenance) => {
+                if let Some(owner) = owner_of(&provenance) {
+                    if let LoanOwner::Binding(id) = owner {
+                        roots.insert(self.alias_resolved_root(id));
+                    }
+                }
+            }
         }
     }
 
@@ -1923,13 +1930,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         ViewCallSource::Expr(source) => {
                             self.collect_copy_element_loans(source, None, None, base, copied);
                         }
-                        ViewCallSource::Receiver(provenance) => {
-                            if let Some(owner) = owner_of(&provenance) {
-                                copied
-                                    .owners
-                                    .entry(base.to_vec())
-                                    .or_default()
-                                    .insert(owner);
+                        ViewCallSource::Receiver(provenance)
+                        | ViewCallSource::Capture(provenance) => {
+                            for atom in Self::storage_atoms(&provenance) {
+                                if let Some(owner) = owner_of(&atom) {
+                                    copied
+                                        .owners
+                                        .entry(base.to_vec())
+                                        .or_default()
+                                        .insert(owner);
+                                }
                             }
                         }
                     }
@@ -2282,7 +2292,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     Some(ViewCallSource::Expr(source)) => {
                         self.collect_view_owners(source, owners);
                     }
-                    Some(ViewCallSource::Receiver(provenance)) => {
+                    Some(ViewCallSource::Receiver(provenance))
+                    | Some(ViewCallSource::Capture(provenance)) => {
                         if let Some(owner) = owner_of(&provenance) {
                             owners.insert(owner);
                         }
@@ -2326,7 +2337,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match self.call_view_source(callee, args) {
             Some(ViewCallSource::Expr(source)) => self.view_loans(source),
             Some(ViewCallSource::Receiver(_)) => self.dot_receiver_loans(callee),
-            None => BTreeSet::new(),
+            Some(ViewCallSource::Capture(_)) | None => BTreeSet::new(),
         }
     }
 
@@ -2386,7 +2397,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn call_provenance(&self, callee: &Expr, args: &[Arg]) -> Provenance {
         match self.call_view_source(callee, args) {
             Some(ViewCallSource::Expr(source)) => self.view_provenance(source),
-            Some(ViewCallSource::Receiver(provenance)) => provenance,
+            Some(ViewCallSource::Receiver(provenance))
+            | Some(ViewCallSource::Capture(provenance)) => provenance,
             None => Provenance::None,
         }
     }
@@ -2428,7 +2440,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // chain through the call is as mixed as the source itself.
             ExprKind::Call { callee, args, .. } => match self.call_view_source(callee, args) {
                 Some(ViewCallSource::Expr(source)) => self.view_is_mixed(source),
-                _ => false,
+                Some(ViewCallSource::Receiver(_)) | Some(ViewCallSource::Capture(_)) => false,
+                None => false,
             },
             _ => false,
         }
@@ -2476,9 +2489,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !Self::returns_a_view(&returns) {
                 return None;
             }
+            // A capturing lambda's return may read a capture rather than a
+            // parameter. The capture's backing is named by the enclosing
+            // binding's provenance, so it takes precedence over the parameter
+            // source the signature alone would suggest.
+            let captures = self.lambda_capture_sources(callee);
+            if let Some(source) = captures.into_iter().next() {
+                return Some(source);
+            }
+            // A lambda's returned view may name one of several view
+            // parameters. The body's return names the parameter it reads, so
+            // the source resolves even when the signature alone lists more than
+            // one lend candidate.
+            if let Some(index) = self.lambda_returned_param_index(callee) {
+                return source(index);
+            }
             let effective = self.call_effective_params(callee, args, is_dot, &params);
+            let include_take = super::lower::mentions_type_param(&returns);
             return self
-                .single_lend_candidate(&effective, &params)
+                .single_lend_candidate(&effective, &params, include_take)
                 .and_then(source);
         }
         let name = self.callee_name(callee)?;
@@ -2496,13 +2525,89 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
                     .collect();
                 let effective = self.call_effective_params(callee, args, is_dot, &params);
-                self.single_lend_candidate(&effective, &params)
+                // A return that still mentions a type parameter may be a view
+                // at its instance; the argument itself is then the only source
+                // the call can name, including a `take` argument an identity
+                // function hands back.
+                let include_take = super::lower::mentions_type_param(&returns);
+                self.single_lend_candidate(&effective, &params, include_take)
                     .and_then(source)
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
                 ..
             }) => source(arg),
+            _ => None,
+        }
+    }
+
+    /// The backing of a capturing lambda's returned view.
+    ///
+    /// A lambda's return may read a capture rather than a parameter. The
+    /// capture list names the enclosing bindings, and the enclosing checker
+    /// still holds their provenance at the call site, so the returned view's
+    /// backing resolves through the same place-provenance rule a local read
+    /// uses. A conditional over lambdas contributes both arms' captures.
+    fn lambda_capture_sources<'e>(&self, callee: &'e Expr) -> Vec<ViewCallSource<'e>> {
+        match &super::expr::structural_wrapper_inner(callee).kind {
+            ExprKind::Lambda { captures, body, .. } => {
+                let mut mentioned = BTreeSet::new();
+                collect_lambda_return_names(body, &mut mentioned);
+                let mut sources = Vec::new();
+                for capture in captures {
+                    if !mentioned.contains(&capture.name) {
+                        continue;
+                    }
+                    let Some(id) = self.lookup(&capture.name) else {
+                        continue;
+                    };
+                    let provenance = self.place_provenance(id);
+                    if provenance != Provenance::None {
+                        sources.push(ViewCallSource::Capture(provenance));
+                    }
+                }
+                sources
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let mut sources = self.lambda_capture_sources(then_value);
+                sources.extend(self.lambda_capture_sources(else_value));
+                sources
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// The parameter a lambda's returned view derives from, when it names one.
+    ///
+    /// A lambda signature may list several view-like parameters; only the one
+    /// the return expression names contributes the view. A conditional over
+    /// lambdas resolves only when both arms name the same parameter position.
+    fn lambda_returned_param_index(&self, callee: &Expr) -> Option<usize> {
+        match &super::expr::structural_wrapper_inner(callee).kind {
+            ExprKind::Lambda { params, body, .. } => {
+                let mut mentioned = BTreeSet::new();
+                collect_lambda_return_names(body, &mut mentioned);
+                let mut indices = params
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, param)| mentioned.contains(&param.name))
+                    .map(|(index, _)| index);
+                let first = indices.next()?;
+                indices.next().is_none().then_some(first)
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let then_index = self.lambda_returned_param_index(then_value)?;
+                let else_index = self.lambda_returned_param_index(else_value)?;
+                (then_index == else_index).then_some(then_index)
+            }
             _ => None,
         }
     }
@@ -2604,9 +2709,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .iter()
                 .map(|param| param.name.clone())
                 .collect();
-            (params, returns, Some((names, body_mentioned_names(&decl.body))))
+            (params, returns, Some((names, body_return_flow_names(&decl.body))))
         };
-        if is_view_like(&returns) || !self.may_carry_view(&returns) {
+        if is_view_like(&returns)
+            || (!self.may_carry_view(&returns) && !super::lower::mentions_type_param(&returns))
+        {
             return Vec::new();
         }
         let effective = self.call_effective_params(callee, args, is_dot, &params);
@@ -2655,24 +2762,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         candidates
     }
 
-    /// The single non-`take` lend candidate a call may reborrow.
+    /// The single lend candidate a call may reborrow.
     ///
     /// A concrete lend candidate is authoritative: a type parameter's
     /// instantiation is unknown at the definition, and a call that also passes
     /// a concrete view names that view by the concrete parameter's position.
     /// Only when no concrete candidate exists does a parameter mention count,
     /// which covers a generic pass-through whose only lend is the type
-    /// parameter itself.
+    /// parameter itself. A return that mentions a type parameter may be a view
+    /// at its instance, so the caller also admits a `take` argument, which an
+    /// identity function hands back to the caller.
     fn single_lend_candidate(
         &self,
         effective: &[(Mode, Ty)],
         declared: &[(Mode, Ty)],
+        include_take: bool,
     ) -> Option<usize> {
         let candidate = is_lend_candidate;
+        let included = |mode: Mode| include_take || mode != Mode::Take;
         let concrete: Vec<usize> = effective
             .iter()
             .enumerate()
-            .filter(|(_, (mode, ty))| *mode != Mode::Take && candidate(ty))
+            .filter(|(_, (mode, ty))| included(*mode) && candidate(ty))
             .map(|(index, _)| index)
             .collect();
         // A concrete call-site argument type resolves the substitution; only
@@ -2686,7 +2797,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .iter()
                 .enumerate()
                 .filter(|(_, (mode, ty))| {
-                    *mode != Mode::Take && super::lower::mentions_type_param(ty)
+                    included(*mode) && super::lower::mentions_type_param(ty)
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<usize>>()
@@ -3201,12 +3312,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 ///
 /// A written argument or a `Member` receiver keeps its expression, so a walk
 /// can descend into it arm by arm; a qualified receiver names a place rather
-/// than a written expression, so its provenance is carried instead.
+/// than a written expression, so its provenance is carried instead. A captured
+/// lambda return has no argument expression at all, so the capture's backing
+/// provenance is carried too.
 pub(super) enum ViewCallSource<'e> {
     /// A written argument or a `Member` receiver's base expression.
     Expr(&'e Expr),
     /// A qualified receiver's place provenance.
     Receiver(Provenance),
+    /// A capturing lambda's return-value backing.
+    Capture(Provenance),
 }
 
 /// The constant index of an element expression, when it is a literal.
@@ -3238,26 +3353,241 @@ fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
 /// A write to a path replaces that path and everything below it, but a strict
 /// prefix of the write stays valid: writing `h.name.x` re-initializes `x`
 /// while `h.name` itself is still the value that was moved or narrowed. An
-/// unrelated path is untouched.
+/// unrelated path is untouched. A run-time index writes any element, so it
+/// clears every element path at that position; a constant element path keeps
+/// its own identity.
 fn written_path_clears(written: &[ir::Projection], path: &[ir::Projection]) -> bool {
-    if path.len() < written.len() && written.starts_with(path) {
+    if path.len() < written.len() && written_starts_with(written, path) {
         return false;
     }
-    path.starts_with(written)
+    written_starts_with(path, written)
 }
 
-/// The parameter names a function body mentions.
+/// True when a path starts with a written prefix, wildcard-aware.
+///
+/// A written run-time element (`Element(None)` or `ElementTemp`) selects any
+/// element, so it matches every element step of the recorded path. Every other
+/// step compares structurally.
+fn written_starts_with(path: &[ir::Projection], written: &[ir::Projection]) -> bool {
+    path.len() >= written.len()
+        && written
+            .iter()
+            .zip(path)
+            .all(|(written, path)| written_step_matches(written, path))
+}
+
+/// True when one written step matches one recorded path step.
+fn written_step_matches(written: &ir::Projection, path: &ir::Projection) -> bool {
+    written == path
+        || (matches!(
+            written,
+            ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+        ) && matches!(
+            path,
+            ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
+        ))
+}
+
+/// The parameter names a function body's return values may read.
 ///
 /// A carrier return can hand back a view position of a parameter the body
-/// reads, directly or through a local that carries the view. The name set is a
-/// may-read summary over the whole body: a parameter the summary omits is never
-/// read, so it cannot back a returned position and is not treated as a carrier
-/// source. A body that only forwards a parameter to a call still mentions it,
-/// which keeps the conservative source set for an indirect derivation.
-fn body_mentioned_names(body: &Block) -> BTreeSet<String> {
+/// reads, directly or through a local that carries the view. The summary starts
+/// from the names every return expression mentions and propagates backward
+/// through `let`, `const`, and assignment initializers until it stops growing.
+/// A parameter that only feeds an unrelated computation is not in the set, so
+/// it is not treated as a carrier source; a view carried through a local still
+/// reaches its parameter.
+fn body_return_flow_names(body: &Block) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
-    collect_block_names(body, &mut names);
+    collect_return_block_names(body, &mut names);
+    loop {
+        let mut changed = false;
+        propagate_block_names(body, &mut names, &mut changed);
+        if !changed {
+            break;
+        }
+    }
     names
+}
+
+/// Propagates a live name set backward through a block's initializers.
+fn propagate_block_names(block: &Block, live: &mut BTreeSet<String>, changed: &mut bool) {
+    for statement in &block.statements {
+        propagate_stmt_names(statement, live, changed);
+    }
+}
+
+/// Propagates a live name set backward through one statement.
+fn propagate_stmt_names(stmt: &Stmt, live: &mut BTreeSet<String>, changed: &mut bool) {
+    match stmt {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                if expr_mentions_live(value, live) {
+                    *changed |= live.insert(decl.name.clone());
+                }
+            }
+        }
+        Stmt::Const(decl) => {
+            if expr_mentions_live(&decl.value, live) {
+                *changed |= live.insert(decl.name.clone());
+            }
+        }
+        Stmt::Expr(expr) => propagate_expr_names(expr, live, changed),
+        Stmt::If(decl) => {
+            propagate_expr_names(&decl.condition, live, changed);
+            propagate_if_names(decl, live, changed);
+        }
+        Stmt::While(decl) => {
+            propagate_expr_names(&decl.condition, live, changed);
+            propagate_block_names(&decl.body, live, changed);
+        }
+        Stmt::DoWhile(decl) => {
+            propagate_block_names(&decl.body, live, changed);
+            propagate_expr_names(&decl.condition, live, changed);
+        }
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(ForInit::Expr(expressions)) => {
+                    for expression in expressions {
+                        propagate_expr_names(expression, live, changed);
+                    }
+                }
+                Some(ForInit::Let(binding)) => {
+                    if let Some(value) = &binding.value {
+                        if expr_mentions_live(value, live) {
+                            *changed |= live.insert(binding.name.clone());
+                        }
+                    }
+                }
+                Some(ForInit::Const(binding)) => {
+                    if expr_mentions_live(&binding.value, live) {
+                        *changed |= live.insert(binding.name.clone());
+                    }
+                }
+                None => {}
+            }
+            if let Some(condition) = &decl.condition {
+                propagate_expr_names(condition, live, changed);
+            }
+            for step in &decl.step {
+                propagate_expr_names(step, live, changed);
+            }
+            propagate_block_names(&decl.body, live, changed);
+        }
+        Stmt::ForIn(decl) => {
+            // The loop binding aliases the iterable's element, so a live use of
+            // the alias reaches the iterable's names.
+            if expr_mentions_live(&decl.iterable, live) {
+                *changed |= live.insert(decl.name.clone());
+            }
+            propagate_block_names(&decl.body, live, changed);
+        }
+        Stmt::Switch(decl) => {
+            propagate_expr_names(&decl.scrutinee, live, changed);
+            for clause in &decl.clauses {
+                for statement in &clause.statements {
+                    propagate_stmt_names(statement, live, changed);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            propagate_block_names(block, live, changed)
+        }
+        _ => {}
+    }
+}
+
+/// Propagates a live name set through an `if` statement and any chained
+/// `else if`.
+fn propagate_if_names(decl: &IfStmt, live: &mut BTreeSet<String>, changed: &mut bool) {
+    propagate_block_names(&decl.then_block, live, changed);
+    match &decl.else_branch {
+        Some(ElseBranch::If(nested)) => {
+            propagate_expr_names(&nested.condition, live, changed);
+            propagate_if_names(nested, live, changed);
+        }
+        Some(ElseBranch::Block(block)) => propagate_block_names(block, live, changed),
+        None => {}
+    }
+}
+
+/// Propagates a live name set through assignments nested in an expression.
+fn propagate_expr_names(expr: &Expr, live: &mut BTreeSet<String>, changed: &mut bool) {
+    match &expr.kind {
+        ExprKind::Assign { target, value, .. } => {
+            if let ExprKind::Name(name) = &target.kind {
+                if expr_mentions_live(value, live) {
+                    *changed |= live.insert(name.clone());
+                }
+            }
+            propagate_expr_names(target, live, changed);
+            propagate_expr_names(value, live, changed);
+        }
+        ExprKind::Call { callee, args, .. } => {
+            propagate_expr_names(callee, live, changed);
+            for arg in args {
+                propagate_expr_names(&arg.value, live, changed);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            propagate_expr_names(base, live, changed);
+            propagate_expr_names(index, live, changed);
+        }
+        ExprKind::Member { base, .. } => propagate_expr_names(base, live, changed),
+        ExprKind::Unary { operand, .. } => propagate_expr_names(operand, live, changed),
+        ExprKind::Binary { left, right, .. } => {
+            propagate_expr_names(left, live, changed);
+            propagate_expr_names(right, live, changed);
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            propagate_expr_names(condition, live, changed);
+            propagate_expr_names(then_value, live, changed);
+            propagate_expr_names(else_value, live, changed);
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            propagate_expr_names(value, live, changed)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                propagate_expr_names(&field.value, live, changed);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                propagate_expr_names(element, live, changed);
+            }
+            if let Some(fill) = fill {
+                propagate_expr_names(fill, live, changed);
+            }
+        }
+        ExprKind::Unsafe(inner) => propagate_expr_names(inner, live, changed),
+        ExprKind::IntrinsicCall { args, .. } => {
+            for arg in args {
+                if let IntrinsicArg::Expr(inner) = arg {
+                    propagate_expr_names(inner, live, changed);
+                }
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(inner) = piece {
+                    propagate_expr_names(inner, live, changed);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// True when an expression mentions a name in the live set.
+fn expr_mentions_live(expr: &Expr, live: &BTreeSet<String>) -> bool {
+    let mut names = BTreeSet::new();
+    collect_expr_names(expr, &mut names);
+    names.iter().any(|name| live.contains(name))
 }
 
 /// Collects every name a block mentions.
@@ -3431,6 +3761,57 @@ fn collect_lambda_body_names(body: &LambdaBody, names: &mut BTreeSet<String>) {
     match body {
         LambdaBody::Expr(value) => collect_expr_names(value, names),
         LambdaBody::Block(block) => collect_block_names(block, names),
+    }
+}
+
+/// Collects the names a lambda body's return value mentions.
+fn collect_lambda_return_names(body: &LambdaBody, names: &mut BTreeSet<String>) {
+    match body {
+        LambdaBody::Expr(value) => collect_expr_names(value, names),
+        LambdaBody::Block(block) => collect_return_block_names(block, names),
+    }
+}
+
+/// Collects the names every `return` in a block mentions.
+fn collect_return_block_names(block: &Block, names: &mut BTreeSet<String>) {
+    for statement in &block.statements {
+        collect_return_stmt_names(statement, names);
+    }
+}
+
+/// Collects the names one statement's reachable returns mention.
+fn collect_return_stmt_names(stmt: &Stmt, names: &mut BTreeSet<String>) {
+    match stmt {
+        Stmt::Return {
+            value: Some(value), ..
+        } => collect_expr_names(value, names),
+        Stmt::If(decl) => collect_return_if_names(decl, names),
+        Stmt::While(decl) => collect_return_block_names(&decl.body, names),
+        Stmt::DoWhile(decl) => collect_return_block_names(&decl.body, names),
+        Stmt::ForC(decl) => collect_return_block_names(&decl.body, names),
+        Stmt::ForIn(decl) => collect_return_block_names(&decl.body, names),
+        Stmt::Switch(decl) => {
+            for clause in &decl.clauses {
+                for statement in &clause.statements {
+                    collect_return_stmt_names(statement, names);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            collect_return_block_names(block, names)
+        }
+        _ => {}
+    }
+}
+
+/// Collects the names an `if` statement's returns mention, including a
+/// chained `else if`.
+fn collect_return_if_names(decl: &IfStmt, names: &mut BTreeSet<String>) {
+    collect_return_block_names(&decl.then_block, names);
+    match &decl.else_branch {
+        Some(ElseBranch::If(nested)) => collect_return_if_names(nested, names),
+        Some(ElseBranch::Block(block)) => collect_return_block_names(block, names),
+        None => {}
     }
 }
 

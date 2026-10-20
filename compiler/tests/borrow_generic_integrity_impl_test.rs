@@ -1176,6 +1176,46 @@ func main(): i32 {
         "pqnestedinit: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
     assert_contains("pqnestedinit", &first, "h.name = (ClInner)");
+
+    // A run-time element write clears the narrowing of every element at that
+    // position, so the later constant-index read reports the null use.
+    let runtime_index = r#"module impl.bgi.pqruntimeindex;
+
+import { String, stringOf } from std.text;
+
+struct Cell { v: String?; }
+struct H { cells: Cell[2]; }
+
+func main(): i32 {
+    let h: H = H { cells: [Cell { v: stringOf("aa") }, Cell { v: null }] };
+    let j: i32 = 1;
+    if (h.cells[0].v != null) {
+        h.cells[j].v = null;
+        return i32(len(h.cells[0].v));
+    }
+    return 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqruntimeindex", runtime_index);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqruntimeindex: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10010:"),
+        1,
+        "pqruntimeindex: expected the cleared narrowing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("may be null"),
+        "pqruntimeindex: expected the null-use report; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqruntimeindex: a rejected program must not produce a translation unit"
+    );
 }
 
 /// The null-first and nested conditional takes emit the concrete carrier.
@@ -1236,6 +1276,40 @@ func main(): i32 {
         "pqtakenested: expected both nested arms and the cleanups; unit:\n{first}"
     );
     assert_contains("pqtakenested", &first, "__cl_tmp0 = NULL;");
+
+    let mixed = r#"module impl.bgi.pqtakemixed;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct HN { name: String?; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T, U>(c: bool, take h: T, take g: U): i32 {
+    return sink(take (c ? h.name : g.name));
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    let g: HN = HN { name: stringOf("bb") };
+    return f<H, HN>(true, h, g);
+}
+"#;
+    let (first, second) = emit_twice("pqtakemixed", mixed);
+    assert_eq!(
+        first, second,
+        "pqtakemixed: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains("pqtakemixed", &first, "ClString __cl_tmp0 = NULL;");
+    assert!(
+        count_occurrences(&first, "h.name = NULL;") >= 2,
+        "pqtakemixed: expected the h arm and the cleanup; unit:\n{first}"
+    );
+    assert!(
+        count_occurrences(&first, "g.name = NULL;") >= 2,
+        "pqtakemixed: expected the g arm and the cleanup; unit:\n{first}"
+    );
 }
 
 /// The unsafe-wrapped generic conditional reports once at a binding, a

@@ -1870,13 +1870,72 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// stored into that parameter was already judged at its store, and a view
     /// inherited from the caller points at storage that outlives the return.
     fn is_returned_take_parameter(&self, value: &Expr, owner: usize) -> bool {
-        let Some(PlaceTarget::Local(id, _)) = self.place_target(value) else {
+        let is_take_root = |expr: &Expr| {
+            let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) else {
+                return false;
+            };
+            let id = self.alias_resolved_root(id);
+            self.bindings[id].kind == BindingKind::Param
+                && self.bindings[id].mode == Mode::Take
+        };
+        let take_root = |expr: &Expr| {
+            let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) else {
+                return false;
+            };
+            let id = self.alias_resolved_root(id);
+            id == owner && is_take_root(expr)
+        };
+        if take_root(value) {
+            return true;
+        }
+        // An identity call forwards the take parameter and hands its storage
+        // back. The exemption applies only when every source the call may read
+        // is a take parameter of this function; a local source keeps the
+        // escape report.
+        if let ExprKind::Call { callee, args, .. } = &value.kind {
+            let mut sources = self.call_carrier_sources(callee, args);
+            if let Some(source) = self.call_view_source(callee, args) {
+                sources.push(source);
+            }
+            if !sources.is_empty() {
+                let all_take = sources.iter().all(|source| match source {
+                    super::place::ViewCallSource::Expr(source) => is_take_root(source),
+                    super::place::ViewCallSource::Receiver(provenance)
+                    | super::place::ViewCallSource::Capture(provenance) => {
+                        matches!(provenance, Provenance::Param(id) if {
+                            self.bindings[*id].kind == BindingKind::Param
+                                && self.bindings[*id].mode == Mode::Take
+                        })
+                    }
+                });
+                if all_take {
+                    return true;
+                }
+            }
+        }
+        // A conditional selects one arm at run time; when every non-null arm
+        // is a take parameter, moving the selected arm out transfers the
+        // storage exactly as the direct return does. An arm that is a local
+        // keeps the escape report.
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        else {
             return false;
         };
-        let id = self.alias_resolved_root(id);
-        id == owner
-            && self.bindings[id].kind == BindingKind::Param
-            && self.bindings[id].mode == Mode::Take
+        let mut saw_take = false;
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Null) {
+                continue;
+            }
+            if !is_take_root(arm) {
+                return false;
+            }
+            saw_take = true;
+        }
+        saw_take
     }
 }
 

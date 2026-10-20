@@ -22,22 +22,23 @@ rule.
 | Q-R9 | An `unsafe`- or cast-wrapped conditional take is judged and lowered exactly like its bare twin. |
 | Q-R10 | An owned array-literal element whose value is a generic conditional records the per-instance duty. At `T = H { name: String }` the element move from a lend parameter reports `E10034` once; a duplicable instance stays accepted and clean. |
 | Q-R11 | An `unsafe`- or cast-wrapped generic conditional source is judged like its bare twin. The struct-literal field, projected assignment, take, and binding spellings report `E10034` once at an owning instance. |
-| Q-R12 | A nested write below a partially moved field keeps the moved prefix. The write reports the moved-value error (`E10020`) once instead of clearing the field's moved state. A whole-field re-initialization stays accepted and clean. |
+| Q-R12 | A nested write below a partially moved field keeps the moved prefix. The write reports the moved-value error (`E10020`) at its own site instead of clearing the field's moved state, and the later read reports at its own site; the concrete twin reports the same two sites. A whole-field re-initialization stays accepted and clean. |
 
 ## Non-functional requirements
 
 | ID | Requirement |
 |----|-------------|
-| Q-N1 | Every rejected case reports exactly one diagnostic and writes no translation unit. |
+| Q-N1 | Every rejected case reports exactly one diagnostic per use site and writes no translation unit. A use site is one statement or expression position; the `DEF-523` nested write reports at the write and again at the later read, exactly as its concrete twin does. |
 | Q-N2 | Every accepted control builds under the fixed strict flags and runs ASan/LSan clean. |
 | Q-N3 | Accepted programs emit byte-identical C across two emissions. |
 | Q-N4 | `make check` and `make verify` pass at the batch head. |
 | Q-N5 | No `spec/` oracle, diagnostic registry, or generated C is edited. |
 | Q-N6 | The roadmap records each row's closing commit; no row is closed without its red case. |
+| Q-N7 | The carrier source set does not treat a parameter the callee body never mentions as a source: a helper that returns an all-static carrier while accepting an unused owned aggregate stays accepted and clean. |
 
 ## Acceptance criteria
 
-- The eleven filed reproductions reject once (508, 509, 510-escape, 511, 512, 518, 519, 521, 523)
-  or run clean with the twin's move-out (514, 515).
+- The eleven filed reproductions reject with one report per use site (508, 509, 510-escape, 511,
+  512, 518, 519, 521, 523) or run clean with the twin's move-out (514, 515).
 - The accepted controls run clean and strict-build; the lambda/conditional controls emit valid C.
 - The focused suites and the full workspace suite are green.

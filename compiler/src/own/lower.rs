@@ -1022,6 +1022,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .collect()
             })
             .unwrap_or_default();
+        // A captured local is a same-frame destination; a captured out-slot or
+        // writable parameter is the caller's. The lifted body judges an
+        // out-slot store against that destination frame.
+        let capture_slots: BTreeMap<String, bool> = self
+            .sema
+            .closures
+            .get(&site)
+            .map(|closure| {
+                closure
+                    .captures
+                    .iter()
+                    .filter_map(|info| {
+                        self.lookup(&info.name).map(|id| {
+                            let binding = &self.bindings[id];
+                            (
+                                info.name.clone(),
+                                binding.kind == BindingKind::OutSlot
+                                    || (binding.kind == BindingKind::Param
+                                        && binding.mode == Mode::Borrow),
+                            )
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let saved_builder = std::mem::replace(
             &mut self.builder,
             Builder::new(format!("cl_lambda_{site}"), lambda_params, ret.clone()),
@@ -1081,7 +1106,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for (param, ty) in params.iter().zip(param_tys) {
             self.declare_lambda_param(&param.name, ty.clone());
         }
-        self.declare_captures(site, &capture_dies);
+        self.declare_captures(site, &capture_dies, &capture_slots);
         match body {
             LambdaBody::Expr(value) if self.returns.is_void() => {
                 // A void expression body is a statement: the expression
@@ -1262,7 +1287,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `Copy` capture is a by-value field; a read-only or writable borrow is
     /// a pointer field, and a writable borrow is declared `borrow` so the body
     /// may assign through it.
-    fn declare_captures(&mut self, site: usize, capture_dies: &BTreeMap<String, bool>) {
+    fn declare_captures(
+        &mut self,
+        site: usize,
+        capture_dies: &BTreeMap<String, bool>,
+        capture_slots: &BTreeMap<String, bool>,
+    ) {
         let infos: Vec<CaptureInfo> = self
             .sema
             .closures
@@ -1302,6 +1332,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 alias_root: None,
                 generated: false,
                 capture_dies_with_frame: capture_dies
+                    .get(&info.name)
+                    .copied()
+                    .unwrap_or(false),
+                capture_caller_slot: capture_slots
                     .get(&info.name)
                     .copied()
                     .unwrap_or(false),

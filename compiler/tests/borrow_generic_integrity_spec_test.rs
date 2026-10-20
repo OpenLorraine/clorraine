@@ -2266,6 +2266,30 @@ func main(): i32 {
     let output = run_memory("condtakenested", nested);
     assert_no_asan("condtakenested", &output);
     assert_exit("condtakenested", &output, 0);
+
+    // The two arms may have different nullable spellings of the same carrier.
+    let mixed = r#"module spec.bgi.condtakemixed;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct HN { name: String?; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T, U>(c: bool, take h: T, take g: U): i32 {
+    return sink(take (c ? h.name : g.name));
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    let g: HN = HN { name: stringOf("bb") };
+    return f<H, HN>(true, h, g);
+}
+"#;
+    let output = run_memory("condtakemixed", mixed);
+    assert_no_asan("condtakemixed", &output);
+    assert_exit("condtakemixed", &output, 0);
 }
 
 /// An `unsafe`-wrapped conditional take is judged and lowered exactly like its
@@ -2542,4 +2566,50 @@ func main(): i32 {
     let output = run_memory("nestedwriteinit", control);
     assert_no_asan("nestedwriteinit", &output);
     assert_exit("nestedwriteinit", &output, 0);
+
+    // A run-time element write clears the null narrowing of every element at
+    // that position, so the later constant-index read is no longer narrowed.
+    let runtime_index = r#"module spec.bgi.runtimeindexwrite;
+
+import { String, stringOf } from std.text;
+
+struct Cell { v: String?; }
+struct H { cells: Cell[2]; }
+
+func main(): i32 {
+    let h: H = H { cells: [Cell { v: stringOf("aa") }, Cell { v: null }] };
+    let j: i32 = 1;
+    if (h.cells[0].v != null) {
+        h.cells[j].v = null;
+        return i32(len(h.cells[0].v));
+    }
+    return 0;
+}
+"#;
+    assert_rejected_count(
+        "runtimeindexwrite",
+        runtime_index,
+        "E10010",
+        1,
+        &["may be null"],
+    );
+
+    let control = r#"module spec.bgi.runtimeindexok;
+
+import { String, stringOf } from std.text;
+
+struct Cell { v: String?; }
+struct H { cells: Cell[2]; }
+
+func main(): i32 {
+    let h: H = H { cells: [Cell { v: stringOf("aa") }, Cell { v: null }] };
+    if (h.cells[0].v != null) {
+        return i32(len(h.cells[0].v)) - 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("runtimeindexok", control);
+    assert_no_asan("runtimeindexok", &output);
+    assert_exit("runtimeindexok", &output, 0);
 }

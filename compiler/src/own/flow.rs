@@ -95,6 +95,13 @@ pub(super) struct Binding {
     /// whether the escape is frame-backed. Every non-capture binding leaves
     /// this false.
     pub(super) capture_dies_with_frame: bool,
+    /// True when a lifted lambda's capture names a caller slot.
+    ///
+    /// A write through a captured out-slot or writable parameter leaves the
+    /// enclosing frame; a write through a captured local stays in the same
+    /// frame. The lifted body cannot tell the origin from the capture mode
+    /// alone, so the enclosing checker records the destination's frame here.
+    pub(super) capture_caller_slot: bool,
 }
 
 /// One lexical scope and the bindings declared in it.

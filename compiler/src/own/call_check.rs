@@ -85,8 +85,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // expression's own signature types the call and carries its parameter
         // modes exactly as a func-typed binding's does.
         if self.callee_name(callee).is_none() {
-            if let Some(params) = self.callable_signature(&self.ty(callee)) {
+            if let Some(params) = self.value_callee_signature(&self.ty(callee)) {
                 self.eval(callee);
+                self.check_marker_matches("the callable value", args, &params);
+                // A closure's parameters are unmarked read-only lends. The
+                // closure-call lowering materializes an owned argument itself,
+                // so only the marker check and the argument reads run here.
+                if matches!(self.ty(callee).kind, TyKind::Closure(_)) {
+                    for arg in args {
+                        self.eval(&arg.value);
+                    }
+                    return;
+                }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
                 self.check_arguments(args, &params, &effective, span, &mut lent, None);
@@ -348,6 +358,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             TyKind::Func(_) | TyKind::Param(_)
         )
         .then_some(id)
+    }
+
+    /// The parameters of a value callee's signature.
+    ///
+    /// A `func` type and a callable-bound type parameter carry their modes
+    /// directly. A closure's parameters are unmarked read-only lends, exactly
+    /// like a lifted function's; the marker check and argument reads use that
+    /// spelling.
+    fn value_callee_signature(&self, ty: &Ty) -> Option<Vec<(Mode, Ty)>> {
+        if let TyKind::Closure(closure) = &ty.kind {
+            return Some(
+                closure
+                    .params
+                    .iter()
+                    .map(|ty| (Mode::None, ty.clone()))
+                    .collect(),
+            );
+        }
+        self.callable_signature(ty)
     }
 
     /// The parameters of the callable a type spells, when it is one.
@@ -713,12 +742,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // destination's report would repeat one site. Only an
                     // ownerless derivation — a carrier call behind a
                     // conditional — needs this walk.
-                    if Self::storage_atoms(&self.view_provenance(&field.value))
-                        .iter()
-                        .any(|atom| {
-                            matches!(atom, Provenance::Local(_) | Provenance::Param(_))
-                        })
-                    {
+                    if self.provenance_dies_with_frame(&self.view_provenance(&field.value)) {
                         continue;
                     }
                     if let Some(owner) = self.frame_owned_view_owner(&field.value) {
@@ -729,12 +753,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::ArrayLiteral { elements, fill } => {
                 if self.may_carry_view(&self.ty(expr).iterated_element()) {
                     for element in elements {
-                        if Self::storage_atoms(&self.view_provenance(element))
-                            .iter()
-                            .any(|atom| {
-                                matches!(atom, Provenance::Local(_) | Provenance::Param(_))
-                            })
-                        {
+                        if self.provenance_dies_with_frame(&self.view_provenance(element)) {
                             continue;
                         }
                         if let Some(owner) = self.frame_owned_view_owner(element) {
@@ -757,9 +776,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // hands back the view positions of every source argument it may read,
         // so the same walk names the backing.
         if let ExprKind::Call { callee, args, .. } = &expr.kind {
-            if let Some(super::place::ViewCallSource::Expr(source)) = self.call_view_source(callee, args) {
-                if let Some(owner) = self.frame_owned_view_owner(source) {
-                    return Some(owner);
+            if let Some(source) = self.call_view_source(callee, args) {
+                match source {
+                    super::place::ViewCallSource::Expr(source) => {
+                        if let Some(owner) = self.frame_owned_view_owner(source) {
+                            return Some(owner);
+                        }
+                    }
+                    super::place::ViewCallSource::Receiver(provenance)
+                    | super::place::ViewCallSource::Capture(provenance) => {
+                        if let Some(owner) = self.frame_owner_of_provenance(&provenance) {
+                            return Some(owner);
+                        }
+                    }
                 }
             }
             if let Some(owner) = self.frame_owned_carrier_source_owner(callee, args) {
@@ -888,6 +917,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         _ => {}
                     }
                 }
+                // A capturing lambda's returned view reads the captured
+                // binding's backing; the enclosing provenance decides whether
+                // that storage dies with this frame.
+                super::place::ViewCallSource::Capture(provenance) => {
+                    if let Some(owner) = self.frame_owner_of_provenance(&provenance) {
+                        return Some(owner);
+                    }
+                }
             }
         }
         None
@@ -949,6 +986,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let id = self.alias_resolved_root(id);
         self.owner_dies_with_frame(LoanOwner::Binding(id))
             .then_some(Some(id))
+    }
+
+    /// True when a provenance names storage that dies with this frame.
+    ///
+    /// A local always dies; a parameter dies only when it is a `take` parameter
+    /// or a by-value capture. A plain parameter belongs to the caller and stays
+    /// live, so a literal field backed by one still needs the destination walk
+    /// for its other arm.
+    fn provenance_dies_with_frame(&self, provenance: &Provenance) -> bool {
+        Self::storage_atoms(provenance).iter().any(|atom| match atom {
+            Provenance::Local(_) => true,
+            Provenance::Param(id) => self.binding_dies_with_frame(*id),
+            _ => false,
+        })
     }
 
     /// The frame-owned storage a provenance names, when it reads any.
