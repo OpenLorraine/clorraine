@@ -1,6 +1,6 @@
 # Execution Plan — Memory Critical Residue (Batch Q)
 
-> **Progress**: 23/32 tasks
+> **Progress**: 32/32 tasks
 > **Rows**: `DEF-508`, `DEF-509`, `DEF-510`, `DEF-511`, `DEF-512`, `DEF-514`, `DEF-515`,
 > `DEF-518`, `DEF-519`, `DEF-521`, `DEF-523`
 > **Baseline**: `6a67880`
@@ -42,8 +42,8 @@
 
 - [x] 1.3.1 Add the implementation pins (report count and text, emitted carrier/callee shapes,
       strict-build and byte-identical accepted controls)
-- [ ] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
-- [ ] 1.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
+- [x] 1.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 2: Generic conditional wrappers
 
@@ -72,8 +72,8 @@
 ### Step 2.3: Pins and review
 
 - [x] 2.3.1 Add the implementation pins and the byte-identical accepted controls
-- [ ] 2.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
-- [ ] 2.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 2.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
+- [x] 2.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 3: Moved state
 
@@ -96,11 +96,11 @@
 ### Step 3.3: Pins and review
 
 - [x] 3.3.1 Add the implementation pins and the accepted control
-- [ ] 3.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
-- [ ] 3.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 3.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
+- [x] 3.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 4: Close-out
 
-- [ ] 4.1 Run `make check` and `make verify`; record the focused leg counts
-- [ ] 4.2 Record the close-out (rows, commits, residuals) and sync `plans/00-roadmap.md`
-- [ ] 4.3 Refresh the specialist check if a new plan landed; leave the tree clean
+- [x] 4.1 Run `make check` and `make verify`; record the focused leg counts
+- [x] 4.2 Record the close-out (rows, commits, residuals) and sync `plans/00-roadmap.md`
+- [x] 4.3 Refresh the specialist check if a new plan landed; leave the tree clean

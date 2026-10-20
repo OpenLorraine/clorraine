@@ -4,7 +4,7 @@
 > critical-closeout, and memory-critical-completion batches. The scope is `DEF-508`..`DEF-512`,
 > `DEF-514`, `DEF-515`, `DEF-518`, `DEF-519`, `DEF-521`, and `DEF-523` from
 > `plans/00-roadmap.md`.
-> **Status**: In progress (2026-10-20)
+> **Status**: Done (2026-10-20)
 > **Created**: 2026-10-20
 > **Planning baseline**: `6a67880` (the batch-P close-out and push).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).
