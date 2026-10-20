@@ -129,7 +129,7 @@ reopening a closed critical.
 
 ## Close-out
 
-**Verification**: `make verify` passed every leg at `324fe76`, `5180cf0`, and `2bb549a` (frozen `spec/check.sh`, the full
+**Verification**: `make verify` passed every leg at `324fe76`, `5180cf0`, `2bb549a`, and `bf813d9` (frozen `spec/check.sh`, the full
 workspace suite, the hosted-amiga corpus, the vbcc build-only leg, both FS-UAE output legs, and the
 six runtime-fault programs). Focused legs at head: borrow-store spec 39/39 and impl 13/13,
 eval-emission spec 53/53 and impl 47/47, borrow-generic spec 36/36 and impl 14/14, conditional
@@ -143,7 +143,8 @@ Deferred** (`DEF-425`). The batch plan is **35/35 tasks**.
 
 **Code record**: plan `432191f`; carrier red cases `25721e3`; phase-1 fix `e80c2c0`; phase-2 fix
 `17025f0`; phase-3 red cases `f060470`; phase-3 fix and corrections `91d2de0`, `617ce40`,
-`4110acc`, `5180cf0`; pins `28dbe05`, `725812e`. The working tree is clean apart from the untracked
+`4110acc`, `5180cf0`; diagnostics-scope and `len`-field correction `2bb549a`, `bf813d9`; pins
+`28dbe05`, `725812e`. The working tree is clean apart from the untracked
 `.opencode/` tooling catalog; no `spec/` oracle, registry, or generated C was edited.
 
 **Residuals**: `DEF-506`/`507` (conservative false rejections), `DEF-508`..`512` (carrier/callee
