@@ -26,28 +26,30 @@ place rule is limited to a source that projects from a place.
 
 ## Phase 2 — `DEF-531`: evaluate non-call effectful `len` operands
 
-`lower_intrinsic_call` distinguishes three operand shapes:
+`lower_intrinsic_call` and the bare/dot spellings distinguish three operand
+shapes:
 
 1. a pure fixed-array place: fold to the extent, no read;
 2. a direct call: lower and materialize through the guard, so the call runs
    only on the reached path;
-3. any other non-pure shape: currently folds and drops the effects.
+3. any other non-pure shape: an effects-only walk before the fold.
 
-Split the third shape by the evaluation context:
+The third shape splits by the evaluation context:
 
-- **Unconditional expression position** (`speculative_lowering` false): lower
-  the operand with `lower_discarded` before returning the extent. The discard
-  path already handles a fixed-array conditional per selected arm, an array
-  literal's element expressions, and a run-time index read. The extent is
-  structural, so the folded value is unchanged.
-- **Conditionally evaluated position** (`speculative_lowering` true): keep the
-  structural fold for non-call shapes. A statement here would run on a path
-  that skips the call; the guard materialization only knows the direct-call
-  and owned-call forms. This narrower shape is recorded separately if a probe
-  shows it accepted with dropped effects.
+- **Unconditional expression position** (`defer_move_outs == 0` and
+  `!in_loop_condition`): run `evaluate_len_operand_effects` before returning the
+  extent. The walk evaluates a conditional's condition and, when both arms are
+  fresh storage, the selected arm; it evaluates an array literal's element
+  expressions and a run-time index's base, index, and bounds guard. A caller
+  place is never moved by the structural fold.
+- **Conditionally evaluated position**: keep the structural fold for non-call
+  shapes, because a statement here would run on a path that skips the call.
+  This narrower shape is the recorded `DEF-534` residual.
 
-A pure place still folds. A direct call still materializes. The runtime
-index case's base and index are pinned by `lower_discarded`'s target lowering.
+A pure place still folds. A direct call still materializes. The three spellings
+— qualified `std.mem.len(x)`, bare `len(x)`, and dot `x.len()` — share the same
+walk. A conditional that mixes a caller place arm with a fresh arm runs only its
+condition; discarding the whole conditional would move the caller's owner.
 
 ## Phase 3 — `DEF-532`: apply the global-borrow call rule to initializers
 
@@ -55,20 +57,40 @@ Module initializers are checked by sema but not by the own function checker.
 Add a focused initializer walk to `compiler/src/own/program.rs` and call it
 from `own::check` with the collected `ProgramInfo`:
 
-- walk each `GlobalLet`/`GlobalConst` initializer recursively;
-- for a direct call, resolve the user/`ffi` signature (module path first, then
-  the current module, then the unique simple-name map);
-- for a dot call, resolve the last segment as the free function and use the
-  receiver as parameter zero;
-- for each non-`take` parameter whose declared mode is `borrow`, `const`, or
-  unmarked, if the argument or receiver resolves to a non-`const` module
-  global, report `E10038` once at the written place;
-- the module-qualified receiver shape accepted by the existing oracle stays
-  accepted (`DEF-533`); a bare module-level or imported receiver reports;
-- a `const` global and a non-place argument stay accepted.
+- walk each `GlobalLet` initializer recursively; a `GlobalConst` initializer
+  cannot call a function (the constant check reports `E10224`) so it needs no
+  call walk;
+- resolve the callee by the body order: a module-qualified name in that module,
+  otherwise the current module, then an import binding under its original name,
+  then the program-wide map; the declaring module supplies the parameter and
+  type-parameter names;
+- resolve the receiver's projected type from the semantic expression type (or
+  project a module global's declared type through its fields) and skip the call
+  when the receiver's type declares a func-typed field with the callee's name;
+- for a direct call, a dot call, or a module-qualified owner, judge each
+  written argument and the receiver against the declared parameter mode;
+- report `E10038` once when a non-`const` global is passed to a `borrow`,
+  `const`, or unmarked parameter. A module-qualified receiver, a `const` global,
+  a non-place argument, and an unmarked scalar/view or unresolved generic
+  parameter stay accepted to preserve the existing oracles (`DEF-533`).
 
 This reuses the same rule and text as the function-body check without building
 a synthetic function body or emitting IR. The walk is read-only.
+
+## Review corrections
+
+The first review round found one critical memory-safety defect and several
+initializer false positives and false negatives:
+
+- the `len` correction evaluates effects only and never moves a caller place
+  arm; a mixed conditional runs only its condition;
+- the initializer walk resolves the callee scope-first and uses the projected
+  receiver type, the semantic field table, and the declaring module;
+- an explicit `borrow` on a generic dot callee reports, while an unresolved
+  unmarked parameter keeps the oracle shape.
+
+The residual conditionally evaluated `len` operand and the func-typed
+initializer call arguments are recorded as `DEF-534` and `DEF-537`.
 
 ## Verification
 

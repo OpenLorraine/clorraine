@@ -16,10 +16,11 @@ oracle.
 
 | ID | Requirement |
 |----|-------------|
-| T-R5 | A free `len` of a fixed-array operand that is a conditional of calls, an array literal of calls, or a run-time-index read evaluates the operand's effects at the expression's position, then folds the extent. A conditional runs only the selected arm; an array literal runs each element expression once; a run-time index runs its index expression once. |
+| T-R5 | A free, bare, or dot `len` of a fixed-array operand that is a conditional, an array literal, or a run-time-index read evaluates the operand's effects at the expression's position, then folds the extent. A conditional runs only the selected arm; an array literal runs each element expression once; a run-time index runs its index expression once. A conditional that mixes a caller place arm with a fresh arm runs only its condition and never moves the place arm. |
 | T-R6 | A pure fixed-array place still folds with no read; the C unused marker remains so the strict build has no `unused-but-set-variable` warning. A direct call operand keeps the guard materialization, so a conditional, short-circuit, or loop-condition call runs only on the reached path. |
 | T-R7 | When the `len` call itself sits in a conditionally evaluated position (an outer conditional arm, a short-circuit right side, or a loop condition), a non-call effectful operand must not run on a path that skips the call. If the shape cannot be filled path-aware, it keeps the structural fold and is recorded as a narrower residual rather than running unconditionally. |
 | T-R8 | The accepted programs run and return the expected value under the host strict build and AddressSanitizer. |
+| T-R12 | The bare `len(x)` and dot `x.len()` spellings share the free spelling's evaluation rules; a caller-owned place used as an arm or element is not moved by the structural fold. |
 
 ## `DEF-532` — module initializers apply the own call rules
 
@@ -28,6 +29,8 @@ oracle.
 | T-R9 | A call inside a module initializer applies the ownership argument modes exactly as the same call in a function body: a global passed to a `borrow`/unmarked parameter reports `E10038`; a global receiver follows the receiver rule. |
 | T-R10 | A module initializer call with only caller-safe sources stays accepted and runs. A module-level `const` source stays accepted. |
 | T-R11 | The initializer diagnostic reports once per site, at the written call, and produces no translation unit. |
+| T-R13 | The initializer walk resolves the callee by the body's scope order (current module, import binding, program map) and resolves parameter types in the declaring module. A func-typed field call is not judged against a same-named free function, including a projected or indexed receiver. |
+| T-R14 | An explicit `borrow`/`const` on a generic dot callee reports `E10038`; an unmarked parameter whose declared type is an unresolved type parameter keeps the existing initializer oracle. |
 
 ## General
 
