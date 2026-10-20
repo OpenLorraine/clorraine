@@ -2003,15 +2003,28 @@ impl<'a> Emitter<'a> {
     /// nested conditional keeps the fallback because its per-arm fields are not
     /// distributed here.
     fn struct_conditional_discard_safe(&self, then_value: &Value, else_value: &Value) -> bool {
-        [then_value, else_value].into_iter().all(|arm| {
-            !self.arm_roots_at_place(arm)
-                && !matches!(
-                    &arm.kind,
-                    ValueKind::Conditional { .. }
-                        | ValueKind::Materialize { .. }
-                        | ValueKind::Temp(_)
-                )
-        })
+        self.struct_arm_discard_safe(then_value) && self.struct_arm_discard_safe(else_value)
+    }
+
+    /// True when one struct-conditional arm can be stored in the discard
+    /// destination.
+    ///
+    /// A nested conditional recurses: an all-fresh call pair can be rendered as
+    /// one C ternary into the destination. An already-materialized temporary or
+    /// an owning place arm keeps the per-arm fallback.
+    fn struct_arm_discard_safe(&self, arm: &Value) -> bool {
+        match &arm.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.struct_arm_discard_safe(then_value)
+                    && self.struct_arm_discard_safe(else_value)
+            }
+            ValueKind::Materialize { .. } | ValueKind::Temp(_) => false,
+            _ => !self.arm_roots_at_place(arm),
+        }
     }
 
     /// True when a discarded arm needs a destination to evaluate its fresh

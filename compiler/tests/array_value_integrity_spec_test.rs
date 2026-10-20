@@ -1721,3 +1721,33 @@ func main(): i32 {
     assert_no_asan("discardstructcall", &output);
     assert_exit("discardstructcall", &output, 0);
 }
+
+/// A nested fresh call arm of a discarded struct conditional also runs.
+///
+/// The outer selected arm is a nested conditional; the all-fresh call pair is
+/// stored into the struct discard destination, so the selected inner call runs
+/// and the other calls do not.
+#[test]
+fn should_evaluate_a_nested_fresh_call_arm_of_a_discarded_struct_conditional() {
+    let source = r#"module spec.avi.discardstructnestedcall;
+
+struct Box { rows: i32[2]; }
+
+let hits: i32 = 0;
+
+func mkA(): Box { hits = hits + 1; return Box { rows: [1, 2] }; }
+func mkB(): Box { hits = hits + 10; return Box { rows: [3, 4] }; }
+func mkC(): Box { hits = hits + 100; return Box { rows: [5, 6] }; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let flag2: bool = false;
+    (flag ? (flag2 ? mkA() : mkB()) : mkC());
+    let n: usize = len((flag ? (flag2 ? mkA() : mkB()) : mkC()).rows);
+    return i32(n) - 2 + hits - 20;
+}
+"#;
+    let output = run_memory("discardstructnestedcall", source);
+    assert_no_asan("discardstructnestedcall", &output);
+    assert_exit("discardstructnestedcall", &output, 0);
+}
