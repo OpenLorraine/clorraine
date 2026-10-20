@@ -824,3 +824,99 @@ func main(): i32 {
         "pgenericaccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// A bare projection over a type-parameter conditional reports every inner
+/// lend arm, and a duplicable member later read stays accepted.
+#[test]
+fn should_report_each_bare_projection_arm_at_every_consumed_position() {
+    let take = r#"module impl.bgi.pbaretake;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 { return sink(take ((d ? h1 : h2).name)); }
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pbaretake", take);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pbaretake: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        2,
+        "pbaretake: expected two E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pbaretake: a rejected program must not produce a translation unit"
+    );
+
+    let binding = r#"module impl.bgi.pbarebinding;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(d: bool, h1: T, h2: T): i32 {
+    let s: String? = (d ? h1 : h2).name;
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    return f<H>(true, h1, h2);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pbarebinding", binding);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pbarebinding: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        2,
+        "pbarebinding: expected two E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pbarebinding: a rejected program must not produce a translation unit"
+    );
+
+    let accepted = r#"module impl.bgi.pbaredup;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: raw u8; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: raw u8? = c ? h.tag : null;
+    if (h.tag == null) { return 0; }
+    return 1;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: null };
+    return f<H>(true, h);
+}
+"#;
+    let (first, second) = emit_twice("pbaredup", accepted);
+    assert_eq!(
+        first, second,
+        "pbaredup: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
