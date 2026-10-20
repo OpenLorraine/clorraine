@@ -3282,6 +3282,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     };
                     prepared_view = Some(lowered.clone());
                     lowered
+                } else if (element_ty.is_unknown()
+                    || crate::types::contains_param(&element_ty))
+                    && !self.ty(value).is_fixed_array()
+                    && self.projects_from_place(&lowered)
+                {
+                    // The instance decides whether this element owns or
+                    // borrows. A place source stays a place: an owned
+                    // instance moves it in the emitter, while a view
+                    // instance widens it in place. Consuming it here would
+                    // move the caller's storage into a transfer temporary
+                    // that the view instance never releases.
+                    lowered
                 } else {
                     self.consume_place(lowered)
                 }

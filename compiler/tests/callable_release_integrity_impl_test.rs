@@ -1768,3 +1768,70 @@ func main(): i32 {
         "qualidentityhook: the call must not reach the caller's function; emitted C:\n{emitted}"
     );
 }
+
+/// A run-time view store widens a place source instead of moving it.
+///
+/// The opaque element resolves to `str`, so the emitter keeps the source
+/// place: the store reads `(*a).v` directly and neither creates a transfer
+/// temporary nor empties the caller's field. The constant-index twin keeps
+/// the same shape.
+#[test]
+fn should_store_a_place_source_in_place_at_a_runtime_view_store() {
+    let runtime = r#"module spec.cri.impl.runtimeviewstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap<T>, borrow a: Box, i: i32): void {
+    w.items[i] = a.v;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["", ""], tag: stringOf("t") };
+    let a: Box = Box { v: stringOf("ab") };
+    store(w, a, 1);
+    return i32(len(w.items[1])) - 2 + i32(len(a.v)) - 2;
+}
+"#;
+    let emitted = emit_host("runtimeviewstoreimpl", runtime);
+    assert_contains(
+        "runtimeviewstoreimpl",
+        &emitted,
+        "*(&((*w).items[__cl_tmp0])) = cl_string_view((*a).v);",
+    );
+    assert!(
+        !emitted.contains("__cl_tmp1 = (*a).v;"),
+        "runtimeviewstoreimpl: the source place was moved into a transfer temporary"
+    );
+    assert!(
+        !emitted.contains("(*a).v = NULL;"),
+        "runtimeviewstoreimpl: the view store emptied the caller's source"
+    );
+
+    let constant = r#"module spec.cri.impl.constantviewstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap<T>, borrow a: Box): void {
+    w.items[0] = a.v;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["", ""], tag: stringOf("t") };
+    let a: Box = Box { v: stringOf("ab") };
+    store(w, a);
+    return i32(len(w.items[0])) - 2 + i32(len(a.v)) - 2;
+}
+"#;
+    let emitted = emit_host("constantviewstoreimpl", constant);
+    assert_contains(
+        "constantviewstoreimpl",
+        &emitted,
+        "(*w).items[0] = cl_string_view((*a).v);",
+    );
+}
