@@ -2967,21 +2967,37 @@ impl<'a> Emitter<'a> {
     ) -> Option<Value> {
         let name = self.global_intrinsic_call(module, callee)?;
         if name == "len" {
-            let receiver = self.global_dot_receiver(module, callee)?;
-            // A fixed-array receiver folds to its extent here, before any
+            // The dot spelling takes the receiver; the module-qualified free
+            // spelling takes its first argument.
+            let dot = self.global_dot_callee(module, callee);
+            let operand = if dot {
+                self.global_dot_receiver(module, callee)?
+            } else {
+                let argument = args.first()?;
+                self.lower_global(module, &argument.value)
+            };
+            // A fixed-array place folds to its extent before any
             // materialization: the fold reads no runtime value, so the
             // receiver's stores never emit and its operands are never
             // evaluated, exactly as the function path's structural fold drops
-            // them. A slice or an owned `Array` keeps its receiver, because
-            // their length is a runtime field.
-            if let Some(extent) = self.fixed_array_len_extent(&receiver) {
-                return Some(Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128)));
+            // them. A slice or an owned `Array` keeps its operand, because
+            // their length is a runtime field. A call or literal keeps its
+            // evaluation because it may have effects.
+            let foldable = dot
+                || matches!(
+                    args.first().map(|argument| &argument.value.kind),
+                    Some(ExprKind::Name(_) | ExprKind::Qualified(_))
+                );
+            if foldable {
+                if let Some(extent) = self.fixed_array_len_extent(&operand) {
+                    return Some(Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128)));
+                }
             }
             return Some(Value::new(
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {
                     name: "len".to_owned(),
-                    args: vec![receiver],
+                    args: vec![operand],
                     type_arg: None,
                 },
             ));
@@ -3050,12 +3066,34 @@ impl<'a> Emitter<'a> {
     /// receiver-taking `len` are the intrinsics a module initializer can
     /// spell.
     fn global_intrinsic_call(&mut self, module: &Module, callee: &Expr) -> Option<String> {
-        let name = callee_name(callee)?;
-        if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
+        let written = callee_name(callee)?;
+        let (target_module, name) = match written.rsplit_once('.') {
+            Some((target, simple)) => (Some(target), simple),
+            None => (None, written.as_str()),
+        };
+        if !matches!(name, "len" | "rawSlice" | "rawStr" | "slice") {
             return None;
         }
-        if self.ffi_callee_signature(&name).is_some()
-            || self.functions.keys().any(|(_, simple)| *simple == name)
+        if let Some(target_module) = target_module {
+            // A module-qualified call names that module's declaration. Only
+            // the compiler intrinsic there lowers as the built-in helper; a
+            // user or `ffi` declaration keeps its own symbol, and a lexical
+            // binding cannot reach a module initializer.
+            let intrinsic = self
+                .loaded
+                .module(target_module)
+                .and_then(|target| target.decl(name))
+                .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Intrinsic))
+                || (crate::stdlib::is_standard_module(target_module)
+                    && crate::stdlib::is_compiler_intrinsic(name));
+            if !intrinsic {
+                return None;
+            }
+        } else if self.ffi_callee_signature(&written).is_some()
+            || self
+                .functions
+                .keys()
+                .any(|(_, simple)| simple.as_str() == name)
         {
             return None;
         }
@@ -3064,7 +3102,36 @@ impl<'a> Emitter<'a> {
         if self.init_callable_value(module, callee).is_some() {
             return None;
         }
-        Some(name)
+        Some(name.to_owned())
+    }
+
+    /// True when a module-initializer callee is a dot call.
+    ///
+    /// The leading segments must name a module and the final segment a
+    /// declaration in it for the callee to be a module-qualified free call.
+    /// When the module prefix ends earlier, the next segment is a module
+    /// binding and the rest are its members, so the callee is a dot call on
+    /// that binding. A `Member` callee always has a receiver.
+    fn global_dot_callee(&self, module: &Module, callee: &Expr) -> bool {
+        match &callee.kind {
+            ExprKind::Member { .. } => true,
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                if let Some(split) = (1..name.segments.len())
+                    .rev()
+                    .find(|split| self.loaded.has_module(&name.segments[..*split].join(".")))
+                {
+                    return split + 1 < name.segments.len();
+                }
+                // No module path: a module-level binding head followed by its
+                // members is a dot call on that binding.
+                let receiver = crate::ast::QualifiedName {
+                    segments: name.segments[..name.segments.len() - 1].to_vec(),
+                    span: name.span,
+                };
+                crate::init_graph::resolve_global(self.loaded, module, &receiver).is_some()
+            }
+            _ => false,
+        }
     }
 
     /// Writes every function body, user functions first in source order, then

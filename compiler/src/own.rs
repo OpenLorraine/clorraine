@@ -1686,3 +1686,16 @@ impl PlaceTarget {
         }
     }
 }
+
+/// True when an expression names a place without evaluating a call or literal.
+///
+/// The structural `len` fold reads no storage, so it can drop a fixed-array
+/// place without evaluating anything. A call, index, or literal may have
+/// effects or own a temporary, so the fold leaves it to the ordinary lowering.
+fn is_pure_place(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Name(_) | ExprKind::Qualified(_) => true,
+        ExprKind::Member { base, .. } => is_pure_place(base),
+        _ => false,
+    }
+}

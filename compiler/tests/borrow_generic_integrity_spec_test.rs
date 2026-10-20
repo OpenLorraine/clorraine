@@ -2762,3 +2762,134 @@ func main(): i32 {
     assert_no_asan("dotboundok", &output);
     assert_exit("dotboundok", &output, 0);
 }
+
+/// A generic dot call judges recursion and explicit type arguments like the
+/// direct call.
+///
+/// An inferred instantiation that grows reports `E10305` once. An explicit
+/// type-argument list fixes the instance itself, so a short list reports only
+/// its count (`E10300`) and never infers the missing parameter from the
+/// receiver or the written arguments. An ephemeral closure argument still
+/// reports `E10306`.
+#[test]
+fn should_judge_a_generic_dot_calls_recursion_explicit_list_and_ephemeral_argument() {
+    let inferred = r#"module spec.bgi.dotrecursive;
+
+struct Wrapper<T> {
+    inner: T;
+}
+
+func nest<T>(x: T): void {
+    let w: Wrapper<T> = Wrapper<T> { inner: x };
+    w.nest();
+}
+
+func main(): i32 {
+    nest(0);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "dotrecursive",
+        inferred,
+        "E10305",
+        &["recursive beyond the limit"],
+    );
+
+    let direct = r#"module spec.bgi.dotrecursivedirect;
+
+struct Wrapper<T> {
+    inner: T;
+}
+
+func nest<T>(x: T): void {
+    nest(Wrapper<T> { inner: x });
+}
+
+func main(): i32 {
+    nest(0);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "dotrecursivedirect",
+        direct,
+        "E10305",
+        &["recursive beyond the limit"],
+    );
+
+    let explicit = r#"module spec.bgi.dotexplicit;
+
+func run<T>(x: T, n: i32): i32 {
+    if (n <= 0) { return 0; }
+    return x.run<i32>(n - 1);
+}
+
+func main(): i32 {
+    return run<i32>(3, 2);
+}
+"#;
+    let output = run_memory("dotexplicit", explicit);
+    assert_no_asan("dotexplicit", &output);
+    assert_exit("dotexplicit", &output, 0);
+
+    let short = r#"module spec.bgi.dotshort;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let x: i32 = 1;
+    return x.apply<i32>(5) - 5;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("dotshort", short);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10300:").count(),
+        1,
+        "dotshort: expected one type-argument count report; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10301:"),
+        "dotshort: an explicit list must not infer a missing parameter; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("error E10303:"),
+        "dotshort: a short list must not judge an unbound bound; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
+
+    let ephemeral = r#"module spec.bgi.dotephemeral;
+
+struct Pair<T, U> {
+    first: T;
+    second: U;
+}
+
+func makePair<T, U>(first: T, second: U): Pair<T, U> {
+    return Pair<T, U> { first: first, second: second };
+}
+
+func demo(): void {
+    let counter: i32 = 0;
+    let x: i32 = 0;
+    let p: Pair<i32, func(i32): i32> = x.makePair([borrow counter] (n: i32) => {
+        counter = counter + n;
+    });
+}
+
+func main(): i32 {
+    demo();
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "dotephemeral",
+        ephemeral,
+        "E10306",
+        &["ephemeral type argument"],
+    );
+}

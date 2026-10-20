@@ -80,6 +80,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
         }
+        // A module-qualified intrinsic is not a dot call. Its arguments carry
+        // the same judgments as the bare spelling: `len` reads its operand
+        // through a view, and the view builders borrow their source.
+        if let Some(intrinsic) = self.qualified_intrinsic_name(callee) {
+            self.check_qualified_intrinsic_call(&intrinsic, args, span);
+            return;
+        }
         // A non-name callee whose recorded type is callable — an inline lambda
         // or a conditional over func values — is called through its value. The
         // expression's own signature types the call and carries its parameter
@@ -324,13 +331,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &callee.kind {
             ExprKind::Name(name) => Some(name.clone()),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let receiver = &name.segments[..name.segments.len() - 1];
-                let receiver_is_value = receiver
-                    .first()
-                    .is_some_and(|head| self.lookup(head).is_some())
-                    || (!(receiver.len() >= 2 && self.loaded.has_module(&receiver.join(".")))
-                        && self.dotted_global(receiver).is_some());
-                if receiver_is_value {
+                if self.is_dot_call(callee) {
                     name.segments.last().cloned()
                 } else {
                     Some(name.segments.join("."))
@@ -340,6 +341,65 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { name, .. } => Some(name.clone()),
             _ => None,
         }
+    }
+
+    /// The simple name of a compiler intrinsic reached through a module path.
+    ///
+    /// A module-qualified intrinsic is never a dot call: its leading segments
+    /// name the declaring module and its final segment the helper. A user or
+    /// `ffi` declaration of the same spelling, a callable field, and an
+    /// unresolved name all keep their ordinary route. The standard-library
+    /// fallback covers a program checked without the embedded module loaded,
+    /// where the declaration table cannot answer.
+    fn qualified_intrinsic_name(&self, callee: &Expr) -> Option<String> {
+        if self.is_dot_call(callee) {
+            return None;
+        }
+        let written = self.callee_name(callee)?;
+        let (module, simple) = written.rsplit_once('.')?;
+        let declared = self
+            .loaded
+            .module(module)
+            .and_then(|target| target.decl(simple))
+            .map(|decl| decl.kind);
+        if matches!(declared, Some(crate::load::DeclKind::Intrinsic))
+            || (crate::stdlib::is_standard_module(module)
+                && crate::stdlib::is_compiler_intrinsic(simple))
+        {
+            return Some(simple.to_owned());
+        }
+        None
+    }
+
+    /// Applies a qualified intrinsic's argument judgments.
+    ///
+    /// `len` reads its operand through a view, so a possibly-null operand
+    /// reports like the bare and dot spellings. The view builders derive a
+    /// view over their first argument, so the source keeps the imported
+    /// spelling's loan rules: a borrowed global or a possibly-null source
+    /// reports. A fixed-array `len` operand is structural and is not read.
+    fn check_qualified_intrinsic_call(&mut self, name: &str, args: &'a [Arg], span: Span) {
+        if name == "len" {
+            for (index, arg) in args.iter().enumerate() {
+                let folded = index == 0
+                    && super::is_pure_place(&arg.value)
+                    && super::lower::fixed_array_extent(&self.ty(&arg.value)).is_some();
+                if !folded {
+                    self.eval(&arg.value);
+                }
+                if index == 0 && self.ty(&arg.value).nullable {
+                    self.check_nonnull_expr(&arg.value, span);
+                }
+            }
+            return;
+        }
+        self.check_stdlib_call(
+            StdlibEffect::ViewOf {
+                arg: 0,
+                kind: LoanKind::Shared,
+            },
+            args,
+        );
     }
 
     /// The binding a callee name resolves to when that binding is callable.
@@ -876,6 +936,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 resolved,
                 &arg_ty,
                 lent,
+                false,
             );
         }
         self.check_cross_frame_pass_through(args, params, receiver, span);
@@ -1587,6 +1648,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
+                    true,
                 );
             }
             Some(receiver) => {
@@ -1598,6 +1660,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
+                    true,
                 );
             }
         }
@@ -1661,6 +1724,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         effective: Option<&Ty>,
         arg_ty: &Ty,
         lent: &mut BTreeSet<usize>,
+        receiver: bool,
     ) {
         let target = self.place_target(expr);
         match mode {
@@ -1759,7 +1823,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.note_maybe_moved_use(id, &projections, span);
                 }
                 if let Some(PlaceTarget::Global(id, _)) = &target {
-                    if !self.global_is_const(id) {
+                    // A dot-call receiver is read by the call, not lent out as
+                    // a written argument, so a module global can be the
+                    // receiver of a borrowing method.
+                    if !receiver && !self.global_is_const(id) {
                         self.error(
                             "E10038",
                             format!("cannot borrow global '{}'", id.name),
@@ -1835,7 +1902,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             Mode::None | Mode::Const => {
                 if let Some(PlaceTarget::Global(id, _)) = &target {
-                    if !self.global_is_const(id) {
+                    if !receiver && !self.global_is_const(id) {
                         self.error(
                             "E10038",
                             format!("cannot borrow global '{}'", id.name),
@@ -1937,6 +2004,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(expected),
                 &arg_ty,
                 &mut lent,
+                false,
             );
         }
     }

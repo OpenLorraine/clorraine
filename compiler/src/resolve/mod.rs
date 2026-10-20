@@ -498,7 +498,11 @@ impl Resolver<'_, '_> {
             return self.module.decls.contains_key(name);
         }
         if !self.loaded.has_module(module) {
-            return false;
+            // A program can be checked without the embedded module loaded, but
+            // the compiler-known builders still answer through their standard
+            // module.
+            return crate::stdlib::is_standard_module(module)
+                && crate::stdlib::is_compiler_intrinsic(name);
         }
         if self.loaded.module_exports(module, name) {
             return true;

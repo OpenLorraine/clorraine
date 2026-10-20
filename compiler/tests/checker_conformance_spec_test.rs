@@ -10355,3 +10355,347 @@ func main(): i32 {
     assert_no_asan("qcollshadow", &output);
     assert_exit("qcollshadow", &output, 0);
 }
+
+/// A module path and a value-headed dot call stay distinct.
+///
+/// A module binding followed by `.len` is a dot call on that binding, even
+/// when the binding is a fixed array whose extent folds. A module-level or
+/// imported value named like a standard module does not displace the standard
+/// module path, and a single-segment module path wins over a same-named value.
+/// A module initializer reaches the free `len` spelling too.
+#[test]
+fn should_keep_a_module_path_binding_dot_call_and_free_intrinsic_apart() {
+    let dot = r#"module spec.cc.qdotlen;
+
+let text: str = "abc";
+let arr: i32[2] = [20, 21];
+
+func main(): i32 {
+    return i32(spec.cc.qdotlen.text.len())
+        + i32(spec.cc.qdotlen.arr.len())
+        + i32(spec.cc.qdotlen.arr[0]) - 25;
+}
+"#;
+    let output = run_memory("qdotlen", dot);
+    assert_no_asan("qdotlen", &output);
+    assert_exit("qdotlen", &output, 0);
+
+    let head = r#"module spec.cc.qhead;
+
+let std: i32 = 7;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) + i32(a[0]) - 22 + std - 7;
+}
+"#;
+    let output = run_memory("qhead", head);
+    assert_no_asan("qhead", &output);
+    assert_exit("qhead", &output, 0);
+
+    let holder = r#"module spec.cc.qheadlib;
+
+export let std: i32 = 7;
+"#;
+    let imported_head = r#"module spec.cc.qheaduser;
+
+import { std } from spec.cc.qheadlib;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) + i32(a[0]) - 22 + std - 7;
+}
+"#;
+    let output = run_memory_pair("qheadpair", holder, imported_head);
+    assert_no_asan("qheadpair", &output);
+    assert_exit("qheadpair", &output, 0);
+
+    let single_holder = r#"module libm;
+
+export func f(): i32 { return 5; }
+export let libm: i32 = 3;
+"#;
+    let single_imported = r#"module spec.cc.qsingle;
+
+import { libm } from libm;
+
+func main(): i32 {
+    return libm.f() - 5 + libm - 3;
+}
+"#;
+    let output = run_memory_pair("qsingle", single_holder, single_imported);
+    assert_no_asan("qsingle", &output);
+    assert_exit("qsingle", &output, 0);
+
+    let single_local = r#"module spec.cc.qsinglelocal;
+
+let libm: i32 = 3;
+
+func main(): i32 {
+    return libm.f() - 5 + libm - 3;
+}
+"#;
+    let output = run_memory_pair("qsinglelocal", single_holder, single_local);
+    assert_no_asan("qsinglelocal", &output);
+    assert_exit("qsinglelocal", &output, 0);
+
+    let initializer = r#"module spec.cc.qinitlen;
+
+let a: i32[2] = [20, 21];
+let n: usize = std.mem.len(a);
+
+func mk(): i32[2] { return [20, 21]; }
+
+let m: usize = std.mem.len(mk());
+
+func main(): i32 {
+    return i32(n) + i32(m) + i32(a[0]) - 24;
+}
+"#;
+    let output = run_memory("qinitlen", initializer);
+    assert_no_asan("qinitlen", &output);
+    assert_exit("qinitlen", &output, 0);
+
+    let unread = r#"module spec.cc.qunread;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("qunread", unread);
+    assert_no_asan("qunread", &output);
+    assert_exit("qunread", &output, 0);
+}
+
+/// A qualified intrinsic and `ffi` declaration are call-only.
+///
+/// A value position reports `E10219`; a nullable source keeps the bare
+/// spelling's `E10010`; a non-generic intrinsic's type-argument count is
+/// `E10300`, its argument count is `E10308`, and an intrinsic import is not
+/// exported.
+#[test]
+fn should_judge_a_qualified_intrinsics_arguments_and_value_position() {
+    let value = r#"module spec.cc.qintrvalue;
+
+func main(): i32 {
+    let g: usize = std.mem.len;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qintrvalue",
+        value,
+        "E10219",
+        &["'std.mem.len' is not declared", "call the function directly"],
+        &[],
+    );
+
+    let ffi_holder = r#"module spec.cc.qffivalue.lib;
+
+import { String } from std.text;
+
+ffi api {
+    func cl_string_len(borrow s: String): usize;
+}
+"#;
+    let ffi_value = r#"module spec.cc.qffivalue.main;
+
+func main(): i32 {
+    let g = spec.cc.qffivalue.lib.cl_string_len;
+    return 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("qffivalue", ffi_holder, ffi_value);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "qffivalue: a qualified ffi value must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10219:").count(),
+        1,
+        "qffivalue: expected one value-position report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("call the function directly"),
+        "qffivalue: expected the call-only help; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
+
+    let nullable_str = r#"module spec.cc.qnullstr;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    return i32(std.mem.len(s)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "qnullstr",
+        nullable_str,
+        "E10010",
+        &["may be null here"],
+        &[],
+    );
+
+    let nullable_raw = r#"module spec.cc.qnullraw;
+
+func main(): i32 {
+    let p: raw u8? = null;
+    let v: u8[] = unsafe std.mem.rawSlice(p, 2);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qnullraw",
+        nullable_raw,
+        "E10010",
+        &["may be null here"],
+        &[],
+    );
+
+    let nullable_raw_str = r#"module spec.cc.qnullrawstr;
+
+func main(): i32 {
+    let p: raw u8? = null;
+    let v: str = unsafe std.mem.rawStr(p, 2);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qnullrawstr",
+        nullable_raw_str,
+        "E10010",
+        &["may be null here"],
+        &[],
+    );
+
+    let type_args = r#"module spec.cc.qlenargs;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    return i32(std.mem.len<usize>(a)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "qlenargs",
+        type_args,
+        "E10300",
+        &["wrong number of type arguments for 'len'"],
+        &[],
+    );
+
+    let arity = r#"module spec.cc.qlenarity;
+
+func bump(): i32 { return 1; }
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    return i32(std.mem.len(a, bump())) - 2;
+}
+"#;
+    assert_rejected_once(
+        "qlenarity",
+        arity,
+        "E10308",
+        &["wrong number of arguments for 'len'"],
+        &[],
+    );
+
+    let raw_str_arity = r#"module spec.cc.qrawstrarity;
+
+func main(): i32 {
+    let a: u8[1] = [65];
+    let s: str = unsafe std.mem.rawStr(raw u8(&a[0]));
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qrawstrarity",
+        raw_str_arity,
+        "E10308",
+        &["wrong number of arguments for 'rawStr'"],
+        &[],
+    );
+
+    let raw_slice_types = r#"module spec.cc.qrawslicetypes;
+
+func main(): i32 {
+    let a: u8[1] = [65];
+    let v: u8[] = unsafe std.mem.rawSlice<u8, i32>(raw u8(&a[0]), 1);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qrawslicetypes",
+        raw_slice_types,
+        "E10300",
+        &["wrong number of type arguments for 'rawSlice'"],
+        &[],
+    );
+
+    let imported = r#"module spec.cc.qrawimport;
+
+import { rawSlice } from std.mem;
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qrawimport",
+        imported,
+        "E11102",
+        &["not exported from module 'std.mem'"],
+        &[],
+    );
+}
+
+/// A module function value wins over an imported value with the same head.
+///
+/// The holder exports both `helper` and a value named `spec`; the caller
+/// imports the value and reads the function as a value. The emitted symbol is
+/// the holder's function, not a projection of the imported value. A
+/// module-qualified func-typed global still calls through its binding.
+#[test]
+fn should_emit_a_module_function_value_over_an_imported_value_head() {
+    let holder = r#"module spec.cc.qvaluable.lib;
+
+export func helper(): i32 { return 5; }
+export let spec: i32 = 0;
+"#;
+    let caller = r#"module spec.cc.qvaluable.user;
+
+import { spec } from spec.cc.qvaluable.lib;
+
+func main(): i32 {
+    let g: func(): i32 = spec.cc.qvaluable.lib.helper;
+    return g() - 5 + spec;
+}
+"#;
+    let output = run_memory_pair("qvaluable", holder, caller);
+    assert_no_asan("qvaluable", &output);
+    assert_exit("qvaluable", &output, 0);
+
+    let global_holder = r#"module spec.cc.qglobalfunc.lib;
+
+func five(): i32 { return 5; }
+
+export let g: func(): i32 = five;
+"#;
+    let global_caller = r#"module spec.cc.qglobalfunc.user;
+
+func main(): i32 {
+    return spec.cc.qglobalfunc.lib.g() - 5;
+}
+"#;
+    let output = run_memory_pair("qglobalfunc", global_holder, global_caller);
+    assert_no_asan("qglobalfunc", &output);
+    assert_exit("qglobalfunc", &output, 0);
+}

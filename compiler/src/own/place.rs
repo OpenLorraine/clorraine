@@ -3226,6 +3226,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .collect();
                     return Some(PlaceTarget::Local(id, projections));
                 }
+                // A module-qualified function value is a path, not a binding:
+                // a module path wins over an imported value that shares the
+                // head's spelling. Without this check the imported head would
+                // project the remaining segments as fields of that value.
+                if matches!(
+                    self.resolved_callee(&name.segments.join(".")),
+                    Some(Callee::User(_)) | Some(Callee::Ffi(_))
+                ) {
+                    return None;
+                }
                 // Otherwise the name is a module-level binding: a same-module
                 // or imported head with field projections, or a full module
                 // path whose last segment is the binding.

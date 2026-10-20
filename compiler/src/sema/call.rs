@@ -70,21 +70,21 @@ impl Checker<'_, '_> {
                 match self.qualified_decl_kind(&module, &last) {
                     Some(DeclKind::Intrinsic) => match last.as_str() {
                         "len" => {
-                            for ty in type_args {
-                                self.resolve_type_argument(ty);
-                            }
+                            self.check_non_generic_intrinsic(
+                                &last, args.len(), 1, type_args, span,
+                            );
                             for arg in args {
                                 self.check_value(&arg.value, None);
                             }
                             return Ty::usize_ty();
                         }
                         "slice" | "rawSlice" => {
-                            return self.check_view_builder(type_args, args);
+                            return self.check_view_builder(&last, type_args, args, span);
                         }
                         "rawStr" => {
-                            for ty in type_args {
-                                self.resolve_type_argument(ty);
-                            }
+                            self.check_non_generic_intrinsic(
+                                &last, args.len(), 2, type_args, span,
+                            );
                             for arg in args {
                                 self.check_value(&arg.value, None);
                             }
@@ -182,7 +182,7 @@ impl Checker<'_, '_> {
                         Some(crate::load::DeclKind::Intrinsic)
                     )
                 {
-                    return self.check_view_builder(type_args, args);
+                    return self.check_view_builder(&name, type_args, args, span);
                 }
             }
         }
@@ -238,6 +238,46 @@ impl Checker<'_, '_> {
         Ty::unknown()
     }
 
+    /// Checks the fixed arity and absent type parameters of an intrinsic.
+    ///
+    /// `len` and `rawStr` are declared without type parameters, so a written
+    /// type argument is the ordinary wrong-count diagnostic. The argument
+    /// count is judged against the declaration; every argument is still
+    /// walked by the caller for its own errors.
+    fn check_non_generic_intrinsic(
+        &mut self,
+        name: &str,
+        found_args: usize,
+        expected_args: usize,
+        type_args: &[Type],
+        span: Span,
+    ) {
+        if !type_args.is_empty() {
+            self.error(
+                "E10300",
+                format!(
+                    "wrong number of type arguments for '{name}': expected 0, found {}",
+                    type_args.len()
+                ),
+                "remove the type arguments",
+                span,
+            );
+            for ty in type_args {
+                self.resolve_type_argument(ty);
+            }
+        }
+        if found_args != expected_args {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for '{name}': expected {expected_args}, found {found_args}"
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+        }
+    }
+
     /// Types a compiler-known view builder call.
     ///
     /// `slice(v, lo, hi)` and `rawSlice<T>(p, n)` produce a view whose element
@@ -247,7 +287,36 @@ impl Checker<'_, '_> {
     /// pointee. Recording the element here is what lets the ordinary
     /// conversion rules reject a view offered where a different element is
     /// expected, before the ownership stage lowers it.
-    fn check_view_builder(&mut self, type_args: &[Type], args: &[Arg]) -> Ty {
+    fn check_view_builder(
+        &mut self,
+        name: &str,
+        type_args: &[Type],
+        args: &[Arg],
+        span: Span,
+    ) -> Ty {
+        if type_args.len() > 1 {
+            self.error(
+                "E10300",
+                format!(
+                    "wrong number of type arguments for '{name}': expected 1, found {}",
+                    type_args.len()
+                ),
+                "list one element type",
+                span,
+            );
+        }
+        let expected_args = if name == "slice" { 3 } else { 2 };
+        if args.len() != expected_args {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for '{name}': expected {expected_args}, found {}",
+                    args.len()
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+        }
         let mut explicit: Option<Ty> = None;
         for ty in type_args {
             let resolved = self.resolve_type_argument(ty);
@@ -803,8 +872,16 @@ impl Checker<'_, '_> {
                 bindings.insert(param.clone(), ty);
             }
         }
-        if let Some(param) = signature.params.first() {
-            match_param(param, receiver, &declared, &mut bindings);
+        // An explicit type-argument list fixes the instance itself. The
+        // receiver and arguments are still checked against the substituted
+        // parameters, but they must not infer a binding the author did not
+        // write: a short list is judged by its count alone, exactly as the
+        // direct call judges it.
+        let infer = type_args.is_empty();
+        if infer {
+            if let Some(param) = signature.params.first() {
+                match_param(param, receiver, &declared, &mut bindings);
+            }
         }
         // The written count is judged against the declared parameters like
         // every other call; a mismatch reports once and still walks the
@@ -860,33 +937,40 @@ impl Checker<'_, '_> {
                 _ => pending.push(Some(self.check_value(&arg.value, None))),
             }
         }
-        for (index, ty) in pending.iter().enumerate() {
-            if let Some(ty) = ty {
-                if let Some(param) = rest.get(index) {
-                    match_param(param, ty, &declared, &mut bindings);
+        if infer {
+            for (index, ty) in pending.iter().enumerate() {
+                if let Some(ty) = ty {
+                    if let Some(param) = rest.get(index) {
+                        match_param(param, ty, &declared, &mut bindings);
+                    }
                 }
             }
         }
         let unbound = Self::unbound_params(&declared, &bindings);
         // The direct call judges the instance it inferred: a parameter that
         // no receiver or argument fixes is `E10301`, and a recursive
-        // instantiation is `E10305`. A dot call reaches the same routes.
-        if unbound.is_empty() {
-            if self.is_recursive_instantiation(name, &declared, &bindings) {
+        // instantiation is `E10305`. A dot call reaches the same routes. An
+        // explicit type-argument list fixes the instance itself, so it is
+        // judged by its count instead; the unbound report would duplicate the
+        // count report on a short list.
+        if infer {
+            if unbound.is_empty() {
+                if self.is_recursive_instantiation(name, &declared, &bindings) {
+                    self.error(
+                        "E10305",
+                        format!("instantiation of '{name}' is recursive beyond the limit"),
+                        "break the generic recursion",
+                        span,
+                    );
+                }
+            } else {
                 self.error(
-                    "E10305",
-                    format!("instantiation of '{name}' is recursive beyond the limit"),
-                    "break the generic recursion",
+                    "E10301",
+                    format!("cannot infer type arguments for '{name}'"),
+                    "write the type arguments explicitly",
                     span,
                 );
             }
-        } else {
-            self.error(
-                "E10301",
-                format!("cannot infer type arguments for '{name}'"),
-                "write the type arguments explicitly",
-                span,
-            );
         }
         self.check_callable_bounds(&signature.type_params, &bindings, span);
         self.check_ephemeral_bindings(name, &signature.type_params, &bindings, span);

@@ -13,11 +13,27 @@ use super::lower::fixed_array_extent;
 use super::place::deref_rooted;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
+    /// The length of the longest leading module path in a qualified name.
+    ///
+    /// A module path must name a loaded module; a single-segment module (`m`)
+    /// counts as much as a nested one (`a.b`). The search runs from the longest
+    /// candidate down so a nested module wins over its parent's prefix.
+    fn module_prefix_len(&self, segments: &[String]) -> Option<usize> {
+        (1..segments.len())
+            .rev()
+            .find(|split| self.loaded.has_module(&segments[..*split].join(".")))
+    }
+
     /// True when a call's callee is a dot-call with a value receiver.
     ///
     /// A `Member` callee always has one. A `Qualified` callee is a dot-call
-    /// when its head names a value in scope, matching how the type stage
-    /// decides between member access and a module path.
+    /// when the leading segments name a binding and a later segment is the
+    /// called member. A module path that reaches the final segment directly
+    /// names a module declaration instead, even when an imported value shares
+    /// the head's spelling; a lexical binding of the head always shadows the
+    /// path. When the module prefix ends before the final segment, the next
+    /// segment is a module binding and the rest are its members, so the call
+    /// is a dot-call on that binding.
     pub(super) fn is_dot_call(&self, callee: &Expr) -> bool {
         match &callee.kind {
             ExprKind::Member { .. } => true,
@@ -25,19 +41,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if name.segments.len() < 2 {
                     return false;
                 }
-                // A module path that names a user or `ffi` function wins over
-                // an imported value head; a lexical binding of the head still
-                // shadows the path.
                 let head = &name.segments[0];
-                if self.lookup(head).is_none()
-                    && matches!(
-                        self.resolved_callee(&name.segments.join(".")),
-                        Some(Callee::User(_)) | Some(Callee::Ffi(_))
-                    )
-                {
-                    return false;
+                if self.lookup(head).is_some() {
+                    return true;
                 }
-                self.lookup(head).is_some() || self.resolve_global_id(head).is_some()
+                if let Some(split) = self.module_prefix_len(&name.segments) {
+                    return split + 1 < name.segments.len();
+                }
+                // No module path: the head is a module-level value and the
+                // rest are its members. A path that resolves no binding stays
+                // on the ordinary unresolved route.
+                self.resolve_global_id(head).is_some()
+                    || self
+                        .dotted_global(&name.segments[..name.segments.len() - 1])
+                        .is_some()
             }
             _ => false,
         }
@@ -130,6 +147,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(self.member_type(&base_ty, name))
             }
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                // A module-qualified declaration is not a field access, even
+                // when an imported value shares the head's spelling. The
+                // module path wins, exactly as it does for a read.
+                if !self.is_dot_call(callee) {
+                    return None;
+                }
                 let last = name.segments.len() - 1;
                 let ty = self.receiver_path_type(&name.segments[..last])?;
                 Some(self.member_type(&ty, &name.segments[last]))
@@ -148,10 +171,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let (first, rest) = segments.split_first()?;
         // A receiver path that names a loaded module is a module qualifier, not
         // a binding, unless a lexical binding shadows the head.
-        if self.lookup(first).is_none()
-            && segments.len() >= 2
-            && self.loaded.has_module(&segments.join("."))
-        {
+        if self.lookup(first).is_none() && self.loaded.has_module(&segments.join(".")) {
             return None;
         }
         // The module path wins for a receiver exactly as it does for a read
@@ -398,7 +418,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(value) if pin_updates => Some(self.pin_operand_location(value)),
             other => other,
         };
-        if receiver.is_none() {
+        if receiver.is_none() && self.is_dot_call(callee) {
             if let Some(value) = self.lower_dot_receiver(callee) {
                 // The dot receiver is the call's argument position zero: its
                 // element locations settle here, before any written argument,
@@ -685,6 +705,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A qualified free call (`mod.len(value)`) takes its argument
             // directly; the dot spelling (`xs.len()`) takes the receiver.
             if !self.is_dot_call(callee) {
+                // A fixed-array place has a structural extent: folding it
+                // reads no storage. Skipping the lowering keeps an
+                // otherwise-unused local unused, so the emitter still marks
+                // it and the strict C build stays warning-free. A call or
+                // literal is still lowered because it may have effects or
+                // own a temporary.
+                if let Some(arg) = args.first() {
+                    if super::is_pure_place(&arg.value) {
+                        if let Some(extent) = fixed_array_extent(&self.ty(&arg.value)) {
+                            return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
+                        }
+                    }
+                }
                 let value = match args.first() {
                     Some(arg) => self.lower_value(&arg.value),
                     None => Value::new(Ty::unknown(), ValueKind::Aggregate),

@@ -6818,7 +6818,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("qintrlen", length);
-    assert_contains("qintrlen", &emitted, "n = 2;");
+    assert_contains("qintrlen", &emitted, "n = 2u;");
 
     let holder = r#"module spec.cc.impl.qffi.lib;
 
@@ -6862,5 +6862,142 @@ func main(): i32 {
     assert!(
         !emitted.contains("spec.cc.impl.qcoll.lib.f"),
         "qcollpath: the raw dotted path reached the C"
+    );
+}
+
+/// Module-path values and free intrinsics emit the resolved identities.
+///
+/// A module binding's dot-`len` reads the binding, a fixed array folds to its
+/// extent, a module-level or imported value head does not displace a standard
+/// module path, a free `len` in a module initializer folds, and a
+/// module-qualified function value names the holder's symbol rather than a
+/// projection of an imported value. The single-segment module call passes no
+/// receiver argument.
+#[test]
+fn should_emit_module_path_values_and_free_intrinsics_by_identity() {
+    let dot = r#"module spec.cc.impl.qdotlen;
+
+let text: str = "abc";
+let arr: i32[2] = [20, 21];
+
+func main(): i32 {
+    return i32(spec.cc.impl.qdotlen.text.len())
+        + i32(spec.cc.impl.qdotlen.arr.len())
+        + i32(spec.cc.impl.qdotlen.arr[0]) - 25;
+}
+"#;
+    let emitted = emit_host("qdotimpl", dot);
+    assert_contains(
+        "qdotimpl",
+        &emitted,
+        "(cl_spec_cc_impl_qdotlen_text).len",
+    );
+    assert!(
+        !emitted.contains("std.mem."),
+        "qdotimpl: a module binding's dot-len emitted a standard-module call"
+    );
+
+    let head = r#"module spec.cc.impl.qhead;
+
+let std: i32 = 7;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) + i32(a[0]) - 22 + std - 7;
+}
+"#;
+    let emitted = emit_host("qheadimpl", head);
+    assert_contains("qheadimpl", &emitted, "n = 2u;");
+    assert!(
+        !emitted.contains("std.mem.len"),
+        "qheadimpl: the raw qualified intrinsic path reached the C"
+    );
+
+    let unread = r#"module spec.cc.impl.qunread;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("qunreadimpl", unread);
+    assert_contains("qunreadimpl", &emitted, "if (sizeof(a)) { }");
+    assert_contains("qunreadimpl", &emitted, "n = 2u;");
+
+    let initializer = r#"module spec.cc.impl.qinitlen;
+
+let a: i32[2] = [20, 21];
+let n: usize = std.mem.len(a);
+
+func main(): i32 {
+    return i32(n) + i32(a[0]) - 22;
+}
+"#;
+    let emitted = emit_host("qinitimpl", initializer);
+    assert_contains("qinitimpl", &emitted, "cl_spec_cc_impl_qinitlen_n = 2u;");
+    assert!(
+        !emitted.contains("std.mem.len"),
+        "qinitimpl: the free len in a module initializer emitted a dotted call"
+    );
+
+    let call_initializer = r#"module spec.cc.impl.qcallleninit;
+
+func mk(): i32[2] { return [20, 21]; }
+
+let n: usize = std.mem.len(mk());
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("qcallinitimpl", call_initializer);
+    assert_contains("qcallinitimpl", &emitted, "cl_spec_cc_impl_qcallleninit_mk(");
+    assert_contains("qcallinitimpl", &emitted, "cl_spec_cc_impl_qcallleninit_n = 2;");
+
+    let value_holder = r#"module spec.cc.impl.qvaluable.lib;
+
+export func helper(): i32 { return 5; }
+export let spec: i32 = 0;
+"#;
+    let value_caller = r#"module spec.cc.impl.qvaluable.user;
+
+import { spec } from spec.cc.impl.qvaluable.lib;
+
+func main(): i32 {
+    let g: func(): i32 = spec.cc.impl.qvaluable.lib.helper;
+    return g() - 5 + spec;
+}
+"#;
+    let emitted = emit_host_pair("qvalueimpl", value_holder, value_caller);
+    assert_contains(
+        "qvalueimpl",
+        &emitted,
+        "g = cl_spec_cc_impl_qvaluable_lib_helper;",
+    );
+    assert!(
+        !emitted.contains("cl_spec_cc_impl_qvaluable_lib_spec.cc"),
+        "qvalueimpl: the imported value was projected as the function"
+    );
+
+    let single_holder = r#"module libm;
+
+export func f(): i32 { return 5; }
+export let libm: i32 = 3;
+"#;
+    let single_caller = r#"module spec.cc.impl.qsingle;
+
+import { libm } from libm;
+
+func main(): i32 {
+    return libm.f() - 5 + libm - 3;
+}
+"#;
+    let emitted = emit_host_pair("qsingleimpl", single_holder, single_caller);
+    assert_contains("qsingleimpl", &emitted, "cl_libm_f()");
+    assert!(
+        !emitted.contains("cl_libm_f(cl_spec_cc_impl_qsingle_libm"),
+        "qsingleimpl: the single-segment module call passed the value receiver"
     );
 }

@@ -651,6 +651,38 @@ impl Checker<'_, '_> {
             // though an import binds the head. A lexical binding still
             // shadows the path.
             if !self.is_local(first) {
+                // An intrinsic or `ffi` declaration is call-only: it has no
+                // value symbol of its own, so a value position keeps the
+                // ordinary undeclared report instead of emitting a dotted C
+                // path. A lexical binding of the head still shadows the path.
+                if let Some((last, head)) = name.segments.split_last() {
+                    if !head.is_empty() {
+                        let module = head.join(".");
+                        if matches!(
+                            self.qualified_decl_kind(&module, last),
+                            Some(crate::load::DeclKind::Ffi | crate::load::DeclKind::Intrinsic)
+                        ) {
+                            self.error(
+                                "E10219",
+                                format!("'{}' is not declared", name.segments.join(".")),
+                                "call the function directly",
+                                name.span,
+                            );
+                            return Ty::unknown();
+                        }
+                    }
+                }
+                // A module function value reaches its declaration before the
+                // value-head route: a module path wins over an imported value
+                // that shares the head's spelling.
+                if let Some((last, head)) = name.segments.split_last() {
+                    if !head.is_empty() {
+                        let module = head.join(".");
+                        if let Some(signature) = self.table.function(&module, last) {
+                            return Ty::func(signature.ty());
+                        }
+                    }
+                }
                 if let Some(ty) = self.module_path_type(&name.segments, name.span) {
                     return ty;
                 }
