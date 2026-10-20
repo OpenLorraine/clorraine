@@ -2106,3 +2106,54 @@ func main(): i32 {
     assert_no_asan("baredup", &output);
     assert_exit("baredup", &output, 0);
 }
+
+/// A later-use duty judges the moved path, not the use path.
+///
+/// A whole move followed by a duplicable-member read reports the moved binding
+/// once, and a duplicable member duty does not hide a later owning-member use.
+#[test]
+fn should_judge_the_moved_path_and_not_the_later_use_path() {
+    let whole_move = r#"module spec.bgi.wholemove;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: i32; }
+
+func f<T>(take h: T): i32 {
+    let c: T = h;
+    return h.tag;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: 3 };
+    return f<H>(h);
+}
+"#;
+    assert_rejected_count("wholemove", whole_move, "E10020", 1, &["'h'"]);
+
+    let dedupe = r#"module spec.bgi.dedupemembers;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: raw u8; }
+
+func sink(take s: raw u8?): i32 { return 0; }
+func first(s: String): i32 { return i32(len(s)); }
+
+func f<T, U>(take h: T, u: U): i32 {
+    let r: i32 = sink(take (true ? h.tag : null));
+    let a: raw u8? = h.tag;
+    let s: U = h.name;
+    return first(h.name) + r;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: null };
+    let u: String = stringOf("bb");
+    return f<H, String>(h, u);
+}
+"#;
+    assert_rejected_count("dedupemembers", dedupe, "E10020", 1, &["'h'"]);
+
+
+}

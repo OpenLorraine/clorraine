@@ -503,18 +503,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .moved_if_owning
                     .iter()
                     .all(|path| matches!(path.as_slice(), [ir::Projection::Field(_)]));
-            let path: Vec<crate::types::PlacePathStep> = projections
+            // The judgment follows the moved paths, not the use path: a whole
+            // move conflicts with every later read, and a moved prefix owns
+            // even when the read selects a duplicable member below it.
+            let moved: Vec<Vec<crate::types::PlacePathStep>> = state
+                .moved_if_owning
                 .iter()
-                .map(|projection| match projection {
-                    ir::Projection::Field(field) => {
-                        crate::types::PlacePathStep::Field(field.clone())
-                    }
-                    ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
-                        crate::types::PlacePathStep::Element
-                    }
+                .filter(|moved| {
+                    moved.is_empty()
+                        || projections.is_empty()
+                        || projections.starts_with(moved)
+                        || moved.starts_with(projections)
+                })
+                .map(|moved| {
+                    moved
+                        .iter()
+                        .map(|projection| match projection {
+                            ir::Projection::Field(field) => {
+                                crate::types::PlacePathStep::Field(field.clone())
+                            }
+                            ir::Projection::Element(_)
+                            | ir::Projection::ElementTemp(_) => {
+                                crate::types::PlacePathStep::Element
+                            }
+                        })
+                        .collect()
                 })
                 .collect();
-            self.record_requires_duplicable(id, span, partial, path);
+            self.record_requires_duplicable(id, span, partial, moved);
         }
     }
 
@@ -615,9 +631,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         id: usize,
         span: Span,
         partial: bool,
-        path: Vec<crate::types::PlacePathStep>,
+        paths: Vec<Vec<crate::types::PlacePathStep>>,
     ) {
-        if !self.recorded_requirements.insert(id) {
+        if !self.recorded_requirements.insert((id, paths.clone())) {
             return;
         }
         if !self.maybe_owns(&self.bindings[id].ty) {
@@ -630,7 +646,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             binding: ir_name,
             ty: declared,
             partial,
-            path,
+            paths,
             span,
         });
     }

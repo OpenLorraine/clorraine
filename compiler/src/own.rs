@@ -505,8 +505,9 @@ struct FunctionChecker<'a, 'd> {
     recorded_storable_slot: BTreeSet<(String, u32, u32)>,
     /// Self-assign sites already recorded, so one site owes one duty.
     recorded_self_assign: BTreeSet<(String, u32, u32)>,
-    /// Binding indices already recorded, so one binding owes one duty.
-    recorded_requirements: BTreeSet<usize>,
+    /// Later-use duties already recorded, keyed by the binding and the
+    /// conflicting moved paths, so one moved-place set owes one duty.
+    recorded_requirements: BTreeSet<(usize, Vec<Vec<crate::types::PlacePathStep>>)>,
     /// Move sites already recorded, so one site owes one element-move duty.
     ///
     /// The speculative loop pass lowers the same body twice, so the site —

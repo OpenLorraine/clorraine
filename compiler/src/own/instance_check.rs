@@ -228,49 +228,30 @@ fn check_not_lend_requirements(
             // one judged. A raw-pointer element selects the pointee, which
             // `project_place_path` does not model; the other steps reuse its
             // field/element resolution.
-            let mut selected = substituted.clone();
-            for projection in &requirement.projections {
-                selected = match projection {
+            let path: Vec<crate::types::PlacePathStep> = requirement
+                .projections
+                .iter()
+                .map(|projection| match projection {
                     crate::ir::Projection::Field(name) => {
-                        // A raw pointer reaches its pointee before the member
-                        // is selected, exactly as the element step does; the
-                        // duplicable root is not the judged type.
-                        let mut base = selected.clone();
-                        while let crate::types::TyKind::Raw(inner) = &base.kind {
-                            base = (**inner).clone();
-                        }
-                        crate::types::project_place_path(
-                            &base,
-                            &[crate::types::PlacePathStep::Field(name.clone())],
-                            &sema.table,
-                        )
+                        crate::types::PlacePathStep::Field(name.clone())
                     }
                     crate::ir::Projection::Element(_)
-                    | crate::ir::Projection::ElementTemp(_) => match &selected.kind {
-                        crate::types::TyKind::Raw(inner) => (**inner).clone(),
-                        _ => selected.iterated_element(),
-                    },
-                };
-                if selected.is_unknown() {
-                    break;
-                }
+                    | crate::ir::Projection::ElementTemp(_) => {
+                        crate::types::PlacePathStep::Element
+                    }
+                })
+                .collect();
+            let judged = projected_type(sema, &substituted, &path);
+            if sema.table.duplicable(&judged) && !is_view_member_projection(&path) {
+                continue;
             }
-            let substituted = if selected.is_unknown() {
-                substituted
-            } else {
-                selected
-            };
             // A nullable substitution is the `borrow T?` out-slot carve-out,
             // so a move stays legal where the concrete spelling is — but only
             // for a writable lend moved into a slot that may be that out-slot.
             // Both conditions are needed: a read-only source may never be
             // emptied, and a move into an owned position would leave the
             // source and the destination aliasing one allocation.
-            if sema.table.duplicable(&substituted)
-                || (substituted.nullable
-                    && requirement.writable_source
-                    && requirement.stores_into_slot)
-            {
+            if judged.nullable && requirement.writable_source && requirement.stores_into_slot {
                 continue;
             }
             diagnostics.push(
@@ -415,6 +396,54 @@ fn check_self_assign_requirements(
 /// moved-value code (`E10020`) for a whole-binding move, and the partial-move
 /// code (`E10025`) when only a member path moved and the use names the whole
 /// binding, matching the concrete spelling's two judgments.
+/// True when a projection selects a view member that the opaque lowering
+/// cannot emit through a type parameter.
+///
+/// A `.ptr`/`.len` member or an element of a view is not lowered through an
+/// opaque type; the conservative duty rejects the store instead of emitting
+/// invalid C.
+fn is_view_member_projection(path: &[crate::types::PlacePathStep]) -> bool {
+    path.iter().any(|step| match step {
+        crate::types::PlacePathStep::Element => true,
+        crate::types::PlacePathStep::Field(field) => field == "ptr" || field == "len",
+    })
+}
+
+/// True when a moved or selected projection reaches an owned value.
+///
+/// The projection resolver stops at a type it does not model. A view's
+/// intrinsic `.ptr`/`.len` member and an element of a view reach no owned
+/// value, so they stay copies; any other unresolved projection falls back to
+/// the owning root, as the concrete spelling would.
+fn projected_type(
+    sema: &SemaOutput,
+    root: &Ty,
+    path: &[crate::types::PlacePathStep],
+) -> Ty {
+    let mut selected = root.clone();
+    for step in path {
+        while let TyKind::Raw(inner) = &selected.kind {
+            selected = (**inner).clone();
+        }
+        // A view member (`.ptr`, `.len`, or an element of a view) is not
+        // lowered through an opaque type; the conservative duty keeps the
+        // store rejected instead of emitting invalid C.
+        if matches!(step, crate::types::PlacePathStep::Element) && is_view(&selected) {
+            return root.clone();
+        }
+        let next = crate::types::project_place_path(
+            &selected,
+            std::slice::from_ref(step),
+            &sema.table,
+        );
+        if next.is_unknown() {
+            return root.clone();
+        }
+        selected = next;
+    }
+    selected
+}
+
 fn check_duplicable_requirements(
     program: &ProgramInfo,
     sema: &SemaOutput,
@@ -443,24 +472,14 @@ fn check_duplicable_requirements(
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
             let substituted = crate::types::substitute(declared, &bound);
-            // A projected use names the member the move selected; resolve it
-            // after substitution so a duplicable member of an owning root
-            // stays a copy. An empty path is the whole-binding use.
-            let judged = if requirement.path.is_empty() {
-                substituted.clone()
-            } else {
-                let selected = crate::types::project_place_path(
-                    &substituted,
-                    &requirement.path,
-                    &sema.table,
-                );
-                if selected.is_unknown() {
-                    substituted.clone()
-                } else {
-                    selected
-                }
-            };
-            if sema.table.duplicable(&judged) {
+            // The judgment follows every conflicting moved path. An empty
+            // path is a whole-binding move and judges the whole substituted
+            // type; a projected path judges the moved member.
+            let owns = requirement.paths.iter().any(|path| {
+                is_view_member_projection(path)
+                    || !sema.table.duplicable(&projected_type(sema, &substituted, path))
+            });
+            if !owns {
                 continue;
             }
             if requirement.partial {
