@@ -1,6 +1,6 @@
 # Execution Plan — Opaque Store and Call Residue (Batch R)
 
-> **Progress**: 11/49 tasks
+> **Progress**: 27/49 tasks
 > **Rows**: `DEF-525`, `DEF-526`, `DEF-527`, `DEF-528`, `DEF-395`, `DEF-396`, `DEF-401`,
 > `DEF-406`, `DEF-407`, `DEF-402`
 > **Baseline**: `766e9b9`
@@ -46,23 +46,23 @@
 
 ### Step 2.1: Red cases
 
-- [ ] 2.1.1 Write the red cases: the slice-of-func typedef and call, and the capturing-closure
+- [x] 2.1.1 Write the red cases: the slice-of-func typedef and call, and the capturing-closure
       conditional; each asserts a strict build/run or one `E10404`
-- [ ] 2.1.2 Confirm both fail at the baseline and commit the red cases
+- [x] 2.1.2 Confirm both fail at the baseline and commit the red cases
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Teach `declarator`'s `Raw` arm the function-pointer shape and route the slice
+- [x] 2.2.1 Teach `declarator`'s `Raw` arm the function-pointer shape and route the slice
       typedef through it (`DEF-527`)
-- [ ] 2.2.2 Reject a conditional of distinct capturing closures with `E10404`
+- [x] 2.2.2 Reject a conditional of distinct capturing closures with `E10404`
       (`DEF-528`)
-- [ ] 2.2.3 Run the focused suites and `make check`; commit the fix
+- [x] 2.2.3 Run the focused suites and `make check`; commit the fix
 
 ### Step 2.3: Pins and review
 
-- [ ] 2.3.1 Add the implementation pins (typedef text, strict build, one-report text)
-- [ ] 2.3.2 Dispatch the phase review; apply corrections
-- [ ] 2.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 2.3.1 Add the implementation pins (typedef text, strict build, one-report text)
+- [x] 2.3.2 Dispatch the phase review; apply corrections
+- [x] 2.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 3: Capture write summary
 
@@ -72,22 +72,22 @@
 
 ### Step 3.1: Red case
 
-- [ ] 3.1.1 Write the safe parameter-backed write case (accepted and clean) beside the batch-Q
+- [x] 3.1.1 Write the safe parameter-backed write case (accepted and clean) beside the batch-Q
       local-owner escape control; confirm the safe case fails at the baseline
-- [ ] 3.1.2 Commit the red case
+- [x] 3.1.2 Commit the red case
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Add the lambda-body write summary and apply a surviving provenance in
+- [x] 3.2.1 Add the lambda-body write summary and apply a surviving provenance in
       `mark_written_captures`
-- [ ] 3.2.2 Keep the frame-backed and unknown-write cases conservative
-- [ ] 3.2.3 Run the focused suites and `make check`; commit the fix
+- [x] 3.2.2 Keep the frame-backed and unknown-write cases conservative
+- [x] 3.2.3 Run the focused suites and `make check`; commit the fix
 
 ### Step 3.3: Pins and review
 
-- [ ] 3.3.1 Add the implementation pins (the safe emission and the retained rejection)
-- [ ] 3.3.2 Dispatch the phase review; apply corrections
-- [ ] 3.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 3.3.1 Add the implementation pins (the safe emission and the retained rejection)
+- [x] 3.3.2 Dispatch the phase review; apply corrections
+- [x] 3.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 4: Generic dot call
 

@@ -2613,3 +2613,95 @@ func main(): i32 {
     assert_no_asan("runtimeindexok", &output);
     assert_exit("runtimeindexok", &output, 0);
 }
+
+/// A generic dot call returns and binds its chosen instance.
+///
+/// The callee's `T` is fixed by the receiver and the written arguments, so the
+/// result is the substituted `String`, not the declared `T`. A generic caller
+/// whose own `T` shares the callee's spelling keeps the callee's binding, and
+/// an explicit type argument on a dot call is checked like the direct spelling.
+#[test]
+fn should_bind_a_generic_dot_calls_instance() {
+    let returned = r#"module spec.bgi.dotreturn;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { v: T; }
+
+func pick<T>(take a: Wrap<T>, take b: T, take c: T): T { return a.v; }
+
+func main(): i32 {
+    let s1: String = stringOf("ab");
+    let s2: String = stringOf("cd");
+    let s3: String = stringOf("ef");
+    let w: Wrap<String> = Wrap<String> { v: s1 };
+    let x: String = w.pick(s2, s3);
+    return i32(len(x)) - 2;
+}
+"#;
+    let output = run_memory("dotreturn", returned);
+    assert_no_asan("dotreturn", &output);
+    assert_exit("dotreturn", &output, 0);
+
+    let shared = r#"module spec.bgi.dotshared;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { v: T; }
+
+func pick<T>(take a: Wrap<T>, take b: T, take c: T): T { return a.v; }
+
+func outer<T>(take a: Wrap<String>, take b: String, take c: String): String {
+    return a.pick(b, c);
+}
+
+func main(): i32 {
+    let s1: String = stringOf("ab");
+    let s2: String = stringOf("cd");
+    let s3: String = stringOf("ef");
+    let w: Wrap<String> = Wrap<String> { v: s1 };
+    let x: String = outer<i32>(w, s2, s3);
+    return i32(len(x)) - 2;
+}
+"#;
+    let output = run_memory("dotshared", shared);
+    assert_no_asan("dotshared", &output);
+    assert_exit("dotshared", &output, 0);
+
+    let explicit_mismatch = r#"module spec.bgi.dotexplicit;
+
+struct Box { v: i32; }
+
+func pick<T>(take b: Box, take x: T): T { return x; }
+
+func main(): i32 {
+    let b: Box = Box { v: 1 };
+    let x: str = b.pick<str>(5);
+    return i32(x[0]) - 53;
+}
+"#;
+    assert_rejected_once(
+        "dotexplicit",
+        explicit_mismatch,
+        "E10200",
+        &["cannot convert 'i32' to 'str'"],
+    );
+
+    let explicit_count = r#"module spec.bgi.dotcount;
+
+struct Box { v: i32; }
+
+func pick<T>(take b: Box, take x: T): T { return x; }
+
+func main(): i32 {
+    let b: Box = Box { v: 1 };
+    return b.pick<i32, i32>(5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "dotcount",
+        explicit_count,
+        "E10300",
+        &["wrong number of type arguments"],
+    );
+}

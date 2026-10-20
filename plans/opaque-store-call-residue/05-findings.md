@@ -64,12 +64,34 @@
 ## Phase 2 — Type and closure surface
 
 **Rows**: `DEF-527`, `DEF-528`.
-**Status**: Pending.
+**Implementation**: `ee35e0e` (red `fa79fda`).
+**Lenses**: correctness, emission-integrity, semantics.
+
+- `declarator`'s `Raw` arm now spells a pointer to a function pointer as
+  `ret (**name)(params)`, built through `func_pointer_declarator`; the slice typedef
+  uses the shared declarator instead of appending `*ptr` to `c_type`.
+  `should_emit_a_slice_of_func_typedef`,
+  `should_emit_a_pointer_to_function_pointer_slice`: the typedef is
+  `i32 (**ptr)(i32)`, the slice strict-builds and calls its first element.
+- A conditional of two distinct capturing closures reports `E10404` once at the
+  conditional and returns `unknown`; a capture-less pair keeps the ordinary
+  `func` conversion. `should_reject_a_conditional_of_capturing_closures_with_the_ephemeral_rule`
+  checks one `E10404`, no `E10200`, and the accepted capture-less control.
 
 ## Phase 3 — Capture write summary
 
 **Rows**: `DEF-526`.
-**Status**: Pending.
+**Implementation**: `1535df6`, `8155bbb` (red test in `1535df6`).
+**Lenses**: correctness, memory-safety.
+
+`mark_written_captures` now scans the lambda body for whole-name writes to the
+write-borrow capture. A write is surviving when its value is static, a module
+path, a capture backed by caller storage, or a conditional/cast wrapper of those;
+a shadowing binding, a nested lambda that names the capture, a projection write,
+or an unclassified value keeps the conservative frame-backed mark. A body with no
+write leaves the local unchanged. `should_accept_a_parameter_backed_capture_write`
+accepts the caller-backed case and runs ASan/LSan-clean; the batch-Q
+`capturedestination` local-owner twin still reports `E10030`.
 
 ## Phase 4 — Generic dot call
 
