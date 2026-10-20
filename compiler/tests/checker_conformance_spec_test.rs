@@ -10940,3 +10940,95 @@ func main(): i32 {
         &[],
     );
 }
+
+/// A module initializer applies the global-borrow call rule.
+///
+/// A direct call and a bare global dot receiver report `E10038` exactly as
+/// their function-body twins do. A `const` global argument, a literal
+/// argument, and the module-qualified receiver shape the existing
+/// member-call oracle accepts stay accepted.
+#[test]
+fn should_apply_the_global_borrow_rule_in_a_module_initializer() {
+    let direct = r#"module spec.cc.qinitdirect;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = peek(n, 5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    assert_rejected_once(
+        "qinitdirect",
+        direct,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let dot = r#"module spec.cc.qinitdot;
+
+struct N { v: i32; }
+
+func peek(borrow n: N, x: i32): i32 {
+    return n.v + x;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = n.peek(5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    assert_rejected_once(
+        "qinitdot",
+        dot,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let safe = r#"module spec.cc.qinitsafe;
+
+const n: i32 = 1;
+
+func add(a: i32, b: i32): i32 {
+    return a + b;
+}
+
+let g: i32 = add(n, 2);
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("qinitsafe", safe);
+    assert_no_asan("qinitsafe", &output);
+    assert_exit("qinitsafe", &output, 0);
+
+    let qualified = r#"module spec.cc.qinitqualified;
+
+struct N { v: i32; }
+
+func peek(borrow n: N): i32 {
+    return n.v;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = spec.cc.qinitqualified.n.peek();
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let output = run_memory("qinitqualified", qualified);
+    assert_no_asan("qinitqualified", &output);
+    assert_exit("qinitqualified", &output, 0);
+}
