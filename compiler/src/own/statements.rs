@@ -833,6 +833,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             None
         };
+        // A shadowing place source names the outer binding, so it is captured
+        // before the new name is declared, exactly as in `check_let`.
+        let copy_source = self.place_target(&decl.value);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
@@ -867,7 +870,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             false
         };
-        let copied = match self.place_target(&decl.value) {
+        let copied = match copy_source {
             Some(PlaceTarget::Local(source, projections))
                 if super::place::constant_path(&projections) =>
             {

@@ -1580,6 +1580,34 @@ func main(): i32 {
         &["cannot modify 'b' while it is shared-borrowed"],
     );
 
+    let plain_shadow = r#"module spec.bsi.constplainshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        const h: Holder = h;
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    assert_rejected_once(
+        "constplainshadow",
+        plain_shadow,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
     let control = r#"module spec.bsi.constcondok;
 
 struct Holder { names: str[2]; }
@@ -1652,6 +1680,30 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("globalcondindex", indexed, "E10033", &["escapes its scope"]);
+
+    let alias_arm = r#"module spec.bsi.globalaliasarm;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func set(c: bool): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let hs: Holder[1] = [Holder { names: [b.v, "EE"] }];
+    for (borrow e in hs) {
+        g = c ? e : e;
+    }
+}
+
+func main(): i32 {
+    set(true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once("globalaliasarm", alias_arm, "E10033", &["escapes its scope"]);
 
     let control = r#"module spec.bsi.globalcondok;
 
@@ -1884,6 +1936,35 @@ func main(): i32 {
     assert_rejected_once(
         "condshadowcopy",
         source,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let alias_copy = r#"module spec.bsi.aliascopy;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let hs: Holder[1] = [Holder { names: [b.v, "EE"] }];
+    for (borrow e in hs) {
+        let h: Holder = c ? e : e;
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+    return 9;
+}
+
+func main(): i32 {
+    return use(true) - 97;
+}
+"#;
+    assert_rejected_once(
+        "aliascopy",
+        alias_copy,
         "E10031",
         &["cannot modify 'b' while it is shared-borrowed"],
     );

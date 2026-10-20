@@ -2066,6 +2066,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Name(_) | ExprKind::Qualified(_) => {
                 match self.place_target(value) {
                     Some(PlaceTarget::Local(id, _)) => {
+                        let id = self.alias_resolved_root(id);
                         !self.binding_loan_owners(id).is_empty()
                     }
                     _ => false,

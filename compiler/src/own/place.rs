@@ -1695,8 +1695,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         copied: &mut CopyLoans,
     ) {
         if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
-            if let Some(paths) = self.state.element_loans.get(&source) {
-                let read = constant_path(&projections).then_some(projections.as_slice());
+            // A loop alias has no storage of its own: its element loans live
+            // on the container under the alias root's projections.
+            let (loan_source, loan_projections) =
+                match &self.bindings[source].alias_root {
+                    Some(PlaceTarget::Local(root, root_projections)) => {
+                        (*root, root_projections.clone())
+                    }
+                    _ => (source, projections.clone()),
+                };
+            if let Some(paths) = self.state.element_loans.get(&loan_source) {
+                let read =
+                    constant_path(&loan_projections).then_some(loan_projections.as_slice());
                 let mut recorded = false;
                 for (path, loans) in paths {
                     let destination = match read {
@@ -1750,8 +1760,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // no frame loan. A static-str local points at static storage. A
             // local with no recorded position stays unknown, so the binding's
             // own provenance judges it instead.
+            let root = self.alias_resolved_root(source);
             if matches!(
-                self.bindings[source].kind,
+                self.bindings[root].kind,
                 BindingKind::Param | BindingKind::OutSlot
             ) || matches!(self.ty(value).kind, TyKind::StaticStr)
             {
