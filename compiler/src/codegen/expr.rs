@@ -41,9 +41,13 @@ impl<'a> Emitter<'a> {
             ValueKind::Member { base, name } => {
                 // A fixed array's `.len` is its structural extent, exactly as
                 // the `len` intrinsic folds it: there is no member to read and
-                // the base evaluates nothing.
+                // the base evaluates nothing. A base recorded opaquely in a
+                // generic body resolves through its instance first, so the
+                // view member or structural extent is the one the instance
+                // selected.
+                let base_ty = self.resolved_value_ty(base);
                 if name == "len" {
-                    if let TyKind::Array { extents, .. } = &self.substitute(&base.ty).kind {
+                    if let TyKind::Array { extents, .. } = &base_ty.kind {
                         if extents.iter().all(Option::is_some) {
                             let extent = extents.first().and_then(|size| *size).unwrap_or(0);
                             return format!("{extent}");
@@ -51,7 +55,7 @@ impl<'a> Emitter<'a> {
                     }
                 }
                 let base_c = self.deref_base(base, self.value(base));
-                if matches!(self.substitute(&base.ty).kind, TyKind::Raw(_)) {
+                if matches!(base_ty.kind, TyKind::Raw(_)) {
                     format!("{base_c}->{name}")
                 } else {
                     format!("{base_c}.{name}")
@@ -60,7 +64,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Index { base, index } => {
                 let base_c = self.deref_base(base, self.value(base));
                 let index_c = self.value(index);
-                index_text(&self.substitute(&base.ty), &base_c, &index_c)
+                index_text(&self.resolved_value_ty(base), &base_c, &index_c)
             }
             ValueKind::Unary { op, operand } => self.unary(*op, operand, value),
             // A short-circuit operator evaluates its right operand only when

@@ -665,9 +665,13 @@ impl<'a> Emitter<'a> {
                 // member a view, the store is a view write: widen the owned
                 // source and leave it in place. The owned instance keeps the
                 // move below.
-                let recorded_target = self.substitute(&target.ty);
+                let recorded_target = &target.ty;
                 let resolved_target = self.resolved_place_ty(target);
-                if recorded_target.is_unknown() && crate::borrow::is_view_like(&resolved_target)
+                let recorded_known = !recorded_target.is_unknown()
+                    && !crate::types::contains_param(recorded_target);
+                if !recorded_known
+                    && crate::borrow::is_view_like(&resolved_target)
+                    && !resolved_target.is_fixed_array()
                 {
                     let target_c = self.place(target);
                     let source_value = Value::new(

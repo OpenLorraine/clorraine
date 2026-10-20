@@ -724,6 +724,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let id = self.builder.add_scope(parent, in_loop, close_span);
         self.scopes.push(Scope {
             id,
+            close_span,
             ..Scope::default()
         });
         id
@@ -1159,6 +1160,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             span,
             used: false,
             scope,
+            scope_end: self.scopes.last().map(|s| s.close_span).unwrap_or_default(),
             kind,
             mode,
             is_const,

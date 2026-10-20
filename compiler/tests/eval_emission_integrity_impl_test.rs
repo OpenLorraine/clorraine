@@ -3069,7 +3069,7 @@ struct Box { v: String; }
 func f<T>(take h: T): i32 {
     let a: Box = Box { v: stringOf("aa") };
     h.names[0] = a.v;
-    return i32(len(h.names[0])) - 2;
+    return i32(h.names[0][0]) - 97;
 }
 
 func main(): i32 {
@@ -3115,4 +3115,65 @@ func main(): i32 {
         "oqscaller: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
     assert_run_exit("oqscaller", caller_view, 0);
+
+    let wrapper = r#"module impl.eei.oqswrap;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+struct Box { v: String; }
+
+func f<T>(take w: Wrap<T>): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    w.items[0] = a.v;
+    return i32(w.items[0][0]) - 97;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["EE", "FF"] };
+    return f<str>(take w);
+}
+"#;
+    let (first, second) = emit_twice("oqswrap", wrapper);
+    assert_eq!(
+        first, second,
+        "oqswrap: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "oqswrap",
+        &first,
+        &["w.items[0] = cl_string_view(a.v);"],
+    );
+    assert_run_exit("oqswrap", wrapper, 0);
+
+    let by_value = r#"module impl.eei.oqsparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func id<T>(take h: T, s: String): T {
+    h.names[0] = s;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let s: String = stringOf("aa");
+    let g: Holder = id<Holder>(take h, s);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let (first, second) = emit_twice("oqsparam", by_value);
+    assert_eq!(
+        first,
+        second,
+        "oqsparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all("oqsparam", &first, &["h.names[0] = cl_string_view(s);"]);
+    assert!(
+        !first.contains("h.names[0] = s;"),
+        "oqsparam: a view store must not move the owned parameter"
+    );
+    assert_run_exit("oqsparam", by_value, 0);
 }

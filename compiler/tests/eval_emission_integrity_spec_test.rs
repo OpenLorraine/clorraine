@@ -3457,7 +3457,7 @@ struct Box { v: String; }
 func f<T>(take h: T): i32 {
     let a: Box = Box { v: stringOf("aa") };
     h.names[0] = a.v;
-    return i32(len(h.names[0])) - 2;
+    return i32(h.names[0][0]) - 97;
 }
 
 func main(): i32 {
@@ -3468,6 +3468,420 @@ func main(): i32 {
     let output = run_memory("opaqueviewsorewiden", widen);
     assert_no_asan("opaqueviewsorewiden", &output);
     assert_exit("opaqueviewsorewiden", &output, 0);
+}
+
+/// A stored view follows the carrier through conditionals, copies, and calls.
+///
+/// The carrier's stored view escapes whenever the returned value can select or
+/// relay the binding. Each shape reports `E10030` once at the return, exactly
+/// as its concrete twin does.
+#[test]
+fn should_follow_an_opaque_store_escape_through_carrier_returns() {
+    let conditional = r#"module spec.eei.opaqueviewsorecond;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T, take h2: T, c: bool): T {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    return c ? h : h2;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let h2: Holder = Holder { names: ["GG", "HH"] };
+    let g: Holder = id<Holder>(take h, take h2, true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorecond",
+        conditional,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let copied = r#"module spec.eei.opaqueviewsorecopy;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    let out: T = h;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorecopy",
+        copied,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let relayed = r#"module spec.eei.opaqueviewsorerelay;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func echo<T>(take h: T): T { return h; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    return echo<T>(take h);
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorerelay",
+        relayed,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let loop_alias = r#"module spec.eei.opaqueviewsoreloop;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take xs: T[1]): T[1] {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    for (borrow e in xs) { e.names[0] = s; }
+    return xs;
+}
+
+func main(): i32 {
+    let xs: Holder[1] = [Holder { names: ["EE", "FF"] }];
+    let g: Holder[1] = f<Holder>(take xs);
+    return i32(g[0].names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreloop",
+        loop_alias,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// A stored view's backing is watched after the store.
+///
+/// A backing that dies at an inner scope or is rewritten reports the concrete
+/// escape or shared-loan conflict. An overwrite removes the earlier duty, and
+/// a sibling return does not hand the view out.
+#[test]
+fn should_watch_an_opaque_store_backing_after_the_store() {
+    let nested = r#"module spec.eei.opaqueviewsorenested;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    {
+        let a: Box = Box { v: stringOf("aa") };
+        h.names[0] = a.v;
+    }
+    let v: str = h.names[0];
+    return i32(v[0]) - 97;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorenested",
+        nested,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let reassigned = r#"module spec.eei.opaqueviewsorereassign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func first(s: str): i32 { return i32(s[0]); }
+
+func f<T>(take h: T): i32 {
+    let s: String = stringOf("aa");
+    h.names[0] = s;
+    s = stringOf("bb");
+    return first(h.names[0]) - 97;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorereassign",
+        reassigned,
+        "E10031",
+        &["while it is shared-borrowed"],
+        &[],
+    );
+
+    let two_stores = r#"module spec.eei.opaqueviewsoretwo;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = a.v;
+    let t: str = b.v;
+    h.names[0] = s;
+    h.names[1] = t;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoretwo",
+        two_stores,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let overwrite = r#"module spec.eei.opaqueviewsoreoverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    h.names[0] = "OK";
+    return i32(h.names[0][0]) - 79;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    let output = run_memory("opaqueviewsoreoverwrite", overwrite);
+    assert_no_asan("opaqueviewsoreoverwrite", &output);
+    assert_exit("opaqueviewsoreoverwrite", &output, 0);
+
+    let sibling = r#"module spec.eei.opaqueviewsoresibling;
+
+import { String, stringOf } from std.text;
+
+struct H2 { a: str[2]; b: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.a[0] = a.v;
+    let g: T = h;
+    return i32(g.b[0][0]) - 69;
+}
+
+func main(): i32 {
+    let h: H2 = H2 { a: ["EE", "FF"], b: ["EE", "FF"] };
+    return f<H2>(take h);
+}
+"#;
+    let output = run_memory("opaqueviewsoresibling", sibling);
+    assert_no_asan("opaqueviewsoresibling", &output);
+    assert_exit("opaqueviewsoresibling", &output, 0);
+}
+
+/// The instance's member kind also decides the store's move and widening.
+///
+/// A view-typed member accepts an owned source as a widening and leaves the
+/// source readable. An owned member keeps the concrete move: a by-value
+/// parameter cannot be moved, and a later read of a moved local is the moved
+/// value error.
+#[test]
+fn should_apply_the_instance_move_or_widening_to_an_opaque_store() {
+    let param_view = r#"module spec.eei.opaqueviewsoreparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func id<T>(take h: T, s: String): T {
+    h.names[0] = s;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let s: String = stringOf("aa");
+    let g: Holder = id<Holder>(take h, s);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("opaqueviewsoreparam", param_view);
+    assert_no_asan("opaqueviewsoreparam", &output);
+    assert_exit("opaqueviewsoreparam", &output, 0);
+
+    let param_owned = r#"module spec.eei.opaqueviewsoreparamowned;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func id<T>(take h: T, s: String): T {
+    h.v = s;
+    return h;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    let s: String = stringOf("aa");
+    let g: Box = id<Box>(take b, s);
+    return i32(len(g.v)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreparamowned",
+        param_owned,
+        "E10034",
+        &["borrowed parameter 's'"],
+        &[],
+    );
+
+    let owned_later = r#"module spec.eei.opaqueviewsoreownedlater;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.v = a.v;
+    return i32(len(a.v)) - 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    return f<Box>(take b);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreownedlater",
+        owned_later,
+        "E10020",
+        &["'a' was moved"],
+        &[],
+    );
+
+    let wrapper_view = r#"module spec.eei.opaqueviewsorewrap;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+struct Box { v: String; }
+
+func f<T>(take w: Wrap<T>): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    w.items[0] = a.v;
+    return i32(w.items[0][0]) - 97;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["EE", "FF"] };
+    return f<str>(take w);
+}
+"#;
+    let output = run_memory("opaqueviewsorewrap", wrapper_view);
+    assert_no_asan("opaqueviewsorewrap", &output);
+    assert_exit("opaqueviewsorewrap", &output, 0);
+
+    let source_read = r#"module spec.eei.opaqueviewsoresource;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    return i32(len(a.v)) - 2;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    let output = run_memory("opaqueviewsoresource", source_read);
+    assert_no_asan("opaqueviewsoresource", &output);
+    assert_exit("opaqueviewsoresource", &output, 0);
+
+    let wrapper_owned = r#"module spec.eei.opaqueviewsorewrapowned;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+struct Box { v: String; }
+
+func f<T>(take w: Wrap<T>): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    w.items[0] = a.v;
+    return i32(len(w.items[0])) - 2;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> {
+        items: [stringOf("EE"), stringOf("FF")],
+    };
+    return f<String>(take w);
+}
+"#;
+    let output = run_memory("opaqueviewsorewrapowned", wrapper_owned);
+    assert_no_asan("opaqueviewsorewrapowned", &output);
+    assert_exit("opaqueviewsorewrapowned", &output, 0);
 }
 
 /// A carrier call nested in a returned struct literal is judged at the return.

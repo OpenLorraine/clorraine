@@ -1322,6 +1322,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 span: Span::default(),
                 used: true,
                 scope,
+                scope_end: self.scopes.last().map(|s| s.close_span).unwrap_or_default(),
                 kind: BindingKind::Param,
                 mode,
                 is_const: false,

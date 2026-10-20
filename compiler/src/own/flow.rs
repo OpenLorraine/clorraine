@@ -50,6 +50,11 @@ pub(super) struct Binding {
     pub(super) used: bool,
     /// The scope depth the binding was declared in.
     pub(super) scope: usize,
+    /// The source range where the binding's scope closes.
+    ///
+    /// A stored view backed by this binding dies when its scope closes; the
+    /// opaque-store hooks compare a later read's span with it.
+    pub(super) scope_end: Span,
     /// What kind of binding it is.
     pub(super) kind: BindingKind,
     /// The written parameter mode, or no mode for a local.
@@ -116,6 +121,8 @@ pub(super) struct Binding {
 pub(super) struct Scope {
     /// The scope's id in the lowered function.
     pub(super) id: ir::ScopeId,
+    /// The source range of the point that closes the scope.
+    pub(super) close_span: Span,
     /// Names bound here, innermost wins.
     pub(super) names: BTreeMap<String, usize>,
     /// Binding indices in declaration order, for reverse drop emission.

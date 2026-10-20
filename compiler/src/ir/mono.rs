@@ -316,6 +316,36 @@ pub struct RequiresOpaqueStore {
     /// already quoted for a binding, and `Some("a statement temporary")` for a
     /// value the walk cannot name.
     pub frame_owner: Option<String>,
+    /// The backing binding whose storage the stored view reads.
+    ///
+    /// The body's scope and write hooks use it to record an invalidating write
+    /// or a use after the backing's scope ends. The audit reads only the spans
+    /// the hooks record.
+    pub owner: Option<usize>,
+    /// The backing binding's source name, for the invalidation report.
+    pub owner_name: Option<String>,
+    /// The owned source binding whose move waits for the instance.
+    ///
+    /// A store of an owned place into an opaque member moves the source at an
+    /// owned destination and widens it at a view destination. The body records
+    /// the source and its later reads; the audit reports the concrete
+    /// moved-value error only when the instance's destination owns.
+    pub source: Option<usize>,
+    /// The owned source binding's source name, for the moved-value report.
+    pub source_name: Option<String>,
+    /// The projection from the owned source binding to the stored value.
+    pub source_path: Vec<super::Projection>,
+    /// True when the owned source is a non-take parameter.
+    ///
+    /// Such a source cannot be moved by the concrete rule; the audit reports
+    /// `E10034` at the store when the destination owns.
+    pub source_param: bool,
+    /// Reads of the owned source after the store, for the owned instance.
+    pub later_uses: Vec<Span>,
+    /// Reads of the destination after the backing's scope ends.
+    pub late_uses: Vec<Span>,
+    /// Writes or moves of the backing after the store.
+    pub invalidations: Vec<Span>,
     /// The store site, for the conversion diagnostic.
     pub store_span: Span,
     /// The return site once the destination root is returned.

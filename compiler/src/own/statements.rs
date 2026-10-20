@@ -384,6 +384,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
+        if let Some(PlaceTarget::Local(source, source_path)) = copy_source.clone() {
+            if source_path.is_empty() {
+                self.transfer_opaque_store_duties(id, source);
+            }
+        }
         if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
                 initialized: true,
@@ -1870,6 +1875,42 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Copies the opaque-store duties of a carrier binding onto its new owner.
+    ///
+    /// A whole-binding copy moves the carrier's view positions into the new
+    /// binding, so a later return or read of the copy judges the same stored
+    /// views. The source's own later uses stay with the source duty; the copy
+    /// keeps the backing watches and drops the source-move fields.
+    fn transfer_opaque_store_duties(&mut self, target: usize, source: usize) {
+        if self.opaque_store_requirements.is_empty() {
+            return;
+        }
+        let target_ty = self.bindings[target].ty.clone();
+        if !(target_ty.is_unknown() || crate::types::contains_param(&target_ty)) {
+            return;
+        }
+        let source = self.alias_resolved_root(source);
+        let source_root = self.bindings[source].ir_name.clone();
+        let target_root = self.bindings[target].ir_name.clone();
+        let mut copied = Vec::new();
+        for duty in &self.opaque_store_requirements {
+            if duty.function != self.decl.name || duty.root != source_root {
+                continue;
+            }
+            let mut copy = duty.clone();
+            copy.root = target_root.clone();
+            copy.ty = target_ty.clone();
+            copy.return_span = None;
+            copy.later_uses.clear();
+            copy.source = None;
+            copy.source_name = None;
+            copy.source_path.clear();
+            copy.source_param = false;
+            copied.push(copy);
+        }
+        self.opaque_store_requirements.extend(copied);
+    }
+
     /// Marks every opaque-member store into the returned root as escaping.
     ///
     /// The store's destination kind is not known at the declaration, so the
@@ -1877,14 +1918,45 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the concrete twin reports at: the caller receives the carrier and any
     /// frame-backed view its opaque members hold dies with this frame.
     fn mark_opaque_store_return(&mut self, value: &Expr) {
-        let value = super::expr::structural_wrapper_inner(value);
-        let Some(PlaceTarget::Local(id, _)) = self.place_target(value) else {
+        if self.opaque_store_requirements.is_empty() {
             return;
+        }
+        // A scalar return that merely reads the carrier does not hand its
+        // stored views to the caller.
+        if !(self.may_carry_view(&self.returns)
+            || crate::types::contains_param(&self.returns)
+            || self.returns.is_unknown())
+        {
+            return;
+        }
+        let value = super::expr::structural_wrapper_inner(value);
+        let mut roots = BTreeSet::new();
+        self.expr_view_roots(value, &mut roots);
+        let returned_path = match self.place_target(value) {
+            Some(PlaceTarget::Local(id, projections)) => {
+                Some((self.alias_resolved_root(id), projections))
+            }
+            _ => None,
         };
-        let id = self.alias_resolved_root(id);
-        let root = self.bindings[id].ir_name.clone();
+        let root_names: BTreeSet<String> = roots
+            .iter()
+            .map(|id| self.bindings[*id].ir_name.clone())
+            .collect();
         for duty in &mut self.opaque_store_requirements {
-            if duty.function == self.decl.name && duty.root == root {
+            if duty.function != self.decl.name || !root_names.contains(&duty.root) {
+                continue;
+            }
+            // A sibling field returned from the same root does not hand out
+            // the stored view. A whole return or a path that contains the
+            // stored position does.
+            if let Some((id, path)) = &returned_path {
+                if self.bindings[*id].ir_name != duty.root
+                    || !super::expr::projection_paths_overlap(path, &duty.path)
+                {
+                    continue;
+                }
+            }
+            if duty.return_span.is_none() {
                 duty.return_span = Some(value.span);
             }
         }

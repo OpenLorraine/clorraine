@@ -589,6 +589,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Checks and walks an expression, returning its type.
     pub(super) fn eval(&mut self, expr: &'a Expr) -> Ty {
+        self.note_opaque_use(expr, expr.span);
         let ty = self.ty(expr);
         match &expr.kind {
             ExprKind::Int(_)
@@ -1306,7 +1307,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.view_array_literal_depth -= 1;
                 }
                 self.literal_views = saved_literal_views;
-                self.record_opaque_store(id, &projections, value, &target_ty, target.span);
+                let deferred_owned_move =
+                    self.record_opaque_store(id, &projections, value, &target_ty, target.span);
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
@@ -1317,7 +1319,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A view-typed target stores a view, which moves nothing: the
                 // backing stays where it is and the container loans it, so a
                 // conditional or place source is not consumed.
-                if !projections.is_empty() && !is_view_like(&target_ty) {
+                if !projections.is_empty() && !is_view_like(&target_ty) && !deferred_owned_move {
                     if self.place_target(value).is_some() {
                         self.consume_owned_place(value, value.span);
                     } else {
@@ -1748,6 +1750,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// frame-dying backing; the per-instance audit applies the instance's
     /// conversion and reports the escape when the root is returned. A concrete
     /// destination keeps the ordinary store path.
+    ///
+    /// An owned source is not moved here: the instance decides whether the
+    /// destination owns it (a move) or holds a widened view (a copy). The
+    /// recorded source lets the audit report the concrete moved-value or
+    /// lend-move error when the destination owns, and lets the body judge a
+    /// later read or write of the source. Returns true when the caller must
+    /// skip the declaration's move.
     fn record_opaque_store(
         &mut self,
         id: usize,
@@ -1755,64 +1764,177 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         value: &Expr,
         target_ty: &Ty,
         span: Span,
-    ) {
+    ) -> bool {
+        if self.speculative_lowering {
+            return false;
+        }
         if projections.is_empty()
             || !(target_ty.is_unknown() || crate::types::contains_param(target_ty))
         {
-            return;
+            return false;
         }
-        let root_ty = self.bindings[id].ty.clone();
-        if !(root_ty.is_unknown() || crate::types::contains_param(&root_ty)) {
-            return;
+        let declared_root = self.bindings[id].ty.clone();
+        if !(declared_root.is_unknown() || crate::types::contains_param(&declared_root)) {
+            return false;
         }
         let value_ty = self.ty(value);
-        let view_source = is_view_like(&value_ty)
-            || matches!(&value_ty.kind, TyKind::Handle(name) if name == "String");
-        if !view_source {
-            return;
+        let view_source = is_view_like(&value_ty);
+        let owned_source = matches!(&value_ty.kind, TyKind::Handle(name) if name == "String");
+        if !view_source && !owned_source {
+            return false;
         }
-        // An owned source read from a non-take parameter is rejected by the
-        // concrete move rule at the declaration (`E10034`); recording the
-        // store too would add a dependent conversion report. A view source
-        // moves nothing and keeps its duty.
-        if !is_view_like(&value_ty) {
-            if let Some(PlaceTarget::Local(source, _)) = self.place_target(value) {
-                let source = self.alias_resolved_root(source);
-                let binding = &self.bindings[source];
-                if binding.kind == BindingKind::Param && binding.mode != Mode::Take {
-                    return;
+        // An owned source is judged only when it is a place: a call result or
+        // a literal has no later use to report and keeps its existing store
+        // path.
+        let source_place = if owned_source {
+            match self.place_target(value) {
+                Some(PlaceTarget::Local(source, source_path)) => {
+                    let source = self.alias_resolved_root(source);
+                    Some((source, source_path))
                 }
+                _ => None,
             }
+        } else {
+            None
+        };
+        if owned_source && source_place.is_none() {
+            return false;
         }
-        let root = self.bindings[id].ir_name.clone();
+        // A `for (borrow e in xs)` alias has no storage of its own: the store
+        // reaches the container element, so the duty roots at the container
+        // with the alias's own path followed by the written path.
+        let (root_id, mut path) = match &self.bindings[id].alias_root {
+            Some(PlaceTarget::Local(root, root_path)) => (*root, root_path.clone()),
+            _ => (id, Vec::new()),
+        };
+        path.extend_from_slice(projections);
+        let root = self.bindings[root_id].ir_name.clone();
         if !self
             .recorded_opaque_stores
             .insert((root.clone(), span.start, span.end))
         {
-            return;
+            return false;
         }
-        let frame_owner = Self::storage_atoms(&self.view_provenance(value))
+        // A store at or above an earlier path replaces whatever view that path
+        // held, so the earlier duty no longer describes the carrier.
+        self.opaque_store_requirements.retain(|duty| {
+            !(duty.function == self.decl.name
+                && duty.root == root
+                && projection_path_covers(&path, &duty.path))
+        });
+        let frame_atom = Self::storage_atoms(&self.view_provenance(value))
             .into_iter()
-            .find(|atom| !self.provenance_fits_destination(atom, false))
-            .map(|atom| match atom {
-                Provenance::Local(owner) | Provenance::Param(owner) => {
-                    super::liveness::owner_subject(
-                        &self.bindings[owner].name,
+            .find(|atom| !self.provenance_fits_destination(atom, false));
+        let (frame_owner, owner, owner_name) = match frame_atom {
+            Some(Provenance::Local(owner) | Provenance::Param(owner)) => {
+                let name = self.bindings[owner].name.clone();
+                (
+                    Some(super::liveness::owner_subject(
+                        &name,
                         self.bindings[owner].generated,
-                    )
-                }
-                _ => "a statement temporary".to_owned(),
-            });
+                    )),
+                    Some(owner),
+                    Some(name),
+                )
+            }
+            Some(_) => (Some("a statement temporary".to_owned()), None, None),
+            None => (None, None, None),
+        };
+        let (source, source_path, source_param) = match source_place {
+            Some((source, source_path)) => {
+                let binding = &self.bindings[source];
+                let parameter =
+                    binding.kind == BindingKind::Param && binding.mode != Mode::Take;
+                (Some(source), source_path, parameter)
+            }
+            None => (None, Vec::new(), false),
+        };
+        let source_name = source.map(|id| self.bindings[id].name.clone());
         self.opaque_store_requirements.push(ir::RequiresOpaqueStore {
             function: self.decl.name.clone(),
-            ty: root_ty,
-            path: projections.to_vec(),
+            ty: declared_root,
+            path,
             value: value_ty,
             frame_owner,
+            owner,
+            owner_name,
+            source,
+            source_name,
+            source_path,
+            source_param,
+            later_uses: Vec::new(),
+            late_uses: Vec::new(),
+            invalidations: Vec::new(),
             store_span: span,
             return_span: None,
             root,
         });
+        owned_source
+    }
+
+    /// Records a read that reaches an opaque store's destination or source.
+    ///
+    /// A read of the carrier after the backing's scope closes hands the caller
+    /// a dangling view, and a read of an owned source after a store that may
+    /// have moved it is the concrete moved-value error at an owning instance.
+    /// The per-instance audit decides which kind the destination actually is.
+    fn note_opaque_use(&mut self, expr: &'a Expr, span: Span) {
+        if self.speculative_lowering || self.opaque_store_requirements.is_empty() {
+            return;
+        }
+        let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) else {
+            return;
+        };
+        let id = self.alias_resolved_root(id);
+        let root = self.bindings[id].ir_name.clone();
+        for duty in &mut self.opaque_store_requirements {
+            if duty.function != self.decl.name {
+                continue;
+            }
+            if duty.root == root {
+                if let Some(owner) = duty.owner {
+                    if self.bindings[owner].scope_end.end <= span.start {
+                        push_opaque_span(&mut duty.late_uses, span);
+                    }
+                }
+            }
+            if duty.source == Some(id)
+                && projection_paths_overlap(&duty.source_path, &projections)
+            {
+                push_opaque_span(&mut duty.later_uses, span);
+            }
+        }
+    }
+
+    /// Records a write or move that reaches an opaque store's backing.
+    ///
+    /// Writing the backing after a view was stored into the carrier frees or
+    /// replaces the storage the view reads. At a view instance the write is
+    /// the concrete shared-loan conflict; at an owning instance the same write
+    /// is a use after the move the store performed.
+    pub(super) fn note_opaque_owner_write(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        span: Span,
+    ) {
+        if self.speculative_lowering || self.opaque_store_requirements.is_empty() {
+            return;
+        }
+        let id = self.alias_resolved_root(id);
+        for duty in &mut self.opaque_store_requirements {
+            if duty.function != self.decl.name {
+                continue;
+            }
+            if duty.owner == Some(id) {
+                push_opaque_span(&mut duty.invalidations, span);
+            }
+            if duty.source == Some(id)
+                && projection_paths_overlap(&duty.source_path, projections)
+            {
+                push_opaque_span(&mut duty.later_uses, span);
+            }
+        }
     }
 
     /// Reports a view store that escapes the frame its destination keeps.
@@ -3326,3 +3448,34 @@ fn raw_deref_store_target(target: &Expr) -> Option<(&Expr, Vec<RawStoreProjectio
     Some((deref, projections))
 }
 
+
+/// Appends one span to an opaque-store watch list, once.
+fn push_opaque_span(list: &mut Vec<Span>, span: Span) {
+    if !list.iter().any(|known| known.start == span.start && known.end == span.end) {
+        list.push(span);
+    }
+}
+
+/// True when one projection path covers another.
+///
+/// A store at a path replaces every position below it, so a prefix covers the
+/// longer path. A run-time element step covers any element step.
+fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) -> bool {
+    prefix.len() <= path.len()
+        && prefix
+            .iter()
+            .zip(path)
+            .all(|(left, right)| projection_step_covers(left, right))
+}
+
+/// True when two projection paths select an overlapping position.
+pub(super) fn projection_paths_overlap(left: &[ir::Projection], right: &[ir::Projection]) -> bool {
+    projection_path_covers(left, right) || projection_path_covers(right, left)
+}
+
+/// True when one projection step reaches every position the other names.
+fn projection_step_covers(left: &ir::Projection, right: &ir::Projection) -> bool {
+    left == right
+        || (matches!(left, ir::Projection::Element(_))
+            && matches!(right, ir::Projection::Element(_)))
+}

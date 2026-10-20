@@ -150,6 +150,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// that field and clears its portion of the narrowing facts; writing a
     /// field of a wholly moved value is a use after move.
     pub(super) fn write_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        self.note_opaque_owner_write(id, projections, span);
         self.bindings[id].used = true;
         let binding = &self.bindings[id];
         if binding.is_const {
@@ -430,6 +431,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Moves out of a place, applying partial-move and loan rules.
     pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        self.note_opaque_owner_write(id, projections, span);
         self.bindings[id].used = true;
         let binding = &self.bindings[id];
         // A borrow element view never owns its element, so an ownership
@@ -1150,7 +1152,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the container exactly as the element-loan records do. A chain that
     /// roots at anything else — a call result, a literal, or module storage —
     /// names no binding here.
-    fn expr_view_roots(&self, expr: &Expr, roots: &mut BTreeSet<usize>) {
+    pub(super) fn expr_view_roots(&self, expr: &Expr, roots: &mut BTreeSet<usize>) {
         match &expr.kind {
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {

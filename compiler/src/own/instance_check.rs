@@ -405,6 +405,8 @@ fn check_opaque_store_requirements(
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
+    let mut reported_conversion = BTreeSet::new();
+    let mut reported_escape = BTreeSet::new();
     for requirement in mono.opaque_store_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -443,37 +445,110 @@ fn check_opaque_store_requirements(
                 continue;
             }
             if !crate::types::implicit_conversion(&value, &destination) {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "E10200",
-                        format!(
-                            "cannot convert '{}' to '{}' implicitly",
-                            value.display(),
-                            destination.display()
-                        ),
-                        requirement.store_span,
-                    )
-                    .with_help("use an explicit cast `T(expr)`"),
+                let site = (
+                    requirement.function.clone(),
+                    requirement.store_span.start,
+                    requirement.store_span.end,
                 );
+                if reported_conversion.insert(site) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10200",
+                            format!(
+                                "cannot convert '{}' to '{}' implicitly",
+                                value.display(),
+                                destination.display()
+                            ),
+                            requirement.store_span,
+                        )
+                        .with_help("use an explicit cast `T(expr)`"),
+                    );
+                }
                 break;
             }
             if is_view_like(&destination) {
-                if let (Some(subject), Some(span)) =
-                    (&requirement.frame_owner, requirement.return_span)
-                {
+                let subject = requirement.frame_owner.as_deref();
+                if let (Some(subject), Some(span)) = (subject, requirement.return_span) {
+                    let site = (
+                        requirement.function.clone(),
+                        span.start,
+                        span.end,
+                    );
+                    if reported_escape.insert(site) {
+                        diagnostics.push(opaque_escape(subject, span));
+                    }
+                    break;
+                }
+                if let (Some(subject), Some(span)) = (subject, requirement.late_uses.first()) {
+                    diagnostics.push(opaque_escape(subject, *span));
+                    break;
+                }
+                if let Some(span) = requirement.invalidations.first() {
+                    let name = requirement
+                        .owner_name
+                        .as_deref()
+                        .unwrap_or("the owner");
                     diagnostics.push(
                         Diagnostic::error(
-                            "E10030",
-                            format!("borrow of {subject} does not live long enough"),
-                            span,
+                            "E10031",
+                            format!("cannot modify '{name}' while it is shared-borrowed"),
+                            *span,
                         )
-                        .with_help("finish the use before the owner's scope ends"),
+                        .with_help("end the shared borrow first"),
                     );
                     break;
                 }
+                continue;
+            }
+            // An owning destination keeps the concrete move judgment: a
+            // non-take parameter cannot be moved, and a later read of a moved
+            // local is the moved-value error.
+            if requirement.source_param {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10034",
+                        format!(
+                            "cannot release or store borrowed parameter '{}'",
+                            requirement
+                                .source_name
+                                .as_deref()
+                                .unwrap_or("the source")
+                        ),
+                        requirement.store_span,
+                    )
+                    .with_help(
+                        "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                    ),
+                );
+                break;
+            }
+            if let Some(span) = requirement.later_uses.first() {
+                let name = requirement
+                    .source_name
+                    .as_deref()
+                    .unwrap_or("the source");
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10020",
+                        format!("'{name}' was moved and cannot be used"),
+                        *span,
+                    )
+                    .with_help("re-initialize the binding or use a view"),
+                );
+                break;
             }
         }
     }
+}
+
+/// The escape report for one stored view whose backing dies with the frame.
+fn opaque_escape(subject: &str, span: Span) -> Diagnostic {
+    Diagnostic::error(
+        "E10030",
+        format!("borrow of {subject} does not live long enough"),
+        span,
+    )
+    .with_help("finish the use before the owner's scope ends")
 }
 
 /// Reports the duplicability duty when an instance substitutes an owning type.
