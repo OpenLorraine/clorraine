@@ -1446,3 +1446,50 @@ func main(): i32 {
     );
     assert!(!c_path.exists());
 }
+
+/// A generic dot call reports the direct call's inference and bound codes.
+///
+/// An uninferable parameter is `E10301` once, and a concrete argument that
+/// violates a callable bound is `E10303` once. Neither writes a translation
+/// unit.
+#[test]
+fn should_report_a_generic_dot_calls_inference_and_bound() {
+    let unbound = r#"module spec.bgi.impl.dotunbound;
+
+func fail<T>(x: i32): T { return 0; }
+
+func main(): i32 {
+    let n: i32 = 1.fail();
+    return n;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("dotunbound", unbound);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10301:"),
+        1,
+        "dotunbound: expected one inference report; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
+
+    let bound = r#"module spec.bgi.impl.dotbound;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    return 1.apply(5) - 5;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("dotbound", bound);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10303:"),
+        1,
+        "dotbound: expected one bound report; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
+}

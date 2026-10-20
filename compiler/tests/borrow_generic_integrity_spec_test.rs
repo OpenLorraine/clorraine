@@ -2755,7 +2755,7 @@ func apply<T, F: func(T): T>(x: T, f: F): T {
 }
 
 func main(): i32 {
-    return 5.apply<i32, func(i32): i32>(addOne) - 6;
+    return 5.apply(addOne) - 6;
 }
 "#;
     let output = run_memory("dotboundok", accepted);

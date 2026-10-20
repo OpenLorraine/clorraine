@@ -811,6 +811,28 @@ impl Checker<'_, '_> {
             }
         }
         let unbound = Self::unbound_params(&declared, &bindings);
+        // The direct call judges the instance it inferred: a parameter that
+        // no receiver or argument fixes is `E10301`, and a recursive
+        // instantiation is `E10305`. A dot call reaches the same routes.
+        if unbound.is_empty() {
+            if self.is_recursive_instantiation(name, &declared, &bindings) {
+                self.error(
+                    "E10305",
+                    format!("instantiation of '{name}' is recursive beyond the limit"),
+                    "break the generic recursion",
+                    span,
+                );
+            }
+        } else {
+            self.error(
+                "E10301",
+                format!("cannot infer type arguments for '{name}'"),
+                "write the type arguments explicitly",
+                span,
+            );
+        }
+        self.check_callable_bounds(&signature.type_params, &bindings, span);
+        self.check_ephemeral_bindings(name, &signature.type_params, &bindings, span);
         self.check_dot_receiver_call(
             receiver_expr,
             receiver,
