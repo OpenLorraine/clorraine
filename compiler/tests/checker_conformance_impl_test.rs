@@ -6752,3 +6752,31 @@ func main(): i32 {
         "qualcurrentpin: the current module's qualified spelling must emit the unqualified control byte for byte"
     );
 }
+
+/// A self-qualified generic fixed-array call names the concrete loop element.
+///
+/// The call's written type argument fixes the instance, so the iterable is
+/// `i32[2]` and the loop binding is `i32`; no placeholder spelling reaches the
+/// emitted C.
+#[test]
+fn should_emit_the_concrete_element_of_a_qualified_generic_iterable() {
+    let source = r#"module spec.cc.impl.qgenericloop;
+
+func id<T>(x: T): T { return x; }
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let s: i32 = 0;
+    for (v in spec.cc.impl.qgenericloop.id<i32[2]>(a)) {
+        s = s + v;
+    }
+    return s - 41;
+}
+"#;
+    let emitted = emit_host("qgenericloop", source);
+    assert_contains("qgenericloop", &emitted, "i32 v = 0;");
+    assert!(
+        !emitted.contains("#element"),
+        "qgenericloop: the element type kept its placeholder"
+    );
+}

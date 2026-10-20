@@ -43,6 +43,26 @@ impl Checker<'_, '_> {
             return self.check_dot_call(Some(base), base_ty, name, type_args, args, callee.span);
         }
         if let ExprKind::Qualified(name) = &callee.kind {
+            // A module path that names a function reaches that declaration
+            // directly. A lexical binding of the head still shadows the path.
+            // Routing through the direct/generic checker fixes the written type
+            // arguments, arity, conversions, and the substituted return type.
+            if name.segments.len() >= 2 && !self.is_local(&name.segments[0]) {
+                let last = name.segments.last().cloned().unwrap_or_default();
+                let module = name.segments[..name.segments.len() - 1].join(".");
+                if let Some(signature) = self.table.function(&module, &last) {
+                    if signature.type_params.is_empty() {
+                        self.check_args_direct(
+                            args,
+                            &signature.params,
+                            &signature.modes,
+                            Some((&last, span)),
+                        );
+                        return signature.returns.clone();
+                    }
+                    return self.check_generic_call(&last, &signature, type_args, args, span);
+                }
+            }
             // A dotted callee whose head is a value in scope is a dot-call,
             // exactly like the `Member` shape the parser builds elsewhere.
             if name.segments.len() >= 2 && self.name_is_value(&name.segments[0]) {

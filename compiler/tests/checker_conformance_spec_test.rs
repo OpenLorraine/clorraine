@@ -10162,8 +10162,7 @@ func main(): i32 {
 func id<T>(x: T): T { return x; }
 
 func main(): i32 {
-    let x: str = spec.cc.qgenericmismatch.id<i32>("x");
-    return i32(x[0]) - 120;
+    return spec.cc.qgenericmismatch.id<i32>("x");
 }
 "#;
     assert_rejected_once(
