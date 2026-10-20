@@ -372,13 +372,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .value
             .as_ref()
             .and_then(|value| self.place_target(value));
-        let conditional_copy = decl
+        let carrier_copy = decl
             .value
             .as_ref()
             .filter(|value| {
                 !is_view_like(&target)
                     && self.may_carry_view(&target)
-                    && matches!(value.kind, ExprKind::Conditional { .. })
+                    && self.place_target(value).is_none()
+                    && (self.collects_copy_positions(value)
+                        || FunctionChecker::mentions_call(value))
             })
             .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
@@ -414,7 +416,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // selects (`let s: str = xs[0];` included), while a conditional,
             // an array literal, or a run-time read supplies its positions arm
             // by arm and is written as one union.
-            let conditional_copy_recorded = if let Some(copied) = conditional_copy {
+            let carrier_copy_recorded = if let Some(copied) = carrier_copy {
                 self.apply_copy_element_loans(id, &[], copied, decl.span);
                 true
             } else {
@@ -475,7 +477,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => false,
                 };
-                let copied = conditional_copy_recorded || copied_from_source;
+                let copied = carrier_copy_recorded || copied_from_source;
                 if !copied && is_view_like(&target) && self.collects_copy_positions(value) {
                     self.record_copy_element_loans(
                         id,
@@ -825,9 +827,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A conditional carrier's arms are collected before the binding is
         // declared, exactly as in `check_let`, so a shadowing initializer
         // names the outer binding each arm reads.
-        let conditional_copy = if !is_view_like(&target)
+        let carrier_copy = if !is_view_like(&target)
             && self.may_carry_view(&target)
-            && matches!(decl.value.kind, ExprKind::Conditional { .. })
+            && self.place_target(&decl.value).is_none()
+            && (self.collects_copy_positions(&decl.value)
+                || FunctionChecker::mentions_call(&decl.value))
         {
             Some(self.snapshot_copy_element_loans(&decl.value, lowered, &target, &[]))
         } else {
@@ -864,7 +868,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A place read with constant projections transfers the positions it
         // selects; a conditional, an array literal, or a run-time read
         // supplies its positions arm by arm and is written as one union.
-        let conditional_copy_recorded = if let Some(copied) = conditional_copy {
+        let carrier_copy_recorded = if let Some(copied) = carrier_copy {
             self.apply_copy_element_loans(id, &[], copied, decl.span);
             true
         } else {
@@ -879,7 +883,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => false,
         };
-        if !conditional_copy_recorded
+        if !carrier_copy_recorded
             && !copied
             && is_view_like(&target)
             && self.collects_copy_positions(&decl.value)
@@ -892,7 +896,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 &target,
                 decl.span,
             );
-        } else if !conditional_copy_recorded
+        } else if !carrier_copy_recorded
             && !copied
             && !is_view_like(&target)
             && self.may_carry_view(&target)

@@ -1969,6 +1969,90 @@ func main(): i32 {
         &["cannot modify 'b' while it is shared-borrowed"],
     );
 
+    let self_assign = r#"module spec.bsi.condselfassign;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    h = c ? h : h;
+    b.v = stringOf("zz");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true) - 97;
+}
+"#;
+    assert_rejected_once(
+        "condselfassign",
+        self_assign,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let call_shadow = r#"module spec.bsi.callshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeHolder(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        let h: Holder = makeHolder(h.names[0]);
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected_once(
+        "callshadow",
+        call_shadow,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let literal_shadow = r#"module spec.bsi.literalshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        let h: Holder = Holder { names: [h.names[0], "EE"] };
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected_once(
+        "literalshadow",
+        literal_shadow,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
     let control = r#"module spec.bsi.condshadowcopyok;
 
 struct Holder { names: str[2]; }

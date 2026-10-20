@@ -1473,6 +1473,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 } else if !moved && !is_view_like(&target_ty) {
+                    // A composite copy must be collected before the target's
+                    // record is cleared: the source may be the target itself
+                    // (`h = c ? h : h`), and clearing first would lose its
+                    // loans. The collected union is applied after the clear.
+                    let copy_loans = if self.may_carry_view(&target_ty)
+                        && (self.collects_copy_positions(value)
+                            || FunctionChecker::mentions_call(value))
+                    {
+                        Some(self.snapshot_copy_element_loans(
+                            value,
+                            lowered.as_ref(),
+                            &target_ty,
+                            &projections,
+                        ))
+                    } else {
+                        None
+                    };
                     self.replace_element_loans(id, &projections, BTreeSet::new());
                     let positions = self.literal_view_loan_positions(value);
                     if !positions.is_empty() {
@@ -1483,27 +1500,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             target.span,
                         );
                     }
-                    // A conditional copy of a carrier supplies its view
-                    // positions arm by arm; the composite collector records
-                    // the union, exactly as the let path does.
-                    if !is_view_like(&target_ty)
-                        && self.may_carry_view(&target_ty)
-                        && matches!(
-                            value.kind,
-                            ExprKind::Conditional { .. }
-                                | ExprKind::StructLiteral { .. }
-                                | ExprKind::ArrayLiteral { .. }
-                                | ExprKind::Call { .. }
-                        )
-                        && (self.collects_copy_positions(value)
-                            || matches!(value.kind, ExprKind::Call { .. }))
-                    {
-                        self.record_copy_element_loans(
+                    if let Some(copied) = copy_loans {
+                        self.apply_copy_element_loans(
                             id,
                             &projections,
-                            value,
-                            lowered.as_ref(),
-                            &target_ty,
+                            copied,
                             target.span,
                         );
                     }
