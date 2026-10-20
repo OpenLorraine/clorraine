@@ -1083,3 +1083,111 @@ func main(): i32 {
     let output = run_memory("viewlengthfiled", filed);
     assert_no_asan("viewlengthfiled", &output);
 }
+
+/// A folded `len` operand still evaluates a non-call effectful shape.
+///
+/// The extent is structural, but a conditional runs only the selected arm, an
+/// array literal runs each element expression once, and a run-time index runs
+/// its index expression once. At the phase base each shape folded to the
+/// constant and dropped its effects.
+#[test]
+fn should_evaluate_a_non_call_folded_len_operand() {
+    let conditional_false = r#"module spec.avi.lencondfalse;
+
+let hits: i32 = 0;
+let which: i32 = 0;
+
+func mkA(): i32[2] {
+    hits = hits + 1;
+    which = 1;
+    return [20, 21];
+}
+
+func mkB(): i32[2] {
+    hits = hits + 1;
+    which = 2;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = false;
+    let n: usize = std.mem.len(run ? mkA() : mkB());
+    return i32(n) - 2 + hits - 1 + which - 2;
+}
+"#;
+    let output = run_memory("lencondfalse", conditional_false);
+    assert_no_asan("lencondfalse", &output);
+    assert_exit("lencondfalse", &output, 0);
+
+    let conditional_true = r#"module spec.avi.lencondtrue;
+
+let hits: i32 = 0;
+let which: i32 = 0;
+
+func mkA(): i32[2] {
+    hits = hits + 1;
+    which = 1;
+    return [20, 21];
+}
+
+func mkB(): i32[2] {
+    hits = hits + 1;
+    which = 2;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = true;
+    let n: usize = std.mem.len(run ? mkA() : mkB());
+    return i32(n) - 2 + hits - 1 + which - 1;
+}
+"#;
+    let output = run_memory("lencondtrue", conditional_true);
+    assert_no_asan("lencondtrue", &output);
+    assert_exit("lencondtrue", &output, 0);
+
+    let literal = r#"module spec.avi.lenliteral;
+
+let hits: i32 = 0;
+let which: i32 = 0;
+
+func mkA(): i32[2] {
+    hits = hits + 1;
+    which = 1;
+    return [20, 21];
+}
+
+func mkB(): i32[2] {
+    hits = hits + 1;
+    which = 2;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let n: usize = std.mem.len([mkA(), mkB()]);
+    return i32(n) - 2 + hits - 2 + which - 2;
+}
+"#;
+    let output = run_memory("lenliteral", literal);
+    assert_no_asan("lenliteral", &output);
+    assert_exit("lenliteral", &output, 0);
+
+    let index = r#"module spec.avi.lenindex;
+
+let hits: i32 = 0;
+
+func bump(): i32 {
+    hits = hits + 1;
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = std.mem.len(a[bump()]);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenindex", index);
+    assert_no_asan("lenindex", &output);
+    assert_exit("lenindex", &output, 0);
+}
