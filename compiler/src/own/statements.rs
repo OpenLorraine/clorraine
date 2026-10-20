@@ -488,15 +488,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else if !copied
                     && !is_view_like(&target)
                     && self.may_carry_view(&target)
-                    && matches!(
-                        value.kind,
-                        ExprKind::Conditional { .. }
-                            | ExprKind::StructLiteral { .. }
-                            | ExprKind::ArrayLiteral { .. }
-                            | ExprKind::Call { .. }
-                    )
                     && (self.collects_copy_positions(value)
-                        || matches!(value.kind, ExprKind::Call { .. }))
+                        || FunctionChecker::mentions_call(value))
                 {
                     // A conditional copy of a carrier hands each arm's view
                     // positions to the destination. The destination is a
@@ -829,6 +822,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let lowered = prepared.lowered();
         let effect = self.prepare_binding_effect(&target, &decl.value, lowered);
         self.check_value_into(&decl.value, &target, decl.span);
+        // A conditional carrier's arms are collected before the binding is
+        // declared, exactly as in `check_let`, so a shadowing initializer
+        // names the outer binding each arm reads.
+        let conditional_copy = if !is_view_like(&target)
+            && self.may_carry_view(&target)
+            && matches!(decl.value.kind, ExprKind::Conditional { .. })
+        {
+            Some(self.snapshot_copy_element_loans(&decl.value, lowered, &target, &[]))
+        } else {
+            None
+        };
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
@@ -857,6 +861,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A place read with constant projections transfers the positions it
         // selects; a conditional, an array literal, or a run-time read
         // supplies its positions arm by arm and is written as one union.
+        let conditional_copy_recorded = if let Some(copied) = conditional_copy {
+            self.apply_copy_element_loans(id, &[], copied, decl.span);
+            true
+        } else {
+            false
+        };
         let copied = match self.place_target(&decl.value) {
             Some(PlaceTarget::Local(source, projections))
                 if super::place::constant_path(&projections) =>
@@ -866,7 +876,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => false,
         };
-        if !copied && is_view_like(&target) && self.collects_copy_positions(&decl.value) {
+        if !conditional_copy_recorded
+            && !copied
+            && is_view_like(&target)
+            && self.collects_copy_positions(&decl.value)
+        {
             self.record_copy_element_loans(
                 id,
                 &[],
@@ -875,18 +889,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 &target,
                 decl.span,
             );
-        } else if !copied
+        } else if !conditional_copy_recorded
+            && !copied
             && !is_view_like(&target)
             && self.may_carry_view(&target)
-            && matches!(
-                decl.value.kind,
-                ExprKind::Conditional { .. }
-                    | ExprKind::StructLiteral { .. }
-                    | ExprKind::ArrayLiteral { .. }
-                    | ExprKind::Call { .. }
-            )
             && (self.collects_copy_positions(&decl.value)
-                || matches!(decl.value.kind, ExprKind::Call { .. }))
+                || FunctionChecker::mentions_call(&decl.value))
         {
             // A `const` carrier copy records the same positions a `let` copy
             // does: the destination's views read the arms' backings, so a
@@ -1544,6 +1552,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     for source in self.type_param_conditional_sources(value) {
                         self.mark_moved_if_owning(source, span);
                     }
+                    // A projection over a nested conditional of
+                    // type-parameter places names each inner lend arm, so both
+                    // selected members record their own duty.
+                    for source in self.maybe_owning_projection_move_sources(value) {
+                        self.mark_moved_if_owning(source, span);
+                    }
                 }
             }
         }
@@ -1768,6 +1782,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .into_iter()
                             .map(LoanOwner::Binding),
                     );
+                    // A carrier-returning call hands back a view of its single
+                    // lend source; when that source is this frame's storage,
+                    // the return escapes even though no binding has recorded a
+                    // loan for the call's result yet.
+                    if let Some(Some(owner)) = self.frame_owned_view_owner(value) {
+                        owners.insert(LoanOwner::Binding(owner));
+                    }
                 }
                 owners
                     .into_iter()

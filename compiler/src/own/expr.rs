@@ -762,6 +762,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             self.move_target(source, field.value.span);
                         }
                     }
+                    // A conditional field whose arm is rooted at a type
+                    // parameter owns only at some instances, so the field
+                    // records the per-instance duty the audit resolves.
+                    for source in self.type_param_conditional_sources(&field.value) {
+                        self.mark_moved_if_owning(source, field.value.span);
+                    }
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => {
@@ -1320,6 +1326,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             } else {
                                 self.move_target(source, value.span);
                             }
+                        }
+                        // A conditional arm rooted at a type parameter is a
+                        // move only at some instances; the projected store
+                        // records the per-instance duty for the audit.
+                        for source in self.type_param_conditional_sources(value) {
+                            self.mark_moved_if_owning(source, value.span);
                         }
                     }
                 }
@@ -2048,6 +2060,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.carrier_copy_escapes(value)
             }
+            // A place-shaped arm may project the carrier through a member or
+            // an element (`hs[0]`, `s.holder`); the projected place reaches
+            // the same binding loans the whole name does.
             ExprKind::Name(_) | ExprKind::Qualified(_) => {
                 match self.place_target(value) {
                     Some(PlaceTarget::Local(id, _)) => {
@@ -2056,12 +2071,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => false,
                 }
             }
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.carrier_copy_escapes(base)
+            }
             // A literal's own field judgment already reports a frame-backed
             // view at the field site; adding the destination's report would
             // repeat one store's rejection. Only a place arm, a call arm, or a
             // nested conditional contributes the destination report.
             ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. } => false,
-            ExprKind::Call { .. } => {
+            ExprKind::Call { callee, args, .. } => {
+                if let Some(source) = self.call_carrier_source(callee, args) {
+                    // A global outlives every caller, so a caller-backed
+                    // parameter escapes it exactly as this frame's local does;
+                    // only static and module storage survive.
+                    return match source {
+                        super::place::ViewCallSource::Expr(source) => !matches!(
+                            self.view_provenance(source),
+                            Provenance::Static | Provenance::Global(_)
+                        ),
+                        super::place::ViewCallSource::Receiver(provenance) => !matches!(
+                            provenance,
+                            Provenance::Static | Provenance::Global(_)
+                        ),
+                    };
+                }
                 self.frame_owned_view_owner(value).is_some()
                     || self.names_fresh_view_storage(value, &self.ty(value))
             }

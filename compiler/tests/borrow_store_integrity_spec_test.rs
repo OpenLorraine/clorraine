@@ -1525,6 +1525,61 @@ func main(): i32 {
         &["cannot modify 'b' while it is shared-borrowed"],
     );
 
+    let wrapped = r#"module spec.bsi.constcondwrap;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [b.v, "EE"] };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    const h2: Holder = unsafe (c ? h1 : h3);
+    b.v = stringOf("zz");
+    return i32(h2.names[0][0]);
+}
+
+func main(): i32 {
+    return use(true);
+}
+"#;
+    assert_rejected_once(
+        "constcondwrap",
+        wrapped,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let shadow = r#"module spec.bsi.constcondshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [b.v, "EE"] };
+    {
+        const h: Holder = true ? h : h;
+        b.v = stringOf("zz");
+        return i32(h.names[0][0]);
+    }
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    assert_rejected_once(
+        "constcondshadow",
+        shadow,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
     let control = r#"module spec.bsi.constcondok;
 
 struct Holder { names: str[2]; }
@@ -1574,6 +1629,29 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("globalcond", source, "E10033", &["escapes its scope"]);
+
+    let indexed = r#"module spec.bsi.globalcondindex;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func set(c: bool): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let hs: Holder[1] = [Holder { names: [b.v, "EE"] }];
+    let h3: Holder = Holder { names: ["FF", "GG"] };
+    g = c ? hs[0] : h3;
+}
+
+func main(): i32 {
+    set(true);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once("globalcondindex", indexed, "E10033", &["escapes its scope"]);
 
     let control = r#"module spec.bsi.globalcondok;
 
@@ -1629,6 +1707,78 @@ func main(): i32 {
         "E10031",
         &["cannot modify 'b' while it is shared-borrowed"],
     );
+
+    let generic_source = r#"module spec.bsi.callcarriergeneric;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: str, b: T): str { return a; }
+
+func use(n: i32): i32 {
+    let s: String = stringOf("aa");
+    let v: str = pick<i32>(s, n);
+    s = stringOf("zz");
+    return i32(v[0]) - 97;
+}
+
+func main(): i32 {
+    return use(1);
+}
+"#;
+    assert_rejected_once(
+        "callcarriergeneric",
+        generic_source,
+        "E10031",
+        &["cannot modify 's' while it is shared-borrowed"],
+    );
+
+    let aggregate_source = r#"module spec.bsi.callcarrieraggregate;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeHBox(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+
+func use(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = makeHBox(b);
+    b.v = stringOf("zz");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return use() - 97;
+}
+"#;
+    assert_rejected_once(
+        "callcarrieraggregate",
+        aggregate_source,
+        "E10031",
+        &["cannot modify 'b' while it is shared-borrowed"],
+    );
+
+    let duplicate_control = r#"module spec.bsi.callcarrierdup;
+
+struct Holder { names: str[2]; }
+
+func make<T>(a: T): Holder { return Holder { names: ["AA", "EE"] }; }
+
+func use(): i32 {
+    let x: i32 = 1;
+    let h: Holder = make<i32>(x);
+    x = 2;
+    return i32(h.names[0][0]) - 65 + x - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("callcarrierdup", duplicate_control);
+    assert_no_asan("callcarrierdup", &output);
+    assert_exit("callcarrierdup", &output, 0);
 
     let control = r#"module spec.bsi.callcarriercopyok;
 

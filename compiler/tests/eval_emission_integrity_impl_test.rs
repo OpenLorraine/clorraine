@@ -2475,6 +2475,67 @@ func main(): i32 {
         "pinline: expected one E10030; stderr:\n{stderr}"
     );
 
+    let func_local = r#"module impl.eei.pfunclocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+func first(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let f: func(str[2], i32): str = first;
+    fill(f(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pfunclocal", func_local);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pfunclocal: expected one E10030; stderr:\n{stderr}"
+    );
+
+    let generic = r#"module impl.eei.pgeneric;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick<T>(xs: T[2], i: i32): T { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pick<str>(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("pgeneric", generic);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "pgeneric: expected one E10030; stderr:\n{stderr}"
+    );
+
     let accepted = r#"module impl.eei.preturnok;
 
 func pick(xs: str[2], i: i32): str { return xs[i]; }

@@ -231,11 +231,20 @@ fn check_not_lend_requirements(
             let mut selected = substituted.clone();
             for projection in &requirement.projections {
                 selected = match projection {
-                    crate::ir::Projection::Field(name) => crate::types::project_place_path(
-                        &selected,
-                        &[crate::types::PlacePathStep::Field(name.clone())],
-                        &sema.table,
-                    ),
+                    crate::ir::Projection::Field(name) => {
+                        // A raw pointer reaches its pointee before the member
+                        // is selected, exactly as the element step does; the
+                        // duplicable root is not the judged type.
+                        let mut base = selected.clone();
+                        while let crate::types::TyKind::Raw(inner) = &base.kind {
+                            base = (**inner).clone();
+                        }
+                        crate::types::project_place_path(
+                            &base,
+                            &[crate::types::PlacePathStep::Field(name.clone())],
+                            &sema.table,
+                        )
+                    }
                     crate::ir::Projection::Element(_)
                     | crate::ir::Projection::ElementTemp(_) => match &selected.kind {
                         crate::types::TyKind::Raw(inner) => (**inner).clone(),

@@ -702,3 +702,125 @@ func main(): i32 {
     let emitted = emit_host("generic-duplicable", duplicable);
     assert_contains("generic-duplicable", &emitted, "cl_pick__P");
 }
+
+/// The batch-P instance duties report once per selected lend arm.
+///
+/// The generic take, raw field, struct-literal field, and projected assignment
+/// report one `E10034`; the nested projection reports two (one per inner lend
+/// arm). A duplicable instance re-emits byte-identically.
+#[test]
+fn should_report_the_generic_conditional_duties_once_per_selected_arm() {
+    let rejected = |tag: &str, source: &str, expected: usize| {
+        let (_scratch, output, c_path) = compile_only(tag, source);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end accepted a program that must be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            count_occurrences(&stderr, "error E10034:"),
+            expected,
+            "{tag}: unexpected E10034 count; stderr:\n{stderr}"
+        );
+        assert!(
+            !c_path.exists(),
+            "{tag}: a rejected program must not produce a translation unit"
+        );
+    };
+
+    let take = r#"module impl.bgi.ptake;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: i32; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, h: T): i32 { return sink(take (c ? h.name : null)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: 1 };
+    return f<H>(true, h);
+}
+"#;
+    rejected("ptake", take, 1);
+
+    let raw = r#"module impl.bgi.praw;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: i32; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, xs: T): i32 { return sink(take (c ? (unsafe xs.name) : null)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa"), tag: 1 };
+    let p: raw H = unsafe &h;
+    return f<raw H>(true, p);
+}
+"#;
+    rejected("praw", raw, 1);
+
+    let field = r#"module impl.bgi.pfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: c ? h.name : null, tag: 1 };
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    rejected("pfield", field, 1);
+
+    let projection = r#"module impl.bgi.pprojection;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, d: bool, h1: T, h2: T): String? {
+    return c ? (d ? h1 : h2).name : null;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa") };
+    let h2: H = H { name: stringOf("bb") };
+    let r: String? = f<H>(true, true, h1, h2);
+    if (r == null) { return 9; }
+    return i32(len(r)) - 2;
+}
+"#;
+    rejected("pprojection", projection, 2);
+
+    let accepted = r#"module impl.bgi.paccepted;
+
+struct HD { p: raw u8; }
+
+func sink(take s: raw u8?): i32 { return 0; }
+
+func f<T>(c: bool, h: T): i32 { return sink(take (c ? h.p : null)); }
+
+func main(): i32 {
+    let v: u8 = 1;
+    let h: HD = HD { p: unsafe &v };
+    return f<HD>(true, h);
+}
+"#;
+    let (first, second) = emit_twice("pgenericaccepted", accepted);
+    assert_eq!(
+        first, second,
+        "pgenericaccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}

@@ -1077,13 +1077,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // single lend source, so the return's loan walk follows that
             // source. Its element loans name the frame backing a local or
             // overwritten container holds.
-            ExprKind::Call { callee, args, .. } => {
-                if let Some(ViewCallSource::Expr(source)) =
-                    self.call_view_source(callee, args)
-                {
-                    self.expr_view_roots(source, roots);
+            // A carrier-returning call hands back the view positions of its
+            // single lend source; consult it when the call is not a view
+            // return.
+            ExprKind::Call { callee, args, .. } => match self
+                .call_view_source(callee, args)
+                .or_else(|| self.call_carrier_source(callee, args))
+            {
+                Some(ViewCallSource::Expr(source)) => self.expr_view_roots(source, roots),
+                Some(ViewCallSource::Receiver(provenance)) => {
+                    if let Some(owner) = owner_of(&provenance) {
+                        if let LoanOwner::Binding(id) = owner {
+                            roots.insert(self.alias_resolved_root(id));
+                        }
+                    }
+                    // A receiver whose own provenance is static (a view array
+                    // of literals, for example) still reads that binding's
+                    // element loans; name the receiver root itself.
+                    match &callee.kind {
+                        ExprKind::Member { base, .. } => self.expr_view_roots(base, roots),
+                        ExprKind::Qualified(name) => {
+                            if let Some(id) =
+                                name.segments.first().and_then(|first| self.lookup(first))
+                            {
+                                roots.insert(self.alias_resolved_root(id));
+                            }
+                        }
+                        _ => {}
+                    }
                 }
-            }
+                None => {}
+            },
             _ => {}
         }
     }
@@ -1606,6 +1630,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a value contains a call under any structural wrapper.
+    ///
+    /// A carrier-returning call supplies the returned view positions even when
+    /// its own view-loan set is empty, so the copy gate admits a call wrapped
+    /// in `unsafe`, a cast, or a conditional arm.
+    pub(super) fn mentions_call(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Call { .. } => true,
+            ExprKind::Unsafe(inner) => Self::mentions_call(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                Self::mentions_call(value)
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => Self::mentions_call(then_value) || Self::mentions_call(else_value),
+            _ => false,
+        }
+    }
+
     /// True when a copy source names its view positions arm by arm.
     ///
     /// A conditional or an array literal — under any cast or unsafe wrapper —
@@ -1733,7 +1778,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // copy would; a later write through the backing reports the live loan.
         if let ExprKind::Call { callee, args, .. } = &value.kind {
             if let Some(source) = self.call_carrier_source(callee, args) {
-                self.collect_copy_element_loans(source, None, None, base, copied);
+                match source {
+                    ViewCallSource::Expr(source) => {
+                        self.collect_copy_element_loans(source, None, None, base, copied);
+                    }
+                    ViewCallSource::Receiver(provenance) => {
+                        if let Some(owner) = owner_of(&provenance) {
+                            copied
+                                .owners
+                                .entry(base.to_vec())
+                                .or_default()
+                                .insert(owner);
+                        }
+                    }
+                }
                 if !copied.owners.is_empty() || !copied.recorded.is_empty() {
                     return;
                 }
@@ -2251,7 +2309,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// parameter mentions a type parameter is resolved at its instance by the
     /// call-site substitution, exactly as the lowered walk does.
     pub(super) fn call_view_source<'e>(&self, callee: &'e Expr, args: &'e [Arg]) -> Option<ViewCallSource<'e>> {
-        let is_dot = self.is_dot_call(callee);
+        // A func-typed field is called through its own signature, which has no
+        // receiver parameter; only a named method or a stdlib helper treats
+        // the dot receiver as parameter zero.
+        let field_call = self
+            .callee_field_type(callee)
+            .is_some_and(|ty| self.callable_type_signature(&ty).is_some());
+        let is_dot = self.is_dot_call(callee) && !field_call;
         let source = |index: usize| -> Option<ViewCallSource<'e>> {
             if is_dot && index == 0 {
                 return match &callee.kind {
@@ -2270,20 +2334,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !Self::returns_a_view(&returns) {
                 return None;
             }
-            let candidates: Vec<usize> = params
-                .iter()
-                .enumerate()
-                .filter(|(_, (mode, ty))| {
-                    *mode != Mode::Take
-                        && (is_lend_candidate(ty) || super::lower::mentions_type_param(ty))
-                })
-                .map(|(index, _)| index)
-                .collect();
-            return if candidates.len() == 1 {
-                source(candidates[0])
-            } else {
-                None
-            };
+            let effective = self.call_effective_params(callee, args, is_dot, &params);
+            return self
+                .single_lend_candidate(&effective, &params, false)
+                .and_then(source);
         }
         let name = self.callee_name(callee)?;
         match self.resolved_callee(&name) {
@@ -2294,23 +2348,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !Self::returns_a_view(&returns) {
                     return None;
                 }
-                let candidates: Vec<usize> = decl
+                let params: Vec<(Mode, Ty)> = decl
                     .params
                     .iter()
-                    .enumerate()
-                    .filter(|(_, param)| {
-                        let ty = self.resolve_with(&param.ty, &type_params);
-                        param.mode != Mode::Take
-                            && (is_lend_candidate(&ty)
-                                || super::lower::mentions_type_param(&ty))
-                    })
-                    .map(|(index, _)| index)
+                    .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
                     .collect();
-                if candidates.len() == 1 {
-                    source(candidates[0])
-                } else {
-                    None
-                }
+                let effective = self.call_effective_params(callee, args, is_dot, &params);
+                self.single_lend_candidate(&effective, &params, false)
+                    .and_then(source)
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
@@ -2333,36 +2378,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &self,
         callee: &'e Expr,
         args: &'e [Arg],
-    ) -> Option<&'e Expr> {
-        let is_dot = self.is_dot_call(callee);
-        let source = |index: usize| -> Option<&'e Expr> {
+    ) -> Option<ViewCallSource<'e>> {
+        let field_call = self
+            .callee_field_type(callee)
+            .is_some_and(|ty| self.callable_type_signature(&ty).is_some());
+        let is_dot = self.is_dot_call(callee) && !field_call;
+        let source = |index: usize| -> Option<ViewCallSource<'e>> {
             if is_dot && index == 0 {
                 return match &callee.kind {
-                    ExprKind::Member { base, .. } => Some(base),
+                    ExprKind::Member { base, .. } => Some(ViewCallSource::Expr(base)),
+                    ExprKind::Qualified(_) => Some(ViewCallSource::Receiver(
+                        self.dot_receiver_provenance(callee),
+                    )),
                     _ => None,
                 };
             }
             let written_index = if is_dot { index - 1 } else { index };
-            args.get(written_index).map(|arg| &arg.value)
+            args.get(written_index)
+                .map(|arg| ViewCallSource::Expr(&arg.value))
         };
         if let Some((params, returns)) = self.callable_call_signature(callee) {
             if is_view_like(&returns) || !self.may_carry_view(&returns) {
                 return None;
             }
-            let candidates: Vec<usize> = params
-                .iter()
-                .enumerate()
-                .filter(|(_, (mode, ty))| {
-                    *mode != Mode::Take
-                        && (is_lend_candidate(ty) || super::lower::mentions_type_param(ty))
-                })
-                .map(|(index, _)| index)
-                .collect();
-            return if candidates.len() == 1 {
-                source(candidates[0])
-            } else {
-                None
-            };
+            let effective = self.call_effective_params(callee, args, is_dot, &params);
+            return self
+                .single_lend_candidate(&effective, &params, true)
+                .and_then(source);
         }
         let name = self.callee_name(callee)?;
         let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
@@ -2373,22 +2415,89 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_view_like(&returns) || !self.may_carry_view(&returns) {
             return None;
         }
-        let candidates: Vec<usize> = decl
+        let params: Vec<(Mode, Ty)> = decl
             .params
             .iter()
+            .map(|param| (param.mode, self.resolve_with(&param.ty, &type_params)))
+            .collect();
+        let effective = self.call_effective_params(callee, args, is_dot, &params);
+        self.single_lend_candidate(&effective, &params, true)
+            .and_then(source)
+    }
+
+    /// The single non-`take` lend candidate a call may reborrow.
+    ///
+    /// A concrete lend candidate is authoritative: a type parameter's
+    /// instantiation is unknown at the definition, and a call that also passes
+    /// a concrete view names that view by the concrete parameter's position.
+    /// Only when no concrete candidate exists does a parameter mention count,
+    /// which covers a generic pass-through whose only lend is the type
+    /// parameter itself.
+    fn single_lend_candidate(
+        &self,
+        effective: &[(Mode, Ty)],
+        declared: &[(Mode, Ty)],
+        carrier: bool,
+    ) -> Option<usize> {
+        let candidate = |ty: &Ty| {
+            is_lend_candidate(ty) || (carrier && self.may_view_from_storage(ty))
+        };
+        let concrete: Vec<usize> = effective
+            .iter()
             .enumerate()
-            .filter(|(_, param)| {
-                let ty = self.resolve_with(&param.ty, &type_params);
-                param.mode != Mode::Take
-                    && (is_lend_candidate(&ty) || super::lower::mentions_type_param(&ty))
-            })
+            .filter(|(_, (mode, ty))| *mode != Mode::Take && candidate(ty))
             .map(|(index, _)| index)
             .collect();
-        if candidates.len() == 1 {
-            source(candidates[0])
+        // A concrete call-site argument type resolves the substitution; only
+        // a call made inside a generic body, whose argument type still
+        // mentions a parameter, falls back to the declared parameter type.
+        let unresolved = effective
+            .iter()
+            .any(|(_, ty)| super::lower::mentions_type_param(ty));
+        let candidates = if concrete.is_empty() && unresolved {
+            declared
+                .iter()
+                .enumerate()
+                .filter(|(_, (mode, ty))| {
+                    *mode != Mode::Take && super::lower::mentions_type_param(ty)
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<usize>>()
         } else {
-            None
+            concrete
+        };
+        (candidates.len() == 1).then(|| candidates[0])
+    }
+
+    /// The parameter list with each written argument's call-site type.
+    ///
+    /// A generic declaration's parameter type is a type parameter, while the
+    /// argument may already be a concrete view, an owned aggregate, or a
+    /// scalar. Substituting the argument type at the call site lets the
+    /// single-source walk judge the actual instantiation; a parameter whose
+    /// argument the call does not write keeps its declared type.
+    fn call_effective_params(
+        &self,
+        callee: &Expr,
+        args: &[Arg],
+        is_dot: bool,
+        params: &[(Mode, Ty)],
+    ) -> Vec<(Mode, Ty)> {
+        let mut effective = params.to_vec();
+        for (index, (_, ty)) in effective.iter_mut().enumerate() {
+            let argument_ty = if is_dot && index == 0 {
+                Some(self.dot_receiver_type(callee))
+            } else {
+                let written = if is_dot { index - 1 } else { index };
+                args.get(written).map(|arg| self.ty(&arg.value))
+            };
+            if let Some(argument_ty) = argument_ty {
+                if !argument_ty.is_unknown() {
+                    *ty = argument_ty;
+                }
+            }
         }
+        effective
     }
 
     /// The parameter list and return type of a value callable.
@@ -2411,8 +2520,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let ExprKind::Name(written) = &callee.kind else {
             return None;
         };
-        let id = self.lookup(written)?;
-        self.callable_type_signature(&self.bindings[id].ty)
+        if let Some(id) = self.lookup(written) {
+            return self.callable_type_signature(&self.bindings[id].ty);
+        }
+        // A bare name may name a module-level func-typed global; its value is
+        // the callable, exactly as the call check resolves it.
+        self.value_callee_global_type(callee)
+            .and_then(|ty| self.callable_type_signature(&ty))
     }
 
     /// The signature a callable type spells, if any.

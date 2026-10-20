@@ -1745,14 +1745,14 @@ func main(): i32 { return use(); }
 
     let control = r#"module spec.bgi.generictakememberok;
 
-struct HD { name: i32; tag: i32; }
+struct HD { p: raw u8; tag: i32; }
 
-func sinkI(take s: i32?): i32 { return 0; }
+func sinkR(take s: raw u8?): i32 { return 0; }
 
-func f<T>(c: bool, h: T): i32 { return sinkI(take (c ? h.name : null)); }
+func f<T>(c: bool, h: T): i32 { return sinkR(take (c ? h.p : null)); }
 
 func main(): i32 {
-    let h: HD = HD { name: 1, tag: 2 };
+    let h: HD = HD { p: null, tag: 2 };
     return f<HD>(true, h);
 }
 "#;
@@ -1795,16 +1795,16 @@ func main(): i32 { return use(); }
 
     let control = r#"module spec.bgi.generictakerawok;
 
-struct HD { name: i32; tag: i32; }
+struct HD { p: raw u8; tag: i32; }
 
-func sinkI(take s: i32?): i32 { return 0; }
+func sinkR(take s: raw u8?): i32 { return 0; }
 
-func f<T>(c: bool, xs: T): i32 { return sinkI(take (c ? (unsafe xs.name) : null)); }
+func f<T>(c: bool, xs: T): i32 { return sinkR(take (c ? (unsafe xs.p) : null)); }
 
 func main(): i32 {
-    let h: HD = HD { name: 1, tag: 2 };
-    let p: raw HD = unsafe &h;
-    return f<raw HD>(true, p);
+    let h: HD = HD { p: null, tag: 2 };
+    let q: raw HD = unsafe &h;
+    return f<raw HD>(true, q);
 }
 "#;
     let output = run_memory("generictakerawok", control);
@@ -1876,17 +1876,18 @@ func main(): i32 { return use(); }
 
     let control = r#"module spec.bgi.genericfieldok;
 
-struct HD { name: i32; }
-struct S { name: i32?; tag: i32; }
+struct HD { p: raw u8; }
+struct S { p: raw u8?; tag: i32; }
 
 func f<T>(c: bool, h: T): i32 {
-    let s: S = S { name: c ? h.name : null, tag: 1 };
-    if (s.name == null) { return 9; }
-    return s.name - 1;
+    let s: S = S { p: c ? h.p : null, tag: 1 };
+    if (s.p == null) { return 9; }
+    return 0;
 }
 
 func main(): i32 {
-    let h: HD = HD { name: 1 };
+    let v: u8 = 1;
+    let h: HD = HD { p: unsafe &v };
     return f<HD>(true, h);
 }
 "#;
@@ -1942,7 +1943,7 @@ func f<T, U>(c: bool, d: bool, h1: T, h2: T, z: U): U {
 func main(): i32 {
     let h1: HD = HD { name: 1 };
     let h2: HD = HD { name: 2 };
-    return f<HD, i32>(true, true, h1, h2, 0);
+    return f<HD, i32>(true, true, h1, h2, 1) - 1;
 }
 "#;
     let output = run_memory("genericprojcondok", control);

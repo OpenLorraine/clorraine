@@ -512,19 +512,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if view_parameter {
                     failing = match &callee.kind {
                         ExprKind::Member { base, .. } => self.frame_owned_view_owner(base),
-                        // A dotted receiver names the head binding and then the
-                        // fields selected from it; the head's storage is the
-                        // receiver's storage, and a head that resolves to no
-                        // local is module-level or a parameter the walk keeps.
-                        ExprKind::Qualified(name) => name
-                            .segments
-                            .first()
-                            .and_then(|first| self.lookup(first))
-                            .map(|id| self.alias_resolved_root(id))
-                            .filter(|id| {
-                                self.owner_dies_with_frame(LoanOwner::Binding(*id))
-                            })
-                            .map(Some),
+                        // A dotted receiver names the head binding and the
+                        // fields selected from it. Judge the receiver's
+                        // backing, not the head's lifetime: a view backed by a
+                        // parameter, a module global, or static storage stays
+                        // accepted, while an owned local aggregate or a view
+                        // of this frame's storage reports.
+                        ExprKind::Qualified(name) => {
+                            self.qualified_receiver_frame_owner(name)
+                        }
                         _ => None,
                     };
                 }
@@ -604,10 +600,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// either way the frame reading it outlives this one.
     fn place_roots_in_a_further_out_frame(&self, expr: &Expr) -> bool {
         match self.place_target(expr) {
-            Some(PlaceTarget::Local(id, _)) => matches!(
-                self.bindings[id].kind,
-                BindingKind::Param | BindingKind::OutSlot
-            ),
+            // A loop alias has no storage of its own; its place reaches the
+            // container, whose kind decides whether the slot lives further out.
+            Some(PlaceTarget::Local(id, _)) => {
+                let id = self.alias_resolved_root(id);
+                matches!(
+                    self.bindings[id].kind,
+                    BindingKind::Param | BindingKind::OutSlot
+                )
+            }
             _ => false,
         }
     }
@@ -623,6 +624,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) else {
                     return false;
                 };
+                let id = self.alias_resolved_root(id);
                 matches!(
                     self.bindings[id].kind,
                     BindingKind::Param | BindingKind::OutSlot
@@ -681,8 +683,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             if let Some(source) = self.call_carrier_source(callee, args) {
-                if let Some(owner) = self.frame_owned_view_owner(source) {
-                    return Some(owner);
+                match source {
+                    super::place::ViewCallSource::Expr(source) => {
+                        if let Some(owner) = self.frame_owned_view_owner(source) {
+                            return Some(owner);
+                        }
+                    }
+                    super::place::ViewCallSource::Receiver(provenance) => {
+                        if let Some(owner) = self.frame_owner_of_provenance(&provenance) {
+                            return Some(owner);
+                        }
+                        // A receiver whose own provenance is static still reads
+                        // its binding's element loans, so judge the receiver
+                        // place itself as well.
+                        match &callee.kind {
+                            ExprKind::Member { base, .. } => {
+                                if let Some(owner) = self.frame_owned_view_owner(base) {
+                                    return Some(owner);
+                                }
+                            }
+                            ExprKind::Qualified(name) => {
+                                if let Some(owner) =
+                                    self.qualified_receiver_frame_owner(name)
+                                {
+                                    return Some(owner);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
         }
@@ -798,7 +827,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// store into an out-slot. The caller-side pass-through check cannot see
     /// which field the callee views, so it treats the owned argument as a
     /// potential source.
-    fn may_view_from_storage(&self, ty: &Ty) -> bool {
+    pub(super) fn may_view_from_storage(&self, ty: &Ty) -> bool {
         match &ty.kind {
             TyKind::Str | TyKind::CString | TyKind::StaticStr | TyKind::Handle(_) => true,
             TyKind::Raw(_) => true,
@@ -827,6 +856,67 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let id = self.alias_resolved_root(id);
         self.owner_dies_with_frame(LoanOwner::Binding(id))
             .then_some(Some(id))
+    }
+
+    /// The frame-owned storage a provenance names, when it reads any.
+    ///
+    /// A local or a `take` parameter dies with this frame; a plain or `borrow`
+    /// parameter, a module global, and a static literal survive it. A
+    /// statement temporary always dies at the end of its statement.
+    fn frame_owner_of_provenance(&self, provenance: &Provenance) -> Option<Option<usize>> {
+        for atom in Self::storage_atoms(provenance) {
+            match atom {
+                Provenance::Local(id) | Provenance::Param(id) => {
+                    if self.owner_dies_with_frame(LoanOwner::Binding(id)) {
+                        return Some(self.frame_view_owner(LoanOwner::Binding(id)));
+                    }
+                }
+                Provenance::Temp(_) => return Some(None),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// The frame-owned backing of a dotted receiver path.
+    ///
+    /// The head names a binding and the trailing segments select fields from
+    /// it. A view receiver is judged by the loans it carries, so a `str` backed
+    /// by a parameter, a module global, or static storage stays accepted. An
+    /// aggregate is judged by its recorded loans and then by whether it owns
+    /// viewable storage; every other receiver is the head's own storage. A
+    /// head that resolves to no local is module-level and survives every
+    /// frame.
+    fn qualified_receiver_frame_owner(
+        &self,
+        name: &crate::ast::QualifiedName,
+    ) -> Option<Option<usize>> {
+        let id = name.segments.first().and_then(|first| self.lookup(first))?;
+        let id = self.alias_resolved_root(id);
+        if !self.owner_dies_with_frame(LoanOwner::Binding(id)) {
+            return None;
+        }
+        // The final segment is the method name, not a field of the receiver.
+        let method = name.segments.len().saturating_sub(1);
+        let mut ty = self.bindings[id].ty.clone();
+        if method > 1 {
+            for segment in &name.segments[1..method] {
+                ty = self.member_type(&ty, segment);
+            }
+        }
+        if is_view(&ty) || self.may_carry_view(&ty) {
+            if let Some(owner) = self
+                .binding_loan_owners(id)
+                .into_iter()
+                .find(|owner| self.owner_dies_with_frame(*owner))
+            {
+                return Some(self.frame_view_owner(owner));
+            }
+            if is_view(&ty) || !self.has_owned_viewable_storage(&ty) {
+                return None;
+            }
+        }
+        Some(Some(id))
     }
 
     /// The report subject a frame-dying view owner names.
@@ -1064,6 +1154,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             }
                         }
                     }
+                }
+                // A conditional arm rooted at a type parameter is judged at
+                // its instance: a projected member records the lend duty and a
+                // whole arm records the maybe-owning move, exactly as the same
+                // arm does at a return or a binding.
+                for source in self.type_param_conditional_sources(expr) {
+                    self.mark_moved_if_owning(source, span);
                 }
                 if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {

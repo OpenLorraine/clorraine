@@ -2259,6 +2259,34 @@ func main(): i32 {
         &[],
     );
 
+    let dot = r#"module spec.eei.returndotview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func first(xs: str[2], i: i32): str { return xs[i]; }
+
+func outer(): str {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    return xs.first(0);
+}
+
+func main(): i32 {
+    let s: str = outer();
+    return i32(s[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "returndotview",
+        dot,
+        "E10035",
+        &["cannot return a view of local 'a'"],
+        &[],
+    );
+
     let control = r#"module spec.eei.returnviewok;
 
 func pick(xs: str[2], i: i32): str { return xs[i]; }
@@ -2531,6 +2559,103 @@ func main(): i32 {
         &[],
     );
 
+    let func_field = r#"module spec.eei.funcfieldview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Dispatch { f: func(str[2], i32): str; }
+
+func first(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow d: Dispatch, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(d.f(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let d: Dispatch = Dispatch { f: first };
+    let out: str? = null;
+    outer(borrow d, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "funcfieldview",
+        func_field,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let generic_call = r#"module spec.eei.genericview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick<T>(xs: T[2], i: i32): T { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(pick<str>(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "genericview",
+        generic_call,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let returned_callable = r#"module spec.eei.returnedcallableview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func first(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func picker(): func(str[2], i32): str { return first; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(picker()(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "returnedcallableview",
+        returned_callable,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
     let control = r#"module spec.eei.closureviewok;
 
 func fill(p: str, borrow slot: str?): void { slot = p; }
@@ -2616,6 +2741,53 @@ func main(): i32 {
         &[],
     );
 
+    let view_control = r#"module spec.eei.dotviewok;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func storeStr(h: str, borrow slot: str?): void { slot = h; }
+
+func outer(borrow p: Box, borrow slot: str?): void {
+    let s: str = p.v;
+    s.storeStr(borrow slot);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let out: str? = null;
+    outer(borrow b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("dotviewok", view_control);
+    assert_no_asan("dotviewok", &output);
+    assert_exit("dotviewok", &output, 0);
+
+    let static_view = r#"module spec.eei.dotstaticok;
+
+struct Box { v: str[2]; }
+
+func store(h: str[2], borrow slot: str?): void { slot = h[0]; }
+
+func outer(borrow slot: str?): void {
+    let v: str[2] = ["AA", "BB"];
+    v.store(borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("dotstaticok", static_view);
+    assert_no_asan("dotstaticok", &output);
+    assert_exit("dotstaticok", &output, 0);
+
     let control = r#"module spec.eei.dotreceiverok;
 
 import { String, stringOf } from std.text;
@@ -2639,4 +2811,167 @@ func main(): i32 {
     let output = run_memory("dotreceiverok", control);
     assert_no_asan("dotreceiverok", &output);
     assert_exit("dotreceiverok", &output, 0);
+}
+
+/// A carrier-returning dot call, a module-level func value, and a carrier
+/// return follow their source's storage.
+///
+/// The dot receiver and the global callable each name the same single source a
+/// free call does, so a frame-backed source reports `E10030` once; a carrier
+/// return reports the concrete twin's `E10030` at the return. The caller-backed
+/// controls stay accepted and clean.
+#[test]
+fn should_follow_a_carrier_receiver_a_global_callable_and_a_carrier_return() {
+    let receiver = r#"module spec.eei.carrierreceiver;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeFrom(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    a.makeFrom().store(borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "carrierreceiver",
+        receiver,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let global_callable = r#"module spec.eei.globalcallable;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func first(xs: str[2], i: i32): str { return xs[i]; }
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+let g: func(str[2], i32): str = first;
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(g(xs, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "globalcallable",
+        global_callable,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let carrier_return = r#"module spec.eei.carrierreturn;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeFrom(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+
+func outer(): Holder {
+    let a: Box = Box { v: stringOf("aa") };
+    return makeFrom(a);
+}
+
+func main(): i32 {
+    let h: Holder = outer();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "carrierreturn",
+        carrier_return,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.carrierreceiverok;
+
+struct Holder { names: str[2]; }
+
+func makeFrom(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func outer(borrow slot: str?): void {
+    let h: Holder = makeFrom("AA");
+    store(h, borrow slot);
+}
+
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("carrierreceiverok", control);
+    assert_no_asan("carrierreceiverok", &output);
+    assert_exit("carrierreceiverok", &output, 0);
+}
+
+/// A loop-alias receiver used as an out-slot still roots in the container.
+///
+/// The alias has no storage of its own, so the container's caller-backed slot
+/// makes the pass-through a cross-frame write; the local source reports
+/// `E10030` once.
+#[test]
+fn should_resolve_a_loop_alias_receiver_slot_across_frames() {
+    let source = r#"module spec.eei.aliasreceiver;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Slot { tag: String; ss: str[2]; }
+
+func fill(borrow slot: Slot, p: str): void { slot.ss[0] = p; }
+
+func outer(borrow slots: Slot[1]): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let p: str = a.v;
+    for (borrow s in slots) {
+        s.fill(p);
+    }
+}
+
+func main(): i32 {
+    let slots: Slot[1] = [Slot { tag: stringOf("t"), ss: ["AA", "BB"] }];
+    outer(borrow slots);
+    return i32(slots[0].ss[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "aliasreceiver",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
 }
