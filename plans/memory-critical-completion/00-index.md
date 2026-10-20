@@ -3,7 +3,7 @@
 > **Feature**: Close the fifteen remaining open critical defects left by the memory/value and
 > critical-closeout batches. The scope is `DEF-485`..`DEF-489`, `DEF-493`, `DEF-495`..`DEF-499`,
 > and `DEF-501`..`DEF-504` from `plans/00-roadmap.md`.
-> **Status**: Planning
+> **Status**: Done (2026-10-20)
 > **Created**: 2026-10-20
 > **Planning baseline**: `efc68f9` (the batch-O close-out commit).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).

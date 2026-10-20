@@ -57,8 +57,9 @@ view-return and call-boundary walks do, so the container's element loans reject 
 ### `DEF-487` — the function-returned call-mediated view
 
 Extend the view return's loan walk to resolve a call's single lend source even when that source is a
-container with element loans, then create the loan at the return. The existing escape rule reports
-`E10030` once; a parameter-backed source keeps its acceptance.
+container with element loans, then create the loan at the return. The return reports the concrete
+twin's code once (the local-owner `E10035` for a local source; the escape `E10030` where the
+parameter-backed twin also reports it); a parameter-backed source keeps its acceptance.
 
 ### `DEF-488` / `DEF-489` — the inline carrier and the conditional call arm
 
