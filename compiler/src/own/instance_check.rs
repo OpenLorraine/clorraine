@@ -422,7 +422,7 @@ fn check_opaque_store_requirements(
             let value = crate::types::substitute(&requirement.value, &bindings);
             if base.is_unknown()
                 || crate::types::contains_param(&base)
-                || value.is_unknown()
+                || (value.is_unknown() && !crate::types::is_null_shaped(&value))
                 || crate::types::contains_param(&value)
             {
                 continue;
@@ -443,6 +443,29 @@ fn check_opaque_store_requirements(
             let destination =
                 crate::types::project_place_path(&base, &path, &sema.table);
             if destination.is_unknown() || crate::types::contains_param(&destination) {
+                continue;
+            }
+            if crate::types::is_null_shaped(&requirement.value) {
+                let null_capable = destination.nullable
+                    || is_view(&destination)
+                    || matches!(destination.kind, TyKind::Handle(_) | TyKind::Raw(_));
+                if !null_capable {
+                    if reported_use.insert((
+                        requirement.function.clone(),
+                        requirement.store_span.start,
+                        "E10012",
+                    )) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10012",
+                                "'null' is not allowed here",
+                                requirement.store_span,
+                            )
+                            .with_help("declare the type `T?` or avoid the empty state"),
+                        );
+                    }
+                    break;
+                }
                 continue;
             }
             if !crate::types::implicit_conversion(&value, &destination) {
@@ -555,6 +578,22 @@ fn check_opaque_store_requirements(
                     .with_help(
                         "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
                     ),
+                );
+                break;
+            }
+            let top_level_field = requirement.source_path.len() == 1
+                && matches!(
+                    requirement.source_path.first(),
+                    Some(crate::ir::Projection::Field(_))
+                );
+            if !requirement.source_path.is_empty() && !top_level_field {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10026",
+                        "partial moves are limited to top-level fields in v1",
+                        requirement.store_span,
+                    )
+                    .with_help("move the whole value instead"),
                 );
                 break;
             }

@@ -3974,6 +3974,221 @@ func main(): i32 {
     assert_exit("opaqueviewsorewholeroot", &output, 0);
 }
 
+/// The opaque-store duty closes over copies, aliases, and instance kinds.
+///
+/// An aggregate copy carries the stored view at its own path, a self-assignment
+/// keeps the target's duty, a run-time sibling store does not erase a constant
+/// element's view, a re-initialized source keeps its earlier read, a null value
+/// at a fixed-array member reports the null rule, and a no-source view call or
+/// a superseded view stays accepted.
+#[test]
+fn should_close_the_opaque_store_copy_and_liveness_residue() {
+    let aggregate = r#"module spec.eei.opaqueviewsoreaggregate;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { inner: T; }
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): Wrap<T> {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    let out: Wrap<T> = Wrap<T> { inner: h };
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Wrap<Holder> = f<Holder>(take h);
+    return i32(g.inner.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreaggregate",
+        aggregate,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let self_assign = r#"module spec.eei.opaqueviewsoreself;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    h = h;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreself",
+        self_assign,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let runtime_sibling = r#"module spec.eei.opaqueviewsoresruntime;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T, i: i32): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    h.names[i] = "OK";
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h, 1);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoresruntime",
+        runtime_sibling,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let read_then_reinit = r#"module spec.eei.opaqueviewsoresreadreinit;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.v = a.v;
+    let n: i32 = i32(len(a.v));
+    a = Box { v: stringOf("bb") };
+    return n - 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    return f<Box>(take b);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoresreadreinit",
+        read_then_reinit,
+        "E10020",
+        &["'a' was moved"],
+        &[],
+    );
+
+    let null_member = r#"module spec.eei.opaqueviewsoresnull;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T): i32 {
+    let n = null;
+    h.names = n;
+    return 0;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoresnull",
+        null_member,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+
+    let partial = r#"module spec.eei.opaqueviewsorespartial;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box[2] = [Box { v: stringOf("aa") }, Box { v: stringOf("bb") }];
+    h.v = a[0].v;
+    return 0;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    return f<Box>(take b);
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsorespartial",
+        partial,
+        "E10026",
+        &["partial moves are limited"],
+        &[],
+    );
+
+    let call_view = r#"module spec.eei.opaqueviewsorescall;
+
+struct Holder { names: str[2]; }
+
+func mk(): str { return "aa"; }
+
+func f<T>(take h: T): i32 {
+    h.names[0] = mk();
+    return i32(h.names[0][0]) - 97;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    let output = run_memory("opaqueviewsorescall", call_view);
+    assert_no_asan("opaqueviewsorescall", &output);
+    assert_exit("opaqueviewsorescall", &output, 0);
+
+    let superseded_copy = r#"module spec.eei.opaqueviewsoressuperseded;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+
+func f<T>(take h: T): T {
+    let s: String = stringOf("aa");
+    h.names[0] = s;
+    h.names[0] = "OK";
+    let out: T = h;
+    return out;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = f<Holder>(take h);
+    return i32(g.names[0][0]) - 79;
+}
+"#;
+    let output = run_memory("opaqueviewsoressuperseded", superseded_copy);
+    assert_no_asan("opaqueviewsoressuperseded", &output);
+    assert_exit("opaqueviewsoressuperseded", &output, 0);
+}
+
 /// The instance's member kind also decides the store's move and widening.
 ///
 /// A view-typed member accepts an owned source as a widening and leaves the

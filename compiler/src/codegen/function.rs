@@ -489,6 +489,7 @@ impl<'a> Emitter<'a> {
             |ty| self.needs_drop(&self.substitute(ty)),
             |ty| crate::types::is_null_shaped(&self.substitute(ty)),
             |ty| self.carries_null_value(ty),
+            |place| self.resolved_place_ty(place),
         );
         let mut written: BTreeSet<String> = BTreeSet::new();
         for local in &function.locals {
@@ -3380,6 +3381,7 @@ fn unread_locals(
     drop_reads: impl Fn(&Ty) -> bool,
     null_shape: impl Fn(&Ty) -> bool,
     null_capable: impl Fn(&Ty) -> bool,
+    place_ty: impl Fn(&Place) -> Ty,
 ) -> BTreeSet<String> {
     let mut read: BTreeSet<String> = BTreeSet::new();
     for block in &function.blocks {
@@ -3391,9 +3393,9 @@ fn unread_locals(
                 Statement::Move { target, source } => {
                     // A null-shaped source lowers to the target's own empty
                     // value, so the move does not read it.
-                    if !(null_shape(&source.ty)
-                        && !null_shape(&target.ty)
-                        && null_capable(&target.ty))
+                    if !(null_shape(&place_ty(source))
+                        && !null_shape(&place_ty(target))
+                        && null_capable(&place_ty(target)))
                     {
                         note_place(source, &mut read);
                     }

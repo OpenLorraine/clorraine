@@ -1893,7 +1893,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         value: &Expr,
         span: Span,
     ) {
-        if self.opaque_store_requirements.is_empty() || roots.is_empty() {
+        if self.opaque_store_requirements.is_empty()
+            || (roots.is_empty()
+                && !matches!(
+                    value.kind,
+                    ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. }
+                ))
+        {
             return;
         }
         let target_ty = self.bindings[target].ty.clone();
@@ -1904,45 +1910,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return;
         }
-        let root_names: BTreeSet<String> = roots
-            .iter()
-            .map(|id| self.bindings[*id].ir_name.clone())
-            .collect();
         let target_root = self.bindings[target].ir_name.clone();
-        // A view alias selects one stored position; a carrier copy takes the
-        // whole binding, so every position matches.
-        let direct = self.place_target(value);
+        let embed = matches!(
+            value.kind,
+            ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. }
+        );
+        let mut positions = Vec::new();
+        self.expr_view_positions(value, &mut Vec::new(), &mut positions);
         let mut copied = Vec::new();
-        for duty in &self.opaque_store_requirements {
-            if duty.function != self.decl.name || !root_names.contains(&duty.root) {
-                continue;
-            }
-            if view_alias {
-                let Some(PlaceTarget::Local(root, path)) = &direct else {
-                    continue;
-                };
-                if self.bindings[self.alias_resolved_root(*root)].ir_name != duty.root
-                    || !super::expr::projection_paths_overlap(path, &duty.path)
+        for (root, position) in positions {
+            let root = self.bindings[root].ir_name.clone();
+            for duty in &self.opaque_store_requirements {
+                if duty.function != self.decl.name
+                    || duty.root != root
+                    || duty.root == target_root
+                    || duty.superseded
                 {
                     continue;
                 }
+                let path = if view_alias {
+                    if !super::expr::projection_paths_overlap(&position, &duty.path) {
+                        continue;
+                    }
+                    Vec::new()
+                } else if embed {
+                    let mut path = position.clone();
+                    path.extend_from_slice(&duty.path);
+                    path
+                } else {
+                    if !super::expr::projection_path_covers(&position, &duty.path) {
+                        continue;
+                    }
+                    duty.path[position.len()..].to_vec()
+                };
+                let mut copy = duty.clone();
+                copy.root = target_root.clone();
+                copy.ty = target_ty.clone();
+                copy.path = path;
+                copy.return_span = None;
+                copy.later_uses.clear();
+                copy.source_ir = None;
+                copy.source_name = None;
+                copy.source_path.clear();
+                copy.source_param = false;
+                copy.superseded = false;
+                if view_alias {
+                    copy.value = target_ty.clone();
+                    copy.store_span = span;
+                }
+                copied.push(copy);
             }
-            let mut copy = duty.clone();
-            copy.root = target_root.clone();
-            copy.ty = target_ty.clone();
-            copy.return_span = None;
-            copy.later_uses.clear();
-            copy.source_ir = None;
-            copy.source_name = None;
-            copy.source_path.clear();
-            copy.source_param = false;
-            copy.superseded = false;
-            if view_alias {
-                copy.path.clear();
-                copy.value = target_ty.clone();
-                copy.store_span = span;
-            }
-            copied.push(copy);
         }
         self.opaque_store_requirements.extend(copied);
     }

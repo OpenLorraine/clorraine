@@ -1399,10 +1399,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.write_place(id, &projections, target.span);
                 if projections.is_empty() {
-                    let root = self.bindings[id].ir_name.clone();
-                    self.supersede_opaque_duties(&root, &[]);
                     let mut roots = BTreeSet::new();
                     self.expr_view_roots(value, &mut roots);
+                    let root = self.bindings[id].ir_name.clone();
+                    let aliases_target = roots
+                        .iter()
+                        .any(|source| self.bindings[*source].ir_name == root);
+                    if !aliases_target {
+                        self.supersede_opaque_duties(&root, &[]);
+                    }
                     self.transfer_opaque_store_duties(id, &roots, value, target.span);
                 }
                 let lowered = if has_runtime_element(&projections) {
@@ -1787,7 +1792,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let value_ty = self.ty(value);
         let view_source = is_view_like(&value_ty);
         let owned_source = matches!(&value_ty.kind, TyKind::Handle(name) if name == "String");
-        if !view_source && !owned_source {
+        let null_source = crate::types::is_null_shaped(&value_ty);
+        if !view_source && !owned_source && !null_source {
             return false;
         }
         // An owned source that names a place can be moved or widened; a call
@@ -1842,16 +1848,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         scope_end: self.bindings[owner].scope_end,
                     }
                 }
-                _ => ir::OpaqueFrame {
-                    binding: None,
-                    name: None,
-                    subject: "a statement temporary".to_owned(),
-                    scope_end: Span::default(),
-                },
+                // A value the provenance walk cannot name is a temporary only
+                // when it actually owns or derives from fresh storage; a
+                // no-source view call or an aggregate of static views names
+                // no backing and must stay accepted.
+                _ => continue,
             };
             if !frames.contains(&frame) {
                 frames.push(frame);
             }
+        }
+        if frames.is_empty()
+            && ((owned_source && source_place.is_none())
+                || (!owned_source && self.frame_owned_view_owner(value).is_some()))
+        {
+            frames.push(ir::OpaqueFrame {
+                binding: None,
+                name: None,
+                subject: "a statement temporary".to_owned(),
+                scope_end: Span::default(),
+            });
         }
         let frame_owner = frames.first().map(|frame| frame.subject.clone());
         let has_source_place = source_place.is_some();
@@ -2003,11 +2019,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if moved {
                     push_opaque_span(&mut duty.later_uses, span);
                 } else if projection_path_covers(projections, &duty.source_path) {
-                    // The write re-initializes the moved source, so its move
-                    // judgment and later uses no longer apply.
-                    duty.later_uses.clear();
+                    // The write re-initializes the moved source: future reads
+                    // are legal, but a read already recorded before the write
+                    // is a real use after the move.
                     duty.source_ir = None;
-                    duty.source_name = None;
                     duty.source_path.clear();
                     duty.source_param = false;
                 }
@@ -3550,7 +3565,7 @@ fn push_opaque_use(list: &mut Vec<(Span, String)>, span: Span, subject: &str) {
 /// longer path. A run-time element step covers every element; a constant step
 /// covers only the same constant, because writing one element leaves its
 /// siblings' views in place.
-fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) -> bool {
+pub(super) fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) -> bool {
     prefix.len() <= path.len()
         && prefix
             .iter()
@@ -3559,10 +3574,12 @@ fn projection_path_covers(prefix: &[ir::Projection], path: &[ir::Projection]) ->
 }
 
 /// True when one projection step covers another position.
+///
+/// Only the same step covers: a run-time element store *may* write any element,
+/// so it cannot replace a constant element's view, and a constant store cannot
+/// replace a run-time record.
 fn projection_step_covers(left: &ir::Projection, right: &ir::Projection) -> bool {
     left == right
-        || (matches!(left, ir::Projection::Element(None))
-            && matches!(right, ir::Projection::Element(_)))
 }
 
 /// True when two projection paths select an overlapping position.

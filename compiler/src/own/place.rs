@@ -1211,6 +1211,108 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The bindings a view expression's projection chain roots at, with the
+    /// path from the expression to each root.
+    ///
+    /// Mirrors [`Self::expr_view_roots`] for a copy that embeds or extracts a
+    /// carrier: an aggregate literal prefixes the position of the field or
+    /// element, a place projection strips the copied prefix, and a call hands
+    /// its sources the expression's own path. A `for (borrow e in xs)` alias
+    /// resolves to its container exactly as the root walk does.
+    pub(super) fn expr_view_positions(
+        &self,
+        expr: &Expr,
+        path: &mut Vec<ir::Projection>,
+        out: &mut Vec<(usize, Vec<ir::Projection>)>,
+    ) {
+        match &expr.kind {
+            ExprKind::Name(name) => {
+                if let Some(id) = self.lookup(name) {
+                    out.push((self.alias_resolved_root(id), path.clone()));
+                }
+            }
+            ExprKind::Qualified(name) => {
+                if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
+                    out.push((self.alias_resolved_root(id), path.clone()));
+                }
+            }
+            ExprKind::Member { base, name } => {
+                path.push(ir::Projection::Field(name.clone()));
+                self.expr_view_positions(base, path, out);
+                path.pop();
+            }
+            ExprKind::Index { base, .. } => {
+                path.push(ir::Projection::Element(None));
+                self.expr_view_positions(base, path, out);
+                path.pop();
+            }
+            ExprKind::Unsafe(inner) => self.expr_view_positions(inner, path, out),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.expr_view_positions(value, path, out);
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.expr_view_positions(then_value, path, out);
+                self.expr_view_positions(else_value, path, out);
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    path.push(ir::Projection::Field(field.name.clone()));
+                    self.expr_view_positions(&field.value, path, out);
+                    path.pop();
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for (index, element) in elements.iter().enumerate() {
+                    path.push(ir::Projection::Element(Some(index)));
+                    self.expr_view_positions(element, path, out);
+                    path.pop();
+                }
+                if let Some(fill) = fill {
+                    path.push(ir::Projection::Element(None));
+                    self.expr_view_positions(fill, path, out);
+                    path.pop();
+                }
+            }
+            ExprKind::Call { callee, args, .. } => {
+                let sources = self.call_view_sources(callee, args);
+                if !sources.is_empty() {
+                    for source in sources {
+                        self.expr_view_positions_source(source, path, out);
+                    }
+                } else {
+                    for source in self.call_carrier_sources(callee, args) {
+                        self.expr_view_positions_source(source, path, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Adds the positions one resolved call source reaches.
+    fn expr_view_positions_source(
+        &self,
+        source: ViewCallSource<'_>,
+        path: &mut Vec<ir::Projection>,
+        out: &mut Vec<(usize, Vec<ir::Projection>)>,
+    ) {
+        match source {
+            ViewCallSource::Expr(source) => self.expr_view_positions(source, path, out),
+            ViewCallSource::Receiver(provenance) | ViewCallSource::Capture(provenance) => {
+                if let Some(owner) = owner_of(&provenance) {
+                    if let LoanOwner::Binding(id) = owner {
+                        let id = self.alias_resolved_root(id);
+                        out.push((id, path.clone()));
+                    }
+                }
+            }
+        }
+    }
+
     /// Adds the roots one resolved call source reaches.
     fn expr_view_roots_source(
         &self,
