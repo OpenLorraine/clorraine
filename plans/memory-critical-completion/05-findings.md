@@ -129,7 +129,7 @@ reopening a closed critical.
 
 ## Close-out
 
-**Verification**: `make verify` passed every leg at `324fe76` and again at `5180cf0` (frozen `spec/check.sh`, the full
+**Verification**: `make verify` passed every leg at `324fe76`, `5180cf0`, and `2bb549a` (frozen `spec/check.sh`, the full
 workspace suite, the hosted-amiga corpus, the vbcc build-only leg, both FS-UAE output legs, and the
 six runtime-fault programs). Focused legs at head: borrow-store spec 39/39 and impl 13/13,
 eval-emission spec 53/53 and impl 47/47, borrow-generic spec 36/36 and impl 14/14, conditional
@@ -138,7 +138,7 @@ shapes emit no translation unit.
 
 **Row accounting**: batch P closes **15/15** named criticals — `DEF-485`..`489`, `493`, `495`..`499`,
 `501`..`504`. Three pre-existing siblings closed incidentally: `DEF-516`, `DEF-517`, `DEF-520`. The
-roadmap now holds **511 tracker rows: 358 Done, 152 open (10 critical, 44 major, 98 minor), 1
+roadmap now holds **513 tracker rows: 358 Done, 154 open (11 critical, 44 major, 99 minor), 1
 Deferred** (`DEF-425`). The batch plan is **35/35 tasks**.
 
 **Code record**: plan `432191f`; carrier red cases `25721e3`; phase-1 fix `e80c2c0`; phase-2 fix
@@ -148,5 +148,6 @@ Deferred** (`DEF-425`). The batch plan is **35/35 tasks**.
 
 **Residuals**: `DEF-506`/`507` (conservative false rejections), `DEF-508`..`512` (carrier/callee
 views), `DEF-513` (inline-iterable alias return), `DEF-514`..`519` (conditional take/array/return
-moves), `DEF-521` (unsafe/cast-wrapped generic source), `DEF-522` (view-member projection precision).
-None is silently fixed or reopened.
+moves), `DEF-521` (unsafe/cast-wrapped generic source), `DEF-522` (view-member projection precision and
+opaque lowering), `DEF-523` (nested write clears a moved prefix), `DEF-524` (distinct later-use sites share one
+report). None is silently fixed or reopened.

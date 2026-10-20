@@ -428,10 +428,7 @@ fn is_view_member_projection(
                 // folded by the emitter (the projected base type is unknown),
                 // so the conservative duty rejects it. A user field named
                 // `len` on an ordinary value is a copy.
-                if field == "len"
-                    && (matches!(selected.kind, TyKind::Array { .. })
-                        || matches!(&selected.kind, TyKind::Struct(name, _) if name == "Array"))
-                {
+                if field == "len" && matches!(selected.kind, TyKind::Array { .. }) {
                     return true;
                 }
             }
@@ -509,7 +506,7 @@ fn check_duplicable_requirements(
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
-    let mut reported: BTreeSet<(String, u32, u32)> = BTreeSet::new();
+    let mut reported: BTreeSet<(String, String, u32, u32)> = BTreeSet::new();
     for requirement in mono.duplicable_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -543,6 +540,7 @@ fn check_duplicable_requirements(
                 continue;
             }
             if !reported.insert((
+                requirement.function.clone(),
                 requirement.binding.clone(),
                 requirement.span.start,
                 requirement.span.end,
