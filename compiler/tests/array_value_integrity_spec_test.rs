@@ -1380,4 +1380,79 @@ func main(): i32 {
     let output = run_memory("lenmixeddot", mixed_dot);
     assert_no_asan("lenmixeddot", &output);
     assert_exit("lenmixeddot", &output, 0);
+
+    let owned_literal = r#"module spec.avi.lenlitowned;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let n: usize = len([stringOf("aa"), stringOf("bb")]);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("lenlitowned", owned_literal);
+    assert_no_asan("lenlitowned", &output);
+    assert_exit("lenlitowned", &output, 0);
+
+    let member_root = r#"module spec.avi.lenmemberroot;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String; rows: String[2]; }
+
+func mk(): Box {
+    return Box { name: stringOf("n"), rows: [stringOf("aa"), stringOf("bb")] };
+}
+
+func main(): i32 {
+    let n: usize = len(mk().rows[0]);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("lenmemberroot", member_root);
+    assert_no_asan("lenmemberroot", &output);
+    assert_exit("lenmemberroot", &output, 0);
+
+    let member_dot = r#"module spec.avi.lenmemberdot;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String; rows: String[2]; }
+
+func mk(): Box {
+    return Box { name: stringOf("n"), rows: [stringOf("aa"), stringOf("bb")] };
+}
+
+func main(): i32 {
+    let n: usize = mk().rows.len();
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("lenmemberdot", member_dot);
+    assert_no_asan("lenmemberdot", &output);
+    assert_exit("lenmemberdot", &output, 0);
+
+    let fresh_member_conditional = r#"module spec.avi.lenmembercond;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String; rows: String[2]; }
+
+func mkA(): Box {
+    return Box { name: stringOf("a"), rows: [stringOf("aa"), stringOf("ab")] };
+}
+
+func mkB(): Box {
+    return Box { name: stringOf("b"), rows: [stringOf("ba"), stringOf("bb")] };
+}
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = len(flag ? mkA().rows : mkB().rows);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("lenmembercond", fresh_member_conditional);
+    assert_no_asan("lenmembercond", &output);
+    assert_exit("lenmembercond", &output, 0);
 }

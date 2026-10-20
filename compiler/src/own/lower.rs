@@ -1401,11 +1401,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_pure_value(&value) {
             return;
         }
+        // A bare call result has no literal field to materialize, so bind an
+        // owning result to a statement temporary the pending release frees.
+        // The expression-statement route handles its own calls; this covers a
+        // call reached through a discard-only position such as a structural
+        // `len` operand.
+        if matches!(
+            &value.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        ) && self.discard_binds_owner(&value.ty)
+        {
+            self.bind_discarded_owner(value);
+            return;
+        }
         // A bare literal statement has no conditional arm to defer, so its
         // fresh leaves materialize here: every leaf with an effect binds to its
         // own statement temporary and releases when the statement ends, while
         // a place leaf stays a read.
         let value = self.materialize_discarded_literal(value);
+        // A projection of a fresh call result names no storage that outlives
+        // the statement. Bind its ownerless root so the root's remaining
+        // fields release; a chain that already roots in storage stays a read.
+        let value = if matches!(&value.kind, ValueKind::Member { .. } | ValueKind::Index { .. }) {
+            self.bind_ownerless_projection_root(value)
+        } else {
+            value
+        };
         self.emit(Statement::Discard { value });
     }
 
@@ -1509,9 +1530,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// set and is freed exactly once. A place-derived or already bound arm
     /// keeps reading its storage instead of moving it, because the discard
     /// never takes ownership of the arm's value.
+    ///
+    /// A fixed-array projection arm (a field or element of a fresh call result)
+    /// binds its root even when the array itself owns nothing: the per-arm
+    /// store copies from the arm, and C has no lvalue for a member of an
+    /// rvalue.
     fn defer_discarded_arm(&mut self, value: Value) -> Value {
-        if self.discard_conditional_depth == 0
-            || !self.discard_binds_owner(&value.ty)
+        if self.discard_conditional_depth == 0 {
+            return value;
+        }
+        if value.ty.is_fixed_array()
+            && matches!(
+                &value.kind,
+                ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
+        {
+            return self.bind_guarded_fixed_array_root(value);
+        }
+        if !self.discard_binds_owner(&value.ty)
             || !matches!(
                 &value.kind,
                 ValueKind::Call { .. }
@@ -4486,6 +4522,44 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
                     value
                 }
             }
+            _ => value,
+        }
+    }
+
+    /// Binds a fixed-array projection arm's ownerless root on the arm's path.
+    ///
+    /// The per-arm store copies the selected fixed-array projection. C cannot
+    /// take the address of a member of an rvalue, so a root that is a call or
+    /// closure result fills a temporary through the deferred materialization.
+    /// The fill runs only on the arm's path, so a skipped arm never evaluates
+    /// its root. A duplicable root still needs the temporary because the copy
+    /// needs an lvalue; its release is a no-op.
+    fn bind_guarded_fixed_array_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.bind_guarded_fixed_array_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.bind_guarded_fixed_array_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                self.materialize_guard_operand(value)
+            }
+            ValueKind::StructLit { .. } => self.materialize_guard_literal(value),
             _ => value,
         }
     }

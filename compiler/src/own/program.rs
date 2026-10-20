@@ -325,7 +325,8 @@ pub(super) fn check_globals<'a>(
 /// judges each written argument and a dot receiver against the declared
 /// parameter mode: a non-`const` module global passed to a `borrow`, `const`,
 /// or unmarked parameter reports `E10038`. A module-qualified receiver, a
-/// `const` global, and a non-place argument stay accepted.
+/// `const` global, a non-place argument, and the existing unmarked scalar,
+/// view, or unresolved-generic oracle shapes stay accepted.
 fn check_initializer_calls<'a>(
     expr: &Expr,
     module: &'a Module,
@@ -692,7 +693,6 @@ fn check_initializer_call<'a>(
                             param,
                             &type_params,
                             &callee_module,
-                            receiver_ty.as_ref(),
                             loaded,
                             program,
                             sema,
@@ -732,7 +732,6 @@ fn check_initializer_call<'a>(
                             param,
                             &type_params,
                             &callee_module,
-                            receiver_ty.as_ref(),
                             loaded,
                             program,
                             sema,
@@ -782,6 +781,12 @@ fn initializer_param_unresolved(
 }
 
 /// Checks a dot receiver's global borrow.
+///
+/// The call has already been type-checked, so a receiver that reaches this
+/// point names the free function, possibly through an implicit conversion. The
+/// body checker does not compare the receiver type before applying the global
+/// rule, and neither does this walk. A func-typed field call is filtered by the
+/// caller's field guard.
 #[allow(clippy::too_many_arguments)]
 fn check_initializer_receiver(
     global: crate::init_graph::GlobalRef,
@@ -789,7 +794,6 @@ fn check_initializer_receiver(
     param: &Param,
     type_params: &[String],
     callee_module: &Module,
-    receiver_ty: Option<&Ty>,
     loaded: &Loaded,
     program: &ProgramInfo<'_>,
     sema: &SemaOutput,
@@ -802,19 +806,6 @@ fn check_initializer_receiver(
         && initializer_param_unresolved(param, type_params, callee_module, loaded, sema)
     {
         return;
-    }
-    if let Some(receiver_ty) = receiver_ty {
-        let expected = resolve_ty_folded(&param.ty, type_params, &sema.table, callee_module, loaded);
-        // A generic parameter or an unresolved type has no concrete gate; the
-        // declaration-level mode still applies. A concrete mismatch is a
-        // different callee (for example a func field that shares the name).
-        if !expected.is_unknown()
-            && !crate::types::contains_param(&expected)
-            && !receiver_ty.is_unknown()
-            && expected != *receiver_ty
-        {
-            return;
-        }
     }
     check_initializer_global(global, span, param, program, diagnostics);
 }

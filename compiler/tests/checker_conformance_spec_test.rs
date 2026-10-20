@@ -11138,10 +11138,9 @@ func main(): i32 {
 }
 "#;
     // The two loaded modules declare `Holder` with different fields. The
-    // checker resolves the field against the initializer module's struct, so
-    // this program is accepted; the shared simple type name is a separate
-    // pre-existing type-table/emission defect (DEF-416), so this case stops at
-    // the front end.
+    // semantic type table keeps the last declaration, which is this module's,
+    // so the field check accepts. The shared simple type name is the
+    // pre-existing DEF-416 collision, so this case stops at the front end.
     let (_scratch, _emitted) = emit_pair("qinitstructname", holder, main);
 
     let order_holder = r#"module spec.cc.qinitorder;
@@ -11279,6 +11278,76 @@ func main(): i32 {
         index_projection,
         "E10038",
         &["cannot borrow global 'es'"],
+        &[],
+    );
+}
+
+/// The initializer borrow rule judges a widened receiver, not only an exact
+/// type match.
+///
+/// A `static str` global passed to `borrow s: str`, a projected `static str`
+/// field, and a `u8` global passed to `borrow x: u16` all report `E10038`
+/// exactly as the function-body twin does. The call has already been
+/// type-checked, so the receiver names the free function or its widened form;
+/// the walk must not drop the report when the written and declared types differ.
+#[test]
+fn should_apply_the_borrow_rule_to_a_widened_initializer_receiver() {
+    let text = r#"module spec.cc.qinitwiden;
+
+func sizeOf(borrow s: str): i32 { return i32(len(s)); }
+
+let s: static str = "abc";
+let g: i32 = s.sizeOf();
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    assert_rejected_once(
+        "qinitwiden",
+        text,
+        "E10038",
+        &["cannot borrow global 's'"],
+        &[],
+    );
+
+    let projected = r#"module spec.cc.qinitwidenproj;
+
+struct H { tag: static str; }
+
+func sizeOf(borrow s: str): i32 { return i32(len(s)); }
+
+let h: H = H { tag: "abc" };
+let g: i32 = h.tag.sizeOf();
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    assert_rejected_once(
+        "qinitwidenproj",
+        projected,
+        "E10038",
+        &["cannot borrow global 'h'"],
+        &[],
+    );
+
+    let scalar = r#"module spec.cc.qinitwidenscalar;
+
+func takeW(borrow x: u16): i32 { return i32(x); }
+
+let a: u8 = 1;
+let g: i32 = a.takeW();
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "qinitwidenscalar",
+        scalar,
+        "E10038",
+        &["cannot borrow global 'a'"],
         &[],
     );
 }
