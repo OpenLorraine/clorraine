@@ -2975,3 +2975,441 @@ func main(): i32 {
         &[],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Carrier sources and callable expressions (Batch Q)
+// ---------------------------------------------------------------------------
+
+/// A projected member of a carrier-returning call is judged at the frame that
+/// receives it.
+///
+/// `make(a.v).names` selects a view position the returned carrier derives from
+/// the caller's local `a`, so the out-slot store reports `E10030` once. The
+/// static control stays accepted and clean.
+#[test]
+fn should_reject_a_projected_carrier_member_with_a_frame_backing() {
+    let source = r#"module spec.eei.projcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: str[2], borrow slot: str?): void { slot = h[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    store(make(a.v).names, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "projcarrier",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.projcarrierok;
+
+struct Holder { names: str[2]; }
+
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(h: str[2], borrow slot: str?): void { slot = h[0]; }
+
+func outer(borrow slot: str?): void {
+    store(make("AA").names, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("projcarrierok", control);
+    assert_no_asan("projcarrierok", &output);
+    assert_exit("projcarrierok", &output, 0);
+}
+
+/// A carrier-returning call with several lend sources contributes every
+/// source's view positions.
+///
+/// `makePair(a.v, b.v)` may return a carrier holding views of either argument,
+/// so the out-slot store names the first frame-dying source and reports
+/// `E10030` once. The all-static pair stays accepted and clean.
+#[test]
+fn should_reject_a_two_source_carrier_call_with_a_frame_backing() {
+    let source = r#"module spec.eei.paircarrier;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makePair(x: str, y: str): Holder { return Holder { names: [x, y] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("bb") };
+    store(makePair(a.v, b.v), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "paircarrier",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.paircarrierok;
+
+struct Holder { names: str[2]; }
+
+func makePair(x: str, y: str): Holder { return Holder { names: [x, y] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    store(makePair("AA", "BB"), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("paircarrierok", control);
+    assert_no_asan("paircarrierok", &output);
+    assert_exit("paircarrierok", &output, 0);
+}
+
+/// A carrier return through an owned aggregate or a `take` argument follows
+/// that source.
+///
+/// `makeHolder(x, b)` views `b.v`, so the caller's store reports `E10030`
+/// once. `id(take h1)` hands `h1`'s views back; the caller's store reports the
+/// same code once, while returning and using the identity result in the same
+/// frame stays accepted and clean.
+#[test]
+fn should_reject_a_carrier_call_through_an_owned_or_take_source() {
+    let aggregate = r#"module spec.eei.ownedcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func makeHolder(x: str, h: Box): Holder { return Holder { names: [x, h.v] }; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[1]; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("aa") };
+    let h: Holder = makeHolder("AA", b);
+    store(h, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "ownedcarrier",
+        aggregate,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let identity = r#"module spec.eei.takecarrier;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id(take h: Holder): Holder { return h; }
+func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h1: Holder = Holder { names: [a.v, "EE"] };
+    let h2: Holder = id(take h1);
+    store(h2, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "takecarrier",
+        identity,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.takecarrierok;
+
+struct Holder { names: str[2]; }
+
+func id(take h: Holder): Holder { return h; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    let g: Holder = id(take h);
+    return i32(g.names[0][0]) - 65;
+}
+"#;
+    let output = run_memory("takecarrierok", control);
+    assert_no_asan("takecarrierok", &output);
+    assert_exit("takecarrierok", &output, 0);
+}
+
+/// A carrier call nested in a returned struct literal is judged at the return.
+///
+/// The selected field is a carrier whose view reads the returned frame's local
+/// `a`, so the return reports `E10030` once. The all-static literal stays
+/// accepted and clean.
+#[test]
+fn should_reject_a_carrier_call_in_a_returned_struct_literal() {
+    let source = r#"module spec.eei.literalcarrierreturn;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+struct S { h: Holder; }
+
+func makeFrom(b: Box): Holder { return Holder { names: [b.v, "EE"] }; }
+
+func outer(c: bool): S {
+    let a: Box = Box { v: stringOf("aa") };
+    return S { h: c ? makeFrom(a) : Holder { names: ["CC", "DD"] } };
+}
+
+func main(): i32 {
+    let s: S = outer(true);
+    return i32(s.h.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "literalcarrierreturn",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.literalcarrierreturnok;
+
+struct Holder { names: str[2]; }
+struct S { h: Holder; }
+
+func outer(c: bool): S {
+    return S { h: c ? Holder { names: ["AA", "BB"] } : Holder { names: ["CC", "DD"] } };
+}
+
+func main(): i32 {
+    let s: S = outer(false);
+    return i32(s.h.names[0][0]) - 67;
+}
+"#;
+    let output = run_memory("literalcarrierreturnok", control);
+    assert_no_asan("literalcarrierreturnok", &output);
+    assert_exit("literalcarrierreturnok", &output, 0);
+}
+
+/// An inline lambda callee resolves its own signature in the source walks.
+///
+/// The lambda returns its `str` argument, so the store hands the caller's slot
+/// a view of the frame-local `a`; the store reports `E10030` once. The
+/// parameter-backed control stays accepted and clean.
+#[test]
+fn should_reject_an_inline_lambda_view_escape() {
+    let source = r#"module spec.eei.lambdaview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    store(((ys: str, j: i32) => ys)(s, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "lambdaview",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.lambdaviewok;
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, borrow slot: str?): void {
+    store(((ys: str, j: i32) => ys)(p, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("lambdaviewok", control);
+    assert_no_asan("lambdaviewok", &output);
+    assert_exit("lambdaviewok", &output, 0);
+}
+
+/// A conditional over func values resolves the common signature and lowers
+/// through the selected callable value.
+///
+/// The escaping call reports `E10030` once. The same call used inside the frame
+/// stays accepted, emits valid C that strict-builds, and runs.
+#[test]
+fn should_resolve_a_conditional_func_value_call() {
+    let source = r#"module spec.eei.condfuncview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func first(s: str, j: i32): str { return s; }
+func second(s: str, j: i32): str { return s; }
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    store((c ? first : second)(s, 0), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "condfuncview",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.condfuncviewok;
+
+func first(s: str, j: i32): str { return s; }
+func second(s: str, j: i32): str { return s; }
+
+func outer(c: bool, p: str): i32 {
+    let s: str = (c ? first : second)(p, 0);
+    return i32(s[0]) - 65;
+}
+
+func main(): i32 {
+    return outer(true, "AA");
+}
+"#;
+    let output = run_host("condfuncviewok", control);
+    assert_exit("condfuncviewok", &output, 0);
+}
+
+/// A by-value capture that backs a view stored into an out-slot reports the
+/// owning escape.
+///
+/// The closure environment dies when the lambda call ends, so the caller's
+/// slot would hold a view of freed storage; the store reports `E10030` once.
+/// A parameter-backed capture survives the call and stays accepted and clean.
+#[test]
+fn should_reject_a_capture_backed_out_slot_view() {
+    let source = r#"module spec.eei.captureoutslotview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    ([a, borrow slot] () => {
+        slot = a.v;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "captureoutslotview",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+
+    let control = r#"module spec.eei.captureoutslotviewok;
+
+func outer(p: str, borrow slot: str?): void {
+    ([p, borrow slot] () => {
+        slot = p;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("captureoutslotviewok", control);
+    assert_no_asan("captureoutslotviewok", &output);
+    assert_exit("captureoutslotviewok", &output, 0);
+}

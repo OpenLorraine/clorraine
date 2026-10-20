@@ -2191,3 +2191,239 @@ func main(): i32 {
     assert_no_asan("fixedarrayelem", &output);
     assert_exit("fixedarrayelem", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Generic conditional wrappers and moved-state residue (Batch Q)
+// ---------------------------------------------------------------------------
+
+/// A conditional `take` of a `take` parameter's owning member moves the
+/// selected member out of the parameter per arm.
+///
+/// At `T = H { name: String }` the concrete twin moves `h.name` into the callee
+/// and drops it there, so the parameter's remaining fields release exactly
+/// once. The generic body must emit the same per-arm move-out; the program runs
+/// clean.
+#[test]
+fn should_move_out_a_conditional_take_of_a_take_parameter_member() {
+    let source = r#"module spec.bgi.condtakemove;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 { return sink(take (c ? h.name : null)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let output = run_memory("condtakemove", source);
+    assert_no_asan("condtakemove", &output);
+    assert_exit("condtakemove", &output, 0);
+}
+
+/// An `unsafe`-wrapped conditional take is judged and lowered exactly like its
+/// bare twin.
+#[test]
+fn should_move_out_an_unsafe_wrapped_conditional_take() {
+    let source = r#"module spec.bgi.condtakemoveunsafe;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 { return sink(take (unsafe (c ? h.name : null))); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let output = run_memory("condtakemoveunsafe", source);
+    assert_no_asan("condtakemoveunsafe", &output);
+    assert_exit("condtakemoveunsafe", &output, 0);
+}
+
+/// An owned array-literal element whose value is a generic conditional records
+/// the per-instance duty.
+///
+/// At `T = H { name: String }` the element moves an owning member out of a lend
+/// parameter, so the concrete twin reports `E10034`; the generic body reports
+/// the same code once. A duplicable element instance stays accepted and clean.
+#[test]
+fn should_reject_a_generic_conditional_array_element() {
+    let source = r#"module spec.bgi.genericarrayelem;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let arr: String[1] = [c ? h.name : h.name];
+    return i32(len(arr[0])) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    assert_rejected_once(
+        "genericarrayelem",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let control = r#"module spec.bgi.genericarrayelemok;
+
+struct HD { name: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let arr: i32[1] = [c ? h.name : h.name];
+    return arr[0] - 1;
+}
+
+func main(): i32 {
+    let h: HD = HD { name: 1 };
+    return f<HD>(true, h);
+}
+"#;
+    let output = run_memory("genericarrayelemok", control);
+    assert_no_asan("genericarrayelemok", &output);
+    assert_exit("genericarrayelemok", &output, 0);
+}
+
+/// An `unsafe`-wrapped generic conditional source is judged like its bare twin.
+///
+/// The struct-literal field spelling at `T = H { name: String }` reports
+/// `E10034` once. The duplicable field instance stays accepted and clean.
+#[test]
+fn should_reject_an_unsafe_wrapped_generic_conditional_source() {
+    let source = r#"module spec.bgi.genericunsafefield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+struct S { name: String?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: S = S { name: unsafe (c ? h.name : null), tag: 1 };
+    if (s.name == null) { return 9; }
+    return i32(len(s.name)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    assert_rejected_once(
+        "genericunsafefield",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let control = r#"module spec.bgi.genericunsafefieldok;
+
+struct HD { p: raw u8; }
+struct SD { name: raw u8?; tag: i32; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: SD = SD { name: unsafe (c ? h.p : null), tag: 1 };
+    if (s.name == null) { return 0; }
+    return 1;
+}
+
+func main(): i32 {
+    let h: HD = HD { p: null };
+    return f<HD>(true, h);
+}
+"#;
+    let output = run_memory("genericunsafefieldok", control);
+    assert_no_asan("genericunsafefieldok", &output);
+    assert_exit("genericunsafefieldok", &output, 0);
+}
+
+/// A nested write below a partially moved field keeps the moved prefix.
+///
+/// `h.name` was moved into `n`, so writing `h.name.x` is a use of the moved
+/// value and reports `E10020` once; the later read of `h.name.s` never runs.
+/// The concrete twin reports the same code. A whole-field re-initialization
+/// stays accepted and clean.
+#[test]
+fn should_reject_a_nested_write_below_a_moved_field() {
+    let generic = r#"module spec.bgi.nestedwritemoved;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f<T>(take h: T): i32 {
+    let n: Inner = h.name;
+    h.name.x = 7;
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f<H>(h);
+}
+"#;
+    assert_rejected_count("nestedwritemoved", generic, "E10020", 1, &["was moved"]);
+
+    let concrete = r#"module spec.bgi.nestedwritemovedconc;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f(take h: H): i32 {
+    let n: Inner = h.name;
+    h.name.x = 7;
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f(h);
+}
+"#;
+    assert_rejected_count(
+        "nestedwritemovedconc",
+        concrete,
+        "E10020",
+        1,
+        &["was moved"],
+    );
+
+    let control = r#"module spec.bgi.nestedwriteinit;
+
+import { String, stringOf } from std.text;
+
+struct Inner { x: i32; s: String; }
+struct H { name: Inner; }
+
+func f(take h: H): i32 {
+    let n: Inner = h.name;
+    h.name = Inner { x: 7, s: stringOf("cd") };
+    return i32(len(h.name.s)) + n.x;
+}
+
+func main(): i32 {
+    let h: H = H { name: Inner { x: 1, s: stringOf("ab") } };
+    return f(h) - 3;
+}
+"#;
+    let output = run_memory("nestedwriteinit", control);
+    assert_no_asan("nestedwriteinit", &output);
+    assert_exit("nestedwriteinit", &output, 0);
+}
