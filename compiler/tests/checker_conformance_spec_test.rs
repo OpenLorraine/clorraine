@@ -10790,3 +10790,153 @@ func main(): i32 {
     assert_no_asan("qglobalfunc", &output);
     assert_exit("qglobalfunc", &output, 0);
 }
+
+/// A folded `len` operand is evaluated only on the path that reaches it.
+///
+/// The structural fold reads no storage, but an effectful operand (a call, an
+/// owned call, or a run-time index) still runs. A conditional, short-circuit,
+/// or loop-condition operand must run only where the expression is evaluated.
+#[test]
+fn should_evaluate_a_folded_len_operand_on_the_reached_path() {
+    let conditional_false = r#"module spec.cc.qcondfalse;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = false;
+    let n: usize = run ? std.mem.len(mk()) : 4;
+    return i32(n) - 4 + hits;
+}
+"#;
+    let output = run_memory("qcondfalse", conditional_false);
+    assert_no_asan("qcondfalse", &output);
+    assert_exit("qcondfalse", &output, 0);
+
+    let conditional_true = r#"module spec.cc.qcondtrue;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = true;
+    let n: usize = run ? std.mem.len(mk()) : 4;
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("qcondtrue", conditional_true);
+    assert_no_asan("qcondtrue", &output);
+    assert_exit("qcondtrue", &output, 0);
+
+    let short_circuit = r#"module spec.cc.qshort;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = false;
+    if (run && i32(std.mem.len(mk())) == 2) {
+        return 9;
+    }
+    return hits;
+}
+"#;
+    let output = run_memory("qshort", short_circuit);
+    assert_no_asan("qshort", &output);
+    assert_exit("qshort", &output, 0);
+
+    let loop_condition = r#"module spec.cc.qloopcond;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && i32(std.mem.len(mk())) == 2) {
+        i = i + 1;
+    }
+    return i32(i) - 2 + hits - 2;
+}
+"#;
+    let output = run_memory("qloopcond", loop_condition);
+    assert_no_asan("qloopcond", &output);
+    assert_exit("qloopcond", &output, 0);
+
+    let statement = r#"module spec.cc.qstmtlen;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    std.mem.len(mk());
+    return hits - 1;
+}
+"#;
+    let output = run_memory("qstmtlen", statement);
+    assert_no_asan("qstmtlen", &output);
+    assert_exit("qstmtlen", &output, 0);
+}
+
+/// An `ffi` declaration may not take a compiler intrinsic's reserved name.
+///
+/// The declaration would emit the written C symbol and collide with the
+/// compiler's own lowering and the standard-library shim, so the loader reports
+/// `E20006` exactly as it does for a user function.
+#[test]
+fn should_reject_an_ffi_declaration_of_a_reserved_intrinsic() {
+    let slice = r#"module spec.cc.qffislice;
+
+ffi api {
+    func slice(v: i32[], lo: usize, hi: usize): i32[];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qffislice",
+        slice,
+        "E20006",
+        &["'slice' is a reserved built-in and cannot be redeclared"],
+        &[],
+    );
+
+    let raw_str = r#"module spec.cc.qffirawstr;
+
+ffi api {
+    func rawStr(x: i32): i32;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "qffirawstr",
+        raw_str,
+        "E20006",
+        &["'rawStr' is a reserved built-in and cannot be redeclared"],
+        &[],
+    );
+}

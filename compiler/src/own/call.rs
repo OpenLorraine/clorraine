@@ -717,10 +717,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                         }
                         // The length is structural, but the operand may have
-                        // effects: evaluate it as a discarded statement (and
-                        // release an owning result) before folding.
-                        self.lower_discarded(&arg.value);
-                        return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
+                        // effects. Lower it through the guard materialization
+                        // so a conditional or short-circuit operand runs only
+                        // on the path that reaches this expression, and an
+                        // owning result is released there. The emitter reads
+                        // the extent from the fixed-array type.
+                        let value = self.lower_value(&arg.value);
+                        let value = self.materialize_guard_operand(value);
+                        return Some((
+                            Ty::usize_ty(),
+                            ValueKind::Intrinsic {
+                                name: "len".to_owned(),
+                                args: vec![value],
+                                type_arg: None,
+                            },
+                        ));
                     }
                 }
                 let value = match args.first() {

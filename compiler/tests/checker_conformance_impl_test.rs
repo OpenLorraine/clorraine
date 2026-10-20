@@ -6944,9 +6944,9 @@ func main(): i32 {
     assert_contains(
         "qsidefreeimpl",
         &emitted,
-        "cl_spec_cc_impl_qsidefree_mk(__cl_discard",
+        "cl_spec_cc_impl_qsidefree_mk(__cl_tmp0)",
     );
-    assert_contains("qsidefreeimpl", &emitted, "(void)(__cl_discard");
+    assert_contains("qsidefreeimpl", &emitted, "n = 2;");
 
     let row = r#"module spec.cc.impl.qrowlen;
 
@@ -7055,5 +7055,40 @@ func main(): i32 {
     assert!(
         !emitted.contains("cl_libm_f(cl_spec_cc_impl_qsingle_libm"),
         "qsingleimpl: the single-segment module call passed the value receiver"
+    );
+}
+
+/// A folded `len` operand keeps its evaluation inside the reached arm.
+///
+/// The operand's call is rendered in the conditional arm, not as an
+/// unconditional statement before the choice; the emitter reads the extent from
+/// the fixed-array type.
+#[test]
+fn should_keep_a_folded_len_operand_inside_its_conditional_arm() {
+    let source = r#"module spec.cc.impl.qcondimpl;
+
+let hits: i32 = 0;
+
+func mk(): i32[2] {
+    hits = hits + 1;
+    return [20, 21];
+}
+
+func main(): i32 {
+    let run: bool = false;
+    let n: usize = run ? std.mem.len(mk()) : 4;
+    return i32(n) - 4 + hits;
+}
+"#;
+    let emitted = emit_host("qcondimpl", source);
+    assert_contains(
+        "qcondimpl",
+        &emitted,
+        "cl_spec_cc_impl_qcondimpl_mk(__cl_tmp0)",
+    );
+    assert_contains(
+        "qcondimpl",
+        &emitted,
+        "? ((cl_spec_cc_impl_qcondimpl_mk(__cl_tmp0)), 2)",
     );
 }

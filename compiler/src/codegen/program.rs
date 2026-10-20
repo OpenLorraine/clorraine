@@ -3075,14 +3075,34 @@ impl<'a> Emitter<'a> {
     /// receiver-taking `len` are the intrinsics a module initializer can
     /// spell.
     fn global_intrinsic_call(&mut self, module: &Module, callee: &Expr) -> Option<String> {
-        // The compiler-known names are reserved, so the simple segment is the
-        // declaration identity. A user or `ffi` declaration, and a callable
-        // field or func-typed global, keep their own symbol.
-        let name = callee_name(callee)?;
-        if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
+        let written = qualified_callee_name(callee);
+        let name = written.rsplit('.').next().unwrap_or(&written);
+        if !matches!(name, "len" | "rawSlice" | "rawStr" | "slice") {
             return None;
         }
-        if self.ffi_callee_signature(&name).is_some()
+        // A module path that ends at the final segment names that module's
+        // declaration. Only the compiler intrinsic there lowers as the
+        // built-in helper; a user or `ffi` declaration of the same simple
+        // name keeps its own symbol. A path that ends earlier is a dot call on
+        // a module binding, so the simple-name shadow checks below apply.
+        let module_path = match &callee.kind {
+            ExprKind::Qualified(target) if target.segments.len() >= 2 => {
+                self.global_module_prefix(&target.segments)
+                    .filter(|split| split + 1 == target.segments.len())
+                    .map(|split| target.segments[..split].join("."))
+            }
+            _ => None,
+        };
+        if let Some(module_path) = module_path {
+            let intrinsic = self
+                .loaded
+                .module(&module_path)
+                .and_then(|target| target.decl(name))
+                .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Intrinsic));
+            if !intrinsic {
+                return None;
+            }
+        } else if self.ffi_callee_signature(name).is_some()
             || self
                 .functions
                 .keys()
@@ -3093,7 +3113,17 @@ impl<'a> Emitter<'a> {
         if self.init_callable_value(module, callee).is_some() {
             return None;
         }
-        Some(name)
+        Some(name.to_owned())
+    }
+
+    /// The length of the longest leading module path in a qualified name.
+    ///
+    /// The search runs from the longest candidate down so a nested module wins
+    /// over its parent's prefix. A single-segment module counts as a path.
+    fn global_module_prefix(&self, segments: &[String]) -> Option<usize> {
+        (1..segments.len())
+            .rev()
+            .find(|split| self.loaded.has_module(&segments[..*split].join(".")))
     }
 
     /// True when a module-initializer callee is a dot call.
@@ -3107,10 +3137,7 @@ impl<'a> Emitter<'a> {
         match &callee.kind {
             ExprKind::Member { .. } => true,
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                if let Some(split) = (1..name.segments.len())
-                    .rev()
-                    .find(|split| self.loaded.has_module(&name.segments[..*split].join(".")))
-                {
+                if let Some(split) = self.global_module_prefix(&name.segments) {
                     return split + 1 < name.segments.len();
                 }
                 // No module path: a module-level binding head followed by its

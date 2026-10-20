@@ -336,22 +336,40 @@ fn declarations_of(item: &Item) -> Vec<Decl> {
 /// declare one, which the caller has already established.
 fn check_reserved_declarations(items: &[Item], diagnostics: &mut Diagnostics) {
     for item in items {
-        let (name, span) = match item {
-            Item::Intrinsic(signature) => (&signature.name, signature.name_span),
-            Item::Func(decl) => (&decl.name, decl.name_span),
-            Item::Comptime(decl) => (&decl.name, decl.name_span),
-            _ => continue,
-        };
-        if stdlib::is_compiler_intrinsic(name) {
-            diagnostics.push(
-                Diagnostic::error(
-                    "E20006",
-                    format!("'{name}' is a reserved built-in and cannot be redeclared"),
-                    span,
-                )
-                .with_help("the compiler provides this intrinsic; rename the declaration"),
-            );
+        match item {
+            Item::Intrinsic(signature) => {
+                check_reserved_name(&signature.name, signature.name_span, diagnostics);
+            }
+            Item::Func(decl) => {
+                check_reserved_name(&decl.name, decl.name_span, diagnostics);
+            }
+            Item::Comptime(decl) => {
+                check_reserved_name(&decl.name, decl.name_span, diagnostics);
+            }
+            // An `ffi` declaration emits the written C symbol, so a reserved
+            // intrinsic name would collide with the compiler's own lowering
+            // and the standard-library shim. The same rule applies.
+            Item::Ffi(block) => {
+                for signature in &block.decls {
+                    check_reserved_name(&signature.name, signature.name_span, diagnostics);
+                }
+            }
+            _ => {}
         }
+    }
+}
+
+/// Reports `E20006` when a declared name is one of the compiler intrinsics.
+fn check_reserved_name(name: &str, span: crate::span::Span, diagnostics: &mut Diagnostics) {
+    if stdlib::is_compiler_intrinsic(name) {
+        diagnostics.push(
+            Diagnostic::error(
+                "E20006",
+                format!("'{name}' is a reserved built-in and cannot be redeclared"),
+                span,
+            )
+            .with_help("the compiler provides this intrinsic; rename the declaration"),
+        );
     }
 }
 
