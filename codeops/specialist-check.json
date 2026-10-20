@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-19T17:39:10+02:00",
+  "checkedAt": "2026-10-20T03:35:26+02:00",
   "plans": [
     "array-value-integrity",
     "borrow-generic-integrity",
@@ -28,6 +28,7 @@
     "generic-field-integrity",
     "generic-substitution-guards",
     "memory-critical-closeout",
+    "memory-critical-completion",
     "memory-value-integrity",
     "module-initializer-integrity",
     "non-lexical-lifetimes",
