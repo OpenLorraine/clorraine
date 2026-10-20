@@ -1306,6 +1306,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.view_array_literal_depth -= 1;
                 }
                 self.literal_views = saved_literal_views;
+                self.record_opaque_store(id, &projections, value, &target_ty, target.span);
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
@@ -1736,6 +1737,82 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return false;
         };
         same_place_expr(target, operand)
+    }
+
+    /// Records a store into a member the declaration sees through a type
+    /// parameter.
+    ///
+    /// The destination type is unresolved here, so the declaration cannot tell
+    /// whether the instance makes the member a view or an owner. A view-like
+    /// source (or an owned `String`, which widens to `str`) records its
+    /// frame-dying backing; the per-instance audit applies the instance's
+    /// conversion and reports the escape when the root is returned. A concrete
+    /// destination keeps the ordinary store path.
+    fn record_opaque_store(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        value: &Expr,
+        target_ty: &Ty,
+        span: Span,
+    ) {
+        if projections.is_empty()
+            || !(target_ty.is_unknown() || crate::types::contains_param(target_ty))
+        {
+            return;
+        }
+        let root_ty = self.bindings[id].ty.clone();
+        if !(root_ty.is_unknown() || crate::types::contains_param(&root_ty)) {
+            return;
+        }
+        let value_ty = self.ty(value);
+        let view_source = is_view_like(&value_ty)
+            || matches!(&value_ty.kind, TyKind::Handle(name) if name == "String");
+        if !view_source {
+            return;
+        }
+        // An owned source read from a non-take parameter is rejected by the
+        // concrete move rule at the declaration (`E10034`); recording the
+        // store too would add a dependent conversion report. A view source
+        // moves nothing and keeps its duty.
+        if !is_view_like(&value_ty) {
+            if let Some(PlaceTarget::Local(source, _)) = self.place_target(value) {
+                let source = self.alias_resolved_root(source);
+                let binding = &self.bindings[source];
+                if binding.kind == BindingKind::Param && binding.mode != Mode::Take {
+                    return;
+                }
+            }
+        }
+        let root = self.bindings[id].ir_name.clone();
+        if !self
+            .recorded_opaque_stores
+            .insert((root.clone(), span.start, span.end))
+        {
+            return;
+        }
+        let frame_owner = Self::storage_atoms(&self.view_provenance(value))
+            .into_iter()
+            .find(|atom| !self.provenance_fits_destination(atom, false))
+            .map(|atom| match atom {
+                Provenance::Local(owner) | Provenance::Param(owner) => {
+                    super::liveness::owner_subject(
+                        &self.bindings[owner].name,
+                        self.bindings[owner].generated,
+                    )
+                }
+                _ => "a statement temporary".to_owned(),
+            });
+        self.opaque_store_requirements.push(ir::RequiresOpaqueStore {
+            function: self.decl.name.clone(),
+            ty: root_ty,
+            path: projections.to_vec(),
+            value: value_ty,
+            frame_owner,
+            store_span: span,
+            return_span: None,
+            root,
+        });
     }
 
     /// Reports a view store that escapes the frame its destination keeps.

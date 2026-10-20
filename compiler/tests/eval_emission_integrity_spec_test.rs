@@ -3457,7 +3457,7 @@ struct Box { v: String; }
 func f<T>(take h: T): i32 {
     let a: Box = Box { v: stringOf("aa") };
     h.names[0] = a.v;
-    return i32(h.names[0][0]) - 97;
+    return i32(len(h.names[0])) - 2;
 }
 
 func main(): i32 {

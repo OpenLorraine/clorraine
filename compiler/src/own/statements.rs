@@ -1616,6 +1616,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             self.eval(value);
             self.literal_views = saved_literal_views;
+            self.mark_opaque_store_return(value);
             if view_elements {
                 self.view_array_literal_depth -= 1;
             }
@@ -1866,6 +1867,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 value: None,
                 releases,
             });
+        }
+    }
+
+    /// Marks every opaque-member store into the returned root as escaping.
+    ///
+    /// The store's destination kind is not known at the declaration, so the
+    /// escape judgment waits for the instance. The return supplies the site
+    /// the concrete twin reports at: the caller receives the carrier and any
+    /// frame-backed view its opaque members hold dies with this frame.
+    fn mark_opaque_store_return(&mut self, value: &Expr) {
+        let value = super::expr::structural_wrapper_inner(value);
+        let Some(PlaceTarget::Local(id, _)) = self.place_target(value) else {
+            return;
+        };
+        let id = self.alias_resolved_root(id);
+        let root = self.bindings[id].ir_name.clone();
+        for duty in &mut self.opaque_store_requirements {
+            if duty.function == self.decl.name && duty.root == root {
+                duty.return_span = Some(value.span);
+            }
         }
     }
 

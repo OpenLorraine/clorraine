@@ -43,8 +43,8 @@ pub use global::GlobalId;
 pub use guards::value_needs_guards;
 pub use mono::{
     CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
-    RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOutSlotPlace, RequiresSelfAssign,
-    RequiresStorableSlot, StructInstance,
+    RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOpaqueStore,
+    RequiresOutSlotPlace, RequiresSelfAssign, RequiresStorableSlot, StructInstance,
 };
 pub use place::{Place, PlaceBase, Projection};
 

@@ -105,6 +105,7 @@ pub fn check(
     let mut out_slot_duties = Vec::new();
     let mut storable_duties = Vec::new();
     let mut self_assign_duties = Vec::new();
+    let mut opaque_store_duties = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -135,6 +136,7 @@ pub fn check(
                     slot_duties,
                     store_duties,
                     self_assign_reqs,
+                    opaque_store_reqs,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -146,6 +148,7 @@ pub fn check(
                 out_slot_duties.extend(slot_duties);
                 storable_duties.extend(store_duties);
                 self_assign_duties.extend(self_assign_reqs);
+                opaque_store_duties.extend(opaque_store_reqs);
             }
         }
     }
@@ -202,6 +205,9 @@ pub fn check(
     }
     for duty in self_assign_duties {
         monomorphization.require_self_assign(duty);
+    }
+    for duty in opaque_store_duties {
+        monomorphization.require_opaque_store(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -499,6 +505,15 @@ struct FunctionChecker<'a, 'd> {
     /// reports the owning or nullable diagnostic, while a duplicable or view
     /// substitution stays accepted.
     self_assign_requirements: Vec<ir::RequiresSelfAssign>,
+    /// The opaque-member store duties this body owes its instances.
+    ///
+    /// A store into a projection the declaration sees through a type parameter
+    /// is judged after substitution: a view member accepts the widened value
+    /// (and reports the escape when the carrier is returned), while an owned
+    /// member keeps the concrete implicit-conversion judgment.
+    opaque_store_requirements: Vec<ir::RequiresOpaqueStore>,
+    /// Opaque-store sites already recorded, so one site owes one duty.
+    recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Store sites already recorded, so one site owes one slot duty.
@@ -602,6 +617,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             out_slot_duties: Vec::new(),
             storable_slot_requirements: Vec::new(),
             self_assign_requirements: Vec::new(),
+            opaque_store_requirements: Vec::new(),
+            recorded_opaque_stores: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
             recorded_storable_slot: BTreeSet::new(),
             recorded_self_assign: BTreeSet::new(),
@@ -632,6 +649,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresOutSlotPlace>,
         Vec<ir::RequiresStorableSlot>,
         Vec<ir::RequiresSelfAssign>,
+        Vec<ir::RequiresOpaqueStore>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -683,6 +701,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.out_slot_duties,
             self.storable_slot_requirements,
             self.self_assign_requirements,
+            self.opaque_store_requirements,
         )
     }
 

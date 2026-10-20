@@ -2990,3 +2990,129 @@ func main(): i32 {
         "pqliteralparam: expected the carrier source once; stderr:\n{stderr}"
     );
 }
+
+/// A store into a type-parameter member follows the instance's member kind.
+///
+/// The local view reports at the return, the owned member reports the concrete
+/// conversion, and the accepted caller-backed and widened stores emit the
+/// view write without moving the source.
+#[test]
+fn should_judge_an_opaque_member_store_at_its_instance() {
+    let local_view = r#"module impl.eei.oqsview;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let stderr = compile_stderr("oqsview", local_view);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10030:"),
+        1,
+        "oqsview: expected one escape report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("borrow of 'a' does not live long enough"),
+        "oqsview: expected the local source; stderr:\n{stderr}"
+    );
+
+    let owned_member = r#"module impl.eei.oqsowned;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.v = s;
+    return h;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    let g: Box = id<Box>(take b);
+    return i32(len(g.v)) - 2;
+}
+"#;
+    let stderr = compile_stderr("oqsowned", owned_member);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10200:"),
+        1,
+        "oqsowned: expected one conversion report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'String'"),
+        "oqsowned: expected the concrete pair; stderr:\n{stderr}"
+    );
+
+    let widen = r#"module impl.eei.oqswiden;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    return i32(len(h.names[0])) - 2;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    let (first, second) = emit_twice("oqswiden", widen);
+    assert_eq!(
+        first, second,
+        "oqswiden: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "oqswiden",
+        &first,
+        &["h.names[0] = cl_string_view(a.v);"],
+    );
+    assert!(
+        !first.contains("h.names[0] = a.v;"),
+        "oqswiden: the owned source must not move into the view member"
+    );
+    assert_run_exit("oqswiden", widen, 0);
+
+    let caller_view = r#"module impl.eei.oqscaller;
+
+struct Holder { names: str[2]; }
+
+func id<T>(take h: T, p: str): T {
+    let v: str = p;
+    h.names[0] = v;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h, "aa");
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let (first, second) = emit_twice("oqscaller", caller_view);
+    assert_eq!(
+        first, second,
+        "oqscaller: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("oqscaller", caller_view, 0);
+}

@@ -285,6 +285,43 @@ pub struct RequiresSelfAssign {
     pub span: Span,
 }
 
+/// A store into a type-parameter member whose instance decides its kind.
+///
+/// The declaration sees only `T`, so it cannot tell whether the selected member
+/// holds a view or an owner. The body records the store and the audit
+/// substitutes the root: a view destination accepts the value with the ordinary
+/// instance conversion and reports the frame escape when the carrier is
+/// returned, while an owned destination keeps the concrete implicit-conversion
+/// judgment. The record carries the root binding only while the body is being
+/// checked; the audit needs the declared type, the path, and the source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresOpaqueStore {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The unique IR spelling of the destination root binding.
+    ///
+    /// The return hook compares it with the returned place's binding. The
+    /// per-instance audit does not read it.
+    pub root: String,
+    /// The destination root's declared type, substituted per instance.
+    pub ty: Ty,
+    /// The projection from the root to the stored member.
+    pub path: Vec<super::Projection>,
+    /// The stored value's declared type, substituted per instance.
+    pub value: Ty,
+    /// The frame-dying backing the stored view reads.
+    ///
+    /// `None` when the source is caller- or module-backed and the view
+    /// survives the frame. `Some(subject)` carries the diagnostic subject,
+    /// already quoted for a binding, and `Some("a statement temporary")` for a
+    /// value the walk cannot name.
+    pub frame_owner: Option<String>,
+    /// The store site, for the conversion diagnostic.
+    pub store_span: Span,
+    /// The return site once the destination root is returned.
+    pub return_span: Option<Span>,
+}
+
 /// One emitted specialization of a lifted lambda.
 ///
 /// A lifted function inside a generic declaration is emitted once per enclosing
@@ -320,6 +357,7 @@ pub struct Monomorphization {
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
     storable_slot_requirements: Vec<RequiresStorableSlot>,
     self_assign_requirements: Vec<RequiresSelfAssign>,
+    opaque_store_requirements: Vec<RequiresOpaqueStore>,
     iterable_requirements: Vec<RequiresIterable>,
 }
 
@@ -446,5 +484,15 @@ impl Monomorphization {
     /// Every whole-binding self-assign duty recorded so far.
     pub fn self_assign_requirements(&self) -> &[RequiresSelfAssign] {
         &self.self_assign_requirements
+    }
+
+    /// Records a store into a type-parameter member.
+    pub fn require_opaque_store(&mut self, requirement: RequiresOpaqueStore) {
+        self.opaque_store_requirements.push(requirement);
+    }
+
+    /// Every opaque-member store duty recorded so far.
+    pub fn opaque_store_requirements(&self) -> &[RequiresOpaqueStore] {
+        &self.opaque_store_requirements
     }
 }

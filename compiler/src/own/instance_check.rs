@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::borrow::is_view;
+use crate::borrow::{is_view, is_view_like};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
@@ -65,6 +65,7 @@ pub fn check(
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
+    check_opaque_store_requirements(program, sema, mono, diagnostics);
     check_capture_move_requirements(program, sema, mono, diagnostics);
 }
 
@@ -385,6 +386,92 @@ fn check_self_assign_requirements(
                 ),
             );
             break;
+        }
+    }
+}
+
+/// Reports the instance judgment for a store into a type-parameter member.
+///
+/// The declaration saw only `T`, so it could not tell whether the member holds
+/// a view or an owner. Each instance substitutes the root and projects the
+/// stored path: an incompatible pair reports the concrete implicit-conversion
+/// error at the store, and a view member that receives a frame-dying backing
+/// reports the escape at the return when the carrier is returned. A
+/// caller-backed or static view stays accepted. One duty reports once — the
+/// first offending instance — so the body site is not repeated.
+fn check_opaque_store_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.opaque_store_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let base = crate::types::substitute(&requirement.ty, &bindings);
+            let value = crate::types::substitute(&requirement.value, &bindings);
+            if base.is_unknown()
+                || crate::types::contains_param(&base)
+                || value.is_unknown()
+                || crate::types::contains_param(&value)
+            {
+                continue;
+            }
+            let path: Vec<crate::types::PlacePathStep> = requirement
+                .path
+                .iter()
+                .map(|projection| match projection {
+                    crate::ir::Projection::Field(name) => {
+                        crate::types::PlacePathStep::Field(name.clone())
+                    }
+                    crate::ir::Projection::Element(_)
+                    | crate::ir::Projection::ElementTemp(_) => {
+                        crate::types::PlacePathStep::Element
+                    }
+                })
+                .collect();
+            let destination =
+                crate::types::project_place_path(&base, &path, &sema.table);
+            if destination.is_unknown() || crate::types::contains_param(&destination) {
+                continue;
+            }
+            if !crate::types::implicit_conversion(&value, &destination) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10200",
+                        format!(
+                            "cannot convert '{}' to '{}' implicitly",
+                            value.display(),
+                            destination.display()
+                        ),
+                        requirement.store_span,
+                    )
+                    .with_help("use an explicit cast `T(expr)`"),
+                );
+                break;
+            }
+            if is_view_like(&destination) {
+                if let (Some(subject), Some(span)) =
+                    (&requirement.frame_owner, requirement.return_span)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10030",
+                            format!("borrow of {subject} does not live long enough"),
+                            span,
+                        )
+                        .with_help("finish the use before the owner's scope ends"),
+                    );
+                    break;
+                }
+            }
         }
     }
 }

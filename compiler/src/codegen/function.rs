@@ -659,6 +659,26 @@ impl<'a> Emitter<'a> {
             }
             Statement::Move { target, source } => {
                 self.emit_line_directive(span);
+                // A store into a member the declaration saw through a type
+                // parameter records the move shape because the declaration
+                // assumed an owned destination. When the instance makes the
+                // member a view, the store is a view write: widen the owned
+                // source and leave it in place. The owned instance keeps the
+                // move below.
+                let recorded_target = self.substitute(&target.ty);
+                let resolved_target = self.resolved_place_ty(target);
+                if recorded_target.is_unknown() && crate::borrow::is_view_like(&resolved_target)
+                {
+                    let target_c = self.place(target);
+                    let source_value = Value::new(
+                        self.resolved_place_ty(source),
+                        ValueKind::Place(source.clone()),
+                    );
+                    self.emit_guards(&source_value);
+                    let lowered = self.store_text(&source_value, &resolved_target);
+                    self.push(&format!("    {target_c} = {lowered};"));
+                    return;
+                }
                 let target_c = self.place(target);
                 let source_c = self.place(source);
                 // A source reached through a run-time element may name the
