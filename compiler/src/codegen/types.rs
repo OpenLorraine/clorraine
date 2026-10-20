@@ -306,8 +306,17 @@ pub(super) fn declarator(ty: &Ty, name: &str, table: &TypeTable) -> String {
             }
             format!("{} {name}{suffix}", c_type(element, table))
         }
-        TyKind::Raw(inner) => pointer_to_array_declarator(inner, name, table)
-            .unwrap_or_else(|| format!("{} *{name}", c_type(inner, table))),
+        TyKind::Raw(inner) => {
+            // A pointer to a function pointer is a nested declarator: the
+            // element's own `ret (*)(params)` text followed by `*name` would
+            // declare a function returning a pointer, not a pointer to a
+            // function pointer.
+            if let TyKind::Func(signature) = &inner.kind {
+                return func_pointer_declarator(signature, &format!("*{name}"), table);
+            }
+            pointer_to_array_declarator(inner, name, table)
+                .unwrap_or_else(|| format!("{} *{name}", c_type(inner, table)))
+        }
         TyKind::CString => format!("char *{name}"),
         TyKind::Func(signature) => func_pointer_declarator(signature, name, table),
         _ => format!("{} {name}", c_type(ty, table)),

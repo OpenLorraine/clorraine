@@ -183,8 +183,7 @@ impl<'a> Emitter<'a> {
             return;
         }
         for (key, element) in keys {
-            let pointer = pointer_to_array_declarator(element, "ptr", &self.sema.table)
-                .unwrap_or_else(|| format!("{} *ptr", c_type(element, &self.sema.table)));
+            let pointer = declarator(&Ty::raw(element.clone()), "ptr", &self.sema.table);
             self.push(&format!(
                 "typedef struct {{ {pointer}; usize len; }} ClSlice_{key};"
             ));

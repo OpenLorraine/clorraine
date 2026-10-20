@@ -424,6 +424,19 @@ impl Checker<'_, '_> {
         if let Some(result) = crate::types::conditional_result(&then_ty, &else_ty) {
             return result;
         }
+        // Two distinct capturing closures have different environment types, so
+        // no single callable value can carry either arm. The conditional is an
+        // ephemeral closure, not a conversion between two matching closure
+        // types.
+        if then_ty.is_closure() && else_ty.is_closure() {
+            self.error(
+                "E10404",
+                "closures are ephemeral and cannot be stored, returned, or captured",
+                "pass the lambda directly",
+                span,
+            );
+            return Ty::unknown();
+        }
         self.error(
             "E10200",
             format!(

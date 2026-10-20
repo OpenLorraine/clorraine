@@ -3233,3 +3233,37 @@ func main(): i32 {
     );
     assert_run_exit("oqswholearray", whole_array, 0);
 }
+
+/// A slice of function values spells a pointer to a function pointer.
+///
+/// The element is `func(i32): i32`, so the slice's pointer field is
+/// `i32 (**ptr)(i32)`: a pointer to the function pointer, not a function type
+/// with `*ptr` appended. The accepted slice strict-builds and calls its first
+/// element.
+#[test]
+fn should_emit_a_pointer_to_function_pointer_slice() {
+    let source = r#"module impl.eei.slicefunc;
+
+import { slice } from std.mem;
+
+func inc(x: i32): i32 { return x + 1; }
+func twice(x: i32): i32 { return x * 2; }
+
+func main(): i32 {
+    let a: (func(i32): i32)[2] = [inc, twice];
+    let v: (func(i32): i32)[] = slice(a, 0, 2);
+    return v[0](20) - 21;
+}
+"#;
+    let (first, second) = emit_twice("slicefunc", source);
+    assert_eq!(
+        first, second,
+        "slicefunc: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains_all(
+        "slicefunc",
+        &first,
+        &["typedef struct { i32 (**ptr)(i32); usize len; } ClSlice_fn_i32__i32;"],
+    );
+    assert_run_exit("slicefunc", source, 0);
+}
