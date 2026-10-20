@@ -370,12 +370,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// its backing rejects that escape; a later read inside the frame is
     /// unaffected.
     fn mark_written_captures(&mut self, callee: &Expr) {
-        if !matches!(
-            super::expr::structural_wrapper_inner(callee).kind,
-            ExprKind::Lambda { .. }
-        ) {
+        let callee = super::expr::structural_wrapper_inner(callee);
+        let ExprKind::Lambda { body, .. } = &callee.kind else {
             return;
-        }
+        };
         let TyKind::Closure(closure) = &self.ty(callee).kind else {
             return;
         };
@@ -385,7 +383,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .get(&closure.id)
             .map(|site| site.captures.clone())
             .unwrap_or_default();
-        for capture in captures {
+        for capture in &captures {
             if capture.mode != CaptureMode::WriteBorrow {
                 continue;
             }
@@ -395,13 +393,343 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let binding = &self.bindings[id];
             let owns_frame_storage = binding.kind == BindingKind::Local
                 || (binding.kind == BindingKind::Param && binding.mode == Mode::Take);
-            if owns_frame_storage {
-                self.bindings[id].provenance = Provenance::Local(id);
-                self.bindings[id].capture_written = true;
-                // A recorded static position from the initializer no longer
-                // describes the value the closure wrote.
-                self.state.element_loans.remove(&id);
+            if !owns_frame_storage {
+                continue;
             }
+            match self.capture_write_summary(body, &capture.name, &captures) {
+                // No write leaves the local's value unchanged.
+                None => {}
+                Some(true) if !self.capture_source_dies_with_frame(id) => {}
+                Some(_) => {
+                    self.bindings[id].provenance = Provenance::Local(id);
+                    self.bindings[id].capture_written = true;
+                    // A recorded static position from the initializer no longer
+                    // describes the value the closure wrote.
+                    self.state.element_loans.remove(&id);
+                }
+            }
+        }
+    }
+
+    /// Summarizes the whole-name writes to one write-borrow capture.
+    ///
+    /// `Some(true)` when at least one write exists and every write stores a
+    /// value that survives the enclosing frame (a static view, a module path, a
+    /// capture backed by caller storage, or a conditional of those).
+    /// `Some(false)` when any write may store frame-backed storage or the walk
+    /// cannot classify it. `None` when the body never writes the capture.
+    fn capture_write_summary(
+        &self,
+        body: &LambdaBody,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+    ) -> Option<bool> {
+        let mut written = false;
+        let mut safe = true;
+        match body {
+            LambdaBody::Expr(value) => {
+                self.scan_capture_expr(value, name, captures, &mut written, &mut safe);
+            }
+            LambdaBody::Block(block) => {
+                self.scan_capture_block(block, name, captures, &mut written, &mut safe);
+            }
+        }
+        written.then_some(safe)
+    }
+
+    /// Scans one lambda-body expression for writes to the captured name.
+    ///
+    /// A nested lambda that names the capture may write it on a later call, so
+    /// it makes the summary unsafe. A write through a projection of the capture
+    /// or a shadowing binding is likewise unclassified and unsafe.
+    fn scan_capture_expr(
+        &self,
+        expr: &Expr,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        match &expr.kind {
+            ExprKind::Assign { target, value, .. } => {
+                if expression_root_name(target) == Some(name) {
+                    *written = true;
+                    if !self.capture_rhs_survives(value, captures) {
+                        *safe = false;
+                    }
+                } else if matches!(target.kind, ExprKind::Name(_)) {
+                    // A write to another name is unrelated.
+                } else if expression_mentions_name(target, name) {
+                    *written = true;
+                    *safe = false;
+                }
+                self.scan_capture_expr(value, name, captures, written, safe);
+            }
+            ExprKind::Lambda { captures: inner, .. } => {
+                if inner.iter().any(|capture| capture.name == name) {
+                    *written = true;
+                    *safe = false;
+                }
+            }
+            ExprKind::Call { callee, args, .. } => {
+                self.scan_capture_expr(callee, name, captures, written, safe);
+                for arg in args {
+                    self.scan_capture_expr(&arg.value, name, captures, written, safe);
+                }
+            }
+            ExprKind::Index { base, index } => {
+                self.scan_capture_expr(base, name, captures, written, safe);
+                self.scan_capture_expr(index, name, captures, written, safe);
+            }
+            ExprKind::Member { base, .. } => {
+                self.scan_capture_expr(base, name, captures, written, safe);
+            }
+            ExprKind::Unary { operand, .. } => {
+                self.scan_capture_expr(operand, name, captures, written, safe);
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.scan_capture_expr(left, name, captures, written, safe);
+                self.scan_capture_expr(right, name, captures, written, safe);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.scan_capture_expr(condition, name, captures, written, safe);
+                self.scan_capture_expr(then_value, name, captures, written, safe);
+                self.scan_capture_expr(else_value, name, captures, written, safe);
+            }
+            ExprKind::Cast { value, .. }
+            | ExprKind::RawCast { value, .. }
+            | ExprKind::Unsafe(value) => {
+                self.scan_capture_expr(value, name, captures, written, safe);
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.scan_capture_expr(&field.value, name, captures, written, safe);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.scan_capture_expr(element, name, captures, written, safe);
+                }
+                if let Some(fill) = fill {
+                    self.scan_capture_expr(fill, name, captures, written, safe);
+                }
+            }
+            ExprKind::IntrinsicCall { args, .. } => {
+                for arg in args {
+                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
+                        self.scan_capture_expr(inner, name, captures, written, safe);
+                    }
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        self.scan_capture_expr(inner, name, captures, written, safe);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Scans one lambda-body block for writes to the captured name.
+    fn scan_capture_block(
+        &self,
+        block: &Block,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        for statement in &block.statements {
+            self.scan_capture_stmt(statement, name, captures, written, safe);
+        }
+    }
+
+    /// Scans one lambda-body statement for writes to the captured name.
+    fn scan_capture_stmt(
+        &self,
+        statement: &Stmt,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        match statement {
+            Stmt::Let(decl) => {
+                self.scan_capture_let(decl, name, captures, written, safe);
+            }
+            Stmt::Const(decl) => {
+                self.scan_capture_const(decl, name, captures, written, safe);
+            }
+            Stmt::Expr(expr) => {
+                self.scan_capture_expr(expr, name, captures, written, safe);
+            }
+            Stmt::If(decl) => {
+                self.scan_capture_if(decl, name, captures, written, safe);
+            }
+            Stmt::While(decl) => {
+                self.scan_capture_expr(&decl.condition, name, captures, written, safe);
+                self.scan_capture_block(&decl.body, name, captures, written, safe);
+            }
+            Stmt::DoWhile(decl) => {
+                self.scan_capture_block(&decl.body, name, captures, written, safe);
+                self.scan_capture_expr(&decl.condition, name, captures, written, safe);
+            }
+            Stmt::ForC(decl) => {
+                match &decl.init {
+                    Some(crate::ast::ForInit::Let(init)) => {
+                        self.scan_capture_let(init, name, captures, written, safe);
+                    }
+                    Some(crate::ast::ForInit::Const(init)) => {
+                        self.scan_capture_const(init, name, captures, written, safe);
+                    }
+                    Some(crate::ast::ForInit::Expr(exprs)) => {
+                        for expr in exprs {
+                            self.scan_capture_expr(expr, name, captures, written, safe);
+                        }
+                    }
+                    None => {}
+                }
+                if let Some(condition) = &decl.condition {
+                    self.scan_capture_expr(condition, name, captures, written, safe);
+                }
+                for step in &decl.step {
+                    self.scan_capture_expr(step, name, captures, written, safe);
+                }
+                self.scan_capture_block(&decl.body, name, captures, written, safe);
+            }
+            Stmt::ForIn(decl) => {
+                if decl.name == name {
+                    *safe = false;
+                }
+                self.scan_capture_expr(&decl.iterable, name, captures, written, safe);
+                self.scan_capture_block(&decl.body, name, captures, written, safe);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(value) = value {
+                    self.scan_capture_expr(value, name, captures, written, safe);
+                }
+            }
+            Stmt::Switch(decl) => {
+                self.scan_capture_expr(&decl.scrutinee, name, captures, written, safe);
+                for clause in &decl.clauses {
+                    if let crate::ast::SwitchLabel::Case(value) = &clause.label {
+                        self.scan_capture_expr(value, name, captures, written, safe);
+                    }
+                    for statement in &clause.statements {
+                        self.scan_capture_stmt(statement, name, captures, written, safe);
+                    }
+                }
+            }
+            Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+                self.scan_capture_block(block, name, captures, written, safe);
+            }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
+        }
+    }
+
+    /// Scans one `let` declaration for writes to the captured name.
+    fn scan_capture_let(
+        &self,
+        decl: &crate::ast::LetStmt,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        // A shadowing binding makes a later write ambiguous.
+        if decl.name == name {
+            *safe = false;
+        }
+        if let Some(value) = &decl.value {
+            self.scan_capture_expr(value, name, captures, written, safe);
+        }
+    }
+
+    /// Scans one `const` declaration for writes to the captured name.
+    fn scan_capture_const(
+        &self,
+        decl: &crate::ast::ConstStmt,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        if decl.name == name {
+            *safe = false;
+        }
+        self.scan_capture_expr(&decl.value, name, captures, written, safe);
+    }
+
+    /// Scans one `if` statement, including a chained `else if`.
+    fn scan_capture_if(
+        &self,
+        decl: &crate::ast::IfStmt,
+        name: &str,
+        captures: &[crate::types::CaptureInfo],
+        written: &mut bool,
+        safe: &mut bool,
+    ) {
+        self.scan_capture_expr(&decl.condition, name, captures, written, safe);
+        self.scan_capture_block(&decl.then_block, name, captures, written, safe);
+        match &decl.else_branch {
+            Some(crate::ast::ElseBranch::If(nested)) => {
+                self.scan_capture_if(nested, name, captures, written, safe);
+            }
+            Some(crate::ast::ElseBranch::Block(block)) => {
+                self.scan_capture_block(block, name, captures, written, safe);
+            }
+            None => {}
+        }
+    }
+
+    /// True when one assigned value is backed by storage that survives the
+    /// enclosing frame.
+    fn capture_rhs_survives(
+        &self,
+        value: &Expr,
+        captures: &[crate::types::CaptureInfo],
+    ) -> bool {
+        match &value.kind {
+            ExprKind::Str(_)
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Char(_)
+            | ExprKind::Bool(_) => true,
+            ExprKind::Qualified(_) => true,
+            ExprKind::Name(name) => {
+                if captures.iter().any(|capture| capture.name == *name) {
+                    match self.lookup(name) {
+                        Some(id) => !self.capture_source_dies_with_frame(id),
+                        None => true,
+                    }
+                } else {
+                    // A module-level binding survives; any other name is a
+                    // lambda-local the enclosing frame cannot see.
+                    self.lookup(name).is_none()
+                        && crate::init_graph::resolve_name_global(self.loaded, self.module, name)
+                            .is_some()
+                }
+            }
+            ExprKind::Unsafe(inner)
+            | ExprKind::Cast { value: inner, .. }
+            | ExprKind::RawCast { value: inner, .. } => {
+                self.capture_rhs_survives(inner, captures)
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.capture_rhs_survives(then_value, captures)
+                    && self.capture_rhs_survives(else_value, captures)
+            }
+            _ => false,
         }
     }
 
@@ -1641,5 +1969,62 @@ fn marker_kind(mode: Mode) -> Mode {
     match mode {
         Mode::None | Mode::Const => Mode::Const,
         other => other,
+    }
+}
+
+/// The whole-name root of an assignment target, when it is a bare name.
+fn expression_root_name(expr: &Expr) -> Option<&str> {
+    match &expr.kind {
+        ExprKind::Name(name) => Some(name),
+        _ => None,
+    }
+}
+
+/// True when one expression mentions a name anywhere in a place or value.
+fn expression_mentions_name(expr: &Expr, name: &str) -> bool {
+    match &expr.kind {
+        ExprKind::Name(written) => written == name,
+        ExprKind::Qualified(qualified) => qualified
+            .segments
+            .first()
+            .is_some_and(|first| first == name),
+        ExprKind::Call { callee, args, .. } => {
+            expression_mentions_name(callee, name)
+                || args
+                    .iter()
+                    .any(|arg| expression_mentions_name(&arg.value, name))
+        }
+        ExprKind::Index { base, index } => {
+            expression_mentions_name(base, name) || expression_mentions_name(index, name)
+        }
+        ExprKind::Member { base, .. } => expression_mentions_name(base, name),
+        ExprKind::Unary { operand, .. } => expression_mentions_name(operand, name),
+        ExprKind::Binary { left, right, .. } => {
+            expression_mentions_name(left, name) || expression_mentions_name(right, name)
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            expression_mentions_name(condition, name)
+                || expression_mentions_name(then_value, name)
+                || expression_mentions_name(else_value, name)
+        }
+        ExprKind::Cast { value, .. }
+        | ExprKind::RawCast { value, .. }
+        | ExprKind::Unsafe(value) => expression_mentions_name(value, name),
+        ExprKind::StructLiteral { fields, .. } => fields
+            .iter()
+            .any(|field| expression_mentions_name(&field.value, name)),
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements
+                .iter()
+                .any(|element| expression_mentions_name(element, name))
+                || fill
+                    .as_deref()
+                    .is_some_and(|fill| expression_mentions_name(fill, name))
+        }
+        _ => false,
     }
 }

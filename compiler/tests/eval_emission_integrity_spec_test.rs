@@ -5245,3 +5245,33 @@ func main(): i32 {
     assert_no_asan("slicefunc", &output);
     assert_exit("slicefunc", &output, 0);
 }
+
+/// A parameter-backed view written through a captured local survives.
+///
+/// The closure stores the captured parameter view into the enclosing local,
+/// so the local holds the caller's storage. A later store to the caller's slot
+/// is accepted, while the local-owner twin (the batch-Q captured-destination
+/// case) still reports the escape.
+#[test]
+fn should_accept_a_parameter_backed_capture_write() {
+    let source = r#"module spec.eei.captureparamsafe;
+
+func store(s: str, borrow slot: str?): void { slot = s; }
+
+func outer(p: str, borrow slot: str?): void {
+    let r: str = "";
+    ([p, borrow r] () => { r = p; })();
+    store(r, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("captureparamsafe", source);
+    assert_no_asan("captureparamsafe", &output);
+    assert_exit("captureparamsafe", &output, 0);
+}
