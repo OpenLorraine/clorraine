@@ -701,7 +701,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             | ExprKind::Float(_)
             | ExprKind::Char(_)
             | ExprKind::Bool(_) => true,
-            ExprKind::Qualified(_) => true,
+            ExprKind::Qualified(_) | ExprKind::Member { .. } => {
+                // A dotted read that roots at an enclosing binding follows
+                // that binding's backing; a module path survives.
+                match self.place_target(value) {
+                    Some(PlaceTarget::Local(id, _)) => {
+                        let id = self.alias_resolved_root(id);
+                        let name = &self.bindings[id].name;
+                        captures.iter().any(|capture| capture.name == *name)
+                            && !self.capture_source_dies_with_frame(id)
+                    }
+                    Some(PlaceTarget::Global(_, _)) | None => true,
+                }
+            }
             ExprKind::Name(name) => {
                 if captures.iter().any(|capture| capture.name == *name) {
                     match self.lookup(name) {
