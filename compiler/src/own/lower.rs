@@ -1001,11 +1001,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 mode: Mode::None,
             })
             .collect();
-        // A capture aliases the enclosing binding it names, so its lifespan
-        // comes from that binding, not from the lifted function's own table.
-        // Record it before the enclosing bindings are saved: a view stored
-        // through a captured out-slot escapes the enclosing frame exactly when
-        // the captured source dies with that frame.
+        // A capture aliases the enclosing binding it names, so the views it
+        // carries point at that binding's backing, not at the capture's own
+        // storage. Record the backing's lifespan before the enclosing bindings
+        // are saved: a view stored through a captured out-slot escapes the
+        // enclosing frame exactly when the captured source dies with that
+        // frame.
         let capture_dies: BTreeMap<String, bool> = self
             .sema
             .closures
@@ -1016,7 +1017,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .filter_map(|info| {
                         self.lookup(&info.name)
-                            .map(|id| (info.name.clone(), self.binding_dies_with_frame(id)))
+                            .map(|id| (info.name.clone(), self.capture_source_dies_with_frame(id)))
                     })
                     .collect()
             })

@@ -983,6 +983,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         value: &Expr,
         lowered: Option<&Value>,
     ) -> BindingEffect {
+        // A transparent `unsafe` or cast wrapper keeps the operand's storage
+        // and ownership effect, so a conditional behind one is judged exactly
+        // as its bare twin is at a binding, a `const`, and a whole assignment.
+        let value = super::expr::structural_wrapper_inner(value);
         if self.maybe_owns(target) {
             // The flow keeps copy semantics for a maybe-owning target; the
             // sources are only marked as consumed so a later use deposits the

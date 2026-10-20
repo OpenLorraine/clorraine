@@ -966,6 +966,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when the views a captured binding holds die with the enclosing
+    /// frame.
+    ///
+    /// A capture aliases the enclosing binding, but a view it carries points at
+    /// that binding's backing, not at the binding's own storage: a local `str`
+    /// copied from a parameter survives the frame even though the local does
+    /// not. A view into a local (or into an owned local's storage) dies with
+    /// it. A non-view binding is judged by its own storage, which dies for a
+    /// local or `take` parameter and survives for a plain parameter, an
+    /// out-slot, or a module value.
+    pub(super) fn capture_source_dies_with_frame(&self, id: usize) -> bool {
+        match self.place_provenance(id) {
+            Provenance::Static | Provenance::Global(_) => false,
+            Provenance::Param(origin) | Provenance::Local(origin) => {
+                self.binding_dies_with_frame(origin)
+            }
+            Provenance::Temp(_) => true,
+            Provenance::None => self.binding_dies_with_frame(id),
+            Provenance::Composite(atoms) => atoms.iter().any(|atom| match atom {
+                Provenance::Static | Provenance::Global(_) => false,
+                Provenance::Param(origin) | Provenance::Local(origin) => {
+                    self.binding_dies_with_frame(*origin)
+                }
+                Provenance::Temp(_) | Provenance::None | Provenance::Composite(_) => true,
+            }),
+        }
+    }
+
     /// The frame-dying owners a view value's binding loans name.
     ///
     /// A container binding's element loans name the storage its view positions

@@ -2223,6 +2223,49 @@ func main(): i32 {
     let output = run_memory("condtakemove", source);
     assert_no_asan("condtakemove", &output);
     assert_exit("condtakemove", &output, 0);
+
+    // The null arm may come first; the selected member still moves out.
+    let reversed = r#"module spec.bgi.condtakerev;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 { return sink(take (c ? null : h.name)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(false, h);
+}
+"#;
+    let output = run_memory("condtakerev", reversed);
+    assert_no_asan("condtakerev", &output);
+    assert_exit("condtakerev", &output, 0);
+
+    // A nested conditional on the owning side moves the selected member and
+    // keeps the nullable spelling of the outer value.
+    let nested = r#"module spec.bgi.condtakenested;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, d: bool, take h: T): i32 {
+    return sink(take (c ? h.name : (d ? h.name : null)));
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, true, h);
+}
+"#;
+    let output = run_memory("condtakenested", nested);
+    assert_no_asan("condtakenested", &output);
+    assert_exit("condtakenested", &output, 0);
 }
 
 /// An `unsafe`-wrapped conditional take is judged and lowered exactly like its
@@ -2349,6 +2392,79 @@ func main(): i32 {
     let output = run_memory("genericunsafefieldok", control);
     assert_no_asan("genericunsafefieldok", &output);
     assert_exit("genericunsafefieldok", &output, 0);
+
+    let binding = r#"module spec.bgi.genericunsafebind;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: String? = unsafe (c ? h.name : null);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    assert_rejected_once(
+        "genericunsafebind",
+        binding,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let constant = r#"module spec.bgi.genericunsafeconst;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    const s: String? = unsafe (c ? h.name : null);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    assert_rejected_once(
+        "genericunsafeconst",
+        constant,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let assignment = r#"module spec.bgi.genericunsafeassign;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: String? = null;
+    s = unsafe (c ? h.name : null);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    assert_rejected_once(
+        "genericunsafeassign",
+        assignment,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
 }
 
 /// A nested write below a partially moved field keeps the moved prefix.

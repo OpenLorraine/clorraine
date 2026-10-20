@@ -2780,3 +2780,57 @@ func main(): i32 {
         "pqlocalhop: expected the escape report; stderr:\n{stderr}"
     );
 }
+
+/// A captured local copy of a parameter-backed or static view is accepted.
+///
+/// The capture's backing is the parameter or static storage, not the local's
+/// own slot, so the out-slot store keeps its acceptance. Both controls re-emit
+/// byte-identically and run clean.
+#[test]
+fn should_emit_a_captured_local_view_control_byte_identically() {
+    let parameter = r#"module impl.eei.pqcaptureparam;
+
+func outer(p: str, borrow slot: str?): void {
+    let s: str = p;
+    ([s, borrow slot] () => {
+        slot = s;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqcaptureparam", parameter);
+    assert_eq!(
+        first, second,
+        "pqcaptureparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("pqcaptureparam", parameter, 0);
+
+    let static_view = r#"module impl.eei.pqcapturestatic;
+
+func outer(borrow slot: str?): void {
+    let s: str = "AA";
+    ([s, borrow slot] () => {
+        slot = s;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let (first, second) = emit_twice("pqcapturestatic", static_view);
+    assert_eq!(
+        first, second,
+        "pqcapturestatic: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_run_exit("pqcapturestatic", static_view, 0);
+}

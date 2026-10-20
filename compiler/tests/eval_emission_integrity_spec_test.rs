@@ -3412,4 +3412,46 @@ func main(): i32 {
     let output = run_memory("captureoutslotviewok", control);
     assert_no_asan("captureoutslotviewok", &output);
     assert_exit("captureoutslotviewok", &output, 0);
+
+    // A local copy of a parameter-backed view keeps the caller's backing, so
+    // the capture survives the call exactly as the parameter does.
+    let local_view = r#"module spec.eei.captureoutslotviewlocal;
+
+func outer(p: str, borrow slot: str?): void {
+    let s: str = p;
+    ([s, borrow slot] () => {
+        slot = s;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("AA", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("captureoutslotviewlocal", local_view);
+    assert_no_asan("captureoutslotviewlocal", &output);
+    assert_exit("captureoutslotviewlocal", &output, 0);
+
+    let static_view = r#"module spec.eei.captureoutslotviewstatic;
+
+func outer(borrow slot: str?): void {
+    let s: str = "AA";
+    ([s, borrow slot] () => {
+        slot = s;
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("captureoutslotviewstatic", static_view);
+    assert_no_asan("captureoutslotviewstatic", &output);
+    assert_exit("captureoutslotviewstatic", &output, 0);
 }

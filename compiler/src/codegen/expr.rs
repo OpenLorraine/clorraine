@@ -455,10 +455,20 @@ impl<'a> Emitter<'a> {
                 }
                 let then_ty = self.resolved_value_ty(then_value);
                 let else_ty = self.resolved_value_ty(else_value);
-                if then_ty.is_unknown() || then_ty != else_ty {
+                if then_ty.is_unknown() || else_ty.is_unknown() {
                     ty
-                } else {
+                } else if then_ty == else_ty {
                     then_ty
+                } else if then_ty.kind == else_ty.kind {
+                    // One arm may be the nullable spelling of the other's
+                    // concrete type (`String` versus `String?`). The selected
+                    // arm's value is exactly that type widened by the empty
+                    // value, so the conditional takes the nullable spelling.
+                    let mut merged = then_ty;
+                    merged.nullable = merged.nullable || else_ty.nullable;
+                    merged
+                } else {
+                    ty
                 }
             }
             // A projected read carries the same opacity: the place's root
@@ -498,8 +508,14 @@ impl<'a> Emitter<'a> {
     }
 
     /// True when a value carries the null literal's nullable-unknown shape.
+    ///
+    /// A compiler temporary records the opaque type its generic body wrote; the
+    /// instance's fill resolves it, exactly as the declaration does. Judging
+    /// the resolved type keeps a materialized `take` carrier from being rendered
+    /// as the parameter's empty value just because the generic spelling was
+    /// opaque and nullable.
     pub(super) fn is_null_shaped(&self, value: &Value) -> bool {
-        crate::types::is_null_shaped(&self.substitute(&value.ty))
+        crate::types::is_null_shaped(&self.resolved_value_ty(value))
     }
 
     /// Renders an integer literal with a suffix when it does not fit `int`.

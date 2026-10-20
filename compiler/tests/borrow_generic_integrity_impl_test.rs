@@ -1177,3 +1177,137 @@ func main(): i32 {
     );
     assert_contains("pqnestedinit", &first, "h.name = (ClInner)");
 }
+
+/// The null-first and nested conditional takes emit the concrete carrier.
+///
+/// The null arm may lead, and an owning arm may itself be a conditional. The
+/// temporary stays a `String` carrier (never the opaque `i32` fallback), the
+/// selected member moves out, and the unit re-emits byte-identically.
+#[test]
+fn should_emit_the_null_first_and_nested_conditional_takes() {
+    let reversed = r#"module impl.bgi.pqtakefirstnull;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, take h: T): i32 { return sink(take (c ? null : h.name)); }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(false, h);
+}
+"#;
+    let (first, second) = emit_twice("pqtakefirstnull", reversed);
+    assert_eq!(
+        first, second,
+        "pqtakefirstnull: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains("pqtakefirstnull", &first, "ClString __cl_tmp0 = NULL;");
+    assert_contains("pqtakefirstnull", &first, "__cl_tmp0 = h.name;");
+
+    let nested = r#"module impl.bgi.pqtakenested;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func sink(take s: String?): i32 { return 0; }
+
+func f<T>(c: bool, d: bool, take h: T): i32 {
+    return sink(take (c ? h.name : (d ? h.name : null)));
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, true, h);
+}
+"#;
+    let (first, second) = emit_twice("pqtakenested", nested);
+    assert_eq!(
+        first, second,
+        "pqtakenested: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains("pqtakenested", &first, "ClString __cl_tmp0 = NULL;");
+    assert!(
+        count_occurrences(&first, "h.name = NULL;") >= 4,
+        "pqtakenested: expected both nested arms and the cleanups; unit:\n{first}"
+    );
+    assert_contains("pqtakenested", &first, "__cl_tmp0 = NULL;");
+}
+
+/// The unsafe-wrapped generic conditional reports once at a binding, a
+/// `const`, and a whole assignment.
+#[test]
+fn should_report_the_wrapped_generic_binding_and_assignment_once() {
+    let binding = r#"module impl.bgi.pqunsafebind;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: String? = unsafe (c ? h.name : null);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqunsafebind", binding);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqunsafebind: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqunsafebind: expected one E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqunsafebind: a rejected program must not produce a translation unit"
+    );
+
+    let assignment = r#"module impl.bgi.pqunsafeassign;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(c: bool, h: T): i32 {
+    let s: String? = null;
+    s = unsafe (c ? h.name : null);
+    if (s == null) { return 9; }
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("aa") };
+    return f<H>(true, h);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("pqunsafeassign", assignment);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "pqunsafeassign: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqunsafeassign: expected one E10034; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "pqunsafeassign: a rejected program must not produce a translation unit"
+    );
+}
