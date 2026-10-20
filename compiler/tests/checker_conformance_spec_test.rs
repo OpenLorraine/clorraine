@@ -11031,4 +11031,61 @@ func main(): i32 {
     let output = run_memory("qinitqualified", qualified);
     assert_no_asan("qinitqualified", &output);
     assert_exit("qinitqualified", &output, 0);
+
+    let generic = r#"module spec.cc.qinitgeneric;
+
+struct N { v: i32; }
+
+func id<T>(borrow x: T): i32 {
+    return 0;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = id(n);
+
+func main(): i32 {
+    return g;
+}
+"#;
+    assert_rejected_once(
+        "qinitgeneric",
+        generic,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let field = r#"module spec.cc.qinitfield;
+
+struct Holder { call: func(i32): i32; }
+
+func call(x: i32): i32 { return x; }
+
+let h: Holder = Holder { call: (x: i32) => x + 1 };
+let g: i32 = h.call(5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let output = run_memory("qinitfield", field);
+    assert_no_asan("qinitfield", &output);
+    assert_exit("qinitfield", &output, 0);
+
+    let same_type_field = r#"module spec.cc.qinitfield2;
+
+struct Holder { call: func(i32): i32; }
+
+func call(x: Holder): i32 { return 0; }
+
+let h: Holder = Holder { call: (x: i32) => x + 1 };
+let g: i32 = h.call(5);
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let output = run_memory("qinitfield2", same_type_field);
+    assert_no_asan("qinitfield2", &output);
+    assert_exit("qinitfield2", &output, 0);
 }

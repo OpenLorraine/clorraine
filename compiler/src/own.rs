@@ -94,7 +94,7 @@ pub fn check(
     let program = ProgramInfo::collect(loaded, &sema.table);
     ffi::check_items(&program, diagnostics);
     for module in loaded.modules.values() {
-        program::check_globals(module, loaded, sema, diagnostics);
+        program::check_globals(module, loaded, &program, sema, diagnostics);
         program::check_struct_declarations(module, loaded, sema, diagnostics);
     }
     let mut functions = Vec::new();
