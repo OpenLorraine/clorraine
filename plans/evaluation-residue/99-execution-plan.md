@@ -93,7 +93,8 @@
 > **Reasoning**: high — one critical UAF and several initializer judgments
 
 - [x] 5.1.1 Replace the unconditional `len` discard with the effects-only walk;
-      a mixed caller-place conditional runs only its condition
+      a mixed caller-place conditional evaluates the selected fresh arm and
+      leaves the place arm in place
 - [x] 5.1.2 Add the every-spelling spec test (bare, dot, qualified; owned and
       mixed cases) and the no-move implementation pin; run `RDC_ASAN=1`
 - [x] 5.2.1 Rewrite the initializer callee resolution and receiver typing;

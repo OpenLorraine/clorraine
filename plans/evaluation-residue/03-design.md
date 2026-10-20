@@ -48,8 +48,9 @@ The third shape splits by the evaluation context:
 
 A pure place still folds. A direct call still materializes. The three spellings
 — qualified `std.mem.len(x)`, bare `len(x)`, and dot `x.len()` — share the same
-walk. A conditional that mixes a caller place arm with a fresh arm runs only its
-condition; discarding the whole conditional would move the caller's owner.
+walk. A conditional that mixes a caller place arm with a fresh arm evaluates
+the selected fresh arm and leaves the place arm in place; the discard emitter
+keeps a place arm a read.
 
 ## Phase 3 — `DEF-532`: apply the global-borrow call rule to initializers
 
@@ -83,7 +84,8 @@ The first review round found one critical memory-safety defect and several
 initializer false positives and false negatives:
 
 - the `len` correction evaluates effects only and never moves a caller place
-  arm; a mixed conditional runs only its condition;
+  arm; a mixed conditional evaluates the selected fresh arm and leaves the
+  place arm in place;
 - a discarded bare call result binds to a statement temporary, an ownerless
   projection root binds before the discard, and a fixed-array projection arm
   binds its root on the arm's path, so an owning call leaf or member root

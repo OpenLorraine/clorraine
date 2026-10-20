@@ -37,9 +37,9 @@ including the hosted-amiga corpus and the six fault legs. The review corrections
 fixed one critical `len` use-after-free and the initializer false positives and
 false negatives. New residuals: `DEF-534` (conditionally evaluated `len`
 operands), `DEF-535` (conditional borrowed places at a view-instance opaque
-store), `DEF-536` (bare discarded fixed-array conditional), `DEF-537`
-(func-typed initializer call arguments), and the extended `DEF-533` oracle
-conflict. The same-named type probe is the pre-existing `DEF-416`.
+store), `DEF-537` (func-typed initializer call arguments), and the extended
+`DEF-533` oracle conflict. `DEF-536` (bare discarded fixed-array conditional)
+is fixed by the dedicated discard path. The same-named type probe is the pre-existing `DEF-416`.
 
 ## Documents
 

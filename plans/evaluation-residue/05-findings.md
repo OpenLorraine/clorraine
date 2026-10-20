@@ -28,7 +28,7 @@ rejection at a view instance is filed as `DEF-535`.
 **Commits**: `ca0ba15` (red), `0e3b74e` (free spelling), `8786f23` (review
 corrections: every spelling, effects-only walk, pins), `7fee974` (confirmation
 corrections: discarded leaf/root binding), `98cb4cb` (indexed and nested member
-arms).
+arms), `a42b398` (discard place-arm safety and struct-literal effects).
 
 A free, bare, or dot `len` of a fixed-array conditional, array literal, or
 run-time index evaluates the operand's effects and still folds the structural
@@ -37,18 +37,21 @@ once, and an index runs its index expression and bounds guard once. A pure place
 still folds; a direct call keeps the guard materialization.
 
 The review correction replaced the unconditional whole-operand discard with an
-effects-only walk. A conditional that mixes a caller place arm with a fresh arm
-now runs only its condition: discarding the whole conditional moved and freed
-the caller's fixed-array owner while the checker still considered it live, an
-ASan heap-use-after-free. The bare `len(...)` and dot `xs.len()` spellings now
-share the same evaluation, so the three spellings agree.
+effects-only walk. The first version ran only a mixed conditional's condition:
+discarding the whole conditional moved and freed the caller's fixed-array owner
+while the checker still considered it live, an ASan heap-use-after-free. The
+discard emitter now keeps a place-rooted arm a read and evaluates the selected
+fresh arm, so a mixed conditional runs the fresh path without moving the
+caller's storage. The bare `len(...)` and dot `xs.len()` spellings share the
+same evaluation, so the three spellings agree.
 
 **Verification**: `should_evaluate_a_non_call_folded_len_operand_in_every_spelling`
 (bare, dot, and qualified; conditional, literal, index, call, owned, mixed
 place-arm, owned-literal, member-root, member-dot, fresh-member-conditional,
 indexed-arm, and nested-member-conditional cases; run under `RDC_ASAN=1`),
-`should_emit_a_len_operand_without_moving_a_caller_place` (emitted shape), the
-focused suites, and `make check`.
+`should_emit_a_len_operand_without_moving_a_caller_place` (emitted shape),
+`should_keep_a_place_arm_in_a_discarded_fixed_array_conditional` (place and
+fresh selections under ASan), the focused suites, and `make check`.
 
 **Residual**: a non-call operand in a conditionally evaluated position (an outer
 conditional arm, a short-circuit right side, or a loop condition) keeps the
@@ -73,6 +76,15 @@ projection whose base is a nested conditional still emitted
 whose base is fresh, and the guarded fixed-array root distributes a nested
 conditional into its arms. Both are pinned (`lenindexcond`,
 `lennestedmember`).
+
+The emission re-review then found the same move-out in the discard emitter for a
+place-rooted fixed-array projection arm. A dedicated discard path now evaluates
+only fresh arms, marks a place arm's storage with a `sizeof` use marker, and
+releases the fresh destination. This also closes the bare-statement
+fixed-array conditional move (`DEF-536`): `(flag ? a : mk());` leaves `a`
+readable. The mixed qualified `len` fresh arm and a struct-literal operand or
+arm now evaluate as well (`lenmixedfresh`, `lenstructroot`, `lenstructcond`,
+and `should_keep_a_place_arm_in_a_discarded_fixed_array_conditional`).
 
 ## Phase 3 — Module initializer call rule (`DEF-532`)
 
@@ -128,13 +140,15 @@ and a module-qualified global receiver, while BR-9 and the function-body twin
 reject them. The walk keeps those shapes accepted until a user ruling retargets
 the oracles or amends BR-9.
 
-**Pre-existing residuals**:
+**Residuals**:
 
 | Row | Finding |
 |---|---|
 | `DEF-533` | Module-initializer global-borrow oracle conflict (extended) |
 | `DEF-534` | Conditionally evaluated non-call `len` operands keep the fold |
 | `DEF-535` | A conditional of borrowed places is rejected at a view-instance opaque store |
-| `DEF-536` | A bare discarded fixed-array conditional moves a place arm (ASan UAF) |
 | `DEF-537` | Func-typed global/field initializer calls skip the borrow rule |
 | `DEF-416` | Same-named types in two modules share one type-table entry; the T2 front-end pin stops before the invalid C |
+
+`DEF-536` (the bare discarded fixed-array conditional move) is fixed by the
+dedicated discard path and is closed in the roadmap.
