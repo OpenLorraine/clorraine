@@ -997,6 +997,55 @@ impl<'a> Emitter<'a> {
                         return;
                     }
                 }
+                // A discarded struct conditional evaluates the selected arm.
+                // An all-fresh literal pair stores through one discard
+                // destination, so a call-filled fixed-array field receives its
+                // hidden destination. A pair with an owning place field keeps
+                // only the condition: copying the place into a discarded
+                // destination would release the caller's storage.
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &value.kind
+                {
+                    let ty = self.substitute(&value.ty);
+                    if matches!(ty.kind, TyKind::Struct(..)) {
+                        if self.struct_conditional_discard_safe(then_value, else_value) {
+                            let dest = self.unique_local("__cl_discard");
+                            self.push("    {");
+                            self.push(&format!(
+                                "        {} = {};",
+                                declarator(&ty, &dest, &self.sema.table),
+                                self.empty_state(&ty)
+                            ));
+                            self.emit_struct_conditional_assign(
+                                &dest,
+                                &ty,
+                                condition,
+                                then_value,
+                                else_value,
+                            );
+                            if self.needs_drop(&ty) {
+                                self.emit_drop_expr(&dest, &ty);
+                            } else {
+                                self.push(&format!("        (void)({dest});"));
+                            }
+                            self.push("    }");
+                        } else {
+                            self.emit_guards(condition);
+                            let condition_c = self.value(condition);
+                            self.push(&format!("    if ({condition_c}) {{"));
+                            self.emit_guards(then_value);
+                            self.emit_place_use_marker(then_value);
+                            self.push("    } else {");
+                            self.emit_guards(else_value);
+                            self.emit_place_use_marker(else_value);
+                            self.push("    }");
+                        }
+                        return;
+                    }
+                }
                 // A literal has no C expression form: its leaves materialize
                 // into statement temporaries the statement's release frees, so
                 // the guards that fill them run here and no value expression is
@@ -1908,6 +1957,55 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// True when a discarded arm reads an owning place.
+    ///
+    /// A duplicable place can be copied into the discard destination and
+    /// dropped harmlessly; an owning place must stay a read, because the
+    /// destination's release would free the caller's storage. Composite arms
+    /// recurse, so a literal with one owning place leaf is skipped whole.
+    fn arm_roots_at_place(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(_) => self.needs_drop(&value.ty),
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.arm_roots_at_place(base)
+            }
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => self.arm_roots_at_place(operand),
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.arm_roots_at_place(then_value) || self.arm_roots_at_place(else_value)
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                elements.iter().any(|element| self.arm_roots_at_place(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.arm_roots_at_place(fill))
+            }
+            ValueKind::StructLit { fields, .. } => {
+                fields.iter().any(|(_, field)| self.arm_roots_at_place(field))
+            }
+            ValueKind::Cast { value, .. } => self.arm_roots_at_place(value),
+            _ => false,
+        }
+    }
+
+    /// True when a discarded struct conditional can store both arms safely.
+    ///
+    /// A struct literal with only fresh or duplicable-place fields may be
+    /// stored into the discard destination and released; a literal with an
+    /// owning place field must not be copied there, because the destination's
+    /// release would free storage the caller still owns.
+    fn struct_conditional_discard_safe(&self, then_value: &Value, else_value: &Value) -> bool {
+        [then_value, else_value].into_iter().all(|arm| {
+            matches!(&arm.kind, ValueKind::StructLit { .. }) && !self.arm_roots_at_place(arm)
+        })
+    }
+
     /// True when a discarded arm needs a destination to evaluate its fresh
     /// value.
     fn discard_arm_needs_dest(&self, arm: &Value) -> bool {
@@ -1920,7 +2018,7 @@ impl<'a> Emitter<'a> {
             return self.discard_arm_needs_dest(then_value)
                 || self.discard_arm_needs_dest(else_value);
         }
-        !arm_roots_at_place(arm)
+        !self.arm_roots_at_place(arm)
     }
 
     /// Emits one arm of a discarded fixed-array conditional.
@@ -1945,7 +2043,7 @@ impl<'a> Emitter<'a> {
             self.push("        }");
             return;
         }
-        if arm_roots_at_place(arm) {
+        if self.arm_roots_at_place(arm) {
             // The selector and any index guards still run; the bytes stay with
             // the caller. The `sizeof` marker keeps the C build warning-free
             // when the arm's only source use is the skipped read.
@@ -3731,39 +3829,6 @@ fn arm_is_projected_place(value: &Value) -> bool {
             !place.projections.is_empty()
                 || matches!(place.base, PlaceBase::DerefTemp { .. })
         }
-        _ => false,
-    }
-}
-
-/// True when an arm reads storage the caller already owns.
-///
-/// A discarded conditional copies no value, so an arm rooted at a place must
-/// stay a read: moving it into the discard temporary and zeroing it would
-/// empty a binding the surrounding code still uses. A call, literal, or
-/// compiler-owned temporary is fresh and may be evaluated and released.
-fn arm_roots_at_place(value: &Value) -> bool {
-    match &value.kind {
-        ValueKind::Place(_) => true,
-        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-            arm_roots_at_place(base)
-        }
-        ValueKind::Unary {
-            op: UnaryOp::Deref,
-            operand,
-        } => arm_roots_at_place(operand),
-        ValueKind::Conditional {
-            then_value,
-            else_value,
-            ..
-        } => arm_roots_at_place(then_value) || arm_roots_at_place(else_value),
-        ValueKind::ArrayLit { elements, fill } => {
-            elements.iter().any(arm_roots_at_place)
-                || fill.as_deref().is_some_and(arm_roots_at_place)
-        }
-        ValueKind::StructLit { fields, .. } => {
-            fields.iter().any(|(_, field)| arm_roots_at_place(field))
-        }
-        ValueKind::Cast { value, .. } => arm_roots_at_place(value),
         _ => false,
     }
 }

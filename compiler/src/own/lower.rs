@@ -1463,6 +1463,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.evaluate_len_operand_effects(&field.value);
                 }
             }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        self.evaluate_len_operand_effects(inner);
+                    }
+                }
+            }
             ExprKind::Index { .. } => {
                 // The read evaluates the base and index and runs the bounds
                 // guard; it moves no storage.

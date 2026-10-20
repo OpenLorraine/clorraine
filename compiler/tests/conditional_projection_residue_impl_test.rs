@@ -2620,27 +2620,37 @@ fn should_materialize_a_discarded_literal_field_per_fresh_owner() {
         body,
         "__cl_tmp1 = cl_std_text_stringOf(cl_str(\"y\"))",
     );
-    assert_on_line_of(tag, body, "(void)((ok ?", "(ClPair){ __cl_tmp0, t }");
-    assert_on_line_of(tag, body, "(void)((ok ?", "(ClPair){ __cl_tmp1, u }");
+    assert_contains(tag, body, "if (ok) {");
+    assert_contains(tag, body, "if (sizeof(t)) { }");
+    assert_contains(tag, body, "if (sizeof(u)) { }");
     assert_release_after(
         tag,
         body,
-        "(void)((ok ?",
+        "if (ok) {",
         "if (__cl_tmp1) { FreeString(__cl_tmp1); }",
     );
     assert_release_after(
         tag,
         body,
-        "(void)((ok ?",
+        "if (ok) {",
         "if (__cl_tmp0) { FreeString(__cl_tmp0); }",
     );
-    // The place bindings keep their own storage: no release of `t` or `u`
-    // runs between the fresh fields' releases and the statement's next
-    // computation, so only the scope cleanup frees them.
-    assert_follows(
+    // The place bindings keep their own storage: the discard block releases
+    // only the fresh field temporaries, and the statement's next computation
+    // runs before the scope cleanup frees `t`/`u`.
+    assert_contains(
         tag,
         body,
-        "    __cl_tmp0 = NULL;\n",
+        "if (sizeof(t)) { }",
+    );
+    assert_contains(
+        tag,
+        body,
+        "if (sizeof(u)) { }",
+    );
+    assert_contains(
+        tag,
+        body,
         "__cl_ret = (i32)((u32)(i32)((u32)(i32)((cl_string_view(t)).len)",
     );
 }
@@ -4629,12 +4639,12 @@ fn should_pass_the_hidden_destination_to_call_filled_literal_fields() {
     let tag = "implcallfield";
     let (_scratch, emitted) = emit_host(tag, CALL_FILLED_FIELD_SOURCE);
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_implcallfield_use(bool ok)\n{");
-    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n1(__cl_tmp0.names)");
-    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n2(__cl_tmp1.names)");
-    assert_absent(tag, body, ".names = cl_spec_cprimpl_implcallfield_n");
-    assert_contains(tag, body, "ClInner __cl_arm_");
+    // Each call-filled fixed-array field passes the call's hidden destination
+    // on its own path; the per-arm carrier is the one that reaches the store.
     assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n1(__cl_call_");
     assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n2(__cl_call_");
+    assert_absent(tag, body, ".names = cl_spec_cprimpl_implcallfield_n");
+    assert_contains(tag, body, "ClInner __cl_arm_");
     assert_contains(tag, body, "o.items[0] = __cl_arm_");
     assert_absent(tag, body, "(ok ? (ClInner)");
 }

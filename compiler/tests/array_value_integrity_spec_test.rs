@@ -1627,3 +1627,68 @@ func main(): i32 {
     assert_no_asan("discardfresh", &output);
     assert_exit("discardfresh", &output, 0);
 }
+
+/// A struct-rooted or composite `len` operand evaluates its fresh leaves.
+///
+/// A conditional of struct literals at a member root keeps the fixed-array call
+/// field's hidden destination on the selected arm; a template field runs its
+/// placeholder calls; an array-literal arm with a duplicable place element
+/// still runs its fresh element calls and leaves the place readable.
+#[test]
+fn should_evaluate_a_struct_or_composite_len_operand() {
+    let struct_root_conditional = r#"module spec.avi.lenstructrootcond;
+
+let hits: i32 = 0;
+
+struct Box { rows: i32[2]; }
+
+func mkRows(): i32[2] { hits = hits + 1; return [1, 2]; }
+
+func main(): i32 {
+    let flag: bool = false;
+    let n: usize = len((flag ? Box { rows: mkRows() } : Box { rows: mkRows() }).rows);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let output = run_memory("lenstructrootcond", struct_root_conditional);
+    assert_no_asan("lenstructrootcond", &output);
+    assert_exit("lenstructrootcond", &output, 0);
+
+    let template_field = r#"module spec.avi.lentemplatefield;
+
+import { String } from std.text;
+
+let bump: i32 = 0;
+
+struct Box { name: String; rows: i32[2]; }
+
+func mkBump(): i32 { bump = bump + 1; return 1; }
+
+func main(): i32 {
+    let n: usize = len(Box { name: $"v {mkBump()}", rows: [1, 2] }.rows);
+    return i32(n) - 2 + bump - 1;
+}
+"#;
+    let output = run_memory("lentemplatefield", template_field);
+    assert_no_asan("lentemplatefield", &output);
+    assert_exit("lentemplatefield", &output, 0);
+
+    let composite_arm = r#"module spec.avi.lencompositearm;
+
+let bump: i32 = 0;
+
+func mkBump(): i32 { bump = bump + 1; return 9; }
+func mkOther(): i32[2] { return [3, 4]; }
+
+func main(): i32 {
+    let a: i32[2] = [7, 8];
+    let flag: bool = true;
+    (flag ? [a[0], mkBump()] : mkOther());
+    let n: usize = len(flag ? [a[0], mkBump()] : mkOther());
+    return i32(n) - 2 + a[0] - 7 + bump - 2;
+}
+"#;
+    let output = run_memory("lencompositearm", composite_arm);
+    assert_no_asan("lencompositearm", &output);
+    assert_exit("lencompositearm", &output, 0);
+}
