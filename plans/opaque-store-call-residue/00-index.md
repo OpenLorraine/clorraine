@@ -3,7 +3,7 @@
 > **Feature**: Close the last open critical (`DEF-525`) and the closely related opaque
 > subscript/store and generic-call residue rows: `DEF-525`, `DEF-526`, `DEF-527`, `DEF-528`,
 > `DEF-395`, `DEF-396`, `DEF-401`, `DEF-406`, `DEF-407`, and the incidental `DEF-402`.
-> **Status**: In progress (2026-10-20)
+> **Status**: Done (2026-10-20)
 > **Created**: 2026-10-20
 > **Planning baseline**: `766e9b9` (the batch-Q close-out and push).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).

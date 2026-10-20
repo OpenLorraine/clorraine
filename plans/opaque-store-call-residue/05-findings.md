@@ -96,17 +96,36 @@ accepts the caller-backed case and runs ASan/LSan-clean; the batch-Q
 ## Phase 4 — Generic dot call
 
 **Rows**: `DEF-395`, `DEF-401`, `DEF-406`.
-**Status**: Pending.
+**Implementation**: `1eb54b2` (red `1ff66e1`).
+
+`check_generic_dot_call` returns the substituted result type, so a `T`-returning
+dot call emits the instance type (`ClString`, not `ClT`) and a generic caller
+whose own `T` shares the callee's spelling keeps the callee's binding. Explicit
+type arguments are resolved, counted (`E10300`), and seeded before the receiver
+and argument checks. `should_bind_a_generic_dot_calls_instance`,
+`should_emit_the_generic_dot_calls_substituted_result`.
 
 ## Phase 5 — Qualified call route
 
 **Rows**: `DEF-396`, `DEF-407`.
-**Status**: Pending.
+**Implementation**: `fd5b1bc` (red `d7096f0`).
+
+A qualified module function whose head is not a lexical local routes through
+`check_generic_call` or `check_args_direct` with its written type arguments,
+so arity (`E10308`), type-argument count (`E10300`), conversions (`E10200`),
+and the substituted return type match the direct spelling. A fixed-array result
+used as a loop iterable names the concrete element (`i32`, not
+`#element of T`). `should_check_a_self_qualified_generic_call`,
+`should_emit_the_concrete_element_of_a_qualified_generic_iterable`.
 
 ## Phase 6 — Initializer verification
 
 **Rows**: `DEF-402`.
-**Status**: Pending.
+**Implementation**: `a782866` (verification only).
+
+The self-qualified generic initializer emits `cl_id__i32(20)` and runs clean at
+the batch head; no dedicated change was required.
+`should_reach_a_self_qualified_generic_in_an_initializer`.
 
 ## New rows filed by the phase review
 
@@ -114,3 +133,12 @@ accepts the caller-backed case and runs ASan/LSan-clean; the batch-Q
 |-----|----------|---------|
 | `DEF-529` | major, pre-existing | A run-time-index view store consumes the owned source into a transfer temporary that is never released (a leak; the constant-index store is clean). |
 | `DEF-530` | minor, pre-existing | Two definite carrier return sites report one `E10030` because the duty keeps one return span; the concrete twin reports each site. |
+
+
+## Close-out
+
+`make check` and `make verify` pass at the batch head. The roadmap records
+`DEF-525`, `DEF-526`, `DEF-527`, `DEF-528`, `DEF-395`, `DEF-396`, `DEF-401`,
+`DEF-406`, `DEF-407`, and `DEF-402` as Done; `DEF-529` (run-time-index view-store
+leak) and `DEF-530` (one report for two return sites) are filed as follow-up rows.
+No `spec/` file, diagnostic registry entry, or generated C was edited.
