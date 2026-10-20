@@ -1705,6 +1705,29 @@ func main(): i32 {
 "#;
     assert_rejected_once("globalaliasarm", alias_arm, "E10033", &["escapes its scope"]);
 
+    let parameter_call = r#"module spec.bsi.globalparamcall;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+let g: Holder = Holder { names: ["CC", "DD"] };
+
+func makeHolder(v: str): Holder { return Holder { names: [v, "EE"] }; }
+
+func set(p: str): void {
+    g = makeHolder(p);
+}
+
+func main(): i32 {
+    let s: String = stringOf("aa");
+    set(s);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once("globalparamcall", parameter_call, "E10033", &["escapes its scope"]);
+
     let control = r#"module spec.bsi.globalcondok;
 
 struct Holder { names: str[2]; }
