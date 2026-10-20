@@ -716,22 +716,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         if super::is_pure_place(&arg.value) {
                             return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                         }
-                        // The length is structural, but the operand may have
-                        // effects. Lower it through the guard materialization
-                        // so a conditional or short-circuit operand runs only
-                        // on the path that reaches this expression, and an
-                        // owning result is released there. The emitter reads
-                        // the extent from the fixed-array type.
-                        let value = self.lower_value(&arg.value);
-                        let value = self.materialize_guard_operand(value);
-                        return Some((
-                            Ty::usize_ty(),
-                            ValueKind::Intrinsic {
-                                name: "len".to_owned(),
-                                args: vec![value],
-                                type_arg: None,
-                            },
-                        ));
+                        // A call operand may have effects. Lower it through
+                        // the guard materialization so a conditional or
+                        // short-circuit operand runs only on the path that
+                        // reaches this expression, and an owning result is
+                        // released there. The emitter reads the extent from
+                        // the fixed-array type.
+                        //
+                        // A non-call effectful shape (a conditional, an array
+                        // literal, or a run-time index) has no expression form
+                        // the emitter can fold and discard safely; those
+                        // shapes keep the structural fold and their evaluation
+                        // is tracked separately.
+                        if matches!(arg.value.kind, ExprKind::Call { .. }) {
+                            let value = self.lower_value(&arg.value);
+                            let value = self.materialize_guard_operand(value);
+                            return Some((
+                                Ty::usize_ty(),
+                                ValueKind::Intrinsic {
+                                    name: "len".to_owned(),
+                                    args: vec![value],
+                                    type_arg: None,
+                                },
+                            ));
+                        }
+                        return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                     }
                 }
                 let value = match args.first() {
