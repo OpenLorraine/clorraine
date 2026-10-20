@@ -88,6 +88,9 @@ initializer false positives and false negatives:
   projection root binds before the discard, and a fixed-array projection arm
   binds its root on the arm's path, so an owning call leaf or member root
   releases and a skipped arm never runs;
+- the freshness classification treats an index of fresh storage as fresh, and
+  a projection whose base is a nested conditional distributes into its arms so
+  each names an lvalue and only the selected arm evaluates;
 - the initializer walk resolves the callee scope-first and uses the projected
   receiver type, the semantic field table, and the declaring module;
 - an explicit `borrow` on a generic dot callee reports, while an unresolved

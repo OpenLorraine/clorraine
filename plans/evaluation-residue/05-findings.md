@@ -27,7 +27,8 @@ rejection at a view instance is filed as `DEF-535`.
 **Status**: Done (2026-10-20).
 **Commits**: `ca0ba15` (red), `0e3b74e` (free spelling), `8786f23` (review
 corrections: every spelling, effects-only walk, pins), `7fee974` (confirmation
-corrections: discarded leaf/root binding).
+corrections: discarded leaf/root binding), `98cb4cb` (indexed and nested member
+arms).
 
 A free, bare, or dot `len` of a fixed-array conditional, array literal, or
 run-time index evaluates the operand's effects and still folds the structural
@@ -43,8 +44,9 @@ ASan heap-use-after-free. The bare `len(...)` and dot `xs.len()` spellings now
 share the same evaluation, so the three spellings agree.
 
 **Verification**: `should_evaluate_a_non_call_folded_len_operand_in_every_spelling`
-(bare, dot, and qualified; conditional, literal, index, call, owned, and mixed
-place-arm cases; run under `RDC_ASAN=1`),
+(bare, dot, and qualified; conditional, literal, index, call, owned, mixed
+place-arm, owned-literal, member-root, member-dot, fresh-member-conditional,
+indexed-arm, and nested-member-conditional cases; run under `RDC_ASAN=1`),
 `should_emit_a_len_operand_without_moving_a_caller_place` (emitted shape), the
 focused suites, and `make check`.
 
@@ -63,6 +65,14 @@ binds a fixed-array projection arm's root on that arm's path. The last change
 also fixes the invalid `memcpy(&(mk().rows), ...)` emission for a conditional of
 fresh member arms; the skipped arm no longer runs. The owned and member-root
 cases are pinned in the every-spelling test under ASan.
+
+The confirmation re-review found two narrower shapes: a conditional of indexed
+member arms was classified as non-fresh, so its arms' calls were skipped, and a
+projection whose base is a nested conditional still emitted
+`memcpy(&((c ? a : b).rows), ...)`. The freshness predicate now accepts an index
+whose base is fresh, and the guarded fixed-array root distributes a nested
+conditional into its arms. Both are pinned (`lenindexcond`,
+`lennestedmember`).
 
 ## Phase 3 — Module initializer call rule (`DEF-532`)
 
