@@ -242,7 +242,9 @@ fn check_not_lend_requirements(
                 })
                 .collect();
             let judged = projected_type(sema, &substituted, &path);
-            if sema.table.duplicable(&judged) && !is_view_member_projection(&path) {
+            if sema.table.duplicable(&judged)
+                && !is_view_member_projection(sema, &substituted, &path)
+            {
                 continue;
             }
             // A nullable substitution is the `borrow T?` out-slot carve-out,
@@ -402,11 +404,59 @@ fn check_self_assign_requirements(
 /// A `.ptr`/`.len` member or an element of a view is not lowered through an
 /// opaque type; the conservative duty rejects the store instead of emitting
 /// invalid C.
-fn is_view_member_projection(path: &[crate::types::PlacePathStep]) -> bool {
-    path.iter().any(|step| match step {
-        crate::types::PlacePathStep::Element => true,
-        crate::types::PlacePathStep::Field(field) => field == "ptr" || field == "len",
-    })
+fn is_view_member_projection(
+    sema: &SemaOutput,
+    root: &Ty,
+    path: &[crate::types::PlacePathStep],
+) -> bool {
+    let mut selected = root.clone();
+    for step in path {
+        while let TyKind::Raw(inner) = &selected.kind {
+            selected = (**inner).clone();
+        }
+        match step {
+            crate::types::PlacePathStep::Field(field)
+                if field == "ptr" || field == "len" =>
+            {
+                // Only a view's intrinsic member is unlowerable; a user field
+                // named `len` or `ptr` on an ordinary value is copied. A
+                // structural `.len` on an array is a duplicable count.
+                if is_view(&selected) {
+                    return true;
+                }
+                // A structural `.len` through an opaque type parameter is not
+                // folded by the emitter (the projected base type is unknown),
+                // so the conservative duty rejects it. A user field named
+                // `len` on an ordinary value is a copy.
+                if field == "len"
+                    && (matches!(selected.kind, TyKind::Array { .. })
+                        || matches!(&selected.kind, TyKind::Struct(name, _) if name == "Array"))
+                {
+                    return true;
+                }
+            }
+            crate::types::PlacePathStep::Element => {
+                if is_view(&selected) {
+                    return true;
+                }
+                // An unresolved or still-generic base stays conservative.
+                if selected.is_unknown() || crate::types::contains_param(&selected) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        let next = crate::types::project_place_path(
+            &selected,
+            std::slice::from_ref(step),
+            &sema.table,
+        );
+        if next.is_unknown() {
+            return true;
+        }
+        selected = next;
+    }
+    false
 }
 
 /// True when a moved or selected projection reaches an owned value.
@@ -424,6 +474,15 @@ fn projected_type(
     for step in path {
         while let TyKind::Raw(inner) = &selected.kind {
             selected = (**inner).clone();
+        }
+        // A structural `.len` on an array is a duplicable count.
+        if matches!(
+            step,
+            crate::types::PlacePathStep::Field(field) if field == "len"
+        ) && matches!(selected.kind, TyKind::Array { .. })
+        {
+            selected = Ty::usize_ty();
+            continue;
         }
         // A view member (`.ptr`, `.len`, or an element of a view) is not
         // lowered through an opaque type; the conservative duty keeps the
@@ -450,6 +509,7 @@ fn check_duplicable_requirements(
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
+    let mut reported: BTreeSet<(String, u32, u32)> = BTreeSet::new();
     for requirement in mono.duplicable_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -476,10 +536,17 @@ fn check_duplicable_requirements(
             // path is a whole-binding move and judges the whole substituted
             // type; a projected path judges the moved member.
             let owns = requirement.paths.iter().any(|path| {
-                is_view_member_projection(path)
+                is_view_member_projection(sema, &substituted, path)
                     || !sema.table.duplicable(&projected_type(sema, &substituted, path))
             });
             if !owns {
+                continue;
+            }
+            if !reported.insert((
+                requirement.binding.clone(),
+                requirement.span.start,
+                requirement.span.end,
+            )) {
                 continue;
             }
             if requirement.partial {

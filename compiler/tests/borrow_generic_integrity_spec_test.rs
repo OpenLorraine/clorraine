@@ -2155,5 +2155,39 @@ func main(): i32 {
 "#;
     assert_rejected_count("dedupemembers", dedupe, "E10020", 1, &["'h'"]);
 
+    let user_len_field = r#"module spec.bgi.userlenfield;
 
+import { String, stringOf } from std.text;
+
+struct H { len: i32; name: String; }
+
+func f<T, U>(take h: T, u: U): i32 {
+    let a: U = h.len;
+    return h.len + i32(a);
+}
+
+func main(): i32 {
+    let h: H = H { len: 1, name: stringOf("aa") };
+    return f<H, i32>(h, 5) - 2;
+}
+"#;
+    let output = run_memory("userlenfield", user_len_field);
+    assert_no_asan("userlenfield", &output);
+    assert_exit("userlenfield", &output, 0);
+
+    let fixed_array_element = r#"module spec.bgi.fixedarrayelem;
+
+func f<T, U>(take xs: T, u: U): i32 {
+    let a: U = xs[0];
+    return xs[0] + i32(a);
+}
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    return f<i32[2], i32>(xs, 5) - 2;
+}
+"#;
+    let output = run_memory("fixedarrayelem", fixed_array_element);
+    assert_no_asan("fixedarrayelem", &output);
+    assert_exit("fixedarrayelem", &output, 0);
 }
