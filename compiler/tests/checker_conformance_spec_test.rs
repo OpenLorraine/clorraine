@@ -10205,3 +10205,23 @@ func main(): i32 {
         &[],
     );
 }
+
+/// A self-qualified generic call in a module initializer declares its instance.
+///
+/// The initializer collector resolves the module-path receiver like the body
+/// collector, so `spec...id<i32>(20)` names the `i32` instance and the strict
+/// build and run succeed.
+#[test]
+fn should_reach_a_self_qualified_generic_in_an_initializer() {
+    let source = r#"module spec.cc.qgenericinit;
+
+func id<T>(x: T): T { return x; }
+
+let v: i32 = spec.cc.qgenericinit.id<i32>(20);
+
+func main(): i32 { return v - 20; }
+"#;
+    let output = run_memory("qgenericinit", source);
+    assert_no_asan("qgenericinit", &output);
+    assert_exit("qgenericinit", &output, 0);
+}
