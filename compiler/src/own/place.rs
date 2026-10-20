@@ -1232,7 +1232,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::Qualified(name) => {
-                if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
+                // A dotted value read lowers to a place chain; keep every
+                // selected member in the position. A module path names no
+                // binding and contributes nothing.
+                if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
+                    out.push((self.alias_resolved_root(id), projections));
+                } else if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
                     out.push((self.alias_resolved_root(id), path.clone()));
                 }
             }
