@@ -3361,6 +3361,115 @@ func main(): i32 {
     assert_exit("takecarrierselect", &output, 0);
 }
 
+/// A view stored into a type-parameter member is judged at its instance.
+///
+/// The declaration cannot see whether `T`'s member holds a view or an owner.
+/// At `T = Holder` the member is a `str`, so a view of the frame's local `a`
+/// stored into it and returned with the `take` carrier escapes (`E10030`).
+/// A caller-backed parameter view stays accepted, and an owned member at
+/// `T = Box` reports the concrete implicit conversion.
+#[test]
+fn should_judge_a_view_store_into_an_opaque_member_at_its_instance() {
+    let local_view = r#"module spec.eei.opaqueviewsore;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.names[0] = s;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h);
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsore",
+        local_view,
+        "E10030",
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let caller_view = r#"module spec.eei.opaqueviewsorecaller;
+
+struct Holder { names: str[2]; }
+
+func id<T>(take h: T, p: str): T {
+    let v: str = p;
+    h.names[0] = v;
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    let g: Holder = id<Holder>(take h, "aa");
+    return i32(g.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("opaqueviewsorecaller", caller_view);
+    assert_no_asan("opaqueviewsorecaller", &output);
+    assert_exit("opaqueviewsorecaller", &output, 0);
+
+    let owned_member = r#"module spec.eei.opaqueviewsoreowned;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func id<T>(take h: T): T {
+    let a: Box = Box { v: stringOf("aa") };
+    let s: str = a.v;
+    h.v = s;
+    return h;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("EE") };
+    let g: Box = id<Box>(take b);
+    return i32(len(g.v)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "opaqueviewsoreowned",
+        owned_member,
+        "E10200",
+        &["cannot convert 'str' to 'String'"],
+        &[],
+    );
+
+    // An owned local widened to the view member is a store, not a move: the
+    // source stays readable and the emitted member holds the widened view.
+    let widen = r#"module spec.eei.opaqueviewsorewiden;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+
+func f<T>(take h: T): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    h.names[0] = a.v;
+    return i32(h.names[0][0]) - 97;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["EE", "FF"] };
+    return f<Holder>(take h);
+}
+"#;
+    let output = run_memory("opaqueviewsorewiden", widen);
+    assert_no_asan("opaqueviewsorewiden", &output);
+    assert_exit("opaqueviewsorewiden", &output, 0);
+}
+
 /// A carrier call nested in a returned struct literal is judged at the return.
 ///
 /// The selected field is a carrier whose view reads the returned frame's local
