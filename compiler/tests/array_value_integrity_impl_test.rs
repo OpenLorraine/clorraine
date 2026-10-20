@@ -734,3 +734,88 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A folded `len` of a non-call operand emits the operand's effects.
+///
+/// The conditional emits both arms under its condition, the literal emits each
+/// element expression, and the index emits its index call. The folded extent is
+/// still the constant `2`, so the effects ride beside the fold rather than
+/// changing its value.
+#[test]
+fn should_emit_the_effects_of_a_non_call_folded_len_operand() {
+    let scratch = ScratchDir::new("lenopimpl");
+    let conditional = r#"module codegen.av.impl.lencond;
+
+let hits: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let run: bool = true;
+    let n: usize = std.mem.len(run ? mkA() : mkB());
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let emitted = emit_host("lencondimpl", &scratch, conditional);
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lencond_mkA("),
+        "lencondimpl: the selected conditional arm was not emitted"
+    );
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lencond_mkB("),
+        "lencondimpl: the other conditional arm was not emitted"
+    );
+    assert!(
+        emitted.contains("n = 2u;"),
+        "lencondimpl: the extent did not fold"
+    );
+
+    let literal = r#"module codegen.av.impl.lenlit;
+
+let hits: i32 = 0;
+
+func mkA(): i32[2] { hits = hits + 1; return [20, 21]; }
+func mkB(): i32[2] { hits = hits + 1; return [20, 21]; }
+
+func main(): i32 {
+    let n: usize = std.mem.len([mkA(), mkB()]);
+    return i32(n) - 2 + hits - 2;
+}
+"#;
+    let emitted = emit_host("lenlitimpl", &scratch, literal);
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lenlit_mkA("),
+        "lenlitimpl: the first literal element was not emitted"
+    );
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lenlit_mkB("),
+        "lenlitimpl: the second literal element was not emitted"
+    );
+    assert!(
+        emitted.contains("n = 2u;"),
+        "lenlitimpl: the extent did not fold"
+    );
+
+    let index = r#"module codegen.av.impl.lenindex;
+
+let hits: i32 = 0;
+
+func bump(): i32 { hits = hits + 1; return 0; }
+
+func main(): i32 {
+    let a: i32[2][2] = [[1, 2], [20, 21]];
+    let n: usize = std.mem.len(a[bump()]);
+    return i32(n) - 2 + hits - 1;
+}
+"#;
+    let emitted = emit_host("lenindeximpl", &scratch, index);
+    assert!(
+        emitted.contains("cl_codegen_av_impl_lenindex_bump("),
+        "lenindeximpl: the run-time index expression was not emitted"
+    );
+    assert!(
+        emitted.contains("n = 2u;"),
+        "lenindeximpl: the extent did not fold"
+    );
+}

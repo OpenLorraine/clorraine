@@ -740,6 +740,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 },
                             ));
                         }
+                        // A conditional, array literal, or run-time index
+                        // has effects the extent fold would drop. In an
+                        // unconditional position, discard the operand first
+                        // so the effects run at this point and only the
+                        // selected arm or elements evaluate. A statement in a
+                        // conditionally evaluated position would run on a path
+                        // that skips the call, so that shape keeps the fold.
+                        if self.defer_move_outs == 0 && !self.in_loop_condition {
+                            self.lower_discarded(&arg.value);
+                        }
                         return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
                     }
                 }
