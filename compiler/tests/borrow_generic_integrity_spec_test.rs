@@ -2705,3 +2705,60 @@ func main(): i32 {
         &["wrong number of type arguments"],
     );
 }
+
+/// A generic dot call runs the direct call's inference and bound checks.
+///
+/// A parameter only in the return is uninferable (`E10301`), a concrete
+/// argument that violates a callable bound is `E10303`, and the explicit
+/// callable-bound call stays accepted and runs.
+#[test]
+fn should_judge_a_generic_dot_calls_inference_and_bounds() {
+    let unbound = r#"module spec.bgi.dotunbound;
+
+func fail<T>(x: i32): T { return 0; }
+
+func main(): i32 {
+    let n: i32 = 1.fail();
+    return n;
+}
+"#;
+    assert_rejected_once(
+        "dotunbound",
+        unbound,
+        "E10301",
+        &["cannot infer type arguments"],
+    );
+
+    let callable_bound = r#"module spec.bgi.dotbound;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    return 1.apply(5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "dotbound",
+        callable_bound,
+        "E10303",
+        &["does not satisfy"],
+    );
+
+    let accepted = r#"module spec.bgi.dotboundok;
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    return 5.apply<i32, func(i32): i32>(addOne) - 6;
+}
+"#;
+    let output = run_memory("dotboundok", accepted);
+    assert_no_asan("dotboundok", &output);
+    assert_exit("dotboundok", &output, 0);
+}

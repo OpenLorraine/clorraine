@@ -10225,3 +10225,133 @@ func main(): i32 { return v - 20; }
     assert_no_asan("qgenericinit", &output);
     assert_exit("qgenericinit", &output, 0);
 }
+
+/// A qualified function value resolves to its emitted module symbol.
+///
+/// The type stage already accepts `spec...helper` as a `func(): i32`; the
+/// emitter must name `cl_spec_..._helper`, not the raw dotted path. The same
+/// program exercises a self-qualified private function, which the resolver
+/// already accepts inside its own module.
+#[test]
+fn should_emit_a_qualified_function_value() {
+    let source = r#"module spec.cc.qfuncvalue;
+
+func helper(): i32 { return 5; }
+
+func main(): i32 {
+    let g: func(): i32 = spec.cc.qfuncvalue.helper;
+    return g() - 5;
+}
+"#;
+    let output = run_memory("qfuncvalue", source);
+    assert_no_asan("qfuncvalue", &output);
+    assert_exit("qfuncvalue", &output, 0);
+}
+
+/// A qualified compiler intrinsic or `ffi` declaration is available.
+///
+/// `std.mem.len`, `std.mem.rawSlice`, and `std.mem.rawStr` are compiler-known
+/// declarations of the standard module; qualified access reaches them exactly
+/// as the bare spellings. A cross-module `ffi` call reaches the target module's
+/// declaration and runs.
+#[test]
+fn should_resolve_a_qualified_intrinsic_and_ffi_declaration() {
+    let length = r#"module spec.cc.qintrlen;
+
+func main(): i32 {
+    let a: i32[2] = [20, 21];
+    let n: usize = std.mem.len(a);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("qintrlen", length);
+    assert_no_asan("qintrlen", &output);
+    assert_exit("qintrlen", &output, 0);
+
+    let raw_slice = r#"module spec.cc.qintrrawslice;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let v: u8[] = unsafe std.mem.rawSlice<u8>(raw u8(&a[0]), 2);
+    return i32(v[1]) - 2;
+}
+"#;
+    let output = run_memory("qintrrawslice", raw_slice);
+    assert_no_asan("qintrrawslice", &output);
+    assert_exit("qintrrawslice", &output, 0);
+
+    let raw_str = r#"module spec.cc.qintrrawstr;
+
+func main(): i32 {
+    let a: u8[2] = [65, 66];
+    let s: str = unsafe std.mem.rawStr(raw u8(&a[0]), 2);
+    return i32(s[1]) - 66;
+}
+"#;
+    let output = run_memory("qintrrawstr", raw_str);
+    assert_no_asan("qintrrawstr", &output);
+    assert_exit("qintrrawstr", &output, 0);
+
+    let holder = r#"module spec.cc.qffi.lib;
+
+import { String } from std.text;
+
+ffi api {
+    func cl_string_len(borrow s: String): usize;
+}
+"#;
+    let ffi = r#"module spec.cc.qffi.user;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let n: usize = spec.cc.qffi.lib.cl_string_len(stringOf("abcd"));
+    return i32(n) - 4;
+}
+"#;
+    let output = run_memory_pair("qffi", holder, ffi);
+    assert_no_asan("qffi", &output);
+    assert_exit("qffi", &output, 0);
+}
+
+/// A module path wins over an imported value with the same head.
+///
+/// The holder exports `f` and a value named `spec`; the caller imports the
+/// value and calls the module function. The path resolves the function, and a
+/// lexical local named like the head still takes the value route.
+#[test]
+fn should_prefer_a_module_path_over_an_imported_value_head() {
+    let holder = r#"module spec.cc.qcoll.lib;
+
+export func f(): i32 { return 5; }
+export let spec: i32 = 0;
+"#;
+    let caller = r#"module spec.cc.qcoll.user;
+
+import { spec } from spec.cc.qcoll.lib;
+
+func main(): i32 {
+    return spec.cc.qcoll.lib.f() - 5 + spec;
+}
+"#;
+    let output = run_memory_pair("qcollpath", holder, caller);
+    assert_no_asan("qcollpath", &output);
+    assert_exit("qcollpath", &output, 0);
+
+    let shadow = r#"module spec.cc.qcollshadow;
+
+struct Wrap {
+    f: func(): i32;
+}
+
+func helper(): i32 { return 5; }
+
+func main(): i32 {
+    let spec: Wrap = Wrap { f: helper };
+    return spec.f() - 5;
+}
+"#;
+    let output = run_memory("qcollshadow", shadow);
+    assert_no_asan("qcollshadow", &output);
+    assert_exit("qcollshadow", &output, 0);
+}
