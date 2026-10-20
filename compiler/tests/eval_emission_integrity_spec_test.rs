@@ -5220,3 +5220,28 @@ func main(): i32 {
         &[],
     );
 }
+
+/// A slice whose element is a `func` type emits a valid C typedef.
+///
+/// The element is itself a function pointer, so the slice's pointer names a
+/// pointer to that function pointer. The accepted program indexes the slice and
+/// calls the selected function.
+#[test]
+fn should_emit_a_slice_of_func_typedef() {
+    let source = r#"module spec.eei.slicefunc;
+
+import { slice } from std.mem;
+
+func inc(x: i32): i32 { return x + 1; }
+func twice(x: i32): i32 { return x * 2; }
+
+func main(): i32 {
+    let a: (func(i32): i32)[2] = [inc, twice];
+    let v: (func(i32): i32)[] = slice(a, 0, 2);
+    return v[0](20) - 21;
+}
+"#;
+    let output = run_memory("slicefunc", source);
+    assert_no_asan("slicefunc", &output);
+    assert_exit("slicefunc", &output, 0);
+}

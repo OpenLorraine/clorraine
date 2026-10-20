@@ -2,8 +2,64 @@
 
 ## Phase 1 — Opaque member store
 
-**Rows**: `DEF-525`.
-**Status**: In progress.
+**Rows**: `DEF-525` (critical).
+**Implementation**: `cca403d`, `37621a6`, `5fc503d`, `4581083`, `3e336e2`.
+**Red cases**: `f251cdb`, extended in each correction round.
+**Lenses**: correctness, semantics, memory-safety, emission-integrity.
+
+### What changed
+
+- A store into a projection the declaration sees through a type parameter records
+  `ir::RequiresOpaqueStore`: the root binding's declared type, the projection path,
+  the source type, every frame-dying backing, the owned source (when the instance
+  decides between a move and a widening), the store and return sites, and the
+  caller-slot flag.
+- The instance audit substitutes the root, projects the path, and applies the
+  concrete conversion. A view member accepts a widened or view source; a returned
+  frame-backed view, a read after the backing's scope closes, a backing rewrite, a
+  caller-slot escape, and an owned member's move/lend/partial-move rule all report
+  the concrete twin's code at the concrete site.
+- The escape duty follows direct, conditional, copied (`let`/`const`/assignment),
+  call-relayed, dotted, constant-index, concrete-typed, and aggregate
+  (struct/array literal) returns. An overwritten path supersedes only the view it
+  replaced; a constant element keeps its sibling's view; two run-time stores do not
+  replace each other.
+- The emitter chooses a view store when the recorded target was not concrete and
+  the instance target is view-like, widens an owned `String` through
+  `cl_string_view`, leaves the source readable at a view instance, keeps the move
+  and zero at an owned instance, and resolves a whole fixed-array move through the
+  instance (`memcpy`). Opaque `.len` and index reads resolve through the instance
+  (`(h.names[0]).ptr[0]`), and the unused-local analysis resolves the same shapes.
+- Null at a non-nullable instance member reports `E10012`; a null at a nullable
+  one stays accepted.
+
+### Red/green evidence
+
+| Row | Red (baseline `766e9b9`) | Green (head `3e336e2`) |
+|-----|--------------------------|------------------------|
+| `DEF-525` | accepted; ASan heap-use-after-free; the owned-source form emitted invalid C | `E10030` once at the return; caller-backed twin accepted and ASan/LSan-clean; owned member `E10200`; widened store `cl_string_view` and no move |
+| Return variants | conditional/copy/relay/dotted/aggregate forms accepted and UAF | each `E10030` once |
+| Backing liveness | nested-block, loop-break, source rewrite, read-then-reinit accepted and UAF/SEGV | `E10030`/`E10031`/`E10020` at the concrete site |
+| Owned/widened stores | view member emitted `ClStr = ClString`; owned instance kept the move | view member widens; owned instance moves; `Wrap<T>` at `T=str`/`String` split correctly |
+| Null and partial | null at a fixed array ran an OOB memcpy; `a[0].v` accepted | `E10012` / `E10026` |
+
+### Review
+
+| Lens | Verdict at `cca403d` | Corrections | Bounded confirmation |
+|------|----------------------|-------------|----------------------|
+| memory-safety | NOT CONFIRMED (non-place returns, backing liveness) | `37621a6`, `5fc503d`, `3e336e2` | **CONFIRMED** at `3e336e2`: no new leak, double free, use-after-free, or release-count defect on the reviewed diff |
+| emission-integrity | NOT CONFIRMED (EI-001/EI-002 conditional/call returns and early backing death) | `37621a6`, `5fc503d`, `3e336e2` | **CONFIRMED** at `3e336e2`: corpus byte-identical; whole-array `memcpy`, opaque index `.ptr[0]`, and accepted controls strict-build/run |
+| correctness | NOT CONFIRMED (copy routes, element identity, lambda binding indices, partial moves) | `5fc503d`, `4581083`, `3e336e2` | all reported criticals closed; the two-return-site count is filed as `DEF-530` |
+| semantics | NOT CONFIRMED (return propagation, backing rewrite, source move/widening) | `37621a6`, `5fc503d`, `3e336e2` | all reported criticals closed; span/subject precision filed with the remaining minor rows |
+
+### Rulings
+
+| Rule | Ruling | Rationale |
+|------|--------|-----------|
+| Opaque view store | The instance decides the member kind: a view member accepts a widened or view source, an owned member keeps the concrete move/conversion rule. | The declaration only sees `T`; the concrete twin judges the substituted member. |
+| Frame escape | A returned carrier, a read after the backing's scope, a caller-slot store, and a backing rewrite report the concrete escape/conflict code at the concrete site. | BR-1 and the last-use rule apply to the stored view exactly as they do to a concrete view store. |
+| Owned source | An owned source waits for the instance: a view member widens it and leaves it readable; an owned member moves it (or reports the lend/partial-move rule). | A move is only correct when the destination owns; the instance decides. |
+| Overwrite | A store at or above an earlier path replaces only the view that path definitely covers; a constant element and a run-time element are distinct. | A run-time element store may write another position, so it cannot erase a constant element's view. |
 
 ## Phase 2 — Type and closure surface
 
@@ -29,3 +85,10 @@
 
 **Rows**: `DEF-402`.
 **Status**: Pending.
+
+## New rows filed by the phase review
+
+| Row | Severity | Finding |
+|-----|----------|---------|
+| `DEF-529` | major, pre-existing | A run-time-index view store consumes the owned source into a transfer temporary that is never released (a leak; the constant-index store is clean). |
+| `DEF-530` | minor, pre-existing | Two definite carrier return sites report one `E10030` because the duty keeps one return span; the concrete twin reports each site. |

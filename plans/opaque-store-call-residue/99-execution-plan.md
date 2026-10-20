@@ -1,6 +1,6 @@
 # Execution Plan — Opaque Store and Call Residue (Batch R)
 
-> **Progress**: 0/49 tasks
+> **Progress**: 11/49 tasks
 > **Rows**: `DEF-525`, `DEF-526`, `DEF-527`, `DEF-528`, `DEF-395`, `DEF-396`, `DEF-401`,
 > `DEF-406`, `DEF-407`, `DEF-402`
 > **Baseline**: `766e9b9`
@@ -14,29 +14,29 @@
 
 ### Step 1.1: Red cases
 
-- [ ] 1.1.1 Write the red cases in `eval_emission_integrity_spec_test.rs`: the local-view
+- [x] 1.1.1 Write the red cases in `eval_emission_integrity_spec_test.rs`: the local-view
       escape (`E10030` at the return), the caller-backed parameter-view control (accepted and
       clean), and the owned-instance view store (`E10200` at the store); each asserts the twin's
       code once or an exact clean run
-- [ ] 1.1.2 Confirm every case fails at the baseline (accepted+UAF, invalid C, or the wrong
+- [x] 1.1.2 Confirm every case fails at the baseline (accepted+UAF, invalid C, or the wrong
       acceptance), then commit the red cases
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Add `ir::RequiresOpaqueStore` and its accessor to `ir/mono.rs`
-- [ ] 1.2.2 Record the duty at an unknown/parameter destination store (`own/expr.rs`)
-- [ ] 1.2.3 Mark the duty escaped at a return of its root binding (`own/statements.rs`)
-- [ ] 1.2.4 Discharge the duty in `own/instance_check.rs`: conversion or escape
-- [ ] 1.2.5 Render an unknown-target `Move` as a view store when the instance target is
+- [x] 1.2.1 Add `ir::RequiresOpaqueStore` and its accessor to `ir/mono.rs`
+- [x] 1.2.2 Record the duty at an unknown/parameter destination store (`own/expr.rs`)
+- [x] 1.2.3 Mark the duty escaped at a return of its root binding (`own/statements.rs`)
+- [x] 1.2.4 Discharge the duty in `own/instance_check.rs`: conversion or escape
+- [x] 1.2.5 Render an unknown-target `Move` as a view store when the instance target is
       view-like (`codegen/function.rs`)
-- [ ] 1.2.6 Run the focused suites and `make check`; commit the fix
+- [x] 1.2.6 Run the focused suites and `make check`; commit the fix
 
 ### Step 1.3: Pins and review
 
-- [ ] 1.3.1 Add the implementation pins (report count and text, widened store text, no source
+- [x] 1.3.1 Add the implementation pins (report count and text, widened store text, no source
       move, byte-identical accepted control)
-- [ ] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
-- [ ] 1.3.3 Record the phase in `05-findings.md` and the roadmap
+- [x] 1.3.2 Dispatch the four-lens phase review; apply corrections and bounded confirmation
+- [x] 1.3.3 Record the phase in `05-findings.md` and the roadmap
 
 ## Phase 2: Type and closure surface
 

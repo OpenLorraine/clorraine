@@ -751,3 +751,41 @@ func main(): i32 {
         &["error E10024:"],
     );
 }
+
+/// A conditional of two distinct capturing closures is ephemeral.
+///
+/// The two closures have different environments, so no single C value can
+/// carry either arm. The conditional reports the ephemeral-closure rule
+/// (`E10404`) once, not a conversion between two closure types. A capture-less
+/// pair stays an ordinary function value.
+#[test]
+fn should_reject_a_conditional_of_capturing_closures_with_the_ephemeral_rule() {
+    let capturing = r#"module spec.ci.condcapture;
+
+func main(): i32 {
+    let x: i32 = 20;
+    let c: bool = true;
+    let f = c ? [x]() => x : [x]() => x;
+    return f() - 20;
+}
+"#;
+    assert_rejected_once(
+        "condcapture",
+        capturing,
+        "E10404",
+        &["closures are ephemeral"],
+        &["E10200"],
+    );
+
+    let captureless = r#"module spec.ci.condplain;
+
+func main(): i32 {
+    let c: bool = true;
+    let f = c ? (x: i32) => x + 1 : (x: i32) => x + 2;
+    return f(20) - 21;
+}
+"#;
+    let output = run_memory("condplain", captureless);
+    assert_no_asan("condplain", &output);
+    assert_exit("condplain", &output, 0);
+}
