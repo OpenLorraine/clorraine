@@ -454,7 +454,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.error(
                 "E10034",
                 format!("cannot release or store borrowed parameter '{name}'"),
-                "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                super::LEND_STORE_HELP,
                 span,
             );
             return;

@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 5/27 tasks (19%)
-> **Last Updated**: 2026-10-22 01:16
+> **Progress**: 7/27 tasks (26%)
+> **Last Updated**: 2026-10-22 01:18
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -219,18 +219,23 @@ Notes:
 
 ### Phase 2 — Concrete whole-out-slot judgment
 
-- [ ] 2.1.1 Add the source-matrix helper and the whole-out-slot foreign-lend
+> **Phase baseline tree**: e7d366b73ec3e55ea6a0c504186d0ee514cc62d7
+
+- [x] 2.1.1 Add the source-matrix helper and the whole-out-slot foreign-lend
   judgment in `check_escaping_view_store`, before the
   `callee_elides_no_single_parameter` withholding; handle projections,
   conditionals, captures, and view-returning calls; accept a `static str`
   position; keep the existing `E10030` for local/fresh views.
-- [ ] 2.1.2 Update the canonical `E10034` help at the seven sites (or through
+  ✅ (completed: 2026-10-22 01:18)
+- [x] 2.1.2 Update the canonical `E10034` help at the seven sites (or through
   a shared helper) and the diagnostic site; keep the message
   `cannot release or store borrowed parameter '{name}'`.
-- [ ] 2.1.3 Run the focused `borrow_store_integrity_*`,
+  ✅ (completed: 2026-10-22 01:18)
+- [~] 2.1.3 Run the focused `borrow_store_integrity_*`,
   `conditional_projection_residue_*`, and `eval_emission_integrity_*` suites,
   the `compiler/src/own/tests.rs` unit tests, and the `RDC_ASAN=1` ownership
-  probes.
+  probes. ⏳ (verification pending: 2026-10-22 01:18; the existing fixture
+  migration is AR-1)
 
 ### Phase 3 — Generic whole-slot duty and the owned move
 

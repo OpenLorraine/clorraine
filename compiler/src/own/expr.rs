@@ -2374,6 +2374,60 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect()
     }
 
+    /// The first foreign lend root a whole out-slot store would keep.
+    ///
+    /// A `borrow T?` slot owns its own incoming value, but a different lend's
+    /// value or view is call-scoped. A `take` source owns its value; a capture
+    /// that dies with the enclosing frame is the existing frame-backed case.
+    /// The value is static when its type is `static str` or every conditional
+    /// arm is static; a static position outlives the call and is accepted.
+    fn foreign_lend_store_root(&self, value: &Expr, destination: usize) -> Option<usize> {
+        if self.is_static_view_source(value) {
+            return None;
+        }
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            let Provenance::Param(owner) = atom else {
+                continue;
+            };
+            if owner == destination {
+                continue;
+            }
+            let binding = &self.bindings[owner];
+            if binding.kind == BindingKind::Param && binding.mode == Mode::Take {
+                continue;
+            }
+            if binding.capture_dies_with_frame {
+                continue;
+            }
+            return Some(owner);
+        }
+        None
+    }
+
+    /// True when a value's storage is static for every possible result.
+    ///
+    /// A `static str` type names module-level storage, and a conditional is
+    /// static only when both arms are; `null` names no storage. A `str` field
+    /// of a by-value aggregate is not static-typed even when its initializer is
+    /// a literal, so the caller cannot prove it and the store remains a
+    /// recorded precision loss.
+    fn is_static_view_source(&self, value: &Expr) -> bool {
+        if matches!(self.ty(value).kind, TyKind::StaticStr) {
+            return true;
+        }
+        match &value.kind {
+            ExprKind::Str(_) | ExprKind::Null => true,
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.is_static_view_source(then_value) && self.is_static_view_source(else_value)
+            }
+            _ => false,
+        }
+    }
+
     /// Collects the bindings an owned place value or conditional names.
     fn owned_source_roots(&self, value: &Expr, roots: &mut Vec<usize>) {
         match &value.kind {
@@ -2423,6 +2477,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ) {
         if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
             return;
+        }
+        // A whole `borrow T?` slot owns only its incoming value. A value or
+        // view of a different lend is call-scoped, so the caller can reassign
+        // its backing after the call and leave the slot dangling; report the
+        // source parameter once, before the view-return withholding can hide
+        // the store.
+        if whole_out_slot {
+            if let (Some(destination), false) = (root_id, global) {
+                if let Some(owner) = self.foreign_lend_store_root(value, destination) {
+                    let name = self.bindings[owner].name.clone();
+                    self.error(
+                        "E10034",
+                        format!("cannot release or store borrowed parameter '{name}'"),
+                        super::LEND_STORE_HELP,
+                        span,
+                    );
+                    return;
+                }
+            }
         }
         // The callee's own view-return judgment already rejects the value when
         // its declaration elides no single parameter, so the destination's
@@ -3056,7 +3129,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.error(
                 "E10034",
                 format!("cannot release or store borrowed parameter '{parameter}'"),
-                "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                super::LEND_STORE_HELP,
                 span,
             );
         }

@@ -267,7 +267,7 @@ fn check_not_lend_requirements(
                     requirement.span,
                 )
                 .with_help(
-                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                    super::LEND_STORE_HELP,
                 ),
             );
             break;
@@ -319,7 +319,7 @@ fn check_storable_slot_requirements(
                     requirement.span,
                 )
                 .with_help(
-                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                    super::LEND_STORE_HELP,
                 ),
             );
             break;
@@ -382,7 +382,7 @@ fn check_self_assign_requirements(
                     requirement.span,
                 )
                 .with_help(
-                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                    super::LEND_STORE_HELP,
                 ),
             );
             break;
@@ -652,7 +652,7 @@ fn check_opaque_store_requirements(
                         requirement.store_span,
                     )
                     .with_help(
-                        "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                        super::LEND_STORE_HELP,
                     ),
                 );
                 break;
@@ -675,7 +675,7 @@ fn check_opaque_store_requirements(
                             requirement.store_span,
                         )
                         .with_help(
-                            "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                            super::LEND_STORE_HELP,
                         ),
                     );
                     arm_reported = true;

@@ -66,6 +66,13 @@ mod tests;
 
 use program::{Callee, ProgramInfo, StdlibEffect};
 
+/// Remedy shared by every rejected lend store.
+///
+/// The `borrow T?` exception covers only the slot's own incoming value. A
+/// different lend's value or view is still rejected, while a static view and
+/// a newly owned value remain legal.
+pub(crate) const LEND_STORE_HELP: &str = "declare the parameter `take` or by value; a `borrow T?` slot may hold its own incoming value, a static view, or a newly owned value";
+
 /// What the ownership stage hands to the emitter.
 pub struct OwnershipOutput {
     /// The lowered control-flow graph of every function body.
