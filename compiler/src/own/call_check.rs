@@ -37,7 +37,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
                 return;
             }
         }
@@ -59,7 +59,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
                 return;
             }
         }
@@ -76,7 +76,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_marker_matches(&name, args, &params);
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
                 return;
             }
         }
@@ -107,7 +107,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
                 return;
             }
         }
@@ -132,7 +132,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
                 return;
             }
             // The callee may be an intrinsic reached as a dot-call, such as
@@ -219,6 +219,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         &mut lent,
                     );
                 }
+                let callee_stores_whole_out_slot = callee_has_whole_out_slot_store(decl);
                 self.check_arguments(
                     args,
                     written_params,
@@ -230,6 +231,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         None
                     },
+                    callee_stores_whole_out_slot,
                 );
                 // A slot parameter whose declared type still mentions a type
                 // parameter may become a nullable out-slot only at the
@@ -894,6 +896,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         lent: &mut BTreeSet<usize>,
         receiver: Option<(&'a Expr, &(Mode, Ty))>,
+        callee_stores_whole_out_slot: bool,
     ) {
         for (index, arg) in args.iter().enumerate() {
             let expected = params.get(index).map(|(_, ty)| ty.clone());
@@ -936,7 +939,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 lent,
             );
         }
-        self.check_cross_frame_pass_through(args, params, receiver, span);
+        self.check_cross_frame_pass_through(
+            args,
+            params,
+            receiver,
+            span,
+            callee_stores_whole_out_slot,
+        );
     }
 
     /// Judges a view pass-through into a slot that lives further out.
@@ -957,7 +966,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         params: &[(Mode, Ty)],
         receiver: Option<(&'a Expr, &(Mode, Ty))>,
         span: Span,
+        callee_stores_whole_out_slot: bool,
     ) {
+        // A callee that writes its own whole out-slot reports the store at
+        // its definition or instance. The caller-side frame report would
+        // repeat the same store; leave the callee-side judgment as the one
+        // report. An opaque callee has no body to judge, so the caller keeps
+        // the conservative frame guard.
+        if callee_stores_whole_out_slot {
+            return;
+        }
         // A borrow parameter whose type can hold a view is a slot the callee
         // may write one into — a view-like slot directly, or a struct or
         // array slot with a view-like position. The slot's own root decides
@@ -2122,6 +2140,246 @@ fn expression_mentions_name(expr: &Expr, name: &str) -> bool {
                     .as_deref()
                     .is_some_and(|fill| expression_mentions_name(fill, name))
         }
+        _ => false,
+    }
+}
+
+/// The whole out-slot parameters of one function declaration.
+///
+/// A `borrow` parameter is a whole out-slot when its written type is nullable
+/// or is a type parameter that may resolve to a nullable instance. A
+/// non-nullable view slot, an array element slot, and an opaque handle slot
+/// keep the field or element judgment and are not out-slots here.
+fn whole_out_slot_params(decl: &crate::ast::FuncDecl) -> BTreeSet<String> {
+    let type_params: BTreeSet<&str> = decl
+        .type_params
+        .iter()
+        .map(|param| param.name.as_str())
+        .collect();
+    decl.params
+        .iter()
+        .filter(|param| {
+            if param.mode != Mode::Borrow {
+                return false;
+            }
+            if param.ty.nullable {
+                return true;
+            }
+            matches!(
+                &param.ty.kind,
+                TypeKind::Named { name, args }
+                    if args.is_empty()
+                        && name.segments.len() == 1
+                        && type_params.contains(name.segments[0].as_str())
+            )
+        })
+        .map(|param| param.name.clone())
+        .collect()
+}
+
+/// The non-`take` parameters of one function declaration.
+///
+/// These are the caller-backed lends a store can copy a value or view from.
+/// A `take` parameter owns its value and a local does not name a lend.
+fn non_take_lends(decl: &crate::ast::FuncDecl) -> BTreeSet<String> {
+    decl.params
+        .iter()
+        .filter(|param| param.mode != Mode::Take)
+        .map(|param| param.name.clone())
+        .collect()
+}
+
+/// True when the declaration's body writes a whole out-slot parameter.
+///
+/// The caller-side frame check is a conservative guard for a callee whose
+/// body is opaque. Once the callee's own body stores into the out-slot, the
+/// callee-side judgment reports the store and the caller-side consequence
+/// report would duplicate it. The scan is syntactic and conservative: it
+/// looks only for a plain `slot = ...` assignment to a declared out-slot,
+/// including one inside a nested lambda, because the name resolves to the
+/// same captured slot there.
+fn callee_has_whole_out_slot_store(decl: &crate::ast::FuncDecl) -> bool {
+    let slots = whole_out_slot_params(decl);
+    if slots.is_empty() {
+        return false;
+    }
+    let lends = non_take_lends(decl);
+    block_stores_whole_out_slot(&decl.body, &slots, &lends)
+}
+
+/// True when a block contains a whole out-slot store.
+fn block_stores_whole_out_slot(
+    block: &Block,
+    slots: &BTreeSet<String>,
+    lends: &BTreeSet<String>,
+) -> bool {
+    block
+        .statements
+        .iter()
+        .any(|stmt| stmt_stores_whole_out_slot(stmt, slots, lends))
+}
+
+/// True when an `if` statement contains a whole out-slot store.
+fn if_stores_whole_out_slot(
+    decl: &crate::ast::IfStmt,
+    slots: &BTreeSet<String>,
+    lends: &BTreeSet<String>,
+) -> bool {
+    expr_stores_whole_out_slot(&decl.condition, slots, lends)
+        || block_stores_whole_out_slot(&decl.then_block, slots, lends)
+        || match &decl.else_branch {
+            Some(crate::ast::ElseBranch::If(nested)) => if_stores_whole_out_slot(nested, slots, lends),
+            Some(crate::ast::ElseBranch::Block(block)) => {
+                block_stores_whole_out_slot(block, slots, lends)
+            }
+            None => false,
+        }
+}
+
+/// True when a statement contains a whole out-slot store.
+fn stmt_stores_whole_out_slot(
+    stmt: &Stmt,
+    slots: &BTreeSet<String>,
+    lends: &BTreeSet<String>,
+) -> bool {
+    use crate::ast::{ForInit, Stmt, SwitchLabel};
+    match stmt {
+        Stmt::Let(decl) => decl
+            .value
+            .as_ref()
+            .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
+        Stmt::Const(decl) => expr_stores_whole_out_slot(&decl.value, slots, lends),
+        Stmt::Expr(expr) => expr_stores_whole_out_slot(expr, slots, lends),
+        Stmt::If(decl) => if_stores_whole_out_slot(decl, slots, lends),
+        Stmt::While(decl) => {
+            expr_stores_whole_out_slot(&decl.condition, slots, lends)
+                || block_stores_whole_out_slot(&decl.body, slots, lends)
+        }
+        Stmt::DoWhile(decl) => {
+            block_stores_whole_out_slot(&decl.body, slots, lends)
+                || expr_stores_whole_out_slot(&decl.condition, slots, lends)
+        }
+        Stmt::ForC(decl) => {
+            let init = match &decl.init {
+                Some(ForInit::Let(init)) => init
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
+                Some(ForInit::Const(init)) => expr_stores_whole_out_slot(&init.value, slots, lends),
+                Some(ForInit::Expr(exprs)) => exprs
+                    .iter()
+                    .any(|expr| expr_stores_whole_out_slot(expr, slots, lends)),
+                None => false,
+            };
+            init || decl
+                .condition
+                .as_ref()
+                .is_some_and(|condition| expr_stores_whole_out_slot(condition, slots, lends))
+                || decl
+                    .step
+                    .iter()
+                    .any(|step| expr_stores_whole_out_slot(step, slots, lends))
+                || block_stores_whole_out_slot(&decl.body, slots, lends)
+        }
+        Stmt::ForIn(decl) => {
+            expr_stores_whole_out_slot(&decl.iterable, slots, lends)
+                || block_stores_whole_out_slot(&decl.body, slots, lends)
+        }
+        Stmt::Return { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
+        Stmt::Break(_) | Stmt::Continue(_) => false,
+        Stmt::Switch(decl) => {
+            expr_stores_whole_out_slot(&decl.scrutinee, slots, lends)
+                || decl.clauses.iter().any(|clause| {
+                    let label = match &clause.label {
+                        SwitchLabel::Case(value) => expr_stores_whole_out_slot(value, slots, lends),
+                        SwitchLabel::Default => false,
+                    };
+                    label
+                        || clause
+                            .statements
+                            .iter()
+                            .any(|stmt| stmt_stores_whole_out_slot(stmt, slots, lends))
+                })
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            block_stores_whole_out_slot(block, slots, lends)
+        }
+    }
+}
+
+/// True when an expression contains a whole out-slot store.
+fn expr_stores_whole_out_slot(
+    expr: &Expr,
+    slots: &BTreeSet<String>,
+    lends: &BTreeSet<String>,
+) -> bool {
+    use crate::ast::{AssignOp, IntrinsicArg, LambdaBody, TemplatePiece};
+    match &expr.kind {
+        ExprKind::Assign { op, target, value } => {
+            let whole = matches!(op, AssignOp::Assign)
+                && matches!(&target.kind, ExprKind::Name(name) if slots.contains(name));
+            let foreign = whole
+                && match &target.kind {
+                    ExprKind::Name(destination) => lends.iter().any(|param| {
+                        param != destination && expression_mentions_name(value, param)
+                    }),
+                    _ => false,
+                };
+            foreign
+                || expr_stores_whole_out_slot(target, slots, lends)
+                || expr_stores_whole_out_slot(value, slots, lends)
+        }
+        ExprKind::Call { callee, args, .. } => {
+            expr_stores_whole_out_slot(callee, slots, lends)
+                || args
+                    .iter()
+                    .any(|arg| expr_stores_whole_out_slot(&arg.value, slots, lends))
+        }
+        ExprKind::Index { base, index } => {
+            expr_stores_whole_out_slot(base, slots, lends) || expr_stores_whole_out_slot(index, slots, lends)
+        }
+        ExprKind::Member { base, .. } => expr_stores_whole_out_slot(base, slots, lends),
+        ExprKind::Unary { operand, .. } => expr_stores_whole_out_slot(operand, slots, lends),
+        ExprKind::Binary { left, right, .. } => {
+            expr_stores_whole_out_slot(left, slots, lends) || expr_stores_whole_out_slot(right, slots, lends)
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            expr_stores_whole_out_slot(condition, slots, lends)
+                || expr_stores_whole_out_slot(then_value, slots, lends)
+                || expr_stores_whole_out_slot(else_value, slots, lends)
+        }
+        ExprKind::Cast { value, .. }
+        | ExprKind::RawCast { value, .. }
+        | ExprKind::Unsafe(value) => expr_stores_whole_out_slot(value, slots, lends),
+        ExprKind::StructLiteral { fields, .. } => fields
+            .iter()
+            .any(|field| expr_stores_whole_out_slot(&field.value, slots, lends)),
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements
+                .iter()
+                .any(|element| expr_stores_whole_out_slot(element, slots, lends))
+                || fill
+                    .as_deref()
+                    .is_some_and(|fill| expr_stores_whole_out_slot(fill, slots, lends))
+        }
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Expr(inner) => expr_stores_whole_out_slot(inner, slots, lends),
+            LambdaBody::Block(block) => block_stores_whole_out_slot(block, slots, lends),
+        },
+        ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+            IntrinsicArg::Expr(value) => expr_stores_whole_out_slot(value, slots, lends),
+            IntrinsicArg::Type(_) => false,
+        }),
+        ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            TemplatePiece::Placeholder(value) => expr_stores_whole_out_slot(value, slots, lends),
+            TemplatePiece::Literal(_) => false,
+        }),
         _ => false,
     }
 }
