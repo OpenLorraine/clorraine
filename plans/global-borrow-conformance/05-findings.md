@@ -36,4 +36,19 @@ parameter reports `E10038`, and a `const` global stays accepted.
 
 ## Phase 3 — Generic element move (`DEF-425`)
 
-**Status**: Pending.
+**Status**: Done (2026-10-21).
+**Commit**: `f6d51e5`.
+
+An opaque member move out of a borrow parameter records the per-instance
+not-lend duty; an owning substitution reports `E10034`, a duplicable one stays
+a copy. A deeper projection out of a `take` parameter records the per-instance
+element-move duty: an owning substitution reports `E10026`, a duplicable one
+copies, and a whole value or top-level field remains a legal take move. The
+self-slot assignment skips the source move, so the identical self-copy stays
+accepted; the distinct-index self-slot emission pin is removed because that
+generic shape is now rejected.
+
+**Verification**: the runtime-index spec case now rejects the member and whole
+generic moves with `E10034`, rejects the take twin with `E10026`, and accepts
+the duplicable take and identical self-copy controls; the dedupe and span pins
+remain green. `make check` and `make verify` exit 0 at the batch head.

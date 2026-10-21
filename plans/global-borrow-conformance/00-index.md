@@ -1,6 +1,6 @@
 # Global Borrow and Move Conformance (Batch U)
 
-> **Status**: In progress (2026-10-21)
+> **Status**: Done (2026-10-21)
 > **Created**: 2026-10-21
 > **Baseline**: `513fd90` (the batch-T close-out).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).
@@ -29,6 +29,11 @@ The frozen specification wins over a conflicting Rust spec pin.
 - `DEF-425`: apply frozen BR-5/STR-11/12. Reject the generic element move
   through a borrow parameter, and retarget the pinned acceptance cases to the
   concrete/take rejection.
+
+## Close-out
+
+All three rows are Done. The frozen specification wins over the conflicting
+Rust pins. `make check` and `make verify` pass at the batch head.
 
 ## Documents
 

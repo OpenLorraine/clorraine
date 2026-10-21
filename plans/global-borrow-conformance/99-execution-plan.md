@@ -1,6 +1,6 @@
 # Execution Plan — Global Borrow and Move Conformance (Batch U)
 
-> **Progress**: 7/12 tasks
+> **Progress**: 12/12 tasks
 > **Rows**: `DEF-533`, `DEF-537`, `DEF-425`
 > **Baseline**: `513fd90`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -24,13 +24,13 @@
 
 ## Phase 3: Generic element move (`DEF-425`)
 
-- [ ] 3.1.1 Record the borrowed-element move and judge it per instance
-- [ ] 3.1.2 Retarget the pinned batch-M acceptance cases to the concrete/take
+- [x] 3.1.1 Record the borrowed-element move and judge it per instance
+- [x] 3.1.2 Retarget the pinned batch-M acceptance cases to the concrete/take
       rejection
-- [ ] 3.2.1 Add the generic/concrete/take matrix and the duplicable control;
+- [x] 3.2.1 Add the generic/concrete/take matrix and the duplicable control;
       run `make check`
 
 ## Close-out
 
-- [ ] 4.1 Run `make check` and `make verify` at the batch head
-- [ ] 4.2 Record the phase findings and update the roadmap rows
+- [x] 4.1 Run `make check` and `make verify` at the batch head
+- [x] 4.2 Record the phase findings and update the roadmap rows
