@@ -387,10 +387,23 @@ fn check_initializer_calls<'a>(
             }
         }
         ExprKind::IntrinsicCall { name, args, .. } => {
+            // An import alias names its original intrinsic. Resolve it before
+            // the view-builder lookup, so `import { slice as sl }` applies the
+            // same source rule as the direct spelling.
+            let resolved = if name.contains('.') {
+                name.as_str()
+            } else {
+                module
+                    .import(name)
+                    .filter(|binding| !binding.poisoned)
+                    .map(|binding| binding.original.as_str())
+                    .unwrap_or(name)
+            };
+            let effect_name = resolved.rsplit_once('.').map(|(_, simple)| simple).unwrap_or(resolved);
             // A view builder borrows its source. The body checker reports a
             // non-const global there; the initializer walk must apply the same
             // rule instead of leaving the intrinsic source unchecked.
-            if let Some(StdlibEffect::ViewOf { arg, .. }) = stdlib_effect(name) {
+            if let Some(StdlibEffect::ViewOf { arg, .. }) = stdlib_effect(effect_name) {
                 if let Some(IntrinsicArg::Expr(source)) = args.get(arg) {
                     check_initializer_global_source(
                         source,
@@ -627,10 +640,19 @@ fn check_initializer_call<'a>(
     }
     // A standard-library view builder borrows its source. The body checker
     // applies the global rule there; the initializer walk must match.
+    let stdlib_name = if call.module_path.is_none() {
+        module
+            .import(&call.simple)
+            .filter(|binding| !binding.poisoned)
+            .map(|binding| binding.original.as_str())
+            .unwrap_or(&call.simple)
+    } else {
+        call.simple.as_str()
+    };
     if let Some(Callee::Stdlib {
         effect: StdlibEffect::ViewOf { arg, .. },
         ..
-    }) = program.callee(&call.simple)
+    }) = program.callee(stdlib_name)
     {
         if let Some(written) = args.get(arg) {
             check_initializer_global_source(

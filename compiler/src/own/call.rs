@@ -672,21 +672,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         args: &'a [Arg],
     ) -> Option<(Ty, ValueKind)> {
         let written = self.callee_name(callee)?;
+        // An imported alias names its original declaration. The intrinsic
+        // resolver keys on the declaration name, while the shadow check still
+        // uses the written spelling so an alias to a user function keeps its
+        // own symbol.
+        let resolved = if written.contains('.') {
+            written.clone()
+        } else {
+            self.module
+                .import(&written)
+                .filter(|binding| !binding.poisoned)
+                .map(|binding| binding.original.clone())
+                .unwrap_or_else(|| written.clone())
+        };
         // A module-qualified spelling keeps its declaration identity for the
         // shadow check, while the compiler-known helper is named by its last
         // segment.
-        let name = written
+        let name = resolved
             .rsplit_once('.')
             .map(|(_, simple)| simple.to_owned())
-            .unwrap_or_else(|| written.clone());
+            .unwrap_or_else(|| resolved.clone());
         // Only the compiler-known helper lowers as an intrinsic. A user or
         // `ffi` declaration that happens to share the name must resolve to its
         // own symbol, never be silently replaced by the built-in lowering.
-        if matches!(
-            self.resolved_callee(&written),
-            Some(Callee::User(_)) | Some(Callee::Ffi(_))
-        ) {
-            return None;
+        for candidate in [&written, &resolved] {
+            if matches!(
+                self.resolved_callee(candidate),
+                Some(Callee::User(_)) | Some(Callee::Ffi(_))
+            ) {
+                return None;
+            }
         }
         // A callable field shadows the built-in name too: `h.len(5)` is a call
         // through the field, not the length intrinsic.

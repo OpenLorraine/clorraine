@@ -11530,3 +11530,44 @@ func main(): i32 {
     assert_no_asan("qinitfuncsafe", &output);
     assert_exit("qinitfuncsafe", &output, 0);
 }
+
+/// An imported view-builder alias resolves to its original intrinsic.
+///
+/// `import { slice as sl }` must lower and check `sl(xs, ...)` exactly like
+/// `slice(xs, ...)`: a local source builds and runs, while a non-`const`
+/// module global reports `E10038` instead of emitting an undeclared `sl(...)`.
+#[test]
+fn should_resolve_a_view_builder_import_alias() {
+    let body = r#"module spec.cc.qaliasviewbody;
+
+import { slice as sl } from std.mem;
+
+func main(): i32 {
+    let xs: i32[4] = [1, 2, 3, 4];
+    let v: i32[] = sl(xs, 0, 2);
+    return i32(v[0]) - 1;
+}
+"#;
+    let output = run_memory("qaliasviewbody", body);
+    assert_no_asan("qaliasviewbody", &output);
+    assert_exit("qaliasviewbody", &output, 0);
+
+    let initializer = r#"module spec.cc.qaliasviewinit;
+
+import { slice as sl } from std.mem;
+
+let xs: i32[4] = [1, 2, 3, 4];
+let v: i32[] = sl(xs, 0, 2);
+
+func main(): i32 {
+    return i32(v[0]) - 1;
+}
+"#;
+    assert_rejected_once(
+        "qaliasviewinit",
+        initializer,
+        "E10038",
+        &["cannot borrow global 'xs'"],
+        &[],
+    );
+}
