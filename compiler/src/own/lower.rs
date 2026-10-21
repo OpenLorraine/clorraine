@@ -309,6 +309,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if self.materialize_owned_temporaries
                     && !self.speculative_lowering
                     && Self::contains_discard_then(&value)
+                    && self.sema.table.duplicable(&value.ty)
+                    && !self.maybe_owns(&value.ty)
+                    && !is_view_like(&value.ty)
                 {
                     return self.materialize_guard_operand(value);
                 }

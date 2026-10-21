@@ -2219,4 +2219,27 @@ func main(): i32 {
     let output = run_memory("lennestedcall", nested_call);
     assert_no_asan("lennestedcall", &output);
     assert_exit("lennestedcall", &output, 20);
+
+    let nested_view_store = r#"module spec.avi.lennestedviewstore;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, flag: bool, i: i32): i32 {
+    w.items[i] = flag ? ((len([mk()]) == 1) ? stringOf("aa") : stringOf("bb")) : stringOf("cc");
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let r: i32 = store<String>(borrow w, true, 0);
+    return r + calls - 1;
+}
+"#;
+    let output = run_memory("lennestedviewstore", nested_view_store);
+    assert_no_asan("lennestedviewstore", &output);
+    assert_exit("lennestedviewstore", &output, 0);
 }
