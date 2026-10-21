@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 13/27 tasks (48%)
-> **Last Updated**: 2026-10-22 01:30
+> **Progress**: 14/27 tasks (52%)
+> **Last Updated**: 2026-10-22 01:45
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -180,7 +180,7 @@ Notes:
   `should_accept_and_run_when_a_slot_instantiation_is_nullable` so the `take`
   and null-slice sub-cases stay accepted and the `copy<String?>` sub-case
   becomes `E10034`.
-- [ ] 1.1.4 Inventory every whole-binding store into a `borrow` slot (or a
+- [x] 1.1.4 Inventory every whole-binding store into a `borrow` slot (or a
   captured whole out-slot) whose source is a non-`take` lend, across all
   `compiler/tests/*.rs` and `compiler/src/own/tests.rs`; start from the 188
   exact-helper occurrences and add
@@ -194,6 +194,7 @@ Notes:
   Classify each as unsafe rejection, safe-but-unprovable rejection,
   static-array precision loss, or incidental setup; record the final count
   and file list in the phase notes under `$CODEOPS_TMPDIR`.
+  ✅ (completed: 2026-10-22 01:45)
 - [ ] 1.1.5 Migrate `conditional_projection_residue_spec_test.rs`
   (103 occurrences): retarget the foreign pass-through acceptances to
   `E10034`; rewrite incidental setup to a static or `take` source; keep the
