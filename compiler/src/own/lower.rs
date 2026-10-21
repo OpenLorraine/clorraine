@@ -1102,6 +1102,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .collect()
             })
             .unwrap_or_default();
+        let capture_out_slots: BTreeMap<String, bool> = self
+            .sema
+            .closures
+            .get(&site)
+            .map(|closure| {
+                closure
+                    .captures
+                    .iter()
+                    .filter_map(|info| {
+                        self.lookup(&info.name).map(|id| {
+                            (
+                                info.name.clone(),
+                                self.bindings[id].kind == BindingKind::OutSlot
+                                    || self.bindings[id].capture_whole_out_slot,
+                            )
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let saved_builder = std::mem::replace(
             &mut self.builder,
             Builder::new(format!("cl_lambda_{site}"), lambda_params, ret.clone()),
@@ -1161,7 +1181,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for (param, ty) in params.iter().zip(param_tys) {
             self.declare_lambda_param(&param.name, ty.clone());
         }
-        self.declare_captures(site, &capture_dies, &capture_slots);
+        self.declare_captures(site, &capture_dies, &capture_slots, &capture_out_slots);
         match body {
             LambdaBody::Expr(value) if self.returns.is_void() => {
                 // A void expression body is a statement: the expression
@@ -1347,6 +1367,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         site: usize,
         capture_dies: &BTreeMap<String, bool>,
         capture_slots: &BTreeMap<String, bool>,
+        capture_out_slots: &BTreeMap<String, bool>,
     ) {
         let infos: Vec<CaptureInfo> = self
             .sema
@@ -1392,6 +1413,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .copied()
                     .unwrap_or(false),
                 capture_caller_slot: capture_slots
+                    .get(&info.name)
+                    .copied()
+                    .unwrap_or(false),
+                capture_whole_out_slot: capture_out_slots
                     .get(&info.name)
                     .copied()
                     .unwrap_or(false),

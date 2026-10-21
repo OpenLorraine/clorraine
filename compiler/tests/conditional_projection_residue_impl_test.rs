@@ -254,6 +254,46 @@ fn assert_rejected(tag: &str, source: &str, code: &str, count: usize) {
 /// later use. A diagnostic renders its location on the line after its
 /// message, so pairing each error line with the next location line keeps a
 /// warning's location out of the comparison.
+/// Asserts the source is rejected with the exact set of diagnostic codes.
+fn assert_rejected_code_set(tag: &str, source: &str, codes: &[&str]) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let actual: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .map(|line| line.split_whitespace().nth(1).unwrap_or("").trim_end_matches(':'))
+        .collect();
+    assert_eq!(
+        actual.len(),
+        codes.len(),
+        "{tag}: expected {codes:?}, saw {actual:?}; stderr:\n{stderr}"
+    );
+    for code in codes {
+        assert!(
+            actual.contains(code),
+            "{tag}: expected {code}; saw {actual:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 fn assert_rejected_at_line(tag: &str, source: &str, code: &str, count: usize, line: usize) {
     let scratch = ScratchDir::new(tag);
     let source_path = write_source(tag, &scratch, source);
@@ -3615,7 +3655,7 @@ fn should_reject_a_cross_frame_pass_through_once() {
     let tag = "implxflocal";
     assert_rejected_at_line(tag, CROSS_FRAME_LOCAL_SOURCE, "E10030", 1, 11);
     assert_rejected(tag, CROSS_FRAME_FRESH_SOURCE, "E10030", 1);
-    assert_rejected(tag, CROSS_FRAME_ARRAY_SOURCE, "E10030", 1);
+    assert_rejected_code_set(tag, CROSS_FRAME_ARRAY_SOURCE, &["E10033", "E10030"]);
     let (first, second) = emit_twice("implxfparam", CROSS_FRAME_PARAM_SOURCE);
     assert!(
         first == second,

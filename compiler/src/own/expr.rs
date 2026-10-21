@@ -1417,6 +1417,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 &name,
                                 true,
                                 target.span,
+                                None,
+                                false,
                             );
                         }
                         Some(PlaceTarget::Local(root_id, _)) if caller_slot => {
@@ -1427,6 +1429,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 &name,
                                 false,
                                 target.span,
+                                Some(*root_id),
+                                self.is_out_slot_binding(*root_id) && projections.is_empty(),
                             );
                         }
                         _ if caller_slot => {
@@ -1437,6 +1441,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 &name,
                                 false,
                                 target.span,
+                                Some(id),
+                                self.is_out_slot_binding(id) && projections.is_empty(),
                             );
                         }
                         _ => {}
@@ -1652,7 +1658,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     && (is_view_like(&target_ty) || is_view_like(&value_ty))
                 {
                     let name = id.name.clone();
-                    self.check_escaping_view_store(value, &target_ty, &name, true, target.span);
+                    self.check_escaping_view_store(
+                        value,
+                        &target_ty,
+                        &name,
+                        true,
+                        target.span,
+                        None,
+                        false,
+                    );
                 } else if !rejected_write
                     && !is_view_like(&target_ty)
                     && !is_view_like(&value_ty)
@@ -1824,9 +1838,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The destination type is unresolved here, so the declaration cannot tell
     /// whether the instance makes the member a view or an owner. A view-like
     /// source (or an owned `String`, which widens to `str`) records its
-    /// frame-dying backing; the per-instance audit applies the instance's
-    /// conversion and reports the escape when the root is returned. A concrete
-    /// destination keeps the ordinary store path.
+    /// frame-dying backing; a type-parameter value defers only its view
+    /// judgment and keeps the ordinary maybe-owning store path. The
+    /// per-instance audit applies the instance's conversion and reports the
+    /// escape when the root is returned or when a caller-retained field tries
+    /// to keep a view of another lend.
     ///
     /// An owned source is not moved here: the instance decides whether the
     /// destination owns it (a move) or holds a widened view (a copy). The
@@ -1846,9 +1862,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.speculative_lowering {
             return false;
         }
-        if projections.is_empty()
-            || !(target_ty.is_unknown() || crate::types::contains_param(target_ty))
-        {
+        if projections.is_empty() {
             return false;
         }
         let declared_root = self.bindings[id].ty.clone();
@@ -1856,16 +1870,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return false;
         }
         let value_ty = self.ty(value);
-        let view_source = is_view_like(&value_ty);
+        let maybe_value = value_ty.is_unknown() || crate::types::contains_param(&value_ty);
+        let view_source = is_view_like(&value_ty) || maybe_value;
         let owned_source = matches!(&value_ty.kind, TyKind::Handle(name) if name == "String");
         let null_source = crate::types::is_null_shaped(&value_ty);
         if !view_source && !owned_source && !null_source {
             return false;
         }
+        // The declaration cannot judge a type-parameter value; the instance
+        // decides whether it is a view, a duplicable value, or an owner. Record
+        // the duty for the view judgment but keep the declaration's ordinary
+        // maybe-owning path, so an owning instance still gets the concrete move
+        // judgment.
+        let maybe_view_only = maybe_value && !owned_source;
+        // A concrete target under a generic root is still a view destination
+        // at every instance (for example a fixed `str[2]` field). A concrete
+        // non-view target keeps the ordinary store path.
+        if !(target_ty.is_unknown()
+            || crate::types::contains_param(target_ty)
+            || is_view_like(target_ty))
+        {
+            return false;
+        }
         // An owned source that names a place can be moved or widened; a call
         // result or literal has no later use to report but still records the
         // view's frame so a returned carrier reports the escape.
-        let source_place = if owned_source {
+        let source_place = if owned_source || maybe_view_only {
             match self.place_target(value) {
                 Some(PlaceTarget::Local(source, source_path)) => {
                     let source = self.alias_resolved_root(source);
@@ -1920,6 +1950,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         path.extend_from_slice(projections);
         let root = self.bindings[root_id].ir_name.clone();
+        let root_name = self.bindings[root_id].name.clone();
+        let whole_out_slot =
+            self.is_out_slot_binding(id) && projections.is_empty();
         if !self
             .recorded_opaque_stores
             .insert((root.clone(), span.start, span.end))
@@ -1998,6 +2031,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
         }
         let frame_owner = frames.first().map(|frame| frame.subject.clone());
+        // A caller-retained container field or element cannot keep a view of a
+        // different lend parameter: the lend is call-scoped, so the instance
+        // audit reports the field escape. Record every parameter backing the
+        // value derives from; a copy within the same carrier is exempt.
+        let mut parameter_backed_sources = std::collections::BTreeSet::new();
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if let Provenance::Param(owner) = atom {
+                parameter_backed_sources.insert(self.bindings[owner].ir_name.clone());
+            }
+        }
+        if let Some((source, _)) = &source_place {
+            let binding = &self.bindings[*source];
+            if binding.kind == BindingKind::Param && binding.mode != Mode::Take {
+                parameter_backed_sources.insert(binding.ir_name.clone());
+            }
+        }
+        for (source, _, _) in &source_arm_pairs {
+            let binding = &self.bindings[*source];
+            if binding.kind == BindingKind::Param && binding.mode != Mode::Take {
+                parameter_backed_sources.insert(binding.ir_name.clone());
+            }
+        }
+        if maybe_view_only {
+            for owner in self.value_source_roots(value) {
+                let binding = &self.bindings[owner];
+                if binding.kind == BindingKind::Param && binding.mode != Mode::Take {
+                    parameter_backed_sources.insert(binding.ir_name.clone());
+                }
+            }
+        }
         let fresh_arm = owned_source
             && source_place.is_none()
             && self.conditional_has_fresh_arm(value);
@@ -2031,6 +2094,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .map(|(_, _, source)| source)
                 .collect(),
             fresh_arm,
+            maybe_view_only,
+            whole_out_slot,
+            parameter_backed_sources: parameter_backed_sources.into_iter().collect(),
+            root_name,
             later_uses: Vec::new(),
             late_uses: Vec::new(),
             invalidations: Vec::new(),
@@ -2041,11 +2108,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             caller_slot,
             root,
         });
-        // An owned source with no single place — a conditional, a call result,
-        // or a literal — is also decided per instance: the destination may be
-        // a view (a widening) or an owner (a move). The caller must not run
-        // the declaration's move in either case.
-        owned_source
+        // An owned String source with no single place — a conditional, a call
+        // result, or a literal — is also decided per instance: the destination
+        // may be a view (a widening) or an owner (a move). The caller must not
+        // run the declaration's move in either case. A type-parameter value
+        // keeps the ordinary maybe-owning path; only its view judgment is
+        // deferred to the audit.
+        if maybe_view_only {
+            false
+        } else {
+            owned_source
+        }
     }
 
     /// Ends the view watches a replaced opaque store no longer owns.
@@ -2207,10 +2280,132 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A view-typed destination stores view storage, so the judgment follows
     /// the frame the destination holds. A global or a field lives for the
     /// whole program: only module-level storage survives it, so a parameter-,
+    /// The place roots a value can derive a view from.
+    ///
+    /// A conditional recurses into its arms. A call result may return a view of
+    /// one of its arguments (a generic identity, for example), so its arguments
+    /// and receiver contribute when the call has no recorded provenance of its
+    /// own; a call whose result is already known to be static or module-backed
+    /// contributes nothing. A call/literal with no roots has no caller-backed
+    /// source.
+    fn value_source_roots(&self, value: &Expr) -> Vec<usize> {
+        let mut roots = Vec::new();
+        self.collect_value_source_roots(value, &mut roots);
+        roots.sort_unstable();
+        roots.dedup();
+        roots
+    }
+
+    /// Recurses through the shapes a view or owned source can hide in.
+    fn collect_value_source_roots(&self, value: &Expr, roots: &mut Vec<usize>) {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_value_source_roots(then_value, roots);
+                self.collect_value_source_roots(else_value, roots);
+            }
+            ExprKind::Unsafe(inner) => self.collect_value_source_roots(inner, roots),
+            ExprKind::Call { callee, args, .. } => {
+                let provenance = self.view_provenance(value);
+                if matches!(
+                    provenance,
+                    Provenance::Static | Provenance::Global(_)
+                ) {
+                    return;
+                }
+                // A named user or stdlib call has a signature and a return
+                // expression summary. If it named no source, the result does
+                // not derive from an argument; a static-returning helper with
+                // an unused lend argument must not become a false escape.
+                if self.func_binding_callee(callee).is_none()
+                    && self.callee_field_type(callee).is_none()
+                {
+                    if let Some(name) = self.callee_name(callee) {
+                        if self.resolved_callee(&name).is_some() {
+                            return;
+                        }
+                    }
+                }
+                for arg in args {
+                    let ty = self.ty(&arg.value);
+                    if is_view_like(&ty)
+                        || self.may_view_from_storage(&ty)
+                        || ty.is_unknown()
+                        || crate::types::contains_param(&ty)
+                    {
+                        self.collect_value_source_roots(&arg.value, roots);
+                    }
+                }
+            }
+            _ => {
+                if let Some(PlaceTarget::Local(owner, _)) = self.place_target(value) {
+                    roots.push(owner);
+                }
+            }
+        }
+    }
+
+    /// The parameters a stored value's view or owned place derives from.
+    ///
+    /// A view's provenance names its backing parameter; an owned `String`
+    /// place names its binding, and a conditional recurses into its arms. A
+    /// local, a `take` parameter, a fresh result, and module storage are not
+    /// caller-backed lend sources.
+    fn dynamic_parameter_roots(&self, value: &Expr) -> Vec<usize> {
+        let mut roots = Vec::new();
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if let Provenance::Param(owner) = atom {
+                roots.push(owner);
+            }
+        }
+        self.owned_source_roots(value, &mut roots);
+        roots.sort_unstable();
+        roots.dedup();
+        roots
+            .into_iter()
+            .filter(|owner| {
+                let binding = &self.bindings[*owner];
+                (binding.kind == BindingKind::Param && binding.mode != Mode::Take)
+                    || binding.kind == BindingKind::OutSlot
+            })
+            .collect()
+    }
+
+    /// Collects the bindings an owned place value or conditional names.
+    fn owned_source_roots(&self, value: &Expr, roots: &mut Vec<usize>) {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.owned_source_roots(then_value, roots);
+                self.owned_source_roots(else_value, roots);
+            }
+            ExprKind::Unsafe(inner) => self.owned_source_roots(inner, roots),
+            _ => {
+                if let Some(PlaceTarget::Local(owner, _)) = self.place_target(value) {
+                    roots.push(owner);
+                }
+            }
+        }
+    }
+
     /// local-, fresh-, or `take`-derived view reports `E10033`. A writable
     /// parameter slot holds the caller's frame: module-level and the caller's
     /// parameter storage survive it, while a view of this frame's storage — or
     /// of a temporary — reports the loan-outlives `E10030`.
+    ///
+    /// A caller-retained container field or element is stricter: a view of a
+    /// different lend parameter escapes the lend's call scope even though the
+    /// caller's frame outlives the callee, so it reports `E10033`. A duplicable
+    /// struct root is copied at the call and keeps the copy-local acceptance; a
+    /// fixed array or slice still reaches the caller's storage and is not a
+    /// copy. A whole `borrow T?` ownership slot is the separate out-slot
+    /// exemption.
     ///
     /// A conditional or an array names every storage component it may store,
     /// so each component is judged on its own; the first component the
@@ -2223,6 +2418,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         name: &str,
         global: bool,
         span: Span,
+        root_id: Option<usize>,
+        whole_out_slot: bool,
     ) {
         if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
             return;
@@ -2236,6 +2433,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // The empty view names no storage, so it cannot escape.
         if matches!(value.kind, ExprKind::Null) {
             return;
+        }
+        // A caller-retained container field or element cannot keep a view of a
+        // different lend parameter. The lend is call-scoped (BR-5), so the
+        // store is the field-escape rule even though the caller's frame
+        // outlives the callee. A duplicable container root is copied at the
+        // call, so only the callee's copy is filled; a whole `borrow T?`
+        // out-slot assignment is the ownership-slot exemption.
+        if let (false, false, Some(root_id)) = (global, whole_out_slot, root_id) {
+            let root_ty = self.bindings[root_id].ty.clone();
+            let root_is_concrete = !crate::types::contains_param(&root_ty);
+            if root_is_concrete && !self.sema.table.copies_whole_value(&root_ty) {
+                let foreign_parameter = self
+                    .dynamic_parameter_roots(value)
+                    .into_iter()
+                    .any(|owner| owner != root_id);
+                if foreign_parameter {
+                    self.error(
+                        "E10033",
+                        format!("borrow of '{name}' escapes its scope"),
+                        "derive the view from a parameter or take ownership",
+                        span,
+                    );
+                    return;
+                }
+            }
         }
         let failing = Self::storage_atoms(&self.view_provenance(value))
             .into_iter()
@@ -2371,6 +2593,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// capture environment field is outside this frame too. A `take` parameter
     /// owns its value in this frame, and a read-only lend rejects the write on
     /// its own, so both take the frame path.
+    /// True when the binding is a whole `borrow T?` ownership slot.
+    ///
+    /// A capture carries the original kind because its lifted-body binding is
+    /// a plain parameter; the ownership-slot exemption follows the captured
+    /// destination too.
+    fn is_out_slot_binding(&self, id: usize) -> bool {
+        self.bindings[id].kind == BindingKind::OutSlot
+            || self.bindings[id].capture_whole_out_slot
+    }
+
     fn is_caller_slot(&self, id: usize) -> bool {
         if matches!(
             self.bindings[id].base,

@@ -386,6 +386,29 @@ pub struct RequiresOpaqueStore {
     /// statement temporary. The store reports the escape at the store when no
     /// later read already reports it.
     pub fresh_arm: bool,
+    /// True when the declaration only deferred the view judgment for a
+    /// type-parameter value.
+    ///
+    /// The ordinary maybe-owning store path still runs, so an owning instance
+    /// keeps its concrete move judgment. The audit judges only the view
+    /// destination and must not repeat the move report.
+    pub maybe_view_only: bool,
+    /// True when the store is a whole assignment to a `borrow T?` out-slot.
+    ///
+    /// The out-slot exemption lets the callee replace the incoming owned value;
+    /// it is not a field or element store, so a caller-retained container's
+    /// field escape does not apply.
+    pub whole_out_slot: bool,
+    /// The parameter roots a view store may copy its view from.
+    ///
+    /// A caller-retained container field or element cannot keep a view of a
+    /// different parameter's backing: the lend is call-scoped, so the store is
+    /// the field-escape rule. The roots are IR spellings for the instance
+    /// audit; a root equal to the destination root is a copy within the same
+    /// carrier and stays accepted.
+    pub parameter_backed_sources: Vec<String>,
+    /// The destination root's source name, for the field-escape report.
+    pub root_name: String,
     /// True when the destination root is a slot the caller keeps.
     ///
     /// A stored frame-backed view in a caller slot escapes at the store; the

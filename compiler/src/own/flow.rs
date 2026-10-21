@@ -107,6 +107,13 @@ pub(super) struct Binding {
     /// frame. The lifted body cannot tell the origin from the capture mode
     /// alone, so the enclosing checker records the destination's frame here.
     pub(super) capture_caller_slot: bool,
+    /// True when a lifted lambda's capture names a whole `borrow T?` out-slot.
+    ///
+    /// The capture is a parameter binding in the lifted body, so its original
+    /// ownership-slot kind must travel with it. The out-slot exemption applies
+    /// only to a whole assignment; a captured writable view parameter is not
+    /// an ownership slot and keeps the field/element judgment.
+    pub(super) capture_whole_out_slot: bool,
     /// True when a lambda wrote through a capture of this binding.
     ///
     /// The closure body is checked separately, so the enclosing frame cannot

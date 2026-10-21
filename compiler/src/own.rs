@@ -1172,6 +1172,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             generated: false,
             capture_dies_with_frame: false,
             capture_caller_slot: false,
+            capture_whole_out_slot: false,
             capture_written: false,
         });
         if let Some(scope) = self.scopes.last_mut() {

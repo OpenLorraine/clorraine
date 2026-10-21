@@ -2925,10 +2925,10 @@ func main(): i32 {
 /// returns. `slot = b.v;` stores a view of the callee's local `b`, which dies
 /// when the callee returns while the caller's slot still reads it. Both report
 /// one `E10030` and emit no translation unit. The parameter-backed twins
-/// `slot = p.v;` keep the caller's frame alive for as long as the slot is
-/// read: in the non-nullable spelling the callee reads the copy it stored, and
-/// in the nullable by-address spelling the caller reads the written view. Both
-/// are accepted, exit 0, and are memory-clean.
+/// `slot = p.v;` differ by destination kind: a non-nullable writable view slot
+/// is caller-retained, so it rejects the parameter-backed store with `E10033`;
+/// a nullable `borrow T?` ownership slot keeps its accepted store, and the
+/// caller reads the written view.
 #[test]
 fn should_reject_a_fresh_or_local_backed_view_stored_into_a_parameter_slot() {
     let fresh = r#"module spec.cpr.outslotfresh;
@@ -2966,9 +2966,7 @@ func main(): i32 {
     return fill(borrow out, b) - 120;
 }
 "#;
-    let output = run_memory("outslotpartwin", twin);
-    assert_no_asan("outslotpartwin", &output);
-    assert_exit("outslotpartwin", &output, 0);
+    compile_rejects("outslotpartwin", twin, "E10033", 1);
 
     let wide = r#"module spec.cpr.outslotpartwide;
 
@@ -3351,6 +3349,20 @@ func main(): i32 {
 
     let slot = r#"module spec.cpr.staticout;
 
+func fill(borrow slot: str[1]): void { slot = ["xyz"]; }
+
+func main(): i32 {
+    let out: str[1] = ["AA"];
+    fill(borrow out);
+    return i32(out[0][0]) - 120;
+}
+"#;
+    let output = run_memory("staticout", slot);
+    assert_no_asan("staticout", &output);
+    assert_exit("staticout", &output, 0);
+
+    let parameter_slot = r#"module spec.cpr.staticoutparam;
+
 func fill(p: str, borrow slot: str[1]): void { slot = [p]; }
 
 func main(): i32 {
@@ -3359,9 +3371,7 @@ func main(): i32 {
     return i32(out[0][0]) - 120;
 }
 "#;
-    let output = run_memory("staticout", slot);
-    assert_no_asan("staticout", &output);
-    assert_exit("staticout", &output, 0);
+    compile_rejects("staticoutparam", parameter_slot, "E10033", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -3417,12 +3427,12 @@ func main(): i32 {
 /// c ? [p, s1] : [q, "cd"]; slot = v;` spelling binds the conditional first,
 /// `slot = [p, q];` stores the caller's two parameters, and the scalar twin
 /// `out = c ? p : "cd"` pairs a parameter with a literal: every component is
-/// the caller's or module storage, so each slot store is accepted. The
-/// static-str call `lit()` names static storage and is accepted into the same
-/// global field. The `null` arm of `slot = c ? null : p` names no storage, so
-/// the caller-backed spelling is accepted.
+/// the global field accepts module storage. A writable `borrow` slot is
+/// caller-retained and cannot keep a view of a lend parameter, so each
+/// parameter-backed store reports `E10033`; the `null` arm names no storage and
+/// contributes nothing.
 #[test]
-fn should_accept_a_mixed_source_whose_components_module_or_caller_storage_covers() {
+fn should_judge_a_mixed_source_into_a_global_or_a_writable_slot() {
     let sources = r#"module spec.cpr.mergesources;
 
 let s1: str = "ab";
@@ -3471,9 +3481,7 @@ func main(): i32 {
     return i32(out[0][0]) - 120;
 }
 "#;
-    let output = run_memory("mergeparam", slot);
-    assert_no_asan("mergeparam", &output);
-    assert_exit("mergeparam", &output, 0);
+    compile_rejects("mergeparam", slot, "E10033", 3);
 
     let staticfn = r#"module spec.cpr.staticfn;
 
@@ -6399,11 +6407,12 @@ func main(): i32 { return run(1) - 120; }
 /// reads the view, so `fill(b.v, borrow slot)` reports exactly one `E10030`
 /// and emits no translation unit; the fresh-argument spelling inside `outer`
 /// and the `middle` chain (`fill(borrow out2, mk().v)`) report the same one
-/// error, and the array literal `slot = [p, q]` filled with fresh members
-/// across frames reports it once as well. The parameter-backed chain
-/// (`outer(p: Box, borrow slot) { fill(p.v, borrow slot); }`) keeps its
-/// backing in the caller's frame and the same-frame call keeps the slot in
-/// the backing's frame: both are accepted, exit 0, and are memory-clean.
+/// error, and the array literal `slot = [p, q]` adds the callee's own
+/// `E10033` field/element escape beside the caller's `E10030`. The
+/// parameter-backed chain (`outer(p: Box, borrow slot) { fill(p.v, borrow
+/// slot); }`) keeps its backing in the caller's frame and the same-frame call
+/// keeps the slot in the backing's frame: both are accepted, exit 0, and are
+/// memory-clean.
 #[test]
 fn should_reject_a_cross_frame_out_slot_pass_through() {
     let parameter = r#"module spec.cpr.crossframeparam;
@@ -6534,7 +6543,7 @@ func run(): i32 {
 
 func main(): i32 { return run(); }
 "#;
-    compile_rejects("crossframearray", array, "E10030", 1);
+    compile_reports("crossframearray", array, &["E10033", "E10030"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -7127,7 +7136,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xfreceiver", receiver_slot, "E10030", 1);
+    compile_reports("xfreceiver", receiver_slot, &["E10033", "E10030"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -21826,11 +21835,13 @@ func main(): i32 {
 
 /// A conditional of borrowed places is judged by the instance's destination.
 ///
-/// A view-instance store widens each owned arm; the borrowed parameters back
-/// the view, so the store is accepted. The concrete view twin stays accepted.
-/// An owning instance keeps the concrete arm judgment and reports `E10034` for
-/// each non-`take` lend arm. A local-backed conditional into a caller slot is
-/// still the frame escape (`E10030`).
+/// A duplicable container root is copied at the call, so the store fills the
+/// callee's copy and is accepted. A nonduplicable caller-retained container
+/// cannot keep a view of another lend parameter: the lend is call-scoped, so
+/// the field or element store reports one `E10033`. An owning instance keeps
+/// the concrete arm judgment and reports `E10034` for each non-`take` lend arm.
+/// A local-backed conditional into a caller slot is still the frame escape
+/// (`E10030`); a frame-local nonduplicable container keeps its accepted store.
 #[test]
 fn should_store_a_conditional_of_borrowed_places_at_a_view_instance() {
     let view_store = r#"module spec.cpr.condviewstore;
@@ -21841,14 +21852,14 @@ struct Wrap<T> { items: T[2]; }
 
 func store<T>(borrow w: Wrap<T>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
     w.items[i] = run ? a : b;
-    return 0;
+    return i32(w.items[i][0]);
 }
 
 func main(): i32 {
     let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
     let a: String = stringOf("aa");
     let b: String = stringOf("bb");
-    return store<str>(borrow w, true, borrow a, borrow b, 0);
+    return store<str>(borrow w, true, borrow a, borrow b, 0) - 97;
 }
 "#;
     let output = run_memory("condviewstore", view_store);
@@ -21874,9 +21885,109 @@ func main(): i32 {
     return r + i32(len(w.items[0])) - 2;
 }
 "#;
-    let output = run_memory("condviewstorewrap2", nonduplicable_view);
-    assert_no_asan("condviewstorewrap2", &output);
-    assert_exit("condviewstorewrap2", &output, 0);
+    compile_rejects("condviewstorewrap2", nonduplicable_view, "E10033", 1);
+
+    let plain_nonduplicable = r#"module spec.cpr.condplainwrap2;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap2<T>, borrow a: String): void {
+    w.items[0] = a;
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let a: String = stringOf("aa");
+    store<str>(borrow w, borrow a);
+    return i32(w.items[0][0]) - 120;
+}
+"#;
+    compile_rejects("condplainwrap2", plain_nonduplicable, "E10033", 1);
+
+    let concrete_nonduplicable = r#"module spec.cpr.condconcretewrap2;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store(borrow w: Wrap2<str>, borrow a: String): void {
+    w.items[0] = a;
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let a: String = stringOf("aa");
+    store(borrow w, borrow a);
+    return i32(w.items[0][0]) - 120;
+}
+"#;
+    compile_rejects("condconcretewrap2", concrete_nonduplicable, "E10033", 1);
+
+    let view_source_nonduplicable = r#"module spec.cpr.condviewsourcewrap2;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap2<T>, borrow a: Box): void {
+    w.items[0] = a.v;
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let a: Box = Box { v: stringOf("ab") };
+    store<str>(borrow w, borrow a);
+    return i32(w.items[0][0]) - 97;
+}
+"#;
+    compile_rejects("condviewsourcewrap2", view_source_nonduplicable, "E10033", 1);
+
+    let local_view_of_param = r#"module spec.cpr.condlocalsourcewrap2;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store(borrow w: Wrap2<str>, borrow p: Box, run: bool): void {
+    let s: str = p.v;
+    w.items[0] = run ? s : "AA";
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let p: Box = Box { v: stringOf("ab") };
+    store(borrow w, borrow p, true);
+    return i32(w.items[0][0]) - 97;
+}
+"#;
+    compile_rejects("condlocalsourcewrap2", local_view_of_param, "E10033", 1);
+
+    let frame_local = r#"module spec.cpr.condframelocalwrap2;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store(run: bool, borrow a: String, borrow b: String): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    w.items[0] = run ? a : b;
+    return i32(w.items[0][0]);
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let r: i32 = store(true, borrow a, borrow b);
+    return r - 97;
+}
+"#;
+    let output = run_memory("condframelocalwrap2", frame_local);
+    assert_no_asan("condframelocalwrap2", &output);
+    assert_exit("condframelocalwrap2", &output, 0);
 
     let concrete_view = r#"module spec.cpr.condviewstoreconcrete;
 
@@ -21886,14 +21997,14 @@ struct Wrap<T> { items: T[2]; }
 
 func store(borrow w: Wrap<str>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
     w.items[i] = run ? a : b;
-    return 0;
+    return i32(w.items[i][0]);
 }
 
 func main(): i32 {
     let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
     let a: String = stringOf("aa");
     let b: String = stringOf("bb");
-    return store(borrow w, true, borrow a, borrow b, 0);
+    return store(borrow w, true, borrow a, borrow b, 0) - 97;
 }
 "#;
     let output = run_memory("condviewstoreconcrete", concrete_view);
@@ -22160,4 +22271,301 @@ func main(): i32 {
     let output = run_memory("condreinituncond", unconditional);
     assert_no_asan("condreinituncond", &output);
     assert_exit("condreinituncond", &output, 0);
+}
+
+/// A generic or array view store cannot escape into a caller-retained field.
+///
+/// The declaration may see a type-parameter value or a concrete view field
+/// under a generic root; the instance decides whether the destination is a
+/// view. A fixed-array or slice root is duplicable in the type table but its C
+/// parameter still reaches the caller's storage, so it is not a copy. Each
+/// spelling reports one `E10033` at the store. The duplicable-root, same-carrier,
+/// static, and owning-instance controls keep their behavior.
+#[test]
+fn should_reject_a_generic_or_array_view_store_into_a_caller_retained_container() {
+    let generic_value = r#"module spec.cpr.genericvaluewrap2;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap2<T>, borrow a: T): void {
+    w.items[0] = a;
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let b: Box = Box { v: stringOf("aa") };
+    let s: str = b.v;
+    store<str>(borrow w, borrow s);
+    b.v = stringOf("QQ");
+    return i32(w.items[0][0]) - 97;
+}
+"#;
+    compile_rejects("genericvaluewrap2", generic_value, "E10033", 1);
+
+    let generic_value_owning = r#"module spec.cpr.genericvalueowning;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap2<T>, borrow a: T): void {
+    w.items[0] = a;
+}
+
+func main(): i32 {
+    let w: Wrap2<String> = Wrap2<String> { items: [stringOf("xx"), stringOf("yy")], tag: stringOf("t") };
+    let a: String = stringOf("aa");
+    store<String>(borrow w, borrow a);
+    return 0;
+}
+"#;
+    compile_rejects("genericvalueowning", generic_value_owning, "E10034", 1);
+
+    let generic_root = r#"module spec.cpr.genericrootconcrete;
+
+import { String, stringOf } from std.text;
+
+struct Outer<T> { payload: T; items: str[2]; tag: String; }
+
+func store<T>(borrow o: Outer<T>, borrow a: String): void {
+    o.items[0] = a;
+}
+
+func main(): i32 {
+    let o: Outer<i32> = Outer<i32> { payload: 1, items: ["xx", "yy"], tag: stringOf("t") };
+    let a: String = stringOf("aa");
+    store<i32>(borrow o, borrow a);
+    a = stringOf("cc");
+    return i32(o.items[0][0]) - 97;
+}
+"#;
+    compile_rejects("genericrootconcrete", generic_root, "E10033", 1);
+
+    let generic_root_copy = r#"module spec.cpr.genericrootcopy;
+
+import { String, stringOf } from std.text;
+
+struct Outer<T> { payload: T; items: str[2]; }
+
+func store<T>(borrow o: Outer<T>, borrow a: String): i32 {
+    o.items[0] = a;
+    return i32(o.items[0][0]);
+}
+
+func main(): i32 {
+    let o: Outer<i32> = Outer<i32> { payload: 1, items: ["xx", "yy"] };
+    let a: String = stringOf("aa");
+    return store<i32>(borrow o, borrow a) - 97;
+}
+"#;
+    let output = run_memory("genericrootcopy", generic_root_copy);
+    assert_no_asan("genericrootcopy", &output);
+    assert_exit("genericrootcopy", &output, 0);
+
+    let fixed_array_root = r#"module spec.cpr.fixedarrayroot;
+
+import { String, stringOf } from std.text;
+
+func store(borrow w: str[2], borrow a: String): void {
+    w[0] = a;
+}
+
+func main(): i32 {
+    let w: str[2] = ["xx", "yy"];
+    let a: String = stringOf("aa");
+    store(borrow w, borrow a);
+    a = stringOf("cc");
+    return i32(w[0][0]) - 97;
+}
+"#;
+    compile_rejects("fixedarrayroot", fixed_array_root, "E10033", 1);
+
+    let slice_root = r#"module spec.cpr.sliceroot;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func store(borrow w: str[], borrow a: String): void {
+    w[0] = a;
+}
+
+func main(): i32 {
+    let backing: str[2] = ["xx", "yy"];
+    let w: str[] = slice(backing, 0, 2);
+    let a: String = stringOf("aa");
+    store(borrow w, borrow a);
+    a = stringOf("cc");
+    return i32(w[0][0]) - 97;
+}
+"#;
+    compile_rejects("sliceroot", slice_root, "E10033", 1);
+
+    let call_result = r#"module spec.cpr.callresultwrap2;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func id<T>(n: T): T { return n; }
+
+func store<T>(borrow w: Wrap2<T>, borrow a: T): void {
+    w.items[0] = id<T>(a);
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let b: String = stringOf("aa");
+    let s: str = b;
+    store<str>(borrow w, borrow s);
+    b = stringOf("QQ");
+    return i32(w.items[0][0]) - 97;
+}
+"#;
+    compile_rejects("callresultwrap2", call_result, "E10033", 1);
+
+    let fixed_array_same = r#"module spec.cpr.fixedarraysame;
+
+func store(borrow w: str[2]): i32 {
+    w[1] = w[0];
+    return i32(w[1][0]);
+}
+
+func main(): i32 {
+    let w: str[2] = ["xx", "yy"];
+    return store(borrow w) - 120;
+}
+"#;
+    let output = run_memory("fixedarraysame", fixed_array_same);
+    assert_no_asan("fixedarraysame", &output);
+    assert_exit("fixedarraysame", &output, 0);
+
+    let slice_same = r#"module spec.cpr.slicesame;
+
+import { slice } from std.mem;
+
+func store(borrow w: str[]): i32 {
+    w[1] = w[0];
+    return i32(w[1][0]);
+}
+
+func main(): i32 {
+    let backing: str[2] = ["xx", "yy"];
+    let w: str[] = slice(backing, 0, 2);
+    return store(borrow w) - 120;
+}
+"#;
+    let output = run_memory("slicesame", slice_same);
+    assert_no_asan("slicesame", &output);
+    assert_exit("slicesame", &output, 0);
+
+    let static_scalar_call = r#"module spec.cpr.staticscalarcall;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func ignoreN<T>(n: i32): T { return "AA"; }
+
+func store<T>(borrow w: Wrap2<T>, n: i32): i32 {
+    w.items[0] = ignoreN<T>(n);
+    return i32(w.items[0][0]);
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    return store<str>(borrow w, 7) - 65;
+}
+"#;
+    let output = run_memory("staticscalarcall", static_scalar_call);
+    assert_no_asan("staticscalarcall", &output);
+    assert_exit("staticscalarcall", &output, 0);
+
+    let static_unused_arg = r#"module spec.cpr.staticunusedarg;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func ignore<T>(borrow n: String): T { return "AA"; }
+
+func store<T>(borrow w: Wrap2<T>, borrow n: String): i32 {
+    w.items[0] = ignore<T>(borrow n);
+    return i32(w.items[0][0]);
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let n: String = stringOf("zz");
+    return store<str>(borrow w, borrow n) - 65;
+}
+"#;
+    let output = run_memory("staticunusedarg", static_unused_arg);
+    assert_no_asan("staticunusedarg", &output);
+    assert_exit("staticunusedarg", &output, 0);
+
+    let fixed_array_static = r#"module spec.cpr.fixedarraystatic;
+
+func store(borrow w: str[2]): i32 {
+    w[0] = "AA";
+    return i32(w[0][0]);
+}
+
+func main(): i32 {
+    let w: str[2] = ["xx", "yy"];
+    return store(borrow w) - 65;
+}
+"#;
+    let output = run_memory("fixedarraystatic", fixed_array_static);
+    assert_no_asan("fixedarraystatic", &output);
+    assert_exit("fixedarraystatic", &output, 0);
+}
+
+/// A nested captured whole out-slot keeps the ownership-slot exemption.
+///
+/// A relayed capture is a parameter in the inner lifted body; the original
+/// whole `borrow T?` kind must travel through the relay. A captured
+/// non-nullable writable view slot is not an ownership slot and keeps the
+/// parameter-backed field escape.
+#[test]
+fn should_accept_a_nested_captured_whole_out_slot() {
+    let nested = r#"module spec.cpr.nestedcaptureoutslot;
+
+func outer(borrow slot: str?): void {
+    let s: str = "AA";
+    ([s, borrow slot] () => {
+        ([s, borrow slot] () => {
+            slot = s;
+        })();
+    })();
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("nestedcaptureoutslot", nested);
+    assert_no_asan("nestedcaptureoutslot", &output);
+    assert_exit("nestedcaptureoutslot", &output, 0);
+
+    let writable = r#"module spec.cpr.capturedwritable;
+
+func outer(p: str, borrow slot: str): void {
+    ([p, borrow slot] () => {
+        slot = p;
+    })();
+}
+
+func main(): i32 {
+    let out: str = "AA";
+    outer("xy", borrow out);
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("capturedwritable", writable, "E10033", 1);
 }

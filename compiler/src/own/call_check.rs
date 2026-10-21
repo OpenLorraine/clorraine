@@ -1326,6 +1326,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 _ => {}
             }
         }
+        // A view whose provenance is static or module-backed names storage
+        // that outlives every frame; a call result can carry that provenance
+        // when its return expression reads no lend parameter. The ownerless
+        // fresh-root fallback must not turn it into a statement temporary.
+        if matches!(
+            self.view_provenance(expr),
+            Provenance::Static | Provenance::Global(_)
+        ) {
+            return None;
+        }
         if self.view_reads_fresh_root(expr) {
             return Some(None);
         }

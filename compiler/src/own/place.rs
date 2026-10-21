@@ -841,7 +841,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // the result has no lend source to reborrow, so the call
                 // provenance alone cannot see it.
                 if provenance == Provenance::None
-                    && matches!(self.ty(expr).kind, TyKind::StaticStr)
+                    && (matches!(self.ty(expr).kind, TyKind::StaticStr)
+                        || self.call_returns_static_view(callee, &self.ty(expr)))
                 {
                     Provenance::Static
                 } else {
@@ -2747,8 +2748,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // the call can name, including a `take` argument an identity
                 // function hands back.
                 let include_take = super::lower::mentions_type_param(&returns);
-                self.single_lend_candidate(&effective, &params, include_take)
-                    .and_then(source)
+                let Some(index) =
+                    self.single_lend_candidate(&effective, &params, include_take)
+                else {
+                    return None;
+                };
+                // The signature alone does not prove the return reads the
+                // chosen lend: a helper returning static storage may have one
+                // unused lend parameter. Use the same return-expression summary
+                // the carrier path uses, so that argument is not a view source.
+                let mentioned = body_return_flow_names(&decl.body);
+                let reads_parameter = decl
+                    .params
+                    .get(index)
+                    .is_some_and(|param| mentioned.contains(&param.name));
+                if !reads_parameter {
+                    return None;
+                }
+                source(index)
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
@@ -2756,6 +2773,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }) => source(arg),
             _ => None,
         }
+    }
+
+    /// True when a named user call's view return reads none of its parameters.
+    ///
+    /// The return-expression summary is the same one the carrier path uses. A
+    /// helper that returns a static literal or a module value names no
+    /// parameter, so its result is not a view of a lend argument; treating it
+    /// as static keeps a static store accepted. A local return is rejected by
+    /// the callee's own view-return rule.
+    fn call_returns_static_view(&self, callee: &Expr, return_ty: &Ty) -> bool {
+        if !is_view_like(return_ty) && !super::lower::mentions_type_param(return_ty) {
+            return false;
+        }
+        if self.func_binding_callee(callee).is_some() || self.callee_field_type(callee).is_some()
+        {
+            return false;
+        }
+        let Some(name) = self.callee_name(callee) else {
+            return false;
+        };
+        let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
+            return false;
+        };
+        let mentioned = body_return_flow_names(&decl.body);
+        decl.params
+            .iter()
+            .all(|param| !mentioned.contains(&param.name))
     }
 
     /// The backing of a capturing lambda's returned view.

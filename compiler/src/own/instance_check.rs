@@ -488,6 +488,50 @@ fn check_opaque_store_requirements(
                 break;
             }
             if is_view_like(&destination) && !requirement.superseded {
+                // A caller-retained container field or element cannot keep a
+                // view of a different lend parameter: the lend is call-scoped,
+                // so the store is the field escape even though the caller's
+                // frame outlives the callee. A duplicable root is copied at the
+                // call, so the store only fills the callee's copy and stays
+                // accepted. A whole `borrow T?` out-slot assignment is the
+                // ownership-slot exemption, not a container field store.
+                if requirement.caller_slot
+                    && !requirement.whole_out_slot
+                    && !sema.table.copies_whole_value(&base)
+                {
+                    let foreign_param = requirement
+                        .parameter_backed_sources
+                        .iter()
+                        .any(|source| source != &requirement.root)
+                        || (requirement.source_param
+                            && requirement.source_ir.as_deref()
+                                != Some(requirement.root.as_str()))
+                        || requirement.source_arms.iter().any(|source| {
+                            source.param && source.ir != requirement.root
+                        });
+                    if foreign_param {
+                        if reported_use.insert((
+                            requirement.function.clone(),
+                            requirement.store_span.start,
+                            "E10033",
+                        )) {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "E10033",
+                                    format!(
+                                        "borrow of '{}' escapes its scope",
+                                        requirement.root_name
+                                    ),
+                                    requirement.store_span,
+                                )
+                                .with_help(
+                                    "derive the view from a parameter or take ownership",
+                                ),
+                            );
+                        }
+                        break;
+                    }
+                }
                 let subject = requirement.frame_owner.as_deref();
                 if requirement.caller_slot {
                     if let Some(subject) = subject {
@@ -583,6 +627,12 @@ fn check_opaque_store_requirements(
             }
             if is_view_like(&destination) {
                 // A replaced view keeps only its owned-source judgment.
+                continue;
+            }
+            if requirement.maybe_view_only {
+                // The declaration kept the ordinary maybe-owning path for a
+                // type-parameter value; an owning instance already gets that
+                // concrete move judgment there.
                 continue;
             }
             // An owning destination keeps the concrete move judgment: a

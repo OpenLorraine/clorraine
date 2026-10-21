@@ -431,6 +431,25 @@ impl TypeTable {
         }
     }
 
+    /// True when a call passes the whole container by value.
+    ///
+    /// A duplicable struct is copied, so a view store fills only the callee's
+    /// copy. A duplicable array or slice is not the same thing: a fixed array
+    /// decays to a pointer and a slice copies only its pointer and length, so
+    /// either spelling still reaches the caller's storage. A view-like root is
+    /// shared storage by definition, not a copy of its backing.
+    pub fn copies_whole_value(&self, ty: &Ty) -> bool {
+        self.duplicable(ty)
+            && !matches!(
+                ty.kind,
+                TyKind::Array { .. }
+                    | TyKind::Str
+                    | TyKind::StaticStr
+                    | TyKind::CString
+                    | TyKind::Raw(_)
+            )
+    }
+
     /// The storage size of a type in bytes, when it is known at this stage.
     ///
     /// The value is used by constant folding; a type whose size is not
@@ -746,6 +765,14 @@ mod tests {
         assert!(!table.duplicable(&Ty::struct_("Label")));
         assert!(table.duplicable(&Ty::struct_("Point")));
         assert!(!table.duplicable(&Ty::handle("String")));
+        let fixed = Ty::array(Ty::i32_ty(), vec![Some(2)]);
+        assert!(table.duplicable(&fixed));
+        assert!(!table.copies_whole_value(&fixed));
+        let slice = Ty::array(Ty::i32_ty(), vec![None]);
+        assert!(table.duplicable(&slice));
+        assert!(!table.copies_whole_value(&slice));
+        assert!(table.copies_whole_value(&Ty::struct_("Point")));
+        assert!(!table.copies_whole_value(&Ty::struct_("Label")));
         assert!(table.duplicable(&scalar(ScalarType::F64)));
     }
 
