@@ -65,5 +65,8 @@ projected-type fallback, so the multi-extent take literal move reports
 `E10026`. The generic call-argument, multi-extent, and duplicable controls are
 pinned in `should_judge_a_generic_element_call_and_a_multi_extent_take_move`.
 A module-initializer static view (`toCString("ab")`) restores an init-time
-view-builder pin. The aliased view-builder bypass (`import { slice as sl }`) is
-filed as `DEF-538`.
+view-builder pin. The aliased view-builder bypass (`import { slice as sl }`) is fixed by
+resolving the import alias to its original declaration before the
+intrinsic/view-builder lookup, so the body lowers `sl(...)` as `slice(...)` and
+the initializer applies the source rule. `should_resolve_a_view_builder_import_alias`
+covers the body build/run and the initializer `E10038` rejection.

@@ -1,6 +1,6 @@
 # Execution Plan — Global Borrow and Move Conformance (Batch U)
 
-> **Progress**: 15/15 tasks
+> **Progress**: 16/16 tasks
 > **Rows**: `DEF-533`, `DEF-537`, `DEF-425`
 > **Baseline**: `513fd90`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -37,7 +37,9 @@
 - [x] 5.1.2 Strip one extent per element step and use the shared projected-type
       fallback, so a multi-extent take move reports `E10026`
 - [x] 5.1.3 Restore a module-initializer static view pin and correct the stale
-      initializer doc; file the aliased view-builder bypass
+      initializer doc
+- [x] 5.1.4 Resolve an imported view-builder alias in the body and initializer;
+      add the alias build/rejection cases
 
 ## Close-out
 

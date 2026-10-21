@@ -35,7 +35,7 @@ The frozen specification wins over a conflicting Rust spec pin.
 All three rows are Done. The frozen specification wins over the conflicting
 Rust pins. `make check` and `make verify` pass at the batch head. The review
 corrections added the generic element call-argument and multi-extent take
-judgments; the aliased view-builder bypass is filed as `DEF-538`.
+judgments; the aliased view-builder bypass is fixed as `DEF-538`.
 
 ## Documents
 
