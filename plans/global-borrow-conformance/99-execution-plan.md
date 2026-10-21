@@ -1,6 +1,6 @@
 # Execution Plan — Global Borrow and Move Conformance (Batch U)
 
-> **Progress**: 4/12 tasks
+> **Progress**: 7/12 tasks
 > **Rows**: `DEF-533`, `DEF-537`, `DEF-425`
 > **Baseline**: `513fd90`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -17,9 +17,9 @@
 
 ## Phase 2: Func-typed initializer calls (`DEF-537`)
 
-- [ ] 2.1.1 Resolve a func-typed global's signature and judge its arguments
-- [ ] 2.1.2 Resolve a func-typed field's signature and judge its arguments
-- [ ] 2.2.1 Add the rejection and accepted-control spec cases; run the
+- [x] 2.1.1 Resolve a func-typed global's signature and judge its arguments
+- [x] 2.1.2 Resolve a func-typed field's signature and judge its arguments
+- [x] 2.2.1 Add the rejection and accepted-control spec cases; run the
       focused suites and `make check`
 
 ## Phase 3: Generic element move (`DEF-425`)

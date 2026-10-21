@@ -22,7 +22,17 @@ store-emission 14 + 32).
 
 ## Phase 2 — Func-typed initializer calls (`DEF-537`)
 
-**Status**: Pending.
+**Status**: Done (2026-10-21).
+**Commit**: `167ebe6`.
+
+A func-typed global or field callee now resolves its own `TyKind::Func`
+signature. The field call is resolved before the free-function parameter
+lookup, so `h.cb(s)` is judged by `cb`'s signature. Each written argument is
+judged against the declared mode; a non-`const` global to an unmarked
+parameter reports `E10038`, and a `const` global stays accepted.
+
+**Verification**: `should_apply_the_borrow_rule_to_a_func_typed_initializer_callee`
+(func global, func field, const control); `make check` exits 0.
 
 ## Phase 3 — Generic element move (`DEF-425`)
 
