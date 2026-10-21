@@ -2642,3 +2642,26 @@ func main(): i32 {
     assert_no_asan("initdeepself", &output);
     assert_exit("initdeepself", &output, 0);
 }
+
+/// A module initializer view builder with a static source builds and runs.
+///
+/// `toCString("ab")` is a view builder over a static string, so no global is
+/// borrowed and the view is stable for the program's lifetime. This keeps a
+/// module-initializer view-builder pin after the BR-9 tests moved the global
+/// slice sources to function bodies.
+#[test]
+fn should_build_a_module_initializer_static_view() {
+    let source = r#"module spec.mii.initstaticview;
+
+import { toCString } from std.text;
+
+let c: cstring = toCString("ab");
+
+func main(): i32 {
+    return i32(c[0]) - 97;
+}
+"#;
+    let output = run_memory("initstaticview", source);
+    assert_no_asan("initstaticview", &output);
+    assert_exit("initstaticview", &output, 0);
+}

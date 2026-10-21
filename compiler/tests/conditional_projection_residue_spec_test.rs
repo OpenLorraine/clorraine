@@ -21732,3 +21732,94 @@ func main(): i32 {
     assert_no_asan("ptraddress", &output);
     assert_exit("ptraddress", &output, 0);
 }
+
+/// A generic element call and a multi-extent take move are judged per instance.
+///
+/// A `take` argument that reads an owned element of a `borrow` parameter is
+/// the same lend move as the assignment spelling: `E10034` at the argument
+/// read. The `take` parameter twin reports `E10026`, while a duplicable element
+/// copies. A deeper multi-extent projection out of a `take` parameter also
+/// reports `E10026` instead of leaking the selected handle through a literal
+/// field.
+#[test]
+fn should_judge_a_generic_element_call_and_a_multi_extent_take_move() {
+    let borrow_call = r#"module spec.cpr.genericcallborrow;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func sink(take e: Elem): i32 { return i32(len(e.name)); }
+
+func relay<T>(borrow w: T, i: i32): i32 {
+    return sink(w.items[i]);
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return relay<Holder>(borrow h, 0) - 2;
+}
+"#;
+    compile_rejects("genericcallborrow", borrow_call, "E10034", 1);
+
+    let take_call = r#"module spec.cpr.genericcalltake;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func sink(take e: Elem): i32 { return i32(len(e.name)); }
+
+func relay<T>(take w: T, i: i32): i32 {
+    return sink(w.items[i]);
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return relay<Holder>(take h, 0) - 2;
+}
+"#;
+    compile_rejects("genericcalltake", take_call, "E10026", 1);
+
+    let duplicable = r#"module spec.cpr.genericcalldup;
+
+struct Elem { y: i32; }
+struct Holder { items: Elem[2]; }
+
+func sink(e: Elem): i32 { return e.y; }
+
+func relay<T>(borrow w: T, i: i32): i32 {
+    return sink(w.items[i]);
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
+    return relay<Holder>(borrow h, 0) - 11;
+}
+"#;
+    let output = run_memory("genericcalldup", duplicable);
+    assert_no_asan("genericcalldup", &output);
+    assert_exit("genericcalldup", &output, 0);
+
+    let multi_extent = r#"module spec.cpr.multiextenttake;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { rows: Elem[2][2]; }
+
+func makeIt<T>(take w: T): Elem {
+    return Elem { name: w.rows[0][0].name };
+}
+
+func main(): i32 {
+    let h: Holder = Holder { rows: [[Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }],
+                                   [Elem { name: stringOf("cc") }, Elem { name: stringOf("dd") }]] };
+    let e: Elem = makeIt<Holder>(take h);
+    return i32(len(e.name)) - 2;
+}
+"#;
+    compile_rejects("multiextenttake", multi_extent, "E10026", 1);
+}

@@ -853,7 +853,7 @@ fn check_element_move_requirements(
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
             let base = crate::types::substitute(&requirement.ty, &bound);
-            let moved = crate::types::project_place_path(&base, &requirement.path, &sema.table);
+            let moved = projected_type(sema, &base, &requirement.path);
             if moved.is_unknown()
                 || crate::types::contains_param(&moved)
                 || sema.table.duplicable(&moved)

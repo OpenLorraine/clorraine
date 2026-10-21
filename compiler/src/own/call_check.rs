@@ -1730,6 +1730,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // audit.
                 if let Some(PlaceTarget::Local(id, projections)) = &target {
                     self.note_borrowed_element_move(*id, projections, arg_ty, span);
+                    self.note_take_element_move(*id, projections, arg_ty, span);
+                    // A `take` call argument that reads an opaque member of a
+                    // `borrow`/`const`/unmarked parameter is a lend move: the
+                    // audit substitutes the root and reports E10034 when the
+                    // member owns. A whole take value is legal; the take duty
+                    // above only records a deeper projection.
+                    if self.bindings[*id].kind == BindingKind::Param
+                        && self.bindings[*id].mode != Mode::Take
+                        && (arg_ty.is_unknown() || crate::types::contains_param(arg_ty))
+                    {
+                        self.mark_moved_if_owning(
+                            PlaceTarget::Local(*id, projections.clone()),
+                            span,
+                        );
+                    }
                 }
                 // An unresolved conditional argument selects one arm at run
                 // time, so each arm is judged per instance: an owned arm is

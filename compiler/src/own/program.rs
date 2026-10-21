@@ -325,8 +325,8 @@ pub(super) fn check_globals<'a>(
 /// judges each written argument and a dot receiver against the declared
 /// parameter mode: a non-`const` module global passed to a `borrow`, `const`,
 /// or unmarked parameter reports `E10038`. A `const` global, a non-place
-/// argument, and the existing unmarked scalar, view, or unresolved-generic
-/// oracle shapes stay accepted.
+/// argument, a `take` parameter, and a local or call-result source stay
+/// accepted.
 fn check_initializer_calls<'a>(
     expr: &Expr,
     module: &'a Module,

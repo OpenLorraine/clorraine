@@ -564,10 +564,7 @@ fn project_field(ty: &Ty, name: &str, table: &TypeTable) -> Ty {
 
 /// The element type of an array or slice, or `Unknown` for any other type.
 fn project_element(ty: &Ty) -> Ty {
-    match &ty.kind {
-        TyKind::Array { element, .. } => (**element).clone(),
-        _ => Ty::unknown(),
-    }
+    ty.iterated_element()
 }
 
 /// Substitutes a generic instance's type arguments into a declared type.
