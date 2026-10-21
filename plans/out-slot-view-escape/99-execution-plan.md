@@ -1,7 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 0/27 tasks (0%)
+> **Progress**: 3/27 tasks (11%)
+> **Last Updated**: 2026-10-22 01:04
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -124,17 +125,22 @@ Notes:
 
 ### Phase 0 — Ruling record and frozen-spec clarification
 
-- [ ] 0.1.1 Record the ruling in the plan and the preflight report
+> **Phase baseline tree**: 9c6bd1d12cb2df01817b91cb63ae1d34bd685eb7
+
+- [x] 0.1.1 Record the ruling in the plan and the preflight report
   (PF-006/PF-007 Option A, 2026-10-22); cite AR-20's location.
-- [ ] 0.1.2 Amend the frozen spec: `03-ownership.md` §6, §7 (the rule
+  ✅ (completed: 2026-10-22 01:04)
+  (PF-006/PF-007 Option A, 2026-10-22); cite AR-20's location.
+- [x] 0.1.2 Amend the frozen spec: `03-ownership.md` §6, §7 (the rule
   table at line 239), and §9 (OW-16 at line 292), `06-functions.md` §4,
   `16-borrow-rules.md` §2, `14-diagnostics.md` E10034, `12-ffi-contracts.md`
   CN-16, `decisions.md` PF-001. The exemption is the slot's **own incoming
   value**; a foreign lend's value or view is `E10034`. Update the canonical
   help to "declare the parameter `take` or by value; a `borrow T?` slot may
-  hold only its own incoming value".
-- [ ] 0.1.3 Run `./spec/check.sh`; confirm the diagnostic registry and links;
+  hold only its own incoming value". ✅ (completed: 2026-10-22 01:04)
+- [x] 0.1.3 Run `./spec/check.sh`; confirm the diagnostic registry and links;
   no new code and no new compile-fail golden (E10034 already exists).
+  ✅ (completed: 2026-10-22 01:04)
 
 ### Phase 1 — Red cases and oracle retargeting
 

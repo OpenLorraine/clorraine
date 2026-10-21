@@ -327,7 +327,7 @@ grammar, and the diagnostics registry follow it. Status is `applied` for all.
 
 | PF | Ruling | Status |
 |---|---|---|
-| PF-001 | `borrow T?` out-parameters are in-out ownership slots; E10034 does not apply | applied |
+| PF-001 | `borrow T?` out-parameters are in-out ownership slots; E10034 does not apply to the slot's own incoming value, but a different lend's value or view stored in the slot is E10034 | applied |
 | PF-002 | FFI declarations lower with an explicit ABI table; modes are semantic only | applied |
 | PF-003 | `borrow` and `take` are reserved keywords (50 total) | applied |
 | PF-004 | Name resolution: scopes, declaration-before-use, shadowing, imports, merged modules | applied |

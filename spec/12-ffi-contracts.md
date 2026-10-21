@@ -144,7 +144,7 @@ keep the pointer or release the value.
 |---|---|---|
 | CN-14 | A returned handle is owned by the caller and released by its `freedBy` deleter | - |
 | CN-15 | A `take` argument transfers ownership; the caller's binding is invalid after the call | E10020 |
-| CN-16 | A lend never transfers ownership; the callee must not store or release it, except the value in a `borrow T?` out-parameter slot, which the callee owns on entry and may release | E10034 |
+| CN-16 | A lend never transfers ownership; the callee must not store or release it, except the `borrow T?` slot's own incoming value, which the callee owns on entry and may release; a different lend's value or view is E10034 | E10034 |
 
 ## 5. Nullable acquisition and out-parameters
 

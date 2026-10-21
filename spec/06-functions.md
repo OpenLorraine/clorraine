@@ -141,7 +141,10 @@ E10021, the ordinary definite-assignment rule (F9).
 **Out-parameter ownership.** A `borrow T?` parameter is an in-out ownership
 slot. The callee owns the incoming value on entry: normally `null`, and a
 non-null incoming value must be an initialized owned handle. The callee may
-release that incoming value, so E10034 does not apply to the slot. The callee
+release or replace that incoming value, so E10034 does not apply to the slot's
+own value. The exemption does not cover a different lend: storing another
+parameter's value or view in the slot is E10034, because that lend is
+call-scoped and the caller can reassign its backing after the call. The callee
 is not required to write on every path; afterwards the slot owns the resulting
 handle, or stays `null`. Assigning through the slot drops the callee-owned
 previous value first, then stores the new one (the O3 carve-out). Callers

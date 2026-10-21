@@ -59,7 +59,7 @@
 | E10031 | Mutation while a shared loan is live | `cannot modify '{name}' while it is shared-borrowed` | end the shared borrow first |
 | E10032 | Conflicting loans at one point (second loan, or exclusive vs any) | `'{name}' is already borrowed` | end the first borrow first |
 | E10033 | Loan stored in a field or global | `borrow of '{name}' escapes its scope` | derive the view from a parameter or take ownership |
-| E10034 | Borrowed parameter released or stored by the callee | `cannot release or store borrowed parameter '{name}'` | declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt |
+| E10034 | Borrowed parameter released or stored by the callee | `cannot release or store borrowed parameter '{name}'` | declare the parameter `take` or by value; a `borrow T?` slot may hold only its own incoming value |
 | E10035 | View returned from a local owner | `cannot return a view of local '{name}'` | return an owned value or a view of a parameter |
 | E10036 | View return does not derive from exactly one lend parameter | `view return does not derive from exactly one parameter` | make exactly one parameter a view or handle lend |
 | E10038 | Borrow of a global binding | `cannot borrow global '{name}'` | borrow from a local owner |

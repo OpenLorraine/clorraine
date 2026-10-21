@@ -104,7 +104,9 @@ the slot before the call (passing an uninitialized slot is E10021), the callee
 owns the incoming value on entry and may release it, and the write leaves the
 slot owning the new handle. Writes through the out-parameter drop the
 callee-owned previous value (the O3 carve-out in
-[Ch 03](03-ownership.md)), and E10034 does not apply to out-parameter writes
+[Ch 03](03-ownership.md)). E10034 does not apply to releasing or replacing the
+slot's own incoming value, but it still applies to storing a different lend
+parameter's value or view, which would outlive that call-scoped lend
 ([Ch 06](06-functions.md) section 4 states the full rule).
 
 ## 3. Reborrowing (O12)

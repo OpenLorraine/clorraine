@@ -213,11 +213,15 @@ func dump(path: str): void {
 ```
 
 A `borrow T?` out-parameter is an **in-out ownership slot**: the callee owns the
-incoming value on entry and may release it, so E10034 does not apply to the
-slot. The callee is not required to write on every path; afterwards the slot
-owns the resulting handle (or stays `null`). Assignment through the slot drops
-the callee-owned previous value first, then stores the new one (the O3
-carve-out). [Ch 06](06-functions.md) section 4 states the full rule.
+incoming value on entry and may release it, so E10034 does not apply to
+releasing or replacing that incoming value. The exemption is limited to the
+slot's own value: storing a different lend parameter's value or view in the
+slot is still E10034, because that lend is call-scoped and the caller can
+reassign its backing after the call. The callee is not required to write on
+every path; afterwards the slot owns the resulting handle (or stays `null`).
+Assignment through the slot drops the callee-owned previous value first, then
+stores the new one (the O3 carve-out). [Ch 06](06-functions.md) section 4
+states the full rule.
 
 Definite assignment (F9) applies to the caller's slot too: the caller must
 assign it on every path before the call, so write `let f: File? = null;` first.
@@ -236,7 +240,7 @@ release a value and never change ownership.
 | No mutation of an owner while a shared lend is live | E10031 |
 | A writable lend is unique; a second conflicting loan is an error | E10032 |
 | Lends do not escape their origin (a field, a global, or a local's return) | E10033 |
-| A borrowed parameter is call-scoped; the callee may not release or store it (except a `borrow T?` out-parameter, which the callee owns) | E10034 |
+| A borrowed parameter is call-scoped; the callee may not release or store it (except the `borrow T?` slot's own incoming value, which the callee owns) | E10034 |
 | A view returned from a local is an error | E10035 |
 | A view return must derive from exactly one view-like lend parameter | E10036 |
 | A global may not be borrowed | E10038 |
@@ -289,7 +293,7 @@ section 1). They are restated here in the current vocabulary.
 | OW-13 | Temporaries drop at the statement end | - (codegen) |
 | OW-14 | No drops at process exit; globals may not be move-only owners | E11106 |
 | OW-15 | A `take` parameter transfers ownership into the callee | - |
-| OW-16 | A borrowed parameter is call-scoped; the callee must not release or store it, except the `borrow T?` out-param slot, which the callee owns | E10034 |
+| OW-16 | A borrowed parameter is call-scoped; the callee must not release or store it, except the `borrow T?` slot's own incoming value, which the callee owns | E10034 |
 | OW-17 | A returned view derives from a parameter (elision) | E10035 / E10036 |
 | OW-18 | v1 aggregates carry no view-typed fields except `static str` | - (Ch 02) |
 | OW-19 | A global must be duplicable or `const`; a global may not be borrowed | E11106 / E10038 |
