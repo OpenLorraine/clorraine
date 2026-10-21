@@ -605,6 +605,26 @@ fn check_initializer_call<'a>(
     let Some(call) = initializer_call(callee, loaded) else {
         return;
     };
+    // A func-typed global is the callee value, not a free function. Judge its
+    // written arguments against the type the global was declared with.
+    if matches!(call.receiver, InitializerReceiver::None) {
+        if let Some((global, _)) = initializer_global(callee, module, loaded) {
+            let id = GlobalId::new(global.module, global.name);
+            if let Some(info) = program.globals.get(&id) {
+                if let crate::types::TyKind::Func(signature) = &info.ty.kind {
+                    check_initializer_func_args(
+                        signature,
+                        args,
+                        module,
+                        loaded,
+                        program,
+                        diagnostics,
+                    );
+                    return;
+                }
+            }
+        }
+    }
     // A standard-library view builder borrows its source. The body checker
     // applies the global rule there; the initializer walk must match.
     if let Some(Callee::Stdlib {
@@ -623,19 +643,30 @@ fn check_initializer_call<'a>(
             );
         }
     }
-    let Some(params) = initializer_params(&call, module, loaded, program) else {
-        return;
-    };
     let receiver_ty =
         initializer_receiver_type(&call.receiver, module, loaded, program, sema);
     // A func-typed field call resolves the field, not a free function of the
-    // same name. The field's signature is checked separately; do not judge the
-    // call against the free function's parameters.
+    // same name. Judge its written arguments against the field's signature.
     if let Some(ty) = &receiver_ty {
         if receiver_has_field(ty, &call.simple, sema) {
+            if let Some(field_ty) = sema.table.instance_field(ty, &call.simple) {
+                if let crate::types::TyKind::Func(signature) = &field_ty.kind {
+                    check_initializer_func_args(
+                        signature,
+                        args,
+                        module,
+                        loaded,
+                        program,
+                        diagnostics,
+                    );
+                }
+            }
             return;
         }
     }
+    let Some(params) = initializer_params(&call, module, loaded, program) else {
+        return;
+    };
     match &call.receiver {
         InitializerReceiver::None => {
             for (index, arg) in args.iter().enumerate() {
@@ -726,10 +757,51 @@ fn check_initializer_global_borrow(
     program: &ProgramInfo<'_>,
     diagnostics: &mut Diagnostics,
 ) {
+    check_initializer_global_borrow_mode(expr, span, param.mode, module, loaded, program, diagnostics);
+}
+
+/// Checks a written argument against a parameter mode.
+fn check_initializer_global_borrow_mode(
+    expr: &Expr,
+    span: Span,
+    mode: Mode,
+    module: &Module,
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    diagnostics: &mut Diagnostics,
+) {
+    if mode == Mode::Take {
+        return;
+    }
     let Some((global, _)) = initializer_global(expr, module, loaded) else {
         return;
     };
-    check_initializer_global(global, span, param, program, diagnostics);
+    report_initializer_global_borrow(global, span, program, diagnostics);
+}
+
+/// Checks a func-typed callee's written arguments.
+fn check_initializer_func_args(
+    signature: &crate::types::FuncTy,
+    args: &[Arg],
+    module: &Module,
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    diagnostics: &mut Diagnostics,
+) {
+    for (index, arg) in args.iter().enumerate() {
+        let Some(param) = signature.params.get(index) else {
+            break;
+        };
+        check_initializer_global_borrow_mode(
+            &arg.value,
+            arg.span,
+            param.mode,
+            module,
+            loaded,
+            program,
+            diagnostics,
+        );
+    }
 }
 
 /// Reports a non-`const` global borrowed by one parameter.
@@ -803,7 +875,11 @@ fn initializer_receiver_type(
         InitializerReceiver::Expr(base) => sema
             .expr_types
             .get(&(*base as *const Expr as usize))
-            .cloned(),
+            .cloned()
+            .or_else(|| {
+                let (global, _) = initializer_global(base, module, loaded)?;
+                projected_global_type(&global, program, sema)
+            }),
         InitializerReceiver::Path { segments, span } => {
             let name = QualifiedName {
                 segments: segments.clone(),

@@ -11458,3 +11458,75 @@ func main(): i32 {
         &[],
     );
 }
+
+/// A func-typed initializer callee judges its written arguments.
+///
+/// A call through a `func(...)` global or a func-typed field applies the
+/// declared unmarked lend: a non-`const` global argument reports `E10038`.
+/// A `const` global argument stays accepted.
+#[test]
+fn should_apply_the_borrow_rule_to_a_func_typed_initializer_callee() {
+    let global = r#"module spec.cc.qinitfuncglobal;
+
+func lenOf(s: str): i32 {
+    return i32(len(s));
+}
+
+let f: func(str): i32 = lenOf;
+let s: str = "ab";
+let g: i32 = f(s);
+
+func main(): i32 {
+    return g - 2;
+}
+"#;
+    assert_rejected_once(
+        "qinitfuncglobal",
+        global,
+        "E10038",
+        &["cannot borrow global 's'"],
+        &[],
+    );
+
+    let field = r#"module spec.cc.qinitfuncfield;
+
+func lenOf(s: str): i32 {
+    return i32(len(s));
+}
+
+struct Holder { cb: func(str): i32; }
+
+let h: Holder = Holder { cb: lenOf };
+let s: str = "ab";
+let g: i32 = h.cb(s);
+
+func main(): i32 {
+    return g - 2;
+}
+"#;
+    assert_rejected_once(
+        "qinitfuncfield",
+        field,
+        "E10038",
+        &["cannot borrow global 's'"],
+        &[],
+    );
+
+    let safe = r#"module spec.cc.qinitfuncsafe;
+
+func lenOf(s: str): i32 {
+    return i32(len(s));
+}
+
+let f: func(str): i32 = lenOf;
+const s: str = "ab";
+let g: i32 = f(s);
+
+func main(): i32 {
+    return g - 2;
+}
+"#;
+    let output = run_memory("qinitfuncsafe", safe);
+    assert_no_asan("qinitfuncsafe", &output);
+    assert_exit("qinitfuncsafe", &output, 0);
+}
