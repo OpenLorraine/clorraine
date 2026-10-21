@@ -44,8 +44,8 @@
 
 ## Residual
 
-The caller-side rule that a stored view keeps its backing borrowed for the
-container's lifetime is missing (`DEF-540`). The concrete twin has the same gap;
-this batch's generic conditional acceptance reaches it too. The batch records
-the row; it does not claim the accepted view store is memory-safe until the rule
-lands.
+The caller-side rule that a caller-retained container cannot keep a view of
+another lend is enforced for field/element stores by `DEF-540` / the
+`caller-view-escape` task. A whole `borrow T?` out-slot assignment from another
+lend is the separate `DEF-541`; it keeps the AR-20 acceptance until that
+product decision is resolved.

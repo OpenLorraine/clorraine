@@ -53,7 +53,12 @@ conditional/unconditional/both-path re-init); pass under `RDC_ASAN=1`.
 | Opaque store | Fresh arm beside a local arm accepted and leaked | Fresh-arm frame; store-time `E10030` at a view destination |
 | Opaque store | Arm reports suppressed each other | Report all distinct arm offenses |
 | Opaque store | Arm name/help text differed | Field path and registry wording |
-| Residual | Caller-side stored-view invalidation is missing | Filed as `DEF-540` (critical, pre-existing; the concrete twin has the same gap) |
+| Caller-retained field | A nonduplicable field/element store of another lend's view | Closed in `plans/caller-view-escape`; one `E10033`, duplicable struct copies and same-carrier/static stores accepted |
+| Generic root/value | A type-parameter value or a concrete view target under a generic root was missed | `maybe_view_only` duty and per-instance substitution; owning instance keeps the ordinary move path |
+| Array/slice root | A duplicable array/slice was treated as a copy | `copies_whole_value` distinguishes a struct copy from a decayed array/slice pointer |
+| Nested capture | A relayed whole-out-slot capture lost its kind | `capture_whole_out_slot` relays through the capture map |
+| Static-return call | A static-returning named call was treated as a fresh view | The call-site source summary uses the callee's return-expression names; static/module-backed results are not statement temporaries |
+| Residual | Caller-side stored-view invalidation | Container field/element stores closed in `plans/caller-view-escape`; a whole `borrow T?` out-slot assignment from another lend remains `DEF-541` (critical, needs a ruling against the existing AR-20 acceptance) |
 
 **Final verification**: `make check` and `make verify` exit 0 at the code head;
 the new cases pass under `RDC_ASAN=1`; the emission matrix shows no

@@ -1,7 +1,8 @@
 # Deferred Evaluation Completion (Batch V)
 
-> **Status**: Done (2026-10-21), with the pre-existing caller-side view
-> invalidation rule filed as `DEF-540`.
+> **Status**: Done (2026-10-21). The caller-side view invalidation residual
+> (`DEF-540`) is closed for container field/element stores by the
+> `caller-view-escape` task; its whole out-slot assignment remains `DEF-541`.
 > **Created**: 2026-10-21
 > **Baseline**: `55b6419` (the batch-U close-out).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).

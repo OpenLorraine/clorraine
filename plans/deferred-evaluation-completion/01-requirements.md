@@ -14,10 +14,10 @@
 
 | ID | Requirement |
 |----|-------------|
-| V-R6 | A conditional of owned places stored into a `Wrap<T>` member is judged by the instance: `T=str` widens and is accepted; `T=String` reports `E10034` for each non-take lend arm. |
+| V-R6 | A conditional of owned places stored into a `Wrap<T>` member is judged by the instance: a duplicable `T=str` root is copied at the call and accepted; a nonduplicable caller-retained root reports `E10033` for a view of a different lend parameter; `T=String` reports `E10034` for each non-take lend arm. |
 | V-R7 | A local-backed arm at a caller slot reports `E10030`; a later read of a moved arm reports `E10020`, a whole-value read after a top-level field move `E10025`, and a deeper projected arm `E10026`. |
 | V-R8 | A branch re-initialization that covers only one path keeps the moved state; an unconditional or all-path re-initialization accepts later reads. |
-| V-R9 | A fresh owned arm at a view destination reports `E10030` even when the carrier is never read again; a non-duplicable wrapper pins the real write-through store. |
+| V-R9 | A fresh owned arm at a view destination reports `E10030` even when the carrier is never read again; a frame-local nonduplicable wrapper keeps the real write-through store. |
 
 ## General
 
