@@ -190,7 +190,7 @@ ownership and borrow codes of [Ch 14](14-diagnostics.md) section 3.
 | BR-2 | A live shared loan permits only reads and shared reborrows at the borrowed place | E10031 |
 | BR-3 | A live exclusive loan permits no other access to the borrowed place | E10032 |
 | BR-4 | A move of the owner requires that no loan of it is live | E10022 |
-| BR-5 | A lend parameter is call-scoped; the callee may not release or store it, except the value in a `borrow T?` out-parameter slot, which the callee owns on entry and may release | E10034 |
+| BR-5 | A lend parameter is call-scoped; the callee may not release or store it, except the `borrow T?` slot's own incoming value, which the callee owns on entry and may release; a different lend's value or view is E10034 | E10034 |
 | BR-6 | A returned view must derive from a parameter, not from a local | E10035 |
 | BR-7 | A view return must derive from exactly one view-like lend parameter | E10036 |
 | BR-8 | A loan must not escape its origin: no storage in a field or a global | E10033 |
