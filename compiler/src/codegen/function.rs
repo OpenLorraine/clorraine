@@ -1439,6 +1439,108 @@ impl<'a> Emitter<'a> {
     /// the old value is saved, the right-hand side is stored into the target,
     /// and only then is the saved value released. A target that owns nothing is
     /// overwritten directly.
+    /// True when a value's evaluation carries a statement-only discard.
+    ///
+    /// A deferred `len` runs its operand's effects through a `DiscardThen`.
+    /// A fresh growable container has no C expression-form drop, so the
+    /// enclosing conditional must use the per-arm statement store instead of
+    /// a `?:` expression that would drop the effects or leak the previous
+    /// value.
+    pub(super) fn needs_statement_discard(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::DiscardThen { .. } => true,
+            ValueKind::Binary { left, right, .. } => {
+                self.needs_statement_discard(left) || self.needs_statement_discard(right)
+            }
+            ValueKind::Unary { operand, .. } => self.needs_statement_discard(operand),
+            ValueKind::Cast { value: inner, .. } => self.needs_statement_discard(inner),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.needs_statement_discard(condition)
+                    || self.needs_statement_discard(then_value)
+                    || self.needs_statement_discard(else_value)
+            }
+            ValueKind::Member { base, .. } => self.needs_statement_discard(base),
+            ValueKind::Index { base, index } => {
+                self.needs_statement_discard(base) || self.needs_statement_discard(index)
+            }
+            ValueKind::Call { args, receiver, .. } => {
+                receiver
+                    .as_deref()
+                    .is_some_and(|receiver| self.needs_statement_discard(receiver))
+                    || args.iter().any(|arg| self.needs_statement_discard(arg))
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                args.iter().any(|arg| self.needs_statement_discard(arg))
+            }
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.needs_statement_discard(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements.iter().any(|element| self.needs_statement_discard(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.needs_statement_discard(fill))
+            }
+            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                ValuePiece::Literal(_) => false,
+                ValuePiece::Placeholder(inner) => self.needs_statement_discard(inner),
+            }),
+            ValueKind::Materialize { value: inner, .. } => {
+                self.needs_statement_discard(inner)
+            }
+            _ => false,
+        }
+    }
+
+    /// Emits a scalar conditional store with per-arm statement effects.
+    ///
+    /// A scalar destination needs no save/drop dance, but a deferred `len`
+    /// effect still has to run inside its selected arm. Each arm's guards and
+    /// discard effects are emitted in the branch, then the arm's value is
+    /// copied to the destination.
+    fn emit_scalar_conditional_assign(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) {
+        self.emit_guards(condition);
+        let condition_c = self.value(condition);
+        self.push(&format!("    if ({condition_c}) {{"));
+        self.emit_scalar_conditional_arm(target_c, ty, then_value);
+        self.push("    } else {");
+        self.emit_scalar_conditional_arm(target_c, ty, else_value);
+        self.push("    }");
+    }
+
+    /// Emits one scalar arm, recursing through a nested conditional.
+    fn emit_scalar_conditional_arm(&mut self, target_c: &str, ty: &Ty, arm: &Value) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("        if ({condition_c}) {{"));
+            self.emit_scalar_conditional_arm(target_c, ty, then_value);
+            self.push("        } else {");
+            self.emit_scalar_conditional_arm(target_c, ty, else_value);
+            self.push("        }");
+            return;
+        }
+        self.emit_guards(arm);
+        let lowered = self.store_text(arm, ty);
+        self.push(&format!("        {target_c} = {lowered};"));
+    }
+
     fn emit_assign(&mut self, span: crate::span::Span, target: &Place, value: &Value) {
         let ty = self.resolved_place_ty(target);
         self.emit_line_directive(span);
@@ -1505,6 +1607,36 @@ impl<'a> Emitter<'a> {
                     then_value,
                     else_value,
                 );
+                return;
+            }
+        }
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            if self.needs_statement_discard(then_value)
+                || self.needs_statement_discard(else_value)
+            {
+                let target_c = self.place(target);
+                if self.emits_drop(&ty) {
+                    self.emit_conditional_move_assign(
+                        &target_c,
+                        &ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                } else {
+                    self.emit_scalar_conditional_assign(
+                        &target_c,
+                        &ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                }
                 return;
             }
         }

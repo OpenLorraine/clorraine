@@ -196,6 +196,14 @@ pub(super) struct FlowState {
     /// the same way the view loans are: a branch that stores a carrier and one
     /// that does not join to the union.
     pub(super) carried_owners: BTreeMap<usize, BTreeSet<LoanOwner>>,
+    /// The source paths a definite write re-initialized on every path here.
+    ///
+    /// An opaque store may move a local source at an owning instance. A later
+    /// write that covers the source makes a subsequent read legal, but only
+    /// when the write is definite: a branch that re-initializes on one path
+    /// must not hide the other path's use. A set of covered write paths joins
+    /// by intersection, so only an all-path write clears the state.
+    pub(super) reinitialized_sources: BTreeSet<(usize, Vec<ir::Projection>)>,
 }
 
 impl FlowState {

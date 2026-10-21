@@ -1433,11 +1433,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             carried_owners.entry(*id).or_default().extend(set.iter().cloned());
         }
         carried_owners.retain(|_, set| !set.is_empty());
+        let reinitialized_sources = first
+            .reinitialized_sources
+            .intersection(&second.reinitialized_sources)
+            .cloned()
+            .collect();
         FlowState {
             places,
             loans,
             element_loans,
             carried_owners,
+            reinitialized_sources,
         }
     }
 

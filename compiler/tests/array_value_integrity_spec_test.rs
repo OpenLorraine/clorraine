@@ -1973,3 +1973,144 @@ func main(): i32 {
     assert_no_asan("lenstructowned", &output);
     assert_exit("lenstructowned", &output, 12);
 }
+
+/// A deferred `len` effect releases a growable fresh value and runs once.
+///
+/// A growable container whose element needs a drop has no C expression-form
+/// release. The deferred effect must use the statement-form fill, both in a
+/// loop test and in a conditional arm, or the same temporary leaks on every
+/// re-evaluation. An index, divisor, and slice count materialize the effect
+/// once, so a side-effecting operand runs once rather than once per use.
+#[test]
+fn should_evaluate_a_deferred_len_operand_once_without_leaking() {
+    let grow_loop = r#"module spec.avi.lenarrloop;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (len([grow()]) == 1 && i < 2) {
+        i = i + 1;
+    }
+    return i - 2;
+}
+"#;
+    let output = run_memory("lenarrloop", grow_loop);
+    assert_no_asan("lenarrloop", &output);
+    assert_exit("lenarrloop", &output, 0);
+
+    let grow_short_loop = r#"module spec.avi.lenarrshortloop;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && len([grow()]) == 1) {
+        i = i + 1;
+    }
+    return i - 2;
+}
+"#;
+    let output = run_memory("lenarrshortloop", grow_short_loop);
+    assert_no_asan("lenarrshortloop", &output);
+    assert_exit("lenarrshortloop", &output, 0);
+
+    let grow_arm = r#"module spec.avi.lenarrarm;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = flag ? len([grow()]) : usize(0);
+    return i32(n) - 1;
+}
+"#;
+    let output = run_memory("lenarrarm", grow_arm);
+    assert_no_asan("lenarrarm", &output);
+    assert_exit("lenarrarm", &output, 0);
+
+    let nested_condition = r#"module spec.avi.lennestedcondition;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = flag ? ((len([mk()]) == 1) ? usize(10) : usize(20)) : usize(30);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lennestedcondition", nested_condition);
+    assert_no_asan("lennestedcondition", &output);
+    assert_exit("lennestedcondition", &output, 20);
+
+    let index_once = r#"module spec.avi.lenindexonce;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let xs: i32[2] = [7, 8];
+    let x: i32 = xs[flag ? i32(len([mk()])) : 0];
+    return calls * 10 + x;
+}
+"#;
+    let output = run_memory("lenindexonce", index_once);
+    assert_no_asan("lenindexonce", &output);
+    assert_exit("lenindexonce", &output, 18);
+
+    let divisor_once = r#"module spec.avi.lendivisoronce;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let x: i32 = 10 / (flag ? i32(len([mk()])) : 2);
+    return calls * 10 + x;
+}
+"#;
+    let output = run_memory("lendivisoronce", divisor_once);
+    assert_no_asan("lendivisoronce", &output);
+    assert_exit("lendivisoronce", &output, 20);
+
+    let slice_once = r#"module spec.avi.lensliceonce;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let xs: i32[2] = [7, 8];
+    let v: i32[] = slice(xs, 0, flag ? usize(len([mk()])) : usize(1));
+    return calls * 10 + i32(v[0]);
+}
+"#;
+    let output = run_memory("lensliceonce", slice_once);
+    assert_no_asan("lensliceonce", &output);
+    assert_exit("lensliceonce", &output, 17);
+}

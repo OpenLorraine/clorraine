@@ -21917,3 +21917,203 @@ func main(): i32 {
 "#;
     compile_rejects("condlocalview", local_view, "E10030", 1);
 }
+
+/// Compiles `source` and asserts the exact set of diagnostic codes.
+fn compile_reports(tag: &str, source: &str, codes: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let actual: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .map(|line| line.split_whitespace().nth(1).unwrap_or("").trim_end_matches(':'))
+        .collect();
+    assert_eq!(
+        actual.len(),
+        codes.len(),
+        "{tag}: expected {codes:?}, saw {actual:?}; stderr:\n{stderr}"
+    );
+    for code in codes {
+        assert!(
+            actual.contains(code),
+            "{tag}: expected {code}; saw {actual:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A conditional opaque store is judged per instance and per source path.
+///
+/// A fresh arm keeps a statement-temporary frame beside a named arm. At an
+/// owning instance the arm reports are distinct: a lend arm is `E10034`, a
+/// later local read is `E10020`, and a deeper projected arm is `E10026`. A
+/// whole-struct read after a top-level field move is `E10025`. A conditional
+/// re-initialization that covers only one path does not hide the other path's
+/// use; an all-path or unconditional re-initialization stays accepted.
+#[test]
+fn should_judge_a_conditional_opaque_store_by_instance_and_path() {
+    let fresh_local = r#"module spec.cpr.condfreshlocal;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(take w: Wrap<T>, run: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    w.items[i] = run ? a : stringOf("bb");
+    return i32(len(w.items[i]));
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
+    return store<str>(w, false, 0);
+}
+"#;
+    compile_rejects("condfreshlocal", fresh_local, "E10030", 1);
+
+    let mixed = r#"module spec.cpr.condmixedreports;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, borrow a: String, i: i32): i32 {
+    let b: String = stringOf("bb");
+    w.items[i] = run ? a : b;
+    return i32(len(b));
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let a: String = stringOf("aa");
+    return store<String>(borrow w, true, borrow a, 0);
+}
+"#;
+    compile_reports("condmixedreports", mixed, &["E10034", "E10020"]);
+
+    let deep = r#"module spec.cpr.conddeepreports;
+
+import { String, stringOf } from std.text;
+
+struct Inner { s: String; }
+struct Holder { inner: Inner; }
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, borrow a: String, i: i32): i32 {
+    let h: Holder = Holder { inner: Inner { s: stringOf("hh") } };
+    w.items[i] = run ? a : h.inner.s;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let a: String = stringOf("aa");
+    return store<String>(borrow w, true, borrow a, 0);
+}
+"#;
+    compile_reports("conddeepreports", deep, &["E10034", "E10026"]);
+
+    let partial_whole = r#"module spec.cpr.condpartialwhole;
+
+import { String, stringOf } from std.text;
+
+struct Holder { s: String; tag: i32; }
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, i: i32): i32 {
+    let h: Holder = Holder { s: stringOf("aaaa"), tag: 7 };
+    let b: String = stringOf("bb");
+    w.items[i] = run ? h.s : b;
+    let whole: Holder = h;
+    return whole.tag;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    return store<String>(borrow w, true, 0);
+}
+"#;
+    compile_rejects("condpartialwhole", partial_whole, "E10025", 1);
+
+    let conditional_reinit = r#"module spec.cpr.condreinit;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, later: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    w.items[i] = run ? a : stringOf("bb");
+    if (later) {
+        a = stringOf("cc");
+    }
+    let bs: u8[] = bytes(a);
+    return i32(bs[0]);
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    return store<String>(borrow w, true, false, 0);
+}
+"#;
+    compile_rejects("condreinit", conditional_reinit, "E10020", 1);
+
+    let both_reinit = r#"module spec.cpr.condreinitboth;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, later: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    w.items[i] = run ? a : stringOf("bb");
+    if (later) {
+        a = stringOf("cc");
+    } else {
+        a = stringOf("dd");
+    }
+    let bs: u8[] = bytes(a);
+    return i32(bs[0]);
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let r: i32 = store<String>(borrow w, true, true, 0);
+    return r - 99;
+}
+"#;
+    let output = run_memory("condreinitboth", both_reinit);
+    assert_no_asan("condreinitboth", &output);
+    assert_exit("condreinitboth", &output, 0);
+
+    let unconditional = r#"module spec.cpr.condreinituncond;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    w.items[i] = run ? a : stringOf("bb");
+    a = stringOf("cc");
+    let bs: u8[] = bytes(a);
+    return i32(bs[0]);
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let r: i32 = store<String>(borrow w, true, 0);
+    return r - 99;
+}
+"#;
+    let output = run_memory("condreinituncond", unconditional);
+    assert_no_asan("condreinituncond", &output);
+    assert_exit("condreinituncond", &output, 0);
+}

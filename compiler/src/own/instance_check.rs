@@ -614,10 +614,10 @@ fn check_opaque_store_requirements(
                     arm_reported = true;
                 }
             }
-            if arm_reported {
-                break;
-            }
             for source in &requirement.source_arms {
+                if source.param {
+                    continue;
+                }
                 let top_level = source.path.len() == 1
                     && matches!(
                         source.path.first(),
@@ -634,6 +634,51 @@ fn check_opaque_store_requirements(
                     );
                     arm_reported = true;
                 }
+            }
+            // A later read of an arm is the concrete moved-value or
+            // partial-move report. The read path tells a use of the moved
+            // field (E10020) from a whole-value use of a partially moved
+            // struct (E10025).
+            for source in &requirement.source_arms {
+                let Some((span, read_path)) = source.later_uses.first() else {
+                    continue;
+                };
+                let top_level = source.path.len() == 1
+                    && matches!(
+                        source.path.first(),
+                        Some(crate::ir::Projection::Field(_))
+                    );
+                // A whole-value read (an empty projection) of a struct
+                // whose top-level field moved is E10025. A read of the moved
+                // field itself is E10020; a read of another field does not
+                // reach this duty.
+                let partial_whole = top_level && read_path.is_empty();
+                let (code, message) = if partial_whole {
+                    (
+                        "E10025",
+                        format!(
+                            "'{}' is partially moved and cannot be used as a whole",
+                            source.name
+                        ),
+                    )
+                } else {
+                    (
+                        "E10020",
+                        format!("'{}' was moved and cannot be used", source.name),
+                    )
+                };
+                if reported_use.insert((
+                    requirement.function.clone(),
+                    span.start,
+                    code,
+                )) {
+                    diagnostics.push(
+                        Diagnostic::error(code, message, *span)
+                            .with_help("re-initialize the binding or use a view"),
+                    );
+                }
+                arm_reported = true;
+                break;
             }
             if arm_reported {
                 break;

@@ -1901,6 +1901,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                     name: binding.name.clone(),
                                     path: source_path,
                                     param,
+                                    later_uses: Vec::new(),
                                 },
                             ))
                         }
@@ -1979,10 +1980,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let fresh_arm = owned_source
             && source_place.is_none()
             && self.conditional_has_fresh_arm(value);
-        if frames.is_empty()
-            && (source_arm_pairs.is_empty() || fresh_arm)
-            && ((owned_source && source_place.is_none())
-                || (!owned_source && self.frame_owned_view_owner(value).is_some()))
+        // A fresh arm always contributes a statement-temporary backing, even
+        // beside a named local arm: the view may select the fresh value, which
+        // dies at the statement. A named local arm contributes its own frame
+        // separately, so the synthetic frame is added in addition.
+        if fresh_arm
+            || (frames.is_empty()
+                && source_arm_pairs.is_empty()
+                && ((owned_source && source_place.is_none())
+                    || (!owned_source && self.frame_owned_view_owner(value).is_some())))
         {
             frames.push(ir::OpaqueFrame {
                 binding: None,
@@ -2080,6 +2086,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let id = self.alias_resolved_root(id);
         let root = self.bindings[id].ir_name.clone();
+        // Snapshot the flow-sensitive re-initialization set: the duty loop
+        // mutates the check state, and a definite write on an earlier path is
+        // what makes this read legal.
+        let reinitialized = self.state.reinitialized_sources.clone();
         for duty in &mut self.opaque_store_requirements {
             if duty.function != self.decl.name {
                 continue;
@@ -2101,14 +2111,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             if duty.source_ir.as_deref() == Some(root.as_str())
                 && projection_paths_overlap(&duty.source_path, &projections)
+                && !reinitialized.iter().any(|(source, written)| {
+                    *source == id && projection_path_covers(written, &duty.source_path)
+                })
             {
                 push_opaque_span(&mut duty.later_uses, span);
             }
-            for source in &duty.source_arms {
+            for source in &mut duty.source_arms {
                 if source.ir == root
                     && projection_paths_overlap(&source.path, &projections)
+                    && !reinitialized.iter().any(|(owner, written)| {
+                        *owner == id && projection_path_covers(written, &source.path)
+                    })
                 {
-                    push_opaque_span(&mut duty.later_uses, span);
+                    source.later_uses.push((span, projections.clone()));
                     break;
                 }
             }
@@ -2153,34 +2169,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             if duty.source_ir.as_deref() == Some(root.as_str())
                 && projection_paths_overlap(&duty.source_path, projections)
+                && moved
             {
-                if moved {
-                    push_opaque_span(&mut duty.later_uses, span);
-                } else if projection_path_covers(projections, &duty.source_path) {
-                    // The write re-initializes the moved source: future reads
-                    // are legal, but a read already recorded before the write
-                    // is a real use after the move.
-                    duty.source_ir = None;
-                    duty.source_path.clear();
-                    duty.source_param = false;
-                }
+                push_opaque_span(&mut duty.later_uses, span);
             }
-            let mut reinitialized = Vec::new();
-            for (index, source) in duty.source_arms.iter().enumerate() {
-                if source.ir != root
-                    || !projection_paths_overlap(&source.path, projections)
+            for source in &mut duty.source_arms {
+                if source.ir == root
+                    && projection_paths_overlap(&source.path, projections)
+                    && moved
                 {
-                    continue;
-                }
-                if moved {
-                    push_opaque_span(&mut duty.later_uses, span);
-                } else if projection_path_covers(projections, &source.path) {
-                    reinitialized.push(index);
+                    source.later_uses.push((span, projections.to_vec()));
+                    break;
                 }
             }
-            for index in reinitialized.into_iter().rev() {
-                duty.source_arms.remove(index);
-            }
+        }
+        // Track the write itself in the flow state. A definite write covering
+        // a source makes a later read legal; a branch write joins by
+        // intersection, so only an all-path write qualifies. A move removes
+        // the covered entries instead.
+        if moved {
+            self.state.reinitialized_sources.retain(|(source, written)| {
+                *source != id || !projection_paths_overlap(written, projections)
+            });
+        } else {
+            self.state
+                .reinitialized_sources
+                .insert((id, projections.to_vec()));
         }
     }
 

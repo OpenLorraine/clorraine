@@ -107,10 +107,7 @@ impl<'a> Emitter<'a> {
             // The expression is a comma sequence, so it remains a statement
             // here and an inline guard under a short-circuit or `?:` arm.
             ValueKind::DiscardThen { effects, .. } => {
-                let discarded = self.discard_expression(effects);
-                if discarded != "0" {
-                    self.push(&format!("    {discarded};"));
-                }
+                self.emit_discard_effects(effects);
             }
             // A materialized operand is always evaluated where it stands, so
             // it is filled by a statement before the guarded construct. A
@@ -125,7 +122,6 @@ impl<'a> Emitter<'a> {
                 value_move_outs,
                 adopting,
             } => {
-                self.emit_guards(inner);
                 // An adopting carrier's consumer owns the value, so the
                 // previous value must not be released on a re-fill: the
                 // destination's own cleanup is the sole owner.
@@ -142,6 +138,18 @@ impl<'a> Emitter<'a> {
                         &inner_ty,
                     );
                 }
+                // A deferred `len` effect needs the statement-form release for
+                // a fresh growable container, which has no C expression form.
+                // Fill the temporary on the evaluated path, and skip the
+                // ordinary value fill that would drop the effects.
+                if self.needs_statement_discard(inner)
+                    && !inner_ty.is_fixed_array()
+                    && !matches!(inner.kind, ValueKind::Conditional { .. })
+                {
+                    self.emit_statement_discard_fill(&destination_c, inner);
+                    return;
+                }
+                self.emit_guards(inner);
                 if let ValueKind::Conditional {
                     condition,
                     then_value,
@@ -518,6 +526,107 @@ impl<'a> Emitter<'a> {
                     rendered
                 } else {
                     format!("(({}), {})", guards.join(", "), rendered)
+                }
+            }
+        }
+    }
+
+    /// Fills a temporary with a value whose deferred effects need statements.
+    ///
+    /// A `&&`/`||` keeps the right side on the left's path; every other shape
+    /// emits its ordinary guards (which run a `DiscardThen` effect where it
+    /// stands) and then stores the value. The destination is a scalar
+    /// temporary, so the chosen value is copied and the effects are not
+    /// rendered a second time.
+    fn emit_statement_discard_fill(&mut self, destination_c: &str, value: &Value) {
+        if let ValueKind::Binary {
+            op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr,
+            left,
+            right,
+        } = &value.kind
+        {
+            let and = matches!(
+                value.kind,
+                ValueKind::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    ..
+                }
+            );
+            self.emit_guards(left);
+            let left_c = self.value(left);
+            self.push(&format!("    if ({left_c}) {{"));
+            if and {
+                self.emit_guards(right);
+                self.push(&format!("        {destination_c} = {};", self.value(right)));
+            } else {
+                self.push(&format!("        {destination_c} = 1;"));
+            }
+            self.push("    } else {");
+            if and {
+                self.push(&format!("        {destination_c} = 0;"));
+            } else {
+                self.emit_guards(right);
+                self.push(&format!("        {destination_c} = {};", self.value(right)));
+            }
+            self.push("    }");
+            return;
+        }
+        self.emit_guards(value);
+        self.push(&format!("    {destination_c} = {};", self.value(value)));
+    }
+
+    /// Emits one value's effects as statements on the current path.
+    ///
+    /// A conditional arm can carry statements inside its branch, so a
+    /// materialized fresh value uses the ordinary fill and statement-form
+    /// release, including a growable container whose element loop has no C
+    /// expression form. A conditional recurses in an `if`/`else`, so only the
+    /// selected arm runs. A literal or template evaluates its parts in source
+    /// order. A place projection only emits its guards.
+    fn emit_discard_effects(&mut self, value: &Value) {
+        match &value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.emit_guards(condition);
+                let condition_c = self.value(condition);
+                self.push(&format!("    if ({condition_c}) {{"));
+                self.emit_discard_effects(then_value);
+                self.push("    } else {");
+                self.emit_discard_effects(else_value);
+                self.push("    }");
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.emit_discard_effects(element);
+                }
+                if let Some(fill) = fill {
+                    self.emit_discard_effects(fill);
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.emit_discard_effects(field);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.emit_discard_effects(inner);
+                    }
+                }
+            }
+            ValueKind::DiscardThen { effects, .. } => self.emit_discard_effects(effects),
+            // The ordinary fill releases the previous value with the
+            // statement-form drop, so a growable container is safe across a
+            // loop test. The final value's scope release is already pending.
+            ValueKind::Materialize { .. } => self.emit_guards(value),
+            _ => {
+                let discarded = self.discard_expression(value);
+                if discarded != "0" {
+                    self.push(&format!("    {discarded};"));
                 }
             }
         }

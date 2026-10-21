@@ -311,6 +311,11 @@ pub struct OpaqueSource {
     pub path: Vec<super::Projection>,
     /// True when the source is a non-`take` parameter.
     pub param: bool,
+    /// Reads of the source after an owning-instance store.
+    ///
+    /// The read path distinguishes a use of the moved field (`E10020`) from a
+    /// whole-value use of a partially moved struct (`E10025`).
+    pub later_uses: Vec<(Span, Vec<super::Projection>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -51,6 +51,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut condition = self.lower_value(&decl.condition);
         self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
+        if Self::contains_discard_then(&condition)
+            && !matches!(condition.kind, ValueKind::Conditional { .. })
+        {
+            condition = self.materialize_loop_condition_operand(condition);
+        }
         // The condition may move an owner, so the state after evaluating it is
         // the exit state on the false path, not the head state.
         let condition_state = self.state.clone();
@@ -146,6 +151,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut condition = self.lower_value(&decl.condition);
         self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
+        if Self::contains_discard_then(&condition)
+            && !matches!(condition.kind, ValueKind::Conditional { .. })
+        {
+            condition = self.materialize_loop_condition_operand(condition);
+        }
         self.append_condition_releases(body_block, body_floor, release_floor);
         let shape = self.loop_shape(
             LoopKind::DoWhile,
@@ -327,6 +337,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut lowered = self.lower_value(condition);
                 self.in_loop_condition = saved_loop_condition;
                 self.materialize_owned_calls(&mut lowered);
+                if Self::contains_discard_then(&lowered)
+                    && !matches!(lowered.kind, ValueKind::Conditional { .. })
+                {
+                    lowered = self.materialize_loop_condition_operand(lowered);
+                }
                 lowered
             }
             None => Value::bool(Ty::boolean(), true),

@@ -1502,6 +1502,61 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a value carries a deferred discard effect.
+    ///
+    /// A loop test re-evaluates its condition every iteration, so a deferred
+    /// `len` effect must fill a per-test temporary. The walk follows the same
+    /// shapes the effect lowering produces.
+    pub(super) fn contains_discard_then(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::DiscardThen { .. } => true,
+            ValueKind::Binary { left, right, .. } => {
+                Self::contains_discard_then(left) || Self::contains_discard_then(right)
+            }
+            ValueKind::Unary { operand, .. } => Self::contains_discard_then(operand),
+            ValueKind::Cast { value: inner, .. } => Self::contains_discard_then(inner),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                Self::contains_discard_then(condition)
+                    || Self::contains_discard_then(then_value)
+                    || Self::contains_discard_then(else_value)
+            }
+            ValueKind::Member { base, .. } => Self::contains_discard_then(base),
+            ValueKind::Index { base, index } => {
+                Self::contains_discard_then(base) || Self::contains_discard_then(index)
+            }
+            ValueKind::Call { args, receiver, .. } => {
+                receiver
+                    .as_deref()
+                    .is_some_and(Self::contains_discard_then)
+                    || args.iter().any(Self::contains_discard_then)
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                args.iter().any(Self::contains_discard_then)
+            }
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| Self::contains_discard_then(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements.iter().any(Self::contains_discard_then)
+                    || fill
+                        .as_deref()
+                        .is_some_and(Self::contains_discard_then)
+            }
+            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                ValuePiece::Literal(_) => false,
+                ValuePiece::Placeholder(inner) => Self::contains_discard_then(inner),
+            }),
+            ValueKind::Materialize { value: inner, .. } => {
+                Self::contains_discard_then(inner)
+            }
+            _ => false,
+        }
+    }
+
     /// Lowers a fixed-array `len` operand's effects to a value.
     ///
     /// The structural extent needs no storage, but the operand's own effects
@@ -2179,7 +2234,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// before every test, and the condition reads the filled temporary. A
     /// constant, an already-filled temporary, and an ownership-carrying value
     /// keep their existing spelling.
-    fn materialize_loop_condition_operand(&mut self, value: Value) -> Value {
+    pub(super) fn materialize_loop_condition_operand(&mut self, value: Value) -> Value {
         if !(self.sema.table.duplicable(&value.ty)
             || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update()))
             || matches!(
@@ -6313,6 +6368,11 @@ pub(super) fn is_pure_value(value: &Value) -> bool {
         ValueKind::Unary { op, operand } => !op.is_update() && is_pure_value(operand),
         ValueKind::Binary { left, right, .. } => is_pure_value(left) && is_pure_value(right),
         ValueKind::Cast { value: inner, .. } => is_pure_value(inner),
+        // The carried effects must be materialized once, so the value is not
+        // pure even when both parts are.
+        ValueKind::DiscardThen { effects, value } => {
+            is_pure_value(effects) && is_pure_value(value)
+        }
         ValueKind::Conditional {
             condition,
             then_value,
