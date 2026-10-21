@@ -36,8 +36,10 @@ or new interpreter machinery.
   parameter is a caller-retained slot, not an ownership slot, and rejects a
   parameter-backed view.
 - A whole out-slot assignment from another lend parameter remains a separate
-  critical, `DEF-541`; it conflicts with the earlier AR-20 acceptance and needs
-  its own ruling. It is not silently changed here.
+  critical, `DEF-541`; it conflicts with the earlier AR-20 acceptance. The
+  conservative rejection is now planned in
+  `../out-slot-view-escape/99-execution-plan.md`; it is not silently changed
+  here.
 - A nested lifted-lambda capture relays the original whole-out-slot kind; a
   captured non-nullable writable view slot is not an ownership slot.
 - A view-returning named call whose return expression mentions no parameter is
