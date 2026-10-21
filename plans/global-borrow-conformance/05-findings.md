@@ -37,7 +37,7 @@ parameter reports `E10038`, and a `const` global stays accepted.
 ## Phase 3 — Generic element move (`DEF-425`)
 
 **Status**: Done (2026-10-21).
-**Commit**: `f6d51e5`.
+**Commit**: `f6d51e5`; review corrections `ea478ed`.
 
 An opaque member move out of a borrow parameter records the per-instance
 not-lend duty; an owning substitution reports `E10034`, a duplicable one stays
@@ -52,3 +52,18 @@ generic shape is now rejected.
 generic moves with `E10034`, rejects the take twin with `E10026`, and accepts
 the duplicable take and identical self-copy controls; the dedupe and span pins
 remain green. `make check` and `make verify` exit 0 at the batch head.
+
+**Review corrections**: a call argument of the same opaque element
+(`sink(w.items[i])`) skipped the duty because an unknown type is neither
+maybe-owning nor non-duplicable. The call-argument path now records the
+not-lend duty for a non-take parameter and the element-move duty for a take
+parameter, so the borrow call reports `E10034`, the take call `E10026`, and a
+duplicable instance copies. `project_element` also stripped every extent at
+once, so a multi-extent path (`rows[0][0].name`) became Unknown and the audit
+dropped the duty; it now strips one extent per element step and uses the shared
+projected-type fallback, so the multi-extent take literal move reports
+`E10026`. The generic call-argument, multi-extent, and duplicable controls are
+pinned in `should_judge_a_generic_element_call_and_a_multi_extent_take_move`.
+A module-initializer static view (`toCString("ab")`) restores an init-time
+view-builder pin. The aliased view-builder bypass (`import { slice as sl }`) is
+filed as `DEF-538`.

@@ -1,6 +1,6 @@
 # Execution Plan — Global Borrow and Move Conformance (Batch U)
 
-> **Progress**: 12/12 tasks
+> **Progress**: 15/15 tasks
 > **Rows**: `DEF-533`, `DEF-537`, `DEF-425`
 > **Baseline**: `513fd90`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -29,6 +29,15 @@
       rejection
 - [x] 3.2.1 Add the generic/concrete/take matrix and the duplicable control;
       run `make check`
+
+## Review corrections
+
+- [x] 5.1.1 Judge a generic element call argument out of a borrow/take
+      parameter per instance; add the borrow/take/duplicable matrix
+- [x] 5.1.2 Strip one extent per element step and use the shared projected-type
+      fallback, so a multi-extent take move reports `E10026`
+- [x] 5.1.3 Restore a module-initializer static view pin and correct the stale
+      initializer doc; file the aliased view-builder bypass
 
 ## Close-out
 
