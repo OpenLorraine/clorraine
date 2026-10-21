@@ -103,6 +103,15 @@ impl<'a> Emitter<'a> {
                     self.emit_slice_guard(args);
                 }
             }
+            // The carried effects run on this path and yield the constant.
+            // The expression is a comma sequence, so it remains a statement
+            // here and an inline guard under a short-circuit or `?:` arm.
+            ValueKind::DiscardThen { effects, .. } => {
+                let discarded = self.discard_expression(effects);
+                if discarded != "0" {
+                    self.push(&format!("    {discarded};"));
+                }
+            }
             // A materialized operand is always evaluated where it stands, so
             // it is filled by a statement before the guarded construct. A
             // fixed-array call writes through its hidden out-parameter, so the
@@ -509,6 +518,101 @@ impl<'a> Emitter<'a> {
                     rendered
                 } else {
                     format!("(({}), {})", guards.join(", "), rendered)
+                }
+            }
+        }
+    }
+
+    /// Renders one value's effects as an inline comma sequence.
+    ///
+    /// The result is a C expression that evaluates the value, discards its
+    /// result, and yields `0`. A conditional keeps each arm behind the test, a
+    /// literal or template evaluates its parts in source order, and a
+    /// materialized value runs its guarded fill. A place is only read; no move
+    /// or release of caller storage happens here.
+    fn discard_expression(&self, value: &Value) -> String {
+        match &value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let mut guards = Vec::new();
+                self.guard_expressions(condition, &mut guards);
+                let condition_c = self.value(condition);
+                let then = self.discard_expression(then_value);
+                let else_value = self.discard_expression(else_value);
+                let selected = format!("({condition_c} ? (void)({then}) : (void)({else_value}))");
+                if guards.is_empty() {
+                    selected
+                } else {
+                    format!("(({}), {selected})", guards.join(", "))
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let mut parts: Vec<String> = elements
+                    .iter()
+                    .map(|element| self.discard_expression(element))
+                    .filter(|part| part != "0")
+                    .collect();
+                if let Some(fill) = fill {
+                    let part = self.discard_expression(fill);
+                    if part != "0" {
+                        parts.push(part);
+                    }
+                }
+                if parts.is_empty() {
+                    "0".to_owned()
+                } else {
+                    format!("({})", parts.into_iter().map(|part| format!("(void)({part})")).collect::<Vec<_>>().join(", "))
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|(_, field)| self.discard_expression(field))
+                    .filter(|part| part != "0")
+                    .collect();
+                if parts.is_empty() {
+                    "0".to_owned()
+                } else {
+                    format!("({})", parts.into_iter().map(|part| format!("(void)({part})")).collect::<Vec<_>>().join(", "))
+                }
+            }
+            ValueKind::Template(pieces) => {
+                let parts: Vec<String> = pieces
+                    .iter()
+                    .filter_map(|piece| match piece {
+                        ValuePiece::Literal(_) => None,
+                        ValuePiece::Placeholder(inner) => {
+                            let part = self.discard_expression(inner);
+                            (part != "0").then_some(part)
+                        }
+                    })
+                    .collect();
+                if parts.is_empty() {
+                    "0".to_owned()
+                } else {
+                    format!("({})", parts.into_iter().map(|part| format!("(void)({part})")).collect::<Vec<_>>().join(", "))
+                }
+            }
+            ValueKind::DiscardThen { effects, .. } => self.discard_expression(effects),
+            ValueKind::Int(_)
+            | ValueKind::Float(_)
+            | ValueKind::Char(_)
+            | ValueKind::Bool(_)
+            | ValueKind::Null
+            | ValueKind::Str(_)
+            | ValueKind::Path(_)
+            | ValueKind::Aggregate
+            | ValueKind::Temp(_)
+            | ValueKind::Closure { .. } => "0".to_owned(),
+            _ => {
+                let (rendered, guards) = self.guarded_parts(value);
+                if guards.is_empty() {
+                    format!("(void)({rendered})")
+                } else {
+                    format!("(({}), (void)({rendered}))", guards.join(", "))
                 }
             }
         }
@@ -1270,6 +1374,13 @@ impl<'a> Emitter<'a> {
                         out.push(trap_expression(&condition, "E11211", "index out of range"));
                     }
                 }
+            }
+            ValueKind::DiscardThen { effects, value } => {
+                let discarded = self.discard_expression(effects);
+                if discarded != "0" {
+                    out.push(discarded);
+                }
+                self.guard_expressions(value, out);
             }
             // A materialized operand inside a conditionally evaluated value
             // (a short-circuit operand or a `?:` arm) carries its side effect

@@ -72,6 +72,9 @@ pub fn value_needs_guards(value: &Value) -> bool {
         // filled by a statement before the construct; a loop header cannot
         // carry that statement.
         ValueKind::Materialize { .. } => true,
+        // The effects must run where the value is evaluated; a loop header
+        // moves them into the per-test guard position.
+        ValueKind::DiscardThen { .. } => true,
         ValueKind::Closure { captures, .. } => captures.iter().any(value_needs_guards),
         ValueKind::ClosureCall { callable, args } => {
             value_needs_guards(callable) || args.iter().any(value_needs_guards)

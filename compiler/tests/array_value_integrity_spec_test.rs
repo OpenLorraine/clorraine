@@ -1751,3 +1751,225 @@ func main(): i32 {
     assert_no_asan("discardstructnestedcall", &output);
     assert_exit("discardstructnestedcall", &output, 0);
 }
+
+/// A conditionally evaluated `len` operand runs its effects on the taken path.
+///
+/// The structural extent is still a compile-time constant, but a conditional
+/// arm, a short-circuit right side, and a loop test evaluate the operand only
+/// when that path runs. A conditional arm runs only the selected arm, a
+/// literal or struct member runs each of its parts once, a run-time index runs
+/// its index and bounds guard only on the selected path, and a deferred body
+/// runs when it is executed. The mixed place/fresh arm keeps the caller's
+/// array a read, so the place stays usable.
+#[test]
+fn should_evaluate_a_deferred_len_operand_on_the_evaluated_path() {
+    let outer_true = r#"module spec.avi.lenoutertrue;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = flag ? len([mk(), mk()]) : usize(0);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lenoutertrue", outer_true);
+    assert_no_asan("lenoutertrue", &output);
+    assert_exit("lenoutertrue", &output, 22);
+
+    let outer_false = r#"module spec.avi.lenouterfalse;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = false;
+    let n: usize = flag ? len([mk(), mk()]) : usize(3);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lenouterfalse", outer_false);
+    assert_no_asan("lenouterfalse", &output);
+    assert_exit("lenouterfalse", &output, 3);
+
+    let short_true = r#"module spec.avi.lenshorttrue;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let ok: bool = flag && (len([mk()]) == 1);
+    return calls * 10 + (ok ? 1 : 0);
+}
+"#;
+    let output = run_memory("lenshorttrue", short_true);
+    assert_no_asan("lenshorttrue", &output);
+    assert_exit("lenshorttrue", &output, 11);
+
+    let short_false = r#"module spec.avi.lenshortfalse;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = false;
+    let ok: bool = flag && (len([mk()]) == 1);
+    return calls * 10 + (ok ? 1 : 0);
+}
+"#;
+    let output = run_memory("lenshortfalse", short_false);
+    assert_no_asan("lenshortfalse", &output);
+    assert_exit("lenshortfalse", &output, 0);
+
+    let loop_source = r#"module spec.avi.lenloop;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (len([mk()]) == 1 && i < 2) {
+        i = i + 1;
+    }
+    return calls * 10 + i;
+}
+"#;
+    let output = run_memory("lenloop", loop_source);
+    assert_no_asan("lenloop", &output);
+    assert_exit("lenloop", &output, 32);
+
+    let loop_short = r#"module spec.avi.lenloopshort;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && len([mk()]) == 1) {
+        i = i + 1;
+    }
+    return calls * 10 + i;
+}
+"#;
+    let output = run_memory("lenloopshort", loop_short);
+    assert_no_asan("lenloopshort", &output);
+    assert_exit("lenloopshort", &output, 22);
+
+    let mixed = r#"module spec.avi.lenmixed;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let a: i32[2] = [10, 11];
+    let flag: bool = true;
+    let n: usize = flag ? len(a) : len([mk()]);
+    let after: i32 = a[0];
+    return calls * 10 + i32(n) + after - 12;
+}
+"#;
+    let output = run_memory("lenmixed", mixed);
+    assert_no_asan("lenmixed", &output);
+    assert_exit("lenmixed", &output, 0);
+
+    let owned = r#"module spec.avi.lenowned;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = flag ? len([stringOf("a"), stringOf("b")]) : usize(0);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("lenowned", owned);
+    assert_no_asan("lenowned", &output);
+    assert_exit("lenowned", &output, 0);
+
+    let index = r#"module spec.avi.lenindex;
+
+let calls: i32 = 0;
+func bump(): i32 { calls = calls + 1; return 0; }
+
+func main(): i32 {
+    let m: i32[2][2] = [[1, 2], [3, 4]];
+    let flag: bool = true;
+    let n: usize = flag ? len(m[bump()]) : usize(0);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lenindex", index);
+    assert_no_asan("lenindex", &output);
+    assert_exit("lenindex", &output, 12);
+
+    let index_skip = r#"module spec.avi.lenindexskip;
+
+let calls: i32 = 0;
+func bump(): i32 { calls = calls + 1; return 5; }
+
+func main(): i32 {
+    let m: i32[2][2] = [[1, 2], [3, 4]];
+    let flag: bool = false;
+    let n: usize = flag ? len(m[bump()]) : usize(7);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lenindexskip", index_skip);
+    assert_no_asan("lenindexskip", &output);
+    assert_exit("lenindexskip", &output, 7);
+
+    let index_trap = r#"module spec.avi.lenindextrap;
+
+let calls: i32 = 0;
+func bump(): i32 { calls = calls + 1; return 5; }
+
+func main(): i32 {
+    let m: i32[2][2] = [[1, 2], [3, 4]];
+    let flag: bool = true;
+    let n: usize = flag ? len(m[bump()]) : usize(0);
+    return i32(n);
+}
+"#;
+    let output = run_memory("lenindextrap", index_trap);
+    assert_trap("lenindextrap", &output, "E11211");
+
+    let deferred = r#"module spec.avi.lendefer;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+
+func main(): i32 {
+    let flag: bool = true;
+    if (flag) {
+        defer {
+            let n: usize = len([mk()]);
+            calls = calls + i32(n) - 1;
+        }
+    }
+    return calls;
+}
+"#;
+    let output = run_memory("lendefer", deferred);
+    assert_no_asan("lendefer", &output);
+    assert_exit("lendefer", &output, 1);
+
+    let struct_owned = r#"module spec.avi.lenstructowned;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+struct S { s: String; a: i32[2]; }
+
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = flag ? len((S { s: stringOf("owned"), a: [mk()] }).a) : usize(0);
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lenstructowned", struct_owned);
+    assert_no_asan("lenstructowned", &output);
+    assert_exit("lenstructowned", &output, 12);
+}

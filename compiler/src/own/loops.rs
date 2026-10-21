@@ -801,6 +801,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         match &mut value.kind {
+            ValueKind::DiscardThen { effects, value } => {
+                self.materialize_owned_calls(effects);
+                self.materialize_owned_calls(value);
+            }
             ValueKind::Binary { left, right, .. } => {
                 self.materialize_owned_calls(left);
                 self.materialize_owned_calls(right);

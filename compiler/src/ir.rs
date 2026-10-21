@@ -44,7 +44,8 @@ pub use guards::value_needs_guards;
 pub use mono::{
     CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
     RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOpaqueStore,
-    OpaqueFrame, RequiresOutSlotPlace, RequiresSelfAssign, RequiresStorableSlot, StructInstance,
+    OpaqueFrame, OpaqueSource, RequiresOutSlotPlace, RequiresSelfAssign, RequiresStorableSlot,
+    StructInstance,
 };
 pub use place::{Place, PlaceBase, Projection};
 
@@ -266,6 +267,23 @@ pub enum ValueKind {
         callable: Box<Value>,
         /// The call arguments in source order.
         args: Vec<Value>,
+    },
+    /// A value whose evaluation runs another value's effects first.
+    ///
+    /// A conditionally evaluated position cannot carry a statement before it:
+    /// the statement would run on a skipped arm, a short-circuit path, or one
+    /// loop test instead of every test. The effects are lowered into their own
+    /// value and emitted where this value is evaluated, then the yielded value
+    /// is read. The structural `len` of a fixed-array operand uses this to keep
+    /// the fold while still running the operand's conditional, literal, and
+    /// index effects on the evaluated path.
+    DiscardThen {
+        /// The value whose effects run where this value is evaluated. Its own
+        /// result is not read; a fresh owning result binds and releases through
+        /// the ordinary guarded materialization.
+        effects: Box<Value>,
+        /// The value produced after the effects.
+        value: Box<Value>,
     },
     /// A struct or array literal the checker did not need to name explicitly.
     Aggregate,

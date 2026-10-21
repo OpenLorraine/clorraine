@@ -271,6 +271,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sources
     }
 
+    /// True when a conditional has an arm with no place.
+    ///
+    /// The owned-source frame walk names each place arm separately; a fresh
+    /// arm (a call result or a literal) still contributes a statement
+    /// temporary backing, so the view escape must see it. A null arm carries
+    /// no storage and contributes nothing.
+    fn conditional_has_fresh_arm(&self, expr: &Expr) -> bool {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return false;
+        };
+        [then_value.as_ref(), else_value.as_ref()]
+            .into_iter()
+            .any(|arm| {
+                if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                    self.conditional_has_fresh_arm(arm)
+                } else if matches!(arm.kind, ExprKind::Null) {
+                    false
+                } else {
+                    self.place_target(arm).is_none()
+                }
+            })
+    }
+
     /// The owned places a consumed projection of a conditional may move out of.
     ///
     /// A consuming position that takes a member or element projection of a
@@ -1848,6 +1876,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             None
         };
+        // A conditional's arms are separate sources. The declaration cannot
+        // tell whether the destination owns them or widens them to a view, so
+        // every arm that may move is recorded for the instance audit. A
+        // caller-backed lend parameter contributes no dying frame; a local or
+        // by-value parameter keeps one.
+        let source_arm_pairs: Vec<(usize, bool, ir::OpaqueSource)> =
+            if owned_source && source_place.is_none() {
+                self.conditional_move_sources(value)
+                    .into_iter()
+                    .filter_map(|target| match target {
+                        PlaceTarget::Local(source, source_path) => {
+                            let source = self.alias_resolved_root(source);
+                            let binding = &self.bindings[source];
+                            let caller_backed = binding.kind == BindingKind::Param
+                                && matches!(binding.mode, Mode::Borrow | Mode::Const);
+                            let param = binding.kind == BindingKind::Param
+                                && binding.mode != Mode::Take;
+                            Some((
+                                source,
+                                caller_backed,
+                                ir::OpaqueSource {
+                                    ir: binding.ir_name.clone(),
+                                    name: binding.name.clone(),
+                                    path: source_path,
+                                    param,
+                                },
+                            ))
+                        }
+                        PlaceTarget::Global(_, _) => None,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
         // A `for (borrow e in xs)` alias has no storage of its own: the store
         // reaches the container element, so the duty roots at the container
         // with the alias's own path followed by the written path.
@@ -1896,7 +1958,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 frames.push(frame);
             }
         }
+        for (source, caller_backed, _) in &source_arm_pairs {
+            if *caller_backed {
+                continue;
+            }
+            let name = self.bindings[*source].name.clone();
+            let frame = ir::OpaqueFrame {
+                binding: Some(self.bindings[*source].ir_name.clone()),
+                name: Some(name.clone()),
+                subject: super::liveness::owner_subject(
+                    &name,
+                    self.bindings[*source].generated,
+                ),
+                scope_end: self.bindings[*source].scope_end,
+            };
+            if !frames.contains(&frame) {
+                frames.push(frame);
+            }
+        }
+        let fresh_arm = owned_source
+            && source_place.is_none()
+            && self.conditional_has_fresh_arm(value);
         if frames.is_empty()
+            && (source_arm_pairs.is_empty() || fresh_arm)
             && ((owned_source && source_place.is_none())
                 || (!owned_source && self.frame_owned_view_owner(value).is_some()))
         {
@@ -1908,7 +1992,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
         }
         let frame_owner = frames.first().map(|frame| frame.subject.clone());
-        let has_source_place = source_place.is_some();
         let (source_ir, source_name, source_path, source_param) = match source_place {
             Some((source, source_path)) => {
                 let binding = &self.bindings[source];
@@ -1934,6 +2017,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             source_name,
             source_path,
             source_param,
+            source_arms: source_arm_pairs
+                .into_iter()
+                .map(|(_, _, source)| source)
+                .collect(),
             later_uses: Vec::new(),
             late_uses: Vec::new(),
             invalidations: Vec::new(),
@@ -1944,7 +2031,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             caller_slot,
             root,
         });
-        owned_source && has_source_place
+        // An owned source with no single place — a conditional, a call result,
+        // or a literal — is also decided per instance: the destination may be
+        // a view (a widening) or an owner (a move). The caller must not run
+        // the declaration's move in either case.
+        owned_source
     }
 
     /// Ends the view watches a replaced opaque store no longer owns.
@@ -1966,7 +2057,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 kept.push(duty);
                 continue;
             }
-            if duty.source_ir.is_some() {
+            if duty.source_ir.is_some() || !duty.source_arms.is_empty() {
                 duty.superseded = true;
                 kept.push(duty);
             }
@@ -2012,6 +2103,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && projection_paths_overlap(&duty.source_path, &projections)
             {
                 push_opaque_span(&mut duty.later_uses, span);
+            }
+            for source in &duty.source_arms {
+                if source.ir == root
+                    && projection_paths_overlap(&source.path, &projections)
+                {
+                    push_opaque_span(&mut duty.later_uses, span);
+                    break;
+                }
             }
         }
     }
@@ -2065,6 +2164,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     duty.source_path.clear();
                     duty.source_param = false;
                 }
+            }
+            let mut reinitialized = Vec::new();
+            for (index, source) in duty.source_arms.iter().enumerate() {
+                if source.ir != root
+                    || !projection_paths_overlap(&source.path, projections)
+                {
+                    continue;
+                }
+                if moved {
+                    push_opaque_span(&mut duty.later_uses, span);
+                } else if projection_path_covers(projections, &source.path) {
+                    reinitialized.push(index);
+                }
+            }
+            for index in reinitialized.into_iter().rev() {
+                duty.source_arms.remove(index);
             }
         }
     }

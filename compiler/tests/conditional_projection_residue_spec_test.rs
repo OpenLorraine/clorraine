@@ -21823,3 +21823,97 @@ func main(): i32 {
 "#;
     compile_rejects("multiextenttake", multi_extent, "E10026", 1);
 }
+
+/// A conditional of borrowed places is judged by the instance's destination.
+///
+/// A view-instance store widens each owned arm; the borrowed parameters back
+/// the view, so the store is accepted. The concrete view twin stays accepted.
+/// An owning instance keeps the concrete arm judgment and reports `E10034` for
+/// each non-`take` lend arm. A local-backed conditional into a caller slot is
+/// still the frame escape (`E10030`).
+#[test]
+fn should_store_a_conditional_of_borrowed_places_at_a_view_instance() {
+    let view_store = r#"module spec.cpr.condviewstore;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
+    w.items[i] = run ? a : b;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    return store<str>(borrow w, true, borrow a, borrow b, 0);
+}
+"#;
+    let output = run_memory("condviewstore", view_store);
+    assert_no_asan("condviewstore", &output);
+    assert_exit("condviewstore", &output, 0);
+
+    let concrete_view = r#"module spec.cpr.condviewstoreconcrete;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store(borrow w: Wrap<str>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
+    w.items[i] = run ? a : b;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    return store(borrow w, true, borrow a, borrow b, 0);
+}
+"#;
+    let output = run_memory("condviewstoreconcrete", concrete_view);
+    assert_no_asan("condviewstoreconcrete", &output);
+    assert_exit("condviewstoreconcrete", &output, 0);
+
+    let own_store = r#"module spec.cpr.condownstore;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
+    w.items[i] = run ? a : b;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("xx"), stringOf("yy")] };
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    return store<String>(borrow w, true, borrow a, borrow b, 0);
+}
+"#;
+    compile_rejects("condownstore", own_store, "E10034", 2);
+
+    let local_view = r#"module spec.cpr.condlocalview;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(borrow w: Wrap<T>, run: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    w.items[i] = run ? a : b;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
+    return store<str>(borrow w, true, 0);
+}
+"#;
+    compile_rejects("condlocalview", local_view, "E10030", 1);
+}

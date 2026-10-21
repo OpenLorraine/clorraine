@@ -590,6 +590,54 @@ fn check_opaque_store_requirements(
                 );
                 break;
             }
+            // A conditional's arms are separate sources. An owning
+            // destination keeps the concrete arm judgment: every non-take
+            // lend arm reports E10034, and a deeper projected arm reports
+            // E10026. A view destination returned before this point, so all
+            // its arms stay widened copies.
+            let mut arm_reported = false;
+            for source in &requirement.source_arms {
+                if source.param {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10034",
+                            format!(
+                                "cannot release or store borrowed parameter '{}'",
+                                source.name
+                            ),
+                            requirement.store_span,
+                        )
+                        .with_help(
+                            "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                        ),
+                    );
+                    arm_reported = true;
+                }
+            }
+            if arm_reported {
+                break;
+            }
+            for source in &requirement.source_arms {
+                let top_level = source.path.len() == 1
+                    && matches!(
+                        source.path.first(),
+                        Some(crate::ir::Projection::Field(_))
+                    );
+                if !source.path.is_empty() && !top_level {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10026",
+                            "partial moves are limited to top-level fields in v1",
+                            requirement.store_span,
+                        )
+                        .with_help("move the whole value instead"),
+                    );
+                    arm_reported = true;
+                }
+            }
+            if arm_reported {
+                break;
+            }
             let top_level_field = requirement.source_path.len() == 1
                 && matches!(
                     requirement.source_path.first(),
@@ -1027,6 +1075,10 @@ fn check_value_fills(
         check_fill_type(&value.ty, params, args, sema, span, diagnostics);
     }
     match &value.kind {
+        ValueKind::DiscardThen { effects, value } => {
+            check_value_fills(effects, params, args, sema, span, diagnostics);
+            check_value_fills(value, params, args, sema, span, diagnostics);
+        }
         ValueKind::Call {
             receiver, args: call_args, ..
         } => {

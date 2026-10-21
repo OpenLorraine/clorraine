@@ -1362,6 +1362,10 @@ fn walk_value(
         record_struct_type(&substitute(ty, bindings), sema, mono);
     }
     match &value.kind {
+        ValueKind::DiscardThen { effects, value } => {
+            walk_value(effects, bindings, function, program, sema, mono, enclosing);
+            walk_value(value, bindings, function, program, sema, mono, enclosing);
+        }
         ValueKind::Call {
             callee,
             type_args,

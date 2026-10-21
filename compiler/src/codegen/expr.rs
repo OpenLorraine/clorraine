@@ -31,6 +31,9 @@ impl<'a> Emitter<'a> {
     pub(super) fn value(&self, value: &Value) -> String {
         match &value.kind {
             ValueKind::Place(place) => self.place(place),
+            // The effects run where this value is evaluated; the yielded value
+            // is the one the enclosing expression reads.
+            ValueKind::DiscardThen { value, .. } => self.value(value),
             ValueKind::Int(number) => self.int_literal(*number as u64, &self.substitute(&value.ty)),
             ValueKind::Float(number) => float_literal(*number),
             ValueKind::Char(byte) => format!("{byte}"),
@@ -795,6 +798,11 @@ impl<'a> Emitter<'a> {
     /// spells the widening, because one C `?:` must carry one type in both
     /// arms.
     pub(super) fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
+        // An arm whose effects run where it is evaluated keeps its guard
+        // expression inside the arm, so the skipped path never runs it.
+        if matches!(value.kind, ValueKind::DiscardThen { .. }) {
+            return self.guarded_value(value);
+        }
         // A null-shaped arm carries no computed value: the arm takes the
         // result's own empty value exactly as the null literal does.
         if matches!(value.kind, ValueKind::Null) || self.carries_null_shape(value) {

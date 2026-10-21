@@ -294,6 +294,25 @@ pub struct RequiresSelfAssign {
 /// returned, while an owned destination keeps the concrete implicit-conversion
 /// judgment. The record carries the root binding only while the body is being
 /// checked; the audit needs the declared type, the path, and the source.
+/// One owned source a conditional opaque store may move.
+///
+/// The declaration sees the conditional's arms as places; each arm is judged
+/// per instance. A view destination widens every arm, while an owning
+/// destination keeps the concrete arm judgment: a lend parameter reports
+/// `E10034`, a deeper member path reports `E10026`, and a local move is legal
+/// but a later read reports `E10020`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpaqueSource {
+    /// The source binding's unique IR spelling.
+    pub ir: String,
+    /// The source binding's source name, for the diagnostic.
+    pub name: String,
+    /// The projection from the source binding to the stored value.
+    pub path: Vec<super::Projection>,
+    /// True when the source is a non-`take` parameter.
+    pub param: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequiresOpaqueStore {
     /// The generic function whose body carries the duty.
@@ -337,6 +356,12 @@ pub struct RequiresOpaqueStore {
     /// Such a source cannot be moved by the concrete rule; the audit reports
     /// `E10034` at the store when the destination owns.
     pub source_param: bool,
+    /// The owned sources a conditional store may move.
+    ///
+    /// A simple owned place keeps `source_ir`/`source_path`; a conditional
+    /// records every arm here so a view destination can exempt them all and an
+    /// owning destination can report each offending arm.
+    pub source_arms: Vec<OpaqueSource>,
     /// Reads of the owned source after the store, for the owned instance.
     pub later_uses: Vec<Span>,
     /// Reads of the destination after a backing's scope ends.

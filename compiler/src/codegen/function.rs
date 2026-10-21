@@ -381,6 +381,10 @@ impl<'a> Emitter<'a> {
             }
         }
         match &value.kind {
+            ValueKind::DiscardThen { effects, value } => {
+                self.collect_materialized_temps(effects);
+                self.collect_materialized_temps(value);
+            }
             ValueKind::Member { base, .. } => self.collect_materialized_temps(base),
             ValueKind::Index { base, index } => {
                 self.collect_materialized_temps(base);
@@ -3951,6 +3955,9 @@ fn target_object_text(target_c: &str) -> &str {
 fn value_reads_place(value: &Value, matches: &dyn Fn(&Place) -> bool) -> bool {
     match &value.kind {
         ValueKind::Place(place) => matches(place),
+        ValueKind::DiscardThen { effects, value } => {
+            value_reads_place(effects, matches) || value_reads_place(value, matches)
+        }
         ValueKind::Member { base, .. } => value_reads_place(base, matches),
         ValueKind::Index { base, index } => {
             value_reads_place(base, matches) || value_reads_place(index, matches)
@@ -4060,6 +4067,10 @@ fn note_store_value(
 fn note_value(value: &Value, read: &mut BTreeSet<String>, null_shape: &impl Fn(&Ty) -> bool) {
     match &value.kind {
         ValueKind::Place(place) => note_place(place, read),
+        ValueKind::DiscardThen { effects, value } => {
+            note_value(effects, read, null_shape);
+            note_value(value, read, null_shape);
+        }
         ValueKind::Member { base, .. } => note_value(base, read, null_shape),
         ValueKind::Index { base, index } => {
             note_value(base, read, null_shape);

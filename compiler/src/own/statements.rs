@@ -1954,6 +1954,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 copy.source_name = None;
                 copy.source_path.clear();
                 copy.source_param = false;
+                copy.source_arms.clear();
                 copy.superseded = false;
                 if view_alias {
                     copy.value = target_ty.clone();

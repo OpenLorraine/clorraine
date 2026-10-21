@@ -571,10 +571,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             }
                             if self.defer_move_outs == 0 && !self.in_loop_condition {
                                 self.evaluate_len_operand_effects(inner);
+                                return Value {
+                                    ty: Ty::usize_ty(),
+                                    kind: ValueKind::Int(extent as i128),
+                                };
                             }
+                            // The operand is evaluated only on the path that
+                            // reaches this `len` (a `?:` arm, a short-circuit
+                            // right side, or a loop test). A statement emitted
+                            // here would run even when that path is skipped,
+                            // so carry the effects in the value and run them
+                            // where the value is evaluated.
+                            let effects = self.lower_len_operand_effects_value(inner);
                             return Value {
                                 ty: Ty::usize_ty(),
-                                kind: ValueKind::Int(extent as i128),
+                                kind: ValueKind::DiscardThen {
+                                    effects: Box::new(effects),
+                                    value: Box::new(Value {
+                                        ty: Ty::usize_ty(),
+                                        kind: ValueKind::Int(extent as i128),
+                                    }),
+                                },
                             };
                         }
                     }
@@ -1482,6 +1499,103 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // Literals and lambda values have no run-time effect; a pure
             // name/member was handled by the first check.
             _ => {}
+        }
+    }
+
+    /// Lowers a fixed-array `len` operand's effects to a value.
+    ///
+    /// The structural extent needs no storage, but the operand's own effects
+    /// still run on the path that evaluates it. A conditional becomes a
+    /// conditional of effect values, a literal or template recurses into its
+    /// elements or fields, and a call or other fresh value binds through the
+    /// ordinary guarded materialization so its result is released. A place
+    /// projection stays a read; only its index and bounds checks run.
+    fn lower_len_operand_effects_value(&mut self, expr: &'a Expr) -> Value {
+        if super::is_pure_place(expr) {
+            return Value {
+                ty: self.ty(expr),
+                kind: ValueKind::Aggregate,
+            };
+        }
+        match &expr.kind {
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let condition = self.lower_value(condition);
+                let then_value = self.lower_len_operand_effects_value(then_value);
+                let else_value = self.lower_len_operand_effects_value(else_value);
+                Value {
+                    ty: Ty::usize_ty(),
+                    kind: ValueKind::Conditional {
+                        condition: Box::new(condition),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let elements = elements
+                    .iter()
+                    .map(|element| self.lower_len_operand_effects_value(element))
+                    .collect();
+                let fill = fill
+                    .as_ref()
+                    .map(|fill| Box::new(self.lower_len_operand_effects_value(fill)));
+                Value {
+                    ty: self.ty(expr),
+                    kind: ValueKind::ArrayLit { elements, fill },
+                }
+            }
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        (
+                            field.name.clone(),
+                            self.lower_len_operand_effects_value(&field.value),
+                        )
+                    })
+                    .collect();
+                Value {
+                    ty: self.ty(expr),
+                    kind: ValueKind::StructLit {
+                        name: name.segments.last().cloned().unwrap_or_default(),
+                        fields,
+                    },
+                }
+            }
+            ExprKind::Template(pieces) => {
+                let pieces = pieces
+                    .iter()
+                    .map(|piece| match piece {
+                        crate::ast::TemplatePiece::Literal(bytes) => {
+                            ValuePiece::Literal(String::from_utf8_lossy(bytes).into_owned())
+                        }
+                        crate::ast::TemplatePiece::Placeholder(inner) => {
+                            ValuePiece::Placeholder(self.lower_len_operand_effects_value(inner))
+                        }
+                    })
+                    .collect();
+                Value {
+                    ty: self.ty(expr),
+                    kind: ValueKind::Template(pieces),
+                }
+            }
+            ExprKind::Member { .. } | ExprKind::Index { .. } => {
+                let value = self.lower_value(expr);
+                if matches!(value.kind, ValueKind::Member { .. } | ValueKind::Index { .. }) {
+                    self.bind_ownerless_projection_root(value)
+                } else {
+                    value
+                }
+            }
+            ExprKind::Unsafe(inner) => self.lower_len_operand_effects_value(inner),
+            _ => {
+                let value = self.lower_value(expr);
+                self.materialize_guard_operand(value)
+            }
         }
     }
 
