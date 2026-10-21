@@ -21855,6 +21855,29 @@ func main(): i32 {
     assert_no_asan("condviewstore", &output);
     assert_exit("condviewstore", &output, 0);
 
+    let nonduplicable_view = r#"module spec.cpr.condviewstorewrap2;
+
+import { String, stringOf } from std.text;
+
+struct Wrap2<T> { items: T[2]; tag: String; }
+
+func store<T>(borrow w: Wrap2<T>, run: bool, borrow a: String, borrow b: String, i: i32): i32 {
+    w.items[i] = run ? a : b;
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap2<str> = Wrap2<str> { items: ["xx", "yy"], tag: stringOf("t") };
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let r: i32 = store<str>(borrow w, true, borrow a, borrow b, 0);
+    return r + i32(len(w.items[0])) - 2;
+}
+"#;
+    let output = run_memory("condviewstorewrap2", nonduplicable_view);
+    assert_no_asan("condviewstorewrap2", &output);
+    assert_exit("condviewstorewrap2", &output, 0);
+
     let concrete_view = r#"module spec.cpr.condviewstoreconcrete;
 
 import { String, stringOf } from std.text;

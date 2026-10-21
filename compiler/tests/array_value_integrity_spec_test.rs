@@ -2188,4 +2188,35 @@ func main(): i32 {
     let output = run_memory("lenforstep", for_step);
     assert_no_asan("lenforstep", &output);
     assert_exit("lenforstep", &output, 0);
+
+    let nested_return = r#"module spec.avi.lennestedreturn;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+func pick(flag: bool): usize {
+    return flag ? ((len([mk()]) == 1) ? usize(10) : usize(20)) : usize(30);
+}
+func main(): i32 {
+    let p: usize = pick(true);
+    return calls * 10 + i32(p);
+}
+"#;
+    let output = run_memory("lennestedreturn", nested_return);
+    assert_no_asan("lennestedreturn", &output);
+    assert_exit("lennestedreturn", &output, 20);
+
+    let nested_call = r#"module spec.avi.lennestedcall;
+
+let calls: i32 = 0;
+func mk(): i32 { calls = calls + 1; return 1; }
+func id(n: usize): usize { return n; }
+func main(): i32 {
+    let flag: bool = true;
+    let n: usize = id(flag ? ((len([mk()]) == 1) ? usize(10) : usize(20)) : usize(30));
+    return calls * 10 + i32(n);
+}
+"#;
+    let output = run_memory("lennestedcall", nested_call);
+    assert_no_asan("lennestedcall", &output);
+    assert_exit("lennestedcall", &output, 20);
 }
