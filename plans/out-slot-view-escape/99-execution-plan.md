@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 7/27 tasks (26%)
-> **Last Updated**: 2026-10-22 01:18
+> **Progress**: 11/27 tasks (41%)
+> **Last Updated**: 2026-10-22 01:24
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -239,22 +239,25 @@ Notes:
 
 ### Phase 3 — Generic whole-slot duty and the owned move
 
-- [ ] 3.1.1 Add a dedicated whole-out-slot store duty carrying the source
+> **Phase baseline tree**: 0d3fc0d2b187453a5fbe343af171d883bb9d885f
+
+- [x] 3.1.1 Add a dedicated whole-out-slot store duty carrying the source
   root, mode, and type, the destination root and type, and the span; record
   it for a whole-binding store into a `borrow` slot whose declared type is a
   type parameter (or unknown) and whose instance may be nullable; keep the
   existing `RequiresNotLend` for non-slot destinations.
-- [ ] 3.1.2 Judge the duty per instance: a foreign non-`take` source at a
+  ✅ (completed: 2026-10-22 01:24)
+- [x] 3.1.2 Judge the duty per instance: a foreign non-`take` source at a
   nullable destination → one `E10034` (first offending instance); the
   destination's own root, `take`, static, duplicable, and non-nullable
-  substitutions → accept/unchanged.
-- [ ] 3.1.3 Route the whole-slot store through the new duty so
+  substitutions → accept/unchanged. ✅ (completed: 2026-10-22 01:24)
+- [x] 3.1.3 Route the whole-slot store through the new duty so
   `check_not_lend_requirements` no longer records it; keep the existing
   nullable `writable_source && stores_into_slot` exemption for non-whole slot
   stores. Retarget `copy<String?>` to `E10034`; keep the concrete `take` and
-  null-slice sub-cases accepted.
-- [ ] 3.1.4 Run the generic suites, the `compiler/src/own/tests.rs` unit
-  tests, and `RDC_ASAN=1`.
+  null-slice sub-cases accepted. ✅ (completed: 2026-10-22 01:24)
+- [x] 3.1.4 Run the generic suites, the `compiler/src/own/tests.rs` unit
+  tests, and `RDC_ASAN=1`. ✅ (completed: 2026-10-22 01:24)
 
 ### Phase 4 — One report per program
 

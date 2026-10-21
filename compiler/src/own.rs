@@ -108,6 +108,7 @@ pub fn check(
     let mut duplicable_requirements = Vec::new();
     let mut element_move_requirements = Vec::new();
     let mut not_lend_requirements = Vec::new();
+    let mut whole_out_slot_duties = Vec::new();
     let mut iterable_duties = Vec::new();
     let mut out_slot_duties = Vec::new();
     let mut storable_duties = Vec::new();
@@ -139,6 +140,7 @@ pub fn check(
                     requirements,
                     element_moves,
                     lend_duties,
+                    whole_out_slot_reqs,
                     iterable_reqs,
                     slot_duties,
                     store_duties,
@@ -151,6 +153,7 @@ pub fn check(
                 duplicable_requirements.extend(requirements);
                 element_move_requirements.extend(element_moves);
                 not_lend_requirements.extend(lend_duties);
+                whole_out_slot_duties.extend(whole_out_slot_reqs);
                 iterable_duties.extend(iterable_reqs);
                 out_slot_duties.extend(slot_duties);
                 storable_duties.extend(store_duties);
@@ -200,6 +203,9 @@ pub fn check(
     }
     for requirement in not_lend_requirements {
         monomorphization.require_not_lend(requirement);
+    }
+    for duty in whole_out_slot_duties {
+        monomorphization.require_whole_out_slot_store(duty);
     }
     for duty in iterable_duties {
         monomorphization.require_iterable(duty);
@@ -486,6 +492,14 @@ struct FunctionChecker<'a, 'd> {
     /// judged after substitution: the per-instance audit reports `E10034` when
     /// the type argument owns.
     not_lend_requirements: Vec<ir::RequiresNotLend>,
+    /// The whole out-slot store duties this body owes its instances.
+    ///
+    /// A whole store into a `borrow` slot whose declared type still mentions a
+    /// type parameter is judged after substitution: a nullable instance
+    /// reports `E10034` when the source is a different lend, while a `take`,
+    /// static, own-value, or non-nullable substitution keeps the ordinary
+    /// rule.
+    whole_out_slot_store_requirements: Vec<ir::RequiresWholeOutSlotStore>,
     /// The element-loop iterable duties this body owes its instances.
     ///
     /// A loop over an opaque `T` accepts the declaration because its instance
@@ -523,6 +537,8 @@ struct FunctionChecker<'a, 'd> {
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
+    /// Whole out-slot store sites already recorded, so one site owes one duty.
+    recorded_whole_out_slot_store: BTreeSet<(String, u32, u32)>,
     /// Store sites already recorded, so one site owes one slot duty.
     recorded_storable_slot: BTreeSet<(String, u32, u32)>,
     /// Self-assign sites already recorded, so one site owes one duty.
@@ -620,6 +636,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             duplicable_requirements: Vec::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
+            whole_out_slot_store_requirements: Vec::new(),
             iterable_requirements: Vec::new(),
             out_slot_duties: Vec::new(),
             storable_slot_requirements: Vec::new(),
@@ -627,6 +644,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             opaque_store_requirements: Vec::new(),
             recorded_opaque_stores: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
+            recorded_whole_out_slot_store: BTreeSet::new(),
             recorded_storable_slot: BTreeSet::new(),
             recorded_self_assign: BTreeSet::new(),
             recorded_requirements: BTreeSet::new(),
@@ -652,6 +670,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresDuplicable>,
         Vec<ir::RequiresElementMove>,
         Vec<ir::RequiresNotLend>,
+        Vec<ir::RequiresWholeOutSlotStore>,
         Vec<ir::RequiresIterable>,
         Vec<ir::RequiresOutSlotPlace>,
         Vec<ir::RequiresStorableSlot>,
@@ -704,6 +723,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.duplicable_requirements,
             self.element_move_requirements,
             self.not_lend_requirements,
+            self.whole_out_slot_store_requirements,
             self.iterable_requirements,
             self.out_slot_duties,
             self.storable_slot_requirements,

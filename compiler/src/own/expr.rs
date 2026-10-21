@@ -1405,7 +1405,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if compound.is_some() {
                     self.read_place(id, &projections, target.span);
                 }
-                if is_view_like(&target_ty) || is_view_like(&self.ty(value)) {
+                if is_view_like(&target_ty)
+                    || is_view_like(&self.ty(value))
+                    || (projections.is_empty() && self.is_out_slot_binding(id))
+                {
                     match &alias_root {
                         // A global container outlives every frame, so the
                         // stored view must derive from module-level storage.
@@ -1446,6 +1449,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             );
                         }
                         _ => {}
+                    }
+                }
+                let target_binding_ty = &self.bindings[id].ty;
+                let generic_maybe_nullable = target_binding_ty.is_unknown()
+                    || crate::types::contains_param(target_binding_ty);
+                let value_ty = self.ty(value);
+                let concrete_reports = self.is_out_slot_binding(id)
+                    && (is_view_like(&target_ty)
+                        || is_view_like(&value_ty)
+                        || value_ty.nullable);
+                if projections.is_empty()
+                    && self.bindings[id].mode == Mode::Borrow
+                    && generic_maybe_nullable
+                    && !concrete_reports
+                {
+                    if let Some(owner) = self.foreign_lend_store_root(value, id) {
+                        let destination = self.bindings[id].name.clone();
+                        let ir_name = self.bindings[id].ir_name.clone();
+                        if self.recorded_whole_out_slot_store.insert((
+                            ir_name,
+                            target.span.start,
+                            target.span.end,
+                        )) {
+                            let function = self.decl.name.clone();
+                            let source = self.bindings[owner].name.clone();
+                            let source_ty = self.ty(value);
+                            let source_is_capture = matches!(
+                                self.bindings[owner].base,
+                                Some(ir::PlaceBase::EnvField { .. })
+                            );
+                            let writable_source = self.bindings[owner].mode == Mode::Borrow;
+                            let slot_ty = self.bindings[id].ty.clone();
+                            self.whole_out_slot_store_requirements.push(
+                                ir::RequiresWholeOutSlotStore {
+                                    function,
+                                    destination,
+                                    source,
+                                    slot_ty,
+                                    source_ty,
+                                    source_is_capture,
+                                    writable_source,
+                                    span: target.span,
+                                },
+                            );
+                        }
                     }
                 }
                 self.write_place(id, &projections, target.span);
@@ -2475,27 +2523,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         root_id: Option<usize>,
         whole_out_slot: bool,
     ) {
-        if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
-            return;
-        }
         // A whole `borrow T?` slot owns only its incoming value. A value or
         // view of a different lend is call-scoped, so the caller can reassign
         // its backing after the call and leave the slot dangling; report the
         // source parameter once, before the view-return withholding can hide
-        // the store.
+        // the store. An owned non-nullable lend into an owning slot is left to
+        // the lend-move duty, which already reports that move.
         if whole_out_slot {
             if let (Some(destination), false) = (root_id, global) {
                 if let Some(owner) = self.foreign_lend_store_root(value, destination) {
-                    let name = self.bindings[owner].name.clone();
-                    self.error(
-                        "E10034",
-                        format!("cannot release or store borrowed parameter '{name}'"),
-                        super::LEND_STORE_HELP,
-                        span,
-                    );
-                    return;
+                    let value_ty = self.ty(value);
+                    if is_view_like(target_ty) || is_view_like(&value_ty) || value_ty.nullable {
+                        let name = self.bindings[owner].name.clone();
+                        self.error(
+                            "E10034",
+                            format!("cannot release or store borrowed parameter '{name}'"),
+                            super::LEND_STORE_HELP,
+                            span,
+                        );
+                        return;
+                    }
                 }
             }
+        }
+        if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
+            return;
         }
         // The callee's own view-return judgment already rejects the value when
         // its declaration elides no single parameter, so the destination's

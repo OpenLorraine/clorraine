@@ -200,6 +200,39 @@ pub struct RequiresNotLend {
     pub span: Span,
 }
 
+/// A body's obligation that a whole store into a type-parameter borrow slot
+/// may instantiate as a nullable out-slot and must not keep a foreign lend.
+///
+/// The declaration sees only `T`, so it cannot tell that the instance makes
+/// the slot nullable. The per-instance audit substitutes the slot and source
+/// types: a nullable destination reports `E10034` for a foreign non-`take`
+/// lend, while a `take`, static, own-value, duplicable, or non-nullable
+/// substitution keeps the ordinary rule. A capturing source whose instance
+/// owns is left to the capture-move rule (`E10401`), which already reports at
+/// the store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresWholeOutSlotStore {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The destination slot's source name, for the diagnostic context.
+    pub destination: String,
+    /// The foreign source parameter's source name.
+    pub source: String,
+    /// The destination slot's declared type, substituted per instance.
+    pub slot_ty: Ty,
+    /// The stored value's declared type, substituted for the capture check.
+    pub source_ty: Ty,
+    /// True when the source is a lifted-lambda capture.
+    pub source_is_capture: bool,
+    /// True when the source is a writable `borrow` lend.
+    ///
+    /// A read-only source at a nullable owning slot is already the lend-move
+    /// duty's report; a view source is duplicable, so this duty owns it.
+    pub writable_source: bool,
+    /// The store site.
+    pub span: Span,
+}
+
 /// One element loop whose iterable type still mentions a type parameter.
 ///
 /// The declaration-site check accepts an opaque iterable because its instance
@@ -465,6 +498,7 @@ pub struct Monomorphization {
     duplicable_requirements: Vec<RequiresDuplicable>,
     element_move_requirements: Vec<RequiresElementMove>,
     not_lend_requirements: Vec<RequiresNotLend>,
+    whole_out_slot_requirements: Vec<RequiresWholeOutSlotStore>,
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
     storable_slot_requirements: Vec<RequiresStorableSlot>,
     self_assign_requirements: Vec<RequiresSelfAssign>,
@@ -565,6 +599,16 @@ impl Monomorphization {
     /// Every lend-move duty recorded so far.
     pub fn not_lend_requirements(&self) -> &[RequiresNotLend] {
         &self.not_lend_requirements
+    }
+
+    /// Records a whole out-slot store duty the generic body owes.
+    pub fn require_whole_out_slot_store(&mut self, requirement: RequiresWholeOutSlotStore) {
+        self.whole_out_slot_requirements.push(requirement);
+    }
+
+    /// Every whole out-slot store duty recorded so far.
+    pub fn whole_out_slot_store_requirements(&self) -> &[RequiresWholeOutSlotStore] {
+        &self.whole_out_slot_requirements
     }
 
     /// Records an out-slot place duty the generic body owes.

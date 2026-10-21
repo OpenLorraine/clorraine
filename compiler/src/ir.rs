@@ -44,7 +44,8 @@ pub use guards::value_needs_guards;
 pub use mono::{
     CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
     RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOpaqueStore,
-    OpaqueFrame, OpaqueSource, RequiresOutSlotPlace, RequiresSelfAssign, RequiresStorableSlot,
+    RequiresWholeOutSlotStore, OpaqueFrame, OpaqueSource, RequiresOutSlotPlace,
+    RequiresSelfAssign, RequiresStorableSlot,
     StructInstance,
 };
 pub use place::{Place, PlaceBase, Projection};

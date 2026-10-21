@@ -64,6 +64,7 @@ pub fn check(
     check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
+    check_whole_out_slot_store_requirements(program, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
     check_opaque_store_requirements(program, sema, mono, diagnostics);
     check_capture_move_requirements(program, sema, mono, diagnostics);
@@ -321,6 +322,62 @@ fn check_storable_slot_requirements(
                 .with_help(
                     super::LEND_STORE_HELP,
                 ),
+            );
+            break;
+        }
+    }
+}
+
+/// Reports `E10034` when a whole generic out-slot store instantiates with a
+/// nullable destination and a foreign lend source.
+///
+/// The destination type is still a parameter at the declaration, so the body
+/// cannot tell that the instance makes it a nullable `borrow T?` slot. The
+/// audit substitutes the slot type: a nullable instance reports the same
+/// `E10034` as the concrete spelling. A `take`, static, own-value, or
+/// non-nullable substitution keeps the ordinary rule; an owned non-nullable
+/// source at a nullable slot stays with the lend-move duty; a capturing
+/// source whose instance owns stays with the capture-move rule `E10401`.
+fn check_whole_out_slot_store_requirements(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.whole_out_slot_store_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let slot = substitute_instance(&requirement.slot_ty, &params, &instance.args);
+            if !slot.nullable {
+                continue;
+            }
+            let source = substitute_instance(&requirement.source_ty, &params, &instance.args);
+            if requirement.source_is_capture && !is_view(&source) {
+                continue;
+            }
+            if is_view_like(&source) {
+                // A view source is duplicable, so the lend-move duty leaves it
+                // alone; the whole-slot rule owns the report.
+            } else if !(source.nullable && requirement.writable_source) {
+                // An owned non-nullable source, or a read-only nullable one,
+                // is already a reported lend move.
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10034",
+                    format!(
+                        "cannot release or store borrowed parameter '{}'",
+                        requirement.source
+                    ),
+                    requirement.span,
+                )
+                .with_help(super::LEND_STORE_HELP),
             );
             break;
         }
