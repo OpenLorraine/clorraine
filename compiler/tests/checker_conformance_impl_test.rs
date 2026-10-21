@@ -398,37 +398,35 @@ func main(): i32 {
 fn should_store_an_impure_index_base_once_in_an_initializer() {
     let source = r#"module spec.cc.impl.initbase;
 
-import { slice } from std.mem;
-
 let calls: i32 = 0;
-let xs: i32[4] = [1, 2, 3, 4];
 
-func v(s: i32[]): i32[] {
+func v(s: str): str {
     calls = calls + 1;
     return s;
 }
 
-let sl: i32[] = slice(xs, 0, 4);
-let e: i32 = v(sl)[1];
+let e: i32 = i32(v("abcd")[1]);
 
 func main(): i32 {
     return calls * 10 + e;
 }
 "#;
     let emitted = emit_host("initbase", source);
-    assert_contains("initbase",
+    assert_contains(
+        "initbase",
         &emitted,
-        "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_initbase_v(cl_spec_cc_impl_initbase_sl);",
+        "ClStr __cl_itmp0 = cl_spec_cc_impl_initbase_v(cl_str(\"abcd\"));",
     );
     assert_contains("initbase", &emitted, "((usize)(1) >= (usize)((__cl_itmp0).len))");
-    assert_contains("initbase",
+    assert_contains(
+        "initbase",
         &emitted,
-        "cl_spec_cc_impl_initbase_e = (__cl_itmp0).ptr[1];",
+        "cl_spec_cc_impl_initbase_e = (i32)((__cl_itmp0).ptr[1]);",
     );
     assert_eq!(
         count(
             &emitted,
-            "cl_spec_cc_impl_initbase_v(cl_spec_cc_impl_initbase_sl)"
+            "cl_spec_cc_impl_initbase_v(cl_str(\"abcd\"))"
         ),
         1
     );
@@ -571,18 +569,14 @@ func main(): i32 {
 fn should_re_emit_a_stored_initializer_identically() {
     let source = r#"module spec.cc.impl.reemit;
 
-import { slice } from std.mem;
-
 let calls: i32 = 0;
-let xs: i32[4] = [1, 2, 3, 4];
 
-func v(s: i32[]): i32[] {
+func v(s: str): str {
     calls = calls + 1;
     return s;
 }
 
-let sl: i32[] = slice(xs, 0, 4);
-let e: i32 = v(sl)[1];
+let e: i32 = i32(v("abcd")[1]);
 
 func main(): i32 {
     return calls * 10 + e;
@@ -596,7 +590,7 @@ func main(): i32 {
     assert_contains(
         "reemit",
         &first,
-        "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_spec_cc_impl_reemit_sl);",
+        "ClStr __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_str(\"abcd\"));",
     );
 }
 
@@ -5052,13 +5046,11 @@ func main(): i32 {
 fn should_emit_a_module_path_binding_member_call() {
     let body = r#"module spec.cc.impl.globaldotbody;
 
-struct N { v: i32; }
-
-func peek(borrow n: N, x: i32): i32 {
-    return n.v + x;
+func peek(borrow n: i32, x: i32): i32 {
+    return n + x;
 }
 
-let n: N = N { v: 1 };
+const n: i32 = 1;
 
 func main(): i32 {
     return spec.cc.impl.globaldotbody.n.peek(5) - 6;
@@ -5078,13 +5070,11 @@ func main(): i32 {
 
     let initializer = r#"module spec.cc.impl.globaldotinit;
 
-struct N { v: i32; }
-
-func peek(borrow n: N, x: i32): i32 {
-    return n.v + x;
+func peek(borrow n: i32, x: i32): i32 {
+    return n + x;
 }
 
-let n: N = N { v: 1 };
+const n: i32 = 1;
 
 let g: i32 = spec.cc.impl.globaldotinit.n.peek(5);
 

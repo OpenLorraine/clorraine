@@ -503,10 +503,9 @@ func main(): i32 {
 
 import { slice } from std.mem;
 
-let arr: i32[2] = [1, 2];
-let y: i32[] = slice(arr, 0, 2);
-
 func main(): i32 {
+    let arr: i32[2] = [1, 2];
+    let y: i32[] = slice(arr, 0, 2);
     return i32(len(y));
 }
 "#;

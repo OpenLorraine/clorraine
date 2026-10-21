@@ -932,20 +932,23 @@ func main(): i32 {
 /// no C assignment form) and constructs the slice view from the array, with
 /// the view length readable at run time.
 #[test]
-fn should_initialize_a_module_array_and_slice_view() {
+fn should_initialize_a_local_array_and_slice_view() {
     let source = r#"module spec.sei.p4.arrayandview;
 
 import { slice } from std.mem;
 
-let backing: i32[2] = [1, 2];
-let view: i32[] = slice(backing, 0, 2);
-
-func main(): i32 {
+func run(): i32 {
+    let backing: i32[2] = [1, 2];
+    let view: i32[] = slice(backing, 0, 2);
     return i32(len(view));
 }
+
+func main(): i32 {
+    return run();
+}
 "#;
-    let output = run_host("module-array-and-view", source);
-    assert_exit("module-array-and-view", &output, 2);
+    let output = run_host("local-array-and-view", source);
+    assert_exit("local-array-and-view", &output, 2);
 }
 
 /// A nested module array literal fills every row.
@@ -1008,23 +1011,26 @@ func main(): i32 {
 /// The view length is the requested element count and the first element is the
 /// source's element at the offset.
 #[test]
-fn should_initialize_a_slice_view_from_a_runtime_offset() {
+fn should_initialize_a_local_slice_view_from_a_runtime_offset() {
     let source = r#"module spec.sei.p4.runtimeoffset;
 
 import { slice } from std.mem;
 
-let backing: i32[3] = [1, 2, 3];
-let view: i32[] = slice(backing, 1, 3);
-
-func main(): i32 {
+func run(): i32 {
+    let backing: i32[3] = [1, 2, 3];
+    let view: i32[] = slice(backing, 1, 3);
     if (i32(len(view)) != 2) {
         return 1;
     }
     return view[0];
 }
+
+func main(): i32 {
+    return run();
+}
 "#;
-    let output = run_host("module-view-offset", source);
-    assert_exit("module-view-offset", &output, 2);
+    let output = run_host("local-view-offset", source);
+    assert_exit("local-view-offset", &output, 2);
 }
 
 /// A module slice view with an impure offset evaluates the offset once.
@@ -1045,18 +1051,22 @@ func bump(): i32 {
     return 1;
 }
 
-let backing: i32[3] = [1, 2, 3];
-let v: i32[] = slice(backing, bump(), 3);
+func run(): i32 {
+    let backing: i32[3] = [1, 2, 3];
+    let v: i32[] = slice(backing, bump(), 3);
+    return v[0];
+}
 
 func main(): i32 {
+    let r: i32 = run();
     if (calls != 1) {
         return 9;
     }
-    return v[0];
+    return r;
 }
 "#;
-    let output = run_host("module-impure-offset", source);
-    assert_exit("module-impure-offset", &output, 2);
+    let output = run_host("body-impure-offset", source);
+    assert_exit("body-impure-offset", &output, 2);
 }
 
 /// A conditional module array value evaluates its condition once.

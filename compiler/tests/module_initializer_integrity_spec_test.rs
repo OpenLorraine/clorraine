@@ -518,7 +518,7 @@ func add1(a: i32): i32 {
     return a + 1;
 }
 
-let a: i32 = 5;
+const a: i32 = 5;
 let g: i32 = a.add1();
 
 func main(): i32 {
@@ -1452,14 +1452,16 @@ fn should_infer_a_generic_view_builder_instance_in_a_module_initializer() {
 
 import { slice } from std.mem;
 
-let xs: i32[4] = [1, 2, 3, 4];
+func mkXs(): i32[4] {
+    return [1, 2, 3, 4];
+}
 
 func viewOf<T>(v: T[]): T[] {
     return v;
 }
 
-let e: i32 = viewOf(slice(xs, 0, 4))[1];
-let f: i32 = viewOf<i32>(slice(xs, 0, 4))[2];
+let e: i32 = viewOf(slice(mkXs(), 0, 4))[1];
+let f: i32 = viewOf<i32>(slice(mkXs(), 0, 4))[2];
 
 func main(): i32 {
     return (e - 2) + (f - 3);
@@ -1611,7 +1613,7 @@ fn should_infer_a_receiver_bound_generic_call_in_an_initializer() {
 
 struct Box<T> { tag: i32; }
 
-func mergeBox<A, B>(self: Box<A>, x: Box<B>, y: Box<B>): i32 {
+func mergeBox<A, B>(take self: Box<A>, take x: Box<B>, take y: Box<B>): i32 {
     return x.tag + y.tag;
 }
 
@@ -2127,7 +2129,7 @@ func maybe(c: bool): String? {
 }
 
 let c: bool = false;
-let d: bool = false;
+const d: bool = false;
 let s: str? = c ? stringOf("x") : (d ? maybe(d) : null);
 
 func main(): i32 {

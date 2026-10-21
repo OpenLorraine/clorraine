@@ -116,14 +116,18 @@ func bump(): i32 {
     return 1;
 }
 
-let backing: i32[3] = [1, 2, 3];
-let v: i32[] = slice(backing, bump(), 3);
+func run(): i32 {
+    let backing: i32[3] = [1, 2, 3];
+    let v: i32[] = slice(backing, bump(), 3);
+    return v[0];
+}
 
 func main(): i32 {
+    let r: i32 = run();
     if (calls != 1) {
         return 9;
     }
-    return v[0];
+    return r;
 }
 "#;
 
@@ -154,11 +158,14 @@ const INIT_VIEW: &str = r#"module spec.sei.impl.initview;
 
 import { slice } from std.mem;
 
-let backing: i32[2] = [1, 2];
-let view: i32[] = slice(backing, 0, 2);
+func run(): i32 {
+    let backing: i32[2] = [1, 2];
+    let view: i32[] = slice(backing, 0, 2);
+    return i32(len(view));
+}
 
 func main(): i32 {
-    return i32(len(view));
+    return run();
 }
 "#;
 
@@ -881,14 +888,14 @@ fn should_materialize_an_impure_init_operand_once() {
         1,
         "init-operand-once: the offset call does not run exactly once"
     );
-    let store = position_of(&unit, "i32 __cl_itmp0 = cl_spec_sei_impl_initonce_bump();");
-    let view = position_of(&unit, "cl_spec_sei_impl_initonce_v = ((ClSlice_i32)");
+    let store = position_of(&unit, "__cl_tmp0 = cl_spec_sei_impl_initonce_bump();");
+    let view = position_of(&unit, "v = ((ClSlice_i32)");
     assert!(
         store < view,
         "init-operand-once: the view is constructed before the offset is stored"
     );
     assert!(
-        unit[view..].contains("__cl_itmp0"),
+        unit[view..].contains("__cl_tmp0"),
         "init-operand-once: the construction does not read the stored offset"
     );
 }
@@ -932,8 +939,8 @@ fn should_render_module_intrinsics_in_the_init_function() {
         "init-intrinsic-view: the view is not constructed"
     );
     assert!(
-        unit.contains("cl_spec_sei_impl_initview_backing[0] = 1;")
-            && unit.contains("cl_spec_sei_impl_initview_backing[1] = 2;"),
+        unit.contains("backing[0] = 1;")
+            && unit.contains("backing[1] = 2;"),
         "init-intrinsic-view: the source array is not filled"
     );
 
@@ -969,11 +976,14 @@ fn should_reject_a_slice_type_argument_mismatch_at_module_level() {
 
 import { slice } from std.mem;
 
-let backing: u8[2] = [1, 2];
-let v: i32[] = slice<i32>(backing, 0, 2);
+func run(): i32 {
+    let backing: u8[2] = [1, 2];
+    let v: i32[] = slice<i32>(backing, 0, 2);
+    return v[0];
+}
 
 func main(): i32 {
-    return v[0];
+    return run();
 }
 "#,
         &["E10200"],

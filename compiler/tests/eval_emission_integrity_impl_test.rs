@@ -739,12 +739,15 @@ fn should_guard_an_eager_slice_view() {
 
 import { slice } from std.mem;
 
-let arr: i32[4] = [1, 2, 3, 4];
-let n: i32 = 5;
-let v: i32[] = slice(arr, 0, n);
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let n: i32 = 5;
+    let v: i32[] = slice(arr, 0, n);
+    return i32(v[0]);
+}
 
 func main(): i32 {
-    return i32(v[0]);
+    return run();
 }
 "#;
     let output = run_host("pin-slice-guard", out_of_range);
@@ -766,12 +769,15 @@ func pick(): bool {
     return false;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let n: i32 = 5;
-let w: i32[] = pick() ? slice(arr, 0, n) : slice(arr, 0, 1);
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let n: i32 = 5;
+    let w: i32[] = pick() ? slice(arr, 0, n) : slice(arr, 0, 1);
+    return i32(w[0]);
+}
 
 func main(): i32 {
-    return i32(w[0]);
+    return run();
 }
 "#;
     assert_run_exit("pin-slice-arm-skip", skipped_arm, 1);
@@ -869,12 +875,15 @@ func pick(): bool {
     return false;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let n: i32 = 5;
-let m: usize = pick() ? slice(arr, 0, n).len() : usize(0);
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let n: i32 = 5;
+    let m: usize = pick() ? slice(arr, 0, n).len() : usize(0);
+    return i32(m);
+}
 
 func main(): i32 {
-    return i32(m);
+    return run();
 }
 "#;
     assert_run_exit("pin-slice-len-arm-skip", source, 0);
@@ -896,14 +905,17 @@ func yes(): bool {
     return true;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let ok: bool = yes() || (i32(len(slice(slice(arr, 0, 5), 0, 1))) > 0);
-
-func main(): i32 {
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let ok: bool = yes() || (i32(len(slice(slice(arr, 0, 5), 0, 1))) > 0);
     if (ok) {
         return 1;
     }
     return 0;
+}
+
+func main(): i32 {
+    return run();
 }
 "#;
     assert_run_exit("pin-slice-len-or-skip", or_skip, 1);
@@ -923,11 +935,14 @@ func f(): i32 {
     return 0;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let ok: bool = yes() || (i32(len(slice(arr, f(), 2))) > 0);
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let ok: bool = yes() || (i32(len(slice(arr, f(), 2))) > 0);
+    return calls;
+}
 
 func main(): i32 {
-    return calls;
+    return run();
 }
 "#;
     assert_run_exit("pin-slice-len-or-offset", or_offset, 0);
@@ -952,11 +967,14 @@ func f(): i32 {
     return 0;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let w: i32[] = pick() ? slice(arr, f(), 2) : slice(arr, 0, 1);
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let w: i32[] = pick() ? slice(arr, f(), 2) : slice(arr, 0, 1);
+    return calls * 10 + i32(w[0]);
+}
 
 func main(): i32 {
-    return calls * 10 + i32(w[0]);
+    return run();
 }
 "#;
     assert_run_exit("pin-slice-arm-offset-skip", source, 0 * 10 + 1);
@@ -989,12 +1007,15 @@ func idx(): i32 {
     return 0;
 }
 
-let arr: i32[4] = [1, 2, 3, 4];
-let x: i32[2] = [5, 6];
-let v: i32 = pick() ? slice(slice(arr, 0, 2), 0, 1)[0] : x[idx()];
+func run(): i32 {
+    let arr: i32[4] = [1, 2, 3, 4];
+    let x: i32[2] = [5, 6];
+    let v: i32 = pick() ? slice(slice(arr, 0, 2), 0, 1)[0] : x[idx()];
+    return v;
+}
 
 func main(): i32 {
-    return v;
+    return run();
 }
 "#;
     assert_run_exit("pin-nested-slice", source, 1);

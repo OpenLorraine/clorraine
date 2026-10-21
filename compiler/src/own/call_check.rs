@@ -934,7 +934,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 resolved,
                 &arg_ty,
                 lent,
-                false,
             );
         }
         self.check_cross_frame_pass_through(args, params, receiver, span);
@@ -1614,17 +1613,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             None => (Mode::None, None),
         };
         self.eval_dot_receiver(callee);
-        // A receiver reached through a module path is the module-binding
-        // shape the existing member-call rule accepts. A bare module-level
-        // receiver is still a written global borrow, so it reports exactly as
-        // the free twin does.
-        let module_receiver = match &callee.kind {
-            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let receiver = &name.segments[..name.segments.len() - 1];
-                self.module_prefix_len(receiver).is_some()
-            }
-            _ => false,
-        };
         let receiver = match &callee.kind {
             ExprKind::Member { .. } => None,
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
@@ -1657,7 +1645,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
-                    module_receiver,
                 );
             }
             Some(receiver) => {
@@ -1669,7 +1656,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     effective,
                     &arg_ty,
                     lent,
-                    module_receiver,
                 );
             }
         }
@@ -1733,7 +1719,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         effective: Option<&Ty>,
         arg_ty: &Ty,
         lent: &mut BTreeSet<usize>,
-        receiver: bool,
     ) {
         let target = self.place_target(expr);
         match mode {
@@ -1832,11 +1817,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.note_maybe_moved_use(id, &projections, span);
                 }
                 if let Some(PlaceTarget::Global(id, _)) = &target {
-                    // A receiver reached through a module path is read by the
-                    // call, not lent out as a written argument, so the
-                    // module-binding member-call shape stays accepted. A bare
-                    // global receiver still reports like the free twin.
-                    if !receiver && !self.global_is_const(id) {
+                    // A global receiver is lent exactly like a written
+                    // argument; only a `const` global is exempt.
+                    if !self.global_is_const(id) {
                         self.error(
                             "E10038",
                             format!("cannot borrow global '{}'", id.name),
@@ -1912,7 +1895,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             Mode::None | Mode::Const => {
                 if let Some(PlaceTarget::Global(id, _)) = &target {
-                    if !receiver && !self.global_is_const(id) {
+                    if !self.global_is_const(id) {
                         self.error(
                             "E10038",
                             format!("cannot borrow global '{}'", id.name),
@@ -2014,7 +1997,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(expected),
                 &arg_ty,
                 &mut lent,
-                false,
             );
         }
     }

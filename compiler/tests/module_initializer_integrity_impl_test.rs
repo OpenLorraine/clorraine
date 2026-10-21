@@ -840,14 +840,16 @@ fn should_key_an_inferred_view_builder_initializer_call() {
 
 import { slice } from std.mem;
 
-let xs: i32[4] = [1, 2, 3, 4];
+func mkXs(): i32[4] {
+    return [1, 2, 3, 4];
+}
 
 func viewOf<T>(v: T[]): T[] {
     return v;
 }
 
-let e: i32 = viewOf(slice(xs, 0, 4))[1];
-let f: i32 = viewOf<i32>(slice(xs, 0, 4))[2];
+let e: i32 = viewOf(slice(mkXs(), 0, 4))[1];
+let f: i32 = viewOf<i32>(slice(mkXs(), 0, 4))[2];
 
 func main(): i32 {
     return (e - 2) + (f - 3);
@@ -862,7 +864,12 @@ func main(): i32 {
     assert_contains(
         "inferview",
         &emitted,
-        "ClSlice_i32 __cl_itmp0 = cl_viewOf__i32(((ClSlice_i32){ (cl_spec_mii_impl_inferview_xs) + (0), (usize)((4) - (0)) }));",
+        "ClSlice_i32 __cl_itmp1 = cl_viewOf__i32(((ClSlice_i32){",
+    );
+    assert_contains(
+        "inferview",
+        &emitted,
+        "cl_spec_mii_impl_inferview_mkXs(__cl_itmp0)",
     );
     assert_eq!(
         count(&emitted, "cl_spec_mii_impl_inferview_viewOf("),
@@ -1029,7 +1036,7 @@ fn should_key_a_receiver_bound_generic_dot_call() {
 
 struct Box<T> { tag: i32; }
 
-func mergeBox<A, B>(self: Box<A>, x: Box<B>, y: Box<B>): i32 {
+func mergeBox<A, B>(take self: Box<A>, take x: Box<B>, take y: Box<B>): i32 {
     return x.tag + y.tag;
 }
 

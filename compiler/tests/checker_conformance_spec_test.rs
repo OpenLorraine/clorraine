@@ -331,18 +331,15 @@ func main(): i32 {
 fn should_evaluate_an_impure_index_base_once_in_an_initializer() {
     let source = r#"module spec.cc.initbase;
 
-import { slice } from std.mem;
-
 let calls: i32 = 0;
-let xs: i32[4] = [1, 2, 3, 4];
+const s: str = "abcd";
 
-func v(s: i32[]): i32[] {
+func v(x: str): str {
     calls = calls + 1;
-    return s;
+    return x;
 }
 
-let sl: i32[] = slice(xs, 0, 4);
-let e: i32 = v(sl)[1];
+let e: i32 = i32(v(s)[1]) - 96;
 
 func main(): i32 {
     return calls * 10 + e;
@@ -5200,7 +5197,7 @@ func main(): i32 {
 
 import { b as other } from spec.cc.aliasreceiverholder;
 
-func drain<T>(xs: T): i32 {
+func drain<T>(take xs: T): i32 {
     let n: i32 = 0;
     for (v in xs) {
         n = n + 1;
@@ -8417,13 +8414,11 @@ func main(): i32 {
 fn should_reach_a_module_path_bindings_member_call() {
     let source = r#"module spec.cc.globaldot;
 
-struct N { v: i32; }
-
-func peek(borrow n: N, x: i32): i32 {
-    return n.v + x;
+func peek(borrow n: i32, x: i32): i32 {
+    return n + x;
 }
 
-let n: N = N { v: 1 };
+const n: i32 = 1;
 
 let g: i32 = spec.cc.globaldot.n.peek(5);
 
@@ -8437,13 +8432,11 @@ func main(): i32 {
 
     let deep = r#"module spec.cc.deep.globaldot;
 
-struct N { v: i32; }
-
-func peek(borrow n: N, x: i32): i32 {
-    return n.v + x;
+func peek(borrow n: i32, x: i32): i32 {
+    return n + x;
 }
 
-let n: N = N { v: 1 };
+const n: i32 = 1;
 
 func main(): i32 {
     return spec.cc.deep.globaldot.n.peek(5) - 6;
@@ -11015,13 +11008,11 @@ func main(): i32 {
 
     let qualified = r#"module spec.cc.qinitqualified;
 
-struct N { v: i32; }
-
-func peek(borrow n: N): i32 {
-    return n.v;
+func peek(borrow n: i32): i32 {
+    return n;
 }
 
-let n: N = N { v: 1 };
+const n: i32 = 1;
 let g: i32 = spec.cc.qinitqualified.n.peek();
 
 func main(): i32 {
@@ -11348,6 +11339,122 @@ func main(): i32 {
         scalar,
         "E10038",
         &["cannot borrow global 'a'"],
+        &[],
+    );
+}
+
+/// BR-9 applies to a module-qualified receiver and an initializer view builder.
+///
+/// The frozen rule rejects every borrow of a non-`const` global. A
+/// module-qualified receiver is not an exception, in a body or in an
+/// initializer; a view builder's non-`const` source is a borrow; and an
+/// unmarked scalar or view global argument reports. The `const` controls stay
+/// accepted.
+#[test]
+fn should_apply_br9_to_a_qualified_receiver_and_an_initializer_view_builder() {
+    let qualified_body = r#"module spec.cc.qqualbody;
+
+struct N { v: i32; }
+
+func peek(borrow n: N): i32 {
+    return n.v;
+}
+
+let n: N = N { v: 1 };
+
+func main(): i32 {
+    return spec.cc.qqualbody.n.peek() - 1;
+}
+"#;
+    assert_rejected_once(
+        "qqualbody",
+        qualified_body,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let qualified_init = r#"module spec.cc.qqualinit;
+
+struct N { v: i32; }
+
+func peek(borrow n: N): i32 {
+    return n.v;
+}
+
+let n: N = N { v: 1 };
+let g: i32 = spec.cc.qqualinit.n.peek();
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    assert_rejected_once(
+        "qqualinit",
+        qualified_init,
+        "E10038",
+        &["cannot borrow global 'n'"],
+        &[],
+    );
+
+    let slice_source = r#"module spec.cc.qinitslice;
+
+import { slice } from std.mem;
+
+let xs: i32[4] = [1, 2, 3, 4];
+let sl: i32[] = slice(xs, 0, 4);
+
+func main(): i32 {
+    return i32(sl[1]) - 2;
+}
+"#;
+    assert_rejected_once(
+        "qinitslice",
+        slice_source,
+        "E10038",
+        &["cannot borrow global 'xs'"],
+        &[],
+    );
+
+    let scalar = r#"module spec.cc.qinitscalarborrow;
+
+func add1(a: i32): i32 {
+    return a + 1;
+}
+
+let a: i32 = 5;
+let g: i32 = a.add1();
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    assert_rejected_once(
+        "qinitscalarborrow",
+        scalar,
+        "E10038",
+        &["cannot borrow global 'a'"],
+        &[],
+    );
+
+    let view = r#"module spec.cc.qinitviewborrow;
+
+func first(s: str): i32 {
+    return i32(len(s));
+}
+
+let s: str = "abcd";
+let g: i32 = first(s);
+
+func main(): i32 {
+    return g - 4;
+}
+"#;
+    assert_rejected_once(
+        "qinitviewborrow",
+        view,
+        "E10038",
+        &["cannot borrow global 's'"],
         &[],
     );
 }
