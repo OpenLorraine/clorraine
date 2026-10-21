@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 3/27 tasks (11%)
-> **Last Updated**: 2026-10-22 01:08
+> **Progress**: 5/27 tasks (19%)
+> **Last Updated**: 2026-10-22 01:16
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -144,7 +144,9 @@ Notes:
 
 ### Phase 1 — Red cases and oracle retargeting
 
-- [ ] 1.1.1 Concrete spec cases in `borrow_store_integrity_spec_test.rs`:
+> **Phase baseline tree**: de2a650404aa9d2854a74e4567ad909bfb50d719
+
+- [x] 1.1.1 Concrete spec cases in `borrow_store_integrity_spec_test.rs`:
   direct `fill(p: str, borrow slot: str?)`; field
   `store(h: H) { slot = h.name; }`; static field `h.tag` accepted;
   conditional foreign/foreign and foreign/static (one report); captured
@@ -154,15 +156,15 @@ Notes:
   `slot = slot` (`E10020`) and copy-via-local accepted; a local owner's
   view or a fresh view `E10030`; a local copy of a foreign lend `E10034`;
   static/module accepted; an owning `take` source accepted; a taken view
-  source `E10030`.
-- [ ] 1.1.2 Generic spec cases in `borrow_generic_integrity_spec_test.rs`:
+  source `E10030`. ✅ (completed: 2026-10-22 01:16)
+- [x] 1.1.2 Generic spec cases in `borrow_generic_integrity_spec_test.rs`:
   `copy<str?>` → `E10034`; `copy<String?>` → `E10034` (owned move);
   the concrete `fillString(take v: String, borrow slot: String?)` accepted;
   an owning `take` store at a nullable instance accepted; a taken view
   source `E10030`; a non-nullable owning `T=String` take store keeps the
   existing `RequiresStorableSlot` rejection and is not an acceptance
   control; a non-nullable duplicable slot accepted; the existing
-  `both-generic` `E10034` unchanged.
+  `both-generic` `E10034` unchanged. ✅ (completed: 2026-10-22 01:16)
 - [ ] 1.1.3 Retarget the explicit pins: `mixedcarrier` and `aggoutslot`
   `E10030` → `E10034`; `aggstatic` accepted → `E10034` (the recorded
   static-array precision loss). For `outslotpartwide` and `closeout-st14`,

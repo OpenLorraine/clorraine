@@ -2149,3 +2149,352 @@ func main(): i32 {
     assert_no_asan("aliasreturnok", &output);
     assert_exit("aliasreturnok", &output, 0);
 }
+
+/// A whole out-slot store may not keep a different lend's value or view.
+///
+/// The callee's lend is call-scoped. Storing another parameter's value or
+/// view in the caller's slot lets the caller reassign that parameter's
+/// backing after the call and leaves the slot pointing at freed storage, so
+/// every foreign source reports `E10034` once at the store. The slot's own
+/// incoming value, a static view, and a `take` value stay accepted; a local
+/// or fresh view keeps the existing `E10030` judgment.
+#[test]
+fn should_reject_a_foreign_lend_stored_into_a_whole_out_slot() {
+    let static_field = r#"module spec.bsi.staticfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func store(h: H, borrow slot: str?): void {
+    slot = h.tag;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("AA"), tag: "BB" };
+    let slot: str? = null;
+    store(h, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 66;
+}
+"#;
+    let output = run_memory("staticfield", static_field);
+    assert_no_asan("staticfield", &output);
+    assert_exit("staticfield", &output, 0);
+
+    let static_cond = r#"module spec.bsi.staticcond;
+
+func choose(c: bool, borrow slot: str?): void {
+    slot = c ? "AA" : "BB";
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    choose(true, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 65;
+}
+"#;
+    let output = run_memory("staticcond", static_cond);
+    assert_no_asan("staticcond", &output);
+    assert_exit("staticcond", &output, 0);
+
+    let static_global = r#"module spec.bsi.staticglobal;
+
+const GREETING: static str = "AA";
+
+func store(borrow slot: str?): void {
+    slot = GREETING;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store(borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 65;
+}
+"#;
+    let output = run_memory("staticglobal", static_global);
+    assert_no_asan("staticglobal", &output);
+    assert_exit("staticglobal", &output, 0);
+
+    let copy_own = r#"module spec.bsi.copyown;
+
+func copy(borrow slot: str?): void {
+    let t: str? = slot;
+    slot = t;
+}
+
+func main(): i32 {
+    let s: str = "AA";
+    let slot: str? = s;
+    copy(borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 65;
+}
+"#;
+    let output = run_memory("copyown", copy_own);
+    assert_no_asan("copyown", &output);
+    assert_exit("copyown", &output, 0);
+
+    let captured_copy = r#"module spec.bsi.capturedcopy;
+
+func outer(borrow slot: str?): void {
+    ([borrow slot] () => {
+        let t: str? = slot;
+        slot = t;
+    })();
+}
+
+func main(): i32 {
+    let s: str = "AA";
+    let slot: str? = s;
+    outer(borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 65;
+}
+"#;
+    let output = run_memory("capturedcopy", captured_copy);
+    assert_no_asan("capturedcopy", &output);
+    assert_exit("capturedcopy", &output, 0);
+
+    let take_owned = r#"module spec.bsi.takeowned;
+
+import { String, stringOf } from std.text;
+
+func store(take v: String, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: String? = null;
+    store(stringOf("abc"), borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let output = run_memory("takeowned", take_owned);
+    assert_no_asan("takeowned", &output);
+    assert_exit("takeowned", &output, 3);
+
+    let self_assign = r#"module spec.bsi.selfslot;
+
+func self(borrow slot: str?): void {
+    slot = slot;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    self(borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once("selfslot", self_assign, "E10020", &["'slot'"]);
+
+    let non_nullable = r#"module spec.bsi.nonnullslot;
+
+func store(p: str, borrow d: str): void {
+    d = p;
+}
+
+func main(): i32 {
+    let d: str = "AA";
+    store("AA", borrow d);
+    return 0;
+}
+"#;
+    assert_rejected_once("nonnullslot", non_nullable, "E10033", &["escapes its scope"]);
+
+    let local_view = r#"module spec.bsi.localview;
+
+import { String, stringOf } from std.text;
+
+func store(borrow slot: str?): void {
+    let s: String = stringOf("AA");
+    slot = s;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store(borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once("localview", local_view, "E10030", &["does not live long enough"]);
+
+    let take_view = r#"module spec.bsi.takeview;
+
+func store(take v: str, borrow slot: str?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store("AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once("takeview", take_view, "E10030", &["does not live long enough"]);
+
+    let direct = r#"module spec.bsi.foreignoutslot;
+
+func fill(p: str, borrow slot: str?): void {
+    slot = p;
+}
+
+func main(): i32 {
+    let p: str = "AA";
+    let slot: str? = null;
+    fill(p, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(slot[0]) - 65;
+}
+"#;
+    assert_rejected_once(
+        "foreignoutslot",
+        direct,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+
+    let field = r#"module spec.bsi.foreignfield;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func store(h: H, borrow slot: str?): void {
+    slot = h.name;
+}
+
+func main(): i32 {
+    let h: H = H { name: stringOf("AA"), tag: "BB" };
+    let slot: str? = null;
+    store(h, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreignfield",
+        field,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
+
+    let conditional = r#"module spec.bsi.foreigncond;
+
+func choose(c: bool, p: str, borrow slot: str?): void {
+    slot = c ? p : "AA";
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    choose(true, "AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreigncond",
+        conditional,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+
+    let captured = r#"module spec.bsi.foreigncapture;
+
+func outer(p: str, borrow slot: str?): void {
+    ([p, borrow slot] () => {
+        slot = p;
+    })();
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    outer("AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreigncapture",
+        captured,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+
+    let call = r#"module spec.bsi.foreigncall;
+
+func id(p: str): str {
+    return p;
+}
+
+func outer(p: str, borrow slot: str?): void {
+    slot = id(p);
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    outer("AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreigncall",
+        call,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+
+    let cross = r#"module spec.bsi.foreignslots;
+
+func swap(borrow a: str?, borrow b: str?): void {
+    a = b;
+}
+
+func main(): i32 {
+    let x: str? = "AA";
+    let y: str? = "BB";
+    swap(borrow x, borrow y);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreignslots",
+        cross,
+        "E10034",
+        &["cannot release or store borrowed parameter 'b'"],
+    );
+
+    let local_copy = r#"module spec.bsi.foreignlocalcopy;
+
+func store(p: str, borrow slot: str?): void {
+    let s: str = p;
+    slot = s;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store("AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreignlocalcopy",
+        local_copy,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+}

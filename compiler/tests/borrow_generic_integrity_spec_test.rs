@@ -491,11 +491,10 @@ func main(): i32 {
 
 /// Nullable slot instances stay accepted and run cleanly.
 ///
-/// Three shapes must keep working: a concrete `String?` out-slot receiving a
-/// taken string, a parameter-typed `T[]?` slot receiving `null` through a
-/// dot call, and a parameter-typed nullable slot receiving a borrowed value.
-/// Each run observes the stored value and reports no memory error, which
-/// proves the value is released exactly once.
+/// Two shapes must keep working: a concrete `String?` out-slot receiving a
+/// taken string, and a parameter-typed `T[]?` slot receiving `null` through
+/// a dot call. Each run observes the stored value and reports no memory
+/// error, which proves the value is released exactly once.
 #[test]
 fn should_accept_and_run_when_a_slot_instantiation_is_nullable() {
     let concrete = r#"module spec.bgi.nullableconcrete;
@@ -535,28 +534,6 @@ func main(): i32 {
     let output = run_memory("nullable-slice-slot", slice_slot);
     assert_exit("nullable-slice-slot", &output, 0);
     assert_no_asan("nullable-slice-slot", &output);
-
-    let generic = r#"module spec.bgi.nullablegeneric;
-
-import { String, stringOf } from std.text;
-
-func copy<T>(borrow v: T, borrow slot: T): void {
-    slot = v;
-}
-
-func main(): i32 {
-    let v: String? = stringOf("xyz");
-    let slot: String? = null;
-    copy<String?>(borrow v, borrow slot);
-    if (slot == null) {
-        return 91;
-    }
-    return i32(len(slot));
-}
-"#;
-    let output = run_memory("nullable-generic", generic);
-    assert_exit("nullable-generic", &output, 3);
-    assert_no_asan("nullable-generic", &output);
 }
 
 /// An out-slot self-assignment is rejected once.
@@ -2892,4 +2869,79 @@ func main(): i32 {
         "E10306",
         &["ephemeral type argument"],
     );
+}
+
+/// A generic whole out-slot store may not keep a different lend's value.
+///
+/// The destination is a type parameter, so the declaration cannot tell that
+/// the instance makes it nullable. At each nullable instance the store of a
+/// different lend is the same call-scope violation the concrete spelling
+/// reports: `E10034` once at the store. A `take` source owns its value and
+/// stays accepted, and a non-nullable owning instance keeps the strict
+/// storable-slot judgment.
+#[test]
+fn should_reject_a_foreign_lend_stored_into_a_generic_nullable_out_slot() {
+    let view = r#"module spec.bgi.foreigncopyview;
+
+func copy<T>(borrow v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: str? = "AA";
+    let slot: str? = null;
+    copy<str?>(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreigncopyview",
+        view,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let owned = r#"module spec.bgi.foreigncopyown;
+
+import { String, stringOf } from std.text;
+
+func copy<T>(borrow v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: String? = stringOf("xyz");
+    let slot: String? = null;
+    copy<String?>(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "foreigncopyown",
+        owned,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let take = r#"module spec.bgi.foreigntake;
+
+import { String, stringOf } from std.text;
+
+func put<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: String? = stringOf("xyz");
+    let slot: String? = null;
+    put<String?>(take v, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let output = run_memory("foreigntake", take);
+    assert_no_asan("foreigntake", &output);
+    assert_exit("foreigntake", &output, 3);
 }
