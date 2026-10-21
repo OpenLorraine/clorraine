@@ -660,6 +660,57 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Records a partial element move out of a `take` parameter.
+    ///
+    /// The generic body's selected member has no concrete type yet, so the
+    /// per-instance audit substitutes the root and reports `E10026` when the
+    /// moved member owns. A duplicable instance stays a copy.
+    pub(super) fn note_take_element_move(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        ty: &Ty,
+        span: Span,
+    ) {
+        let binding = &self.bindings[id];
+        if binding.kind != BindingKind::Param || binding.mode != Mode::Take {
+            return;
+        }
+        // A whole take value and a single top-level field are legal moves; the
+        // v1 partial-move limit judges the deeper projection.
+        let top_level = projections.len() == 1
+            && matches!(projections.first(), Some(ir::Projection::Field(_)));
+        if projections.is_empty() || top_level {
+            return;
+        }
+        if !(self.maybe_owns(ty) || ty.is_unknown()) {
+            return;
+        }
+        if !self
+            .recorded_element_moves
+            .insert((id, span.start, span.end))
+        {
+            return;
+        }
+        let path: Vec<crate::types::PlacePathStep> = projections
+            .iter()
+            .map(|projection| match projection {
+                ir::Projection::Field(field) => {
+                    crate::types::PlacePathStep::Field(field.clone())
+                }
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                    crate::types::PlacePathStep::Element
+                }
+            })
+            .collect();
+        self.element_move_requirements.push(ir::RequiresElementMove {
+            function: self.decl.name.clone(),
+            ty: binding.ty.clone(),
+            path,
+            span,
+        });
+    }
+
     /// Records the duplicability duty a body owes for one binding, at most once.
     ///
     /// Only a binding whose declared type mentions a type parameter carries the

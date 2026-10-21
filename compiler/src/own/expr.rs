@@ -53,6 +53,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // site records the duty for the per-instance audit.
         if let Some(PlaceTarget::Local(id, projections)) = &target {
             self.note_borrowed_element_move(*id, projections, &ty, span);
+            self.note_take_element_move(*id, projections, &ty, span);
+        }
+        // A member of an opaque type parameter has no concrete type yet. The
+        // per-instance audit decides whether the selected member owns: record
+        // the lend move now, exactly as the maybe-owning path does, so an
+        // owning substitution reports E10034 and a duplicable one stays a copy.
+        if ty.is_unknown() {
+            if let Some(target) = target {
+                self.mark_moved_if_owning(target, span);
+            }
+            return;
         }
         if self.maybe_owns(&ty) {
             // The field store writes a move for an owning instance, so a later
@@ -1325,7 +1336,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A view-typed target stores a view, which moves nothing: the
                 // backing stays where it is and the container loans it, so a
                 // conditional or place source is not consumed.
-                if !projections.is_empty() && !is_view_like(&target_ty) && !deferred_owned_move {
+                if !projections.is_empty() && !is_view_like(&target_ty) && !deferred_owned_move && !skip_transfer {
                     if self.place_target(value).is_some() {
                         self.consume_owned_place(value, value.span);
                     } else {

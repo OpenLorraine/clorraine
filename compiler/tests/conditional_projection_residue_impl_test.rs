@@ -7393,50 +7393,14 @@ func main(): i32 {
     );
 }
 
-/// A self-slot source move keeps the destination value intact.
+/// An identical self-slot source move emits no transfer.
 ///
-/// A source reached through a run-time element may name the destination slot.
-/// The move compares the two storage addresses and treats an equal pair as a
-/// self-copy, so the destination is not emptied.
+/// `w.items[i].name = w.items[i].name` names one object on both sides, so the
+/// generic borrow body is a self-copy: no address comparison, no move, and no
+/// empty. A distinct-index owned move out of the same borrow parameter is the
+/// `E10034` rejection pinned by the spec suite.
 #[test]
-fn should_guard_a_self_slot_source_move() {
-    let member = r#"module spec.cprimpl.implselfslot;
-
-import { String, stringOf } from std.text;
-
-struct Elem { name: String; }
-struct Holder { items: Elem[2]; }
-
-func copy<T>(borrow w: T, i: i32, j: i32): i32 {
-    w.items[i].name = w.items[j].name;
-    return i32(len(w.items[i].name));
-}
-
-func main(): i32 {
-    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
-    return copy<Holder>(borrow h, 1, 1) - 2;
-}
-"#;
-    let tag = "implselfslot";
-    let (_scratch, emitted) = emit_host(tag, member);
-    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
-    assert_contains(
-        tag,
-        body,
-        "if (&((*w).items[__cl_tmp0].name) != &((*w).items[__cl_tmp1].name)) {",
-    );
-    assert_contains(
-        tag,
-        body,
-        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
-    );
-    assert_follows(
-        tag,
-        body,
-        "(*w).items[__cl_tmp0].name = NULL;",
-        "(*w).items[__cl_tmp0].name = (*w).items[__cl_tmp1].name;",
-    );
-
+fn should_skip_an_identical_self_slot_source_move() {
     let same = r#"module spec.cprimpl.implselfslotsame;
 
 import { String, stringOf } from std.text;
@@ -7465,37 +7429,6 @@ func main(): i32 {
         tag,
         body,
         "return (i32)((cl_string_view((*w).items[i].name)).len);",
-    );
-
-    let whole = r#"module spec.cprimpl.implselfslotwhole;
-
-import { String, stringOf } from std.text;
-
-struct Elem { name: String; }
-struct Holder { items: Elem[2]; }
-
-func copy<T>(borrow w: T, i: i32, j: i32): i32 {
-    w.items[i] = w.items[j];
-    return i32(len(w.items[i].name));
-}
-
-func main(): i32 {
-    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
-    return copy<Holder>(borrow h, 1, 1) - 2;
-}
-"#;
-    let tag = "implselfslotwhole";
-    let (_scratch, emitted) = emit_host(tag, whole);
-    let body = function_body(tag, &emitted, "cl_copy__Holder(ClHolder *w, i32 i, i32 j)\n{");
-    assert_contains(
-        tag,
-        body,
-        "if (&(*(&((*w).items[__cl_tmp0]))) != &((*w).items[j])) {",
-    );
-    assert_contains(
-        tag,
-        body,
-        "ClElem __cl_save_1 = *(&((*w).items[__cl_tmp0]));",
     );
 }
 

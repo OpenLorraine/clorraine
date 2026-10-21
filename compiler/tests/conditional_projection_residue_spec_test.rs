@@ -14048,9 +14048,11 @@ func main(): i32 {
 
 /// A runtime-index source place reads the slot the index selects.
 ///
-/// The copy reads the slot the index selects, the side-effecting index runs
-/// once, and an out-of-range source traps before the store. The concrete twin
-/// keeps the same behavior.
+/// The duplicable copies read the slot the index selects, the side-effecting
+/// index runs once, and an out-of-range source traps before the store. A
+/// distinct-index owned member/element move out of a `borrow` parameter reports
+/// `E10034` exactly as the concrete twin does; the identical self-copy stays
+/// accepted.
 #[test]
 fn should_copy_a_runtime_index_place_on_the_stored_value() {
     let copy = r#"module spec.cpr.rhsindex;
@@ -14130,9 +14132,7 @@ func main(): i32 {
     return copy<Holder>(borrow h, 1, 1) - 2;
 }
 "#;
-    let output = run_memory("rhsindexselfmember", self_member);
-    assert_no_asan("rhsindexselfmember", &output);
-    assert_exit("rhsindexselfmember", &output, 0);
+    compile_rejects("rhsindexselfmember", self_member, "E10034", 1);
 
     let self_same = r#"module spec.cpr.rhsindexselfsame;
 
@@ -14172,9 +14172,7 @@ func main(): i32 {
     return copy<Holder>(borrow h, 1, 1) - 2;
 }
 "#;
-    let output = run_memory("rhsindexselfwhole", self_whole);
-    assert_no_asan("rhsindexselfwhole", &output);
-    assert_exit("rhsindexselfwhole", &output, 0);
+    compile_rejects("rhsindexselfwhole", self_whole, "E10034", 1);
 
     let same_whole = r#"module spec.cpr.rhsindexselfsamewhole;
 
@@ -14196,6 +14194,44 @@ func main(): i32 {
     let output = run_memory("rhsindexselfsamewhole", same_whole);
     assert_no_asan("rhsindexselfsamewhole", &output);
     assert_exit("rhsindexselfsamewhole", &output, 0);
+
+    let take_member = r#"module spec.cpr.rhsindextakemember;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(take w: T, i: i32, j: i32): i32 {
+    w.items[i].name = w.items[j].name;
+    return i32(len(w.items[i].name));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }] };
+    return copy<Holder>(take h, 1, 1) - 2;
+}
+"#;
+    compile_rejects("rhsindextakemember", take_member, "E10026", 1);
+
+    let take_duplicable = r#"module spec.cpr.rhsindextakedup;
+
+struct Elem { y: i32; }
+struct Holder { items: Elem[2]; }
+
+func copy<T>(take w: T, i: i32, j: i32): i32 {
+    w.items[i].y = w.items[j].y;
+    return w.items[i].y;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { items: [Elem { y: 11 }, Elem { y: 22 }] };
+    return copy<Holder>(take h, 0, 1) - 22;
+}
+"#;
+    let output = run_memory("rhsindextakedup", take_duplicable);
+    assert_no_asan("rhsindextakedup", &output);
+    assert_exit("rhsindextakedup", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
