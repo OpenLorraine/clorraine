@@ -380,6 +380,12 @@ pub struct RequiresOpaqueStore {
     /// A superseded duty keeps its owned-source judgment and any use already
     /// recorded before the overwrite, but its future view watches end.
     pub superseded: bool,
+    /// True when a conditional source has a fresh owned arm.
+    ///
+    /// A view instance that selects the fresh arm would store a view over a
+    /// statement temporary. The store reports the escape at the store when no
+    /// later read already reports it.
+    pub fresh_arm: bool,
     /// True when the destination root is a slot the caller keeps.
     ///
     /// A stored frame-backed view in a caller slot escapes at the store; the

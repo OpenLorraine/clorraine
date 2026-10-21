@@ -22093,6 +22093,27 @@ func main(): i32 {
     assert_no_asan("condreinitboth", &output);
     assert_exit("condreinitboth", &output, 0);
 
+    let fresh_no_read = r#"module spec.cpr.condfreshnoread;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func store<T>(take w: Wrap<T>, run: bool, i: i32): i32 {
+    let a: String = stringOf("aa");
+    w.items[i] = run ? a : stringOf("bb");
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<str> = Wrap<str> { items: ["xx", "yy"] };
+    return store<str>(w, false, 0);
+}
+"#;
+    // A fresh owned arm has no frame-scoped owner; the store reports the
+    // escape even when the carrier is never read again.
+    compile_rejects("condfreshnoread", fresh_no_read, "E10030", 1);
+
     let unconditional = r#"module spec.cpr.condreinituncond;
 
 import { String, stringOf, bytes } from std.text;

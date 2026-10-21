@@ -142,10 +142,7 @@ impl<'a> Emitter<'a> {
                 // a fresh growable container, which has no C expression form.
                 // Fill the temporary on the evaluated path, and skip the
                 // ordinary value fill that would drop the effects.
-                if self.needs_statement_discard(inner)
-                    && !inner_ty.is_fixed_array()
-                    && !matches!(inner.kind, ValueKind::Conditional { .. })
-                {
+                if self.needs_statement_discard(inner) && !inner_ty.is_fixed_array() {
                     self.emit_statement_discard_fill(&destination_c, inner);
                     return;
                 }
@@ -531,6 +528,31 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Stores one arm of a statement-filled conditional.
+    ///
+    /// The arm's guards and deferred effects run inside the branch, then the
+    /// arm's value is copied to the destination. A nested conditional recurses
+    /// so its condition is evaluated only on the selected path.
+    fn emit_statement_discard_arm(&mut self, destination_c: &str, arm: &Value) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("        if ({condition_c}) {{"));
+            self.emit_statement_discard_arm(destination_c, then_value);
+            self.push("        } else {");
+            self.emit_statement_discard_arm(destination_c, else_value);
+            self.push("        }");
+            return;
+        }
+        self.emit_guards(arm);
+        self.push(&format!("        {destination_c} = {};", self.value(arm)));
+    }
+
     /// Fills a temporary with a value whose deferred effects need statements.
     ///
     /// A `&&`/`||` keeps the right side on the left's path; every other shape
@@ -539,6 +561,21 @@ impl<'a> Emitter<'a> {
     /// temporary, so the chosen value is copied and the effects are not
     /// rendered a second time.
     fn emit_statement_discard_fill(&mut self, destination_c: &str, value: &Value) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("    if ({condition_c}) {{"));
+            self.emit_statement_discard_arm(destination_c, then_value);
+            self.push("    } else {");
+            self.emit_statement_discard_arm(destination_c, else_value);
+            self.push("    }");
+            return;
+        }
         if let ValueKind::Binary {
             op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr,
             left,
@@ -623,6 +660,21 @@ impl<'a> Emitter<'a> {
             // statement-form drop, so a growable container is safe across a
             // loop test. The final value's scope release is already pending.
             ValueKind::Materialize { .. } => self.emit_guards(value),
+            // A projection over a fresh root carries a nested materialization
+            // whose release is statement-only. The ordinary guard walk fills
+            // it with the statement-form drop.
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.emit_guards(value);
+                // The guard walk evaluates the index and bounds checks but
+                // not the selected value, so a local base could look
+                // set-but-unused to the C compiler. Taking its address keeps
+                // the read without re-evaluating a side-effecting index.
+                self.push(&format!("    (void)(&({}));", self.value(base)));
+            }
+            // A projection over a fresh root carries a nested materialization
+            // whose release is statement-only. The ordinary guard walk fills
+            // it with the statement-form drop.
+            _ if self.needs_statement_discard(value) => self.emit_guards(value),
             _ => {
                 let discarded = self.discard_expression(value);
                 if discarded != "0" {

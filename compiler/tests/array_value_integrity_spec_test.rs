@@ -2113,4 +2113,79 @@ func main(): i32 {
     let output = run_memory("lensliceonce", slice_once);
     assert_no_asan("lensliceonce", &output);
     assert_exit("lensliceonce", &output, 17);
+
+    let conditional_loop = r#"module spec.avi.lencondloop;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let flag: bool = true;
+    let i: i32 = 0;
+    while (flag ? (len([grow()]) == 1) : false) {
+        i = i + 1;
+        if (i == 2) { break; }
+    }
+    return i - 2;
+}
+"#;
+    let output = run_memory("lencondloop", conditional_loop);
+    assert_no_asan("lencondloop", &output);
+    assert_exit("lencondloop", &output, 0);
+
+    let member_arm = r#"module spec.avi.lenmemberarm;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+struct S { keep: Array<String>; arr: i32[2]; }
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let flag: bool = true;
+    while (i < 3) {
+        let n: usize = flag ? len((S { keep: grow(), arr: [1, 2] }).arr) : usize(0);
+        i = i + 1 + i32(n) - 2;
+    }
+    return i - 3;
+}
+"#;
+    let output = run_memory("lenmemberarm", member_arm);
+    assert_no_asan("lenmemberarm", &output);
+    assert_exit("lenmemberarm", &output, 0);
+
+    let for_step = r#"module spec.avi.lenforstep;
+
+import { Array, arrayNew, push } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String> {
+    let a: Array<String> = arrayNew<String>();
+    push(borrow a, take stringOf("x"));
+    return a;
+}
+
+func main(): i32 {
+    let flag: bool = true;
+    let i: i32 = 0;
+    for (; i < 2; i = i + i32(flag ? len([grow()]) : usize(0))) {
+    }
+    return i - 2;
+}
+"#;
+    let output = run_memory("lenforstep", for_step);
+    assert_no_asan("lenforstep", &output);
+    assert_exit("lenforstep", &output, 0);
 }

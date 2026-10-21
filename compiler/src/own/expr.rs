@@ -1998,6 +1998,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
         }
         let frame_owner = frames.first().map(|frame| frame.subject.clone());
+        let fresh_arm = owned_source
+            && source_place.is_none()
+            && self.conditional_has_fresh_arm(value);
         let (source_ir, source_name, source_path, source_param) = match source_place {
             Some((source, source_path)) => {
                 let binding = &self.bindings[source];
@@ -2027,6 +2030,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .into_iter()
                 .map(|(_, _, source)| source)
                 .collect(),
+            fresh_arm,
             later_uses: Vec::new(),
             late_uses: Vec::new(),
             invalidations: Vec::new(),

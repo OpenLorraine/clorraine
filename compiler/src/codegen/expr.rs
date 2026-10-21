@@ -825,7 +825,7 @@ impl<'a> Emitter<'a> {
             };
             return format!(
                 "({} ? {} : {})",
-                self.value(condition),
+                self.guarded_value(condition),
                 self.conditional_arm(then_value, &nested),
                 self.conditional_arm(else_value, &nested)
             );

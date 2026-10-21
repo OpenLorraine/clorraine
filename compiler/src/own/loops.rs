@@ -51,9 +51,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut condition = self.lower_value(&decl.condition);
         self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
-        if Self::contains_discard_then(&condition)
-            && !matches!(condition.kind, ValueKind::Conditional { .. })
-        {
+        if Self::contains_discard_then(&condition) {
             condition = self.materialize_loop_condition_operand(condition);
         }
         // The condition may move an owner, so the state after evaluating it is
@@ -151,9 +149,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut condition = self.lower_value(&decl.condition);
         self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
-        if Self::contains_discard_then(&condition)
-            && !matches!(condition.kind, ValueKind::Conditional { .. })
-        {
+        if Self::contains_discard_then(&condition) {
             condition = self.materialize_loop_condition_operand(condition);
         }
         self.append_condition_releases(body_block, body_floor, release_floor);
@@ -337,9 +333,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut lowered = self.lower_value(condition);
                 self.in_loop_condition = saved_loop_condition;
                 self.materialize_owned_calls(&mut lowered);
-                if Self::contains_discard_then(&lowered)
-                    && !matches!(lowered.kind, ValueKind::Conditional { .. })
-                {
+                if Self::contains_discard_then(&lowered) {
                     lowered = self.materialize_loop_condition_operand(lowered);
                 }
                 lowered

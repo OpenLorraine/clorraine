@@ -522,6 +522,23 @@ fn check_opaque_store_requirements(
                     }
                     break;
                 }
+                // A fresh owned arm has no frame-scoped owner. At a view
+                // instance the stored view would read a statement temporary,
+                // so the store reports the escape even when the carrier is
+                // never read again.
+                if requirement.fresh_arm {
+                    if reported_use.insert((
+                        requirement.function.clone(),
+                        requirement.store_span.start,
+                        "E10030",
+                    )) {
+                        diagnostics.push(opaque_escape(
+                            "a statement temporary",
+                            requirement.store_span,
+                        ));
+                    }
+                    break;
+                }
                 if let Some((span, subject)) = requirement.invalidations.first() {
                     if reported_use.insert((
                         requirement.function.clone(),
@@ -653,18 +670,25 @@ fn check_opaque_store_requirements(
                 // field itself is E10020; a read of another field does not
                 // reach this duty.
                 let partial_whole = top_level && read_path.is_empty();
+                let field = match source.path.first() {
+                    Some(crate::ir::Projection::Field(field)) if top_level => Some(field),
+                    _ => None,
+                };
+                let display = match field {
+                    Some(field) => format!("{}.{}", source.name, field),
+                    None => source.name.clone(),
+                };
                 let (code, message) = if partial_whole {
                     (
                         "E10025",
                         format!(
-                            "'{}' is partially moved and cannot be used as a whole",
-                            source.name
+                            "'{display}' is partially moved and cannot be used as a whole"
                         ),
                     )
                 } else {
                     (
                         "E10020",
-                        format!("'{}' was moved and cannot be used", source.name),
+                        format!("'{display}' was moved and cannot be used"),
                     )
                 };
                 if reported_use.insert((
@@ -672,9 +696,15 @@ fn check_opaque_store_requirements(
                     span.start,
                     code,
                 )) {
+                    let help = if partial_whole {
+                        "use the remaining fields or re-initialize the struct"
+                    } else if field.is_some() {
+                        "re-initialize the field or use a view"
+                    } else {
+                        "re-initialize the binding or use a view"
+                    };
                     diagnostics.push(
-                        Diagnostic::error(code, message, *span)
-                            .with_help("re-initialize the binding or use a view"),
+                        Diagnostic::error(code, message, *span).with_help(help),
                     );
                 }
                 arm_reported = true;

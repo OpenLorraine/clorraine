@@ -294,11 +294,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let else_value = self.materialize_owning_deref(else_value);
                 self.defer_move_outs -= 1;
                 self.eager_conditional_arm = saved_eager_arm;
-                ValueKind::Conditional {
-                    condition: Box::new(condition),
-                    then_value: Box::new(then_value),
-                    else_value: Box::new(else_value),
+                let value = Value {
+                    ty,
+                    kind: ValueKind::Conditional {
+                        condition: Box::new(condition),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                };
+                // A conditional carrying a deferred discard effect is
+                // materialized once, so an enclosing arithmetic step or a
+                // repeated expression re-fills a temporary whose previous
+                // value the statement-form fill releases.
+                if self.materialize_owned_temporaries
+                    && !self.speculative_lowering
+                    && Self::contains_discard_then(&value)
+                {
+                    return self.materialize_guard_operand(value);
                 }
+                return value;
             }
             ExprKind::StructLiteral { name, fields, .. } => {
                 // A literal inside a conditionally evaluated operand must not
@@ -1557,6 +1571,54 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Binds a fresh projection root to a statement temporary.
+    ///
+    /// A `len` operand such as `(S { keep: grow(), arr: [1, 2] }).arr` reads
+    /// the member but must release the literal's other fields. Binding the
+    /// root to a temporary makes the ordinary guarded fill release the
+    /// previous value on every evaluation, including a growable field whose
+    /// drop has no C expression form. A place root stays a read.
+    fn materialize_discard_projection_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.materialize_discard_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.materialize_discard_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            _ => value,
+        }
+    }
+
+    /// Materializes one fresh root, leaving a place or temporary alone.
+    fn materialize_discard_root(&mut self, value: Value) -> Value {
+        match &value.kind {
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                self.materialize_discard_projection_root(value)
+            }
+            ValueKind::Call { .. }
+            | ValueKind::ClosureCall { .. }
+            | ValueKind::StructLit { .. }
+            | ValueKind::ArrayLit { .. }
+            | ValueKind::Conditional { .. } => self.materialize_guard_operand(value),
+            _ => value,
+        }
+    }
+
     /// Lowers a fixed-array `len` operand's effects to a value.
     ///
     /// The structural extent needs no storage, but the operand's own effects
@@ -1641,7 +1703,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { .. } | ExprKind::Index { .. } => {
                 let value = self.lower_value(expr);
                 if matches!(value.kind, ValueKind::Member { .. } | ValueKind::Index { .. }) {
-                    self.bind_ownerless_projection_root(value)
+                    self.materialize_discard_projection_root(value)
                 } else {
                     value
                 }
