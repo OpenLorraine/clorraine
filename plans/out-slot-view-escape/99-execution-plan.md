@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 23/27 tasks (85%)
-> **Last Updated**: 2026-10-22 15:28
+> **Progress**: 24/27 tasks (89%)
+> **Last Updated**: 2026-10-22 15:29
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -294,8 +294,10 @@ Notes:
 
 ### Phase 5 — Verification, review, and close-out
 
-- [ ] 5.1.1 Run the focused suites, `make check`, and `make verify` in the
-  Docker SDK container.
+- [x] 5.1.1 Run the focused suites, `make check`, and `make verify` in the
+  Docker SDK container. ✅ (completed: 2026-10-22 15:29; `make check` and
+  `make verify` green, including the FS-UAE legs after refreshing the local
+  X11 cookie)
 - [ ] 5.1.2 Phase review: correctness reviewer plus the memory-safety
   auditor (ownership change); the emission-integrity auditor if the
   migration changes emitted C.
