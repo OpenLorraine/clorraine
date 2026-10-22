@@ -219,7 +219,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         &mut lent,
                     );
                 }
-                let callee_stores_whole_out_slot = callee_has_whole_out_slot_store(decl);
+                let callee_stores_whole_out_slot = callee_has_whole_out_slot_store(decl, self.sema);
                 self.check_arguments(
                     args,
                     written_params,
@@ -2177,209 +2177,438 @@ fn whole_out_slot_params(decl: &crate::ast::FuncDecl) -> BTreeSet<String> {
         .collect()
 }
 
-/// The non-`take` parameters of one function declaration.
+/// True when the declaration's body stores a foreign source into a whole
+/// out-slot that the callee-side judgment rejects.
 ///
-/// These are the caller-backed lends a store can copy a value or view from.
-/// A `take` parameter owns its value and a local does not name a lend.
-fn non_take_lends(decl: &crate::ast::FuncDecl) -> BTreeSet<String> {
-    decl.params
-        .iter()
-        .filter(|param| param.mode != Mode::Take)
-        .map(|param| param.name.clone())
-        .collect()
-}
-
-/// True when the declaration's body writes a whole out-slot parameter.
-///
-/// The caller-side frame check is a conservative guard for a callee whose
-/// body is opaque. Once the callee's own body stores into the out-slot, the
-/// callee-side judgment reports the store and the caller-side consequence
-/// report would duplicate it. The scan is syntactic and conservative: it
-/// looks only for a plain `slot = ...` assignment to a declared out-slot,
-/// including one inside a nested lambda, because the name resolves to the
-/// same captured slot there.
-fn callee_has_whole_out_slot_store(decl: &crate::ast::FuncDecl) -> bool {
+/// The caller-side frame check is a conservative guard for an opaque callee.
+/// When the callee reports the store itself, the caller-side consequence
+/// report would duplicate it, so the caller withholds its `E10030`. This scan
+/// resolves the stored value's source instead of matching any name anywhere in
+/// the expression: a static field or a conditional condition is not a source,
+/// while a local copy of a parameter and an immediately-called lambda are.
+fn callee_has_whole_out_slot_store(
+    decl: &crate::ast::FuncDecl,
+    sema: &SemaOutput,
+) -> bool {
     let slots = whole_out_slot_params(decl);
     if slots.is_empty() {
         return false;
     }
-    let lends = non_take_lends(decl);
-    block_stores_whole_out_slot(&decl.body, &slots, &lends)
-}
-
-/// True when a block contains a whole out-slot store.
-fn block_stores_whole_out_slot(
-    block: &Block,
-    slots: &BTreeSet<String>,
-    lends: &BTreeSet<String>,
-) -> bool {
-    block
-        .statements
+    let lends: BTreeSet<String> = decl
+        .params
         .iter()
-        .any(|stmt| stmt_stores_whole_out_slot(stmt, slots, lends))
+        .filter(|param| param.mode != Mode::Take)
+        .map(|param| param.name.clone())
+        .collect();
+    let mut locals = BTreeMap::new();
+    collect_local_initializers(&decl.body, &mut locals);
+    let scan = WholeSlotStoreScan {
+        slots: &slots,
+        lends: &lends,
+        locals: &locals,
+        sema,
+    };
+    scan.block(&decl.body)
 }
 
-/// True when an `if` statement contains a whole out-slot store.
-fn if_stores_whole_out_slot(
-    decl: &crate::ast::IfStmt,
-    slots: &BTreeSet<String>,
-    lends: &BTreeSet<String>,
-) -> bool {
-    expr_stores_whole_out_slot(&decl.condition, slots, lends)
-        || block_stores_whole_out_slot(&decl.then_block, slots, lends)
-        || match &decl.else_branch {
-            Some(crate::ast::ElseBranch::If(nested)) => if_stores_whole_out_slot(nested, slots, lends),
-            Some(crate::ast::ElseBranch::Block(block)) => {
-                block_stores_whole_out_slot(block, slots, lends)
-            }
-            None => false,
-        }
+/// The source facts of one callee body.
+struct WholeSlotStoreScan<'a> {
+    slots: &'a BTreeSet<String>,
+    lends: &'a BTreeSet<String>,
+    locals: &'a BTreeMap<String, &'a Expr>,
+    sema: &'a SemaOutput,
 }
 
-/// True when a statement contains a whole out-slot store.
-fn stmt_stores_whole_out_slot(
-    stmt: &Stmt,
-    slots: &BTreeSet<String>,
-    lends: &BTreeSet<String>,
-) -> bool {
-    use crate::ast::{ForInit, Stmt, SwitchLabel};
-    match stmt {
-        Stmt::Let(decl) => decl
-            .value
-            .as_ref()
-            .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
-        Stmt::Const(decl) => expr_stores_whole_out_slot(&decl.value, slots, lends),
-        Stmt::Expr(expr) => expr_stores_whole_out_slot(expr, slots, lends),
-        Stmt::If(decl) => if_stores_whole_out_slot(decl, slots, lends),
-        Stmt::While(decl) => {
-            expr_stores_whole_out_slot(&decl.condition, slots, lends)
-                || block_stores_whole_out_slot(&decl.body, slots, lends)
-        }
-        Stmt::DoWhile(decl) => {
-            block_stores_whole_out_slot(&decl.body, slots, lends)
-                || expr_stores_whole_out_slot(&decl.condition, slots, lends)
-        }
-        Stmt::ForC(decl) => {
-            let init = match &decl.init {
-                Some(ForInit::Let(init)) => init
-                    .value
-                    .as_ref()
-                    .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
-                Some(ForInit::Const(init)) => expr_stores_whole_out_slot(&init.value, slots, lends),
-                Some(ForInit::Expr(exprs)) => exprs
-                    .iter()
-                    .any(|expr| expr_stores_whole_out_slot(expr, slots, lends)),
-                None => false,
-            };
-            init || decl
-                .condition
+impl<'a> WholeSlotStoreScan<'a> {
+    /// The recorded type, or the opaque type when the expression was not
+    /// recorded (a declaration shape the ownership walk never reads).
+    fn ty(&self, expr: &Expr) -> Ty {
+        self.sema
+            .expr_types
+            .get(&(expr as *const Expr as usize))
+            .cloned()
+            .unwrap_or_else(Ty::unknown)
+    }
+
+    fn block(&self, block: &Block) -> bool {
+        block.statements.iter().any(|stmt| self.stmt(stmt))
+    }
+
+    fn stmt(&self, stmt: &Stmt) -> bool {
+        use crate::ast::{ForInit, Stmt, SwitchLabel};
+        match stmt {
+            Stmt::Let(decl) => decl
+                .value
                 .as_ref()
-                .is_some_and(|condition| expr_stores_whole_out_slot(condition, slots, lends))
-                || decl
-                    .step
-                    .iter()
-                    .any(|step| expr_stores_whole_out_slot(step, slots, lends))
-                || block_stores_whole_out_slot(&decl.body, slots, lends)
+                .is_some_and(|value| self.expr(value)),
+            Stmt::Const(decl) => self.expr(&decl.value),
+            Stmt::Expr(expr) => self.expr(expr),
+            Stmt::If(decl) => {
+                self.expr(&decl.condition)
+                    || self.block(&decl.then_block)
+                    || match &decl.else_branch {
+                        Some(crate::ast::ElseBranch::If(nested)) => self.if_stmt(nested),
+                        Some(crate::ast::ElseBranch::Block(block)) => self.block(block),
+                        None => false,
+                    }
+            }
+            Stmt::While(decl) => self.expr(&decl.condition) || self.block(&decl.body),
+            Stmt::DoWhile(decl) => self.block(&decl.body) || self.expr(&decl.condition),
+            Stmt::ForC(decl) => {
+                let init = match &decl.init {
+                    Some(ForInit::Let(init)) => init
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| self.expr(value)),
+                    Some(ForInit::Const(init)) => self.expr(&init.value),
+                    Some(ForInit::Expr(exprs)) => exprs.iter().any(|expr| self.expr(expr)),
+                    None => false,
+                };
+                init || decl
+                    .condition
+                    .as_ref()
+                    .is_some_and(|condition| self.expr(condition))
+                    || decl.step.iter().any(|step| self.expr(step))
+                    || self.block(&decl.body)
+            }
+            Stmt::ForIn(decl) => self.expr(&decl.iterable) || self.block(&decl.body),
+            Stmt::Return { value, .. } => value.as_ref().is_some_and(|value| self.expr(value)),
+            Stmt::Break(_) | Stmt::Continue(_) => false,
+            Stmt::Switch(decl) => {
+                self.expr(&decl.scrutinee)
+                    || decl.clauses.iter().any(|clause| {
+                        let label = match &clause.label {
+                            SwitchLabel::Case(value) => self.expr(value),
+                            SwitchLabel::Default => false,
+                        };
+                        label || clause.statements.iter().any(|stmt| self.stmt(stmt))
+                    })
+            }
+            Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => self.block(block),
         }
-        Stmt::ForIn(decl) => {
-            expr_stores_whole_out_slot(&decl.iterable, slots, lends)
-                || block_stores_whole_out_slot(&decl.body, slots, lends)
-        }
-        Stmt::Return { value, .. } => value
-            .as_ref()
-            .is_some_and(|value| expr_stores_whole_out_slot(value, slots, lends)),
-        Stmt::Break(_) | Stmt::Continue(_) => false,
-        Stmt::Switch(decl) => {
-            expr_stores_whole_out_slot(&decl.scrutinee, slots, lends)
-                || decl.clauses.iter().any(|clause| {
-                    let label = match &clause.label {
-                        SwitchLabel::Case(value) => expr_stores_whole_out_slot(value, slots, lends),
-                        SwitchLabel::Default => false,
+    }
+
+    fn if_stmt(&self, decl: &crate::ast::IfStmt) -> bool {
+        self.expr(&decl.condition)
+            || self.block(&decl.then_block)
+            || match &decl.else_branch {
+                Some(crate::ast::ElseBranch::If(nested)) => self.if_stmt(nested),
+                Some(crate::ast::ElseBranch::Block(block)) => self.block(block),
+                None => false,
+            }
+    }
+
+    fn expr(&self, expr: &Expr) -> bool {
+        use crate::ast::{AssignOp, IntrinsicArg, LambdaBody, TemplatePiece};
+        match &expr.kind {
+            ExprKind::Assign { op, target, value } => {
+                let whole = matches!(op, AssignOp::Assign)
+                    && matches!(&target.kind, ExprKind::Name(name) if self.slots.contains(name));
+                let foreign = whole
+                    && match &target.kind {
+                        ExprKind::Name(destination) => {
+                            let mut visiting = BTreeSet::new();
+                            self.value_has_foreign_root(value, destination, &mut visiting)
+                        }
+                        _ => false,
                     };
-                    label
-                        || clause
-                            .statements
-                            .iter()
-                            .any(|stmt| stmt_stores_whole_out_slot(stmt, slots, lends))
-                })
+                foreign || self.expr(target) || self.expr(value)
+            }
+            ExprKind::Call { callee, args, .. } => {
+                self.expr(callee)
+                    || args.iter().any(|arg| self.expr(&arg.value))
+                    || self.value_has_foreign_root(
+                        expr,
+                        "",
+                        &mut BTreeSet::new(),
+                    ) && matches!(callee.kind, ExprKind::Lambda { .. })
+            }
+            ExprKind::Index { base, index } => self.expr(base) || self.expr(index),
+            ExprKind::Member { base, .. } => self.expr(base),
+            ExprKind::Unary { operand, .. } => self.expr(operand),
+            ExprKind::Binary { left, right, .. } => self.expr(left) || self.expr(right),
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => self.expr(condition) || self.expr(then_value) || self.expr(else_value),
+            ExprKind::Cast { value, .. }
+            | ExprKind::RawCast { value, .. }
+            | ExprKind::Unsafe(value) => self.expr(value),
+            ExprKind::StructLiteral { fields, .. } => {
+                fields.iter().any(|field| self.expr(&field.value))
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements.iter().any(|element| self.expr(element))
+                    || fill.as_deref().is_some_and(|fill| self.expr(fill))
+            }
+            ExprKind::Lambda { body, .. } => match body {
+                LambdaBody::Expr(inner) => self.expr(inner),
+                LambdaBody::Block(block) => self.block(block),
+            },
+            ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+                IntrinsicArg::Expr(value) => self.expr(value),
+                IntrinsicArg::Type(_) => false,
+            }),
+            ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                TemplatePiece::Placeholder(value) => self.expr(value),
+                TemplatePiece::Literal(_) => false,
+            }),
+            _ => false,
         }
-        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
-            block_stores_whole_out_slot(block, slots, lends)
+    }
+
+    /// True when the stored value keeps a foreign non-`take` parameter root.
+    ///
+    /// Local initializers are followed; a static-typed value, a literal, and a
+    /// conditional of static values are not sources. A conditional's condition
+    /// is control flow, not stored storage, so it is not inspected.
+    fn value_has_foreign_root(
+        &self,
+        value: &Expr,
+        destination: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> bool {
+        let value = super::expr::structural_wrapper_inner(value);
+        if self.is_static_value(value) {
+            return false;
+        }
+        match &value.kind {
+            ExprKind::Name(name) => {
+                if name == destination {
+                    return false;
+                }
+                if self.lends.contains(name) {
+                    return true;
+                }
+                let Some(initializer) = self.locals.get(name) else {
+                    return false;
+                };
+                if !visiting.insert(name.clone()) {
+                    return false;
+                }
+                let foreign = self.value_has_foreign_root(initializer, destination, visiting);
+                visiting.remove(name);
+                foreign
+            }
+            ExprKind::Qualified(qualified) => qualified
+                .segments
+                .first()
+                .is_some_and(|first| self.lends.contains(first)),
+            ExprKind::Member { base, .. } => {
+                self.value_has_foreign_root(base, destination, visiting)
+            }
+            ExprKind::Index { base, .. } => {
+                self.value_has_foreign_root(base, destination, visiting)
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.value_has_foreign_root(then_value, destination, visiting)
+                    || self.value_has_foreign_root(else_value, destination, visiting)
+            }
+            ExprKind::Call { callee, args, .. } => {
+                if let ExprKind::Lambda { body, .. } = &callee.kind {
+                    return match body {
+                        crate::ast::LambdaBody::Expr(inner) => {
+                            self.value_has_foreign_root(inner, destination, visiting)
+                        }
+                        crate::ast::LambdaBody::Block(block) => self.block_has_assignment(block),
+                    };
+                }
+                if !is_whole_slot_view(&self.ty(value)) {
+                    return false;
+                }
+                args.iter()
+                    .any(|arg| self.value_has_foreign_root(&arg.value, destination, visiting))
+            }
+            ExprKind::StructLiteral { fields, .. } => fields
+                .iter()
+                .any(|field| self.value_has_foreign_root(&field.value, destination, visiting)),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.value_has_foreign_root(element, destination, visiting))
+                    || fill.as_deref().is_some_and(|fill| {
+                        self.value_has_foreign_root(fill, destination, visiting)
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a lambda block body contains a store into a whole out-slot.
+    fn block_has_assignment(&self, block: &Block) -> bool {
+        block.statements.iter().any(|stmt| match stmt {
+            Stmt::Expr(Expr {
+                kind: ExprKind::Assign { target, .. },
+                ..
+            }) => matches!(&target.kind, ExprKind::Name(name) if self.slots.contains(name)),
+            _ => false,
+        })
+    }
+
+    /// True for a value whose storage is static for every possible result.
+    ///
+    /// This mirrors the callee-side static source rule: a `static str` type, a
+    /// string or null literal, or a conditional of static values. It does not
+    /// follow local initializers, because the callee's rule does not either.
+    fn is_static_value(&self, value: &Expr) -> bool {
+        if matches!(self.ty(value).kind, TyKind::StaticStr) {
+            return true;
+        }
+        match &value.kind {
+            ExprKind::Str(_) | ExprKind::Null => true,
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.is_static_value(then_value) && self.is_static_value(else_value)
+            }
+            ExprKind::Cast { value, .. }
+            | ExprKind::RawCast { value, .. }
+            | ExprKind::Unsafe(value) => self.is_static_value(value),
+            _ => false,
         }
     }
 }
 
-/// True when an expression contains a whole out-slot store.
-fn expr_stores_whole_out_slot(
-    expr: &Expr,
-    slots: &BTreeSet<String>,
-    lends: &BTreeSet<String>,
-) -> bool {
-    use crate::ast::{AssignOp, IntrinsicArg, LambdaBody, TemplatePiece};
+/// Collects `let` and `const` initializers from a function body.
+///
+/// The map is only a source-resolution aid; shadowing keeps the latest
+/// declaration in traversal order, matching the body's lexical order for the
+/// stores this pre-pass judges.
+fn collect_local_initializers<'a>(block: &'a Block, out: &mut BTreeMap<String, &'a Expr>) {
+    for stmt in &block.statements {
+        collect_statement_initializers(stmt, out);
+    }
+}
+
+fn collect_statement_initializers<'a>(
+    stmt: &'a Stmt,
+    out: &mut BTreeMap<String, &'a Expr>,
+) {
+    use crate::ast::{ForInit, Stmt, SwitchLabel};
+    match stmt {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                out.insert(decl.name.clone(), value);
+            }
+        }
+        Stmt::Const(decl) => {
+            out.insert(decl.name.clone(), &decl.value);
+        }
+        Stmt::If(decl) => {
+            collect_local_initializers(&decl.then_block, out);
+            match &decl.else_branch {
+                Some(crate::ast::ElseBranch::If(nested)) => {
+                    collect_if_initializers(nested, out);
+                }
+                Some(crate::ast::ElseBranch::Block(block)) => collect_local_initializers(block, out),
+                None => {}
+            }
+        }
+        Stmt::While(decl) => collect_local_initializers(&decl.body, out),
+        Stmt::DoWhile(decl) => collect_local_initializers(&decl.body, out),
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(ForInit::Let(init)) => {
+                    if let Some(value) = &init.value {
+                        out.insert(init.name.clone(), value);
+                    }
+                }
+                Some(ForInit::Const(init)) => {
+                    out.insert(init.name.clone(), &init.value);
+                }
+                Some(ForInit::Expr(_)) | None => {}
+            }
+            collect_local_initializers(&decl.body, out);
+        }
+        Stmt::ForIn(decl) => collect_local_initializers(&decl.body, out),
+        Stmt::Switch(decl) => {
+            for clause in &decl.clauses {
+                for stmt in &clause.statements {
+                    collect_statement_initializers(stmt, out);
+                }
+                if let SwitchLabel::Case(value) = &clause.label {
+                    collect_expression_initializers(value, out);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            collect_local_initializers(block, out);
+        }
+        Stmt::Expr(expr) => collect_expression_initializers(expr, out),
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_expression_initializers(value, out);
+            }
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
+    }
+}
+
+fn collect_if_initializers<'a>(decl: &'a crate::ast::IfStmt, out: &mut BTreeMap<String, &'a Expr>) {
+    collect_local_initializers(&decl.then_block, out);
+    match &decl.else_branch {
+        Some(crate::ast::ElseBranch::If(nested)) => collect_if_initializers(nested, out),
+        Some(crate::ast::ElseBranch::Block(block)) => collect_local_initializers(block, out),
+        None => {}
+    }
+}
+
+fn collect_expression_initializers<'a>(expr: &'a Expr, out: &mut BTreeMap<String, &'a Expr>) {
+    use crate::ast::{LambdaBody, TemplatePiece};
     match &expr.kind {
-        ExprKind::Assign { op, target, value } => {
-            let whole = matches!(op, AssignOp::Assign)
-                && matches!(&target.kind, ExprKind::Name(name) if slots.contains(name));
-            let foreign = whole
-                && match &target.kind {
-                    ExprKind::Name(destination) => lends.iter().any(|param| {
-                        param != destination && expression_mentions_name(value, param)
-                    }),
-                    _ => false,
-                };
-            foreign
-                || expr_stores_whole_out_slot(target, slots, lends)
-                || expr_stores_whole_out_slot(value, slots, lends)
-        }
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Expr(inner) => collect_expression_initializers(inner, out),
+            LambdaBody::Block(block) => collect_local_initializers(block, out),
+        },
         ExprKind::Call { callee, args, .. } => {
-            expr_stores_whole_out_slot(callee, slots, lends)
-                || args
-                    .iter()
-                    .any(|arg| expr_stores_whole_out_slot(&arg.value, slots, lends))
+            collect_expression_initializers(callee, out);
+            for arg in args {
+                collect_expression_initializers(&arg.value, out);
+            }
         }
-        ExprKind::Index { base, index } => {
-            expr_stores_whole_out_slot(base, slots, lends) || expr_stores_whole_out_slot(index, slots, lends)
-        }
-        ExprKind::Member { base, .. } => expr_stores_whole_out_slot(base, slots, lends),
-        ExprKind::Unary { operand, .. } => expr_stores_whole_out_slot(operand, slots, lends),
-        ExprKind::Binary { left, right, .. } => {
-            expr_stores_whole_out_slot(left, slots, lends) || expr_stores_whole_out_slot(right, slots, lends)
+        ExprKind::Assign { target, value, .. } => {
+            collect_expression_initializers(target, out);
+            collect_expression_initializers(value, out);
         }
         ExprKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            expr_stores_whole_out_slot(condition, slots, lends)
-                || expr_stores_whole_out_slot(then_value, slots, lends)
-                || expr_stores_whole_out_slot(else_value, slots, lends)
+            collect_expression_initializers(condition, out);
+            collect_expression_initializers(then_value, out);
+            collect_expression_initializers(else_value, out);
         }
         ExprKind::Cast { value, .. }
         | ExprKind::RawCast { value, .. }
-        | ExprKind::Unsafe(value) => expr_stores_whole_out_slot(value, slots, lends),
-        ExprKind::StructLiteral { fields, .. } => fields
-            .iter()
-            .any(|field| expr_stores_whole_out_slot(&field.value, slots, lends)),
-        ExprKind::ArrayLiteral { elements, fill } => {
-            elements
-                .iter()
-                .any(|element| expr_stores_whole_out_slot(element, slots, lends))
-                || fill
-                    .as_deref()
-                    .is_some_and(|fill| expr_stores_whole_out_slot(fill, slots, lends))
+        | ExprKind::Unsafe(value) => collect_expression_initializers(value, out),
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_expression_initializers(&field.value, out);
+            }
         }
-        ExprKind::Lambda { body, .. } => match body {
-            LambdaBody::Expr(inner) => expr_stores_whole_out_slot(inner, slots, lends),
-            LambdaBody::Block(block) => block_stores_whole_out_slot(block, slots, lends),
-        },
-        ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
-            IntrinsicArg::Expr(value) => expr_stores_whole_out_slot(value, slots, lends),
-            IntrinsicArg::Type(_) => false,
-        }),
-        ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
-            TemplatePiece::Placeholder(value) => expr_stores_whole_out_slot(value, slots, lends),
-            TemplatePiece::Literal(_) => false,
-        }),
-        _ => false,
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                collect_expression_initializers(element, out);
+            }
+            if let Some(fill) = fill {
+                collect_expression_initializers(fill, out);
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(value) = piece {
+                    collect_expression_initializers(value, out);
+                }
+            }
+        }
+        _ => {}
     }
 }

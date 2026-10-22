@@ -2927,8 +2927,8 @@ func main(): i32 {
 /// one `E10030` and emit no translation unit. The parameter-backed twins
 /// `slot = p.v;` differ by destination kind: a non-nullable writable view slot
 /// is caller-retained, so it rejects the parameter-backed store with `E10033`;
-/// a nullable `borrow T?` ownership slot keeps its accepted store, and the
-/// caller reads the written view.
+/// a nullable `borrow T?` ownership slot reports the foreign-store `E10034`
+/// once, and the caller reads the written view.
 #[test]
 fn should_reject_a_fresh_or_local_backed_view_stored_into_a_parameter_slot() {
     let fresh = r#"module spec.cpr.outslotfresh;
@@ -6388,27 +6388,26 @@ func main(): i32 { return run(1) - 120; }
 //
 // `outer(borrow slot: str?) { let b = ...; fill(b.v, borrow slot); }` lets the
 // callee store a view of `outer`'s frame local into a slot in `outer`'s
-// caller's frame. The callee cannot see the frame relation, so the judgment
-// belongs at the call site: a view argument whose backing is a frame local of
-// the caller, passed to a lend parameter that may write a further-out
-// out-slot, rejects like its direct twin with one `E10030`. The fresh
-// argument, the `str`-valued argument, and the array-literal spellings carry
-// the same judgment. The parameter-backed chain and the same-frame call keep
-// their acceptance.
+// caller's frame. The callee owns the store, so the callee-side judgment
+// reports one `E10034` for a foreign lend stored into its whole nullable
+// out-slot. The fresh argument, the `str`-valued argument, and the
+// array-literal spellings carry the same judgment; the array spelling keeps
+// its `E10033` field/element escape beside the store report. The
+// parameter-backed chain and the same-frame call also report `E10034` because
+// the stored source remains a different non-`take` lend.
 // ---------------------------------------------------------------------------
 
 /// A cross-frame out-slot pass-through rejects like its direct twin.
 ///
 /// `outer`'s local `b` dies with its frame while the caller's slot still
-/// reads the view, so `fill(b.v, borrow slot)` reports exactly one `E10030`
+/// reads the view, so `fill(b.v, borrow slot)` reports exactly one `E10034`
 /// and emits no translation unit; the fresh-argument spelling inside `outer`
 /// and the `middle` chain (`fill(borrow out2, mk().v)`) report the same one
-/// error, and the array literal `slot = [p, q]` adds the callee's own
-/// `E10033` field/element escape beside the caller's `E10030`. The
+/// store error, and the array literal `slot = [p, q]` adds the callee's own
+/// `E10033` field/element escape beside the store report. The
 /// parameter-backed chain (`outer(p: Box, borrow slot) { fill(p.v, borrow
-/// slot); }`) keeps its backing in the caller's frame and the same-frame call
-/// keeps the slot in the backing's frame: both are accepted, exit 0, and are
-/// memory-clean.
+/// slot); }`) and the same-frame call store a foreign lend too, so they also
+/// report `E10034` once.
 #[test]
 fn should_reject_a_cross_frame_out_slot_pass_through() {
     let parameter = r#"module spec.cpr.crossframeparam;
@@ -7133,15 +7132,14 @@ func main(): i32 {
 // xfaccept: the accepted cross-frame spellings of the owner resolution.
 //
 // A view through a carrier literal whose position a caller parameter backs,
-// and a local view of a parameter, both read storage the caller keeps: the
-// callee may store them into a further-out slot and the caller still reads
-// what it wrote. Both are accepted, build strictly, exit 0, and stay
-// memory-clean.
+// and a local view of a parameter, still name a foreign lend at the callee's
+// whole out-slot store. Both report `E10034` once; the caller-backed storage
+// remains readable but the store rule no longer accepts the source.
 // ---------------------------------------------------------------------------
 
-/// The caller-backed cross-frame spellings keep their acceptance.
+/// The caller-backed cross-frame spellings report the foreign store once.
 #[test]
-fn should_accept_the_caller_backed_cross_frame_spellings() {
+fn should_reject_the_caller_backed_cross_frame_spellings() {
     let carrier = r#"module spec.cpr.xfcarrier;
 
 import { String, stringOf } from std.text;

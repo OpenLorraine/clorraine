@@ -1456,15 +1456,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     || crate::types::contains_param(target_binding_ty);
                 let value_ty = self.ty(value);
                 let concrete_reports = self.is_out_slot_binding(id)
-                    && (is_view_like(&target_ty)
-                        || is_view_like(&value_ty)
-                        || value_ty.nullable);
+                    && (is_whole_slot_view(&target_ty)
+                        || is_whole_slot_view(&value_ty));
                 if projections.is_empty()
                     && self.bindings[id].mode == Mode::Borrow
                     && generic_maybe_nullable
                     && !concrete_reports
                 {
-                    if let Some(owner) = self.foreign_lend_store_root(value, id) {
+                    if let Some(owner) = self.whole_slot_store_root(value, id, true) {
                         let destination = self.bindings[id].name.clone();
                         let ir_name = self.bindings[id].ir_name.clone();
                         if self.recorded_whole_out_slot_store.insert((
@@ -1489,6 +1488,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                     slot_ty,
                                     source_ty,
                                     source_is_capture,
+                                    source_is_take: self.bindings[owner].mode == Mode::Take,
                                     writable_source,
                                     span: target.span,
                                 },
@@ -2430,10 +2430,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The value is static when its type is `static str` or every conditional
     /// arm is static; a static position outlives the call and is accepted.
     fn foreign_lend_store_root(&self, value: &Expr, destination: usize) -> Option<usize> {
+        self.whole_slot_store_root(value, destination, false)
+    }
+
+    /// The source root of a whole-slot store.
+    ///
+    /// `include_take` records a `take` root for the generic duty, which must
+    /// decide per instance whether the taken source is an accepted owning
+    /// value or a view that dies with the frame. The concrete judgment keeps
+    /// its existing `take` handling and passes `false`.
+    fn whole_slot_store_root(
+        &self,
+        value: &Expr,
+        destination: usize,
+        include_take: bool,
+    ) -> Option<usize> {
+        let value = super::expr::structural_wrapper_inner(value);
         if self.is_static_view_source(value) {
             return None;
         }
-        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+        if let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        {
+            if let Some(owner) = self
+                .whole_slot_store_root(then_value, destination, include_take)
+                .or_else(|| self.whole_slot_store_root(else_value, destination, include_take))
+            {
+                return Some(owner);
+            }
+        }
+        for atom in Self::storage_atoms(&self.store_source_provenance(value)) {
             let Provenance::Param(owner) = atom else {
                 continue;
             };
@@ -2441,7 +2470,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             }
             let binding = &self.bindings[owner];
-            if binding.kind == BindingKind::Param && binding.mode == Mode::Take {
+            if binding.kind == BindingKind::Param
+                && binding.mode == Mode::Take
+                && !include_take
+            {
                 continue;
             }
             if binding.capture_dies_with_frame {
@@ -2533,7 +2565,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if let (Some(destination), false) = (root_id, global) {
                 if let Some(owner) = self.foreign_lend_store_root(value, destination) {
                     let value_ty = self.ty(value);
-                    if is_view_like(target_ty) || is_view_like(&value_ty) || value_ty.nullable {
+                    if is_whole_slot_view(target_ty) || is_whole_slot_view(&value_ty) {
                         let name = self.bindings[owner].name.clone();
                         self.error(
                             "E10034",

@@ -119,6 +119,50 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str])
         "{tag}: a rejected program must not produce a translation unit"
     );
 }
+/// Asserts the front end rejected `source` with exactly one total error
+/// carrying `code`, and that no translation unit was written.
+///
+/// This is the one-report regression gate: unlike [`assert_rejected_once`],
+/// it fails when a second diagnostic of another code appears at the same
+/// store.
+fn assert_rejected_exactly_once(
+    tag: &str,
+    source: &str,
+    code: &str,
+    fragments: &[&str],
+) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "{tag}: expected exactly one error; stderr:\n{stderr}"
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
 
 /// Emits one host-profile program and asserts the front end accepted it.
 ///
@@ -2499,6 +2543,54 @@ func main(): i32 {
     assert_rejected_once(
         "foreignlocalcopy",
         local_copy,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+    );
+
+    let nullable_owned = r#"module spec.bsi.foreignnullableowned;
+
+import { String, stringOf } from std.text;
+
+func copy(v: String?, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: String? = stringOf("AA");
+    let slot: String? = null;
+    copy(v, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot)) - 2;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignnullableowned",
+        nullable_owned,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let mixed_conditional = r#"module spec.bsi.foreigncondmixed;
+
+import { String, stringOf } from std.text;
+
+func store(c: bool, p: str, borrow slot: str?): void {
+    let own: String = stringOf("AA");
+    let local: str = own;
+    slot = c ? p : local;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store(true, "AA", borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreigncondmixed",
+        mixed_conditional,
         "E10034",
         &["cannot release or store borrowed parameter 'p'"],
     );

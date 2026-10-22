@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::borrow::{is_view, is_view_like};
+use crate::borrow::{is_view, is_view_like, is_whole_slot_view};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
@@ -357,10 +357,26 @@ fn check_whole_out_slot_store_requirements(
                 continue;
             }
             let source = substitute_instance(&requirement.source_ty, &params, &instance.args);
+            if requirement.source_is_take {
+                if is_view(&source) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10030",
+                            format!(
+                                "borrow of '{}' does not live long enough",
+                                requirement.source
+                            ),
+                            requirement.span,
+                        )
+                        .with_help("finish the use before the owner's scope ends"),
+                    );
+                }
+                continue;
+            }
             if requirement.source_is_capture && !is_view(&source) {
                 continue;
             }
-            if is_view_like(&source) {
+            if is_whole_slot_view(&source) {
                 // A view source is duplicable, so the lend-move duty leaves it
                 // alone; the whole-slot rule owns the report.
             } else if !(source.nullable && requirement.writable_source) {

@@ -1405,6 +1405,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 needs_drop: false,
                 registration,
                 provenance: Provenance::None,
+                copy_source: None,
                 base: Some(base),
                 alias_root: None,
                 generated: false,

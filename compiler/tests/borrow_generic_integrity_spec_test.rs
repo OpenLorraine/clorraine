@@ -114,6 +114,50 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str])
         "{tag}: a rejected program must not produce a translation unit"
     );
 }
+/// Asserts the front end rejected `source` with exactly one total error
+/// carrying `code`, and that no translation unit was written.
+///
+/// This is the one-report regression gate: unlike [`assert_rejected_once`],
+/// it fails when a second diagnostic of another code appears at the same
+/// store.
+fn assert_rejected_exactly_once(
+    tag: &str,
+    source: &str,
+    code: &str,
+    fragments: &[&str],
+) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "{tag}: expected exactly one error; stderr:\n{stderr}"
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
 
 /// Compiles `source` and asserts the front end accepted it.
 ///
@@ -2944,4 +2988,65 @@ func main(): i32 {
     let output = run_memory("foreigntake", take);
     assert_no_asan("foreigntake", &output);
     assert_exit("foreigntake", &output, 3);
+
+    let local_copy = r#"module spec.bgi.foreignlocalcopy;
+
+func copy<T>(borrow v: T, borrow slot: T): void {
+    let t: T = v;
+    slot = t;
+}
+
+func main(): i32 {
+    let v: str? = "AA";
+    let slot: str? = null;
+    copy<str?>(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignlocalcopy",
+        local_copy,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let take_view = r#"module spec.bgi.foreigntakeview;
+
+func copy<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: str? = "AA";
+    let slot: str? = null;
+    copy<str?>(take v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreigntakeview",
+        take_view,
+        "E10030",
+        &["does not live long enough"],
+    );
+
+    let raw = r#"module spec.bgi.foreignraw;
+
+func copy<T>(borrow v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: raw u8? = null;
+    let slot: raw u8? = null;
+    copy<raw u8?>(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignraw",
+        raw,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
 }

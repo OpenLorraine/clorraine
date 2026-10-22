@@ -68,6 +68,12 @@ pub(super) struct Binding {
     pub(super) registration: u32,
     /// For a view binding, where its storage comes from.
     pub(super) provenance: Provenance,
+    /// The source a maybe-owning local was copied from.
+    ///
+    /// A `let t: T = v` copy keeps copy semantics at the declaration, so the
+    /// ordinary provenance stays local; the whole-out-slot judgment still
+    /// needs the original parameter root to recognize a later `slot = t`.
+    pub(super) copy_source: Option<Provenance>,
     /// An explicit place base that overrides the binding's usual local or
     /// parameter spelling.
     ///

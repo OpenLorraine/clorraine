@@ -387,7 +387,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         || FunctionChecker::mentions_call(value))
             })
             .map(|value| self.snapshot_copy_element_loans(value, lowered, &target, &[]));
+        let copy_provenance = decl
+            .value
+            .as_ref()
+            .map(|value| self.store_source_provenance(value));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
+        if let Some(source) = copy_provenance {
+            if !matches!(source, Provenance::None) {
+                self.bindings[id].copy_source = Some(source);
+            }
+        }
         if let Some(value) = &decl.value {
             self.transfer_opaque_store_duties(id, &copy_roots, value, &[], value.span);
         }
@@ -849,7 +858,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let copy_source = self.place_target(&decl.value);
         let mut copy_roots = BTreeSet::new();
         self.expr_view_roots(&decl.value, &mut copy_roots);
+        let copy_provenance = self.store_source_provenance(&decl.value);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
+        if !matches!(copy_provenance, Provenance::None) {
+            self.bindings[id].copy_source = Some(copy_provenance);
+        }
         self.transfer_opaque_store_duties(id, &copy_roots, &decl.value, &[], decl.span);
         self.set_place(
             id,
@@ -973,6 +986,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let effect = self.prepare_binding_effect(target, value, lowered);
+        let source = self.store_source_provenance(value);
+        if !matches!(source, Provenance::None) {
+            self.bindings[id].copy_source = Some(source);
+        }
         self.apply_binding_effect(id, effect, span);
     }
 

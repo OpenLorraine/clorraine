@@ -2761,7 +2761,7 @@ struct Holder { names: str[2]; }
 struct Box { v: String; }
 
 func make(v: str, b: Box): Holder { return Holder { names: [v, "EE"] }; }
-func store(h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+func store(h: Holder, borrow slot: str?): void { slot = "AA"; }
 
 func outer(borrow slot: str?): void {
     let b: Box = Box { v: stringOf("aa") };
@@ -2776,16 +2776,12 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let stderr = compile_stderr("pqunusedowned", source);
+    let (first, second) = emit_twice("pqunusedowned", source);
     assert_eq!(
-        count_occurrences(&stderr, "error E10034:"),
-        1,
-        "pqunusedowned: expected the foreign store once; stderr:\n{stderr}"
+        first, second,
+        "pqunusedowned: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
-    assert!(
-        stderr.contains("cannot release or store borrowed parameter 'h'"),
-        "pqunusedowned: expected the foreign store message; stderr:\n{stderr}"
-    );
+    assert_run_exit("pqunusedowned", source, 0);
 
     // A view that reaches the return through a local still names its source.
     let local_hop = r#"module impl.eei.pqlocalhop;

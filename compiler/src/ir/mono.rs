@@ -224,6 +224,12 @@ pub struct RequiresWholeOutSlotStore {
     pub source_ty: Ty,
     /// True when the source is a lifted-lambda capture.
     pub source_is_capture: bool,
+    /// True when the source parameter was declared `take`.
+    ///
+    /// A taken owning source is accepted at a nullable owning slot; a taken
+    /// view source dies with the frame and reports `E10030` after
+    /// substitution.
+    pub source_is_take: bool,
     /// True when the source is a writable `borrow` lend.
     ///
     /// A read-only source at a nullable owning slot is already the lend-move

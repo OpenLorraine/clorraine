@@ -3644,12 +3644,62 @@ func demo(): i32 {
 func main(): i32 { return demo(); }
 "#;
 
-/// A cross-frame pass-through reports once at the call, the twins stay clean.
+/// A local copy inside the callee still keeps the foreign root.
+const CROSS_FRAME_COPY_SOURCE: &str = r#"module spec.cprimpl.implxfcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str = p;
+    slot = s;
+}
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+
+/// A static-field store must not hide the caller's frame report.
+const CROSS_FRAME_STATIC_SOURCE: &str = r#"module spec.cprimpl.implxfstatic;
+
+import { String, stringOf } from std.text;
+
+struct Holder { tag: static str; }
+struct Box { v: String; w: String; }
+
+func pick(h: Holder, q: str, borrow slot: str?): void {
+    slot = h.tag;
+}
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    let h: Holder = Holder { tag: "AA" };
+    pick(h, b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+
+/// A cross-frame pass-through reports once at the callee store.
 ///
 /// The local and fresh spellings report one `E10034` at the fill; the array
 /// spelling keeps its `E10033` and `E10030` diagnostics. The parameter-backed
-/// chain and the same-frame call report `E10034` and write no translation
-/// unit.
+/// chain, the same-frame call, and the local-copy spelling report `E10034`
+/// once. A callee whose store is a static field must not hide the caller's
+/// `E10030` frame report.
 #[test]
 fn should_reject_a_cross_frame_pass_through_once() {
     let tag = "implxflocal";
@@ -3658,6 +3708,8 @@ fn should_reject_a_cross_frame_pass_through_once() {
     assert_rejected_code_set(tag, CROSS_FRAME_ARRAY_SOURCE, &["E10033", "E10030"]);
     assert_rejected("implxfparam", CROSS_FRAME_PARAM_SOURCE, "E10034", 1);
     assert_rejected("implxfsame", CROSS_FRAME_SAME_SOURCE, "E10034", 1);
+    assert_rejected("implxfcopy", CROSS_FRAME_COPY_SOURCE, "E10034", 1);
+    assert_rejected("implxfstatic", CROSS_FRAME_STATIC_SOURCE, "E10030", 1);
 }
 
 /// A module view of a fresh call's member retains the member's storage.

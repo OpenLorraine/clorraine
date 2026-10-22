@@ -97,6 +97,14 @@ pub fn is_view_like(ty: &Ty) -> bool {
     }
 }
 
+/// True for a type the whole-out-slot store rule treats as a view source.
+///
+/// This is [`is_view_like`] plus the raw-pointer spellings that the source
+/// matrix lists in the view-slot column.
+pub fn is_whole_slot_view(ty: &Ty) -> bool {
+    is_view_like(ty) || matches!(ty.kind, TyKind::Raw(_))
+}
+
 /// True for a type that may be a lifetime-elision candidate.
 ///
 /// Views, handles, raw pointers, and `cstring` all borrow or reach storage, so

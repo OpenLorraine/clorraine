@@ -2580,6 +2580,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The parameter source a stored value keeps after local copies.
+    ///
+    /// A view local already carries its source in `provenance`. A maybe-owning
+    /// local copy does not: the copy semantics stay local until the instance
+    /// is known, so `copy_source` records the source separately for the
+    /// whole-out-slot judgment.
+    pub(super) fn store_source_provenance(&self, expr: &Expr) -> Provenance {
+        if let ExprKind::Name(_) = &expr.kind {
+            if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
+                if projections.is_empty() {
+                    if let Some(source) = &self.bindings[id].copy_source {
+                        return source.clone();
+                    }
+                }
+            }
+        }
+        self.view_provenance(expr)
+    }
+
     /// The provenance of a view produced by a call.
     ///
     /// The call resolves its single reborrowed source through

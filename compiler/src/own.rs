@@ -23,7 +23,7 @@ use crate::ast::{
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
-    is_view_like, LoanKind, Provenance,
+    is_view_like, is_whole_slot_view, LoanKind, Provenance,
 };
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ffi::{self, UnsafeOp};
@@ -1194,6 +1194,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             needs_drop,
             registration,
             provenance,
+            copy_source: None,
             base: None,
             alias_root: None,
             generated: false,

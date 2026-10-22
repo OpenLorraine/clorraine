@@ -80,20 +80,6 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     (scratch, output, c_path)
 }
 
-/// Compiles an existing source file for the host profile.
-fn compile_path(tag: &str, source_path: &Path) -> (ScratchDir, Output, PathBuf) {
-    let scratch = ScratchDir::new(tag);
-    let c_path = scratch.path().join("out.c");
-    let output = run_clc(&[
-        "--profile".to_owned(),
-        "host".to_owned(),
-        "-o".to_owned(),
-        c_path.display().to_string(),
-        source_path.display().to_string(),
-    ]);
-    (scratch, output, c_path)
-}
-
 /// Asserts one compiler run rejected the program with exactly one `code`
 /// diagnostic, that the message contains every fragment and none of the
 /// absent markers, and that no translation unit is written.
@@ -138,19 +124,6 @@ fn assert_rejected_output(
 /// Compiles `source` and asserts the rejection contract on the output.
 fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str], absent: &[&str]) {
     let (_scratch, output, c_path) = compile_only(tag, source);
-    assert_rejected_output(tag, &output, &c_path, code, fragments, absent);
-}
-
-/// Compiles an existing file and asserts the rejection contract on the
-/// output.
-fn assert_rejected_once_at(
-    tag: &str,
-    source_path: &Path,
-    code: &str,
-    fragments: &[&str],
-    absent: &[&str],
-) {
-    let (_scratch, output, c_path) = compile_path(tag, source_path);
     assert_rejected_output(tag, &output, &c_path, code, fragments, absent);
 }
 
@@ -2333,8 +2306,9 @@ func main(): i32 {
 /// call.
 ///
 /// `store(make(a.v), borrow slot)` hands the callee a carrier whose view reads
-/// the caller's local `a`, so the call boundary reports `E10030` once. A
-/// static argument stays accepted and clean.
+/// the caller's local `a`; the callee's whole out-slot store reports
+/// `E10034` once. The static-argument control still stores a foreign carrier
+/// field, so it reports the same store error and no caller-side `E10030`.
 #[test]
 fn should_reject_an_inline_call_carrier_with_a_frame_backing() {
     let source = r#"module spec.eei.inlinecarrier;
