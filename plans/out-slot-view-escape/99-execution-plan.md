@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 14/27 tasks (52%)
-> **Last Updated**: 2026-10-22 01:45
+> **Progress**: 15/27 tasks (56%)
+> **Last Updated**: 2026-10-22 02:01
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -165,7 +165,7 @@ Notes:
   existing `RequiresStorableSlot` rejection and is not an acceptance
   control; a non-nullable duplicable slot accepted; the existing
   `both-generic` `E10034` unchanged. ✅ (completed: 2026-10-22 01:16)
-- [ ] 1.1.3 Retarget the explicit pins: `mixedcarrier` and `aggoutslot`
+- [~] 1.1.3 Retarget the explicit pins: `mixedcarrier` and `aggoutslot`
   `E10030` → `E10034`; `aggstatic` accepted → `E10034` (the recorded
   static-array precision loss). For `outslotpartwide` and `closeout-st14`,
   classify by intent: if the test asserts the foreign store, retarget to
@@ -179,7 +179,8 @@ Notes:
   added `E10034`); split
   `should_accept_and_run_when_a_slot_instantiation_is_nullable` so the `take`
   and null-slice sub-cases stay accepted and the `copy<String?>` sub-case
-  becomes `E10034`.
+  becomes `E10034`. ⏳ (cpr pins migrated: 2026-10-22 02:01; the
+  borrow-store, eval, def-closeout, and capture pins remain)
 - [x] 1.1.4 Inventory every whole-binding store into a `borrow` slot (or a
   captured whole out-slot) whose source is a non-`take` lend, across all
   `compiler/tests/*.rs` and `compiler/src/own/tests.rs`; start from the 188
@@ -195,10 +196,10 @@ Notes:
   static-array precision loss, or incidental setup; record the final count
   and file list in the phase notes under `$CODEOPS_TMPDIR`.
   ✅ (completed: 2026-10-22 01:45)
-- [ ] 1.1.5 Migrate `conditional_projection_residue_spec_test.rs`
+- [x] 1.1.5 Migrate `conditional_projection_residue_spec_test.rs`
   (103 occurrences): retarget the foreign pass-through acceptances to
   `E10034`; rewrite incidental setup to a static or `take` source; keep the
-  static and own-value controls accepted.
+  static and own-value controls accepted. ✅ (completed: 2026-10-22 02:01)
 - [ ] 1.1.6 Migrate `conditional_projection_residue_impl_test.rs`
   (69 occurrences): the same classification; update the emission and
   byte-identity pins for the accepted programs.

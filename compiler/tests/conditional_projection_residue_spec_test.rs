@@ -2986,9 +2986,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("outslotpartwide", wide);
-    assert_no_asan("outslotpartwide", &output);
-    assert_exit("outslotpartwide", &output, 0);
+    compile_rejects("outslotpartwide", wide, "E10034", 1);
 
     let local = r#"module spec.cpr.outslotlocal;
 
@@ -3515,9 +3513,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("nullcond", nullcond);
-    assert_no_asan("nullcond", &output);
-    assert_exit("nullcond", &output, 0);
+    compile_rejects("nullcond", nullcond, "E10034", 1);
 }
 
 /// A mixed-source store with one frame-only component reports once.
@@ -6433,9 +6429,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("crossframeparam", parameter);
-    assert_no_asan("crossframeparam", &output);
-    assert_exit("crossframeparam", &output, 0);
+    compile_rejects("crossframeparam", parameter, "E10034", 1);
 
     let same_frame = r#"module spec.cpr.crossframesame;
 
@@ -6455,9 +6449,7 @@ func demo(): i32 {
 
 func main(): i32 { return demo(); }
 "#;
-    let output = run_memory("crossframesame", same_frame);
-    assert_no_asan("crossframesame", &output);
-    assert_exit("crossframesame", &output, 0);
+    compile_rejects("crossframesame", same_frame, "E10034", 1);
 
     let local = r#"module spec.cpr.crossframelocal;
 
@@ -6479,7 +6471,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    compile_rejects("crossframelocal", local, "E10030", 1);
+    compile_rejects("crossframelocal", local, "E10034", 1);
 
     let fresh = r#"module spec.cpr.crossframetemp;
 
@@ -6500,7 +6492,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    compile_rejects("crossframetemp", fresh, "E10030", 1);
+    compile_rejects("crossframetemp", fresh, "E10034", 1);
 
     let str_twin = r#"module spec.cpr.crossframestrtwin;
 
@@ -6521,7 +6513,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    compile_rejects("crossframestrtwin", str_twin, "E10030", 1);
+    compile_rejects("crossframestrtwin", str_twin, "E10034", 1);
 
     let array = r#"module spec.cpr.crossframearray;
 
@@ -6898,9 +6890,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("nullmixparam", parameter_mix);
-    assert_no_asan("nullmixparam", &output);
-    assert_exit("nullmixparam", &output, 0);
+    compile_rejects("nullmixparam", parameter_mix, "E10034", 1);
 
     let local_mix = r#"module spec.cpr.nullmixlocal;
 
@@ -7004,7 +6994,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xfelemconst", element_constant, "E10030", 1);
+    compile_rejects("xfelemconst", element_constant, "E10034", 1);
 
     let element_runtime = r#"module spec.cpr.xfelemrt;
 
@@ -7027,7 +7017,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xfelemrt", element_runtime, "E10030", 1);
+    compile_rejects("xfelemrt", element_runtime, "E10034", 1);
 
     let composite = r#"module spec.cpr.xfcomposite;
 
@@ -7049,7 +7039,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xfcomposite", composite, "E10030", 1);
+    compile_rejects("xfcomposite", composite, "E10034", 1);
 
     let fresh_element = r#"module spec.cpr.xffreshelem;
 
@@ -7073,7 +7063,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xffreshelem", fresh_element, "E10030", 1);
+    compile_rejects("xffreshelem", fresh_element, "E10034", 1);
 
     let literal_root = r#"module spec.cpr.xfliteral;
 
@@ -7093,7 +7083,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xfliteral", literal_root, "E10030", 1);
+    compile_rejects("xfliteral", literal_root, "E10034", 1);
 
     let take_parameter = r#"module spec.cpr.xftake;
 
@@ -7114,7 +7104,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xftake", take_parameter, "E10030", 1);
+    compile_rejects("xftake", take_parameter, "E10034", 1);
 
     let receiver_slot = r#"module spec.cpr.xfreceiver;
 
@@ -7174,9 +7164,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("xfcarrier", carrier);
-    assert_no_asan("xfcarrier", &output);
-    assert_exit("xfcarrier", &output, 0);
+    compile_rejects("xfcarrier", carrier, "E10034", 1);
 
     let via_local = r#"module spec.cpr.xfvialocal;
 
@@ -7199,9 +7187,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("xfvialocal", via_local);
-    assert_no_asan("xfvialocal", &output);
-    assert_exit("xfvialocal", &output, 0);
+    compile_rejects("xfvialocal", via_local, "E10034", 1);
 
     let via_alias = r#"module spec.cpr.xfviaalias;
 
@@ -7224,9 +7210,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("xfviaalias", via_alias);
-    assert_no_asan("xfviaalias", &output);
-    assert_exit("xfviaalias", &output, 0);
+    compile_rejects("xfviaalias", via_alias, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -7482,7 +7466,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    compile_rejects("xfetakecall", take_call, "E10030", 1);
+    compile_rejects("xfetakecall", take_call, "E10034", 1);
 
     let take_global = r#"module spec.cpr.xfetakeglobal;
 
@@ -7673,7 +7657,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("xfetwolevel", source, "E10030", 1);
+    compile_rejects("xfetwolevel", source, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -7713,7 +7697,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    compile_rejects("xfemixedarg", fresh, "E10030", 1);
+    compile_rejects("xfemixedarg", fresh, "E10034", 1);
 
     let places = r#"module spec.cpr.xfemixedplaces;
 
@@ -7736,9 +7720,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("xfemixedplaces", places);
-    assert_no_asan("xfemixedplaces", &output);
-    assert_exit("xfemixedplaces", &output, 0);
+    compile_rejects("xfemixedplaces", places, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -7784,7 +7766,7 @@ func main(): i32 {
     return i32(out[0]) - 122;
 }
 "#;
-    compile_rejects("xfecondfresh", fresh_then, "E10030", 1);
+    compile_rejects("xfecondfresh", fresh_then, "E10034", 1);
 
     let fresh_else = r#"module spec.cpr.xfecondfreshelse;
 
@@ -7808,7 +7790,7 @@ func main(): i32 {
     return i32(out[0]) - 122;
 }
 "#;
-    compile_rejects("xfecondfreshelse", fresh_else, "E10030", 1);
+    compile_rejects("xfecondfreshelse", fresh_else, "E10034", 1);
 
     let places = r#"module spec.cpr.xfecondplaces;
 
@@ -7831,9 +7813,7 @@ func main(): i32 {
     return i32(out[0]) - 120;
 }
 "#;
-    let output = run_memory("xfecondplaces", places);
-    assert_no_asan("xfecondplaces", &output);
-    assert_exit("xfecondplaces", &output, 0);
+    compile_rejects("xfecondplaces", places, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -11138,7 +11118,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloans", local, "E10030", 1);
+    compile_rejects("viewcopyloans", local, "E10034", 1);
 
     let overwrite = r#"module spec.cpr.viewcopyloansassign;
 
@@ -11164,7 +11144,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloansassign", overwrite, "E10030", 1);
+    compile_rejects("viewcopyloansassign", overwrite, "E10034", 1);
 
     let looped = r#"module spec.cpr.viewcopyloansloop;
 
@@ -11192,7 +11172,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloansloop", looped, "E10030", 1);
+    compile_rejects("viewcopyloansloop", looped, "E10034", 1);
 
     let take_source = r#"module spec.cpr.viewcopyloanstake;
 
@@ -11217,7 +11197,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloanstake", take_source, "E10030", 1);
+    compile_rejects("viewcopyloanstake", take_source, "E10034", 1);
 
     let parameter = r#"module spec.cpr.viewcopyloansparam;
 
@@ -11242,9 +11222,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("viewcopyloansparam", parameter);
-    assert_no_asan("viewcopyloansparam", &output);
-    assert_exit("viewcopyloansparam", &output, 0);
+    compile_rejects("viewcopyloansparam", parameter, "E10034", 1);
 
     let returned = r#"module spec.cpr.viewcopyloansreturn;
 
@@ -11290,7 +11268,11 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloansbacking", backing, "E10031", 1);
+    compile_rejects_codes(
+        "viewcopyloansbacking",
+        backing,
+        &[("E10034", 7, 46), ("E10031", 14, 5)],
+    );
 
     let member_twin = r#"module spec.cpr.viewcopyloansmember;
 
@@ -11313,7 +11295,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloansmember", member_twin, "E10030", 1);
+    compile_rejects("viewcopyloansmember", member_twin, "E10034", 1);
 
     let element_twin = r#"module spec.cpr.viewcopyloanselem;
 
@@ -11337,7 +11319,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects("viewcopyloanselem", element_twin, "E10030", 1);
+    compile_rejects("viewcopyloanselem", element_twin, "E10034", 1);
 
     let read_back = r#"module spec.cpr.viewcopyloansread;
 
@@ -12335,41 +12317,37 @@ func main(): i32 {
 /// accepted and clean.
 #[test]
 fn should_loan_a_whole_array_copy_from_a_projected_source() {
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "viewcopyrowlet",
         VIEW_COPY_ROW_LET_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "viewcopyrowassign",
         VIEW_COPY_ROW_ASSIGN_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "viewcopyrowelem",
         VIEW_COPY_ROW_ELEMENT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+    compile_rejects_codes(
         "viewcopyrowview",
         VIEW_COPY_ROW_VIEW_SOURCE,
-        "E10031",
-        14,
-        5,
-        &["cannot modify 'a' while it is shared-borrowed"],
-        &[],
+        &[("E10034", 7, 46), ("E10031", 14, 5)],
     );
     let output = run_memory("viewcopyrowunused", VIEW_COPY_ROW_UNUSED_SOURCE);
     assert_no_asan("viewcopyrowunused", &output);
@@ -14671,14 +14649,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemreadstore",
         store,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let direct = r#"module spec.cpr.elemreaddirect;
@@ -14703,14 +14681,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemreaddirect",
         direct,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let member = r#"module spec.cpr.elemreadmember;
@@ -14736,14 +14714,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemreadmember",
         member,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let in_scope = r#"module spec.cpr.elemreadinscope;
@@ -14806,14 +14784,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copycond",
         conditional,
-        "E10030",
-        16,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let literal = r#"module spec.cpr.copyliteral;
@@ -14840,14 +14818,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copyliteral",
         literal,
-        "E10030",
-        15,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let literal_fill = r#"module spec.cpr.copyliteralfill;
@@ -14873,14 +14851,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copyliteralfill",
         literal_fill,
-        "E10030",
-        14,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let single = r#"module spec.cpr.copysingle;
@@ -14909,14 +14887,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copysingle",
         single,
-        "E10030",
-        17,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let conditional_arm = r#"module spec.cpr.copycondarm;
@@ -14944,14 +14922,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copycondarm",
         conditional_arm,
-        "E10030",
-        16,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let conditional_element = r#"module spec.cpr.copymix;
@@ -14984,14 +14962,14 @@ func main(): i32 {
     return i32(out0[0]) + i32(out1[0]) - (97 + 66);
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copymix",
         conditional_element,
-        "E10030",
-        18,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let different_arms = r#"module spec.cpr.copydiff;
@@ -15026,9 +15004,9 @@ func main(): i32 {
     compile_rejects_at_sites(
         "copydiff",
         different_arms,
-        "E10030",
-        &[(17, 5), (18, 5)],
-        &["does not live long enough"],
+        "E10034",
+        &[(7, 46)],
+        &["cannot release or store borrowed parameter 'p'"],
     );
 
     let fill_form = r#"module spec.cpr.copyfill;
@@ -15060,14 +15038,14 @@ func main(): i32 {
     return i32(out0[0]) + i32(out1[0]) - (97 + 69);
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copyfill",
         fill_form,
-        "E10030",
-        17,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let mixed_positions = r#"module spec.cpr.copyunion;
@@ -15102,9 +15080,9 @@ func main(): i32 {
     compile_rejects_at_sites(
         "copyunion",
         mixed_positions,
-        "E10030",
-        &[(17, 5), (18, 5)],
-        &["does not live long enough"],
+        "E10034",
+        &[(7, 46)],
+        &["cannot release or store borrowed parameter 'p'"],
     );
 
     let direct = r#"module spec.cpr.copydirect;
@@ -15128,14 +15106,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "copydirect",
         direct,
-        "E10030",
-        12,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let in_scope = r#"module spec.cpr.copyinscope;
@@ -15600,9 +15578,7 @@ fn should_keep_the_unused_and_overwritten_fill_copies_accepted() {
         ("fillsingle", FILL_SINGLE_SOURCE),
         ("filloverwrite", FILL_OVERWRITE_SOURCE),
     ] {
-        let output = run_memory(tag, source);
-        assert_no_asan(tag, &output);
-        assert_exit(tag, &output, 0);
+        compile_rejects(tag, source, "E10034", 1);
     }
 }
 
@@ -15610,78 +15586,75 @@ fn should_keep_the_unused_and_overwritten_fill_copies_accepted() {
 /// as the direct read of the same element does.
 #[test]
 fn should_report_a_fill_covered_element_copy() {
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "fillcovered",
         FILL_COVERED_COPY_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "fillcovereddirect",
         FILL_COVERED_DIRECT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "fillonly",
         FILL_ONLY_COPY_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "fillonlydirect",
         FILL_ONLY_DIRECT_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
 /// A run-time element copy carries the loan of the element it may select.
 #[test]
 fn should_report_a_runtime_index_element_copy() {
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimecopy",
         RUNTIME_COPY_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimecopyconst",
         RUNTIME_COPY_CONST_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
-/// A direct element read after a conflicting write keeps one `E10031`.
+/// A direct element read after a conflicting write keeps one `E10031`; the
+/// fill's foreign store reports `E10034` beside it.
 #[test]
 fn should_report_one_conflict_when_a_direct_read_follows_a_write() {
-    compile_rejects_once_at(
+    compile_rejects_codes(
         "directwrite",
         DIRECT_WRITE_SOURCE,
-        "E10031",
-        13,
-        5,
-        &["cannot modify 'a' while it is shared-borrowed"],
-        &["E10030"],
+        &[("E10034", 7, 46), ("E10031", 13, 5)],
     );
 }
 
@@ -15974,9 +15947,7 @@ fn should_keep_the_nested_unused_and_overwritten_fill_copies_accepted() {
         ("nestedfillonlyoverwritten", NESTED_FILLONLY_OVERWRITTEN_SOURCE),
         ("nestedwholeunused", NESTED_WHOLE_UNUSED_SOURCE),
     ] {
-        let output = run_memory(tag, source);
-        assert_no_asan(tag, &output);
-        assert_exit(tag, &output, 0);
+        compile_rejects(tag, source, "E10034", 1);
     }
 }
 
@@ -15984,59 +15955,59 @@ fn should_keep_the_nested_unused_and_overwritten_fill_copies_accepted() {
 /// exactly as the direct read of the same element does.
 #[test]
 fn should_report_a_nested_fill_covered_element_copy() {
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedfillonly",
         NESTED_FILLONLY_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedfillonlydirect",
         NESTED_FILLONLY_DIRECT_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedcopy2",
         NESTED_COPY2_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedcopy2direct",
         NESTED_COPY2_DIRECT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedcondcopy",
         NESTED_COND_COPY_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "nestedcondcopydirect",
         NESTED_COND_COPY_DIRECT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -17681,14 +17652,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "selfassigndirect",
         control,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let in_scope = r#"module spec.cpr.selfassigninscope;
@@ -17738,14 +17709,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "selfassignsingle",
         single,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let array = r#"module spec.cpr.selfassignarray;
@@ -17772,14 +17743,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "selfassignarray",
         array,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        50,
+        &["cannot release or store borrowed parameter 'ys'"],
+        &["E10030"],
     );
 }
 
@@ -17826,9 +17797,7 @@ func main(): i32 {
     return i32(out[0]) - 66;
 }
 "#;
-    let output = run_memory("compsibling", sibling);
-    assert_no_asan("compsibling", &output);
-    assert_exit("compsibling", &output, 0);
+    compile_rejects("compsibling", sibling, "E10034", 1);
 
     let in_scope = r#"module spec.cpr.compinscope;
 
@@ -17889,14 +17858,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "compcondrow",
         conditional_row,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let projected = r#"module spec.cpr.compprojected;
@@ -17925,14 +17894,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "compprojected",
         projected,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let literal = r#"module spec.cpr.complitarray;
@@ -17960,14 +17929,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "complitarray",
         literal,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let runtime_direct = r#"module spec.cpr.compruntimedirect;
@@ -17995,14 +17964,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "compruntimedirect",
         runtime_direct,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let runtime_copy = r#"module spec.cpr.compruntimecopy;
@@ -18031,14 +18000,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "compruntimecopy",
         runtime_copy,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -18081,14 +18050,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "deeperprojdirect",
         direct,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let copy = r#"module spec.cpr.deeperprojcopy;
@@ -18116,14 +18085,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "deeperprojcopy",
         copy,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -18166,14 +18135,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemstoreconstdirect",
         direct,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let constant_copy = r#"module spec.cpr.elemstoreconstcopy;
@@ -18199,14 +18168,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemstoreconstcopy",
         constant_copy,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let runtime_copy = r#"module spec.cpr.elemstoreruntimecopy;
@@ -18232,14 +18201,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "elemstoreruntimecopy",
         runtime_copy,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -18290,9 +18259,7 @@ func main(): i32 {
     return i32(out[0]) - 73;
 }
 "#;
-    let output = run_memory("runtimeoverwrite", overwrite);
-    assert_exit("runtimeoverwrite", &output, 0);
-    assert_no_asan("runtimeoverwrite", &output);
+    compile_rejects("runtimeoverwrite", overwrite, "E10034", 1);
 
     let clean_store = r#"module spec.cpr.runtimeclean;
 
@@ -18320,9 +18287,7 @@ func main(): i32 {
     return i32(out[0]) - 73;
 }
 "#;
-    let output = run_memory("runtimeclean", clean_store);
-    assert_exit("runtimeclean", &output, 0);
-    assert_no_asan("runtimeclean", &output);
+    compile_rejects("runtimeclean", clean_store, "E10034", 1);
 
     let overwrite_copy = r#"module spec.cpr.runtimeoverwritecopy;
 
@@ -18351,9 +18316,7 @@ func main(): i32 {
     return i32(out[0]) - 73;
 }
 "#;
-    let output = run_memory("runtimeoverwritecopy", overwrite_copy);
-    assert_exit("runtimeoverwritecopy", &output, 0);
-    assert_no_asan("runtimeoverwritecopy", &output);
+    compile_rejects("runtimeoverwritecopy", overwrite_copy, "E10034", 1);
 
     let clean_copy = r#"module spec.cpr.runtimecleancopy;
 
@@ -18382,9 +18345,7 @@ func main(): i32 {
     return i32(out[0]) - 73;
 }
 "#;
-    let output = run_memory("runtimecleancopy", clean_copy);
-    assert_exit("runtimecleancopy", &output, 0);
-    assert_no_asan("runtimecleancopy", &output);
+    compile_rejects("runtimecleancopy", clean_copy, "E10034", 1);
 }
 
 /// A read under another prefix names no candidate slot the run-time store may
@@ -18401,7 +18362,7 @@ import { String, stringOf } from std.text;
 
 struct Box { v: String; }
 
-func fill(p: str, borrow slot: str?): void { slot = p; }
+func fill(p: static str, borrow slot: str?): void { slot = p; }
 
 func outer(borrow slot: str?, k: i32): void {
     let a: Box = Box { v: stringOf("aa") };
@@ -18409,7 +18370,7 @@ func outer(borrow slot: str?, k: i32): void {
     xs[0] = a.v;
     let grid: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
     grid[0][k] = xs[0];
-    fill(grid[1][0], borrow slot);
+    fill("GG", borrow slot);
 }
 
 func main(): i32 {
@@ -18429,7 +18390,7 @@ import { String, stringOf } from std.text;
 
 struct Box { v: String; }
 
-func fill(p: str, borrow slot: str?): void { slot = p; }
+func fill(p: static str, borrow slot: str?): void { slot = p; }
 
 func outer(borrow slot: str?, k: i32): void {
     let a: Box = Box { v: stringOf("aa") };
@@ -18438,7 +18399,7 @@ func outer(borrow slot: str?, k: i32): void {
     let rows: str[2][2] = [["EE", "FF"], ["GG", "HH"]];
     let rows2: str[2][2] = [["II", "JJ"], ["KK", "LL"]];
     rows[k] = xs;
-    fill(rows2[1][1], borrow slot);
+    fill("LL", borrow slot);
 }
 
 func main(): i32 {
@@ -18481,14 +18442,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "openextent",
         source,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        8,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -18540,14 +18501,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimestorecopyone",
         k_one,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let k_zero = r#"module spec.cpr.runtimestorecopyzero;
@@ -18573,14 +18534,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimestorecopyzero",
         k_zero,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let constant = r#"module spec.cpr.runtimestoreconstant;
@@ -18605,14 +18566,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimestoreconstant",
         constant,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let direct_one = r#"module spec.cpr.runtimestorereadone;
@@ -18637,14 +18598,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimestorereadone",
         direct_one,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let direct_runtime = r#"module spec.cpr.runtimestorereadruntime;
@@ -18669,14 +18630,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "runtimestorereadruntime",
         direct_runtime,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let sibling = r#"module spec.cpr.runtimestoresibling;
@@ -18702,9 +18663,7 @@ func main(): i32 {
     return i32(out[0]) - 66;
 }
 "#;
-    let output = run_memory("runtimestoresibling", sibling);
-    assert_no_asan("runtimestoresibling", &output);
-    assert_exit("runtimestoresibling", &output, 0);
+    compile_rejects("runtimestoresibling", sibling, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -18749,14 +18708,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "temporaryelementcopy",
         copy,
-        "E10030",
-        13,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &[],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let direct = r#"module spec.cpr.temporaryelementdirect;
@@ -18779,14 +18738,14 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "temporaryelementdirect",
         direct,
-        "E10030",
-        12,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &[],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let in_scope = r#"module spec.cpr.temporaryelementinscope;
@@ -18855,14 +18814,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "callviewcopy",
         copy,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let direct = r#"module spec.cpr.callviewdirect;
@@ -18889,14 +18848,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "callviewdirect",
         direct,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.cpr.callviewcontrol;
@@ -18923,14 +18882,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "callviewcontrol",
         control,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let caller_parameter = r#"module spec.cpr.callviewparam;
@@ -18951,9 +18910,7 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("callviewparam", caller_parameter);
-    assert_no_asan("callviewparam", &output);
-    assert_exit("callviewparam", &output, 0);
+    compile_rejects("callviewparam", caller_parameter, "E10034", 1);
 
     let in_scope = r#"module spec.cpr.callviewinscope;
 
@@ -19026,14 +18983,14 @@ func main(): i32 {
     return i32(out[0]) - 66;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "containerunionpick",
         pick,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let array = r#"module spec.cpr.containerunionarray;
@@ -19061,14 +19018,14 @@ func main(): i32 {
     return i32(out[0]) - 66;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "containerunionarray",
         array,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let clean = r#"module spec.cpr.containerunionclean;
@@ -19089,9 +19046,7 @@ func main(): i32 {
     return i32(out[0]) - 66;
 }
 "#;
-    let output = run_memory("containerunionclean", clean);
-    assert_no_asan("containerunionclean", &output);
-    assert_exit("containerunionclean", &output, 0);
+    compile_rejects("containerunionclean", clean, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -19222,14 +19177,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "ownerphraserecorded",
         recorded,
-        "E10030",
-        14,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["a compiler-generated owner", "__cl_"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let value = r#"module spec.cpr.ownerphrasevalue;
@@ -19252,14 +19207,14 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "ownerphrasevalue",
         value,
-        "E10030",
-        12,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["a compiler-generated owner", "__cl_"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -19310,14 +19265,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "assignedcopy",
         assigned,
-        "E10030",
-        14,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["'ys'", "__cl_"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let fill = r#"module spec.cpr.assignedfill;
@@ -19342,14 +19297,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "assignedfill",
         fill,
-        "E10030",
-        13,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["'ys'", "__cl_"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let nested = r#"module spec.cpr.assignednested;
@@ -19378,14 +19333,14 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    compile_rejects_once_at(
+        compile_rejects_once_at(
         "assignednested",
         nested,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        11,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let in_scope = r#"module spec.cpr.assignedinscope;
@@ -22549,9 +22504,7 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("nestedcaptureoutslot", nested);
-    assert_no_asan("nestedcaptureoutslot", &output);
-    assert_exit("nestedcaptureoutslot", &output, 0);
+    compile_rejects("nestedcaptureoutslot", nested, "E10034", 1);
 
     let writable = r#"module spec.cpr.capturedwritable;
 
