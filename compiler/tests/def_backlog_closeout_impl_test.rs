@@ -930,7 +930,8 @@ func main(): i32 {
 /// A `String?` slot is `ClString *`, a `File?` slot `BPTR *`, a `str?` slot
 /// `ClStr *`, and a slice `T[]?` slot `ClSlice_i32 *`; each call takes the
 /// address of the caller's exact place. The value parameter keeps its own
-/// spelling, so the fix changes only the out-slot.
+/// spelling, so the fix changes only the out-slot. The static and null
+/// sources isolate that lowering from the foreign-lend store rule.
 #[test]
 fn should_spell_nullable_borrow_out_slots_as_pointers_when_the_kinds_are_passed() {
     let source = r#"module impl.closeout.outslot;
@@ -943,7 +944,7 @@ func fillString(take v: String, borrow slot: String?): void {
     slot = v;
 }
 
-func fillStr(v: str, borrow slot: str?): void {
+func fillStr(v: static str, borrow slot: str?): void {
     slot = v;
 }
 
@@ -952,7 +953,7 @@ func fillFile(take v: File, borrow slot: File?): void {
 }
 
 func fillSlice(v: i32[], borrow slot: i32[]?): void {
-    slot = v;
+    slot = null;
 }
 
 func main(): i32 {

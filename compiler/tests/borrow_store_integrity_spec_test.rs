@@ -1878,8 +1878,8 @@ func main(): i32 {
 /// A mixed aggregate carrier is judged field by field at the call boundary.
 ///
 /// The carrier records a known-safe static `tag` position; its owned `name`
-/// field still dies with the caller's frame, so storing a view of it into a
-/// caller slot reports `E10030` once. A view-only carrier over static storage
+/// field belongs to a different lend, so storing a view of it into a caller
+/// out-slot reports `E10034` once. A view-only carrier over static storage
 /// stays accepted and clean.
 #[test]
 fn should_reject_a_mixed_aggregate_carrier_through_its_owned_field() {
@@ -1903,7 +1903,12 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    assert_rejected_once("mixedcarrier", source, "E10030", &["does not live long enough"]);
+    assert_rejected_once(
+        "mixedcarrier",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+    );
 
     let control = r#"module spec.bsi.mixedcarrierok;
 

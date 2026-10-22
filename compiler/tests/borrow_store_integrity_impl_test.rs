@@ -701,7 +701,7 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    assert_rejected("pmixed", mixed, &["E10030"]);
+    assert_rejected("pmixed", mixed, &["E10034"]);
 
     let shadow = r#"module impl.bsi.pshadow;
 

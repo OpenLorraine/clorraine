@@ -3962,20 +3962,19 @@ func main(): i32 {
 
 import { toCString } from std.text;
 
-func put(borrow out: cstring?, v: cstring?): void {
-    out = v;
+func put(borrow out: cstring?): void {
+    out = toCString("ab");
 }
 
-func conv<T>(x: T, v: cstring?): i32 {
+func conv<T>(x: T): i32 {
     let r: T = x;
-    r.put(v);
+    r.put();
     return 0;
 }
 
 func main(): i32 {
     let r: cstring? = toCString("xy");
-    let v: cstring? = toCString("ab");
-    if (conv<cstring?>(r, v) != 0) {
+    if (conv<cstring?>(r) != 0) {
         return 1;
     }
     if (r == null) {

@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 17/27 tasks (63%)
-> **Last Updated**: 2026-10-22 15:19
+> **Progress**: 19/27 tasks (70%)
+> **Last Updated**: 2026-10-22 15:22
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -165,7 +165,7 @@ Notes:
   existing `RequiresStorableSlot` rejection and is not an acceptance
   control; a non-nullable duplicable slot accepted; the existing
   `both-generic` `E10034` unchanged. ✅ (completed: 2026-10-22 01:16)
-- [~] 1.1.3 Retarget the explicit pins: `mixedcarrier` and `aggoutslot`
+- [x] 1.1.3 Retarget the explicit pins: `mixedcarrier` and `aggoutslot`
   `E10030` → `E10034`; `aggstatic` accepted → `E10034` (the recorded
   static-array precision loss). For `outslotpartwide` and `closeout-st14`,
   classify by intent: if the test asserts the foreign store, retarget to
@@ -179,8 +179,8 @@ Notes:
   added `E10034`); split
   `should_accept_and_run_when_a_slot_instantiation_is_nullable` so the `take`
   and null-slice sub-cases stay accepted and the `copy<String?>` sub-case
-  becomes `E10034`. ⏳ (cpr pins migrated: 2026-10-22 02:01; the
-  borrow-store, eval, def-closeout, and capture pins remain)
+  becomes `E10034`.
+  ✅ (completed: 2026-10-22 15:22)
 - [x] 1.1.4 Inventory every whole-binding store into a `borrow` slot (or a
   captured whole out-slot) whose source is a non-`take` lend, across all
   `compiler/tests/*.rs` and `compiler/src/own/tests.rs`; start from the 188
@@ -211,12 +211,12 @@ Notes:
   3/1 `store(h: str[2])` shapes; retarget the foreign stores, keep the
   static and own-value controls, and keep the captured static control.
   ✅ (completed: 2026-10-22 15:19)
-- [ ] 1.1.8 Migrate `borrow_store_integrity_*`,
+- [x] 1.1.8 Migrate `borrow_store_integrity_*`,
   `borrow_generic_integrity_*`, `def_backlog_closeout_*`, and
   `checker_conformance_*`: retarget `mixedcarrier`, `nullable-generic`,
   `closeout-st14`, the capture out-slot cases, and any remaining whole-slot
   fixture from the inventory; keep the `take`, static, and own-value
-  controls.
+  controls. ✅ (completed: 2026-10-22 15:22)
 - [ ] 1.1.9 Confirm red: the new cases fail with the expected missing
   `E10034` or wrong code; the migrated acceptance controls fail until the
   implementation lands; no implementation changes yet.

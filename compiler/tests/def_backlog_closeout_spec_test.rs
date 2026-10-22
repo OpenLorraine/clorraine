@@ -1107,8 +1107,8 @@ func main(): i32 {
 
 /// A `str?` out-slot receives the callee's view so the caller can read it.
 ///
-/// `fill` assigns its `str` argument into a `str?` place. The call must pass
-/// the address of the caller's storage, so the view is written through and the
+/// `fill` assigns a static view into a `str?` place. The call must pass the
+/// address of the caller's storage, so the view is written through and the
 /// caller measures three bytes after the call. A `str?` slot passed by value
 /// would leave the caller's slot empty and `main` would answer nine; the
 /// emitted translation must also build as strict C, because a nullable view has
@@ -1117,7 +1117,7 @@ func main(): i32 {
 fn should_write_through_when_a_nullable_str_out_slot_is_assigned() {
     let source = r#"module spec.closeout.st14;
 
-func fill(v: str, borrow slot: str?): void {
+func fill(v: static str, borrow slot: str?): void {
     slot = v;
 }
 
