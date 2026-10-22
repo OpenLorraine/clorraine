@@ -3693,6 +3693,55 @@ func main(): i32 {
 }
 "#;
 
+/// A conditional write to the copied view must keep the caller guard.
+const CROSS_FRAME_LAUNDER_SOURCE: &str = r#"module spec.cprimpl.implxflaunder;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c) { s = "AA"; }
+    slot = s;
+}
+
+func outer(c: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("AA") };
+    fill(b.v, c, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(false, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+
+/// A static store inside a lambda must not hide the caller guard.
+const CROSS_FRAME_LAMBDA_STATIC_SOURCE: &str = r#"module spec.cprimpl.implxflambdastatic;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(q: str, borrow slot: str?): void {
+    ([borrow slot] () => { slot = "AA"; })();
+}
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("AA") };
+    pick(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+
 /// A cross-frame pass-through reports once at the callee store.
 ///
 /// The local and fresh spellings report one `E10034` at the fill; the array
@@ -3710,6 +3759,13 @@ fn should_reject_a_cross_frame_pass_through_once() {
     assert_rejected("implxfsame", CROSS_FRAME_SAME_SOURCE, "E10034", 1);
     assert_rejected("implxfcopy", CROSS_FRAME_COPY_SOURCE, "E10034", 1);
     assert_rejected("implxfstatic", CROSS_FRAME_STATIC_SOURCE, "E10030", 1);
+    assert_rejected("implxflaunder", CROSS_FRAME_LAUNDER_SOURCE, "E10030", 1);
+    assert_rejected(
+        "implxflambdastatic",
+        CROSS_FRAME_LAMBDA_STATIC_SOURCE,
+        "E10030",
+        1,
+    );
 }
 
 /// A module view of a fresh call's member retains the member's storage.

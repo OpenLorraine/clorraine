@@ -230,6 +230,16 @@ pub struct RequiresWholeOutSlotStore {
     /// view source dies with the frame and reports `E10030` after
     /// substitution.
     pub source_is_take: bool,
+    /// True when the stored source is a frame-local or fresh view.
+    ///
+    /// The concrete spelling reports `E10030`; a parameter-typed slot defers
+    /// the same judgment until the instance shows the view substitution.
+    pub source_is_local: bool,
+    /// True when the source is a local copy of a parameter.
+    ///
+    /// A view copy reports the store `E10034`; an owned copy already reports
+    /// the move at its declaration, so the store must not repeat it.
+    pub source_is_copy: bool,
     /// True when the source is a writable `borrow` lend.
     ///
     /// A read-only source at a nullable owning slot is already the lend-move

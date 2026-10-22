@@ -450,6 +450,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // parameter of the enclosing function.
             && !is_by_value_capture_base(&binding.base)
         {
+            if self.report_diagnostics
+                && !self.reported_store_spans.insert((span.start, span.end))
+            {
+                return;
+            }
             let name = binding.name.clone();
             self.error(
                 "E10034",
@@ -2590,6 +2595,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let ExprKind::Name(_) = &expr.kind {
             if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
                 if projections.is_empty() {
+                    if self.bindings[id].rebound {
+                        return Provenance::Local(id);
+                    }
                     if let Some(source) = &self.bindings[id].copy_source {
                         return source.clone();
                     }
@@ -2597,6 +2605,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         self.view_provenance(expr)
+    }
+
+    /// The frame-local or fresh source name of a stored value.
+    ///
+    /// A view over a local owner or a statement temporary has no parameter
+    /// root. The concrete spelling reports `E10030`; a parameter-typed slot
+    /// records this name so the instance audit can report the same escape.
+    pub(super) fn store_local_source_name(&self, expr: &Expr) -> Option<String> {
+        for atom in Self::storage_atoms(&self.store_source_provenance(expr)) {
+            match atom {
+                Provenance::Local(owner) => return Some(self.bindings[owner].name.clone()),
+                Provenance::Temp(_) => return Some("a statement temporary".to_owned()),
+                _ => {}
+            }
+        }
+        None
     }
 
     /// The provenance of a view produced by a call.

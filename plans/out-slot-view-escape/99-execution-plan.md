@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 24/27 tasks (89%)
-> **Last Updated**: 2026-10-22 16:09
+> **Progress**: 26/27 tasks (96%)
+> **Last Updated**: 2026-10-22 16:43
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -300,11 +300,13 @@ Notes:
   X11 cookie)
 - [~] 5.1.2 Phase review: correctness reviewer plus the memory-safety
   auditor (ownership change); the emission-integrity auditor if the
-  migration changes emitted C. ⏳ (review complete: 1 critical + 1
-  pre-existing critical UAF, 5 major, 3 minor; fixes verified and the
-  single re-review pending)
-- [ ] 5.1.3 Re-emit determinism pins for the changed accepted units; confirm
+  migration changes emitted C. ✅ (completed: 2026-10-22 16:43; the single
+  re-review found the laundering and concrete-owned gaps, both fixed; the
+  final focused, ASAN, `make check`, and `make verify` runs are green)
+- [x] 5.1.3 Re-emit determinism pins for the changed accepted units; confirm
   no byte-identity regression beyond the retargeted fixtures.
+  ✅ (completed: 2026-10-22 16:43; the accepted cpr/eval byte-identity pins
+  pass in the impl suites and `make verify`)
 - [ ] 5.1.4 Close `DEF-541` in the `plans/00-roadmap.md` row `DEF-541`
   (Done) and update the residual row in
   `plans/deferred-evaluation-completion/05-findings.md` (line 61); file the

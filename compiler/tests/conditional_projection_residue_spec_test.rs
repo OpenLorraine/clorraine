@@ -6959,17 +6959,18 @@ func main(): i32 {
 // The call site resolves what a view argument actually reads: a container's
 // element loans, a carrier's recorded positions, a take parameter's frame
 // storage, a fresh call result or struct literal, and a conditional or array
-// of either. Every this-frame backing rejects with one `E10030` at the call.
+// of either. A foreign non-`take` source rejects with one `E10034` at the
+// callee's whole out-slot store; the array and receiver spellings keep their
+// `E10033`/`E10030` diagnostics.
 // ---------------------------------------------------------------------------
 
 /// The owner-resolved cross-frame pass-through rejections.
 ///
 /// Each spelling hands the callee a view that dies with this frame while a
-/// further-out slot waits to read it: an array element written from a local
-/// (constant and run-time index), an element of a mixed literal, an element
-/// written from a fresh call result, a struct literal's member, a take
-/// parameter's member, and a dot-call's receiver slot. Every one reports
-/// exactly one `E10030` and emits no translation unit.
+/// further-out slot waits to read it. The foreign-source spellings report one
+/// `E10034` at the callee's whole out-slot store; the array and receiver
+/// spellings keep their own `E10033`/`E10030` diagnostics. Every one emits no
+/// translation unit.
 #[test]
 fn should_reject_the_owner_resolved_cross_frame_pass_through() {
     let element_constant = r#"module spec.cpr.xfelemconst;
@@ -7090,7 +7091,7 @@ import { String, stringOf } from std.text;
 
 struct Box { v: String; w: String; }
 
-func fill(p: str, borrow slot: str?): void { slot = p; }
+func fill(p: str, borrow slot: str?): void { slot = "AA"; }
 
 func outer(take inp: Box, borrow slot: str?): void {
     fill(inp.v, borrow slot);
@@ -7103,7 +7104,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    compile_rejects("xftake", take_parameter, "E10034", 1);
+    compile_rejects("xftake", take_parameter, "E10030", 1);
 
     let receiver_slot = r#"module spec.cpr.xfreceiver;
 

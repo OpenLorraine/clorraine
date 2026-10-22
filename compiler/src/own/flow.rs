@@ -74,6 +74,12 @@ pub(super) struct Binding {
     /// ordinary provenance stays local; the whole-out-slot judgment still
     /// needs the original parameter root to recognize a later `slot = t`.
     pub(super) copy_source: Option<Provenance>,
+    /// True after a later assignment writes this local.
+    ///
+    /// A written local can hold a different source on a path the declaration
+    /// scan cannot see. The caller frame guard owns that shape; the store duty
+    /// must not treat the declaration initializer as the current source.
+    pub(super) rebound: bool,
     /// An explicit place base that overrides the binding's usual local or
     /// parameter spelling.
     ///

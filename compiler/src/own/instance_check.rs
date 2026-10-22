@@ -215,6 +215,7 @@ fn check_not_lend_requirements(
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
+    let mut reported_stores = BTreeSet::new();
     for requirement in mono.not_lend_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -256,6 +257,14 @@ fn check_not_lend_requirements(
             // emptied, and a move into an owned position would leave the
             // source and the destination aliasing one allocation.
             if judged.nullable && requirement.writable_source && requirement.stores_into_slot {
+                continue;
+            }
+            if requirement.stores_into_slot
+                && !reported_stores.insert((
+                    requirement.function.clone(),
+                    requirement.span.start,
+                ))
+            {
                 continue;
             }
             diagnostics.push(
@@ -357,6 +366,27 @@ fn check_whole_out_slot_store_requirements(
                 continue;
             }
             let source = substitute_instance(&requirement.source_ty, &params, &instance.args);
+            if requirement.source_is_copy && !is_whole_slot_view(&source) {
+                // The owned copy is already the lend-move report at its
+                // declaration; only a view copy owns the store report.
+                continue;
+            }
+            if requirement.source_is_local {
+                if is_whole_slot_view(&source) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10030",
+                            format!(
+                                "borrow of {} does not live long enough",
+                                requirement.source
+                            ),
+                            requirement.span,
+                        )
+                        .with_help("finish the use before the owner's scope ends"),
+                    );
+                }
+                continue;
+            }
             if requirement.source_is_take {
                 if is_view(&source) {
                     diagnostics.push(

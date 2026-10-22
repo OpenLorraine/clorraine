@@ -1463,7 +1463,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     && generic_maybe_nullable
                     && !concrete_reports
                 {
-                    if let Some(owner) = self.whole_slot_store_root(value, id, true) {
+                    let parameter_root = self.whole_slot_store_root(value, id, true);
+                    let local_source = if parameter_root.is_none() {
+                        self.store_local_source_name(value)
+                    } else {
+                        None
+                    };
+                    if parameter_root.is_some() || local_source.is_some() {
                         let destination = self.bindings[id].name.clone();
                         let ir_name = self.bindings[id].ir_name.clone();
                         if self.recorded_whole_out_slot_store.insert((
@@ -1472,13 +1478,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             target.span.end,
                         )) {
                             let function = self.decl.name.clone();
-                            let source = self.bindings[owner].name.clone();
+                            let source = parameter_root
+                                .map(|owner| self.bindings[owner].name.clone())
+                                .or(local_source)
+                                .unwrap_or_default();
                             let source_ty = self.ty(value);
-                            let source_is_capture = matches!(
-                                self.bindings[owner].base,
-                                Some(ir::PlaceBase::EnvField { .. })
-                            );
-                            let writable_source = self.bindings[owner].mode == Mode::Borrow;
+                            let source_is_capture = parameter_root.is_some_and(|owner| {
+                                matches!(
+                                    self.bindings[owner].base,
+                                    Some(ir::PlaceBase::EnvField { .. })
+                                )
+                            });
+                            let source_is_take = parameter_root
+                                .is_some_and(|owner| self.bindings[owner].mode == Mode::Take);
+                            let source_is_copy = matches!(&value.kind, ExprKind::Name(_))
+                                && self
+                                    .place_target(value)
+                                    .is_some_and(|target| match target {
+                                        PlaceTarget::Local(owner, projections) => {
+                                            projections.is_empty()
+                                                && self.bindings[owner].copy_source.is_some()
+                                        }
+                                        _ => false,
+                                    });
+                            let writable_source = parameter_root
+                                .is_some_and(|owner| self.bindings[owner].mode == Mode::Borrow);
                             let slot_ty = self.bindings[id].ty.clone();
                             self.whole_out_slot_store_requirements.push(
                                 ir::RequiresWholeOutSlotStore {
@@ -1488,7 +1512,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                     slot_ty,
                                     source_ty,
                                     source_is_capture,
-                                    source_is_take: self.bindings[owner].mode == Mode::Take,
+                                    source_is_take,
+                                    source_is_local: parameter_root.is_none(),
+                                    source_is_copy,
                                     writable_source,
                                     span: target.span,
                                 },
@@ -2455,11 +2481,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ..
         } = &value.kind
         {
+            // A foreign non-`take` arm wins over a taken arm: the plan gives
+            // `E10034` precedence when a conditional mixes both kinds.
             if let Some(owner) = self
-                .whole_slot_store_root(then_value, destination, include_take)
-                .or_else(|| self.whole_slot_store_root(else_value, destination, include_take))
+                .whole_slot_store_root(then_value, destination, false)
+                .or_else(|| self.whole_slot_store_root(else_value, destination, false))
             {
                 return Some(owner);
+            }
+            if include_take {
+                if let Some(owner) = self
+                    .whole_slot_store_root(then_value, destination, true)
+                    .or_else(|| self.whole_slot_store_root(else_value, destination, true))
+                {
+                    return Some(owner);
+                }
             }
         }
         for atom in Self::storage_atoms(&self.store_source_provenance(value)) {
@@ -2565,7 +2601,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if let (Some(destination), false) = (root_id, global) {
                 if let Some(owner) = self.foreign_lend_store_root(value, destination) {
                     let value_ty = self.ty(value);
-                    if is_whole_slot_view(target_ty) || is_whole_slot_view(&value_ty) {
+                    // A writable nullable owned lend is a whole-slot move; the
+                    // lenient lend-move exemption for a slot destination does
+                    // not apply when the store keeps it in the caller's slot.
+                    let writable_owned =
+                        value_ty.nullable && self.bindings[owner].mode == Mode::Borrow;
+                    if is_whole_slot_view(target_ty)
+                        || is_whole_slot_view(&value_ty)
+                        || writable_owned
+                    {
                         let name = self.bindings[owner].name.clone();
                         self.error(
                             "E10034",

@@ -2594,4 +2594,49 @@ func main(): i32 {
         "E10034",
         &["cannot release or store borrowed parameter 'p'"],
     );
+
+    let writable_owned = r#"module spec.bsi.foreignwritableowned;
+
+import { String, stringOf } from std.text;
+
+func store(borrow v: String?, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: String? = stringOf("AA");
+    let slot: String? = null;
+    store(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignwritableowned",
+        writable_owned,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let foreign_owned_conditional = r#"module spec.bsi.foreigncondowned;
+
+import { String, stringOf } from std.text;
+
+func store(c: bool, a: String?, b: String?, borrow slot: String?): void {
+    slot = c ? a : b;
+}
+
+func main(): i32 {
+    let a: String? = stringOf("AA");
+    let b: String? = stringOf("BB");
+    let slot: String? = null;
+    store(true, a, b, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreigncondowned",
+        foreign_owned_conditional,
+        "E10034",
+        &["cannot release or store borrowed parameter"],
+    );
 }

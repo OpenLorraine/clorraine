@@ -3049,4 +3049,71 @@ func main(): i32 {
         "E10034",
         &["cannot release or store borrowed parameter 'v'"],
     );
+
+    let raw_read_only = r#"module spec.bgi.foreignrawreadonly;
+
+func copy<T>(v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let v: raw u8? = null;
+    let slot: raw u8? = null;
+    copy<raw u8?>(v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignrawreadonly",
+        raw_read_only,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
+
+    let local_frame = r#"module spec.bgi.foreignlocalframe;
+
+import { String, stringOf } from std.text;
+
+func store<T>(borrow slot: T): void {
+    let own: String = stringOf("AA");
+    let v: str = own;
+    let t: T = v;
+    slot = t;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    store<str?>(borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignlocalframe",
+        local_frame,
+        "E10030",
+        &["does not live long enough"],
+    );
+
+    let owned_copy = r#"module spec.bgi.foreignownedcopy;
+
+import { String, stringOf } from std.text;
+
+func copy<T>(borrow v: T, borrow slot: T): void {
+    let t: T = v;
+    slot = t;
+}
+
+func main(): i32 {
+    let v: String? = stringOf("AA");
+    let slot: String? = null;
+    copy<String?>(borrow v, borrow slot);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once(
+        "foreignownedcopy",
+        owned_copy,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+    );
 }

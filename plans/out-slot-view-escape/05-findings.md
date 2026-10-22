@@ -15,6 +15,14 @@
 | RV-011 | 5 | MINOR | compiler/tests — names and docs after retargeting | fixed |
 | RV-012 | 5 | CRITICAL | own/call_check — withheld caller report accepted a dangling view | fixed |
 | RV-013 | 5 | CRITICAL | own/statements — generic local copy lost the foreign root | fixed |
+| RV-014 | 5 | CRITICAL | own/expr — concrete writable nullable owned store accepted | fixed |
+| RV-015 | 5 | CRITICAL | own — conditional write laundered the withheld source | fixed; pre-existing same-frame flow residual recorded |
+| RV-016 | 5 | MAJOR | own/instance_check — owned local copy double report | fixed |
+| RV-017 | 5 | MAJOR | own — owned foreign/foreign conditional double report | fixed |
+| RV-018 | 5 | MAJOR | own/call_check — shadow/assignment/lambda bit forms | fixed |
+| RV-019 | 5 | MINOR | own/expr — take-first conditional precedence | fixed |
+| RV-020 | 5 | MINOR | compiler/tests — xftake and xfowners docs | fixed |
+| RV-021 | 5 | MINOR | borrow generic raw test coverage | fixed |
 
 ## Phase 5 review notes
 
@@ -47,3 +55,33 @@
   case pins it.
 - **RV-011.** The reversed cross-frame test name, the cross-frame/store docs,
   and the inline-carrier control doc now state the `E10034` behavior.
+
+## Second review remediation
+
+- **RV-014.** The concrete whole-slot branch now rejects a writable nullable
+  owned source, while a read-only owned source stays with the lend-move duty
+  and one report. `foreignwritableowned` and `foreigncondowned` pin both.
+- **RV-015.** The withholding scan treats any written local as unresolved and
+  keeps the caller `E10030`; the generic local/fresh source duty reports
+  `E10030` at the instance. The cross-frame laundering and generic local-view
+  probes now reject. The remaining same-frame concrete conditional-write
+  flow-insensitivity is pre-existing and is recorded below as a residual.
+- **RV-016 / RV-017.** An owned local copy is already the declaration's
+  lend-move report, so the store duty skips it; direct foreign/foreign owned
+  conditional stores are deduped per reporting pass and per store.
+- **RV-018.** Written names are collected conservatively (including
+  assignments, loops, and deferred/lambda bodies); a written local never
+  follows its declaration initializer. Static stores inside lambda blocks are
+  resolved, and returned lambda values are followed.
+- **RV-019 / RV-020 / RV-021.** Non-`take` conditional arms win over a taken
+  arm; the `xftake` fixture stores a static source and keeps the caller
+  `E10030`; a read-only raw and a non-nullable raw case pin the raw rule.
+
+## Residuals to file
+
+- **Same-frame conditional-write laundering.** The source state is
+  flow-insensitive, so a concrete same-frame store can accept a local view
+  after a conditional static write. This predates the plan. File it as a new
+  roadmap defect with the ASAN probe.
+- **PF-010.** The generic non-nullable `copy<str>` residual is unchanged and
+  must be filed with the next free roadmap id.

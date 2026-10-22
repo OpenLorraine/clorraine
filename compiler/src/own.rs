@@ -537,6 +537,8 @@ struct FunctionChecker<'a, 'd> {
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
+    /// Store spans that already emitted the concrete lend-move report.
+    reported_store_spans: BTreeSet<(u32, u32)>,
     /// Whole out-slot store sites already recorded, so one site owes one duty.
     recorded_whole_out_slot_store: BTreeSet<(String, u32, u32)>,
     /// Store sites already recorded, so one site owes one slot duty.
@@ -644,6 +646,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             opaque_store_requirements: Vec::new(),
             recorded_opaque_stores: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
+            reported_store_spans: BTreeSet::new(),
             recorded_whole_out_slot_store: BTreeSet::new(),
             recorded_storable_slot: BTreeSet::new(),
             recorded_self_assign: BTreeSet::new(),
@@ -1195,6 +1198,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             registration,
             provenance,
             copy_source: None,
+            rebound: false,
             base: None,
             alias_root: None,
             generated: false,

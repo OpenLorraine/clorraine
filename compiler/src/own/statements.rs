@@ -986,6 +986,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let effect = self.prepare_binding_effect(target, value, lowered);
+        self.bindings[id].rebound = true;
         let source = self.store_source_provenance(value);
         if !matches!(source, Provenance::None) {
             self.bindings[id].copy_source = Some(source);

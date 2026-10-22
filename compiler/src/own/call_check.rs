@@ -2202,10 +2202,13 @@ fn callee_has_whole_out_slot_store(
         .collect();
     let mut locals = BTreeMap::new();
     collect_local_initializers(&decl.body, &mut locals);
+    let mut written = BTreeSet::new();
+    collect_written_names_block(&decl.body, &mut written);
     let scan = WholeSlotStoreScan {
         slots: &slots,
         lends: &lends,
         locals: &locals,
+        written: &written,
         sema,
     };
     scan.block(&decl.body)
@@ -2216,6 +2219,7 @@ struct WholeSlotStoreScan<'a> {
     slots: &'a BTreeSet<String>,
     lends: &'a BTreeSet<String>,
     locals: &'a BTreeMap<String, &'a Expr>,
+    written: &'a BTreeSet<String>,
     sema: &'a SemaOutput,
 }
 
@@ -2378,6 +2382,12 @@ impl<'a> WholeSlotStoreScan<'a> {
                 if name == destination {
                     return false;
                 }
+                // A written binding may hold a different source on a path the
+                // scan cannot see; keep the caller guard instead of risking a
+                // withheld dangling report.
+                if self.written.contains(name) {
+                    return false;
+                }
                 if self.lends.contains(name) {
                     return true;
                 }
@@ -2439,13 +2449,28 @@ impl<'a> WholeSlotStoreScan<'a> {
         }
     }
 
-    /// True when a lambda block body contains a store into a whole out-slot.
+    /// True when a lambda block body returns or stores a foreign source.
+    ///
+    /// A static store inside the block is not a source, so it must not hide
+    /// the caller's frame report. A returned foreign expression is a source.
     fn block_has_assignment(&self, block: &Block) -> bool {
         block.statements.iter().any(|stmt| match stmt {
             Stmt::Expr(Expr {
-                kind: ExprKind::Assign { target, .. },
+                kind:
+                    ExprKind::Assign {
+                        target,
+                        value,
+                        ..
+                    },
                 ..
-            }) => matches!(&target.kind, ExprKind::Name(name) if self.slots.contains(name)),
+            }) => match &target.kind {
+                ExprKind::Name(destination) if self.slots.contains(destination) => self
+                    .value_has_foreign_root(value, destination, &mut BTreeSet::new()),
+                _ => false,
+            },
+            Stmt::Return { value: Some(value), .. } => {
+                self.value_has_foreign_root(value, "", &mut BTreeSet::new())
+            }
             _ => false,
         })
     }
@@ -2473,6 +2498,165 @@ impl<'a> WholeSlotStoreScan<'a> {
             | ExprKind::Unsafe(value) => self.is_static_value(value),
             _ => false,
         }
+    }
+}
+
+/// Collects every name written by an assignment or element loop.
+///
+/// The withholding scan is deliberately conservative about a written local:
+/// the callee-side state may be one branch's value, so the scan must not treat
+/// the declaration initializer as the source at every path.
+fn collect_written_names_block(block: &Block, written: &mut BTreeSet<String>) {
+    for stmt in &block.statements {
+        collect_written_names_stmt(stmt, written);
+    }
+}
+
+fn collect_written_names_stmt(stmt: &Stmt, written: &mut BTreeSet<String>) {
+    use crate::ast::{ForInit, Stmt};
+    match stmt {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                collect_written_names_expr(value, written);
+            }
+        }
+        Stmt::Const(decl) => collect_written_names_expr(&decl.value, written),
+        Stmt::Expr(expr) => collect_written_names_expr(expr, written),
+        Stmt::If(decl) => {
+            collect_written_names_expr(&decl.condition, written);
+            collect_written_names_block(&decl.then_block, written);
+            match &decl.else_branch {
+                Some(crate::ast::ElseBranch::If(nested)) => {
+                    collect_written_names_if(nested, written);
+                }
+                Some(crate::ast::ElseBranch::Block(block)) => {
+                    collect_written_names_block(block, written);
+                }
+                None => {}
+            }
+        }
+        Stmt::While(decl) => {
+            collect_written_names_expr(&decl.condition, written);
+            collect_written_names_block(&decl.body, written);
+        }
+        Stmt::DoWhile(decl) => {
+            collect_written_names_block(&decl.body, written);
+            collect_written_names_expr(&decl.condition, written);
+        }
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(ForInit::Let(init)) => {
+                    if let Some(value) = &init.value {
+                        collect_written_names_expr(value, written);
+                    }
+                }
+                Some(ForInit::Const(init)) => collect_written_names_expr(&init.value, written),
+                Some(ForInit::Expr(exprs)) => {
+                    for expr in exprs {
+                        collect_written_names_expr(expr, written);
+                    }
+                }
+                None => {}
+            }
+            if let Some(condition) = &decl.condition {
+                collect_written_names_expr(condition, written);
+            }
+            for step in &decl.step {
+                collect_written_names_expr(step, written);
+            }
+            collect_written_names_block(&decl.body, written);
+        }
+        Stmt::ForIn(decl) => {
+            written.insert(decl.name.clone());
+            collect_written_names_expr(&decl.iterable, written);
+            collect_written_names_block(&decl.body, written);
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_written_names_expr(value, written);
+            }
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
+        Stmt::Switch(decl) => {
+            collect_written_names_expr(&decl.scrutinee, written);
+            for clause in &decl.clauses {
+                if let crate::ast::SwitchLabel::Case(value) = &clause.label {
+                    collect_written_names_expr(value, written);
+                }
+                for stmt in &clause.statements {
+                    collect_written_names_stmt(stmt, written);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            collect_written_names_block(block, written);
+        }
+    }
+}
+
+fn collect_written_names_if(decl: &crate::ast::IfStmt, written: &mut BTreeSet<String>) {
+    collect_written_names_expr(&decl.condition, written);
+    collect_written_names_block(&decl.then_block, written);
+    match &decl.else_branch {
+        Some(crate::ast::ElseBranch::If(nested)) => collect_written_names_if(nested, written),
+        Some(crate::ast::ElseBranch::Block(block)) => collect_written_names_block(block, written),
+        None => {}
+    }
+}
+
+fn collect_written_names_expr(expr: &Expr, written: &mut BTreeSet<String>) {
+    use crate::ast::{LambdaBody, TemplatePiece};
+    match &expr.kind {
+        ExprKind::Assign { target, value, .. } => {
+            if let ExprKind::Name(name) = &target.kind {
+                written.insert(name.clone());
+            }
+            collect_written_names_expr(target, written);
+            collect_written_names_expr(value, written);
+        }
+        ExprKind::Call { callee, args, .. } => {
+            collect_written_names_expr(callee, written);
+            for arg in args {
+                collect_written_names_expr(&arg.value, written);
+            }
+        }
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Expr(inner) => collect_written_names_expr(inner, written),
+            LambdaBody::Block(block) => collect_written_names_block(block, written),
+        },
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            collect_written_names_expr(condition, written);
+            collect_written_names_expr(then_value, written);
+            collect_written_names_expr(else_value, written);
+        }
+        ExprKind::Cast { value, .. }
+        | ExprKind::RawCast { value, .. }
+        | ExprKind::Unsafe(value) => collect_written_names_expr(value, written),
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_written_names_expr(&field.value, written);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                collect_written_names_expr(element, written);
+            }
+            if let Some(fill) = fill {
+                collect_written_names_expr(fill, written);
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(value) = piece {
+                    collect_written_names_expr(value, written);
+                }
+            }
+        }
+        _ => {}
     }
 }
 
