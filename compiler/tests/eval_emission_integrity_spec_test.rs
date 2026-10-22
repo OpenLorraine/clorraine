@@ -1771,9 +1771,9 @@ func main(): i32 {
     assert_rejected_once(
         "aggoutslot",
         aggregate,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let inline = r#"module spec.eei.callinline;
@@ -1801,9 +1801,9 @@ func main(): i32 {
     assert_rejected_once(
         "callinline",
         inline,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let inline_direct = r#"module spec.eei.callinlinedirect;
@@ -1830,9 +1830,9 @@ func main(): i32 {
     assert_rejected_once(
         "callinlinedirect",
         inline_direct,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let global = r#"module spec.eei.callglobal;
@@ -1901,10 +1901,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("callstaticbound", static_bound);
-    assert_no_asan("callstaticbound", &output);
-    assert_exit("callstaticbound", &output, 0);
-
+    assert_rejected_once(
+        "callstaticbound",
+        static_bound,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
+    );
     let static_aggregate = r#"module spec.eei.aggstatic;
 
 struct Holder { names: str[2]; }
@@ -1923,10 +1926,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("aggstatic", static_aggregate);
-    assert_no_asan("aggstatic", &output);
-    assert_exit("aggstatic", &output, 0);
-
+    assert_rejected_once(
+        "aggstatic",
+        static_aggregate,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let alias = r#"module spec.eei.aggalias;
 
 import { String, stringOf } from std.text;
@@ -1949,10 +1955,13 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("aggalias", alias);
-    assert_no_asan("aggalias", &output);
-    assert_exit("aggalias", &output, 0);
-
+    assert_rejected_once(
+        "aggalias",
+        alias,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let temporary_aggregate = r#"module spec.eei.aggtemporary;
 
 import { String, stringOf } from std.text;
@@ -1977,9 +1986,9 @@ func main(): i32 {
     assert_rejected_once(
         "aggtemporary",
         temporary_aggregate,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let call_carrier = r#"module spec.eei.aggcallcarrier;
@@ -2007,9 +2016,9 @@ func main(): i32 {
     assert_rejected_once(
         "aggcallcarrier",
         call_carrier,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let mixed_scalar = r#"module spec.eei.aggmixedscalar;
@@ -2075,10 +2084,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("aggshadowstatic", shadow_static);
-    assert_no_asan("aggshadowstatic", &output);
-    assert_exit("aggshadowstatic", &output, 0);
-
+    assert_rejected_once(
+        "aggshadowstatic",
+        shadow_static,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let alias_copy = r#"module spec.eei.aggaliscopy;
 
 import { String, stringOf } from std.text;
@@ -2104,10 +2116,13 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("aggaliscopy", alias_copy);
-    assert_no_asan("aggaliscopy", &output);
-    assert_exit("aggaliscopy", &output, 0);
-
+    assert_rejected_once(
+        "aggaliscopy",
+        alias_copy,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let call_static = r#"module spec.eei.aggcallstatic;
 
 struct Holder { names: str[2]; }
@@ -2127,10 +2142,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("aggcallstatic", call_static);
-    assert_no_asan("aggcallstatic", &output);
-    assert_exit("aggcallstatic", &output, 0);
-
+    assert_rejected_once(
+        "aggcallstatic",
+        call_static,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let call_param = r#"module spec.eei.aggcallparam;
 
 struct Holder { names: str[2]; }
@@ -2150,10 +2168,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("aggcallparam", call_param);
-    assert_no_asan("aggcallparam", &output);
-    assert_exit("aggcallparam", &output, 0);
-
+    assert_rejected_once(
+        "aggcallparam",
+        call_param,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let projected_alias = r#"module spec.eei.aggaliasprojected;
 
 import { String, stringOf } from std.text;
@@ -2174,10 +2195,13 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("aggaliasprojected", projected_alias);
-    assert_no_asan("aggaliasprojected", &output);
-    assert_exit("aggaliasprojected", &output, 0);
-
+    assert_rejected_once(
+        "aggaliasprojected",
+        projected_alias,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
+    );
     let take_aggregate = r#"module spec.eei.aggtake;
 
 import { String, stringOf } from std.text;
@@ -2338,9 +2362,9 @@ func main(): i32 {
     assert_rejected_once(
         "inlinecarrier",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.inlinecarrierok;
@@ -2361,10 +2385,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("inlinecarrierok", control);
-    assert_no_asan("inlinecarrierok", &output);
-    assert_exit("inlinecarrierok", &output, 0);
-}
+    assert_rejected_once(
+        "inlinecarrierok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// A conditional that mixes a static literal and a call carrier records the
 /// call arm's backing.
@@ -2400,9 +2427,9 @@ func main(): i32 {
     assert_rejected_once(
         "condcallcarrier",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.condcallcarrierok;
@@ -2424,10 +2451,13 @@ func main(): i32 {
     return i32(out[0]) - 67;
 }
 "#;
-    let output = run_memory("condcallcarrierok", control);
-    assert_no_asan("condcallcarrierok", &output);
-    assert_exit("condcallcarrierok", &output, 0);
-}
+    assert_rejected_once(
+        "condcallcarrierok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// Direct call-mediated views resolve every callable spelling.
 ///
@@ -2463,9 +2493,9 @@ func main(): i32 {
     assert_rejected_once(
         "closureview",
         closure,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let func_local = r#"module spec.eei.funclocalview;
@@ -2495,9 +2525,9 @@ func main(): i32 {
     assert_rejected_once(
         "funclocalview",
         func_local,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let wrapped = r#"module spec.eei.wrappedview;
@@ -2524,9 +2554,9 @@ func main(): i32 {
     assert_rejected_once(
         "wrappedview",
         wrapped,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let conditional = r#"module spec.eei.condwrappedview;
@@ -2553,9 +2583,9 @@ func main(): i32 {
     assert_rejected_once(
         "condwrappedview",
         conditional,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let func_field = r#"module spec.eei.funcfieldview;
@@ -2586,9 +2616,9 @@ func main(): i32 {
     assert_rejected_once(
         "funcfieldview",
         func_field,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let generic_call = r#"module spec.eei.genericview;
@@ -2617,9 +2647,9 @@ func main(): i32 {
     assert_rejected_once(
         "genericview",
         generic_call,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let returned_callable = r#"module spec.eei.returnedcallableview;
@@ -2650,9 +2680,9 @@ func main(): i32 {
     assert_rejected_once(
         "returnedcallableview",
         returned_callable,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.closureviewok;
@@ -2672,10 +2702,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("closureviewok", control);
-    assert_no_asan("closureviewok", &output);
-    assert_exit("closureviewok", &output, 0);
-}
+    assert_rejected_once(
+        "closureviewok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
+    );}
 
 /// A dot-call receiver is judged as a view source at parameter zero.
 ///
@@ -2707,9 +2740,9 @@ func main(): i32 {
     assert_rejected_once(
         "dotreceiver",
         local,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let temp = r#"module spec.eei.dottemp;
@@ -2735,9 +2768,9 @@ func main(): i32 {
     assert_rejected_once(
         "dottemp",
         temp,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let view_control = r#"module spec.eei.dotviewok;
@@ -2761,10 +2794,13 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("dotviewok", view_control);
-    assert_no_asan("dotviewok", &output);
-    assert_exit("dotviewok", &output, 0);
-
+    assert_rejected_once(
+        "dotviewok",
+        view_control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let static_view = r#"module spec.eei.dotstaticok;
 
 struct Box { v: str[2]; }
@@ -2783,10 +2819,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("dotstaticok", static_view);
-    assert_no_asan("dotstaticok", &output);
-    assert_exit("dotstaticok", &output, 0);
-
+    assert_rejected_once(
+        "dotstaticok",
+        static_view,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );
     let control = r#"module spec.eei.dotreceiverok;
 
 import { String, stringOf } from std.text;
@@ -2807,10 +2846,13 @@ func main(): i32 {
     return i32(out[0]) - 97;
 }
 "#;
-    let output = run_memory("dotreceiverok", control);
-    assert_no_asan("dotreceiverok", &output);
-    assert_exit("dotreceiverok", &output, 0);
-}
+    assert_rejected_once(
+        "dotreceiverok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// A carrier-returning dot call, a module-level func value, and a carrier
 /// return follow their source's storage.
@@ -2846,9 +2888,9 @@ func main(): i32 {
     assert_rejected_once(
         "carrierreceiver",
         receiver,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let global_callable = r#"module spec.eei.globalcallable;
@@ -2879,9 +2921,9 @@ func main(): i32 {
     assert_rejected_once(
         "globalcallable",
         global_callable,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 
     let carrier_return = r#"module spec.eei.carrierreturn;
@@ -2931,10 +2973,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("carrierreceiverok", control);
-    assert_no_asan("carrierreceiverok", &output);
-    assert_exit("carrierreceiverok", &output, 0);
-}
+    assert_rejected_once(
+        "carrierreceiverok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// A loop-alias receiver used as an out-slot still roots in the container.
 ///
@@ -3012,9 +3057,9 @@ func main(): i32 {
     assert_rejected_once(
         "projcarrier",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.projcarrierok;
@@ -3035,10 +3080,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("projcarrierok", control);
-    assert_no_asan("projcarrierok", &output);
-    assert_exit("projcarrierok", &output, 0);
-}
+    assert_rejected_once(
+        "projcarrierok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// A carrier-returning call with several lend sources contributes every
 /// source's view positions.
@@ -3074,9 +3122,9 @@ func main(): i32 {
     assert_rejected_once(
         "paircarrier",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.paircarrierok;
@@ -3097,10 +3145,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("paircarrierok", control);
-    assert_no_asan("paircarrierok", &output);
-    assert_exit("paircarrierok", &output, 0);
-}
+    assert_rejected_once(
+        "paircarrierok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
+    );}
 
 /// A carrier return through an owned aggregate or a `take` argument follows
 /// that source.
@@ -3137,9 +3188,9 @@ func main(): i32 {
     assert_rejected_once(
         "ownedcarrier",
         aggregate,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let identity = r#"module spec.eei.takecarrier;
@@ -3169,9 +3220,9 @@ func main(): i32 {
     assert_rejected_once(
         "takecarrier",
         identity,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let generic_identity = r#"module spec.eei.takecarriergeneric;
@@ -3200,9 +3251,9 @@ func main(): i32 {
     assert_rejected_once(
         "takecarriergeneric",
         generic_identity,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let local_view_return = r#"module spec.eei.takecarrierlocalview;
@@ -3268,9 +3319,9 @@ func main(): i32 {
     assert_rejected_once(
         "takecarrierlocalhop",
         local_hop,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let projected_hop = r#"module spec.eei.takecarrierprojected;
@@ -3302,9 +3353,9 @@ func main(): i32 {
     assert_rejected_once(
         "takecarrierprojected",
         projected_hop,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 'h'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.takecarrierok;
@@ -4686,9 +4737,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdaview",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.lambdaviewok;
@@ -4706,10 +4757,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("lambdaviewok", control);
-    assert_no_asan("lambdaviewok", &output);
-    assert_exit("lambdaviewok", &output, 0);
-
+    assert_rejected_once(
+        "lambdaviewok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
+    );
     // A capturing lambda's returned view reads the capture's backing, not a
     // parameter, so the escaping store reports the frame-local source.
     let captured = r#"module spec.eei.lambdacaptureview;
@@ -4736,9 +4790,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdacaptureview",
         captured,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     // A write through a captured local stays in the same frame, so the view
@@ -4769,9 +4823,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdatwoview",
         two_view,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let two_view_control = r#"module spec.eei.lambdatwoviewok;
@@ -4789,10 +4843,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("lambdatwoviewok", two_view_control);
-    assert_no_asan("lambdatwoviewok", &output);
-    assert_exit("lambdatwoviewok", &output, 0);
-
+    assert_rejected_once(
+        "lambdatwoviewok",
+        two_view_control,
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
+    );
     // A conditional return over two view parameters judges every value
     // source, not just the first.
     let mixed_view = r#"module spec.eei.lambdamixedview;
@@ -4819,9 +4876,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdamixedview",
         mixed_view,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     // A conditional return over two view parameters and a multi-capture
@@ -4850,9 +4907,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdamixedparams",
         mixed_params,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let capture_order = r#"module spec.eei.lambdacaptureorder;
@@ -4879,9 +4936,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdacaptureorder",
         capture_order,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let conditional_return = r#"module spec.eei.lambdacondreturn;
@@ -4908,9 +4965,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdacondreturn",
         conditional_return,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let capture_param = r#"module spec.eei.lambdacaptureparam;
@@ -4937,9 +4994,9 @@ func main(): i32 {
     assert_rejected_once(
         "lambdacaptureparam",
         capture_param,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let local_destination = r#"module spec.eei.lambdalocaldest;
@@ -5015,9 +5072,9 @@ func main(): i32 {
     assert_rejected_once(
         "condfuncview",
         source,
-        "E10030",
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
     );
 
     let control = r#"module spec.eei.condfuncviewok;
@@ -5089,10 +5146,13 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("captureoutslotviewok", control);
-    assert_no_asan("captureoutslotviewok", &output);
-    assert_exit("captureoutslotviewok", &output, 0);
-
+    assert_rejected_once(
+        "captureoutslotviewok",
+        control,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
+    );
     // A local copy of a parameter-backed view keeps the caller's backing, so
     // the capture survives the call exactly as the parameter does.
     let local_view = r#"module spec.eei.captureoutslotviewlocal;
@@ -5111,22 +5171,24 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("captureoutslotviewlocal", local_view);
-    assert_no_asan("captureoutslotviewlocal", &output);
-    assert_exit("captureoutslotviewlocal", &output, 0);
-
+    assert_rejected_once(
+        "captureoutslotviewlocal",
+        local_view,
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
+    );
     let static_view = r#"module spec.eei.captureoutslotviewstatic;
 
-func outer(borrow slot: str?): void {
-    let s: str = "AA";
-    ([s, borrow slot] () => {
-        slot = s;
+func outer(p: static str, borrow slot: str?): void {
+    ([p, borrow slot] () => {
+        slot = p;
     })();
 }
 
 func main(): i32 {
     let out: str? = null;
-    outer(borrow out);
+    outer("AA", borrow out);
     if (out == null) { return 9; }
     return i32(out[0]) - 65;
 }
@@ -5270,7 +5332,10 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let output = run_memory("captureparamsafe", source);
-    assert_no_asan("captureparamsafe", &output);
-    assert_exit("captureparamsafe", &output, 0);
-}
+    assert_rejected_once(
+        "captureparamsafe",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 's'"],
+        &["E10030"],
+    );}

@@ -2407,9 +2407,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pclosure", closure);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pclosure: expected one E10030; stderr:\n{stderr}"
+        "pclosure: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'p'"),
+        "pclosure: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let wrapped = r#"module impl.eei.pwrapped;
@@ -2435,9 +2439,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pwrapped", wrapped);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pwrapped: expected one E10030; stderr:\n{stderr}"
+        "pwrapped: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'p'"),
+        "pwrapped: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let dot = r#"module impl.eei.pdot;
@@ -2462,9 +2470,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pdot", dot);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pdot: expected one E10030; stderr:\n{stderr}"
+        "pdot: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pdot: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let inline_carrier = r#"module impl.eei.pinline;
@@ -2491,9 +2503,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pinline", inline_carrier);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pinline: expected one E10030; stderr:\n{stderr}"
+        "pinline: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pinline: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let func_local = r#"module impl.eei.pfunclocal;
@@ -2522,9 +2538,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pfunclocal", func_local);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pfunclocal: expected one E10030; stderr:\n{stderr}"
+        "pfunclocal: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'p'"),
+        "pfunclocal: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let generic = r#"module impl.eei.pgeneric;
@@ -2552,9 +2572,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pgeneric", generic);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pgeneric: expected one E10030; stderr:\n{stderr}"
+        "pgeneric: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'p'"),
+        "pgeneric: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let accepted = r#"module impl.eei.preturnok;
@@ -2609,19 +2633,15 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let (first, second) = emit_twice("pqproj", projected);
+    let stderr = compile_stderr("pqproj", projected);
     assert_eq!(
-        first, second,
-        "pqproj: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqproj: expected the foreign store once; stderr:\n{stderr}"
     );
-    assert_contains_all(
-        "pqproj",
-        &first,
-        &[
-            "cl_impl_eei_pqproj_make(",
-            ".names",
-            "cl_impl_eei_pqproj_store(",
-        ],
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqproj: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let pair = r#"module impl.eei.pqpair;
@@ -2642,19 +2662,15 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let (first, second) = emit_twice("pqpair", pair);
+    let stderr = compile_stderr("pqpair", pair);
     assert_eq!(
-        first, second,
-        "pqpair: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqpair: expected the foreign store once; stderr:\n{stderr}"
     );
-    assert_contains_all(
-        "pqpair",
-        &first,
-        &[
-            "cl_impl_eei_pqpair_makePair(",
-            "cl_str(\"AA\")",
-            "cl_str(\"BB\")",
-        ],
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqpair: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let identity = r#"module impl.eei.pqidentity;
@@ -2718,12 +2734,16 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let (first, second) = emit_twice("pqcapture", captured);
+    let stderr = compile_stderr("pqcapture", captured);
     assert_eq!(
-        first, second,
-        "pqcapture: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqcapture: expected the foreign store once; stderr:\n{stderr}"
     );
-    assert_contains_all("pqcapture", &first, &["cl_lambda_", "slot"]);
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'p'"),
+        "pqcapture: expected the foreign store message; stderr:\n{stderr}"
+    );
 }
 
 /// A carrier helper's unused owned argument is not a view source.
@@ -2756,12 +2776,16 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let (first, second) = emit_twice("pqunusedowned", source);
+    let stderr = compile_stderr("pqunusedowned", source);
     assert_eq!(
-        first, second,
-        "pqunusedowned: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqunusedowned: expected the foreign store once; stderr:\n{stderr}"
     );
-    assert_run_exit("pqunusedowned", source, 0);
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqunusedowned: expected the foreign store message; stderr:\n{stderr}"
+    );
 
     // A view that reaches the return through a local still names its source.
     let local_hop = r#"module impl.eei.pqlocalhop;
@@ -2792,13 +2816,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pqlocalhop", local_hop);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pqlocalhop: expected the frame-backed source once; stderr:\n{stderr}"
+        "pqlocalhop: expected the foreign store once; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("does not live long enough"),
-        "pqlocalhop: expected the escape report; stderr:\n{stderr}"
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqlocalhop: expected the foreign store message; stderr:\n{stderr}"
     );
 }
 
@@ -2825,25 +2849,28 @@ func main(): i32 {
     return i32(out[0]) - 65;
 }
 "#;
-    let (first, second) = emit_twice("pqcaptureparam", parameter);
+    let stderr = compile_stderr("pqcaptureparam", parameter);
     assert_eq!(
-        first, second,
-        "pqcaptureparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        count_occurrences(&stderr, "error E10034:"),
+        1,
+        "pqcaptureparam: expected the foreign store once; stderr:\n{stderr}"
     );
-    assert_run_exit("pqcaptureparam", parameter, 0);
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 's'"),
+        "pqcaptureparam: expected the foreign store message; stderr:\n{stderr}"
+    );
 
     let static_view = r#"module impl.eei.pqcapturestatic;
 
-func outer(borrow slot: str?): void {
-    let s: str = "AA";
-    ([s, borrow slot] () => {
-        slot = s;
+func outer(p: static str, borrow slot: str?): void {
+    ([p, borrow slot] () => {
+        slot = p;
     })();
 }
 
 func main(): i32 {
     let out: str? = null;
-    outer(borrow out);
+    outer("AA", borrow out);
     if (out == null) { return 9; }
     return i32(out[0]) - 65;
 }
@@ -2888,13 +2915,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pqgenericid", identity);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pqgenericid: expected the generic identity source once; stderr:\n{stderr}"
+        "pqgenericid: expected the foreign store once; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("does not live long enough"),
-        "pqgenericid: expected the escape report; stderr:\n{stderr}"
+        stderr.contains("cannot release or store borrowed parameter 'h'"),
+        "pqgenericid: expected the foreign store message; stderr:\n{stderr}"
     );
 
     let captured = r#"module impl.eei.pqlambdacap;
@@ -2920,13 +2947,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pqlambdacap", captured);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pqlambdacap: expected the capture source once; stderr:\n{stderr}"
+        "pqlambdacap: expected the foreign store once; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("does not live long enough"),
-        "pqlambdacap: expected the escape report; stderr:\n{stderr}"
+        stderr.contains("cannot release or store borrowed parameter 's'"),
+        "pqlambdacap: expected the foreign store message; stderr:\n{stderr}"
     );
 
     // A write through a captured same-frame local is not an escape.
@@ -2976,9 +3003,13 @@ func main(): i32 {
 "#;
     let stderr = compile_stderr("pqlambdatwo", two_view);
     assert_eq!(
-        count_occurrences(&stderr, "error E10030:"),
+        count_occurrences(&stderr, "error E10034:"),
         1,
-        "pqlambdatwo: expected the returned parameter's source once; stderr:\n{stderr}"
+        "pqlambdatwo: expected the foreign store once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot release or store borrowed parameter 's'"),
+        "pqlambdatwo: expected the foreign store message; stderr:\n{stderr}"
     );
 
     // A parameter-backed literal arm does not hide the carrier call in the

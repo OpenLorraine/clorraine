@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 16/27 tasks (59%)
-> **Last Updated**: 2026-10-22 09:38
+> **Progress**: 17/27 tasks (63%)
+> **Last Updated**: 2026-10-22 15:19
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -204,12 +204,13 @@ Notes:
   (69 occurrences): the same classification; update the emission and
   byte-identity pins for the accepted programs.
   ✅ (completed: 2026-10-22 09:38)
-- [ ] 1.1.7 Migrate the whole-slot store fixtures in
+- [x] 1.1.7 Migrate the whole-slot store fixtures in
   `eval_emission_integrity_spec_test.rs` and
   `eval_emission_integrity_impl_test.rs`: the 12/4 `fill` helpers, the
   21/5 `store(h: Holder)`, 13/2 `store(s: str)`, 4/1 `store(h: Box)`, and
   3/1 `store(h: str[2])` shapes; retarget the foreign stores, keep the
   static and own-value controls, and keep the captured static control.
+  ✅ (completed: 2026-10-22 15:19)
 - [ ] 1.1.8 Migrate `borrow_store_integrity_*`,
   `borrow_generic_integrity_*`, `def_backlog_closeout_*`, and
   `checker_conformance_*`: retarget `mixedcarrier`, `nullable-generic`,
