@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 15/27 tasks (56%)
-> **Last Updated**: 2026-10-22 02:01
+> **Progress**: 16/27 tasks (59%)
+> **Last Updated**: 2026-10-22 09:38
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -200,9 +200,10 @@ Notes:
   (103 occurrences): retarget the foreign pass-through acceptances to
   `E10034`; rewrite incidental setup to a static or `take` source; keep the
   static and own-value controls accepted. ✅ (completed: 2026-10-22 02:01)
-- [ ] 1.1.6 Migrate `conditional_projection_residue_impl_test.rs`
+- [x] 1.1.6 Migrate `conditional_projection_residue_impl_test.rs`
   (69 occurrences): the same classification; update the emission and
   byte-identity pins for the accepted programs.
+  ✅ (completed: 2026-10-22 09:38)
 - [ ] 1.1.7 Migrate the whole-slot store fixtures in
   `eval_emission_integrity_spec_test.rs` and
   `eval_emission_integrity_impl_test.rs`: the 12/4 `fill` helpers, the

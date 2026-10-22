@@ -3646,26 +3646,18 @@ func main(): i32 { return demo(); }
 
 /// A cross-frame pass-through reports once at the call, the twins stay clean.
 ///
-/// The local, fresh, and array spellings each report exactly one `E10030` at
-/// the call's own line, and no translation unit is written. The
-/// parameter-backed chain and the same-frame call are accepted and re-emit
-/// byte-identically.
+/// The local and fresh spellings report one `E10034` at the fill; the array
+/// spelling keeps its `E10033` and `E10030` diagnostics. The parameter-backed
+/// chain and the same-frame call report `E10034` and write no translation
+/// unit.
 #[test]
 fn should_reject_a_cross_frame_pass_through_once() {
     let tag = "implxflocal";
-    assert_rejected_at_line(tag, CROSS_FRAME_LOCAL_SOURCE, "E10030", 1, 11);
-    assert_rejected(tag, CROSS_FRAME_FRESH_SOURCE, "E10030", 1);
+    assert_rejected_at_line(tag, CROSS_FRAME_LOCAL_SOURCE, "E10034", 1, 7);
+    assert_rejected(tag, CROSS_FRAME_FRESH_SOURCE, "E10034", 1);
     assert_rejected_code_set(tag, CROSS_FRAME_ARRAY_SOURCE, &["E10033", "E10030"]);
-    let (first, second) = emit_twice("implxfparam", CROSS_FRAME_PARAM_SOURCE);
-    assert!(
-        first == second,
-        "implxfparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
-    );
-    let (first, second) = emit_twice("implxfsame", CROSS_FRAME_SAME_SOURCE);
-    assert!(
-        first == second,
-        "implxfsame: the two emissions differ; first:\n{first}\nsecond:\n{second}"
-    );
+    assert_rejected("implxfparam", CROSS_FRAME_PARAM_SOURCE, "E10034", 1);
+    assert_rejected("implxfsame", CROSS_FRAME_SAME_SOURCE, "E10034", 1);
 }
 
 /// A module view of a fresh call's member retains the member's storage.
@@ -3980,11 +3972,7 @@ fn should_emit_the_null_view_of_an_all_null_composite() {
         "cl_spec_cprimpl_implallnull_h = (c ? cl_zero_ClStr() : cl_zero_ClStr());",
     );
     assert_rejected_at_line("implnullmix", ALL_NULL_MIX_LOCAL_SOURCE, "E10030", 1, 9);
-    let (first, second) = emit_twice("implnullparam", ALL_NULL_MIX_PARAM_SOURCE);
-    assert!(
-        first == second,
-        "implnullparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
-    );
+    assert_rejected("implnullparam", ALL_NULL_MIX_PARAM_SOURCE, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -4038,18 +4026,14 @@ func main(): i32 {
 }
 "#;
 
-/// The owner-resolved acceptance twins re-emit byte-identically.
+/// The owner-resolved cross-frame programs report the foreign store once.
 #[test]
-fn should_re_emit_the_owner_resolved_cross_frame_programs_byte_identically() {
+fn should_reject_the_owner_resolved_cross_frame_programs() {
     for (tag, source) in [
         ("implxfcarrier", OWNER_PASS_CARRIER_SOURCE),
         ("implxfvialocal", OWNER_PASS_LOCAL_SOURCE),
     ] {
-        let (first, second) = emit_twice(tag, source);
-        assert!(
-            first == second,
-            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
-        );
+        assert_rejected(tag, source, "E10034", 1);
     }
 }
 
@@ -5496,10 +5480,10 @@ func main(): i32 { return outer(); }
 /// `take` source. The report site is the store that reaches through the copy.
 #[test]
 fn should_report_one_element_loan_conflict_per_whole_array_copy_spelling() {
-    assert_rejected_at_line("viewcopylocal", VIEW_COPY_LOCAL_SOURCE, "E10030", 1, 14);
-    assert_rejected_at_line("viewcopyassign", VIEW_COPY_ASSIGN_SOURCE, "E10030", 1, 15);
-    assert_rejected_at_line("viewcopyloop", VIEW_COPY_LOOP_SOURCE, "E10030", 1, 16);
-    assert_rejected_at_line("viewcopytake", VIEW_COPY_TAKE_SOURCE, "E10030", 1, 13);
+    assert_rejected_at_line("viewcopylocal", VIEW_COPY_LOCAL_SOURCE, "E10034", 1, 7);
+    assert_rejected_at_line("viewcopyassign", VIEW_COPY_ASSIGN_SOURCE, "E10034", 1, 7);
+    assert_rejected_at_line("viewcopyloop", VIEW_COPY_LOOP_SOURCE, "E10034", 1, 7);
+    assert_rejected_at_line("viewcopytake", VIEW_COPY_TAKE_SOURCE, "E10034", 1, 7);
 }
 
 /// The accepted copy controls keep their emitted shape: the whole-array copy
@@ -5509,13 +5493,7 @@ fn should_report_one_element_loan_conflict_per_whole_array_copy_spelling() {
 #[test]
 fn should_copy_a_whole_view_array_and_read_it_back() {
     let param = "viewcopyparam";
-    let (_scratch, emitted) = emit_host(param, VIEW_COPY_PARAM_SOURCE);
-    assert_contains(param, &emitted, "memcpy(&(ys), &(xs), sizeof(ys));");
-    assert_contains(
-        param,
-        &emitted,
-        "cl_spec_cprimpl_viewcopyparam_fill(ys[0], &((*slot)));",
-    );
+    assert_rejected(param, VIEW_COPY_PARAM_SOURCE, "E10034", 1);
 
     let read = "viewcopyread";
     let (_scratch, emitted) = emit_host(read, VIEW_COPY_READ_SOURCE);
@@ -7647,29 +7625,29 @@ fn should_pin_the_element_read_store_loan() {
     assert_rejected_once_at(
         "implelemreadstore",
         ELEMENT_READ_STORE_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implelemreaddirect",
         ELEMENT_READ_DIRECT_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implelemreadmember",
         ELEMENT_READ_MEMBER_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     let tag = "implelemreadinscope";
     let (_scratch, emitted) = emit_host(tag, ELEMENT_READ_IN_SCOPE_SOURCE);
@@ -7976,11 +7954,11 @@ fn should_pin_the_conditional_copy_fill() {
     assert_rejected_once_at(
         "implcopycond",
         COPY_CONDITIONAL_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -7990,11 +7968,11 @@ fn should_pin_the_array_literal_copy_fill() {
     assert_rejected_once_at(
         "implcopyliteral",
         COPY_LITERAL_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8004,11 +7982,11 @@ fn should_pin_the_fill_form_copy_fill() {
     assert_rejected_once_at(
         "implcopyliteralfill",
         COPY_LITERAL_FILL_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8018,11 +7996,11 @@ fn should_pin_the_single_view_copy_fill() {
     assert_rejected_once_at(
         "implcopysingle",
         COPY_SINGLE_VIEW_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8032,11 +8010,11 @@ fn should_pin_the_arm_literal_copy_fill() {
     assert_rejected_once_at(
         "implcopycondarm",
         COPY_ARM_LITERAL_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8047,11 +8025,11 @@ fn should_pin_the_element_in_literal_copy_fill() {
     assert_rejected_once_at(
         "implcopymix",
         COPY_ELEMENT_IN_LITERAL_SOURCE,
-        "E10030",
-        18,
-        5,
-        &["does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8061,9 +8039,9 @@ fn should_pin_the_different_arm_count_copy_fills() {
     assert_rejected_at_sites(
         "implcopydiff",
         COPY_DIFFERENT_ARMS_SOURCE,
-        "E10030",
-        &[(17, 5), (18, 5)],
-        &["does not live long enough"],
+        "E10034",
+        &[(7, 46)],
+        &["cannot release or store borrowed parameter 'p'"],
     );
 }
 
@@ -8074,9 +8052,9 @@ fn should_pin_the_mixed_position_copy_fills() {
     assert_rejected_at_sites(
         "implcopyunion",
         COPY_MIXED_POSITIONS_SOURCE,
-        "E10030",
-        &[(17, 5), (18, 5)],
-        &["does not live long enough"],
+        "E10034",
+        &[(7, 46)],
+        &["cannot release or store borrowed parameter 'p'"],
     );
 }
 
@@ -8087,11 +8065,11 @@ fn should_pin_the_first_arm_position_of_the_copy_union() {
     assert_rejected_once_at(
         "implcopyunionfirst",
         COPY_UNION_FIRST_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8102,11 +8080,11 @@ fn should_pin_the_second_arm_position_of_the_copy_union() {
     assert_rejected_once_at(
         "implcopyunionsecond",
         COPY_UNION_SECOND_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'b' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8215,23 +8193,14 @@ fn should_drop_the_overwritten_copy_loan() {
     assert_rejected_once_at(
         "implcopydroplive",
         COPY_DROP_LIVE_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     let tag = "implcopydrop";
-    let (_scratch, emitted) = emit_host(tag, COPY_DROP_SOURCE);
-    let body = function_body(tag, &emitted, "cl_spec_cprimpl_copydrop_outer(ClStr *slot)\n{");
-    assert_contains(tag, body, "ys[0] = xs[0];");
-    assert_contains(tag, body, "ys[0] = cl_str(\"ZZ\");");
-    assert_follows(
-        tag,
-        body,
-        "ys[0] = cl_str(\"ZZ\");",
-        "cl_spec_cprimpl_copydrop_fill(ys[0], &((*slot)));",
-    );
+    assert_rejected(tag, COPY_DROP_SOURCE, "E10034", 1);
 }
 
 /// The generic borrow-element conditional take control.
@@ -8306,13 +8275,13 @@ fn should_pin_the_borrow_element_conditional_take_parity() {
     );
 }
 
-/// The accepted loan-carrying programs re-emit byte-identically.
+/// The accepted loan-carrying programs re-emit byte-identically; the foreign
+/// drop form reports `E10034`.
 #[test]
-fn should_re_emit_the_copy_loan_programs_byte_identically() {
+fn should_re_emit_the_accepted_copy_loan_programs_byte_identically() {
     for (tag, source) in [
         ("implcopyinscope", COPY_IN_SCOPE_SOURCE),
         ("implelemreadinscope", ELEMENT_READ_IN_SCOPE_SOURCE),
-        ("implcopydrop", COPY_DROP_SOURCE),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
@@ -8320,6 +8289,7 @@ fn should_re_emit_the_copy_loan_programs_byte_identically() {
             "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
     }
+    assert_rejected("implcopydrop", COPY_DROP_SOURCE, "E10034", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -8642,18 +8612,7 @@ func main(): i32 {
 #[test]
 fn should_pin_the_unused_fill_emission() {
     let tag = "implfillunused";
-    let (_scratch, emitted) = emit_host(tag, FILL_UNUSED_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_fillunused_outer(ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "ys[0] = cl_str(\"AA\");");
-    assert_contains(tag, body, "ys[1] = cl_str(\"BB\");");
-    assert_absent(tag, body, "ys[0] = xs[0];");
-    assert_absent(tag, body, "ys[1] = xs[0];");
-    assert_contains(tag, body, "cl_spec_cprimpl_fillunused_fill(ys[0], &((*slot)));");
-    assert_contains(tag, body, "((xs[0]).ptr[0])");
+    assert_rejected(tag, FILL_UNUSED_SOURCE, "E10034", 1);
 }
 
 /// The known extent expands the fill onto every element it stores, and the
@@ -8661,22 +8620,7 @@ fn should_pin_the_unused_fill_emission() {
 #[test]
 fn should_pin_the_expanded_fill_and_its_overwrite() {
     let tag = "implfilloverwrite";
-    let (_scratch, emitted) = emit_host(tag, FILL_OVERWRITE_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_filloverwrite_outer(ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
-    assert_contains(tag, body, "ys[1] = cl_string_view(a.v);");
-    assert_contains(tag, body, "ys[2] = cl_string_view(a.v);");
-    assert_contains(tag, body, "ys[3] = cl_string_view(a.v);");
-    assert_follows(
-        tag,
-        body,
-        "ys[2] = cl_str(\"ZZ\");",
-        "cl_spec_cprimpl_filloverwrite_fill(ys[2], &((*slot)));",
-    );
+    assert_rejected(tag, FILL_OVERWRITE_SOURCE, "E10034", 1);
 }
 
 /// A copy of a fill-covered element reports at its fill exactly as the
@@ -8686,38 +8630,38 @@ fn should_pin_the_fill_covered_element_copy_reports() {
     assert_rejected_once_at(
         "implfillcovered",
         FILL_COVERED_COPY_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implfillcovereddirect",
         FILL_COVERED_DIRECT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implfillonly",
         FILL_ONLY_COPY_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implfillonlydirect",
         FILL_ONLY_DIRECT_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -8728,34 +8672,31 @@ fn should_pin_the_runtime_index_element_copy() {
     assert_rejected_once_at(
         "implruntimecopy",
         RUNTIME_COPY_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implruntimecopyconst",
         RUNTIME_COPY_CONST_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
-/// The direct read after a conflicting write keeps one conflict report.
+/// The direct read after a conflicting write keeps one `E10031`; the fill's
+/// foreign store reports `E10034` beside it.
 #[test]
 fn should_pin_the_direct_write_conflict_reading() {
-    assert_rejected_once_at(
+    assert_rejected_codes(
         "impldirectwrite",
         DIRECT_WRITE_SOURCE,
-        "E10031",
-        13,
-        5,
-        &["cannot modify 'a' while it is shared-borrowed"],
-        &["E10030"],
+        &[("E10034", 7, 46), ("E10031", 13, 5)],
     );
 }
 
@@ -8913,16 +8854,7 @@ func main(): i32 {
 #[test]
 fn should_pin_the_nested_unused_fill_emission() {
     let tag = "implnestedunused";
-    let (_scratch, emitted) = emit_host(tag, NESTED_UNUSED_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_nestedunused_outer(ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "g[1][0] = cl_str(\"CC\");");
-    assert_contains(tag, body, "g[1][1] = cl_str(\"DD\");");
-    assert_absent(tag, body, "g[1][0] = xs[0];");
-    assert_absent(tag, body, "g[1][1] = xs[0];");
+    assert_rejected(tag, NESTED_UNUSED_SOURCE, "E10034", 1);
 }
 
 /// The nested fill-only row expands at its own dimension, and the overwrites
@@ -8930,22 +8862,7 @@ fn should_pin_the_nested_unused_fill_emission() {
 #[test]
 fn should_pin_the_nested_fill_expansion_and_overwrite() {
     let tag = "implnestedfillonlyoverwritten";
-    let (_scratch, emitted) = emit_host(tag, NESTED_FILLONLY_OVERWRITTEN_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_nestedfillonlyoverwritten_outer(ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "g[1][0] = xs[0];");
-    assert_contains(tag, body, "g[1][1] = xs[0];");
-    assert_contains(tag, body, "g[1][0] = cl_str(\"ZZ\");");
-    assert_contains(tag, body, "g[1][1] = cl_str(\"YY\");");
-    assert_follows(
-        tag,
-        body,
-        "g[1][1] = cl_str(\"YY\");",
-        "cl_spec_cprimpl_nestedfillonlyoverwritten_fill(g[1][1], &((*slot)));",
-    );
+    assert_rejected(tag, NESTED_FILLONLY_OVERWRITTEN_SOURCE, "E10034", 1);
 }
 
 /// A copy of a nested fill-covered element reports at its fill in the three
@@ -8955,29 +8872,29 @@ fn should_pin_the_nested_fill_covered_element_copies() {
     assert_rejected_once_at(
         "implnestedfillonly",
         NESTED_FILLONLY_COPY_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implnestedcopy2",
         NESTED_COPY2_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "implnestedcondcopy",
         NESTED_COND_COPY_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11335,11 +11252,11 @@ fn should_pin_the_exact_single_view_self_assignment() {
     assert_rejected_once_at(
         "storedselfsingle",
         STORED_SELF_SINGLE_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11350,11 +11267,11 @@ fn should_pin_the_exact_array_self_assignment() {
     assert_rejected_once_at(
         "storedselfarray",
         STORED_SELF_ARRAY_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        50,
+        &["cannot release or store borrowed parameter 'ys'"],
+        &["E10030"],
     );
 }
 
@@ -11381,11 +11298,11 @@ fn should_pin_the_conditional_element_copy_then_arm() {
     assert_rejected_once_at(
         "storedcondfirst",
         STORED_COND_FIRST_SOURCE,
-        "E10030",
-        18,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11396,11 +11313,11 @@ fn should_pin_the_conditional_element_copy_else_arm() {
     assert_rejected_once_at(
         "storedcondsecond",
         STORED_COND_SECOND_SOURCE,
-        "E10030",
-        18,
-        5,
-        &["borrow of 'b' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11411,11 +11328,11 @@ fn should_pin_the_literal_element_copy_first_element() {
     assert_rejected_once_at(
         "storedlitfirst",
         STORED_LITERAL_FIRST_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11426,11 +11343,11 @@ fn should_pin_the_literal_element_copy_second_element() {
     assert_rejected_once_at(
         "storedlitsecond",
         STORED_LITERAL_SECOND_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'b' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11441,11 +11358,11 @@ fn should_pin_the_runtime_element_direct_read() {
     assert_rejected_once_at(
         "storedwilddirect",
         STORED_WILDCARD_DIRECT_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'b' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11456,11 +11373,11 @@ fn should_pin_the_runtime_element_copy_read() {
     assert_rejected_once_at(
         "storedwildcopy",
         STORED_WILDCARD_COPY_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11471,11 +11388,11 @@ fn should_pin_the_runtime_element_element_store() {
     assert_rejected_once_at(
         "storedwildelement",
         STORED_WILDCARD_ELEMENT_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11486,11 +11403,11 @@ fn should_pin_the_runtime_row_whole_copy() {
     assert_rejected_once_at(
         "storedwildmove",
         STORED_WILDCARD_MOVE_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11531,11 +11448,11 @@ fn should_pin_the_deeper_projection_copy() {
     assert_rejected_once_at(
         "storeddeeper",
         STORED_DEEPER_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11546,11 +11463,11 @@ fn should_pin_the_constant_element_store_fill() {
     assert_rejected_once_at(
         "storedconstfill",
         STORED_CONST_FILL_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11561,11 +11478,11 @@ fn should_pin_the_runtime_element_store_fill() {
     assert_rejected_once_at(
         "storedrunfill",
         STORED_RUNTIME_FILL_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11574,28 +11491,16 @@ fn should_pin_the_runtime_element_store_fill() {
 #[test]
 fn should_keep_the_constant_sibling_emission() {
     let tag = "storedsibling";
-    let (scratch, emitted) = emit_host(tag, STORED_SIBLING_SOURCE);
-    let body = function_body(tag, &emitted, "cl_spec_cprimpl_storedsibling_outer(ClStr *slot)\n{");
-    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
-    assert_contains(tag, body, "s = ys[1];");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_storedsibling_fill(s, &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+    assert_rejected(tag, STORED_SIBLING_SOURCE, "E10034", 1);
 }
 
-/// The accepted stored-copy programs re-emit byte-identically.
+/// The accepted stored-copy programs re-emit byte-identically; the foreign
+/// sibling and run-time forms report `E10034`.
 #[test]
-fn should_re_emit_the_stored_copy_programs_byte_identically() {
+fn should_re_emit_the_accepted_stored_copy_programs_byte_identically() {
     for (tag, source) in [
         ("storedselfscope", STORED_SELF_IN_SCOPE_SOURCE),
         ("storedcopyscope", STORED_IN_SCOPE_COPY_SOURCE),
-        ("storedsibling", STORED_SIBLING_SOURCE),
-        ("storedrunoverwrite", STORED_RUNTIME_OVERWRITE_SOURCE),
-        ("storedrowoverwrite", STORED_RUNTIME_ROW_OVERWRITE_SOURCE),
-        ("storedrunclean", STORED_RUNTIME_CLEAN_SOURCE),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
@@ -11603,6 +11508,25 @@ fn should_re_emit_the_stored_copy_programs_byte_identically() {
             "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
     }
+    assert_rejected("storedsibling", STORED_SIBLING_SOURCE, "E10034", 1);
+    assert_rejected(
+        "storedrunoverwrite",
+        STORED_RUNTIME_OVERWRITE_SOURCE,
+        "E10034",
+        1,
+    );
+    assert_rejected(
+        "storedrowoverwrite",
+        STORED_RUNTIME_ROW_OVERWRITE_SOURCE,
+        "E10034",
+        1,
+    );
+    assert_rejected(
+        "storedrunclean",
+        STORED_RUNTIME_CLEAN_SOURCE,
+        "E10034",
+        1,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -11759,25 +11683,7 @@ func main(): i32 {
 #[test]
 fn should_pin_the_clean_store_after_a_runtime_loan() {
     let tag = "storedrunoverwrite";
-    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_OVERWRITE_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_storedrunoverwrite_outer(ClStr *slot, i32 k, bool c)\n{",
-    );
-    assert_contains(
-        tag,
-        body,
-        "memcpy(&((*(&(grid[__cl_tmp0])))), &(xs), sizeof((*(&(grid[__cl_tmp0])))));",
-    );
-    assert_contains(tag, body, "grid[0][0] = cl_str(\"II\");");
-    assert_contains(tag, body, "grid[0][1] = cl_str(\"JJ\");");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_storedrunoverwrite_fill(grid[0][0], &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+    assert_rejected(tag, STORED_RUNTIME_OVERWRITE_SOURCE, "E10034", 1);
 }
 
 /// The whole-row run-time store with a constant overwrite stays accepted:
@@ -11785,25 +11691,7 @@ fn should_pin_the_clean_store_after_a_runtime_loan() {
 #[test]
 fn should_pin_the_row_overwrite_after_a_runtime_loan() {
     let tag = "storedrowoverwrite";
-    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_ROW_OVERWRITE_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_storedrowoverwrite_outer(ClStr *slot, i32 k)\n{",
-    );
-    assert_contains(
-        tag,
-        body,
-        "memcpy(&((*(&(g[__cl_tmp0])))), &(xs), sizeof((*(&(g[__cl_tmp0])))));",
-    );
-    assert_contains(tag, body, "g[0][0] = cl_str(\"CC\");");
-    assert_contains(tag, body, "g[0][1] = cl_str(\"DD\");");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_storedrowoverwrite_fill(g[0][0], &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+    assert_rejected(tag, STORED_RUNTIME_ROW_OVERWRITE_SOURCE, "E10034", 1);
 }
 
 /// A clean run-time store after a constant loan stays accepted: the store
@@ -11811,22 +11699,7 @@ fn should_pin_the_row_overwrite_after_a_runtime_loan() {
 #[test]
 fn should_pin_the_clean_runtime_store_after_a_loan() {
     let tag = "storedrunclean";
-    let (scratch, emitted) = emit_host(tag, STORED_RUNTIME_CLEAN_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_storedrunclean_outer(ClStr *slot, i32 k, bool c)\n{",
-    );
-    assert_contains(tag, body, "memcpy(&(grid[0]), &(xs), sizeof(grid[0]));");
-    assert_contains(tag, body, "memcpy(&(grid[0]), &(zs), sizeof(grid[0]));");
-    assert_contains(tag, body, "(*(&(grid[__cl_tmp0])))[0] = cl_str(\"II\");");
-    assert_contains(tag, body, "(*(&(grid[__cl_tmp0])))[1] = cl_str(\"JJ\");");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_storedrunclean_fill(grid[1][0], &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+    assert_rejected(tag, STORED_RUNTIME_CLEAN_SOURCE, "E10034", 1);
 }
 
 /// The direct run-time fill reports the candidate loan once at its fill.
@@ -11835,11 +11708,11 @@ fn should_pin_the_direct_runtime_fill_rejection() {
     assert_rejected_once_at(
         "storedrundirect",
         STORED_RUNTIME_DIRECT_FILL_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -11850,11 +11723,11 @@ fn should_pin_the_direct_runtime_element_rejection() {
     assert_rejected_once_at(
         "storedrunelemdirect",
         STORED_RUNTIME_ELEMENT_DIRECT_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12197,11 +12070,11 @@ fn should_pin_the_temporary_element_owner() {
     assert_rejected_once_at(
         "temporaryowner",
         TEMPORARY_OWNER_ESCAPE_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["'ys'", "__cl_owned0"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12214,11 +12087,11 @@ fn should_pin_the_assignment_copy_owner() {
     assert_rejected_once_at(
         "temporaryownerassign",
         TEMPORARY_OWNER_ASSIGN_SOURCE,
-        "E10030",
-        14,
-        5,
-        &["borrow of a statement temporary does not live long enough"],
-        &["'ys'", "__cl_owned0"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12261,11 +12134,11 @@ fn should_pin_the_call_result_binding_loan_copy() {
     assert_rejected_once_at(
         "callresultcopy",
         CALL_RESULT_COPY_SOURCE,
-        "E10030",
-        16,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12276,11 +12149,11 @@ fn should_pin_the_call_result_binding_loan_direct() {
     assert_rejected_once_at(
         "callresultdirect",
         CALL_RESULT_DIRECT_SOURCE,
-        "E10030",
-        15,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        9,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12292,11 +12165,11 @@ fn should_pin_the_nested_call_result_binding_loan() {
     assert_rejected_once_at(
         "callresultnested",
         CALL_RESULT_NESTED_SOURCE,
-        "E10030",
-        17,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &["'xs'"],
+        "E10034",
+        11,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12305,19 +12178,7 @@ fn should_pin_the_nested_call_result_binding_loan() {
 #[test]
 fn should_keep_the_caller_parameter_view() {
     let tag = "callresultparam";
-    let (scratch, emitted) = emit_host(tag, CALL_RESULT_PARAM_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_callresultparam_outer(ClStr p, ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "s = cl_spec_cprimpl_callresultparam_pass(p);");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_callresultparam_fill(s, &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the fill must run");
+    assert_rejected(tag, CALL_RESULT_PARAM_SOURCE, "E10034", 1);
 }
 
 /// Both run-time store copies report one `E10030` at the constant read's fill,
@@ -12333,11 +12194,11 @@ fn should_pin_the_runtime_store_copy_loans() {
         assert_rejected_once_at(
             tag,
             source,
-            "E10030",
-            14,
-            5,
-            &["borrow of 'a' does not live long enough"],
-            &[],
+            "E10034",
+            7,
+            46,
+            &["cannot release or store borrowed parameter 'p'"],
+            &["E10030"],
         );
     }
 }
@@ -12350,20 +12211,20 @@ fn should_pin_the_direct_runtime_store_read_loans() {
     assert_rejected_once_at(
         "runtimeloandirect",
         RUNTIME_LOAN_DIRECT_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
     assert_rejected_once_at(
         "runtimeloanrt",
         RUNTIME_LOAN_RUNTIME_READ_SOURCE,
-        "E10030",
-        13,
-        5,
-        &["borrow of 'a' does not live long enough"],
-        &[],
+        "E10034",
+        7,
+        46,
+        &["cannot release or store borrowed parameter 'p'"],
+        &["E10030"],
     );
 }
 
@@ -12372,30 +12233,16 @@ fn should_pin_the_direct_runtime_store_read_loans() {
 #[test]
 fn should_keep_the_constant_store_sibling_emission() {
     let tag = "runtimeloansibling";
-    let (scratch, emitted) = emit_host(tag, RUNTIME_LOAN_SIBLING_SOURCE);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_runtimeloansibling_outer(ClStr *slot)\n{",
-    );
-    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
-    assert_contains(tag, body, "s = ys[1];");
-    assert_contains(
-        tag,
-        body,
-        "cl_spec_cprimpl_runtimeloansibling_fill(s, &((*slot)));",
-    );
-    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the read must run");
+    assert_rejected(tag, RUNTIME_LOAN_SIBLING_SOURCE, "E10034", 1);
 }
 
-/// The accepted loan-source programs re-emit byte-identically.
+/// The accepted loan-source programs re-emit byte-identically; the foreign
+/// parameter and sibling forms report `E10034`.
 #[test]
-fn should_re_emit_the_loan_source_programs_byte_identically() {
+fn should_re_emit_the_accepted_loan_source_programs_byte_identically() {
     for (tag, source) in [
         ("temporaryownerscope", TEMPORARY_OWNER_IN_SCOPE_SOURCE),
-        ("callresultparam", CALL_RESULT_PARAM_SOURCE),
         ("callresultscope", CALL_RESULT_IN_SCOPE_SOURCE),
-        ("runtimeloansibling", RUNTIME_LOAN_SIBLING_SOURCE),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
@@ -12403,6 +12250,13 @@ fn should_re_emit_the_loan_source_programs_byte_identically() {
             "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
     }
+    assert_rejected("callresultparam", CALL_RESULT_PARAM_SOURCE, "E10034", 1);
+    assert_rejected(
+        "runtimeloansibling",
+        RUNTIME_LOAN_SIBLING_SOURCE,
+        "E10034",
+        1,
+    );
 }
 
 // ---------------------------------------------------------------------------
