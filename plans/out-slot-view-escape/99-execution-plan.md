@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 19/27 tasks (70%)
-> **Last Updated**: 2026-10-22 15:22
+> **Progress**: 23/27 tasks (85%)
+> **Last Updated**: 2026-10-22 15:28
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -217,9 +217,10 @@ Notes:
   `closeout-st14`, the capture out-slot cases, and any remaining whole-slot
   fixture from the inventory; keep the `take`, static, and own-value
   controls. ✅ (completed: 2026-10-22 15:22)
-- [ ] 1.1.9 Confirm red: the new cases fail with the expected missing
+- [x] 1.1.9 Confirm red: the new cases fail with the expected missing
   `E10034` or wrong code; the migrated acceptance controls fail until the
   implementation lands; no implementation changes yet.
+  ✅ (completed: 2026-10-22 15:24; red checkpoint `b1e87fa`)
 
 ### Phase 2 — Concrete whole-out-slot judgment
 
@@ -235,11 +236,11 @@ Notes:
   a shared helper) and the diagnostic site; keep the message
   `cannot release or store borrowed parameter '{name}'`.
   ✅ (completed: 2026-10-22 01:18)
-- [~] 2.1.3 Run the focused `borrow_store_integrity_*`,
+- [x] 2.1.3 Run the focused `borrow_store_integrity_*`,
   `conditional_projection_residue_*`, and `eval_emission_integrity_*` suites,
   the `compiler/src/own/tests.rs` unit tests, and the `RDC_ASAN=1` ownership
-  probes. ⏳ (verification pending: 2026-10-22 01:18; the existing fixture
-  migration is AR-1)
+  probes. ✅ (completed: 2026-10-22 15:28; unit 377/377,
+  ASAN borrow-store 40, projection 229, eval 68; impl suites 13/224/53)
 
 ### Phase 3 — Generic whole-slot duty and the owned move
 
@@ -274,21 +275,22 @@ Notes:
   already-emitted diagnostic. The bit is shape-based, not instance-verdict
   based: the callee-side judgment owns the report at the rejecting instances
   and accepts at the accepting ones. ✅ (completed: 2026-10-22 01:30)
-- [~] 4.1.2 Withhold the caller-side `check_cross_frame_pass_through`
+- [x] 4.1.2 Withhold the caller-side `check_cross_frame_pass_through`
   `E10030` for a callee with the bit; keep it for FFI/opaque callees with no
   body. The non-nullable `str[2]` array slot keeps its existing `E10033` +
   `E10030` contract and is not part of the bit. Add one-report tests for the
-  nullable cross-frame local and fresh shapes. ⏳ (withholding implemented:
-  2026-10-22 01:30; the one-report fixture assertions land with AR-1)
+  nullable cross-frame local and fresh shapes.
+  ✅ (completed: 2026-10-22 15:28; exact-count assertions in
+  `should_reject_a_cross_frame_pass_through_once`)
 - [x] 4.1.3 Reconcile the capture-move overlap: when a captured writable
   borrow is stored into an out-slot, the capture rule owns the report
   (`E10401`) and the out-slot rule withholds; pin the by-value and
   writable-borrow capture cases so no second `E10034` appears.
   ✅ (completed: 2026-10-22 01:30)
-- [~] 4.1.4 Run the cross-frame and captured suites; confirm exactly one
+- [x] 4.1.4 Run the cross-frame and captured suites; confirm exactly one
   `E10034` for the nullable shapes, no `E10030` duplicate, and the
-  non-nullable array contract unchanged. ⏳ (captured suite green; the
-  cross-frame fixture expectations are pending AR-1)
+  non-nullable array contract unchanged.
+  ✅ (completed: 2026-10-22 15:28)
 
 ### Phase 5 — Verification, review, and close-out
 
