@@ -1,8 +1,8 @@
 # Task T-07: Reject a foreign lend stored into a whole out-slot
 
 > **Type**: Task (multi-phase) · **CodeOps Artifact Schema**: 1
-> **Progress**: 26/27 tasks (96%)
-> **Last Updated**: 2026-10-22 16:43
+> **Progress**: 27/27 tasks (100%)
+> **Last Updated**: 2026-10-22 16:33
 > **Rows**: `DEF-541`
 > **Baseline**: `a6dde7d` (plan creation); re-baseline at the first implementation commit
 > **Reasoning**: high — critical memory safety, a frozen-spec clarification, and a deliberate reversal of the AR-20 acceptance
@@ -298,20 +298,22 @@ Notes:
   Docker SDK container. ✅ (completed: 2026-10-22 15:29; `make check` and
   `make verify` green, including the FS-UAE legs after refreshing the local
   X11 cookie)
-- [~] 5.1.2 Phase review: correctness reviewer plus the memory-safety
+- [x] 5.1.2 Phase review: correctness reviewer plus the memory-safety
   auditor (ownership change); the emission-integrity auditor if the
-  migration changes emitted C. ✅ (completed: 2026-10-22 16:43; the single
+  migration changes emitted C. ✅ (completed: 2026-10-22 16:33; the single
   re-review found the laundering and concrete-owned gaps, both fixed; the
   final focused, ASAN, `make check`, and `make verify` runs are green)
 - [x] 5.1.3 Re-emit determinism pins for the changed accepted units; confirm
   no byte-identity regression beyond the retargeted fixtures.
-  ✅ (completed: 2026-10-22 16:43; the accepted cpr/eval byte-identity pins
+  ✅ (completed: 2026-10-22 16:33; the accepted cpr/eval byte-identity pins
   pass in the impl suites and `make verify`)
-- [ ] 5.1.4 Close `DEF-541` in the `plans/00-roadmap.md` row `DEF-541`
+- [x] 5.1.4 Close `DEF-541` in the `plans/00-roadmap.md` row `DEF-541`
   (Done) and update the residual row in
   `plans/deferred-evaluation-completion/05-findings.md` (line 61); file the
   generic non-nullable `copy<str>` residual (PF-010) as a new `DEF-` row in
   `plans/00-roadmap.md` with the probe evidence, using the next free id.
+  ✅ (completed: 2026-10-22 16:33; `DEF-541` Done, PF-010 filed as
+  `DEF-542`, and the same-frame flow residual filed as `DEF-543`)
 
 **Verify**: `make check` and `make verify` in the Docker SDK container; the
 focused suites and `RDC_ASAN=1` controls green; one `E10034` per foreign

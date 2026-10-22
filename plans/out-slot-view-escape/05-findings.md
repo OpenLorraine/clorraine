@@ -79,9 +79,8 @@
 
 ## Residuals to file
 
-- **Same-frame conditional-write laundering.** The source state is
-  flow-insensitive, so a concrete same-frame store can accept a local view
-  after a conditional static write. This predates the plan. File it as a new
-  roadmap defect with the ASAN probe.
-- **PF-010.** The generic non-nullable `copy<str>` residual is unchanged and
-  must be filed with the next free roadmap id.
+- **DEF-543.** The same-frame conditional-write laundering is a pre-existing
+  flow-insensitivity residual; the cross-frame form is rejected by the
+  conservative written-local guard, and the same-frame probe is filed.
+- **DEF-542.** The generic non-nullable `copy<str>` view-slot residual is
+  unchanged and filed per the PF-010 ruling.

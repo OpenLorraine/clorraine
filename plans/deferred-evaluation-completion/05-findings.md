@@ -58,7 +58,7 @@ conditional/unconditional/both-path re-init); pass under `RDC_ASAN=1`.
 | Array/slice root | A duplicable array/slice was treated as a copy | `copies_whole_value` distinguishes a struct copy from a decayed array/slice pointer |
 | Nested capture | A relayed whole-out-slot capture lost its kind | `capture_whole_out_slot` relays through the capture map |
 | Static-return call | A static-returning named call was treated as a fresh view | The call-site source summary uses the callee's return-expression names; static/module-backed results are not statement temporaries |
-| Residual | Caller-side stored-view invalidation | Container field/element stores closed in `plans/caller-view-escape`; a whole `borrow T?` out-slot assignment from another lend remains `DEF-541` (critical, needs a ruling against the existing AR-20 acceptance) |
+| Residual | Caller-side stored-view invalidation | Container field/element stores closed in `plans/caller-view-escape`; the whole `borrow T?` out-slot assignment from another lend is closed in T-07 (`DEF-541`). The same-frame conditional-write flow gap is `DEF-543`; the generic non-nullable view slot is `DEF-542` |
 
 **Final verification**: `make check` and `make verify` exit 0 at the code head;
 the new cases pass under `RDC_ASAN=1`; the emission matrix shows no
