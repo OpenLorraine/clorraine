@@ -105,7 +105,7 @@ general dataflow framework.
 | DEF | Current Behavior | Required Behavior |
 |---|---|---|
 | 167 | `a < b > (c)` is accepted as a generic call, but the callee is not generic and the C call fails. The filed shape is the stage test's **i32 local** `a`; a free-function callee is the `DEF-418` twin | Keep the frozen generic-call parse; add a parse-only/stage-select mode (`compiler/src/driver.rs`); reject explicit type arguments on **every** non-generic callee with one `E10300`, including the non-callable local/parameter value |
-| 171 | `embed` outside a constant context is accepted and emits invalid C | Enforce DI-4 / `E10213`; re-enable the E10213 golden; emit no translation unit. Add a constant-context flag so a module `const` keeps only `E10224`. A module-level `let` is the reserved `spec/04`/`spec/13` conflict (R-6) |
+| 171 | `embed` outside a constant context is accepted and emits invalid C | Enforce DI-4 / `E10213`; re-enable the E10213 golden; emit no translation unit. Add a constant-context flag so a module `const` keeps only `E10224`. A module-level `let embed` reports `E10213` under R-6 (follow `spec/04` §16; the `spec/13` §1 sentence is a recorded frozen inconsistency) |
 | 416 | Two modules' same simple type name collapse into one type-table entry | Report one `E11101` at the second declaration from a cross-module check in `sema` (with a pure `TypeTable` collision query); no merged entry and no C. Keep the simple table; no qualified identity layer |
 
 ## Dependencies
@@ -131,5 +131,5 @@ general dataflow framework.
 | A DEF is stale or no longer reproducible | Medium | Low | Phase 0 revalidates all 35 rows and closes only with HEAD evidence; `DEF-506`/`DEF-507` are the current suspects. A stale close gets a green HEAD pin, not a forced red test |
 | The DEF-416 collision report is mistaken for a spec change | Medium | Medium | It uses the existing E11101 code and is recorded as a conservative limitation (AR-20), not a chapter change |
 | The new source set leaks across a reused temporary id | Medium | Medium | Keep it on `PlaceState`, which `drop_bindings_from`/`edge_state` already prune; add an id-reuse unit pin |
-| The module-level `let embed` spec conflict blocks DEF-171 | Medium | High | R-6 is reserved; the plan claims only the function-body/local-`const` forms until the user rules |
+| The module-level `let embed` spec conflict blocks DEF-171 | Medium | High | R-6 resolved: follow `spec/04` §16; a module-level `let` reports `E10213`; the `spec/13` §1 sentence is recorded as a frozen inconsistency |
 | Spec change needed mid-flight | Low | High | Stop under AR-11 and obtain approval before editing the spec |

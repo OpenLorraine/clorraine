@@ -33,7 +33,7 @@ is a type-table identity collision.
 | DEF | Change | Existing helper |
 |---|---|---|
 | 167 | Keep `a < b > (c)` as the frozen generic call; add a parse-only/stage-select mode for the stage test; report one `E10300` on **every** non-generic callee, including a non-callable local/parameter value. The filed stage shape is the local i32 `a`; the free-function form is the `DEF-418` twin | `sema/call.rs` type-argument check + `driver.rs` mode |
-| 171 | Enforce DI-4: `embed` outside a constant context reports `E10213`; do not lower or emit; re-enable the E10213 golden. Add a constant-context flag so a module `const` keeps only `E10224`. A module-level `let embed` is the reserved `spec/04`/`spec/13` conflict R-6 | `sema/expr.rs` intrinsic check + `sema/items.rs` context flag + compile-fail harness |
+| 171 | Enforce DI-4: `embed` outside a constant context reports `E10213`; do not lower or emit; re-enable the E10213 golden. Add a constant-context flag so a module `const` keeps only `E10224`. A module-level `let embed` reports `E10213` under R-6 (`spec/04` §16; the `spec/13` §1 sentence is a recorded frozen inconsistency) | `sema/expr.rs` intrinsic check + `sema/items.rs` context flag + compile-fail harness |
 | 416 | Report one `E11101` at the second declaration for a cross-module same-simple-name type from a `sema` cross-module check (pure `TypeTable` collision query); keep the simple table and do not emit C | `sema/mod.rs` + `types/table.rs` query |
 
 No parser grammar change is planned. `DEF-167` is a type-stage rejection, not a
@@ -41,18 +41,18 @@ reparse; the parse-only mode preserves the stage-spec parse assertion, and the
 same local-i32 source must still be rejected by a full compile. `DEF-171` uses
 the existing diagnostic registry and golden; the positive constant-context
 `embed` path is not implemented because data inclusion is staged out. A
-module-level `let embed` is the reserved `spec/04` §16 / `spec/13` §1
-constant-context conflict (R-6); the plan does not claim that form until the
-user rules, and it changes no spec chapter. `DEF-416` is a conservative
-collision report: the spec's module-namespace allowance remains a recorded
-limitation (AR-20), not a new type-identity layer.
+module-level `let embed` reports `E10213` under R-6: the plan follows
+`spec/04` §16 and records the `spec/13` §1 sentence as a frozen inconsistency;
+it changes no spec chapter. `DEF-416` is a conservative collision report: the
+spec's module-namespace allowance remains a recorded limitation (AR-20), not a
+new type-identity layer.
 
 ## Error Handling
 
 | Error Case | Handling Strategy | AR Ref |
 |---|---|---|
 | Explicit type args on a non-generic callee | One `E10300` wrong number of type arguments for every non-generic callee form, including the non-callable local/parameter value; no C; the parse-only stage test stays accepted | AR-14, AR-19 |
-| `embed` outside a constant context | `E10213`; no C; the golden is re-enabled; a module `const` keeps only `E10224` (staged); a module-level `let` is R-6 | AR-15 |
+| `embed` outside a constant context | `E10213`; no C; the golden is re-enabled; a module `const` keeps only `E10224` (staged); a module-level `let` reports `E10213` under R-6 | AR-15, AR-23 |
 | Same simple type name in two modules | One `E11101` at the second declaration from the `sema` cross-module check; no C; keep the simple table | AR-20 |
 
 ## Testing Requirements
@@ -65,9 +65,8 @@ limitation (AR-20), not a new type-identity layer.
 - `DEF-171`: the `E10213` golden is re-enabled (remove E10213 from
   `EXCLUDED_CODES`, add it to `ASSERTED_CODES`; keep E10214 excluded); no
   `memcpy(&(data), &(0), ...)`. A non-`embed` constant control builds; a
-  module `const embed` reports only `E10224`; a function-body/local `let embed`
-  reports only `E10213`. A module-level `let embed` is the R-6 conflict; the
-  control records the user's ruling.
+  module `const embed` reports only `E10224`; a function-body/local `let` or
+  `const` `embed` and a module-level `let embed` report only `E10213` (R-6).
 - `DEF-416`: two modules declare `Thing` with different fields; the second
   declaration reports one `E11101` and no C is written. `qinitstructname` is
   retargeted from its current success assertion to the collision rejection.

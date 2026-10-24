@@ -46,7 +46,7 @@ full evidence. The applied corrections are:
 | PF-030 | Build the probe binary before the Phase 0 evidence probe; author the source-set pin after the field exists | 2026-10-24 |
 | PF-031 | Use the pinned destination index and the run-time source shape in ST-9 | 2026-10-24 |
 | PF-032 | Add the four new test pairs to the AGENTS.md test-naming map | 2026-10-24 |
-| R-6 | **Pending user ruling:** `spec/04` §16 says a module-level `let` initializer is not a constant context; `spec/13` §1 says it is. `DEF-171`'s module-level `let embed` outcome depends on this | — |
+| R-6 / AR-23 | User chose **follow `spec/04` §16**: a module-level `let embed` reports `E10213`; the `spec/13` §1 sentence is recorded as a frozen inconsistency; no chapter change | 2026-10-24 |
 
 ## Red-Phase Evidence
 

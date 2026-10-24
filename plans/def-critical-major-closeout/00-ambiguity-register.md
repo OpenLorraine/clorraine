@@ -1,6 +1,6 @@
 # Ambiguity Register: Critical/Major DEF Closeout
 
-> **Status**: ✅ GATE PASSED — all 22 items resolved
+> **Status**: ✅ GATE PASSED — all 23 items resolved
 > **Last Updated**: 2026-10-24
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
@@ -27,6 +27,7 @@
 | AR-20 | Behavioral | How is `DEF-416` closed: module-qualified identity or a collision report? | Qualified identity / collision report / defer | **Collision report**: one `E11101` at the second declaration; keep the simple type table and do not add a type-identity layer. The spec's module-namespace allowance remains a recorded conservative limitation, not a spec change | ✅ Resolved (preflight R-3, 2026-10-24) |
 | AR-21 | Data & state | The plan-creation edit erased the 33 rows' severity/evidence and the roadmap header is stale | Restore/append / move to `05-findings` / leave | **Restore the original notes and fix the header**; phase closes go through the roadmap skill (`update_roadmap`), and the evidence is also recorded in `05-findings.md` | ✅ Resolved (preflight R-4, 2026-10-24) |
 | AR-22 | Technical | Apply the preflight technical corrections? | Apply all / subset / none | **Apply the delegated fixes**; the 28 findings and their resolutions are in `00-preflight-report.md`, and the plan documents are corrected | ✅ Resolved (2026-10-24) |
+| AR-23 | Behavioral / spec | `spec/04` §16 says a module-level `let` initializer is runtime (not a constant context); `spec/13` §1 says it is a constant context for `embed`. Which governs the `E10213` rule? | Follow `spec/04` (module-level `let embed` reports `E10213`) / follow `spec/13` (allow it and record the data-inclusion gap) / implement constant-context data inclusion | User chose **follow `spec/04` §16**: a module-level `let embed` reports `E10213`; the `spec/13` sentence is recorded as a frozen inconsistency; no spec chapter changes | ✅ Resolved (preflight R-6, 2026-10-24) |
 
 ## Resolution Notes
 
@@ -50,4 +51,6 @@
 
 **AR-15:** The `E10213` compile-fail golden is the oracle. The staging exclusion is not a license to accept the program.
 
-**Confirmation:** The register is complete for the authorized critical/major scope. The preflight rulings AR-18…AR-22 were confirmed on 2026-10-24; the plan documents and `plans/00-roadmap.md` are corrected. Preflight iteration 2 verified the corrections and left one reserved specification decision, R-6: `spec/04` §16 says a module-level `let` initializer is not a constant context, while `spec/13` §1 says it is. That decision is recorded in `00-preflight-report.md`; it is not an AR item until the user rules. The plan is not execution-ready while R-6 is open.
+**AR-23:** The user ruled R-6 on 2026-10-24: follow `spec/04` §16. A module-level `let embed` is a runtime context, so it reports `E10213` and writes no translation unit. A module `const embed` keeps the existing `E10224` (data inclusion is staged out). The `spec/13` §1 sentence that calls a module-level initializer a constant context is recorded in `00-preflight-report.md` as a frozen inconsistency; no chapter or golden changes.
+
+**Confirmation:** The register is complete for the authorized critical/major scope. The preflight rulings AR-18…AR-23 were confirmed on 2026-10-24; the plan documents and `plans/00-roadmap.md` are corrected. Preflight iteration 2 resolved all 20 findings and passed. No spec or golden file changed.

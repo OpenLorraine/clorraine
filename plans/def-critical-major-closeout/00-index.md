@@ -1,7 +1,7 @@
 # Critical/Major DEF Closeout Implementation Plan
 
 > **Feature**: Close every open critical and major DEF in the Clorraine roadmap
-> **Status**: Planning Complete — iteration 2 preflight blocked on the reserved `spec/04`/`spec/13` ruling (R-6)
+> **Status**: Planning Complete — preflight iteration 2 passed (R-6 resolved)
 > **Created**: 2026-10-23 01:00
 > **Defects**: DEF-543; DEF-454, DEF-455, DEF-456, DEF-457, DEF-458, DEF-460, DEF-461, DEF-462, DEF-464, DEF-465, DEF-466; DEF-470, DEF-471, DEF-472, DEF-473, DEF-475, DEF-476, DEF-477, DEF-478, DEF-479, DEF-480, DEF-481; DEF-411, DEF-412, DEF-413, DEF-415, DEF-505, DEF-506, DEF-507, DEF-513, DEF-522; DEF-167, DEF-171, DEF-416
 > **CodeOps Artifact Schema**: 1
@@ -69,7 +69,7 @@ affordance, not a language, analysis, or type-identity layer.
 | Precision | Direct existing-pattern fixes; no generalized summary | AR-12 |
 | Closure | Failing spec regression, green fix, roadmap Done with evidence; ST-12 and any AR-16 stale close are the green pins | AR-8, AR-16 |
 | DEF-167 | Parse-only/stage-select mode; a full compile of the filed local-i32 shape rejects with one E10300 | AR-14, AR-19 |
-| DEF-171 | E10213 only outside a constant context; module `const` keeps E10224; module-level `let` is R-6 | AR-15 |
+| DEF-171 | E10213 outside a constant context; module `const` keeps E10224; module-level `let` reports E10213 (R-6: follow `spec/04` §16) | AR-15, AR-23 |
 | DEF-416 | Conservative collision report (E11101) from `sema`; no type-identity layer | AR-20 |
 | Roadmap | Restore the row evidence; closes go through the roadmap skill | AR-17, AR-21 |
 

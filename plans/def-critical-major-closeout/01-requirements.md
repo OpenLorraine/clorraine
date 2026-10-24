@@ -34,10 +34,11 @@ so the plan tracks 35 DEF rows. The 101 minor rows are outside this plan
 - [ ] R5 — Batch E: `DEF-167` and `DEF-171`'s in-scope forms no longer accept a
   program whose C build fails; `DEF-416` reports the cross-module same-simple-name type
   collision with one `E11101` at the second declaration instead of collapsing
-  the two types into one table entry. `DEF-171` covers the function-body and
-  local-`const` forms. A module-level `let embed` is the reserved
-  `spec/04` §16 / `spec/13` §1 constant-context conflict (R-6); R5 does not
-  claim that form until the user rules.
+  the two types into one table entry. `DEF-171` covers the function-body,
+  local-`const`, and module-level `let` forms; a module `const` keeps the staged
+  `E10224`. R-6 resolved the `spec/04` §16 / `spec/13` §1 conflict in favor of
+  `spec/04`: a module-level `let embed` reports `E10213`, and the `spec/13`
+  sentence is recorded as a frozen inconsistency.
 - [ ] R6 — Every active DEF has a specification regression derived from its
   concrete twin or frozen spec, written before the fix and verified red.
   `DEF-470` is the stale green pin (ST-12). A Phase 0 revalidation that closes
@@ -65,8 +66,9 @@ so the plan tracks 35 DEF rows. The 101 minor rows are outside this plan
 - New language features, new diagnostics without an existing spec owner, or
   optional refactors. The `DEF-416` collision uses the existing `E11101` code.
 - A general callee-summary or provenance-lattice framework.
-- Constant-context data inclusion (the module-level `let embed` lowering); the
-  `spec/04`/`spec/13` conflict is R-6, not an implementation task.
+- Constant-context data inclusion (lowering a module-level `let embed`); under
+  R-6 the form is rejected with `E10213` instead. The `spec/13` §1 sentence
+  stays a recorded frozen inconsistency.
 - Any spec or golden change without explicit approval (AR-11).
 - A rewrite of the conditional emission or ownership stages.
 

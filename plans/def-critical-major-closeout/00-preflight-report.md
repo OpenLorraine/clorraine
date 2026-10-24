@@ -1,10 +1,10 @@
 # Preflight Report: Critical/Major DEF Closeout
 
-> **Status**: ❌ BLOCKED — iteration 2 resolved 19 findings; one reserved specification decision (R-6) remains
+> **Status**: ✅ PASSED — iteration 2 resolved all 20 findings; R-6 ruled (Option A)
 > **Iteration**: 2 (re-scan after fixes; fresh session)
 > **Artifact**: Implementation plan at `plans/def-critical-major-closeout/` (12 documents; 13 with this report)
 > **Artifact content hash (iteration 1 scan start)**: `7647b8253a413c8308eb7e66c7d48e88d8c5f2279f8001a1d2629da210633f37`
-> **Artifact content hash (iteration 2 post-fix)**: `2980654bbb04f2cca27bbf804d4b64d38c6a97c6fd468c80951f20c718fa3b44`
+> **Artifact content hash (iteration 2 post-fix)**: `b9ce5652f65b0a42175d1f291a83e95d9d877d382d72cba2b4199b952f37ad38`
 > **Repository HEAD**: `ef6fd9524b07a6bec3ec089818e821c5c24f0f90`
 > **Codebase Grounded**: 42 source/test/spec files examined; 30 compiler probes in iteration 1; the iteration 2 probes re-ran the DEF-167, DEF-411, DEF-415, DEF-456, DEF-460, DEF-464, and DEF-479 shapes
 > **Last Updated**: 2026-10-24
@@ -693,8 +693,8 @@ durable record of the rulings.
 # Iteration 2 — Fresh-Session Re-Scan (2026-10-24)
 
 > **Previous iteration:** 28 findings (6 critical, 16 major, 6 minor); all 28 applied on 2026-10-24.
-> **This iteration:** 20 findings (1 critical, 14 major, 5 minor). 19 resolved by plan edits; 1 reserved (`R-6`).
-> **Carried forward:** PF-033 (`R-6`).
+> **This iteration:** 20 findings (1 critical, 14 major, 5 minor). All 20 resolved: 19 by plan edits, 1 by the user's R-6 ruling.
+> **Carried forward:** None — PF-033 is resolved by AR-23.
 > **Audit target:** unchanged — all 12 plan documents. Strict scope; no `--explore-scope`.
 > **Independence:** the plan was created on 2026-10-23 and iteration 1 ran in a previous session. Iteration 2 ran in a fresh session with five independent cluster auditors and lead re-verification against HEAD `ef6fd95`.
 
@@ -769,7 +769,7 @@ The lead deduplicated the 37 raw findings into 20 `PF` roots. The largest merges
 **Recommendation:** A — it preserves AR-15 and the staged const behavior.
 **User Decision:** AI — delegated by `--auto-design`: Option A. Applied to 5.2.2, 03-E, ST-33, and 02.
 
-### PF-033 (new) — `spec/04` §16 and `spec/13` §1 disagree on a module-level `let` initializer [🟠 MAJOR — RESERVED]
+### PF-033 (new) — `spec/04` §16 and `spec/13` §1 disagree on a module-level `let` initializer [🟠 MAJOR]
 
 **Dimension:** Logical Contradictions / Security Blind Spots
 **Location:** `03-E-strict-build.md:33-41,45`; `07-testing-strategy.md:98` (ST-33); `01-requirements.md:33-39`
@@ -782,7 +782,7 @@ The lead deduplicated the 37 raw findings into 20 `PF` roots. The largest merges
 | B | Follow `spec/13` §1: leave module-level `let embed` accepted; record the data-inclusion gap; E10213 only for function-body/local forms | Preserves the spec-13 example | Leaves an accepted-invalid program in an active row |
 | C | Implement constant-context data inclusion | Makes the example build | Out of scope; a new feature |
 **Recommendation:** A — it preserves the program's "no accepted invalid C" gate and the existing E10213 golden; the user should confirm because it changes behavior for a spec-sanctioned shape.
-**User Decision:** **Pending — R-6.** The plan now scopes R5 to the function-body/local-`const` forms and records the conflict; no spec chapter changed. Confidence: High on the conflict; Med on A.
+**User Decision:** Resolved — User chose Option A (2026-10-24, AR-23): follow `spec/04` §16; a module-level `let embed` reports `E10213`; the `spec/13` §1 sentence is recorded as a frozen inconsistency; no chapter change. Applied to R5, 03-E, 02, ST-33, 5.2.2, and the register. Confidence: High.
 
 ### PF-004 (reopened) — the source set's lifecycle and judgment rules [🟠 MAJOR]
 
@@ -943,24 +943,25 @@ The lead deduplicated the 37 raw findings into 20 `PF` roots. The largest merges
 | `03-E-strict-build.md` | DEF-167 local-i32 full compile; DEF-171 context flag/R-6; DEF-416 `sema` owner; `qinitstructname` retarget |
 | `05-findings.md` | Iteration-2 rulings; red-phase evidence template |
 | `07-testing-strategy.md` | ST-1, ST-2…ST-11, ST-18, ST-20…ST-23, ST-28/29, ST-31…ST-35; green-pin wording; checklist |
-| `99-execution-plan.md` | Phase 0 build order and pin timing; explicit ST lists; must-source walk; DEF-456/464/472/473/416/167/171 owners; phase retarget lines; Phase 2/5 lenses; success criterion 3; R-6 stop |
+| `99-execution-plan.md` | Phase 0 build order and pin timing; explicit ST lists; must-source walk; DEF-456/464/472/473/416/167/171 owners; phase retarget lines; Phase 2/5 lenses; success criterion 3; R-6 resolved |
+| `plans/00-roadmap.md` | The 34 linked rows advanced from `Plan Created` (📋) to `Plan Preflighted` (🔬); the header grouping and the 2026-10-24 date are updated |
 
-**Not applied:** no compiler implementation, no spec chapter, no golden file, and no roadmap stage advance.
+**Not applied:** no compiler implementation, no spec chapter, and no golden file.
 
-## Reserved decision R-6
+## Resolved decision R-6 (AR-23)
 
-- **Decision needed:** For a module-level `let embed`, follow `spec/04` §16 (runtime, so `E10213`) or `spec/13` §1 (constant context, so the shape is allowed but data inclusion is staged and currently emits invalid C). A third option is to implement constant-context data inclusion, which is out of scope.
+- **Decision needed:** For a module-level `let embed`, follow `spec/04` §16 (runtime, so `E10213`) or `spec/13` §1 (constant context, so the shape is allowed but data inclusion is staged and currently emits invalid C). A third option was to implement constant-context data inclusion, which is out of scope.
 - **Recommended:** A — follow `spec/04` §16; report E10213; record the `spec/13` sentence as a frozen inconsistency. This preserves the "no accepted invalid C" gate and the AR-15 decision.
-- **Why reserved:** It changes behavior for a shape one frozen chapter explicitly allows, and AR-11 reserves spec-conflict rulings to the user.
+- **Why it was reserved:** It changes behavior for a shape one frozen chapter explicitly allows, and AR-11 reserves spec-conflict rulings to the user.
 - **Evidence:** `spec/04-expressions.md:363-367`; `spec/13-data-inclusion.md:56-66`; DI-4; the HEAD probes (module `const` → E10224; module/local `let` → accepted, invalid C).
-- **Blocking:** Phase 5.2.2 and DEF-171's module-level `let` control. The other 33 active DEFs and Phases 0–4 are ready.
+- **User decision:** **Option A** (2026-10-24). A module-level `let embed` reports `E10213`; the `spec/13` §1 sentence is recorded as a frozen inconsistency; no spec chapter or golden changed. Recorded as AR-23 and applied to R5, 03-E, 02, ST-33, 5.2.2, and the register.
 
 ## Iteration 2 verdict
 
-**❌ PREFLIGHT BLOCKED — 1 reserved major (PF-033 / R-6); 19 findings resolved.**
+**✅ PREFLIGHT PASSED — all 20 findings resolved.**
 
-The plan is corrected and internally consistent for the 33 other active DEFs. The iteration-2 re-scan verified the counts, links, DEF set, ST numbering, task ordering, and the codebase owners; the applied fixes are recorded above. The plan cannot be marked `Plan Preflighted` while R-6 is open.
+The plan is corrected and internally consistent: 34 active DEFs plus the stale `DEF-470` close, 35 ST rows, 76 tasks, explicit code owners, and executable oracles. The iteration-2 re-scan verified the counts, links, DEF set, ST numbering, task ordering, and the codebase owners; the R-6 ruling is recorded as AR-23.
 
-**Roadmap:** Not advanced — a BLOCKED verdict does not advance the target rows. After the user rules R-6, re-check ST-33 and 5.2.2, then advance the 34 linked rows to `Plan Preflighted` through the roadmap skill.
+**Roadmap:** The 34 linked DEF rows advance to `Plan Preflighted` through the roadmap skill. `DEF-470` stays Done.
 
-**Same-agent bias:** iteration 2 is a fresh session relative to the plan creation and iteration 1; the five cluster auditors and the lead's HEAD probes provide independent evidence. A human compiler/semantics reviewer is still recommended for the `spec/04`/`spec/13` ruling.
+**Same-agent bias:** iteration 2 is a fresh session relative to the plan creation and iteration 1; the five cluster auditors and the lead's HEAD probes provide independent evidence. A human compiler/semantics reviewer is still recommended for the implementation phase.

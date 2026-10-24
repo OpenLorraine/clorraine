@@ -291,9 +291,9 @@ twin accepted.
 > **Lenses**: correctness, semantics, emission integrity, type identity
 > **Reasoning**: medium — three bounded parser/analysis/table fixes
 >
-> **Open ruling (R-6):** the module-level `let embed` outcome depends on the
-> `spec/04` §16 / `spec/13` §1 constant-context conflict recorded in
-> `00-preflight-report.md`. Do not start 5.2.2 until the user rules.
+> **R-6 resolved (2026-10-24):** follow `spec/04` §16; a module-level
+> `let embed` reports `E10213`. The `spec/13` §1 sentence is recorded as a
+> frozen inconsistency; no spec chapter changes.
 
 - [ ] 5.1.1 [spec-author] Write ST-32, ST-33, and ST-34 in
   `compiler/tests/def_strict_build_integrity_spec_test.rs`; keep the frozen
@@ -309,7 +309,7 @@ twin accepted.
   `compiler/src/sema/expr.rs` and the compile-fail harness (`E10213` moves from
   `EXCLUDED_CODES` to `ASSERTED_CODES`; `E10214` stays excluded). Add a
   constant-context flag (`sema/items.rs`) so a module `const` keeps only
-  `E10224`; a module-level `let embed` is the R-6 conflict.
+  `E10224`; a module-level `let embed` reports `E10213` (R-6).
 - [ ] 5.2.3 DEF-416 cross-module same-simple-name collision — report one
   `E11101` at the second declaration from a `compiler/src/sema/mod.rs`
   cross-module check with a pure `compiler/src/types/table.rs` collision query;
