@@ -300,20 +300,6 @@ struct FunctionChecker<'a, 'd> {
     /// more projections replaces the whole-place one at the same site. The
     /// value is the emitted diagnostic's index and the report's rank.
     state_reports: BTreeMap<(usize, u32, &'static str), (usize, usize)>,
-    /// True once a call that can write this module's globals is checked.
-    ///
-    /// A same-module function may assign any module binding, so a global's
-    /// literal initializer is no longer a compile-time constant for the
-    /// destination-index pin after such a call. A call through a func-typed
-    /// local may reach one too. The flag is monotonic within the function; a
-    /// call in the store's own condition runs after the pin.
-    called_current_module: bool,
-    /// Mutable module bindings written so far in this function body.
-    ///
-    /// The destination-index pin may use a module global's literal
-    /// initializer only while no earlier write in this function could have
-    /// replaced it.
-    written_globals: BTreeSet<ir::GlobalId>,
     /// Number of enclosing `unsafe` constructs.
     unsafe_depth: u32,
     /// View-like lend parameters of the function, an elision candidate count.
@@ -635,8 +621,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             loan_ids: BTreeMap::new(),
             binding_names: BTreeMap::new(),
             state_reports: BTreeMap::new(),
-            called_current_module: false,
-            written_globals: BTreeSet::new(),
             continue_states: BTreeMap::new(),
             defer_anchor: None,
             next_registration: 0,
@@ -1442,16 +1426,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // so a later use still deposits the duty.
                 moved_if_owning: a.moved_if_owning.union(&b.moved_if_owning).cloned().collect(),
                 partial: a.partial.union(&b.partial).cloned().collect(),
-                moved_elements: a
-                    .moved_elements
-                    .union(&b.moved_elements)
-                    .cloned()
-                    .collect(),
-                initialized_elements: a
-                    .initialized_elements
-                    .intersection(&b.initialized_elements)
-                    .cloned()
-                    .collect(),
                 initialized: a.initialized && b.initialized,
                 initialized_fields,
                 narrowed: a.narrowed.intersection(&b.narrowed).cloned().collect(),

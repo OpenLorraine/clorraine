@@ -184,12 +184,11 @@ or a documented stale proof; the existing-test inventory is recorded.
 - [x] 2.2.7 DEF-462 intermediate raw-field pin — `compiler/src/own/expr.rs`,
   `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`.
   ✅ (completed: 2026-10-26 14:03)
-- [x] 2.2.8 DEF-464 post-store `E10020` and destination-read acceptance — pin
-  the destination index before the condition, record the run-time source
-  element the arm reads, and report the later constant source read while the
-  destination read stays accepted — `compiler/src/own/expr.rs`,
-  `compiler/src/own/place.rs`.
-  ✅ (completed: 2026-10-26 14:11)
+- [x] 2.2.8 DEF-464 spec-compliant element-move rejection — report one
+  `E10026` for a conditional element source (the frozen v1 element-move rule,
+  AR-26); keep a same-place stable self-arm a self-copy; the destination read
+  control uses a non-element source — `compiler/src/own/expr.rs`.
+  ✅ (completed: 2026-10-26 14:11; re-closed by the Phase 2 review fix)
 - [x] 2.2.9 DEF-465 RHS-before-clear outside the `needs_drop` gate, including
   the fill twin — `compiler/src/codegen/function.rs`.
   ✅ (completed: 2026-10-26 14:15)

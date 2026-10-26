@@ -7165,7 +7165,11 @@ func main(): i32 {
     );
 }
 
-/// A conditional self-arm is matched by its storage address.
+/// A conditional self-arm is matched only when it spells the destination's own
+/// place with a stable index.
+///
+/// The same expression is a self-copy at the storage address; a different
+/// index expression is a v1 element move and reports E10026.
 #[test]
 fn should_match_a_conditional_self_arm_by_storage_address() {
     let same_index = r#"module spec.cprimpl.implselfarm;
@@ -7218,18 +7222,9 @@ func main(): i32 {
     return i32(len(a[i].inner.name)) - 2;
 }
 "#;
-    let tag = "implselfequal";
-    let (_scratch, emitted) = emit_host(tag, equal);
-    let body = function_body(
-        tag,
-        &emitted,
-        "cl_spec_cprimpl_implselfequal_main(void)\n{",
-    );
-    assert_contains(
-        tag,
-        body,
-        "if ((&(a[j].inner)) == (&(a[__cl_tmp0].inner))) {",
-    );
+    // The same run-time index through a different expression is an element
+    // move under the frozen v1 rule.
+    assert_rejected("implselfequal", equal, "E10026", 1);
 }
 
 /// A generic compound store and update carry the concrete wrap casts.
@@ -7448,13 +7443,13 @@ func main(): i32 {
     assert_contains(tag, body, "*(&(*((c ? p : q)))) = (ClS){ (ClInner){ 7 } };");
 }
 
-/// A distinct fixed-array conditional arm is emptied after its bytes move.
+/// A distinct-root fixed-array conditional arm is emptied after its bytes move.
 ///
 /// The address-equal branch restores the saved destination; the distinct branch
 /// copies the arm and clears the arm's own slot, so the destination and the arm
 /// do not both own the moved handles.
 #[test]
-fn should_empty_a_distinct_fixed_array_conditional_arm() {
+fn should_empty_a_distinct_root_fixed_array_conditional_arm() {
     let member = r#"module spec.cprimpl.implarmdistinct;
 
 import { String, stringOf } from std.text;
@@ -7463,10 +7458,10 @@ struct Elem { names: String[2]; }
 
 func main(): i32 {
     let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
+    let z: Elem = Elem { names: [stringOf("jj"), stringOf("kk")] };
     let i: i32 = 1;
-    let j: i32 = 0;
     let c: bool = true;
-    a[i].names = c ? a[j].names : [stringOf("zz"), stringOf("ww")];
+    a[i].names = c ? z.names : [stringOf("zz"), stringOf("ww")];
     return i32(len(a[i].names[0])) - 2;
 }
 "#;
@@ -7480,13 +7475,13 @@ func main(): i32 {
     assert_follows(
         tag,
         body,
-        "memcpy(&(a[__cl_tmp0].names), &(a[j].names), sizeof(a[__cl_tmp0].names));",
-        "cl_zero(&a[j].names);",
+        "memcpy(&(a[__cl_tmp0].names), &(z.names), sizeof(a[__cl_tmp0].names));",
+        "cl_zero(&z.names);",
     );
     assert_follows(
         tag,
         body,
-        "if (&(a[j].names) == &(a[__cl_tmp0].names)) {",
+        "if (&(z.names) == &(a[__cl_tmp0].names)) {",
         "memcpy(&(a[__cl_tmp0].names), &(__cl_save_1), sizeof(a[__cl_tmp0].names));",
     );
 
@@ -7496,10 +7491,10 @@ import { String, stringOf } from std.text;
 
 func main(): i32 {
     let a: String[2][2] = [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]];
+    let z: String[2] = [stringOf("jj"), stringOf("kk")];
     let i: i32 = 1;
-    let j: i32 = 0;
     let c: bool = true;
-    a[i] = c ? a[j] : [stringOf("zz"), stringOf("ww")];
+    a[i] = c ? z : [stringOf("zz"), stringOf("ww")];
     return i32(len(a[i][0])) - 2;
 }
 "#;
@@ -7513,15 +7508,12 @@ func main(): i32 {
     assert_follows(
         tag,
         body,
-        "memcpy(&((*(&(a[__cl_tmp0])))), &(a[j]), sizeof((*(&(a[__cl_tmp0])))));",
-        "cl_zero(&a[j]);",
+        "memcpy(&((*(&(a[__cl_tmp0])))), &(z), sizeof((*(&(a[__cl_tmp0])))));",
+        "cl_zero(&z);",
     );
-    assert_follows(
-        tag,
-        body,
-        "if (&(a[j]) == &((*(&(a[__cl_tmp0]))))) {",
-        "memcpy(&((*(&(a[__cl_tmp0])))), &(__cl_save_1), sizeof((*(&(a[__cl_tmp0])))));",
-    );
+    // A separate root cannot alias the target, so this whole-array arm keeps
+    // the direct byte copy and source emptying; the member twin above pins the
+    // address-equality branch.
 }
 
 /// An identical self-slot source move emits no transfer.

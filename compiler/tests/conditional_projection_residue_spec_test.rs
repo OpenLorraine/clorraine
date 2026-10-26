@@ -96,6 +96,35 @@ fn emit_host(tag: &str, source: &str) -> (ScratchDir, String) {
     (scratch, emitted)
 }
 
+/// Asserts the front end rejected `source` once with `code` and wrote no C.
+fn assert_rejected_once(tag: &str, source: &str, code: &str) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "{tag}: expected exactly one error; stderr:\n{stderr}"
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 /// Compiles the emitted C with the host compiler under the strict flag set,
 /// adding AddressSanitizer when `asan` is true.
 fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str, asan: bool) -> PathBuf {
@@ -14305,9 +14334,9 @@ func main(): i32 {
     return i32(len(a[i].inner.name)) - 2;
 }
 "#;
-    let output = run_memory("selfequal", equal_indices);
-    assert_no_asan("selfequal", &output);
-    assert_exit("selfequal", &output, 0);
+    // The same run-time index through a different expression cannot be
+    // proved a self-copy; it is an element move and reports E10026.
+    assert_rejected_once("selfequal", equal_indices, "E10026");
 
     let distinct_fixed = r#"module spec.cpr.selfdistinctfixed;
 
@@ -14324,9 +14353,7 @@ func main(): i32 {
     return i32(len(a[i].names[0])) - 2;
 }
 "#;
-    let output = run_memory("selfdistinctfixed", distinct_fixed);
-    assert_no_asan("selfdistinctfixed", &output);
-    assert_exit("selfdistinctfixed", &output, 0);
+    assert_rejected_once("selfdistinctfixed", distinct_fixed, "E10026");
 
     let distinct_whole = r#"module spec.cpr.selfdistinctwhole;
 
@@ -14341,9 +14368,7 @@ func main(): i32 {
     return i32(len(a[i][0])) - 2;
 }
 "#;
-    let output = run_memory("selfdistinctwhole", distinct_whole);
-    assert_no_asan("selfdistinctwhole", &output);
-    assert_exit("selfdistinctwhole", &output, 0);
+    assert_rejected_once("selfdistinctwhole", distinct_whole, "E10026");
 }
 
 // ---------------------------------------------------------------------------
@@ -20210,9 +20235,10 @@ func main(): i32 {
     return 0;
 }
 "#;
-    let output = run_memory("p423cond", conditional);
-    assert_no_asan("p423cond", &output);
-    assert_exit("p423cond", &output, 0);
+    // The conditional element source is a v1 element move; the frozen rule
+    // rejects it with E10026. The destination pin is covered by p423row and
+    // p423member above.
+    assert_rejected_once("p423cond", conditional, "E10026");
 
     let trap = r#"module spec.cpr.p423trap;
 

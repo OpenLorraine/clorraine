@@ -41,7 +41,7 @@ existing ownership and codegen helpers.
 | 460 | On the raw self-alias path, restore the save into the destination and zero the save (or suppress that release) | `own/place.rs` raw-deref helpers, `codegen/function.rs` |
 | 461 | Use the adjusted array address, pin it before the call, and apply the guard in `function.rs` | `is_array_param_place` / `array_source_address` |
 | 462 | Pin the intermediate raw-field lvalue before evaluating a side-effecting RHS | `own/expr.rs` pin site, guarded store core |
-| 464 | Mark the conditional store's source moved and report the later read; keep the destination read accepted | `own/expr.rs` post-store walk |
+| 464 | Reject a conditional element source with the frozen v1 `E10026`; keep a same-place stable self-arm a self-copy and use a non-element source for the destination-read control (AR-26) | `own/expr.rs` self-copy judgment |
 | 465 | Move the `__cl_rhs` evaluation outside the `needs_drop` gate for a duplicable fixed-array self-read, including the fill twin | fixed-array store core |
 | 466 | Add a runtime target/source address test before the element owning move; skip the source release on the self-alias path | element store core |
 

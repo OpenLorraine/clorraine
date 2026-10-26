@@ -10,42 +10,6 @@ use super::*;
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- place rules ---------------------------------------------------------
 
-    /// Records the whole-element source a conditional store moves.
-    ///
-    /// The ordinary element move keeps the v1 partial-move limit: a `borrow`
-    /// element and a projected element stay rejected. A conditional store
-    /// whose source is one whole element of an owned array, however, moves a
-    /// single selected element; the element-level state records it so a later
-    /// read of that element is reported. Returns `false` when the source is
-    /// not an owned whole element and the caller should take the ordinary move
-    /// path.
-    pub(super) fn record_element_move(
-        &mut self,
-        id: usize,
-        projections: &[ir::Projection],
-    ) -> bool {
-        let binding = &self.bindings[id];
-        let owned = matches!(binding.kind, BindingKind::Local)
-            || binding.mode == Mode::Take
-            || is_by_value_capture_base(&binding.base);
-        if !owned
-            || projections.len() != 1
-            || !matches!(
-                projections[0],
-                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
-            )
-        {
-            return false;
-        }
-        self.with_place(id, |place| {
-            place.moved_elements.insert(projections.to_vec());
-            place
-                .initialized_elements
-                .retain(|path| path.as_slice() != projections);
-        });
-        true
-    }
-
     /// Reports a read of a moved, partially moved, or uninitialized place.
     ///
     /// A read of a top-level field checks that field's own state, so the
@@ -71,42 +35,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 "re-initialize the binding or use a view",
             );
             return;
-        }
-        // An element read checks the element-level move and initialization
-        // state. A definite write of the selected element re-initializes it,
-        // so the destination read stays accepted even when a wildcard moved
-        // path covers its position; every other element read that may be the
-        // moved source is rejected.
-        if let Some(position) = projections.iter().position(|projection| {
-            matches!(
-                projection,
-                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
-            )
-        }) {
-            let prefix = &projections[..=position];
-            if state
-                .initialized_elements
-                .iter()
-                .any(|path| recorded_path_covers(path, prefix))
-            {
-                return;
-            }
-            if state
-                .moved_elements
-                .iter()
-                .any(|path| recorded_path_covers(path, prefix))
-            {
-                let display = display_place(&name, projections);
-                self.report_state_once(
-                    id,
-                    projections,
-                    span,
-                    "E10020",
-                    format!("'{display}' was moved and cannot be used"),
-                    "re-initialize the element or use a view",
-                );
-                return;
-            }
         }
         if let Some(ir::Projection::Field(field)) = projections.first() {
             if state.partial.contains(field) {
@@ -334,8 +262,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.partial.clear();
                     place.moved = false;
                     place.moved_if_owning.clear();
-                    place.moved_elements.clear();
-                    place.initialized_elements.clear();
                     place.narrowed.clear();
                 }
                 Some(ir::Projection::Field(field)) => {
@@ -370,17 +296,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place
                         .narrowed
                         .retain(|path| !written_path_clears(projections, path));
-                    // A constant element write re-initializes exactly that
-                    // element; a run-time index cannot name the element it
-                    // wrote, so only the pin site may record it.
-                    if projections.len() == 1
-                        && matches!(projections[0], ir::Projection::Element(Some(_)))
-                    {
-                        place.initialized_elements.insert(projections.to_vec());
-                        place
-                            .moved_elements
-                            .retain(|path| path.as_slice() != projections);
-                    }
                 }
             }
         });
@@ -4491,40 +4406,6 @@ fn position_step_matches(recorded: &ir::Projection, read: &ir::Projection) -> bo
     recorded == read
         || (matches!(recorded, ir::Projection::Element(None))
             && matches!(read, ir::Projection::Element(Some(_))))
-}
-
-/// True when a recorded element path selects the read path's position.
-///
-/// A recorded run-time element is a wildcard for every element at its
-/// position; a recorded constant element matches only that element.
-fn recorded_path_covers(recorded: &[ir::Projection], read: &[ir::Projection]) -> bool {
-    read.len() >= recorded.len()
-        && recorded
-            .iter()
-            .zip(read)
-            .all(|(recorded, read)| position_step_matches(recorded, read))
-}
-
-/// Renders a binding and its projection path for a diagnostic.
-fn display_place(name: &str, projections: &[ir::Projection]) -> String {
-    let mut text = name.to_owned();
-    for projection in projections {
-        match projection {
-            ir::Projection::Field(field) => {
-                text.push('.');
-                text.push_str(field);
-            }
-            ir::Projection::Element(Some(index)) => {
-                text.push('[');
-                text.push_str(&index.to_string());
-                text.push(']');
-            }
-            ir::Projection::Element(None) | ir::Projection::ElementTemp(_) => {
-                text.push_str("[_]");
-            }
-        }
-    }
-    text
 }
 
 /// The recorded path's steps below a constant read, when the read selects them.

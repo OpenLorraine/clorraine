@@ -271,6 +271,66 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sources
     }
 
+    /// The owned place arms a conditional may move, paired with their expressions.
+    ///
+    /// A conditional store may move a place arm. The arm's expression is
+    /// needed to decide whether it names the store's own destination: the same
+    /// projection path can be spelled with a different index expression, and
+    /// only a literal or an unchanged local index proves a self-copy.
+    pub(super) fn conditional_move_source_arms<'e>(
+        &self,
+        expr: &'e Expr,
+    ) -> Vec<(&'e Expr, PlaceTarget)> {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                sources.extend(self.conditional_move_source_arms(arm));
+                continue;
+            }
+            let ty = self.ty(arm);
+            if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+                continue;
+            }
+            if let Some(target) = self.place_target(arm) {
+                sources.push((arm, target));
+                continue;
+            }
+            for target in self.conditional_projection_move_sources(arm) {
+                sources.push((arm, target));
+            }
+        }
+        sources
+    }
+
+/// True when a store's element index may name a different element after the
+    /// condition.
+    ///
+    /// A literal or a plain local/parameter index proves the same element only
+    /// while nothing changes it. A module global or a computed index can change,
+    /// so a self-named conditional arm is an element move rather than a self-copy.
+        fn destination_index_may_change(&self, target: &Expr) -> bool {
+        let target = unwrap_unsafe_expr(target);
+        match &target.kind {
+            ExprKind::Index { index, .. } => match &index.kind {
+                ExprKind::Int(_) => false,
+                _ => !matches!(
+                    self.place_target(index),
+                    Some(PlaceTarget::Local(_, ref projections)) if projections.is_empty()
+                ),
+            },
+            ExprKind::Member { base, .. } => self.destination_index_may_change(base),
+            _ => false,
+        }
+    }
+
     /// True when a conditional has an arm with no place.
     ///
     /// The owned-source frame walk names each place arm separately; a fresh
@@ -651,9 +711,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.check_nonnull_expr(base, expr.span);
                 }
                 self.check_member_raw(&base_ty, expr.span);
-                if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
-                    self.read_place(id, &projections, expr.span);
-                }
             }
             ExprKind::Index { base, index } => {
                 let base_ty = self.eval(base);
@@ -663,9 +720,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.check_nonnull_expr(base, expr.span);
                 }
                 self.eval(index);
-                if let Some(PlaceTarget::Local(id, projections)) = self.place_target(expr) {
-                    self.read_place(id, &projections, expr.span);
-                }
             }
             ExprKind::Unary { op, operand } => {
                 let operand_ty = self.eval(operand);
@@ -1142,23 +1196,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 || !self.sema.table.duplicable(&target_ty)
                 || self.maybe_owns(&target_ty));
         let skip_transfer = compound.is_none() && (raw_self || same_place);
-        // A run-time element destination is pinned before the condition. When
-        // the index is a literal or an unchanged module global, the element
-        // the pin names is known statically and the later destination read can
-        // be accepted while the run-time source read is rejected.
-        let destination_element_path = match &repeated {
-            Some(PlaceTarget::Local(_, path))
-                if path.iter().any(|projection| {
-                    matches!(
-                        projection,
-                        ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
-                    )
-                }) =>
-            {
-                self.pinned_destination_path(target, path)
-            }
-            _ => None,
-        };
         // A dereferenced raw pointer is a store target: the pointer names the
         // storage, so the store writes through it in the same shape an indexed
         // element store uses. A member or element over the dereference selects
@@ -1403,58 +1440,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         let value_ty = self.ty(value);
                         let maybe_owning = self.maybe_owns(&value_ty);
-                        let sources = if maybe_owning {
+                        if maybe_owning {
                             let mut sources = self.maybe_owning_move_sources(value);
                             if sources.is_empty() {
                                 sources = self.maybe_owning_projection_move_sources(value);
                             }
-                            sources
-                        } else {
-                            self.conditional_move_sources(value)
-                        };
-                        for source in sources {
-                            if let PlaceTarget::Local(source_id, source_projections) = &source {
-                                if *source_id == id {
-                                    // The conditional arm is evaluated after
-                                    // the condition; the destination index was
-                                    // pinned before it. Only an arm naming the
-                                    // exact pinned element is the destination
-                                    // itself. A run-time destination whose index
-                                    // may have changed is never the same
-                                    // element.
-                                    let same_target = match &destination_element_path {
-                                        Some(path) => source_projections == path,
-                                        None if runtime_element => {
-                                            let index_may_change =
-                                                self.destination_index_may_change(target);
-                                            !index_may_change
-                                                && source_projections == &projections
-                                        }
-                                        None => source_projections == &projections,
-                                    };
-                                    if same_target {
+                            for source in sources {
+                                if let PlaceTarget::Local(source_id, source_projections) = &source
+                                {
+                                    if *source_id == id && source_projections == &projections {
                                         continue;
                                     }
                                 }
-                            }
-                            if maybe_owning {
                                 self.mark_moved_if_owning(source, value.span);
-                            } else {
-                                match &source {
-                                    PlaceTarget::Local(source_id, source_path)
-                                        if source_path.len() == 1
-                                            && matches!(
-                                                source_path[0],
-                                                ir::Projection::Element(_)
-                                                    | ir::Projection::ElementTemp(_)
-                                            ) =>
+                            }
+                        } else {
+                            // A conditional arm that spells the destination's
+                            // own place with a stable index is a self-copy.
+                            // A different spelling, or a global/computed index
+                            // the condition may change, is an element move that
+                            // the frozen v1 rule rejects.
+                            for (arm, source) in self.conditional_move_source_arms(value) {
+                                if let PlaceTarget::Local(source_id, _) = &source {
+                                    if *source_id == id
+                                        && same_place_expr(target, arm)
+                                        && !self.destination_index_may_change(target)
                                     {
-                                        if !self.record_element_move(*source_id, source_path) {
-                                            self.move_target(source, value.span);
-                                        }
+                                        continue;
                                     }
-                                    _ => self.move_target(source, value.span),
                                 }
+                                self.move_target(source, value.span);
                             }
                         }
                         // A conditional arm rooted at a type parameter is a
@@ -1589,12 +1604,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
                 self.write_place(id, &projections, target.span);
-                if let Some(path) = &destination_element_path {
-                    self.with_place(id, |place| {
-                        place.initialized_elements.insert(path.clone());
-                        place.moved_elements.retain(|moved| moved != path);
-                    });
-                }
                 if !projections.is_empty() || !is_view_like(&target_ty) {
                     let root = self.bindings[id].ir_name.clone();
                     let mut roots = BTreeSet::new();
@@ -1779,7 +1788,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A global outlives this frame, so a view-element array stored
                 // here never adopts a backing owned by this function: the
                 // derived element stays in place instead.
-                self.written_globals.insert(id.clone());
                 let saved_adopts = self.view_destination_adopts;
                 self.view_destination_adopts = false;
                 let is_const = self
@@ -4031,110 +4039,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return index;
         }
         self.materialize_value(index)
-    }
-
-    /// The destination element path a run-time store target names at its pin.
-    ///
-    /// The store index is evaluated before the right-hand side, so a later
-    /// update to the index must not change the element the store reaches. The
-    /// path records the element the index names at that point when the index
-    /// is a literal or a module global that still holds its literal
-    /// initializer. A destination whose index is not known stays unnamed and
-    /// is handled conservatively by the caller.
-    fn pinned_destination_path(
-        &self,
-        target: &'a Expr,
-        projections: &[ir::Projection],
-    ) -> Option<Vec<ir::Projection>> {
-        let target = match &target.kind {
-            ExprKind::Unsafe(inner) => inner.as_ref(),
-            _ => target,
-        };
-        let ExprKind::Index { index, .. } = &target.kind else {
-            return None;
-        };
-        let index = self.constant_index(index)?;
-        let mut path = projections.to_vec();
-        let position = path.iter().position(|projection| {
-            matches!(
-                projection,
-                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
-            )
-        })?;
-        if !matches!(path[position], ir::Projection::Element(None)) {
-            return None;
-        }
-        path[position] = ir::Projection::Element(Some(index));
-        Some(path)
-    }
-
-    /// True when the store index may name a different element after the
-    /// condition.
-    ///
-    /// A literal or a plain local/parameter index keeps its value: a called
-    /// condition can only change it through a borrow the target's own
-    /// evaluation would also see. A module global or a computed index can
-    /// change, so a self-named arm is not assumed to be the destination.
-    fn destination_index_may_change(&self, target: &Expr) -> bool {
-        match &target.kind {
-            ExprKind::Unsafe(inner) => self.destination_index_may_change(inner),
-            ExprKind::Index { index, .. } => match &index.kind {
-                ExprKind::Int(_) => false,
-                _ => match self.place_target(index) {
-                    Some(PlaceTarget::Local(_, projections)) if projections.is_empty() => false,
-                    _ => true,
-                },
-            },
-            ExprKind::Member { base, .. } => self.destination_index_may_change(base),
-            _ => false,
-        }
-    }
-
-    /// A compile-time element index from a literal or an unchanged global.
-    ///
-    /// A global initializer is used only while no call or explicit write in
-    /// this function body could have replaced the value: a call may write any
-    /// mutable module binding, so the initializer is stale after one.
-    fn constant_index(&self, expr: &Expr) -> Option<usize> {
-        let value = match &expr.kind {
-            ExprKind::Int(value) => *value,
-            ExprKind::Name(name) => {
-                let global =
-                    crate::init_graph::resolve_name_global(self.loaded, self.module, name)?;
-                let id = ir::GlobalId::new(global.module.clone(), global.name.clone());
-                if self.called_current_module || self.written_globals.contains(&id) {
-                    return None;
-                }
-                let init = self.global_initializer_int(&global);
-                init?
-            }
-            ExprKind::Qualified(name) => {
-                let global =
-                    crate::init_graph::resolve_global(self.loaded, self.module, name)?;
-                let id = ir::GlobalId::new(global.module.clone(), global.name.clone());
-                if self.called_current_module || self.written_globals.contains(&id) {
-                    return None;
-                }
-                self.global_initializer_int(&global)?
-            }
-            ExprKind::Unsafe(inner) => return self.constant_index(inner),
-            _ => return None,
-        };
-        usize::try_from(value).ok()
-    }
-
-    /// The integer literal initializer of a module-level `let`, if it has one.
-    fn global_initializer_int(&self, global: &crate::init_graph::GlobalRef) -> Option<u64> {
-        let module = self.loaded.modules.get(&global.module)?;
-        module.items.iter().find_map(|item| match item {
-            crate::ast::Item::GlobalLet(decl) if decl.name == global.name => {
-                match &decl.value.kind {
-                    ExprKind::Int(value) => Some(*value),
-                    _ => None,
-                }
-            }
-            _ => None,
-        })
     }
 
     /// Builds the projected place a pinned store target names.

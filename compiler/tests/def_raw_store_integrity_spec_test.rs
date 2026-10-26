@@ -735,10 +735,10 @@ func main(): i32 {
 // Post-store source read
 // ---------------------------------------------------------------------------
 
-/// The later read of the run-time source element is rejected once, while no
-/// translation unit is written.
+/// The conditional element source is an element move, which the frozen v1 rule
+/// rejects once as `E10026`; no translation unit is written.
 #[test]
-fn should_reject_the_post_conditional_store_source_read() {
+fn should_reject_the_conditional_element_move_with_e10026() {
     let source = r#"module spec.rawstore.postsrc;
 
 import { String, stringOf } from std.text;
@@ -759,10 +759,11 @@ func main(): i32 {
     return i32(len(s)) - 2;
 }
 "#;
-    assert_rejected_exactly_once("postsrc", source, "E10020", &["a[1]"]);
+    assert_rejected_exactly_once("postsrc", source, "E10026", &["partial moves"]);
 }
 
-/// The destination read stays accepted after the pinned-index store.
+/// The destination read stays accepted after the pinned-index store. The
+/// source is a fresh literal, so the store is not an element move.
 #[test]
 fn should_accept_the_post_conditional_store_destination_read() {
     let source = r#"module spec.rawstore.postdst;
@@ -780,9 +781,9 @@ func set_idx(): bool {
 
 func main(): i32 {
     let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
-    a[idx] = set_idx() ? a[idx] : Elem { name: stringOf("zz") };
+    a[idx] = set_idx() ? Elem { name: stringOf("zz") } : Elem { name: stringOf("yy") };
     let s: str = a[0].name;
-    if (i32(s[0]) != 98) {
+    if (i32(s[0]) != 122) {
         return 9;
     }
     return i32(len(s)) - 2;
