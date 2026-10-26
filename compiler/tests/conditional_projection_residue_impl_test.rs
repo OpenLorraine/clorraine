@@ -154,6 +154,34 @@ fn function_body<'a>(tag: &str, emitted: &'a str, signature: &str) -> &'a str {
     &text[..end]
 }
 
+/// Asserts a store precedes the self-alias wrapper and the source zero follows
+/// the wrapper's else branch.
+///
+/// The arm source move is wrapped in an address test, so a plain adjacency
+/// assertion no longer holds; this keeps the store-before-zero order that the
+/// original assertion carried.
+fn assert_store_then_zero(tag: &str, emitted: &str, store: &str, zero: &str) {
+    let start = emitted
+        .find(store)
+        .unwrap_or_else(|| panic!("{tag}: {store:?} is missing; emitted C:\n{emitted}"));
+    let wrapper = emitted[start..]
+        .find("if (((void *)(")
+        .map(|offset| start + offset)
+        .unwrap_or_else(|| panic!("{tag}: the self-alias wrapper is missing; emitted C:\n{emitted}"));
+    let else_at = emitted[wrapper..]
+        .find("} else {")
+        .map(|offset| wrapper + offset)
+        .unwrap_or_else(|| panic!("{tag}: the self-alias else is missing; emitted C:\n{emitted}"));
+    let zero_at = emitted[else_at..]
+        .find(zero)
+        .map(|offset| else_at + offset)
+        .unwrap_or_else(|| panic!("{tag}: {zero:?} is missing after the wrapper; emitted C:\n{emitted}"));
+    assert!(
+        start < wrapper && wrapper < else_at && else_at < zero_at,
+        "{tag}: the store, self-alias wrapper, else, and source zero are out of order; emitted C:\n{emitted}"
+    );
+}
+
 /// Asserts `second` follows `first` with only `#line` markers between them;
 /// any other text means a statement intervenes.
 fn assert_follows(tag: &str, emitted: &str, first: &str, second: &str) {
@@ -708,8 +736,7 @@ fn should_bind_the_fresh_root_that_owns_residual_storage() {
     let body = function_body(tag, &emitted, "cl_spec_cpr_armfresh_use(bool c, ClBox a)\n{");
     assert_contains(tag, body, "ClBox __cl_tmp1 = {0};");
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_armfresh_mkBox();");
-    assert_contains(tag, body, "s = __cl_tmp1.v;");
-    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
+    assert_store_then_zero(tag, body, "s = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_release_after(
         tag,
         body,
@@ -1249,8 +1276,7 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_fieldcondplain_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_fieldcondplain_mkBox();");
-    assert_contains(tag, body, "o.v = __cl_tmp1.v;");
-    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
+    assert_store_then_zero(tag, body, "o.v = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "elementcond";
@@ -1261,8 +1287,7 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_elementcond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_elementcond_mkBox();");
-    assert_contains(tag, body, "__cl_rhs_1[0] = __cl_tmp1.v;");
-    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
+    assert_store_then_zero(tag, body, "__cl_rhs_1[0] = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "takecond";
@@ -1273,8 +1298,7 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_takecond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_takecond_mkBox();");
-    assert_contains(tag, body, "__cl_tmp2 = __cl_tmp1.v;");
-    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
+    assert_store_then_zero(tag, body, "__cl_tmp2 = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "returncond";
@@ -1285,8 +1309,7 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_returncond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_returncond_mkBox();");
-    assert_contains(tag, body, "__cl_ret = __cl_tmp1.v;");
-    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
+    assert_store_then_zero(tag, body, "__cl_ret = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 }
 
@@ -9409,8 +9432,7 @@ fn should_pin_the_owning_deref_arm_materialization() {
         "if (__cl_cond_1) {",
         "__cl_tmp0 = cl_alt__String(p, q);",
     );
-    assert_contains(tag, body, "r = *(__cl_tmp0);");
-    assert_contains(tag, body, "*(__cl_tmp0) = NULL;");
+    assert_store_then_zero(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
 }
 
 /// The guarded take of a place-pointer deref empties the pointee on the
