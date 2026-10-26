@@ -2053,27 +2053,33 @@ impl<'a> Emitter<'a> {
             .then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
                 address: target.address.clone(),
+                save_base: format!("&({save})"),
+                save_bytes: format!("sizeof({save})"),
+                offset: self.unique_local("__cl_take_off"),
+                length: self.unique_local("__cl_take_len"),
             });
         let has_capture = capture.is_some();
         if let Some(capture) = &capture {
             self.push(&format!("        bool {} = 0;", capture.flag));
+            self.push(&format!("        unsigned long {} = 0;", capture.offset));
+            self.push(&format!("        unsigned long {} = 0;", capture.length));
         }
         let saved_capture = std::mem::replace(&mut self.take_capture, capture);
         self.emit_guards(condition);
-        let alias_flag = self
-            .take_capture
-            .as_ref()
-            .map(|capture| capture.flag.clone());
+        let alias_capture = self.take_capture.clone();
         let condition_c = self.value(condition);
         if has_capture {
-            // Settle the take alias before either arm runs, exactly as the
+            // Settle the take range before either arm runs, exactly as the
             // scalar conditional store does: the condition runs once into a
-            // local, the flag is read, and the branch uses the local.
+            // local, the range is read, and the branch uses the local.
             let cond_local = self.unique_local("__cl_cond");
             self.push(&format!("        bool {cond_local} = {condition_c};"));
-            if let Some(flag) = alias_flag {
-                self.push(&format!("        if ({flag}) {{"));
-                self.emit_move_zero(&save, ty);
+            if let Some(capture) = &alias_capture {
+                self.push(&format!("        if ({}) {{", capture.flag));
+                self.push(&format!(
+                    "            memset((char *)({}) + ({}), 0, ({}));",
+                    capture.save_base, capture.offset, capture.length
+                ));
                 self.push("        }");
             }
             self.push(&format!("        if ({cond_local}) {{"));
@@ -2851,18 +2857,24 @@ impl<'a> Emitter<'a> {
         self.consumed_pointees(condition, &mut pointees);
         self.consumed_pointees(then_value, &mut pointees);
         self.consumed_pointees(else_value, &mut pointees);
-        let capture = save.and_then(|_| {
+        let capture = save.and_then(|save| {
             let owns = pointees
                 .iter()
                 .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)));
             owns.then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
                 address: format!("&({target_c})"),
+                save_base: format!("&({save})"),
+                save_bytes: format!("sizeof({save})"),
+                offset: self.unique_local("__cl_take_off"),
+                length: self.unique_local("__cl_take_len"),
             })
         });
         let has_capture = capture.is_some();
         if let Some(capture) = &capture {
             self.push(&format!("    bool {} = 0;", capture.flag));
+            self.push(&format!("    unsigned long {} = 0;", capture.offset));
+            self.push(&format!("    unsigned long {} = 0;", capture.length));
         }
         let saved_capture = std::mem::replace(&mut self.take_capture, capture);
         self.emit_guards(condition);
@@ -2875,21 +2887,21 @@ impl<'a> Emitter<'a> {
             }
         }
         let condition_c = self.value(condition);
-        let alias_flag = self
-            .take_capture
-            .as_ref()
-            .map(|capture| capture.flag.clone());
+        let alias_capture = self.take_capture.clone();
         if has_capture {
-            // The condition is evaluated once into a local so the alias flag
-            // is settled before the branches: a taken destination is emptied
-            // from the save before an arm can restore or overwrite it. The
+            // The condition is evaluated once into a local so the alias range
+            // is settled before the branches: the consumed subrange of the
+            // save is cleared before an arm can restore or overwrite it. The
             // local is unique because a source binding may already use the
             // generated spelling.
             let cond_local = self.unique_local("__cl_cond");
             self.push(&format!("    bool {cond_local} = {condition_c};"));
-            if let (Some(save), Some(flag)) = (save, alias_flag.clone()) {
-                self.push(&format!("    if ({flag}) {{"));
-                self.emit_move_zero(save, ty);
+            if let Some(capture) = &alias_capture {
+                self.push(&format!("    if ({}) {{", capture.flag));
+                self.push(&format!(
+                    "        memset((char *)({}) + ({}), 0, ({}));",
+                    capture.save_base, capture.offset, capture.length
+                ));
                 self.push("    }");
             }
             self.push(&format!("        if ({cond_local}) {{"));
@@ -2901,12 +2913,15 @@ impl<'a> Emitter<'a> {
         self.emit_conditional_move_arm(target_c, ty, else_value, save, element_target);
         self.push("        }");
         // An arm that consumes the destination through a raw pointer records
-        // its alias only while the arm runs, so the save is checked again after
-        // the branch. A condition take already settled the flag above; the
-        // second check is then a no-op.
-        if let (Some(save), Some(flag)) = (save, alias_flag) {
-            self.push(&format!("    if ({flag}) {{"));
-            self.emit_move_zero(save, ty);
+        // its alias only while the arm runs, so the saved subrange is checked
+        // again after the branch. A condition take already settled it above;
+        // the second clear is then a no-op.
+        if let Some(capture) = &alias_capture {
+            self.push(&format!("    if ({}) {{", capture.flag));
+            self.push(&format!(
+                "        memset((char *)({}) + ({}), 0, ({}));",
+                capture.save_base, capture.offset, capture.length
+            ));
             self.push("    }");
         }
         self.take_capture = saved_capture;
@@ -3219,20 +3234,33 @@ impl<'a> Emitter<'a> {
         if !self.needs_drop(ty) {
             return;
         }
-        let Some((flag, target_address)) = self
-            .take_capture
-            .as_ref()
-            .map(|capture| (capture.flag.clone(), capture.address.clone()))
-        else {
+        let Some(capture) = self.take_capture.clone() else {
             return;
         };
         let Some(address) = self.deref_value_address(value) else {
             return;
         };
+        let source = format!("((unsigned long)({address}))");
+        let destination = format!("((unsigned long)({}))", capture.address);
+        let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
+        let destination_end =
+            format!("({destination} + (unsigned long)({}))", capture.save_bytes);
+        let contains = format!(
+            "((({source} >= {destination}) && ({source} < {destination_end})) || \
+             (({destination} >= {source}) && ({destination} < {source_end})))"
+        );
+        let start = format!("(({source} > {destination}) ? {source} : {destination})");
+        let end = format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
+        self.push(&format!("    if ({contains}) {{"));
+        self.push(&format!("        {} = 1;", capture.flag));
         self.push(&format!(
-            "    if (((void *)({address})) == ((void *)({target_address}))) {{"
+            "        {} = ({start}) - ({destination});",
+            capture.offset
         ));
-        self.push(&format!("        {flag} = 1;"));
+        self.push(&format!(
+            "        {} = ({end}) - ({start});",
+            capture.length
+        ));
         self.push("    }");
     }
 

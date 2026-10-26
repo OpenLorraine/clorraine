@@ -261,6 +261,7 @@ pub(super) struct Emitter<'a> {
 }
 
 /// The runtime alias record of one conditional store's saved destination.
+#[derive(Clone)]
 pub(super) struct TakeCapture {
     /// The boolean local that records whether an aliasing take ran.
     pub(super) flag: String,
@@ -270,6 +271,14 @@ pub(super) struct TakeCapture {
     /// parameter is already the array address and cannot take its own
     /// address, while a scalar destination is rendered as `&(lvalue)`.
     pub(super) address: String,
+    /// The saved copy's base address.
+    pub(super) save_base: String,
+    /// The saved copy's byte count, which is also the destination's extent.
+    pub(super) save_bytes: String,
+    /// The first byte of the save that the take consumed.
+    pub(super) offset: String,
+    /// The number of bytes the take consumed.
+    pub(super) length: String,
 }
 
 /// Emits the whole translation unit for a successful compilation.

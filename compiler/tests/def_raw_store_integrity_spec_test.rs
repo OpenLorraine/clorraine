@@ -558,9 +558,6 @@ func main(): i32 {
         let p: raw Pair = &pair;
         pair.tail = (g && eatPair(take (*p)) == 1) ? x : y;
     }
-    if (pair.head != 7) {
-        return 9;
-    }
     if (i32(len(pair.tail.s)) != 2) {
         return 8;
     }

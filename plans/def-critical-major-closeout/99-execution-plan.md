@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 19/76 tasks (25%)
+> **Progress**: 20/76 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -167,9 +167,10 @@ or a documented stale proof; the existing-test inventory is recorded.
   ✅ (completed: 2026-10-26 13:22)
 - [x] 2.2.2 DEF-455 fixed-array take capture — `compiler/src/codegen/function.rs`.
   ✅ (completed: 2026-10-26 13:24)
-- [ ] 2.2.3 DEF-456 source/destination containment in both directions with
+- [x] 2.2.3 DEF-456 source/destination containment in both directions with
   integer addresses, the taken subrange mapped onto the save copy, and the
   capture carrying the range — `compiler/src/codegen/function.rs`.
+  ✅ (completed: 2026-10-26 13:29)
 - [ ] 2.2.4 DEF-457 take-capture stack — `compiler/src/codegen.rs`,
   `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`.
 - [ ] 2.2.5 DEF-460 raw self-alias save restore/zero — `compiler/src/own/place.rs`,

@@ -1429,10 +1429,25 @@ impl<'a> Emitter<'a> {
         // through a different nominal type, and an unrelated object simply
         // compares unequal without a cross-type pointer warning.
         let address = self.deref_value_address(value)?;
+        let source = format!("((unsigned long)({address}))");
+        let destination = format!("((unsigned long)({}))", capture.address);
+        let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
+        let destination_end =
+            format!("({destination} + (unsigned long)({}))", capture.save_bytes);
+        let contains = format!(
+            "((({source} >= {destination}) && ({source} < {destination_end})) || \
+             (({destination} >= {source}) && ({destination} < {source_end})))"
+        );
+        let start = format!("(({source} > {destination}) ? {source} : {destination})");
+        let end = format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
         Some(format!(
-            "({flag} = ({flag} || (((void *)({address})) == ((void *)({target_address}))))), {move_out}",
+            "({flag} = ({flag} || {contains})), \
+             ({offset} = ({contains}) ? ({start}) - ({destination}) : {offset}), \
+             ({length} = ({contains}) ? ({end}) - ({start}) : {length}), \
+             {move_out}",
             flag = capture.flag,
-            target_address = capture.address,
+            offset = capture.offset,
+            length = capture.length,
         ))
     }
 
