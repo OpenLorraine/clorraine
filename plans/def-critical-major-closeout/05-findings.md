@@ -180,6 +180,37 @@ HEAD (`raw String[2]` conversion), so the concrete parameter alias is the
 specification case and the adjusted-address emission is pinned in the
 implementation test.
 
+**Green and full verification (2026-10-26):** all eleven DEFs are fixed, the
+19-case specification suite passes under `RDC_ASAN=1`, and the eleven
+implementation cases plus the determinism pin pass. `make check` and
+`make verify: all legs passed`.
+
+| DEF | Commit | Fix |
+|---|---|---|
+| 454 | `bdc043d` | Guarded literal fills a temporary and moves the raw-deref field |
+| 455 | `0339d16` | Fixed-array conditional take capture and saved-subrange clear |
+| 456 | `0da2cf4` | Both containment directions over integer addresses; taken-subrange clear |
+| 457 | `ca2b735` | Take-capture stack preserves every live outer save |
+| 458 | `0ec766d` + `07f1e3e` | Place move-out records the take-ran flag on the evaluated path |
+| 460 | `07c213a` | Raw self-alias restores the save and clears the duplicate |
+| 461 | `b220003` | Adjusted array source address guards the saved target |
+| 462 | `e387879` | Intermediate raw field pinned before the side-effecting RHS |
+| 464 | `d6543a1` | Whole-element conditional source recorded moved; destination read accepted |
+| 465 | `46e8634` | Duplicable self-read fills a temporary before the copy, including the fill form |
+| 466 | `039785a` | Element store compares source/target addresses; distinct source emptied |
+
+Expected retargets: the conditional-projection `p439`/`p421` and root-binding
+pins moved to the containment/range spelling; the call-value consumed-save pins
+accept the take-flag memset; the raw-store implementation pins are new.
+
+Residuals: a plain whole-binding raw-deref aliased store (`v = *p` where `p`
+names the destination outside a conditional store) keeps the pre-existing
+drop-before-RHS order; this batch covers the conditional and element forms. The
+address-of fixed-array spelling cannot be expressed as a source at HEAD, so the
+concrete parameter alias is the specification case. The `a[0]` fill twin keeps
+the per-element fill expression; both elements read the old destination, so
+`[3, 3]` holds.
+
 ## Phase Records
 
 Execution adds one section per phase with the revalidation results, review
