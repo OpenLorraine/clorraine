@@ -5649,7 +5649,35 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
             }
             return self.array_literal_needs_stores(field);
         }
+        // An owned field read through a raw pointer keeps the pointee's
+        // storage. A C compound literal copies the pointer value and cannot
+        // empty the pointee, so the literal must fill field by field and let
+        // the store perform the move.
+        if (!self.sema.table.duplicable(&field.ty) || self.maybe_owns(&field.ty))
+            && self.value_reads_raw_deref(field)
+        {
+            return true;
+        }
         self.literal_fields_need_stores(field)
+    }
+
+    /// True when a value reads storage through a raw dereference.
+    ///
+    /// The dereference may be wrapped in a member or element projection; only
+    /// the root read matters, because the store moves the selected subobject.
+    fn value_reads_raw_deref(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            } => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.value_reads_raw_deref(base)
+            }
+            ValueKind::Cast { value, .. } => self.value_reads_raw_deref(value),
+            ValueKind::Materialize { value, .. } => self.value_reads_raw_deref(value),
+            _ => false,
+        }
     }
 
     /// True when a view element of a view array has no complete C value of the
