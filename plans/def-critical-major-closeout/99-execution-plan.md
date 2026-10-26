@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 29/76 tasks (38%)
+> **Progress**: 30/76 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -200,9 +200,10 @@ or a documented stale proof; the existing-test inventory is recorded.
 - [x] 2.3.1 Green: focused raw-store suites, strict-C builds, and
   `RDC_ASAN=1` for ST-2…ST-11 and ST-35.
   ✅ (completed: 2026-10-26 14:29)
-- [ ] 2.3.2 Implementation pins in `compiler/tests/def_raw_store_integrity_impl_test.rs`:
+- [x] 2.3.2 Implementation pins in `compiler/tests/def_raw_store_integrity_impl_test.rs`:
   save/capture shapes, both containment ranges, self-alias restore, evaluated
   counts/order, determinism.
+  ✅ (completed: 2026-10-26 14:30)
 - [ ] 2.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   affected conditional/store tests and record every expected change; close the
   eleven Batch B roadmap rows through the roadmap skill with ASAN/strict-C

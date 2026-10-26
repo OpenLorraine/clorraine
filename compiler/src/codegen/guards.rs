@@ -1444,6 +1444,15 @@ impl<'a> Emitter<'a> {
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
         let mut parts = Vec::new();
         for capture in &self.take_capture {
+            if address == capture.address {
+                // The named place is the destination itself; the move-out
+                // runs on the evaluated path, so the range needs no runtime
+                // comparison (which would trip tautological-compare).
+                parts.push(format!("({} = 1)", capture.flag));
+                parts.push(format!("({} = 0)", capture.offset));
+                parts.push(format!("({} = {})", capture.length, capture.save_bytes));
+                continue;
+            }
             let destination = format!("((unsigned long)({}))", capture.address);
             let destination_end =
                 format!("({destination} + (unsigned long)({}))", capture.save_bytes);
@@ -1492,6 +1501,15 @@ impl<'a> Emitter<'a> {
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
         let mut parts = Vec::new();
         for capture in &self.take_capture {
+            if address == capture.address {
+                // The named place is the destination itself; the move-out runs
+                // on the evaluated path, so the range needs no runtime
+                // comparison (which would trip tautological-compare).
+                parts.push(format!("({} = 1)", capture.flag));
+                parts.push(format!("({} = 0)", capture.offset));
+                parts.push(format!("({} = {})", capture.length, capture.save_bytes));
+                continue;
+            }
             let destination = format!("((unsigned long)({}))", capture.address);
             let destination_end =
                 format!("({destination} + (unsigned long)({}))", capture.save_bytes);

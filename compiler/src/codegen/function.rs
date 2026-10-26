@@ -3347,6 +3347,15 @@ impl<'a> Emitter<'a> {
         let source = format!("((unsigned long)({address}))");
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
         for capture in &captures {
+            if address == capture.address {
+                // The named place is the destination itself; a runtime
+                // comparison would compare the same expression and trip the
+                // strict build's tautological-compare warning.
+                self.push(&format!("    {} = 1;", capture.flag));
+                self.push(&format!("    {} = 0;", capture.offset));
+                self.push(&format!("    {} = {};", capture.length, capture.save_bytes));
+                continue;
+            }
             let destination = format!("((unsigned long)({}))", capture.address);
             let destination_end =
                 format!("({destination} + (unsigned long)({}))", capture.save_bytes);
