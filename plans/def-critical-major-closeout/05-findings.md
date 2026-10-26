@@ -228,7 +228,7 @@ cannot proceed to Phase 3 until the rulings below.
 | RV-005 | 2 | MAJOR | a wildcard element move did not invalidate `initialized_elements` (`own/place.rs`) | resolved by AR-26 (the element initialized state was removed) |
 | RV-006 | 2 | MAJOR | `mentions_call` misses a call nested in an index/member (`own/place.rs`) | open — auto-design fix |
 | RV-007 | 2 | MAJOR | six store-before-move-out ordering pins weakened to presence (`conditional_projection_residue_impl_test.rs`) | open — auto-design fix |
-| RV-008 | 2 | MAJOR | the unplanned null-safe String shim makes a moved source readable and is the ST-11 oracle (`runtime/shim_*.c`) | open — user scope ruling |
+| RV-008 | 2 | MAJOR | the unplanned null-safe String shim made a moved source readable and was the ST-11 oracle (`runtime/shim_*.c`) | resolved (R3): the shim was reverted; the ST-11 non-alias control checks the sibling instead of reading the moved source |
 | SR-001 | 2 | MAJOR | the conditional element move was accepted although `spec/03` §4 / `spec/07` STR-12 require `E10026`; ST-9 encoded the acceptance | resolved (AR-26): follow the frozen spec; ST-9 retargeted; the acceptance machinery reverted |
 | SR-M-001 | 2 | CRITICAL | named-place fixed-array destination take creates no capture (`codegen/function.rs` fixed-array core); pre-existing, inside the changed function | open — user scope ruling |
 | SR-M-002 | 2 | CRITICAL | named-place take of a destination subobject creates no capture (`arm_consumes_target` exact spelling); pre-existing | open — user scope ruling |
@@ -236,7 +236,7 @@ cannot proceed to Phase 3 until the rulings below.
 | SR-M-004 | 2 | CRITICAL | fixed-array conditional `take (cond ? …)` tests the materialization temp, not the selected arm; pre-existing | open — user scope ruling |
 | SR-M-006 | 2 | CRITICAL | a plain (borrow) parameter moved into an owned conditional store double-frees; outside the batch | open — file a separate backlog DEF |
 | SR-E-003 | 2 | MAJOR | the `__cl_rhs` self-read temporary does not reach conditional arms or raw-deref destinations; pre-existing sibling of DEF-465 | open — user scope ruling |
-| SR-S-002/SR-S-003 | 2 | MINOR | callable-field index guard; computed destination index false rejection | report-only |
+| SR-S-002/SR-S-003 | 2 | MINOR | callable-field index guard; computed destination index false rejection | resolved by AR-26 (the index-pin machinery was reverted) |
 | RV-010/RV-013/SR-006 | 2 | MINOR | loosened pins; untested receiver/address-of spellings; latent array extent | report-only |
 
 The user's rulings (2026-10-26): follow the frozen spec (R1, AR-26); fix the

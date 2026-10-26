@@ -252,22 +252,15 @@ void cl_string_append(void *handle, void *src, unsigned int n)
     cl_string_bytes(string)[string->len] = '\0';
 }
 
-/* The first payload byte of a string; the trailing NUL makes it a C string.
- * An empty or moved string has a null handle, so the pointer is null too. */
+/* The first payload byte of a string; the trailing NUL makes it a C string. */
 void *cl_string_ptr(void *handle)
 {
-    if (handle == NULL) {
-        return NULL;
-    }
     return cl_string_bytes((cl_string_block *)handle);
 }
 
-/* The number of live payload bytes in a string. Null-safe. */
+/* The number of live payload bytes in a string. */
 unsigned int cl_string_len(void *handle)
 {
-    if (handle == NULL) {
-        return 0;
-    }
     return ((cl_string_block *)handle)->len;
 }
 

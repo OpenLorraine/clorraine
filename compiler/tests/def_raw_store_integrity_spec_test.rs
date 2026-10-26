@@ -908,7 +908,8 @@ func main(): i32 {
     if (i32(len(xs[0])) != 2) {
         return 9;
     }
-    if (i32(len(other[0])) != 0) {
+    // The sibling stays owned; the moved source other[0] is not read.
+    if (i32(len(other[1])) != 2) {
         return 8;
     }
     return 0;
