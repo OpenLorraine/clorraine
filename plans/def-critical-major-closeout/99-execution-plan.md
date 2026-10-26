@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-26 14:36
-> **Progress**: 31/76 tasks (41%)
+> **Last Updated**: 2026-10-27
+> **Progress**: 34/76 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -221,16 +221,20 @@ program remains in Batch B.
 > **Reasoning**: high — hidden destinations, selected-arm evaluation, and
 > ownership release
 
-- [ ] 3.1.1 [spec-author] Write ST-12 (`DEF-470`), ST-13 (`471`), ST-14
+- [x] 3.1.1 [spec-author] Write ST-12 (`DEF-470`), ST-13 (`471`), ST-14
   (`472`), ST-15 (`473`), and ST-16 (`475`) in
   `compiler/tests/def_conditional_value_integrity_spec_test.rs`; ST-12 is the
   green stale pin recording the Phase 0 `E10020` proof, with no red phase.
-- [ ] 3.1.2 [spec-author] Write ST-17 (`DEF-476`), ST-18 (`477`), ST-19
+  ✅ (completed: 2026-10-27)
+- [x] 3.1.2 [spec-author] Write ST-17 (`DEF-476`), ST-18 (`477`), ST-19
   (`478`), ST-20 (`479`), ST-21 (`480`), and ST-22 (`481`) in the same file;
   include LSan/strict-C controls and the differing-declaration-order scalar
   nested-literal trace.
-- [ ] 3.1.3 Confirm red: the read-base, deferred-take, and maybe-target
+  ✅ (completed: 2026-10-27)
+- [x] 3.1.3 Confirm red: the read-base, deferred-take, and maybe-target
   reproducers fail before the fixes; `DEF-470` stays green.
+  ✅ (completed: 2026-10-27; red: 471, 472, 473, 476, 477, 479; stale at HEAD:
+  475, 478, 480, 481 per AR-16; the evidence table is in `05-findings.md`)
 - [ ] 3.2.1 DEF-471 deref-chain guard — `compiler/src/codegen/expr.rs`.
 - [ ] 3.2.2 DEF-472 concrete-lend maybe-target judgment with the recorded
   concrete arm and destination type — thread the destination through

@@ -297,3 +297,28 @@ report-only. The phase gate is green for Phase 3.
 Execution adds one section per phase with the revalidation results, review
 findings, and the final verification evidence. No row is marked Done without a
 current-HEAD reproduction or a documented stale proof.
+
+## Phase 3 — Specification Cases and Red Confirmation (2026-10-27)
+
+The batch's specification suite is `def_conditional_value_integrity_spec_test.rs`
+(13 cases covering ST-12…ST-22, with the extra green controls). The suite runs
+with `cargo test --test def_conditional_value_integrity_spec_test`; the memory
+cases run under `RDC_ASAN=1` as well. At HEAD `11140b3` the observed results are:
+
+| ST | DEF | HEAD result | Decision |
+|---|---|---|---|
+| ST-12 | 470 | one `E10020` at the later `h.name`, no C | green stale pin (already closed) |
+| ST-13 | 471 | SIGFPE (exit 136), no `E11210` and no stderr line | red |
+| ST-14 | 472 | the owning `T = String` instance is accepted; the `T = str` control exits 0 and is ASAN clean | red (control green) |
+| ST-15 | 473 | the owning `T = String` instance is accepted; the view control exits 0 | red (control green) |
+| ST-16 | 475 | the mixed place/literal read base exits 3, strict C builds, ASAN clean | **stale close (AR-16)**: no longer reproduces at HEAD |
+| ST-17 | 476 | strict C fails: the literal arm calls `n1`/`n2` without the hidden array destination, and the comma arm has no effect | red |
+| ST-18 | 477 | exit 8: the nested conditional store selects a non-selected arm (`last != 2`) | red |
+| ST-19 | 478 | `g = true` selects `n1` only (exit 2); `g = false` calls nothing (exit 0) | **stale close (AR-16)**: no longer reproduces at HEAD |
+| ST-20 | 479 | exit 9: the trace follows declaration order (`21`/`31`) instead of source order (`12`/`13`) | red |
+| ST-21 | 480 | the literal and call-projected arms exit 3/4, ASAN/LSan clean | **stale close (AR-16)**: no longer reproduces at HEAD |
+| ST-22 | 481 | the all-call read base exits 0, ASAN/LSan clean | **stale close (AR-16)**: no longer reproduces at HEAD |
+
+The four stale rows keep their green spec pins as the current-HEAD evidence; the
+roadmap close in `3.3.3` records the proof for each. The active fixes are
+`DEF-471`, `472`, `473`, `476`, `477`, and `479`.
