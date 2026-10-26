@@ -1984,14 +1984,35 @@ impl<'a> Emitter<'a> {
             target.address, target.bytes
         ));
         self.emit_guards(value);
+        // The original source of a transfer materialization is the place it
+        // copied; that place's adjusted address is the one the caller passed.
+        // A source with no place address is compared through the stable
+        // temporary the store materialized.
         let value_c = self.store_text(value, ty);
         let source = self.array_source_address(value, &value_c);
+        let alias_source = self
+            .array_alias_address(value)
+            .unwrap_or_else(|| source.clone());
         self.push(&format!(
             "        memcpy({}, {source}, {});",
             target.address, target.bytes
         ));
         self.emit_arm_source_moves(value, ty);
+        // The source may be the target's own storage. The saved bytes then
+        // repeat the value the target still owns, so releasing the save would
+        // free the same elements a second time. Compare the original source
+        // address with the target address and clear the duplicate save on the
+        // self-alias path. The address is taken from the source before the
+        // stable copy, because an adjusted array parameter already names the
+        // array's address.
+        self.push(&format!(
+            "        if (((void *)({alias_source})) == ((void *)({}))) {{",
+            target.address
+        ));
+        self.push(&format!("            cl_zero(&({save}));"));
+        self.push("        } else {");
         self.emit_drop_expr(&save, ty);
+        self.push("        }");
         self.push("    }");
     }
 
@@ -3814,6 +3835,19 @@ impl<'a> Emitter<'a> {
             }
         }
         format!("&({c_name})")
+    }
+
+    /// The original adjusted address of a fixed-array store source.
+    ///
+    /// A transfer materialization wraps the place it copied into a temporary;
+    /// the place's address is the caller's array, while the temporary is a
+    /// different object. A source with no place root has no original address.
+    fn array_alias_address(&self, value: &Value) -> Option<String> {
+        match &value.kind {
+            ValueKind::Place(_) => Some(self.array_source_address(value, &self.value(value))),
+            ValueKind::Materialize { value: inner, .. } => self.array_alias_address(inner),
+            _ => None,
+        }
     }
 
     /// The byte count of a fixed array through its C-adjusted parameter name.
