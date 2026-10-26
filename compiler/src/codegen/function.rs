@@ -1670,6 +1670,7 @@ impl<'a> Emitter<'a> {
         // pointee. A duplicable value copies and stays intact.
         let moves_pointee = self.needs_drop(&ty) && value_moves_pointee(value);
         let reads_target = value_reads_base(value, target)
+            || (element_target && moves_pointee)
             || (element_target
                 && (value_reads_named_binding(value) || value_reads_alias(value)))
             || (matches!(target.base, PlaceBase::DerefTemp { .. })
@@ -1696,10 +1697,21 @@ impl<'a> Emitter<'a> {
             self.emit_guards(value);
             let lowered = self.store_text(value, &ty);
             self.push(&format!("        {target_c} = {lowered};"));
+            if moves_pointee {
+                // The raw source may name the destination's own storage. The
+                // source move then clears the saved duplicate instead of the
+                // destination, so the moved value stays in place.
+                self.emit_arm_source_moves_with_target(
+                    value,
+                    &ty,
+                    Some(&target_c),
+                    Some(&save),
+                );
+            }
             self.emit_drop_expr(&save, &ty);
             self.push("    }");
         }
-        if moves_pointee {
+        if moves_pointee && !reads_target {
             self.emit_arm_source_moves(value, &ty);
         }
         // A struct literal stores through a C compound initializer, which has
