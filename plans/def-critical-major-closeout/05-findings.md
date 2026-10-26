@@ -162,6 +162,24 @@ commit and the verification evidence.
 14 passed, `own` unit tests 62 passed. The accepted controls are ASAN clean. The
 AR-25 fixes add the composite-store and element-store UAF regressions.
 
+## Phase 2 — Raw Store Integrity
+
+**Red phase (2026-10-26):** 19 specification cases. Fifteen fail at HEAD with the
+filed failure mode: `guardedarg` double-free, `arraytake` double-free,
+`nestedarg` double-free, `selfalias`/`selfaliasmember` SEGV, `shortcircuit`
+11-byte LSan leak, `containsup` double-free, `containfirst` leak,
+`arrayparam`/`arrayaddr` use-after-free, `selfread`/`selffill` wrong values,
+`postsrc` accepted, and `elementalias`/`elementmove` SEGV. The controls pass:
+`guardedargskip`, `fieldpin`, `postdst`, and `shortcircuittaken`.
+
+`fieldpin` is a green runtime control because the host C compiler happens to
+evaluate the store at the same field address; the defect is the missing pin in
+the emitted C. The implementation test in 2.3.2 is the red oracle for that
+row. The address-of fixed-array spelling could not be expressed as a source at
+HEAD (`raw String[2]` conversion), so the concrete parameter alias is the
+specification case and the adjusted-address emission is pinned in the
+implementation test.
+
 ## Phase Records
 
 Execution adds one section per phase with the revalidation results, review

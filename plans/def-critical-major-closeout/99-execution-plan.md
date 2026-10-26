@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 14/76 tasks (18%)
+> **Progress**: 17/76 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -145,20 +145,23 @@ or a documented stale proof; the existing-test inventory is recorded.
 
 ## Phase 2: Raw Store Integrity — DEF-454…466
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `9cbe86990b8d601a10a99e098a5a720d7d0382c4`
 > **Lenses**: correctness, memory safety, emission integrity, semantics
 > **Reasoning**: high — raw aliases, conditional saves, evaluation order, and double-free paths
 
-- [ ] 2.1.1 [spec-author] Write ST-2 (`DEF-454`), ST-3 (`455`), ST-4 (`456`),
+- [x] 2.1.1 [spec-author] Write ST-2 (`DEF-454`), ST-3 (`455`), ST-4 (`456`),
   ST-5 (`457`), and ST-6 (`460`) in
   `compiler/tests/def_raw_store_integrity_spec_test.rs`.
-- [ ] 2.1.2 [spec-author] Write ST-7 (`DEF-461`), ST-8 (`462`), ST-9 (`464`),
+  ✅ (completed: 2026-10-26 13:13)
+- [x] 2.1.2 [spec-author] Write ST-7 (`DEF-461`), ST-8 (`462`), ST-9 (`464`),
   ST-10 (`465`), ST-11 (`466`), and ST-35 (`DEF-458`) in the same file; include
   the address-of spelling, the destination-index/run-time-source control, both
   containment directions, the exact `unsafe` contexts, and the strict-C/ASAN
   controls.
-- [ ] 2.1.3 Confirm red: each unsafe reproducer fails (UAF, double-free, lost
+  ✅ (completed: 2026-10-26 13:13)
+- [x] 2.1.3 Confirm red: each unsafe reproducer fails (UAF, double-free, lost
   value, leak, or invalid C) before the fix.
+  ✅ (completed: 2026-10-26 13:13)
 - [ ] 2.2.1 DEF-454 guarded struct-literal raw move — `compiler/src/codegen/guards.rs`,
   `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs`.
 - [ ] 2.2.2 DEF-455 fixed-array take capture — `compiler/src/codegen/function.rs`.
