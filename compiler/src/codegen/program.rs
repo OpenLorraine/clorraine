@@ -1802,7 +1802,7 @@ impl<'a> Emitter<'a> {
             let field_c = format!("{target_c}.{field_name}");
             if field_ty.is_fixed_array() {
                 let field_target = ArrayTarget::object(&field_c);
-                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
+                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false, false);
                 continue;
             }
             if let ValueKind::StructLit { fields: inner, .. } = &field.kind {

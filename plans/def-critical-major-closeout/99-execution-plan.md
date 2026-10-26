@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 25/76 tasks (33%)
+> **Progress**: 26/76 tasks (34%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -190,8 +190,9 @@ or a documented stale proof; the existing-test inventory is recorded.
   destination read stays accepted — `compiler/src/own/expr.rs`,
   `compiler/src/own/place.rs`.
   ✅ (completed: 2026-10-26 14:11)
-- [ ] 2.2.9 DEF-465 RHS-before-clear outside the `needs_drop` gate, including
+- [x] 2.2.9 DEF-465 RHS-before-clear outside the `needs_drop` gate, including
   the fill twin — `compiler/src/codegen/function.rs`.
+  ✅ (completed: 2026-10-26 14:15)
 - [ ] 2.2.10 DEF-466 runtime element alias test — `compiler/src/codegen/function.rs`.
 - [ ] 2.2.11 DEF-458 place-move-out take-ran capture — `compiler/src/codegen/function.rs`.
 - [ ] 2.3.1 Green: focused raw-store suites, strict-C builds, and
