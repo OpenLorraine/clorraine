@@ -709,6 +709,26 @@ func main(): i32 {
     let output = run_memory("fieldpin", source);
     assert_no_asan("fieldpin", &output);
     assert_exit("fieldpin", &output, 3);
+
+    let emitted = emit_host("fieldpin", source);
+    let pin = emitted
+        .lines()
+        .position(|line| line.contains("= &((*(p)).next);"))
+        .unwrap_or_else(|| panic!("fieldpin: the intermediate member is not pinned; C:\n{emitted}"));
+    let call = emitted
+        .lines()
+        .position(|line| line.contains("cl_spec_rawstore_fieldpin_change(p)"))
+        .unwrap_or_else(|| panic!("fieldpin: the RHS call is missing; C:\n{emitted}"));
+    assert!(
+        pin < call,
+        "fieldpin: the intermediate pin must run before the RHS call; C:\n{emitted}"
+    );
+    assert!(
+        emitted
+            .lines()
+            .any(|line| line.contains("__cl_tmp") && line.contains(".x)) = cl_spec_rawstore_fieldpin_change(p)")),
+        "fieldpin: the store must write through the pinned address; C:\n{emitted}"
+    );
 }
 
 // ---------------------------------------------------------------------------

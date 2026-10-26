@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 23/76 tasks (30%)
+> **Progress**: 24/76 tasks (32%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -181,8 +181,9 @@ or a documented stale proof; the existing-test inventory is recorded.
   address — `compiler/src/codegen/function.rs` (`is_array_param_place`,
   `array_source_address`).
   ✅ (completed: 2026-10-26 13:56)
-- [ ] 2.2.7 DEF-462 intermediate raw-field pin — `compiler/src/own/expr.rs`,
+- [x] 2.2.7 DEF-462 intermediate raw-field pin — `compiler/src/own/expr.rs`,
   `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-26 14:03)
 - [ ] 2.2.8 DEF-464 post-store `E10020` and destination-read acceptance — pin
   the destination index before the condition, record the run-time source
   element the arm reads, and report the later constant source read while the

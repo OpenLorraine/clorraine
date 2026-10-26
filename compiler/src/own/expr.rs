@@ -1215,6 +1215,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     projected = Value::new(self.ty(whole), kind);
                 }
                 projected.ty = element_ty.clone();
+                // A side-effecting value may change an intermediate raw field
+                // before the C lvalue is evaluated. Pin the intermediate
+                // member's address first, then store through that address.
+                let projected = if Self::mentions_call(value)
+                    || super::lower::contains_update(value)
+                {
+                    self.pin_intermediate_raw_member(projected)
+                } else {
+                    projected
+                };
                 // Pin every member/element base and index before the value is
                 // lowered; the pointer itself is already materialized.
                 let projected = self.pin_store_target(projected);
@@ -3840,6 +3850,74 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             target = inner;
         }
         matches!(target.kind, ExprKind::Member { .. })
+    }
+
+    /// Pins an intermediate member over a raw dereference by its address.
+    ///
+    /// A chain such as `(*p).next.x` names the field through an intermediate
+    /// member. The C store would re-evaluate that member after a side-effecting
+    /// right-hand side, so the address of `(*p).next` is bound first and the
+    /// store writes through the bound pointer. Only a member or element base is
+    /// pinned; a direct `(*p).x` already evaluates one dereference.
+    fn pin_intermediate_raw_member(&mut self, value: Value) -> Value {
+        let ValueKind::Member { base, name } = value.kind else {
+            return value;
+        };
+        if !matches!(base.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+            || !Self::roots_at_raw_deref(&base)
+        {
+            return Value::new(value.ty, ValueKind::Member { base, name });
+        }
+        let base_ty = base.ty.clone();
+        let address_ty = Ty::raw(base_ty.clone());
+        let temp = self.new_temp(address_ty.clone());
+        let target = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty: address_ty.clone(),
+        };
+        let address = Value::new(
+            address_ty,
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand: base.clone(),
+            },
+        );
+        self.emit(Statement::Assign {
+            target,
+            value: address,
+        });
+        let pinned = Value::new(
+            base_ty.clone(),
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand: Box::new(Value::new(
+                    Ty::raw(base_ty),
+                    ValueKind::Temp(temp),
+                )),
+            },
+        );
+        Value::new(
+            value.ty,
+            ValueKind::Member {
+                base: Box::new(pinned),
+                name,
+            },
+        )
+    }
+
+    /// True when a value's projection chain roots at a raw dereference.
+    fn roots_at_raw_deref(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            } => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                Self::roots_at_raw_deref(base)
+            }
+            _ => false,
+        }
     }
 
     /// Materializes the base and index of every element selection in a store

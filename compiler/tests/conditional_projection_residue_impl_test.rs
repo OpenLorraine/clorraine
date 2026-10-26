@@ -13237,11 +13237,15 @@ func main(): i32 {
 "#,
     );
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p421bump_main(void)\n{");
-    assert_contains(tag, body, "__cl_tmp0 = cl_spec_cprimpl_p421bump_idx;");
     assert_contains(
         tag,
         body,
-        "*(&((*(p)).arr[__cl_tmp0].y)) = cl_spec_cprimpl_p421bump_bump();",
+        "__cl_tmp0 = &((*(p)).arr[cl_spec_cprimpl_p421bump_idx]);",
+    );
+    assert_contains(
+        tag,
+        body,
+        "*(&((*(__cl_tmp0)).y)) = cl_spec_cprimpl_p421bump_bump();",
     );
     assert_eq!(
         body.matches("cl_spec_cprimpl_p421bump_bump();").count(),
