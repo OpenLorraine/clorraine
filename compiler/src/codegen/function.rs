@@ -3220,12 +3220,17 @@ impl<'a> Emitter<'a> {
             ValueKind::Materialize {
                 value: inner,
                 move_outs,
+                value_move_outs,
                 ..
             } => {
-                move_outs
-                    .iter()
-                    .any(|place| place_may_overlap(&self.place(place), target_c))
-                    || self.arm_consumes_target_in(inner, target_c, true)
+                // Any owning take in a guarded operand may name the
+                // destination through another spelling (an array parameter, a
+                // raw alias); create the capture and let the runtime range
+                // comparison decide. A skipped take leaves the flag clear.
+                if !move_outs.is_empty() || !value_move_outs.is_empty() {
+                    return true;
+                }
+                self.arm_consumes_target_in(inner, target_c, true)
             }
             ValueKind::Conditional {
                 condition,

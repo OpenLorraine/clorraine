@@ -1165,3 +1165,37 @@ func main(): i32 {
 "#;
     assert_rejected_exactly_once("nestedidx", source, "E10026", &["partial moves"]);
 }
+
+/// A named fixed-array parameter take with no raw pointee in the condition is
+/// still one ownership transfer: the capture is created from the take itself.
+#[test]
+fn should_keep_a_named_array_parameter_take_without_a_raw_pointee() {
+    let source = r#"module spec.rawstore.arrayparamtake;
+
+import { String, stringOf } from std.text;
+
+struct A { items: String[2]; }
+
+func eatRows(take rows: String[2]): i32 {
+    return i32(len(rows[0])) - 2;
+}
+
+func go(p: raw A, take rows: String[2]): i32 {
+    let x: String[2] = [stringOf("xx"), stringOf("yy")];
+    let y: String[2] = [stringOf("mm"), stringOf("nn")];
+    let g: bool = true;
+    unsafe {
+        (*p).items = (g && eatRows(take rows) == 0) ? x : y;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: A = A { items: [stringOf("aa"), stringOf("bb")] };
+    unsafe { return go(&a, a.items); }
+}
+"#;
+    let output = run_memory("arrayparamtake", source);
+    assert_no_asan("arrayparamtake", &output);
+    assert_exit("arrayparamtake", &output, 0);
+}

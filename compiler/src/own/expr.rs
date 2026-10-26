@@ -90,6 +90,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// can mark it consumed without rejecting a duplicable instance. A nested
     /// conditional recurses.
     pub(super) fn maybe_owning_move_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        self.maybe_owning_source_arms(expr)
+            .into_iter()
+            .map(|(_, target)| target)
+            .collect()
+    }
+
+    /// The maybe-owning conditional arms paired with their expressions.
+    ///
+    /// A maybe-owning source is judged per instance, and a self-named arm is
+    /// skipped only when its expression proves the same place (a literal
+    /// index). The expression is therefore kept beside the place target.
+    pub(super) fn maybe_owning_source_arms<'e>(
+        &self,
+        expr: &'e Expr,
+    ) -> Vec<(&'e Expr, PlaceTarget)> {
         let ExprKind::Conditional {
             then_value,
             else_value,
@@ -101,15 +116,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut sources = Vec::new();
         for arm in [then_value.as_ref(), else_value.as_ref()] {
             if matches!(arm.kind, ExprKind::Conditional { .. }) {
-                sources.extend(self.maybe_owning_move_sources(arm));
+                sources.extend(self.maybe_owning_source_arms(arm));
                 continue;
             }
             let ty = self.ty(arm);
-            // A type-parameter arm owns only at some instances, so the
-            // per-instance audit decides: record the arm as a maybe-owning
-            // source instead of dropping it at the definition. A projected
-            // member of a type-parameter place has an opaque member type, so
-            // the root's declaration decides.
             let parameter_root = self.place_target(arm).is_some_and(|target| match target {
                 PlaceTarget::Local(id, _) => {
                     super::lower::mentions_type_param(&self.bindings[id].ty)
@@ -123,7 +133,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             }
             if let Some(target) = self.place_target(arm) {
-                sources.push(target);
+                sources.push((arm, target));
             }
         }
         sources
@@ -330,18 +340,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// True when an index expression is not a literal or a plain local.
+    /// True when an index expression is not a literal.
     ///
-    /// A literal or a plain local/parameter index can be named twice without
-    /// an effect; a module global, a call, or a computed index cannot.
+    /// Only a literal index proves the same element at both the store and the
+    /// arm: a local or parameter can be changed by the condition (an `i++`, a
+    /// raw write through an escaped address, or a call), a global can be
+    /// changed anywhere, and a computed index is not stable. The conservative
+    /// rule follows the frozen element-move rule and reports an element move
+    /// for every non-literal self-named arm.
     fn index_expression_may_change(&self, index: &Expr) -> bool {
-        match &index.kind {
-            ExprKind::Int(_) => false,
-            _ => !matches!(
-                self.place_target(index),
-                Some(PlaceTarget::Local(_, ref projections)) if projections.is_empty()
-            ),
-        }
+        !matches!(index.kind, ExprKind::Int(_))
     }
 
     /// True when a conditional has an arm with no place.
@@ -1454,18 +1462,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         let value_ty = self.ty(value);
                         let maybe_owning = self.maybe_owns(&value_ty);
                         if maybe_owning {
-                            let mut sources = self.maybe_owning_move_sources(value);
-                            if sources.is_empty() {
-                                sources = self.maybe_owning_projection_move_sources(value);
-                            }
-                            for source in sources {
-                                if let PlaceTarget::Local(source_id, source_projections) = &source
-                                {
-                                    if *source_id == id && source_projections == &projections {
-                                        continue;
+                            let direct = self.maybe_owning_source_arms(value);
+                            if direct.is_empty() {
+                                for source in self.maybe_owning_projection_move_sources(value) {
+                                    if let PlaceTarget::Local(source_id, source_projections) = &source
+                                    {
+                                        if *source_id == id
+                                            && source_projections == &projections
+                                        {
+                                            continue;
+                                        }
                                     }
+                                    self.note_maybe_element_move(&source, value.span);
+                                    self.mark_moved_if_owning(source, value.span);
                                 }
-                                self.mark_moved_if_owning(source, value.span);
+                            } else {
+                                for (arm, source) in direct {
+                                    if let PlaceTarget::Local(source_id, _) = &source {
+                                        if *source_id == id
+                                            && same_place_expr(target, arm)
+                                            && !self.destination_index_may_change(target)
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                    self.note_maybe_element_move(&source, value.span);
+                                    self.mark_moved_if_owning(source, value.span);
+                                }
                             }
                         } else {
                             // A conditional arm that spells the destination's

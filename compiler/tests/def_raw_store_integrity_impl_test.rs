@@ -695,7 +695,7 @@ fn should_measure_a_fixed_array_parameter_take_by_its_whole_extent() {
 
 import { String, stringOf } from std.text;
 
-struct A { flag: i32; items: String[2]; }
+struct A { items: String[2]; }
 
 func eatRows(take rows: String[2]): i32 { return i32(len(rows[0])) - 2; }
 
@@ -704,13 +704,13 @@ func go(p: raw A, take rows: String[2]): i32 {
     let y: String[2] = [stringOf("mm"), stringOf("nn")];
     let g: bool = true;
     unsafe {
-        (*p).items = (g && (*p).flag == 7 && eatRows(take rows) == 0) ? x : y;
+        (*p).items = (g && eatRows(take rows) == 0) ? x : y;
     }
     return 0;
 }
 
 func main(): i32 {
-    let a: A = A { flag: 7, items: [stringOf("aa"), stringOf("bb")] };
+    let a: A = A { items: [stringOf("aa"), stringOf("bb")] };
     unsafe { return go(&a, a.items); }
 }
 "#,

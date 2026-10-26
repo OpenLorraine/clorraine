@@ -1,7 +1,7 @@
 # Ambiguity Register: Critical/Major DEF Closeout
 
-> **Status**: ✅ GATE PASSED — all 25 items resolved
-> **Last Updated**: 2026-10-24
+> **Status**: ✅ GATE PASSED — all 28 items resolved
+> **Last Updated**: 2026-10-27
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
 |---|---|---|---|---|---|
@@ -32,6 +32,8 @@
 | AR-25 | Behavioral (runtime scope expansion) | The Phase 1 review found two pre-existing critical UAFs in the DEF-543 class: a conditional store value (`slot = c ? s : "BB"`) and an element store into a local view array (`s[0] = p; slot = s[0]`). Absorb them into Phase 1 or file a follow-up? | Absorb both / conditional only / follow-up | User chose **absorb both**: the set judgment resolves conditional, projection, call, and literal values; an element store joins the base binding's source set; regression tests were added | ✅ Resolved (2026-10-26) |
 | AR-26 | Behavioral / spec (runtime review) | Does the conditional element store follow the plan's ST-9 acceptance or the frozen v1 element-move rule? | Accept the plan's ST-9 / follow the frozen `E10026` rule / amend the spec | User chose **follow the frozen spec**: a conditional element source reports one `E10026`; no spec or golden change; ST-9 is retargeted; a same-place stable self-arm stays a self-copy; the destination read control uses a non-element source; the DEF-464 acceptance machinery was reverted | ✅ Resolved (2026-10-26, Phase 2 review R1) |
 
+| AR-27 | Behavioral (Phase 2 re-review RR-002) | Does a local-index conditional self-arm stay a self-copy? | Keep the local-index exception / literal-and-const indices only / reject every element source | User chose **literal/const only**: a literal index is a self-copy; a local, parameter, or computed index reports `E10026`; a `const` spelling is conservatively rejected because the checker resolves no constant value at the index site; the local-index self-arm tests are retargeted | ✅ Resolved (2026-10-27) |
+| AR-28 | Scope (Phase 2 re-review RR-003/P1/P2) | Which re-review criticals are fixed now and which are filed? | Fix RR-003 and P1 now, file P2 / fix all now / file all | User chose **fix RR-003 and P1 now; file P2**: the generic per-instance element duty and the conservative take capture are fixed; the multi-range capture is `DEF-545`; RR-007 stays report-only | ✅ Resolved (2026-10-27) |
 ## Resolution Notes
 
 **AR-1:** HEAD has **136 open defects: 35 critical/major (1 critical + 34 major) and 101 minor**. `DEF-470` is stale, so the active set is **34 rows: 1 critical + 33 major**. `DEF-458` is the open major the original 33-row set omitted; AR-18 adds it to Batch B.

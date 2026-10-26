@@ -7188,14 +7188,13 @@ func main(): i32 {
     );
 }
 
-/// A conditional self-arm is matched only when it spells the destination's own
-/// place with a stable index.
+/// A conditional self-arm is judged by index stability.
 ///
-/// The same expression is a self-copy at the storage address; a different
-/// index expression is a v1 element move and reports E10026.
+/// A literal index is a self-copy and restores the saved value; a different
+/// or local index expression is a v1 element move and reports E10026.
 #[test]
-fn should_match_a_conditional_self_arm_by_storage_address() {
-    let same_index = r#"module spec.cprimpl.implselfarm;
+fn should_judge_a_conditional_self_arm_by_index_stability() {
+    let literal_index = r#"module spec.cprimpl.implselfarm;
 
 import { String, stringOf } from std.text;
 
@@ -7204,30 +7203,20 @@ struct Elem { inner: Inner; }
 
 func main(): i32 {
     let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
-    let i: i32 = 1;
     let c: bool = true;
-    a[i].inner = c ? a[i].inner : Inner { name: stringOf("zz") };
-    return i32(len(a[i].inner.name)) - 2;
+    a[1].inner = c ? a[1].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[1].inner.name)) - 2;
 }
 "#;
     let tag = "implselfarm";
-    let (_scratch, emitted) = emit_host(tag, same_index);
+    let (_scratch, emitted) = emit_host(tag, literal_index);
     let body = function_body(
         tag,
         &emitted,
         "cl_spec_cprimpl_implselfarm_main(void)\n{",
     );
-    assert_contains(
-        tag,
-        body,
-        "if ((&(a[i].inner)) == (&(a[__cl_tmp0].inner))) {",
-    );
-    assert_follows(
-        tag,
-        body,
-        "if ((&(a[i].inner)) == (&(a[__cl_tmp0].inner))) {",
-        "a[__cl_tmp0].inner = __cl_save_1;",
-    );
+    assert_contains(tag, body, "a[1].inner = __cl_save_1;");
+    assert_contains(tag, body, "cl_zero(&__cl_save_1);");
 
     let equal = r#"module spec.cprimpl.implselfequal;
 

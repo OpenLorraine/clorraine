@@ -14253,16 +14253,17 @@ func main(): i32 {
 // conditional self-arm: a branch that names the destination through another
 // index spelling.
 //
-// The branch compares the destination's storage address, so the chosen arm
-// restores the saved value instead of copying it onto itself and emptying it.
+// A literal index proves the same element at the store and the arm, so the
+// chosen arm restores the saved value instead of copying it onto itself and
+// emptying it. Every other index can change and is an element move.
 // ---------------------------------------------------------------------------
 
-/// A conditional self-arm over a run-time index keeps the stored value.
+/// A conditional self-arm is judged by index stability.
 ///
-/// The member, whole-element, fixed-array member, and two-index-equal shapes
-/// each store the selected value back into the destination and read it back.
+/// The member, whole-element, and fixed-array member literals store the
+/// selected value back and read it; a local or computed index reports E10026.
 #[test]
-fn should_update_a_conditional_self_arm_over_a_runtime_index() {
+fn should_judge_a_conditional_self_arm_by_index_stability() {
     let member = r#"module spec.cpr.selfmember;
 
 import { String, stringOf } from std.text;
@@ -14272,10 +14273,9 @@ struct Elem { inner: Inner; }
 
 func main(): i32 {
     let a: Elem[2] = [Elem { inner: Inner { name: stringOf("aa") } }, Elem { inner: Inner { name: stringOf("bb") } }];
-    let i: i32 = 1;
     let c: bool = true;
-    a[i].inner = c ? a[i].inner : Inner { name: stringOf("zz") };
-    return i32(len(a[i].inner.name)) - 2;
+    a[1].inner = c ? a[1].inner : Inner { name: stringOf("zz") };
+    return i32(len(a[1].inner.name)) - 2;
 }
 "#;
     let output = run_memory("selfmember", member);
@@ -14290,10 +14290,9 @@ struct Elem { name: String; }
 
 func main(): i32 {
     let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
-    let i: i32 = 1;
     let c: bool = true;
-    a[i] = c ? a[i] : Elem { name: stringOf("zz") };
-    return i32(len(a[i].name)) - 2;
+    a[1] = c ? a[1] : Elem { name: stringOf("zz") };
+    return i32(len(a[1].name)) - 2;
 }
 "#;
     let output = run_memory("selfelement", element);
@@ -14308,15 +14307,32 @@ struct Elem { names: String[2]; }
 
 func main(): i32 {
     let a: Elem[2] = [Elem { names: [stringOf("aa"), stringOf("ab")] }, Elem { names: [stringOf("bb"), stringOf("bc")] }];
-    let i: i32 = 1;
     let c: bool = true;
-    a[i].names = c ? a[i].names : [stringOf("zz"), stringOf("ww")];
-    return i32(len(a[i].names[0])) - 2;
+    a[1].names = c ? a[1].names : [stringOf("zz"), stringOf("ww")];
+    return i32(len(a[1].names[0])) - 2;
 }
 "#;
     let output = run_memory("selffixed", fixed);
     assert_no_asan("selffixed", &output);
     assert_exit("selffixed", &output, 0);
+
+    let local_self = r#"module spec.cpr.selflocal;
+
+import { String, stringOf } from std.text;
+
+struct Elem { name: String; }
+
+func main(): i32 {
+    let a: Elem[2] = [Elem { name: stringOf("aa") }, Elem { name: stringOf("bb") }];
+    let i: i32 = 1;
+    let c: bool = true;
+    a[i] = c ? a[i] : Elem { name: stringOf("zz") };
+    return i32(len(a[i].name)) - 2;
+}
+"#;
+    // A local index can be changed by the condition; the self-named arm is an
+    // element move under the frozen v1 rule.
+    assert_rejected_once("selflocal", local_self, "E10026");
 
     let equal_indices = r#"module spec.cpr.selfequal;
 
@@ -22545,4 +22561,45 @@ func main(): i32 {
 }
 "#;
     compile_rejects("capturedwritable", writable, "E10033", 1);
+}
+
+/// A generic conditional element store is judged per instance: an owning
+/// substitution reports one `E10026`, while a duplicable substitution copies.
+#[test]
+fn should_judge_a_generic_conditional_element_move_per_instance() {
+    let owning = r#"module spec.cpr.genericcondmove;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func pick<T>(take w: Wrap<T>, i: i32, j: i32, c: bool): i32 {
+    w.items[i] = c ? w.items[j] : w.items[j];
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<String> = Wrap<String> { items: [stringOf("aa"), stringOf("bb")] };
+    return pick<String>(take w, 0, 1, true);
+}
+"#;
+    compile_rejects("genericcondmove", owning, "E10026", 1);
+
+    let duplicable = r#"module spec.cpr.genericconddup;
+
+struct Wrap<T> { items: T[2]; }
+
+func pick<T>(take w: Wrap<T>, i: i32, j: i32, c: bool): i32 {
+    w.items[i] = c ? w.items[j] : w.items[j];
+    return 0;
+}
+
+func main(): i32 {
+    let w: Wrap<i32> = Wrap<i32> { items: [1, 2] };
+    return pick<i32>(take w, 0, 1, true);
+}
+"#;
+    let output = run_memory("genericconddup", duplicable);
+    assert_no_asan("genericconddup", &output);
+    assert_exit("genericconddup", &output, 0);
 }

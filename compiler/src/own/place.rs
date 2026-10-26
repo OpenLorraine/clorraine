@@ -747,6 +747,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
     }
 
+    /// Records the element-move duty a maybe-owning projected source owes.
+    ///
+    /// A conditional arm that projects past the top-level field limit is the
+    /// v1 element-move limit once the substituted type owns. The body records
+    /// the duty while the moved type is a parameter; the per-instance audit
+    /// reports `E10026` for an owning substitution and accepts a duplicable
+    /// one. One duty per store site keeps the report single even when both
+    /// arms name the same projection.
+    pub(super) fn note_maybe_element_move(&mut self, source: &PlaceTarget, span: Span) {
+        let PlaceTarget::Local(id, projections) = source else {
+            return;
+        };
+        let top_level = projections.len() == 1
+            && matches!(projections.first(), Some(ir::Projection::Field(_)));
+        if projections.is_empty() || top_level {
+            return;
+        }
+        let moved = self.projected_type(*id, projections);
+        if !(self.maybe_owns(&moved) || moved.is_unknown()) {
+            return;
+        }
+        if !self
+            .recorded_element_moves
+            .insert((*id, span.start, span.end))
+        {
+            return;
+        }
+        let path: Vec<crate::types::PlacePathStep> = projections
+            .iter()
+            .map(|projection| match projection {
+                ir::Projection::Field(field) => {
+                    crate::types::PlacePathStep::Field(field.clone())
+                }
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                    crate::types::PlacePathStep::Element
+                }
+            })
+            .collect();
+        self.element_move_requirements.push(ir::RequiresElementMove {
+            function: self.decl.name.clone(),
+            ty: self.bindings[*id].ty.clone(),
+            path,
+            span,
+        });
+    }
+
     /// Records the element-move duty a consumed move through a borrow element
     /// owes, at most once per site.
     ///
