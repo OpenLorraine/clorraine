@@ -2993,7 +2993,7 @@ impl<'a> Emitter<'a> {
             }
             self.push("            } else {");
             self.push(&format!("                {target_c} = {arm_c};"));
-            self.emit_arm_source_moves(arm, ty);
+            self.emit_arm_source_moves_with_target(arm, ty, Some(target_c), save);
             self.push("            }");
             return;
         }
@@ -3039,7 +3039,7 @@ impl<'a> Emitter<'a> {
                 self.emit_guards(arm);
                 let arm_c = self.store_text(arm, ty);
                 self.push(&format!("            {target_c} = {arm_c};"));
-                self.emit_arm_source_moves(arm, ty);
+                self.emit_arm_source_moves_with_target(arm, ty, Some(target_c), save);
             }
         }
     }
@@ -3293,6 +3293,23 @@ impl<'a> Emitter<'a> {
     /// condition selects. This is what makes the statement-end release of a
     /// copied transfer temporary a no-op.
     pub(super) fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
+        self.emit_arm_source_moves_with_target(arm, ty, None, None);
+    }
+
+    /// Emits an arm source move, restoring the save on a raw self-alias.
+    ///
+    /// A raw-deref arm source may name the same storage as the destination
+    /// (`v = g ? (*p) : y` with `p = &v`). The arm store is then a self-copy,
+    /// and emptying the source would empty the destination itself. The save is
+    /// the duplicate owner in that case, so it is cleared and the source stays
+    /// intact; every other source is emptied normally.
+    fn emit_arm_source_moves_with_target(
+        &mut self,
+        arm: &Value,
+        ty: &Ty,
+        target: Option<&str>,
+        save: Option<&str>,
+    ) {
         // A null-shaped arm lowers to the destination's own empty value, so it
         // read no storage the store must empty.
         if self.carries_null_shape(arm) && self.carries_null_value(ty) {
@@ -3303,6 +3320,19 @@ impl<'a> Emitter<'a> {
         // consumed, even when the source move belongs to a nested store.
         if value_moves_pointee(arm) {
             self.emit_take_alias(arm, ty);
+        }
+        let self_alias = target.zip(save).and_then(|(target, save)| {
+            self.deref_value_address(arm)
+                .map(|address| (address, target.to_owned(), save.to_owned()))
+        });
+        if let Some((address, target, _)) = &self_alias {
+            self.push(&format!(
+                "    if (((void *)({address})) == ((void *)(&({target})))) {{"
+            ));
+            if let Some(save) = save {
+                self.emit_move_zero(save, ty);
+            }
+            self.push("    } else {");
         }
         match &arm.kind {
             ValueKind::Place(place) => {
@@ -3341,6 +3371,9 @@ impl<'a> Emitter<'a> {
                 }
             }
             _ => {}
+        }
+        if self_alias.is_some() {
+            self.push("    }");
         }
     }
 

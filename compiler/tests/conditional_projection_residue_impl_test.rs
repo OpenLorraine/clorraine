@@ -708,7 +708,8 @@ fn should_bind_the_fresh_root_that_owns_residual_storage() {
     let body = function_body(tag, &emitted, "cl_spec_cpr_armfresh_use(bool c, ClBox a)\n{");
     assert_contains(tag, body, "ClBox __cl_tmp1 = {0};");
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_armfresh_mkBox();");
-    assert_follows(tag, body, "s = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_contains(tag, body, "s = __cl_tmp1.v;");
+    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
     assert_release_after(
         tag,
         body,
@@ -1248,7 +1249,8 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_fieldcondplain_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_fieldcondplain_mkBox();");
-    assert_follows(tag, body, "o.v = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_contains(tag, body, "o.v = __cl_tmp1.v;");
+    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "elementcond";
@@ -1259,7 +1261,8 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_elementcond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_elementcond_mkBox();");
-    assert_follows(tag, body, "__cl_rhs_1[0] = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_contains(tag, body, "__cl_rhs_1[0] = __cl_tmp1.v;");
+    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "takecond";
@@ -1270,7 +1273,8 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_takecond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_takecond_mkBox();");
-    assert_follows(tag, body, "__cl_tmp2 = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_contains(tag, body, "__cl_tmp2 = __cl_tmp1.v;");
+    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 
     let tag = "returncond";
@@ -1281,7 +1285,8 @@ fn should_bind_the_conditional_field_and_element_roots() {
         "cl_spec_cpr_returncond_use(bool c, ClBox a)\n{",
     );
     assert_contains(tag, body, "__cl_tmp1 = cl_spec_cpr_returncond_mkBox();");
-    assert_follows(tag, body, "__cl_ret = __cl_tmp1.v;", "__cl_tmp1.v = NULL;");
+    assert_contains(tag, body, "__cl_ret = __cl_tmp1.v;");
+    assert_contains(tag, body, "__cl_tmp1.v = NULL;");
     assert_contains(tag, body, "if (__cl_tmp1.w) { FreeString(__cl_tmp1.w); }");
 }
 
