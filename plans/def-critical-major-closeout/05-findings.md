@@ -154,6 +154,9 @@ of this batch.
 | SA-003 | CRITICAL (pre-existing) | An element store into a local view array did not update the source state | Fixed under AR-25: the element store joins the base binding's set; regression test added; a sibling element read is conservatively judged from the union |
 | PE-1…PE-4 | MINOR (pre-existing) | Captured writes, `for`-step stores, the generic instance duty, and temporary views keep their base behavior | Recorded residuals |
 
+**Roadmap:** `DEF-543` is Done at `f02e0e1`; the roadmap row links the phase
+commit and the verification evidence.
+
 **Verification:** `make check` and `make verify` pass after the review fixes;
 `borrow_store_integrity_spec_test` 58 passed, `borrow_store_integrity_impl_test`
 14 passed, `own` unit tests 62 passed. The accepted controls are ASAN clean. The

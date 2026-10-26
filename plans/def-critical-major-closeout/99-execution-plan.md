@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 13/76 tasks (17%)
+> **Progress**: 14/76 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -133,12 +133,12 @@ or a documented stale proof; the existing-test inventory is recorded.
   byte-identical re-emission) and the internal source-set/rollback pin in
   `compiler/src/own/tests.rs` (including a speculative temporary id reuse).
   ✅ (completed: 2026-10-26 10:52)
-- [~] 1.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [x] 1.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   out-slot/conditional self-store tests and record every expected change; close
   `DEF-543` through the roadmap skill with the commit and evidence; add the
   phase record to `05-findings.md`.
 
-  ⏳ (implemented: 2026-10-26 10:52)
+  ✅ (completed: 2026-10-26 12:58)
 **Verify**: `make check` and `make verify`; focused ASAN clean; `DEF-543` Done.
 
 ---
