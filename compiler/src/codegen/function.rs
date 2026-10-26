@@ -3345,7 +3345,19 @@ impl<'a> Emitter<'a> {
             return;
         };
         let source = format!("((unsigned long)({address}))");
-        let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
+        // A C-adjusted array parameter's name is the array address, so
+        // `sizeof(*address)` measures one element; use the whole array extent.
+        let source_size = if ty.is_fixed_array() {
+            match &value.kind {
+                ValueKind::Place(place) if self.is_array_param_place(place) => {
+                    self.array_param_bytes(&self.place(place), ty)
+                }
+                _ => format!("sizeof(*({address}))"),
+            }
+        } else {
+            format!("sizeof(*({address}))")
+        };
+        let source_end = format!("({source} + (unsigned long)({source_size}))");
         for capture in &captures {
             if address == capture.address {
                 // The named place is the destination itself; a runtime

@@ -681,6 +681,99 @@ func main(): i32 {
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
 }
 
+/// A fixed-array parameter take measures the whole array extent.
+///
+/// The parameter name is the array address, so the taken range must use the
+/// element size times the first extent; one element would leave the second
+/// element in the save and double-free it.
+#[test]
+fn should_measure_a_fixed_array_parameter_take_by_its_whole_extent() {
+    let tag = "arrayextent";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.arrayextent;
+
+import { String, stringOf } from std.text;
+
+struct A { flag: i32; items: String[2]; }
+
+func eatRows(take rows: String[2]): i32 { return i32(len(rows[0])) - 2; }
+
+func go(p: raw A, take rows: String[2]): i32 {
+    let x: String[2] = [stringOf("xx"), stringOf("yy")];
+    let y: String[2] = [stringOf("mm"), stringOf("nn")];
+    let g: bool = true;
+    unsafe {
+        (*p).items = (g && (*p).flag == 7 && eatRows(take rows) == 0) ? x : y;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: A = A { flag: 7, items: [stringOf("aa"), stringOf("bb")] };
+    unsafe { return go(&a, a.items); }
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_rawstore_arrayextent_go(ClA *p, ClString rows[2])\n{",
+    );
+    assert_contains(tag, body, "(sizeof(rows[0]) * 2)");
+    assert_contains(tag, body, "memset((char *)(&(__cl_save_1)) + (__cl_take_off_1), 0, (__cl_take_len_1));");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}
+
+/// A call nested in the RHS index still pins the intermediate raw field before
+/// the call.
+#[test]
+fn should_pin_the_intermediate_field_before_an_indexed_call() {
+    let tag = "indexedpin";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.indexedpin;
+
+struct Inner { x: i32; }
+struct Outer { next: Inner; }
+
+let arr: i32[2] = [5, 3];
+
+func change(p: raw Outer): i32 {
+    unsafe { (*p).next = Inner { x: 9 }; }
+    return 1;
+}
+
+func main(): i32 {
+    let a: Outer = Outer { next: Inner { x: 0 } };
+    unsafe {
+        let p: raw Outer = &a;
+        (*p).next.x = arr[change(p)];
+    }
+    if (a.next.x != 3) { return 9; }
+    return 0;
+}
+"#,
+    );
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_rawstore_indexedpin_main(void)\n{",
+    );
+    assert_contains(tag, body, "__cl_tmp0 = &((*(p)).next);");
+    let pin = body.find("__cl_tmp0 = &((*(p)).next);").expect("pin");
+    let call = body
+        .find("cl_spec_rawstore_indexedpin_change(p)")
+        .expect("indexed call");
+    assert!(pin < call, "{tag}: the pin must precede the indexed call; body:\n{body}");
+    assert_eq!(
+        body.matches("cl_spec_rawstore_indexedpin_change(p)").count(),
+        1,
+        "{tag}: the index call must evaluate once; body:\n{body}"
+    );
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}
+
 /// The accepted shapes re-emit byte for byte.
 #[test]
 fn should_re_emit_the_batch_byte_identically() {

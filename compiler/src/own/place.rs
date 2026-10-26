@@ -1965,6 +1965,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 else_value,
                 ..
             } => Self::mentions_call(then_value) || Self::mentions_call(else_value),
+            ExprKind::Index { base, index } => {
+                Self::mentions_call(base) || Self::mentions_call(index)
+            }
+            ExprKind::Member { base, .. } => Self::mentions_call(base),
             _ => false,
         }
     }

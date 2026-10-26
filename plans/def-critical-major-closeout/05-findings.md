@@ -221,12 +221,12 @@ cannot proceed to Phase 3 until the rulings below.
 
 | Finding | Phase | Severity | Area | Ruling |
 |---|---|---|---|---|
-| RV-001 | 2 | CRITICAL | take range: a C-adjusted array parameter's source extent is one element (`function.rs` / `guards.rs` extent helpers) | open — auto-design fix |
+| RV-001 | 2 | CRITICAL | take range: a C-adjusted array parameter's source extent was one element (`function.rs` / `guards.rs` extent helpers) | resolved (R4): the source extent uses the whole array; impl pin + ASAN probe |
 | RV-002 | 2 | MAJOR | `constant_index` resolved a shadowing local as the module global (`own/expr.rs`) | resolved by AR-26 (the index-pin machinery was reverted) |
 | RV-003 | 2 | MAJOR | wildcard element self-skip on distinct run-time indices (`own/expr.rs`) | resolved by AR-26 (same-place expression check; distinct indices E10026) |
 | RV-004 | 2 | MAJOR | indirect callee and module-initializer global writes were not tracked (`own/call.rs`, `own/expr.rs`) | resolved by AR-26 (no global index pin remains) |
 | RV-005 | 2 | MAJOR | a wildcard element move did not invalidate `initialized_elements` (`own/place.rs`) | resolved by AR-26 (the element initialized state was removed) |
-| RV-006 | 2 | MAJOR | `mentions_call` misses a call nested in an index/member (`own/place.rs`) | open — auto-design fix |
+| RV-006 | 2 | MAJOR | `mentions_call` missed a call nested in an index/member (`own/place.rs`) | resolved (R4): the walk follows index/member bases; the indexed RHS pin is pinned |
 | RV-007 | 2 | MAJOR | six store-before-move-out ordering pins weakened to presence (`conditional_projection_residue_impl_test.rs`) | open — auto-design fix |
 | RV-008 | 2 | MAJOR | the unplanned null-safe String shim made a moved source readable and was the ST-11 oracle (`runtime/shim_*.c`) | resolved (R3): the shim was reverted; the ST-11 non-alias control checks the sibling instead of reading the moved source |
 | SR-001 | 2 | MAJOR | the conditional element move was accepted although `spec/03` §4 / `spec/07` STR-12 require `E10026`; ST-9 encoded the acceptance | resolved (AR-26): follow the frozen spec; ST-9 retargeted; the acceptance machinery reverted |

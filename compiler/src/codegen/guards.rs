@@ -1491,14 +1491,22 @@ impl<'a> Emitter<'a> {
         if self.take_capture.is_empty() {
             return zero;
         }
+        let ty = self.resolved_place_ty(place);
         let c_name = self.place(place);
         let address = if self.is_array_param_place(place) {
-            c_name
+            c_name.clone()
         } else {
             format!("&({c_name})")
         };
         let source = format!("((unsigned long)({address}))");
-        let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
+        // A C-adjusted array parameter already names the array address; its
+        // `sizeof(*address)` is one element, so use the whole extent.
+        let source_size = if self.is_array_param_place(place) {
+            self.array_param_bytes(&c_name, &ty)
+        } else {
+            format!("sizeof(*({address}))")
+        };
+        let source_end = format!("({source} + (unsigned long)({source_size}))");
         let mut parts = Vec::new();
         for capture in &self.take_capture {
             if address == capture.address {
