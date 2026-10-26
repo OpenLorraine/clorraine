@@ -20186,9 +20186,8 @@ func main(): i32 {
 /// A whole-element store pins its base and index before the right-hand side.
 ///
 /// `p423row` changes the target index inside the row call; the store must land
-/// in the element the target named first. `p423cond` evaluates the condition
-/// (which changes the index) and then moves the element the arm reads, so the
-/// destination keeps the moved value and the source is emptied once.
+/// in the element the target named first. `p423cond`'s conditional element
+/// source is a v1 element move, so the frozen rule rejects it with `E10026`;
 /// `p423trap` keeps the out-of-range fault, and `p423member` is the pinned
 /// member-route control.
 #[test]

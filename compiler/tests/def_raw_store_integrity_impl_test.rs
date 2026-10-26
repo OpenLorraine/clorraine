@@ -863,3 +863,81 @@ func main(): i32 {
     assert_contains(tag, body, "memcpy(&((*(&((*(p)).data)))), &(__cl_rhs_");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
 }
+
+/// A call nested under a binary index still pins the intermediate raw field
+/// before the call.
+#[test]
+fn should_pin_the_intermediate_field_before_a_binary_indexed_call() {
+    let tag = "binarypin";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.binarypin;
+
+struct Inner { x: i32; }
+struct Outer { next: Inner; }
+
+let gp: raw Outer = null;
+let arr: i32[2] = [5, 3];
+let other: Outer = Outer { next: Inner { x: 0 } };
+
+func change(): i32 {
+    unsafe { gp = &other; }
+    return 1;
+}
+
+func main(): i32 {
+    let a: Outer = Outer { next: Inner { x: 0 } };
+    unsafe { gp = &a; (*gp).next.x = arr[change() + 0]; }
+    if (a.next.x != 3) { return 9; }
+    if (other.next.x != 0) { return 8; }
+    return 0;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_rawstore_binarypin_main(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = &((*(cl_spec_rawstore_binarypin_gp)).next);",
+    );
+    let pin = body
+        .find("__cl_tmp0 = &((*(cl_spec_rawstore_binarypin_gp)).next);")
+        .expect("pin");
+    let call = body
+        .find("cl_spec_rawstore_binarypin_change()")
+        .expect("indexed call");
+    assert!(pin < call, "{tag}: the pin must precede the indexed call; body:\n{body}");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}
+
+/// A raw-deref destination whose literal reads through an aliasing pointer
+/// still fills the temporary first.
+#[test]
+fn should_fill_an_aliasing_raw_destination_self_read_into_the_temporary() {
+    let tag = "rawaliasrhs";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.rawaliasrhs;
+
+struct Box { data: i32[2]; }
+
+func main(): i32 {
+    let b: Box = Box { data: [1, 2] };
+    unsafe {
+        let p: raw Box = &b;
+        let q: raw Box = p;
+        (*p).data = [(*q).data[1], (*q).data[0]];
+    }
+    if (b.data[0] != 2) { return 9; }
+    if (b.data[1] != 1) { return 8; }
+    return 0;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_rawstore_rawaliasrhs_main(void)\n{");
+    assert_contains(tag, body, "i32 __cl_rhs_");
+    assert_contains(tag, body, "[0] = (*(q)).data[1];");
+    assert_contains(tag, body, "[1] = (*(q)).data[0];");
+    assert_contains(tag, body, "memcpy(&((*(&((*(p)).data)))), &(__cl_rhs_");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}

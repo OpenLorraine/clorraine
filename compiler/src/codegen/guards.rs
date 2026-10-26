@@ -169,7 +169,6 @@ impl<'a> Emitter<'a> {
                             then_value,
                             else_value,
                             false,
-                            false,
                         );
                     } else if self.needs_drop(&ty) {
                         self.emit_conditional_move_assign(

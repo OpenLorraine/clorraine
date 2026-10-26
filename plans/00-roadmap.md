@@ -4,7 +4,7 @@
 > **Status**: In Progress
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-10-26
-> **Progress**: 409/533 rows done; 124 open (22 Executing: 0 critical + 21 major; 102 Backlog: 1 critical + 101 minor); 0 Deferred
+> **Progress**: 409/533 rows done; 124 open (22 Executing: 22 major; 102 Backlog: 1 critical + 101 minor); 0 Deferred
 > **CodeOps Artifact Schema**: 1
 
 ## Legend

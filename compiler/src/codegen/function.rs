@@ -608,26 +608,20 @@ impl<'a> Emitter<'a> {
                         // has run; the shared fixed-array core saves them.
                         let reads_target = value_reads_base(value, target)
                             || value_reads_named_binding(value)
-                            || value_reads_alias(value);
+                            || value_reads_alias(value)
+                            || value_reads_raw_deref(value);
                         if reads_target {
                             let target_c = self.place(target);
                             let array_target = self.array_target(target, &target_c);
-                            let element_target = target.projections.iter().any(|projection| {
-                                matches!(
-                                    projection,
-                                    ir::Projection::Element(_)
-                                        | ir::Projection::ElementTemp(_)
-                                )
-                            });
-                            let literal_self_read =
-                                value_reads_base(value, target) || value_reads_alias(value);
+                            let literal_self_read = value_reads_base(value, target)
+                                || value_reads_alias(value)
+                                || value_reads_raw_deref(value);
                             self.emit_fixed_array_assign_to(
                                 &array_target,
                                 &ty,
                                 value,
                                 true,
                                 literal_self_read,
-                                element_target,
                             );
                         } else {
                             self.emit_reassigned_target_drop(target);
@@ -772,7 +766,8 @@ impl<'a> Emitter<'a> {
                     // temporary, not the partly written destination.
                     _ => pointer_root_place(pointer)
                         .is_some_and(|base| value_reads_base(value, base)),
-                } || value_reads_alias(value);
+                } || value_reads_alias(value)
+                    || value_reads_raw_deref(value);
                 if pointer_ty.is_fixed_array() {
                     // A fixed-array element is not assignable in C, so the
                     // store goes through the byte-copy/branch-store core
@@ -803,13 +798,12 @@ impl<'a> Emitter<'a> {
                                 value,
                                 true,
                                 literal_self_read,
-                                true,
                             );
                             self.push("    }");
                         }
                     } else {
                         let target = ArrayTarget::object(&target_c);
-                        self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, literal_self_read, true);
+                        self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, literal_self_read);
                     }
                 } else if self.needs_drop(&pointer_ty) {
                     // An owned conditional moves the chosen arm into the
@@ -1805,18 +1799,15 @@ impl<'a> Emitter<'a> {
         // read the right-hand side carries.
         let reads_target = value_reads_base(value, target)
             || value_reads_named_binding(value)
-            || value_reads_alias(value);
+            || value_reads_alias(value)
+            || value_reads_raw_deref(value);
         // The duplicable path only needs an eager temporary when the literal
         // actually reads the destination storage; a named source that names
         // another object does not. An element reached through a loop alias can
         // still name the target, so that case keeps the conservative flag.
-        let literal_self_read = value_reads_base(value, target) || value_reads_alias(value);
-        let element_target = target.projections.iter().any(|projection| {
-            matches!(
-                projection,
-                ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
-            )
-        });
+        let literal_self_read = value_reads_base(value, target)
+            || value_reads_alias(value)
+            || value_reads_raw_deref(value);
         let target = self.array_target(target, &target_c);
         self.emit_fixed_array_assign_to(
             &target,
@@ -1824,7 +1815,6 @@ impl<'a> Emitter<'a> {
             value,
             reads_target,
             literal_self_read,
-            element_target,
         );
     }
 
@@ -1851,7 +1841,6 @@ impl<'a> Emitter<'a> {
         value: &Value,
         reads_target: bool,
         literal_self_read: bool,
-        element_target: bool,
     ) {
         if let ValueKind::Conditional {
             condition,
@@ -1865,7 +1854,6 @@ impl<'a> Emitter<'a> {
                 condition,
                 then_value,
                 else_value,
-                element_target,
                 literal_self_read,
             );
             return;
@@ -2103,7 +2091,6 @@ impl<'a> Emitter<'a> {
         condition: &Value,
         then_value: &Value,
         else_value: &Value,
-        element_target: bool,
         literal_self_read: bool,
     ) {
         if !self.needs_drop(ty) {
@@ -2115,7 +2102,6 @@ impl<'a> Emitter<'a> {
                 ty,
                 then_value,
                 None,
-                element_target,
                 literal_self_read,
             );
             self.push("    } else {");
@@ -2124,7 +2110,6 @@ impl<'a> Emitter<'a> {
                 ty,
                 else_value,
                 None,
-                element_target,
                 literal_self_read,
             );
             self.push("    }");
@@ -2210,7 +2195,6 @@ impl<'a> Emitter<'a> {
             ty,
             then_value,
             Some(&save),
-            element_target,
             literal_self_read,
         );
         self.push("        } else {");
@@ -2219,7 +2203,6 @@ impl<'a> Emitter<'a> {
             ty,
             else_value,
             Some(&save),
-            element_target,
             literal_self_read,
         );
         self.push("        }");
@@ -2401,7 +2384,7 @@ impl<'a> Emitter<'a> {
         let Some(target) = target else {
             return;
         };
-        self.emit_fixed_array_assign_arm(target, ty, arm, None, false, false);
+        self.emit_fixed_array_assign_arm(target, ty, arm, None, false);
     }
 
     /// Marks the caller storage a discarded place arm reads as used.
@@ -2462,7 +2445,6 @@ impl<'a> Emitter<'a> {
         ty: &Ty,
         arm: &Value,
         save: Option<&str>,
-        element_target: bool,
         literal_self_read: bool,
     ) {
         if let ValueKind::Conditional {
@@ -2479,7 +2461,6 @@ impl<'a> Emitter<'a> {
                 ty,
                 then_value,
                 save,
-                element_target,
                 literal_self_read,
             );
             self.push("                } else {");
@@ -2488,7 +2469,6 @@ impl<'a> Emitter<'a> {
                 ty,
                 else_value,
                 save,
-                element_target,
                 literal_self_read,
             );
             self.push("                }");
@@ -2523,14 +2503,20 @@ impl<'a> Emitter<'a> {
             }
             return;
         }
-        if element_target && arm_is_projected_place(arm) {
+        // Every storage arm gets the runtime self-alias guard: an arm that
+        // names the destination through another pointer or parameter spelling
+        // restores the save instead of moving the bytes onto themselves.
+        if save.is_some() && arm_has_storage_root(arm) {
             // The arm may name the destination through another index spelling,
             // so the branch compares the storage addresses before copying.
             self.emit_guards(arm);
             let arm_c = self.value(arm);
             let arm_address = self.array_source_address(arm, &arm_c);
             self.push(&format!(
-                "                if ({arm_address} == {}) {{",
+                // The arm may be an adjusted array parameter (a pointer) and
+                // the target an array address; cast both to void for the
+                // comparison so the strict C build stays warning-free.
+                "                if (((void *)({arm_address})) == ((void *)({}))) {{",
                 target.address
             ));
             if let Some(save) = save {
@@ -2896,7 +2882,7 @@ impl<'a> Emitter<'a> {
             let field_c = format!("{target_c}.{name}");
             if field_ty.is_fixed_array() {
                 let field_target = ArrayTarget::object(&field_c);
-                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false, false);
+                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
                 continue;
             }
             if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
@@ -3900,7 +3886,7 @@ impl<'a> Emitter<'a> {
                     // A whole row that is not a literal has no scalar form; it
                     // travels through the fixed-array store core, one dimension
                     // in.
-                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false, false, false),
+                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false, false),
                 }
                 continue;
             }
@@ -3972,7 +3958,7 @@ impl<'a> Emitter<'a> {
                 _ => {
                     for index in prefix..extent {
                         let sub = target.element(index);
-                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false, false, false);
+                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false, false);
                     }
                 }
             }
@@ -4307,6 +4293,59 @@ fn has_deferred_fill(value: &Value) -> bool {
 /// because releasing the target would invalidate every projection of it.
 fn value_reads_base(value: &Value, target: &Place) -> bool {
     value_reads_place(value, &|place| place.base == target.base)
+}
+
+/// True when a value reads through a raw pointer anywhere.
+///
+/// A raw pointer may name the same storage as the fixed-array destination even
+/// when the spelling differs (an alias binding or a call-rooted pointer), so a
+/// literal that contains a raw read is conservatively treated as self-reading.
+fn value_reads_raw_deref(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            ..
+        } => true,
+        ValueKind::Member { base, .. } => value_reads_raw_deref(base),
+        ValueKind::Index { base, index } => {
+            value_reads_raw_deref(base) || value_reads_raw_deref(index)
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            value_reads_raw_deref(condition)
+                || value_reads_raw_deref(then_value)
+                || value_reads_raw_deref(else_value)
+        }
+        ValueKind::Binary { left, right, .. } => {
+            value_reads_raw_deref(left) || value_reads_raw_deref(right)
+        }
+        ValueKind::Cast { value, .. } => value_reads_raw_deref(value),
+        ValueKind::StructLit { fields, .. } => {
+            fields.iter().any(|(_, field)| value_reads_raw_deref(field))
+        }
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.iter().any(value_reads_raw_deref)
+                || fill.as_deref().is_some_and(value_reads_raw_deref)
+        }
+        ValueKind::Call { args, receiver, .. } => {
+            receiver.as_deref().is_some_and(value_reads_raw_deref)
+                || args.iter().any(value_reads_raw_deref)
+        }
+        ValueKind::Intrinsic { args, .. } => args.iter().any(value_reads_raw_deref),
+        ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            ValuePiece::Literal(_) => false,
+            ValuePiece::Placeholder(inner) => value_reads_raw_deref(inner),
+        }),
+        ValueKind::Materialize { value, .. } => value_reads_raw_deref(value),
+        ValueKind::ClosureCall { callable, args } => {
+            value_reads_raw_deref(callable) || args.iter().any(value_reads_raw_deref)
+        }
+        ValueKind::Closure { captures, .. } => captures.iter().any(value_reads_raw_deref),
+        _ => false,
+    }
 }
 
 /// True when one rendered place may name the same storage as another.

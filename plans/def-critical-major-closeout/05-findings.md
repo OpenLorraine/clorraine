@@ -257,6 +257,35 @@ is filed as `DEF-544`. The fix diff awaits the one-pass re-review.
 | R2 (`fix batch`) | SR-E-003 | the `__cl_rhs` self-read temporary reaches conditional arms and raw-deref destinations | two spec cases and two implementation pins; both red at the prior head |
 | R2 (filed) | SR-M-006 | plain borrow parameter moved into an owned conditional store | `DEF-544` (Backlog, critical) |
 
+## Phase 2 Re-review — 2026-10-26
+
+One-pass re-review over the fix batch (`d270045..2a40ff6`) with the memory-safety,
+emission-integrity, and correctness/semantics lenses. The batch's own tests are
+green and every corpus emission diff is explained, but the re-review found one
+regression introduced by the batch and same-class escapes that keep the Phase 2
+gate closed.
+
+| Finding | Severity | Finding | Status |
+|---|---|---|---|
+| F1 / RR-005 | MAJOR (new) | a fixed-array conditional arm that aliases the destination through a raw pointer or array parameter recorded a plain move as a take; the save was zeroed and the handles leaked (read form: SEGV) | resolved: every storage arm gets the runtime self-alias guard; `rawwholealias`/`paramwholealias` ASAN cases, red at `2a40ff6` |
+| RR-001 | CRITICAL (new) | the destination-index stability check inspected only the outer index of a multi-index target | resolved: the chain is checked recursively; `nestedidx` E10026 case, red at `2a40ff6` |
+| RR-004 | MAJOR (partial RV-006) | `mentions_call` missed calls under unary, binary, assignment, struct/array literal, intrinsic, and template wrappers | resolved: total call walk; `binarypin` implementation case, red at `2a40ff6` |
+| RR-006 | MAJOR (partial SR-E-003) | the raw self-read temporary only recognized the same pointer root; alias and call-rooted pointers overwrote the partly written array | resolved: a literal containing any raw read uses the temporary; `rawaliasrhs` spec + impl, red at `2a40ff6` |
+| RR-002 | CRITICAL (pre-existing, AR-26 soundness) | a local index mutated by the store's value or condition is treated as stable; the accepted store moves a different element, so a later read can dereference freed storage | **open — ruling needed**: (a) restrict the self-copy skip to literal/const indices, following the frozen element-move rule, and retarget the local-index self-arm tests to `E10026`; or (b) keep the local-index exception and file the unsoundness |
+| RR-003 | CRITICAL (pre-existing, AR-26 gap) | the generic twin accepts a conditional element move and the later read, while the concrete twin reports `E10026`; the instance audit records no conditional-element duty | **open — ruling needed**: extend the instance audit now (generic twin should match the concrete twin) or file a DEF |
+| P1 | CRITICAL (pre-existing) | a named fixed-array parameter take creates no capture when no raw pointee appears in the condition; the saved destination is released after the callee freed it. The RV-001 implementation test masks this through its `(*p).flag` read | **open — ruling needed**: create the capture for any owning take in the store's condition/arms (conservative) now, or file a DEF |
+| P2 | CRITICAL (pre-existing) | one `(offset,length)` slot cannot clear two consumed subranges of one save; two takes in one condition double-free (the last range is cleared, earlier ranges are freed again) | **open — ruling needed**: redesign capture clearing (per-move-out clearing or accumulated ranges) as a separate plan, or file a DEF |
+| RR-007 | MINOR | two element-source arms of one conditional store report `E10026` twice at the same span | report-only (the count is one per arm; the store-site dedupe is cosmetic) |
+| RR-008 | MINOR | the `p423cond` doc paragraph still described the old acceptance | resolved |
+| RR-009 | MINOR | the new index-stability doc was mis-indented and overstated stability | resolved (reindented; the claim matches the implemented literal/local rule; RR-002 tracks the local case) |
+| RR-010 | MINOR | the roadmap header undercounted the Executing severities; the fix-batch commits recorded only `make check` | resolved (header corrected; `make verify` runs on the corrected batch) |
+
+Recommended rulings: RR-002 option (a) — follow the frozen element-move rule and
+drop the local-index self-copy exception; RR-003 and P1 fix now within the same
+AR-26/take-capture mechanisms; P2 as a separate critical backlog DEF, because a
+single range slot is a structural design limit and the immediate-clear or
+multi-range redesign has a broad emission blast radius.
+
 ## Phase Records
 
 Execution adds one section per phase with the revalidation results, review

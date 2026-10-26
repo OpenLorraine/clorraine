@@ -1969,6 +1969,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Self::mentions_call(base) || Self::mentions_call(index)
             }
             ExprKind::Member { base, .. } => Self::mentions_call(base),
+            ExprKind::Unary { operand, .. } => Self::mentions_call(operand),
+            ExprKind::Binary { left, right, .. } => {
+                Self::mentions_call(left) || Self::mentions_call(right)
+            }
+            ExprKind::Assign { target, value, .. } => {
+                Self::mentions_call(target) || Self::mentions_call(value)
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                fields.iter().any(|field| Self::mentions_call(&field.value))
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements.iter().any(Self::mentions_call)
+                    || fill.as_deref().is_some_and(Self::mentions_call)
+            }
+            ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+                crate::ast::IntrinsicArg::Expr(expr) => Self::mentions_call(expr),
+                _ => false,
+            }),
+            ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                crate::ast::TemplatePiece::Placeholder(expr) => Self::mentions_call(expr),
+                _ => false,
+            }),
             _ => false,
         }
     }

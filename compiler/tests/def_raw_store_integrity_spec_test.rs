@@ -1086,3 +1086,82 @@ func main(): i32 {
     assert_no_asan("rawrhs", &output);
     assert_exit("rawrhs", &output, 0);
 }
+
+/// A fixed-array conditional arm that aliases the destination through a raw
+/// pointer restores the saved value instead of moving the bytes onto itself.
+#[test]
+fn should_restore_a_fixed_array_raw_self_alias_arm() {
+    let source = r#"module spec.rawstore.rawwholealias;
+
+import { String, stringOf } from std.text;
+
+struct Box { data: String[2]; }
+
+func main(): i32 {
+    let b: Box = Box { data: [stringOf("aa"), stringOf("bb")] };
+    let y: String[2] = [stringOf("yy"), stringOf("yz")];
+    let g: bool = true;
+    unsafe {
+        let p: raw Box = &b;
+        b.data = g ? (*p).data : y;
+    }
+    if (i32(len(b.data[0])) != 2) { return 3; }
+    if (i32(len(b.data[1])) != 2) { return 4; }
+    return 0;
+}
+"#;
+    let output = run_memory("rawwholealias", source);
+    assert_no_asan("rawwholealias", &output);
+    assert_exit("rawwholealias", &output, 0);
+}
+
+/// An array-parameter arm that aliases the destination restores the save; the
+/// runtime address comparison decides, not the spelling.
+#[test]
+fn should_restore_an_array_parameter_self_alias_arm() {
+    let source = r#"module spec.rawstore.paramwholealias;
+
+import { String, stringOf } from std.text;
+
+struct A { flag: i32; items: String[2]; }
+
+func go(p: raw A, take rows: String[2]): i32 {
+    let x: String[2] = [stringOf("xx"), stringOf("yy")];
+    let g: bool = true;
+    unsafe {
+        (*p).items = (g && (*p).flag == 7) ? rows : x;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: A = A { flag: 7, items: [stringOf("aa"), stringOf("bb")] };
+    unsafe { return go(&a, a.items); }
+}
+"#;
+    let output = run_memory("paramwholealias", source);
+    assert_no_asan("paramwholealias", &output);
+    assert_exit("paramwholealias", &output, 0);
+}
+
+/// A nested element target checks every index in the chain; an unstable inner
+/// index makes the conditional element source an element move.
+#[test]
+fn should_reject_a_nested_index_conditional_element_move() {
+    let source = r#"module spec.rawstore.nestedidx;
+
+import { String, stringOf } from std.text;
+
+let idx: i32 = 0;
+
+func set_idx(): bool { idx = 1; return true; }
+
+func main(): i32 {
+    let a: String[2][2] = [[stringOf("aa"), stringOf("ab")], [stringOf("bb"), stringOf("bc")]];
+    a[idx][0] = set_idx() ? a[idx][0] : stringOf("zz");
+    let s: str = a[1][0];
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_exactly_once("nestedidx", source, "E10026", &["partial moves"]);
+}

@@ -310,24 +310,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sources
     }
 
-/// True when a store's element index may name a different element after the
-    /// condition.
+    /// True when a store's element index may name a different element after
+    /// the condition.
     ///
-    /// A literal or a plain local/parameter index proves the same element only
-    /// while nothing changes it. A module global or a computed index can change,
-    /// so a self-named conditional arm is an element move rather than a self-copy.
-        fn destination_index_may_change(&self, target: &Expr) -> bool {
+    /// A literal or a plain local/parameter index can be named twice without
+    /// an effect; a module global, a call, or a computed index can change, so
+    /// a self-named conditional arm is an element move rather than a self-copy.
+    fn destination_index_may_change(&self, target: &Expr) -> bool {
         let target = unwrap_unsafe_expr(target);
         match &target.kind {
-            ExprKind::Index { index, .. } => match &index.kind {
-                ExprKind::Int(_) => false,
-                _ => !matches!(
-                    self.place_target(index),
-                    Some(PlaceTarget::Local(_, ref projections)) if projections.is_empty()
-                ),
-            },
+            // A multi-index target can have a stable outer index over an
+            // unstable inner one, so every index in the chain is checked.
+            ExprKind::Index { base, index } => {
+                self.index_expression_may_change(index)
+                    || self.destination_index_may_change(base)
+            }
             ExprKind::Member { base, .. } => self.destination_index_may_change(base),
             _ => false,
+        }
+    }
+
+    /// True when an index expression is not a literal or a plain local.
+    ///
+    /// A literal or a plain local/parameter index can be named twice without
+    /// an effect; a module global, a call, or a computed index cannot.
+    fn index_expression_may_change(&self, index: &Expr) -> bool {
+        match &index.kind {
+            ExprKind::Int(_) => false,
+            _ => !matches!(
+                self.place_target(index),
+                Some(PlaceTarget::Local(_, ref projections)) if projections.is_empty()
+            ),
         }
     }
 

@@ -7504,7 +7504,7 @@ func main(): i32 {
     assert_follows(
         tag,
         body,
-        "if (&(z.names) == &(a[__cl_tmp0].names)) {",
+        "if (((void *)(&(z.names))) == ((void *)(&(a[__cl_tmp0].names)))) {",
         "memcpy(&(a[__cl_tmp0].names), &(__cl_save_1), sizeof(a[__cl_tmp0].names));",
     );
 
