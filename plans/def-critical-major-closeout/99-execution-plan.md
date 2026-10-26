@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 34/76 tasks (45%)
+> **Progress**: 35/76 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -235,7 +235,9 @@ program remains in Batch B.
   reproducers fail before the fixes; `DEF-470` stays green.
   ✅ (completed: 2026-10-27; red: 471, 472, 473, 476, 477, 479; stale at HEAD:
   475, 478, 480, 481 per AR-16; the evidence table is in `05-findings.md`)
-- [ ] 3.2.1 DEF-471 deref-chain guard — `compiler/src/codegen/expr.rs`.
+- [x] 3.2.1 DEF-471 deref-chain guard — `compiler/src/codegen/expr.rs`.
+  ✅ (completed: 2026-10-27; ST-13 green; conditional-projection 230/224 and
+  raw-store 29/29 under ASAN unchanged)
 - [ ] 3.2.2 DEF-472 concrete-lend maybe-target judgment with the recorded
   concrete arm and destination type — thread the destination through
   `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`,

@@ -424,6 +424,19 @@ impl<'a> Emitter<'a> {
                 op: UnaryOp::AddressOf,
                 operand,
             } => self.resolved_value_ty(operand),
+            // A raw-deref read names its pointee, so a chain such as
+            // `(*h.p).n` resolves the field type the division and index guards
+            // need. A non-raw deref keeps the opaque type.
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => {
+                let operand_ty = self.resolved_value_ty(operand);
+                match operand_ty.kind {
+                    TyKind::Raw(inner) => (*inner).clone(),
+                    _ => ty,
+                }
+            }
             ValueKind::Index { base, .. } => {
                 let base_ty = self.resolved_value_ty(base);
                 let element = element_type(&base_ty);
