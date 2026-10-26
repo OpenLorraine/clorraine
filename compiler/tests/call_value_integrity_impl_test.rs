@@ -464,8 +464,11 @@ func main(): i32 {
         .find("cl_impl_cvi_condconsume_sink(s);")
         .unwrap_or_else(|| panic!("cviimpl-condconsume: the consuming call is absent"));
     let consumed = &tail[call_at..];
+    // The take-ran capture clears the saved value with a byte range; the
+    // drop below then finds nothing to free.
     let zero_at = consumed
-        .find("__cl_save_1 = NULL;")
+        .find("memset((char *)(&(__cl_save_1))")
+        .or_else(|| consumed.find("__cl_save_1 = NULL;"))
         .unwrap_or_else(|| panic!("cviimpl-condconsume: the saved value is not emptied"));
     let drop_at = consumed
         .find("if (__cl_save_1)")
@@ -593,8 +596,11 @@ func main(): i32 {
 "#;
     let emitted = emit_host("cviimpl-consumed", source);
     let tail = after("cviimpl-consumed", &emitted, "s = __cl_tmp0;");
+    // The arm's take records the runtime flag; the capture clears the saved
+    // byte range before the release below.
     let zero_at = tail
-        .find("__cl_save_1 = NULL;")
+        .find("memset((char *)(&(__cl_save_1))")
+        .or_else(|| tail.find("__cl_save_1 = NULL;"))
         .unwrap_or_else(|| panic!("cviimpl-consumed: the saved value is not emptied"));
     let drop_at = tail
         .find("if (__cl_save_1)")

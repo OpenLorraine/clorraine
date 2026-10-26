@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 28/76 tasks (37%)
+> **Progress**: 29/76 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -197,8 +197,9 @@ or a documented stale proof; the existing-test inventory is recorded.
   ✅ (completed: 2026-10-26 14:19)
 - [x] 2.2.11 DEF-458 place-move-out take-ran capture — `compiler/src/codegen/function.rs`.
   ✅ (completed: 2026-10-26 14:23)
-- [ ] 2.3.1 Green: focused raw-store suites, strict-C builds, and
+- [x] 2.3.1 Green: focused raw-store suites, strict-C builds, and
   `RDC_ASAN=1` for ST-2…ST-11 and ST-35.
+  ✅ (completed: 2026-10-26 14:29)
 - [ ] 2.3.2 Implementation pins in `compiler/tests/def_raw_store_integrity_impl_test.rs`:
   save/capture shapes, both containment ranges, self-alias restore, evaluated
   counts/order, determinism.
