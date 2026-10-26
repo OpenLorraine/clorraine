@@ -272,6 +272,11 @@ impl<'a> Emitter<'a> {
                         continue;
                     }
                     let source = self.place(place);
+                    // The place move-out runs only on the evaluated path, so
+                    // recording its alias here lets a skipped short-circuit
+                    // right leave the store's save owned.
+                    let value = Value::new(ty.clone(), ValueKind::Place(place.clone()));
+                    self.emit_take_alias(&value, &ty);
                     self.emit_move_zero_place(place, &source, &ty);
                 }
                 // A consumed value that names no place — a raw-deref take
@@ -1466,6 +1471,54 @@ impl<'a> Emitter<'a> {
         Some(format!("({})", parts.join(", ")))
     }
 
+    /// The move-out of a named place with the take-capture flag.
+    ///
+    /// A named-place `take` in a guarded operand runs only on the evaluated
+    /// path. Its capture flag and taken range are recorded in the same comma
+    /// sequence as the move-out, so a skipped short-circuit right leaves the
+    /// store's save owned.
+    fn place_move_zero_expr(&self, place: &crate::ir::Place) -> String {
+        let zero = self.move_zero_expr(place);
+        if self.take_capture.is_empty() {
+            return zero;
+        }
+        let c_name = self.place(place);
+        let address = if self.is_array_param_place(place) {
+            c_name
+        } else {
+            format!("&({c_name})")
+        };
+        let source = format!("((unsigned long)({address}))");
+        let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
+        let mut parts = Vec::new();
+        for capture in &self.take_capture {
+            let destination = format!("((unsigned long)({}))", capture.address);
+            let destination_end =
+                format!("({destination} + (unsigned long)({}))", capture.save_bytes);
+            let contains = format!(
+                "((({source} >= {destination}) && ({source} < {destination_end})) || \
+                 (({destination} >= {source}) && ({destination} < {source_end})))"
+            );
+            let start = format!("(({source} > {destination}) ? {source} : {destination})");
+            let end =
+                format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
+            parts.push(format!(
+                "({flag} = ({flag} || {contains}))",
+                flag = capture.flag
+            ));
+            parts.push(format!(
+                "({offset} = ({contains}) ? ({start}) - ({destination}) : {offset})",
+                offset = capture.offset
+            ));
+            parts.push(format!(
+                "({length} = ({contains}) ? ({end}) - ({start}) : {length})",
+                length = capture.length
+            ));
+        }
+        parts.push(zero);
+        format!("({})", parts.join(", "))
+    }
+
     /// The plain rendering of a value and its always-evaluated operand guards.
     ///
     /// The guards — a materialize fill, a bounds or division trap — run once,
@@ -1721,7 +1774,7 @@ impl<'a> Emitter<'a> {
                     if !self.needs_drop(&ty) {
                         continue;
                     }
-                    out.push(self.move_zero_expr(place));
+                    out.push(self.place_move_zero_expr(place));
                 }
                 // A consumed value that names no place is emptied through its
                 // own address in the same comma sequence, after the call.

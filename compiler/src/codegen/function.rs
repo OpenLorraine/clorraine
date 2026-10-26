@@ -2949,10 +2949,19 @@ impl<'a> Emitter<'a> {
         self.consumed_pointees(condition, &mut pointees);
         self.consumed_pointees(then_value, &mut pointees);
         self.consumed_pointees(else_value, &mut pointees);
+        // A named-place take of the destination is a place move-out, not a
+        // raw-deref value move-out. It may sit in a short-circuit right or an
+        // arm, so its own runtime move-out records the flag; the save must not
+        // be cleared statically.
+        let place_consumed = save.is_some()
+            && (self.arm_consumes_target(condition, target_c)
+                || self.arm_consumes_target(then_value, target_c)
+                || self.arm_consumes_target(else_value, target_c));
         let capture = save.and_then(|save| {
-            let owns = pointees
-                .iter()
-                .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)));
+            let owns = place_consumed
+                || pointees
+                    .iter()
+                    .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)));
             owns.then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
                 address: format!("&({target_c})"),
@@ -2975,14 +2984,6 @@ impl<'a> Emitter<'a> {
         }
         let saved_capture = std::mem::replace(&mut self.take_capture, live_captures);
         self.emit_guards(condition);
-        // A condition whose evaluation consumed the destination already
-        // transferred the old value to the callee, so the saved old value must
-        // be emptied rather than released again.
-        if let Some(save) = save {
-            if self.arm_consumes_target(condition, target_c) {
-                self.emit_move_zero(save, ty);
-            }
-        }
         let condition_c = self.value(condition);
         if has_capture {
             // The condition is evaluated once into a local so the alias range
@@ -3047,13 +3048,6 @@ impl<'a> Emitter<'a> {
         } = &arm.kind
         {
             self.emit_guards(condition);
-            // A condition whose evaluation consumed the destination already
-            // transferred the old value to the callee.
-            if let Some(save) = save {
-                if self.arm_consumes_target(condition, target_c) {
-                    self.emit_move_zero(save, ty);
-                }
-            }
             let condition_c = self.value(condition);
             self.push(&format!("            if ({condition_c}) {{"));
             self.emit_conditional_move_arm(target_c, ty, then_value, save, element_target);
@@ -3114,14 +3108,6 @@ impl<'a> Emitter<'a> {
                 let temp = self.value(arm);
                 self.push(&format!("            {target_c} = {temp};"));
                 self.emit_move_zero(&temp, ty);
-                // An arm whose call consumed the destination already
-                // transferred the old value to the callee, so the saved old
-                // value must be emptied rather than released again.
-                if let Some(save) = save {
-                    if self.arm_consumes_target(arm, target_c) {
-                        self.emit_move_zero(save, ty);
-                    }
-                }
             }
             _ => {
                 self.emit_guards(arm);
@@ -3324,6 +3310,20 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The address of a consumed value for the take-alias capture.
+    ///
+    /// A raw-deref take names its pointee through the pointer; a named-place
+    /// take names the place itself. A fixed-array parameter already is the
+    /// array's address, so it takes no address-of operator.
+    fn take_alias_address(&self, value: &Value) -> Option<String> {
+        match &value.kind {
+            ValueKind::Place(place) => {
+                Some(self.array_source_address(value, &self.place(place)))
+            }
+            _ => self.deref_value_address(value),
+        }
+    }
+
     /// Records whether a consumed taken value names a conditional store's
     /// saved destination.
     ///
@@ -3341,7 +3341,7 @@ impl<'a> Emitter<'a> {
         if captures.is_empty() {
             return;
         }
-        let Some(address) = self.deref_value_address(value) else {
+        let Some(address) = self.take_alias_address(value) else {
             return;
         };
         let source = format!("((unsigned long)({address}))");
