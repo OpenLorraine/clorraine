@@ -391,6 +391,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .value
             .as_ref()
             .map(|value| self.store_source_provenance(value));
+        let initial_sources = copy_provenance
+            .as_ref()
+            .map(|source| self.source_atoms(source))
+            .unwrap_or_default();
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let Some(source) = copy_provenance {
             if !matches!(source, Provenance::None) {
@@ -406,6 +410,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..PlaceState::default()
             };
             self.set_place(id, init);
+            self.state
+                .places
+                .entry(id)
+                .or_default()
+                .strong_update_sources(initial_sources);
             self.apply_binding_effect(id, effect, decl.span);
             // A carrier binding keeps the backings its view-like positions
             // read, so a later escape of the binding — a return to the caller —
@@ -859,6 +868,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut copy_roots = BTreeSet::new();
         self.expr_view_roots(&decl.value, &mut copy_roots);
         let copy_provenance = self.store_source_provenance(&decl.value);
+        let initial_sources = self.source_atoms(&copy_provenance);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         if !matches!(copy_provenance, Provenance::None) {
             self.bindings[id].copy_source = Some(copy_provenance);
@@ -871,6 +881,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..PlaceState::default()
             },
         );
+        self.state
+            .places
+            .entry(id)
+            .or_default()
+            .strong_update_sources(initial_sources);
         self.apply_binding_effect(id, effect, decl.span);
         // A carrier binding keeps the backings its view-like positions read,
         // exactly as in `check_let`.
@@ -988,10 +1003,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let effect = self.prepare_binding_effect(target, value, lowered);
         self.bindings[id].rebound = true;
         let source = self.store_source_provenance(value);
+        let atoms = self.source_atoms(&source);
         if !matches!(source, Provenance::None) {
             self.bindings[id].copy_source = Some(source);
         }
         self.apply_binding_effect(id, effect, span);
+        // Every assignment is a strong update: the binding now holds exactly
+        // the value's sources. A branch or loop that runs the assignment on
+        // one path only joins this set with the other path in `merge`.
+        self.state
+            .places
+            .entry(id)
+            .or_default()
+            .strong_update_sources(atoms);
     }
 
     /// Resolves the ownership effect an initializer has on the new binding.

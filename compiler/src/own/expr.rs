@@ -1570,6 +1570,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 };
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, lowered.as_ref(), target.span);
+                } else if compound.is_none()
+                    && (is_view_like(&target_ty) || is_view_like(&self.ty(value)))
+                {
+                    // An element store changes one position of a view array.
+                    // The whole binding keeps the union of its element sources,
+                    // so a later element read sees the stored view. The union
+                    // is conservative for a sibling element; it never accepts
+                    // a frame-backed source.
+                    let atoms = self.value_source_atoms(value);
+                    if !atoms.is_empty() {
+                        self.state.places.entry(id).or_default().join_sources(&atoms);
+                        self.bindings[id].rebound = true;
+                    }
                 }
                 // A carrier binding keeps the backings its view-like positions
                 // read. A whole store replaces the set; a projected store adds
@@ -2564,6 +2577,185 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The storage atoms a store value names, following rebound copies and
+    /// every composite spelling.
+    ///
+    /// A bare rebound local resolves through its joined set. A conditional
+    /// unions its arms, a projection follows its base, and a call or literal
+    /// unions its arguments or fields, so a store through any of those shapes
+    /// sees the same storage a bare name would. A local whose set is empty is a
+    /// real frame-backed view and stays a local atom.
+    fn value_source_atoms(&self, value: &Expr) -> Vec<Provenance> {
+        let mut atoms = Vec::new();
+        self.collect_value_source_atoms(super::expr::structural_wrapper_inner(value), &mut atoms);
+        atoms
+    }
+
+    fn collect_value_source_atoms(&self, value: &Expr, out: &mut Vec<Provenance>) {
+        if self.is_static_view_source(value) {
+            return;
+        }
+        let push =
+            |out: &mut Vec<Provenance>, atoms: Vec<Provenance>| {
+                for atom in atoms {
+                    if !out.contains(&atom) {
+                        out.push(atom);
+                    }
+                }
+            };
+        match &value.kind {
+            ExprKind::Name(_) => {
+                if let Some(PlaceTarget::Local(id, projections)) = self.place_target(value) {
+                    if projections.is_empty() && self.bindings[id].rebound {
+                        if let Some(place) = self.state.places.get(&id) {
+                            push(out, place.store_sources());
+                        }
+                        return;
+                    }
+                }
+                push(out, self.source_atoms(&self.store_source_provenance(value)));
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_value_source_atoms(then_value, out);
+                self.collect_value_source_atoms(else_value, out);
+            }
+            ExprKind::Index { base, .. } | ExprKind::Member { base, .. } => {
+                self.collect_value_source_atoms(base, out);
+            }
+            ExprKind::Call { args, .. } => {
+                push(out, self.source_atoms(&self.store_source_provenance(value)));
+                for arg in args {
+                    self.collect_value_source_atoms(&arg.value, out);
+                }
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.collect_value_source_atoms(&field.value, out);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.collect_value_source_atoms(element, out);
+                }
+                if let Some(fill) = fill {
+                    self.collect_value_source_atoms(fill, out);
+                }
+            }
+            _ => push(out, self.source_atoms(&self.store_source_provenance(value))),
+        }
+    }
+
+    /// True when a store value contains a local rebound at least once.
+    ///
+    /// The joined-set judgment is only the missing half of the ordinary rule:
+    /// a value with no rebound local already reaches the declaration
+    /// provenance path, and reporting it here would duplicate that report.
+    fn mentions_rebound_source(&self, value: &Expr) -> bool {
+        let value = super::expr::structural_wrapper_inner(value);
+        match &value.kind {
+            ExprKind::Name(_) => {
+                if let Some(PlaceTarget::Local(id, projections)) = self.place_target(value) {
+                    projections.is_empty() && self.bindings[id].rebound
+                } else {
+                    false
+                }
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.mentions_rebound_source(then_value) || self.mentions_rebound_source(else_value)
+            }
+            ExprKind::Index { base, .. } | ExprKind::Member { base, .. } => {
+                self.mentions_rebound_source(base)
+            }
+            ExprKind::Call { args, .. } => {
+                args.iter().any(|arg| self.mentions_rebound_source(&arg.value))
+            }
+            ExprKind::StructLiteral { fields, .. } => fields
+                .iter()
+                .any(|field| self.mentions_rebound_source(&field.value)),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.mentions_rebound_source(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.mentions_rebound_source(fill))
+            }
+            _ => false,
+        }
+    }
+
+    /// The first source a store value names for a whole-slot store.
+    ///
+    /// A destination or value that still mentions a type parameter defers to
+    /// the per-instance duty, and a `take` parameter keeps the ordinary path,
+    /// which accepts an owned take and reports a take view through the view
+    /// rule. The destination's own parameter is skipped, exactly as the
+    /// ordinary whole-slot rule skips it. Parameter roots win over local roots
+    /// so the store keeps one report.
+    fn rebound_source_store_root(
+        &self,
+        value: &Expr,
+        destination: usize,
+        target_ty: &Ty,
+    ) -> Option<SourceSetRoot> {
+        if !self.mentions_rebound_source(value) {
+            return None;
+        }
+        if crate::types::contains_param(target_ty) || crate::types::contains_param(&self.ty(value))
+        {
+            return None;
+        }
+        let atoms = self.value_source_atoms(value);
+        if atoms.is_empty() {
+            return None;
+        }
+        // A `Local` or `Temp` atom names the storage of a view only when the
+        // stored value or the destination is view-like. An owned local moved
+        // into an owning slot is a legal transfer, not a lend escape; the
+        // ordinary path applies the same gate before its view rule.
+        let view_context = is_view_like(target_ty) || is_view_like(&self.ty(value));
+        let mut local = None;
+        for atom in &atoms {
+            match atom {
+                Provenance::Param(owner) => {
+                    if *owner == destination || self.bindings[*owner].mode == Mode::Take {
+                        continue;
+                    }
+                    return Some(SourceSetRoot::Parameter(*owner));
+                }
+                Provenance::Local(owner) => {
+                    if !view_context || *owner == destination {
+                        continue;
+                    }
+                    if local.is_none() {
+                        local = Some(SourceSetRoot::Local(*owner));
+                    }
+                }
+                Provenance::Temp(_) => {
+                    if !view_context {
+                        continue;
+                    }
+                    if local.is_none() {
+                        local = Some(SourceSetRoot::Temporary);
+                    }
+                }
+                Provenance::None
+                | Provenance::Static
+                | Provenance::Global(_)
+                | Provenance::Composite(_) => {}
+            }
+        }
+        local
+    }
+
     /// local-, fresh-, or `take`-derived view reports `E10033`. A writable
     /// parameter slot holds the caller's frame: module-level and the caller's
     /// parameter storage survive it, while a view of this frame's storage — or
@@ -2619,6 +2811,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         );
                         return;
                     }
+                }
+            }
+        }
+        // A local rebound on one branch keeps a joined source set. The ordinary
+        // whole-slot rule only sees the binding's declaration provenance, so a
+        // foreign parameter or a frame-backed local in the set would otherwise
+        // be lost. The set is consulted only for a concrete destination and
+        // value; a type-parameter pair stays with the per-instance duty.
+        if whole_out_slot {
+            if let (Some(destination), false) = (root_id, global) {
+                if let Some(root) =
+                    self.rebound_source_store_root(value, destination, target_ty)
+                {
+                    match root {
+                        SourceSetRoot::Parameter(owner) => {
+                            let name = self.bindings[owner].name.clone();
+                            self.error(
+                                "E10034",
+                                format!("cannot release or store borrowed parameter '{name}'"),
+                                super::LEND_STORE_HELP,
+                                span,
+                            );
+                        }
+                        SourceSetRoot::Local(owner) => {
+                            let subject = super::liveness::owner_subject(
+                                &self.bindings[owner].name,
+                                self.bindings[owner].generated,
+                            );
+                            self.error(
+                                "E10030",
+                                format!("borrow of {subject} does not live long enough"),
+                                "finish the use before the owner's scope ends",
+                                span,
+                            );
+                        }
+                        SourceSetRoot::Temporary => {
+                            self.error(
+                                "E10030",
+                                "borrow of a statement temporary does not live long enough",
+                                "finish the use before the owner's scope ends",
+                                span,
+                            );
+                        }
+                    }
+                    return;
                 }
             }
         }
@@ -4221,4 +4458,18 @@ fn projection_step_overlaps(left: &ir::Projection, right: &ir::Projection) -> bo
             && matches!(right, ir::Projection::Element(_))
             && (matches!(left, ir::Projection::Element(None))
                 || matches!(right, ir::Projection::Element(None))))
+}
+
+/// The first storage root a rebound local's joined source set names.
+///
+/// A parameter root takes precedence over a local or temporary root, so a
+/// mixed set keeps the foreign-parameter report and never emits a second
+/// diagnostic for the same store.
+enum SourceSetRoot {
+    /// A `borrow` or by-value parameter the caller cannot keep.
+    Parameter(usize),
+    /// A frame-backed local view.
+    Local(usize),
+    /// A statement temporary that dies with the statement.
+    Temporary,
 }

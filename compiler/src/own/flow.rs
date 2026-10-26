@@ -172,6 +172,15 @@ pub(super) struct PlaceState {
     /// Projection paths proved not null on all paths reaching this point. The
     /// empty path means the whole binding.
     pub(super) narrowed: BTreeSet<Vec<ir::Projection>>,
+    /// The sources a rebound local may hold at this program point.
+    ///
+    /// A declaration seeds the set from the initializer, and every assignment
+    /// replaces it (a strong update). Branches and loops join it through the
+    /// ordinary [`PlaceState`] merge, so the whole-out-slot judgment sees every
+    /// storage the value may name. A vector is used because [`Provenance`] has
+    /// no total order; entries are deduplicated and composite values are
+    /// flattened before insertion.
+    pub(super) sources: Vec<Provenance>,
 }
 
 impl PlaceState {
@@ -183,6 +192,25 @@ impl PlaceState {
     /// True when the projection path is known to be not null.
     pub(super) fn is_narrowed(&self, projections: &[ir::Projection]) -> bool {
         self.narrowed.contains(projections)
+    }
+
+    /// Replaces the source set with the atoms of one definite assignment.
+    pub(super) fn strong_update_sources(&mut self, atoms: Vec<Provenance>) {
+        self.sources = atoms;
+    }
+
+    /// Joins another path's source set into this one.
+    pub(super) fn join_sources(&mut self, other: &[Provenance]) {
+        for atom in other {
+            if !self.sources.contains(atom) {
+                self.sources.push(atom.clone());
+            }
+        }
+    }
+
+    /// The flattened source atoms this place may hold.
+    pub(super) fn store_sources(&self) -> Vec<Provenance> {
+        self.sources.clone()
     }
 }
 

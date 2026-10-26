@@ -2607,6 +2607,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.view_provenance(expr)
     }
 
+    /// The flattened source atoms of a stored value, following rebound copies.
+    ///
+    /// A rebound local names its own binding id, but the storage it holds is
+    /// whatever its last assignment carried. Following that binding's source
+    /// set gives the store judge the original parameter or local instead of a
+    /// generic local atom. A local whose set is empty is a real frame-backed
+    /// view and stays a local atom. The visiting set breaks a self-copy cycle
+    /// conservatively by keeping the local atom.
+    pub(super) fn source_atoms(&self, source: &Provenance) -> Vec<Provenance> {
+        let mut atoms = Vec::new();
+        self.collect_source_atoms(source, &mut BTreeSet::new(), &mut atoms);
+        atoms.retain(|atom| !matches!(atom, Provenance::None));
+        atoms
+    }
+
+    /// Recursively flattens one provenance into the source atoms it names.
+    fn collect_source_atoms(
+        &self,
+        source: &Provenance,
+        visiting: &mut BTreeSet<usize>,
+        out: &mut Vec<Provenance>,
+    ) {
+        for atom in Self::storage_atoms(source) {
+            match &atom {
+                Provenance::Local(id) => {
+                    let id = *id;
+                    let held = self
+                        .state
+                        .places
+                        .get(&id)
+                        .map(|place| place.sources.clone())
+                        .unwrap_or_default();
+                    if !held.is_empty() && visiting.insert(id) {
+                        for inner in held {
+                            self.collect_source_atoms(&inner, visiting, out);
+                        }
+                        visiting.remove(&id);
+                    } else if !out.contains(&atom) {
+                        out.push(atom);
+                    }
+                }
+                _ => {
+                    if !out.contains(&atom) {
+                        out.push(atom);
+                    }
+                }
+            }
+        }
+    }
+
     /// The frame-local or fresh source name of a stored value.
     ///
     /// A view over a local owner or a statement temporary has no parameter

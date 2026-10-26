@@ -1,6 +1,6 @@
 # Ambiguity Register: Critical/Major DEF Closeout
 
-> **Status**: ✅ GATE PASSED — all 23 items resolved
+> **Status**: ✅ GATE PASSED — all 25 items resolved
 > **Last Updated**: 2026-10-24
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
@@ -28,6 +28,8 @@
 | AR-21 | Data & state | The plan-creation edit erased the 33 rows' severity/evidence and the roadmap header is stale | Restore/append / move to `05-findings` / leave | **Restore the original notes and fix the header**; phase closes go through the roadmap skill (`update_roadmap`), and the evidence is also recorded in `05-findings.md` | ✅ Resolved (preflight R-4, 2026-10-24) |
 | AR-22 | Technical | Apply the preflight technical corrections? | Apply all / subset / none | **Apply the delegated fixes**; the 28 findings and their resolutions are in `00-preflight-report.md`, and the plan documents are corrected | ✅ Resolved (2026-10-24) |
 | AR-23 | Behavioral / spec | `spec/04` §16 says a module-level `let` initializer is runtime (not a constant context); `spec/13` §1 says it is a constant context for `embed`. Which governs the `E10213` rule? | Follow `spec/04` (module-level `let embed` reports `E10213`) / follow `spec/13` (allow it and record the data-inclusion gap) / implement constant-context data inclusion | User chose **follow `spec/04` §16**: a module-level `let embed` reports `E10213`; the `spec/13` sentence is recorded as a frozen inconsistency; no spec chapter changes | ✅ Resolved (preflight R-6, 2026-10-24) |
+| AR-24 | Behavioral (runtime) | The generic `T = str?` whole-slot copy in ST-1 is rejected `E10030` while the concrete twin is accepted. Is that generic parity gap part of Batch A? | Scope out and record as a residual / fix the generic duty in Batch A / stop | User chose **scope out**: Batch A stays concrete-first; the pre-existing false rejection is recorded in `05-findings.md` for a future plan, and ST-1 no longer claims the generic control | ✅ Resolved (2026-10-25) |
+| AR-25 | Behavioral (runtime scope expansion) | The Phase 1 review found two pre-existing critical UAFs in the DEF-543 class: a conditional store value (`slot = c ? s : "BB"`) and an element store into a local view array (`s[0] = p; slot = s[0]`). Absorb them into Phase 1 or file a follow-up? | Absorb both / conditional only / follow-up | User chose **absorb both**: the set judgment resolves conditional, projection, call, and literal values; an element store joins the base binding's source set; regression tests were added | ✅ Resolved (2026-10-26) |
 
 ## Resolution Notes
 
@@ -53,4 +55,8 @@
 
 **AR-23:** The user ruled R-6 on 2026-10-24: follow `spec/04` §16. A module-level `let embed` is a runtime context, so it reports `E10213` and writes no translation unit. A module `const embed` keeps the existing `E10224` (data inclusion is staged out). The `spec/13` §1 sentence that calls a module-level initializer a constant context is recorded in `00-preflight-report.md` as a frozen inconsistency; no chapter or golden changes.
 
-**Confirmation:** The register is complete for the authorized critical/major scope. The preflight rulings AR-18…AR-23 were confirmed on 2026-10-24; the plan documents and `plans/00-roadmap.md` are corrected. Preflight iteration 2 resolved all 20 findings and passed. No spec or golden file changed.
+**AR-24:** During Phase 1 the generic `T = str?` whole-slot copy (`fill<str?>(p, borrow slot: T)`) reported `E10030` while the concrete `fill(p: str?, borrow slot: str?)` twin was accepted. The user scoped the gap out of Batch A: the source-set fix stays concrete-first, ST-1 no longer claims the generic control, and the discovery is recorded in `05-findings.md` for a future plan. No implementation behavior changed for that shape.
+
+**AR-25:** The Phase 1 review found two pre-existing use-after-free shapes in the same class as DEF-543: a conditional store value and an element store into a local view array. The user approved absorbing both. The set judgment now resolves a conditional, projection, call, or literal value through the same atoms, and an element store joins the base binding's source set. Regression tests cover both shapes.
+
+**Confirmation:** The register is complete for the authorized critical/major scope. The preflight rulings AR-18…AR-23 were confirmed on 2026-10-24; the runtime rulings AR-24 and AR-25 were confirmed on 2026-10-25 and 2026-10-26. Preflight iteration 2 resolved all 20 findings and passed. No spec or golden file changed.

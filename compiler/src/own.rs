@@ -1420,23 +1420,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     initialized_fields.insert(field.clone());
                 }
             }
-            places.insert(
-                id,
-                PlaceState {
-                    moved: a.moved || b.moved,
-                    // A maybe-owning consume on either path survives the join,
-                    // so a later use still deposits the duty.
-                    moved_if_owning: a
-                        .moved_if_owning
-                        .union(&b.moved_if_owning)
-                        .cloned()
-                        .collect(),
-                    partial: a.partial.union(&b.partial).cloned().collect(),
-                    initialized: a.initialized && b.initialized,
-                    initialized_fields,
-                    narrowed: a.narrowed.intersection(&b.narrowed).cloned().collect(),
-                },
-            );
+            let mut merged = PlaceState {
+                moved: a.moved || b.moved,
+                // A maybe-owning consume on either path survives the join,
+                // so a later use still deposits the duty.
+                moved_if_owning: a.moved_if_owning.union(&b.moved_if_owning).cloned().collect(),
+                partial: a.partial.union(&b.partial).cloned().collect(),
+                initialized: a.initialized && b.initialized,
+                initialized_fields,
+                narrowed: a.narrowed.intersection(&b.narrowed).cloned().collect(),
+                sources: a.sources.clone(),
+            };
+            // The sources a local may hold join by union: either path's value
+            // can reach the store, so every source must stay visible.
+            merged.join_sources(&b.sources);
+            places.insert(id, merged);
         }
         let mut loans: BTreeMap<usize, BTreeSet<LoanId>> = BTreeMap::new();
         for (id, set) in first.loans.iter().chain(second.loans.iter()) {

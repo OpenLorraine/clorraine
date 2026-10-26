@@ -2202,13 +2202,19 @@ fn callee_has_whole_out_slot_store(
         .collect();
     let mut locals = BTreeMap::new();
     collect_local_initializers(&decl.body, &mut locals);
-    let mut written = BTreeSet::new();
-    collect_written_names_block(&decl.body, &mut written);
-    let scan = WholeSlotStoreScan {
+    // The scan follows each local's sources as a flow-sensitive set. A
+    // declaration seeds the set, a top-level assignment replaces it, and a
+    // branch or loop joins the paths, so a later store sees exactly the
+    // storage it may hand out.
+    let sources: BTreeMap<String, Vec<&Expr>> = locals
+        .iter()
+        .map(|(name, value)| (name.clone(), vec![*value]))
+        .collect();
+    let mut scan = WholeSlotStoreScan {
         slots: &slots,
         lends: &lends,
-        locals: &locals,
-        written: &written,
+        sources,
+        rebound: BTreeSet::new(),
         sema,
     };
     scan.block(&decl.body)
@@ -2218,8 +2224,11 @@ fn callee_has_whole_out_slot_store(
 struct WholeSlotStoreScan<'a> {
     slots: &'a BTreeSet<String>,
     lends: &'a BTreeSet<String>,
-    locals: &'a BTreeMap<String, &'a Expr>,
-    written: &'a BTreeSet<String>,
+    /// The sources each local may hold at the current point in the walk.
+    sources: BTreeMap<String, Vec<&'a Expr>>,
+    /// The locals assigned at least once. A nested use of a rebound local is
+    /// not judged by the callee's set, so the scan keeps the caller guard.
+    rebound: BTreeSet<String>,
     sema: &'a SemaOutput,
 }
 
@@ -2234,88 +2243,215 @@ impl<'a> WholeSlotStoreScan<'a> {
             .unwrap_or_else(Ty::unknown)
     }
 
-    fn block(&self, block: &Block) -> bool {
-        block.statements.iter().any(|stmt| self.stmt(stmt))
+    fn block(&mut self, block: &'a Block) -> bool {
+        let mut found = false;
+        let mut deferred = Vec::new();
+        for stmt in &block.statements {
+            // A deferred block runs at the scope exit, after every later
+            // statement. Walking it in place would let its writes reach an
+            // earlier store; collect it and walk it with the exit state.
+            if let Stmt::Defer(inner) = stmt {
+                deferred.push(inner);
+            } else {
+                found |= self.stmt(stmt);
+            }
+        }
+        for inner in deferred {
+            found |= self.block(inner);
+        }
+        found
     }
 
-    fn stmt(&self, stmt: &Stmt) -> bool {
+    fn stmt(&mut self, stmt: &'a Stmt) -> bool {
         use crate::ast::{ForInit, Stmt, SwitchLabel};
         match stmt {
-            Stmt::Let(decl) => decl
-                .value
-                .as_ref()
-                .is_some_and(|value| self.expr(value)),
-            Stmt::Const(decl) => self.expr(&decl.value),
-            Stmt::Expr(expr) => self.expr(expr),
-            Stmt::If(decl) => {
-                self.expr(&decl.condition)
-                    || self.block(&decl.then_block)
-                    || match &decl.else_branch {
-                        Some(crate::ast::ElseBranch::If(nested)) => self.if_stmt(nested),
-                        Some(crate::ast::ElseBranch::Block(block)) => self.block(block),
-                        None => false,
-                    }
+            Stmt::Let(decl) => match &decl.value {
+                Some(value) => {
+                    let found = self.expr(value);
+                    self.sources.insert(decl.name.clone(), vec![value]);
+                    found
+                }
+                None => {
+                    self.sources.remove(&decl.name);
+                    false
+                }
+            },
+            Stmt::Const(decl) => {
+                let found = self.expr(&decl.value);
+                self.sources
+                    .insert(decl.name.clone(), vec![&decl.value]);
+                found
             }
-            Stmt::While(decl) => self.expr(&decl.condition) || self.block(&decl.body),
-            Stmt::DoWhile(decl) => self.block(&decl.body) || self.expr(&decl.condition),
+            Stmt::Expr(expr) => self.expr(expr),
+            Stmt::If(decl) => self.if_stmt(decl),
+            Stmt::While(decl) => {
+                let mut found = self.expr(&decl.condition);
+                let pre = self.sources.clone();
+                found |= self.loop_body(&decl.body, &pre);
+                found
+            }
+            Stmt::DoWhile(decl) => {
+                let pre = self.sources.clone();
+                let mut found = self.loop_body(&decl.body, &pre);
+                found |= self.expr(&decl.condition);
+                found
+            }
             Stmt::ForC(decl) => {
-                let init = match &decl.init {
-                    Some(ForInit::Let(init)) => init
-                        .value
-                        .as_ref()
-                        .is_some_and(|value| self.expr(value)),
-                    Some(ForInit::Const(init)) => self.expr(&init.value),
-                    Some(ForInit::Expr(exprs)) => exprs.iter().any(|expr| self.expr(expr)),
+                let mut found = match &decl.init {
+                    Some(ForInit::Let(init)) => {
+                        let found = init
+                            .value
+                            .as_ref()
+                            .is_some_and(|value| self.expr(value));
+                        if let Some(value) = &init.value {
+                            self.sources.insert(init.name.clone(), vec![value]);
+                        }
+                        found
+                    }
+                    Some(ForInit::Const(init)) => {
+                        let found = self.expr(&init.value);
+                        self.sources.insert(init.name.clone(), vec![&init.value]);
+                        found
+                    }
+                    Some(ForInit::Expr(exprs)) => {
+                        exprs.iter().any(|expr| self.expr(expr))
+                    }
                     None => false,
                 };
-                init || decl
+                found |= decl
                     .condition
                     .as_ref()
-                    .is_some_and(|condition| self.expr(condition))
-                    || decl.step.iter().any(|step| self.expr(step))
-                    || self.block(&decl.body)
+                    .is_some_and(|condition| self.expr(condition));
+                let pre = self.sources.clone();
+                found |= decl.step.iter().any(|step| self.expr(step));
+                found |= self.block(&decl.body);
+                let after_first = self.sources.clone();
+                let merged = Self::merge_sources(&pre, &after_first);
+                self.sources = merged.clone();
+                found |= decl.step.iter().any(|step| self.expr(step));
+                found |= self.block(&decl.body);
+                let after_second = self.sources.clone();
+                self.sources = Self::merge_sources(&merged, &after_second);
+                found
             }
-            Stmt::ForIn(decl) => self.expr(&decl.iterable) || self.block(&decl.body),
+            Stmt::ForIn(decl) => {
+                let mut found = self.expr(&decl.iterable);
+                let pre = self.sources.clone();
+                found |= self.loop_body(&decl.body, &pre);
+                found
+            }
             Stmt::Return { value, .. } => value.as_ref().is_some_and(|value| self.expr(value)),
             Stmt::Break(_) | Stmt::Continue(_) => false,
             Stmt::Switch(decl) => {
-                self.expr(&decl.scrutinee)
-                    || decl.clauses.iter().any(|clause| {
-                        let label = match &clause.label {
-                            SwitchLabel::Case(value) => self.expr(value),
-                            SwitchLabel::Default => false,
-                        };
-                        label || clause.statements.iter().any(|stmt| self.stmt(stmt))
-                    })
+                let mut found = self.expr(&decl.scrutinee);
+                let pre = self.sources.clone();
+                // A clause may fall through into the next one, so each clause
+                // starts from the entry state joined with the previous clause's
+                // end state. The final state is the union of every exit.
+                let mut carry = pre.clone();
+                for clause in &decl.clauses {
+                    self.sources = Self::merge_sources(&pre, &carry);
+                    let label = match &clause.label {
+                        SwitchLabel::Case(value) => self.expr(value),
+                        SwitchLabel::Default => false,
+                    };
+                    found |= label;
+                    for statement in &clause.statements {
+                        found |= self.stmt(statement);
+                    }
+                    carry = Self::merge_sources(&carry, &self.sources);
+                }
+                self.sources = carry;
+                found
             }
             Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => self.block(block),
         }
     }
 
-    fn if_stmt(&self, decl: &crate::ast::IfStmt) -> bool {
-        self.expr(&decl.condition)
-            || self.block(&decl.then_block)
-            || match &decl.else_branch {
-                Some(crate::ast::ElseBranch::If(nested)) => self.if_stmt(nested),
-                Some(crate::ast::ElseBranch::Block(block)) => self.block(block),
-                None => false,
-            }
+    fn if_stmt(&mut self, decl: &'a crate::ast::IfStmt) -> bool {
+        let mut found = self.expr(&decl.condition);
+        let pre = self.sources.clone();
+        found |= self.block(&decl.then_block);
+        let then = self.sources.clone();
+        self.sources = pre.clone();
+        found |= match &decl.else_branch {
+            Some(crate::ast::ElseBranch::If(nested)) => self.if_stmt(nested),
+            Some(crate::ast::ElseBranch::Block(block)) => self.block(block),
+            None => false,
+        };
+        let otherwise = self.sources.clone();
+        self.sources = Self::merge_sources(&Self::merge_sources(&pre, &then), &otherwise);
+        found
     }
 
-    fn expr(&self, expr: &Expr) -> bool {
+    /// Walks a loop body twice so a store sees the loop-carried sources.
+    ///
+    /// The first pass starts from the entry state; the second starts from the
+    /// entry joined with the first pass's end state, which is the source set a
+    /// later iteration can carry into the same store.
+    fn loop_body(
+        &mut self,
+        body: &'a Block,
+        pre: &BTreeMap<String, Vec<&'a Expr>>,
+    ) -> bool {
+        self.sources = pre.clone();
+        let mut found = self.block(body);
+        let after_first = self.sources.clone();
+        let merged = Self::merge_sources(pre, &after_first);
+        self.sources = merged.clone();
+        found |= self.block(body);
+        let after_second = self.sources.clone();
+        self.sources = Self::merge_sources(&merged, &after_second);
+        found
+    }
+
+    /// Joins the source sets of two paths by union.
+    fn merge_sources(
+        first: &BTreeMap<String, Vec<&'a Expr>>,
+        second: &BTreeMap<String, Vec<&'a Expr>>,
+    ) -> BTreeMap<String, Vec<&'a Expr>> {
+        let mut merged = first.clone();
+        for (name, values) in second {
+            let entry = merged.entry(name.clone()).or_default();
+            for value in values {
+                if !entry.iter().any(|existing| std::ptr::eq(*existing, *value)) {
+                    entry.push(*value);
+                }
+            }
+        }
+        merged
+    }
+
+    fn expr(&mut self, expr: &'a Expr) -> bool {
         use crate::ast::{AssignOp, IntrinsicArg, LambdaBody, TemplatePiece};
         match &expr.kind {
             ExprKind::Assign { op, target, value } => {
-                let whole = matches!(op, AssignOp::Assign)
-                    && matches!(&target.kind, ExprKind::Name(name) if self.slots.contains(name));
-                let foreign = whole
-                    && match &target.kind {
+                let whole = matches!(op, AssignOp::Assign);
+                let target_is_slot = matches!(
+                    &target.kind,
+                    ExprKind::Name(name) if self.slots.contains(name)
+                );
+                let foreign = if whole && target_is_slot {
+                    match &target.kind {
                         ExprKind::Name(destination) => {
                             let mut visiting = BTreeSet::new();
                             self.value_has_foreign_root(value, destination, &mut visiting)
                         }
                         _ => false,
-                    };
+                    }
+                } else {
+                    false
+                };
+                // A top-level assignment replaces the local's sources; a
+                // branch assignment is joined by the enclosing `if`/loop.
+                if whole && !target_is_slot {
+                    if let ExprKind::Name(name) = &target.kind {
+                        if !self.lends.contains(name) {
+                            self.sources.insert(name.clone(), vec![value.as_ref()]);
+                            self.rebound.insert(name.clone());
+                        }
+                    }
+                }
                 foreign || self.expr(target) || self.expr(value)
             }
             ExprKind::Call { callee, args, .. } => {
@@ -2346,10 +2482,18 @@ impl<'a> WholeSlotStoreScan<'a> {
                 elements.iter().any(|element| self.expr(element))
                     || fill.as_deref().is_some_and(|fill| self.expr(fill))
             }
-            ExprKind::Lambda { body, .. } => match body {
-                LambdaBody::Expr(inner) => self.expr(inner),
-                LambdaBody::Block(block) => self.block(block),
-            },
+            ExprKind::Lambda { body, .. } => {
+                // A capture assignment inside a lambda runs when the lambda
+                // is called, and the lifted body has its own binding ids, so
+                // it must not update the enclosing scan state.
+                let saved = self.sources.clone();
+                let found = match body {
+                    LambdaBody::Expr(inner) => self.expr(inner),
+                    LambdaBody::Block(block) => self.block(block),
+                };
+                self.sources = saved;
+                found
+            }
             ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
                 IntrinsicArg::Expr(value) => self.expr(value),
                 IntrinsicArg::Type(_) => false,
@@ -2382,24 +2526,17 @@ impl<'a> WholeSlotStoreScan<'a> {
                 if name == destination {
                     return false;
                 }
-                // A written binding may hold a different source on a path the
-                // scan cannot see; keep the caller guard instead of risking a
-                // withheld dangling report.
-                if self.written.contains(name) {
-                    return false;
+                if let Some(values) = self.sources.get(name) {
+                    if !visiting.insert(name.clone()) {
+                        return false;
+                    }
+                    let foreign = values.iter().any(|value| {
+                        self.value_has_foreign_root(value, destination, visiting)
+                    });
+                    visiting.remove(name);
+                    return foreign;
                 }
-                if self.lends.contains(name) {
-                    return true;
-                }
-                let Some(initializer) = self.locals.get(name) else {
-                    return false;
-                };
-                if !visiting.insert(name.clone()) {
-                    return false;
-                }
-                let foreign = self.value_has_foreign_root(initializer, destination, visiting);
-                visiting.remove(name);
-                foreign
+                self.lends.contains(name)
             }
             ExprKind::Qualified(qualified) => qualified
                 .segments
@@ -2498,165 +2635,6 @@ impl<'a> WholeSlotStoreScan<'a> {
             | ExprKind::Unsafe(value) => self.is_static_value(value),
             _ => false,
         }
-    }
-}
-
-/// Collects every name written by an assignment or element loop.
-///
-/// The withholding scan is deliberately conservative about a written local:
-/// the callee-side state may be one branch's value, so the scan must not treat
-/// the declaration initializer as the source at every path.
-fn collect_written_names_block(block: &Block, written: &mut BTreeSet<String>) {
-    for stmt in &block.statements {
-        collect_written_names_stmt(stmt, written);
-    }
-}
-
-fn collect_written_names_stmt(stmt: &Stmt, written: &mut BTreeSet<String>) {
-    use crate::ast::{ForInit, Stmt};
-    match stmt {
-        Stmt::Let(decl) => {
-            if let Some(value) = &decl.value {
-                collect_written_names_expr(value, written);
-            }
-        }
-        Stmt::Const(decl) => collect_written_names_expr(&decl.value, written),
-        Stmt::Expr(expr) => collect_written_names_expr(expr, written),
-        Stmt::If(decl) => {
-            collect_written_names_expr(&decl.condition, written);
-            collect_written_names_block(&decl.then_block, written);
-            match &decl.else_branch {
-                Some(crate::ast::ElseBranch::If(nested)) => {
-                    collect_written_names_if(nested, written);
-                }
-                Some(crate::ast::ElseBranch::Block(block)) => {
-                    collect_written_names_block(block, written);
-                }
-                None => {}
-            }
-        }
-        Stmt::While(decl) => {
-            collect_written_names_expr(&decl.condition, written);
-            collect_written_names_block(&decl.body, written);
-        }
-        Stmt::DoWhile(decl) => {
-            collect_written_names_block(&decl.body, written);
-            collect_written_names_expr(&decl.condition, written);
-        }
-        Stmt::ForC(decl) => {
-            match &decl.init {
-                Some(ForInit::Let(init)) => {
-                    if let Some(value) = &init.value {
-                        collect_written_names_expr(value, written);
-                    }
-                }
-                Some(ForInit::Const(init)) => collect_written_names_expr(&init.value, written),
-                Some(ForInit::Expr(exprs)) => {
-                    for expr in exprs {
-                        collect_written_names_expr(expr, written);
-                    }
-                }
-                None => {}
-            }
-            if let Some(condition) = &decl.condition {
-                collect_written_names_expr(condition, written);
-            }
-            for step in &decl.step {
-                collect_written_names_expr(step, written);
-            }
-            collect_written_names_block(&decl.body, written);
-        }
-        Stmt::ForIn(decl) => {
-            written.insert(decl.name.clone());
-            collect_written_names_expr(&decl.iterable, written);
-            collect_written_names_block(&decl.body, written);
-        }
-        Stmt::Return { value, .. } => {
-            if let Some(value) = value {
-                collect_written_names_expr(value, written);
-            }
-        }
-        Stmt::Break(_) | Stmt::Continue(_) => {}
-        Stmt::Switch(decl) => {
-            collect_written_names_expr(&decl.scrutinee, written);
-            for clause in &decl.clauses {
-                if let crate::ast::SwitchLabel::Case(value) = &clause.label {
-                    collect_written_names_expr(value, written);
-                }
-                for stmt in &clause.statements {
-                    collect_written_names_stmt(stmt, written);
-                }
-            }
-        }
-        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
-            collect_written_names_block(block, written);
-        }
-    }
-}
-
-fn collect_written_names_if(decl: &crate::ast::IfStmt, written: &mut BTreeSet<String>) {
-    collect_written_names_expr(&decl.condition, written);
-    collect_written_names_block(&decl.then_block, written);
-    match &decl.else_branch {
-        Some(crate::ast::ElseBranch::If(nested)) => collect_written_names_if(nested, written),
-        Some(crate::ast::ElseBranch::Block(block)) => collect_written_names_block(block, written),
-        None => {}
-    }
-}
-
-fn collect_written_names_expr(expr: &Expr, written: &mut BTreeSet<String>) {
-    use crate::ast::{LambdaBody, TemplatePiece};
-    match &expr.kind {
-        ExprKind::Assign { target, value, .. } => {
-            if let ExprKind::Name(name) = &target.kind {
-                written.insert(name.clone());
-            }
-            collect_written_names_expr(target, written);
-            collect_written_names_expr(value, written);
-        }
-        ExprKind::Call { callee, args, .. } => {
-            collect_written_names_expr(callee, written);
-            for arg in args {
-                collect_written_names_expr(&arg.value, written);
-            }
-        }
-        ExprKind::Lambda { body, .. } => match body {
-            LambdaBody::Expr(inner) => collect_written_names_expr(inner, written),
-            LambdaBody::Block(block) => collect_written_names_block(block, written),
-        },
-        ExprKind::Conditional {
-            condition,
-            then_value,
-            else_value,
-        } => {
-            collect_written_names_expr(condition, written);
-            collect_written_names_expr(then_value, written);
-            collect_written_names_expr(else_value, written);
-        }
-        ExprKind::Cast { value, .. }
-        | ExprKind::RawCast { value, .. }
-        | ExprKind::Unsafe(value) => collect_written_names_expr(value, written),
-        ExprKind::StructLiteral { fields, .. } => {
-            for field in fields {
-                collect_written_names_expr(&field.value, written);
-            }
-        }
-        ExprKind::ArrayLiteral { elements, fill } => {
-            for element in elements {
-                collect_written_names_expr(element, written);
-            }
-            if let Some(fill) = fill {
-                collect_written_names_expr(fill, written);
-            }
-        }
-        ExprKind::Template(pieces) => {
-            for piece in pieces {
-                if let TemplatePiece::Placeholder(value) = piece {
-                    collect_written_names_expr(value, written);
-                }
-            }
-        }
-        _ => {}
     }
 }
 

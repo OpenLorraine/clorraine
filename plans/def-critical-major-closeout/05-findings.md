@@ -114,6 +114,51 @@ above. `DEF-506` stays active; its safe shape is not accepted today.
 Each phase close retargets the tests in this inventory and records every
 expected change.
 
+## Phase 1 — Critical Flow
+
+**Red phase (2026-10-26):** four of the six new ST-1 rejection cases failed at
+HEAD — the same-frame mixed branch, the parameter-first mixed union, the
+conditional assignment, and the cross-frame form. The local-root and
+later-assignment cases were already green at HEAD (the declaration provenance
+happened to carry the right root), so they are labeled regression controls, not
+red gates. The definite-overwrite, all-static, slot-copy, take-root, and
+take-view controls passed. `RDC_ASAN=1` is not run on a rejection case.
+
+**Implementation:** the source set lives on `PlaceState` and is seeded at the
+declaration, strong-updated by every assignment, joined by `merge`, and pruned
+with the place. `source_atoms` follows a rebound copy to the storage it holds;
+the whole-out-slot judge reads a bare rebound name, reports the foreign
+parameter first, skips the destination's own parameter and a `take` root, and
+defers a type-parameter pair. The callee scan walks the body with a
+flow-sensitive source map (branch, loop, switch fall-through, and defer-exit
+joins), withholds the caller guard only for a store shape the callee's judge
+consumes, and isolates lambda-body writes. An owned `Local`/`Temp` transfer is
+accepted; only a view context reports the frame escape.
+
+**Runtime ruling AR-24:** the generic `T = str?` whole-slot copy reports
+`E10030` while the concrete twin is accepted. Batch A stays concrete-first; the
+pre-existing false rejection is recorded here for a future plan and is not part
+of this batch.
+
+### Phase review (2026-10-26)
+
+| Finding | Severity | Area | Ruling |
+|---|---|---|---|
+| SA-001 / SR-001 | CRITICAL | The scan withheld the caller guard for a conditional/projection/call store or a lambda-body write while the callee accepted, leaving an accepted use-after-free | Fixed: the set is consulted only for a bare rebound name; lambda bodies walk a cloned map; regression tests added |
+| SR-002 | MAJOR | A legal owned whole-slot transfer was reported `E10030` | Fixed: an owned `Local`/`Temp` transfer is accepted; only a view context reports the frame escape; regression test added |
+| SR-003 / SA-004 | MAJOR | Duplicate reports for a defer, do-while, or switch fall-through store | Fixed: defer blocks walk at the scope exit, loops get a second carried pass, switch clauses carry the fall-through state; regression tests added |
+| RV-001 / RV-002 / SR-004 | MINOR | The red-phase record overclaimed two base-green controls; the mixed-union fixture used a static local; the impl pin was absent | Fixed: the record is corrected, the fixture uses a local owner, and the cross-frame impl pin is added |
+| RV-003 | MINOR | The scan's name-keyed map does not restore a shadowed local's previous source | Recorded residual: a shadowed inner local can add one duplicate report; it does not accept an unsafe store |
+| RV-004 | MINOR | The scan cannot distinguish a proven-static callee store, so a cross-frame call keeps the caller guard | Recorded residual: conservative false rejection, no unsafe acceptance |
+| SA-002 | CRITICAL (pre-existing) | A same-frame composite store value (`slot = c ? s : "BB"`) was accepted and UAF'd | Fixed under AR-25: the set judge resolves conditional, projection, call, and literal values; regression test added |
+| SA-003 | CRITICAL (pre-existing) | An element store into a local view array did not update the source state | Fixed under AR-25: the element store joins the base binding's set; regression test added; a sibling element read is conservatively judged from the union |
+| PE-1…PE-4 | MINOR (pre-existing) | Captured writes, `for`-step stores, the generic instance duty, and temporary views keep their base behavior | Recorded residuals |
+
+**Verification:** `make check` and `make verify` pass after the review fixes;
+`borrow_store_integrity_spec_test` 58 passed, `borrow_store_integrity_impl_test`
+14 passed, `own` unit tests 62 passed. The accepted controls are ASAN clean. The
+AR-25 fixes add the composite-store and element-store UAF regressions.
+
 ## Phase Records
 
 Execution adds one section per phase with the revalidation results, review

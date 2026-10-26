@@ -770,3 +770,36 @@ func main(): i32 {
         "paccepted: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// The cross-frame laundering shape reports the callee store once.
+///
+/// The callee's joined source set is the only report; the caller's frame guard
+/// is withheld because the callee already rejects the store. The shape is the
+/// implementation counterpart of the specification suite's cross-frame case.
+#[test]
+fn should_keep_the_cross_frame_laundering_store_to_one_report() {
+    let source = r#"module spec.bsi.impl.reboundxframe;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c) { s = "AA"; }
+    slot = s;
+}
+
+func outer(c: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("XYZ") };
+    fill(b.v, c, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected("reboundxframe", source, &["E10034"]);
+}

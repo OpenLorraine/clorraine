@@ -3759,7 +3759,7 @@ fn should_reject_a_cross_frame_pass_through_once() {
     assert_rejected("implxfsame", CROSS_FRAME_SAME_SOURCE, "E10034", 1);
     assert_rejected("implxfcopy", CROSS_FRAME_COPY_SOURCE, "E10034", 1);
     assert_rejected("implxfstatic", CROSS_FRAME_STATIC_SOURCE, "E10030", 1);
-    assert_rejected("implxflaunder", CROSS_FRAME_LAUNDER_SOURCE, "E10030", 1);
+    assert_rejected("implxflaunder", CROSS_FRAME_LAUNDER_SOURCE, "E10034", 1);
     assert_rejected(
         "implxflambdastatic",
         CROSS_FRAME_LAMBDA_STATIC_SOURCE,

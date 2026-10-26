@@ -1339,10 +1339,40 @@ func main(): i32 {
     return f(borrow v);
 }
 "#;
+    let definite_overwrite = r#"module spec.bsi.p3.determinismoverwrite;
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str = p;
+    s = "AA";
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", borrow out);
+    return 0;
+}
+"#;
+    let take_root = r#"module spec.bsi.p3.determinismtake;
+
+import { String, stringOf } from std.text;
+
+func fill(take h: String, borrow slot: String?): void {
+    slot = h;
+}
+
+func main(): i32 {
+    let out: String? = null;
+    fill(stringOf("aa"), borrow out);
+    return 0;
+}
+"#;
     for (tag, source) in [
         ("determinism-self-assign", self_assign),
         ("determinism-out-slot", out_slot),
         ("determinism-in-bounds", in_bounds),
+        ("determinism-overwrite", definite_overwrite),
+        ("determinism-take-root", take_root),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
@@ -2639,4 +2669,490 @@ func main(): i32 {
         "E10034",
         &["cannot release or store borrowed parameter"],
     );
+}
+
+// -- Whole-slot stores of a rebound local across branches --------------------
+//
+// A local rebound on one branch and initialized from a parameter on another
+// keeps both sources. The store judge reads the joined source set, not the
+// declaration-time provenance, so the frame-backed path is visible.
+
+/// A same-frame mixed branch that keeps a parameter view is rejected once.
+///
+/// The local starts from a lend parameter and is overwritten with a static
+/// string on one path. The store of the rebound local can still hand the
+/// parameter's storage to the caller, so the callee reports the foreign-store
+/// rule once and names the parameter.
+#[test]
+fn should_reject_a_same_frame_mixed_branch_store() {
+    let source = r#"module spec.bsi.reboundparam;
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c) { s = "AA"; }
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once("reboundparam", source, "E10034", &["'p'"]);
+}
+
+/// A same-frame mixed branch that keeps a local view is rejected once.
+///
+/// The local is overwritten with another local view on one path. The joined
+/// set names the local view, so the store reports the frame-backed escape and
+/// names that local rather than the rebound binding.
+#[test]
+fn should_reject_a_same_frame_local_root_store() {
+    let source = r#"module spec.bsi.reboundlocal;
+
+import { String, stringOf } from std.text;
+
+func fill(c: bool, borrow slot: str?): void {
+    let l: String = stringOf("AA");
+    let s: str = "BB";
+    if (c) { s = l; }
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once("reboundlocal", source, "E10030", &["'l'"]);
+}
+
+/// A parameter and a local in the same joined set report the parameter first.
+///
+/// The store has one report, not two: the foreign parameter rule wins over the
+/// local-view escape, so the diagnostic count stays stable.
+#[test]
+fn should_report_the_parameter_first_for_a_mixed_union() {
+    let source = r#"module spec.bsi.reboundmixed;
+
+import { String, stringOf } from std.text;
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let l: String = stringOf("AA");
+    let s: str = p;
+    if (c) { s = l; }
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundmixed", source, "E10034", &["'p'"]);
+}
+
+/// A definite overwrite before the store drops the earlier parameter source.
+#[test]
+fn should_accept_a_definite_overwrite_before_the_store() {
+    let source = r#"module spec.bsi.reboundoverwrite;
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str = p;
+    s = "AA";
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_memory("reboundoverwrite", source);
+    assert_exit("reboundoverwrite", &output, 0);
+    assert_no_asan("reboundoverwrite", &output);
+}
+
+/// A conditional value assigned to a definite local keeps both arms.
+#[test]
+fn should_reject_a_conditional_assignment_through_a_rebound_local() {
+    let source = r#"module spec.bsi.reboundcond;
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = p;
+    s = c ? p : "AA";
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundcond", source, "E10034", &["'p'"]);
+}
+
+/// An all-static conditional assignment is accepted.
+#[test]
+fn should_accept_an_all_static_conditional_assignment() {
+    let source = r#"module spec.bsi.reboundstatic;
+
+func fill(c: bool, borrow slot: str?): void {
+    let s: str = "AA";
+    s = c ? "BB" : "CC";
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 66;
+}
+"#;
+    let output = run_memory("reboundstatic", source);
+    assert_exit("reboundstatic", &output, 0);
+    assert_no_asan("reboundstatic", &output);
+}
+
+/// A copy of the slot's own value is accepted.
+#[test]
+fn should_accept_a_rebound_copy_of_the_slots_own_value() {
+    let source = r#"module spec.bsi.reboundslot;
+
+func fill(c: bool, borrow slot: str?): void {
+    let t: str? = slot;
+    if (c) { t = slot; }
+    slot = t;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    return 0;
+}
+"#;
+    let output = run_memory("reboundslot", source);
+    assert_exit("reboundslot", &output, 0);
+    assert_no_asan("reboundslot", &output);
+}
+
+/// An owned `take` value stored into a nullable slot is accepted; a take view
+/// that dies with the frame reports the local escape.
+#[test]
+fn should_keep_the_take_root_and_take_view_rules() {
+    let owned = r#"module spec.bsi.reboundtake;
+
+import { String, stringOf } from std.text;
+
+func fill(take h: String, borrow slot: String?): void {
+    slot = h;
+}
+
+func main(): i32 {
+    let out: String? = null;
+    fill(stringOf("aa"), borrow out);
+    if (out == null) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("reboundtake", owned);
+    assert_exit("reboundtake", &output, 0);
+    assert_no_asan("reboundtake", &output);
+
+    let view = r#"module spec.bsi.reboundtakeview;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func fill(take h: H, borrow slot: str?): void {
+    let s: str = h.name;
+    slot = s;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(H { name: stringOf("aa") }, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_once("reboundtakeview", view, "E10030", &["borrow of"]);
+}
+
+/// The cross-frame form reports the callee store once, not the caller guard.
+#[test]
+fn should_keep_the_cross_frame_report_once() {
+    let source = r#"module spec.bsi.reboundouter;
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c) { s = "AA"; }
+    slot = s;
+}
+
+func outer(p: str, c: bool, borrow slot: str?): void {
+    fill(p, c, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("xx", true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundouter", source, "E10034", &["'p'"]);
+}
+
+
+
+/// A later assignment that adds another foreign source does not suppress the
+/// earlier store's report.
+#[test]
+fn should_keep_the_earlier_store_report_when_a_later_assignment_adds_a_source() {
+    let source = r#"module spec.bsi.reboundlater;
+
+func fill(p: str, q: str, borrow slot: str?): void {
+    let s: str = p;
+    slot = s;
+    s = q;
+}
+
+func outer(p: str, q: str, borrow slot: str?): void {
+    fill(p, q, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer("xx", "yy", borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundlater", source, "E10034", &["'p'"]);
+}
+
+/// A composite store value resolves each arm through the joined set, so the
+/// callee reports one foreign-parameter diagnostic.
+#[test]
+fn should_report_a_composite_store_value_once() {
+    let source = r#"module spec.bsi.reboundcomposite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, c1: bool, c2: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c1) { s = "AA"; }
+    slot = c2 ? s : "BB";
+}
+
+func outer(c1: bool, c2: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("cccc") };
+    fill(b.v, c1, c2, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(false, true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundcomposite", source, "E10034", &["'p'"]);
+}
+
+/// A capture assignment inside a lambda does not update the enclosing scan
+/// state, so the caller guard stays in place.
+#[test]
+fn should_keep_the_caller_guard_when_a_lambda_body_writes_the_local() {
+    let source = r#"module spec.bsi.reboundlambda;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str = "AA";
+    [borrow s, borrow p] () => { s = p; }();
+    slot = s;
+}
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("XYZ") };
+    fill(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundlambda", source, "E10030", &["borrow of 'b'"]);
+}
+
+/// An owned whole-slot transfer is accepted, not treated as a lend escape.
+#[test]
+fn should_accept_an_owned_whole_slot_transfer() {
+    let source = r#"module spec.bsi.reboundowned;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: String?): void {
+    let own: String = stringOf("AA");
+    let s: String = stringOf("BB");
+    s = own;
+    slot = s;
+}
+
+func main(): i32 {
+    let out: String? = null;
+    fill(borrow out);
+    if (out == null) { return 9; }
+    return i32(len(out)) - 2;
+}
+"#;
+    let output = run_memory("reboundowned", source);
+    assert_exit("reboundowned", &output, 0);
+    assert_no_asan("reboundowned", &output);
+}
+
+/// A deferred store is judged at the scope exit, so the callee reports once.
+#[test]
+fn should_report_a_deferred_store_once() {
+    let source = r#"module spec.bsi.rebounddefer;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str = "AA";
+    defer { slot = s; }
+    s = p;
+}
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("XYZ") };
+    fill(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("rebounddefer", source, "E10034", &["'p'"]);
+}
+
+/// A loop-carried source reaches a store in a later iteration; the callee
+/// reports once.
+#[test]
+fn should_report_a_loop_carried_store_once() {
+    let source = r#"module spec.bsi.reboundloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, c: bool, borrow slot: str?): void {
+    let s: str = "AA";
+    do {
+        slot = s;
+        s = p;
+    } while (c);
+}
+
+func outer(c: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("XYZ") };
+    fill(b.v, c, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundloop", source, "E10034", &["'p'"]);
+}
+
+/// A switch fall-through carries the source into the next clause; the callee
+/// reports once.
+#[test]
+fn should_report_a_switch_fallthrough_store_once() {
+    let source = r#"module spec.bsi.reboundswitch;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, c: i32, borrow slot: str?): void {
+    let s: str = "AA";
+    switch (c) {
+        case 0: { s = p; }
+        default: { slot = s; }
+    }
+}
+
+func outer(c: i32, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("XYZ") };
+    fill(b.v, c, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(1, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundswitch", source, "E10034", &["'p'"]);
+}
+
+/// A conditional store value resolves each arm through the joined set.
+#[test]
+fn should_reject_a_conditional_store_value_through_a_rebound_local() {
+    let source = r#"module spec.bsi.reboundcondstore;
+
+func fill(p: str, c1: bool, c2: bool, borrow slot: str?): void {
+    let s: str = p;
+    if (c1) { s = "AA"; }
+    slot = c2 ? s : "BB";
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", false, true, borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundcondstore", source, "E10034", &["'p'"]);
+}
+
+/// An element store feeds the binding's source set, so a later element read
+/// reports the frame-backed source.
+#[test]
+fn should_reject_a_projected_element_store_through_a_rebound_view() {
+    let source = r#"module spec.bsi.reboundelement;
+
+func fill(p: str, borrow slot: str?): void {
+    let s: str[2] = ["AA", "BB"];
+    s[0] = p;
+    slot = s[0];
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill("xx", borrow out);
+    return 0;
+}
+"#;
+    assert_rejected_exactly_once("reboundelement", source, "E10034", &["'p'"]);
 }

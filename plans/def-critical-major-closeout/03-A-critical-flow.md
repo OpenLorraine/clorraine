@@ -67,10 +67,16 @@ impl PlaceState {
     view take from an owned take, so the existing value/target view-like
     judgment remains the discriminator;
   - an all-static or newly owned set keeps the store accepted.
+- A store value resolves through the same atoms for a conditional (its arms), a
+  projection (its base), a call (its view source and arguments), and a literal
+  (its fields or elements). An element store joins the base binding's source
+  set; the union is conservative for a sibling element but never accepts a
+  frame-backed source.
 - If the destination type or the stored value still mentions a type parameter,
   do not apply the concrete set judgment; leave the existing per-instance duty
-  to judge the substituted pair. This keeps a safe `T = str` view instance
-  accepted.
+  to judge the substituted pair. A `T = str?` whole-slot copy is currently a
+  pre-existing false rejection in that duty; it is recorded as a residual and is
+  not changed here.
 - Do not change the ordinary view-provenance path for a non-rebound local; the
   existing E10030/E10034 rules stay in place.
 - The source set is bounded by the distinct live sources and is never a full
@@ -134,6 +140,8 @@ keeps the existing whole-slot duty.
 | The slot's own parameter | Destination-root exclusion (`owner == destination`); the store is accepted | AR-5 |
 | `take` parameter root | Leave it to the existing ordinary path: an owned take value is accepted, a frame-dying take view reports `E10030` | AR-5 |
 | A destination or value mentioning a type parameter | Do not apply the concrete set; leave the existing per-instance duty | AR-5, AR-12 |
+| A conditional, projection, call, or literal store value | Resolve the same atoms through the shape; one report | AR-5, AR-25 |
+| An element store into a local view array | Join the base binding's source set; one report on a later element read | AR-5, AR-25 |
 | Definite overwrite before the store | Strong update removes the earlier source; the store is accepted | AR-5 |
 | Definite conditional-RHS assignment | Strong update stores the value's `Composite`; an all-static conditional RHS is accepted | AR-5 |
 | Conditional assignment before the store | The branch merge joins the arm states; flatten the `Composite` atoms; a parameter root is not hidden | AR-5 |

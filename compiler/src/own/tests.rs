@@ -6,6 +6,8 @@
 //! control-flow graph.
 
 use super::test_support::{compile, error_codes, reports, with_view_helper};
+use super::{FlowState, FunctionChecker, PlaceState};
+use crate::borrow::Provenance;
 use crate::ir::{Statement, Terminator};
 
 #[test]
@@ -1012,4 +1014,52 @@ fn a_conditional_of_ownerless_elements_reports_the_move_limit() {
         }\n\
         func main(): i32 { return 0; }\n";
     assert_eq!(error_codes(source), vec!["E10026"]);
+}
+
+#[test]
+fn source_sets_join_by_union_and_prune_with_the_place() {
+    // Two paths reach the store: one holds a parameter, the other a static
+    // value. The join keeps both so the store judge sees the parameter.
+    let mut first = FlowState::default();
+    first.places.insert(
+        1,
+        PlaceState {
+            sources: vec![Provenance::Param(0)],
+            ..PlaceState::default()
+        },
+    );
+    let mut second = FlowState::default();
+    second.places.insert(
+        1,
+        PlaceState {
+            sources: vec![Provenance::Static],
+            ..PlaceState::default()
+        },
+    );
+    let merged = FunctionChecker::merge(first, second);
+    assert_eq!(
+        merged.places.get(&1).expect("the joined place").sources,
+        vec![Provenance::Param(0), Provenance::Static]
+    );
+
+    // A speculative temporary above the saved binding floor is truncated, so
+    // a later local that reuses the id cannot inherit its sources.
+    let mut state = merged;
+    state.drop_bindings_from(1);
+    assert!(
+        state.places.get(&1).is_none(),
+        "a reused temporary id must not keep the old source set"
+    );
+}
+
+#[test]
+fn a_definite_assignment_replaces_the_source_set() {
+    let mut place = PlaceState::default();
+    place.strong_update_sources(vec![Provenance::Param(1)]);
+    place.strong_update_sources(vec![Provenance::Static]);
+    place.join_sources(&[Provenance::Static, Provenance::Local(2)]);
+    assert_eq!(
+        place.sources,
+        vec![Provenance::Static, Provenance::Local(2)]
+    );
 }

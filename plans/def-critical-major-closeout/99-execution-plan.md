@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-25
-> **Progress**: 6/76 tasks (8%)
+> **Last Updated**: 2026-10-26
+> **Progress**: 13/76 tasks (17%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -90,43 +90,55 @@ or a documented stale proof; the existing-test inventory is recorded.
 
 ## Phase 1: Critical Flow — DEF-543
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `577f2aa695853a97f05cd7dccbceafd7241bee96`
 > **Lenses**: correctness, memory safety, semantics
 > **Reasoning**: high — ownership state across branches and a same-frame escape
 
-- [ ] 1.1.1 [spec-author] Write ST-1 from `07-testing-strategy.md` in
+- [x] 1.1.1 [spec-author] Write ST-1 from `07-testing-strategy.md` in
   `compiler/tests/borrow_store_integrity_spec_test.rs`, including the
   same-frame, cross-frame, static-only, owned-rebind, definite-overwrite,
   conditional-assignment, take-root, and mixed-root controls.
-- [ ] 1.1.2 Confirm red: the same-frame mixed branch is accepted and the
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.1.2 Confirm red: the same-frame mixed branch is accepted and the
   callee-side `E10034` is missing before the fix; the cross-frame count
   assertion is green before and after and is not the red gate.
-- [ ] 1.2.1 Add the bounded `sources` set to `PlaceState` in
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.2.1 Add the bounded `sources` set to `PlaceState` in
   `compiler/src/own/flow.rs`; join it in `FlowState::merge`
   (`compiler/src/own.rs`), and confirm `drop_bindings_from`/`edge_state` prune
   it with the place. Do not add a parallel `Binding` or `FlowState` map
   (PF-004). No `lower.rs` constructor change is needed.
-- [ ] 1.2.2 Strong-update the set on every assignment, flatten
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.2.2 Strong-update the set on every assignment, flatten
   `storage_atoms`, and consult it at the whole-out-slot store in
   `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`, and
   `compiler/src/own/expr.rs` with the destination-root exclusion, the `take`
   deferral, and the type-parameter deferral (`03-A §Implementation Details`).
-- [ ] 1.2.3 Extend the direct callee scan in `compiler/src/own/call_check.rs`
+  Resolve conditional, projection, call, and literal store values through the
+  same atoms, and join an element store into the base binding's set (AR-25).
+  Record the pre-existing generic `T = str?` false rejection as a residual; do
+  not change the instance duty in this batch.
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.2.3 Extend the direct callee scan in `compiler/src/own/call_check.rs`
   with the must-source walk (intersection at branches, conservative at
   loops/defers) so the cross-frame form keeps one report when the store is
   provable, a later assignment cannot suppress an earlier store, and an
   unprovable store keeps the caller guard.
-- [ ] 1.3.1 Green: focused `borrow_store_integrity_*` suites and
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.3.1 Green: focused `borrow_store_integrity_*` suites and
   `RDC_ASAN=1` for the accepted controls.
-- [ ] 1.3.2 Implementation pins in
+  ✅ (completed: 2026-10-26 10:52)
+- [x] 1.3.2 Implementation pins in
   `compiler/tests/borrow_store_integrity_impl_test.rs` (cross-frame one-report,
   byte-identical re-emission) and the internal source-set/rollback pin in
   `compiler/src/own/tests.rs` (including a speculative temporary id reuse).
-- [ ] 1.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+  ✅ (completed: 2026-10-26 10:52)
+- [~] 1.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   out-slot/conditional self-store tests and record every expected change; close
   `DEF-543` through the roadmap skill with the commit and evidence; add the
   phase record to `05-findings.md`.
 
+  ⏳ (implemented: 2026-10-26 10:52)
 **Verify**: `make check` and `make verify`; focused ASAN clean; `DEF-543` Done.
 
 ---
