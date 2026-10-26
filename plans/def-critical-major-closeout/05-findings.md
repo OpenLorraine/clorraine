@@ -227,23 +227,35 @@ cannot proceed to Phase 3 until the rulings below.
 | RV-004 | 2 | MAJOR | indirect callee and module-initializer global writes were not tracked (`own/call.rs`, `own/expr.rs`) | resolved by AR-26 (no global index pin remains) |
 | RV-005 | 2 | MAJOR | a wildcard element move did not invalidate `initialized_elements` (`own/place.rs`) | resolved by AR-26 (the element initialized state was removed) |
 | RV-006 | 2 | MAJOR | `mentions_call` missed a call nested in an index/member (`own/place.rs`) | resolved (R4): the walk follows index/member bases; the indexed RHS pin is pinned |
-| RV-007 | 2 | MAJOR | six store-before-move-out ordering pins weakened to presence (`conditional_projection_residue_impl_test.rs`) | open — auto-design fix |
+| RV-007 | 2 | MAJOR | six store-before-move-out ordering pins weakened to presence (`conditional_projection_residue_impl_test.rs`) | resolved (R4): the branch-aware ordering helper restores the pins (`5ae64df`) |
 | RV-008 | 2 | MAJOR | the unplanned null-safe String shim made a moved source readable and was the ST-11 oracle (`runtime/shim_*.c`) | resolved (R3): the shim was reverted; the ST-11 non-alias control checks the sibling instead of reading the moved source |
 | SR-001 | 2 | MAJOR | the conditional element move was accepted although `spec/03` §4 / `spec/07` STR-12 require `E10026`; ST-9 encoded the acceptance | resolved (AR-26): follow the frozen spec; ST-9 retargeted; the acceptance machinery reverted |
-| SR-M-001 | 2 | CRITICAL | named-place fixed-array destination take creates no capture (`codegen/function.rs` fixed-array core); pre-existing, inside the changed function | open — user scope ruling |
-| SR-M-002 | 2 | CRITICAL | named-place take of a destination subobject creates no capture (`arm_consumes_target` exact spelling); pre-existing | open — user scope ruling |
-| SR-M-003 | 2 | CRITICAL | `take (cond ? named-dest : other)` loses the selected arm; the plan's literal ST-5 shape; pre-existing | open — user scope ruling |
-| SR-M-004 | 2 | CRITICAL | fixed-array conditional `take (cond ? …)` tests the materialization temp, not the selected arm; pre-existing | open — user scope ruling |
-| SR-M-006 | 2 | CRITICAL | a plain (borrow) parameter moved into an owned conditional store double-frees; outside the batch | open — file a separate backlog DEF |
-| SR-E-003 | 2 | MAJOR | the `__cl_rhs` self-read temporary does not reach conditional arms or raw-deref destinations; pre-existing sibling of DEF-465 | open — user scope ruling |
+| SR-M-001 | 2 | CRITICAL | named-place fixed-array destination take creates no capture (`codegen/function.rs` fixed-array core); pre-existing, inside the changed function | resolved (R2): the capture accepts the named-place take and clears after the branch; ASAN spec + impl |
+| SR-M-002 | 2 | CRITICAL | named-place take of a destination subobject creates no capture (`arm_consumes_target` exact spelling); pre-existing | resolved (R2): containment-based capture; the subobject range clears only the taken bytes; ASAN spec |
+| SR-M-003 | 2 | CRITICAL | `take (cond ? named-dest : other)` loses the selected arm; the plan's literal ST-5 shape; pre-existing | resolved (R2): the taken conditional's arm move records the capture; ASAN spec |
+| SR-M-004 | 2 | CRITICAL | fixed-array conditional `take (cond ? …)` tests the materialization temp, not the selected arm; pre-existing | resolved (R2): the fixed-array arm source move records the alias; ASAN spec |
+| SR-M-006 | 2 | CRITICAL | a plain (borrow) parameter moved into an owned conditional store double-frees; outside the batch | filed as `DEF-544` (Backlog) |
+| SR-E-003 | 2 | MAJOR | the `__cl_rhs` self-read temporary does not reach conditional arms or raw-deref destinations; pre-existing sibling of DEF-465 | resolved (R2): the temporary reaches conditional arms and raw-deref destinations; impl pins |
 | SR-S-002/SR-S-003 | 2 | MINOR | callable-field index guard; computed destination index false rejection | resolved by AR-26 (the index-pin machinery was reverted) |
 | RV-010/RV-013/SR-006 | 2 | MINOR | loosened pins; untested receiver/address-of spellings; latent array extent | report-only |
 
 The user's rulings (2026-10-26): follow the frozen spec (R1, AR-26); fix the
 pre-existing sibling spellings now and file SR-M-006 separately (R2); revert the
-runtime shim (R3); apply the eligible new-code fixes (R4). R1 is implemented and
-the derivative tests are retargeted. The remaining findings are the R2/R3/R4
-batch.
+runtime shim (R3); apply the eligible new-code fixes (R4). All four batches are
+implemented; each fix was red at the prior head and green with its tests. SR-M-006
+is filed as `DEF-544`. The fix diff awaits the one-pass re-review.
+
+## Phase 2 Review Fix Batch — 2026-10-26
+
+| Batch | Finding | Fix | Evidence |
+|---|---|---|---|
+| R1 (`e062cec`) | SR-001, RV-002…005 | follow the frozen v1 element-move rule: a different or unstable destination index reports `E10026`; a same-place stable self-arm stays a self-copy | raw-store ST-9 retargeted; conditional-projection spec 229 / impl 224 |
+| R3 (`80e0986`) | RV-008 | revert the unplanned null-safe String accessors; observe the emptied source without reading it | raw-store suite 19/19 under ASAN |
+| R4 (`1651cce`) | RV-001, RV-006 | array-parameter take extent is the whole array; `mentions_call` follows index/member bases | implementation suite 13/13; extent probe ASAN-clean |
+| R4 (`5ae64df`) | RV-007 | restore the six store-before-zero ordering pins with a branch-aware helper | conditional-projection implementation 224/224 |
+| R2 (`fix batch`) | SR-M-001…004 | named fixed-array/subobject/conditional takes create a capture; the fixed-array arm source and the taken conditional arm record the alias; the fixed-array path clears after the branch | four ASAN spec cases plus the implementation pins; each fails at the prior head |
+| R2 (`fix batch`) | SR-E-003 | the `__cl_rhs` self-read temporary reaches conditional arms and raw-deref destinations | two spec cases and two implementation pins; both red at the prior head |
+| R2 (filed) | SR-M-006 | plain borrow parameter moved into an owned conditional store | `DEF-544` (Backlog, critical) |
 
 ## Phase Records
 

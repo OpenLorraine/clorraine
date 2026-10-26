@@ -804,3 +804,62 @@ func main(): i32 {
         "deterministic: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// A conditional arm whose literal reads the destination fills the temporary
+/// inside the chosen branch, before the bytes are copied over.
+#[test]
+fn should_fill_a_conditional_arm_self_read_into_the_temporary() {
+    let tag = "condrhs";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.condrhs;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let y: i32[2] = [7, 8];
+    let c: bool = true;
+    a = c ? [a[1], a[0]] : y;
+    if (a[0] != 2) { return 9; }
+    if (a[1] != 1) { return 8; }
+    return 0;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_rawstore_condrhs_main(void)\n{");
+    assert_contains(tag, body, "i32 __cl_rhs_");
+    assert_contains(tag, body, "[0] = a[1];");
+    assert_contains(tag, body, "[1] = a[0];");
+    assert_contains(tag, body, "memcpy(&(a), &(__cl_rhs_");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}
+
+/// A raw-deref destination whose literal reads through the same pointer fills
+/// the temporary first, so every element reads the old bytes.
+#[test]
+fn should_fill_a_raw_destination_self_read_into_the_temporary() {
+    let tag = "rawrhs";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.rawstore.rawrhs;
+
+struct Box { data: i32[2]; }
+
+func main(): i32 {
+    let b: Box = Box { data: [1, 2] };
+    unsafe {
+        let p: raw Box = &b;
+        (*p).data = [(*p).data[1], (*p).data[0]];
+    }
+    if (b.data[0] != 2) { return 9; }
+    if (b.data[1] != 1) { return 8; }
+    return 0;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_rawstore_rawrhs_main(void)\n{");
+    assert_contains(tag, body, "i32 __cl_rhs_");
+    assert_contains(tag, body, "[0] = (*(p)).data[1];");
+    assert_contains(tag, body, "[1] = (*(p)).data[0];");
+    assert_contains(tag, body, "memcpy(&((*(&((*(p)).data)))), &(__cl_rhs_");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the program must run");
+}

@@ -10,7 +10,7 @@ use crate::ast::{BinaryOp, ScalarType};
 use crate::ir::{Value, ValueKind, ValuePiece};
 use crate::types::{is_signed_scalar, Ty, TyKind};
 
-use super::function::{arm_has_storage_root, value_moves_pointee, ArrayTarget};
+use super::function::{arm_has_storage_root, ArrayTarget};
 use super::render::{bounds_condition, signed_min};
 use super::types::scalar_of;
 use super::Emitter;
@@ -168,6 +168,7 @@ impl<'a> Emitter<'a> {
                             condition,
                             then_value,
                             else_value,
+                            false,
                             false,
                         );
                     } else if self.needs_drop(&ty) {
@@ -850,15 +851,13 @@ impl<'a> Emitter<'a> {
         let storage = arm_has_storage_root(arm);
         if storage {
             let source = self.value(arm);
-            // A raw-deref arm source records the consumed pointee against
-            // every live conditional save in the same comma sequence. This is
-            // the expression-form twin of the arm source move.
-            let move_out = if value_moves_pointee(arm) {
-                self.deref_move_zero_expr(arm, ty)
-                    .unwrap_or_else(|| self.move_zero_text_expr(&source, ty))
-            } else {
-                self.move_zero_text_expr(&source, ty)
-            };
+            // A storage arm is moved into the destination. When the arm is
+            // the source of a taken conditional, the move-out records the
+            // consumed subrange against every live conditional save in the
+            // same comma sequence.
+            let move_out = self
+                .storage_move_zero_expr(arm, ty)
+                .unwrap_or_else(|| self.move_zero_text_expr(&source, ty));
             format!("({target_c} = {value_text}, {move_out})")
         } else {
             format!("({target_c} = {value_text})")
@@ -960,10 +959,9 @@ impl<'a> Emitter<'a> {
             ValueKind::Member { .. } | ValueKind::Index { .. }
         )) && arm_has_storage_root(value));
         if storage && self.needs_drop(row_ty) {
-            let zero = match &value.kind {
-                ValueKind::Place(place) => self.move_zero_expr(place),
-                _ => self.move_zero_text_expr(&source, &self.substitute(&value.ty)),
-            };
+            let zero = self
+                .storage_move_zero_expr(value, row_ty)
+                .unwrap_or_else(|| self.move_zero_text_expr(&source, &self.substitute(&value.ty)));
             parts.push(zero);
         }
         Some(format!("({})", parts.join(", ")))
@@ -1418,17 +1416,20 @@ impl<'a> Emitter<'a> {
         Some(parts.join(", "))
     }
 
-    /// The move-out of a consumed non-place value as a comma operand.
+    /// The move-out of a consumed storage value as a comma operand.
     ///
-    /// A raw-deref `take` argument transfers its pointee, so the caller's
-    /// storage is emptied through the same rendered address the read used.
-    /// A projected member (`(*p).name`) empties only the selected member, so
-    /// the pointee's sibling fields stay owned. The guard expression runs
-    /// after the call, on the evaluated path only.
-    fn deref_move_zero_expr(&self, value: &Value, ty: &Ty) -> Option<String> {
-        if !value_moves_pointee(value) {
-            return None;
+    /// A raw-deref `take` argument transfers its pointee, a projected member
+    /// (`(*p).name`) empties only the selected member, and a named place names
+    /// its own storage. The move-out records the take capture in the same
+    /// comma sequence, so a skipped short-circuit right leaves the store's
+    /// save owned. The guard expression runs after the call, on the evaluated
+    /// path only.
+    fn storage_move_zero_expr(&self, value: &Value, ty: &Ty) -> Option<String> {
+        // A named place has its own array-parameter-aware zero helper.
+        if let ValueKind::Place(place) = &value.kind {
+            return Some(self.place_move_zero_expr(place));
         }
+        let address = self.take_alias_address(value)?;
         let rendered = self.value(value);
         let move_out = self.move_zero_text_expr(&rendered, ty);
         if self.take_capture.is_empty() {
@@ -1439,7 +1440,6 @@ impl<'a> Emitter<'a> {
         // capture is checked, because a nested materialization keeps the
         // outer store's save alive. The addresses are cast to unsigned long:
         // the comparison is a range test, not a pointer relational test.
-        let address = self.deref_value_address(value)?;
         let source = format!("((unsigned long)({address}))");
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
         let mut parts = Vec::new();
@@ -1809,7 +1809,7 @@ impl<'a> Emitter<'a> {
                     if !self.needs_drop(&ty) {
                         continue;
                     }
-                    if let Some(move_out) = self.deref_move_zero_expr(value, &ty) {
+                    if let Some(move_out) = self.storage_move_zero_expr(value, &ty) {
                         out.push(move_out);
                     }
                 }

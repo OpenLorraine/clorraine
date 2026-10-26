@@ -919,3 +919,170 @@ func main(): i32 {
     assert_no_asan("elementmove", &output);
     assert_exit("elementmove", &output, 0);
 }
+
+/// A named fixed-array destination taken inside its own condition is one
+/// ownership transfer: the callee frees the array and the saved old array is
+/// cleared, so the post-branch release is a no-op.
+#[test]
+fn should_keep_a_named_fixed_array_take_capture() {
+    let source = r#"module spec.rawstore.namedarray;
+
+import { String, stringOf } from std.text;
+
+struct A { items: String[2]; }
+
+func eatRows(take rows: String[2]): i32 {
+    return i32(len(rows[0])) - 2;
+}
+
+func main(): i32 {
+    let a: A = A { items: [stringOf("aa"), stringOf("bb")] };
+    let x: String[2] = [stringOf("xx"), stringOf("yy")];
+    let y: String[2] = [stringOf("mm"), stringOf("nn")];
+    let g: bool = true;
+    a.items = (g && eatRows(take a.items) == 0) ? x : y;
+    if (i32(len(a.items[0])) != 2) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("namedarray", source);
+    assert_no_asan("namedarray", &output);
+    assert_exit("namedarray", &output, 0);
+}
+
+/// A named subobject take inside its own store's condition consumes only that
+/// subobject: its saved bytes are cleared while the sibling stays owned.
+#[test]
+fn should_keep_a_named_subobject_take_capture() {
+    let source = r#"module spec.rawstore.namedsub;
+
+import { String, stringOf } from std.text;
+
+struct Pair { first: String; sibling: String; }
+
+func eat(take s: String): i32 {
+    return i32(len(s)) - 2;
+}
+
+func main(): i32 {
+    let pair: Pair = Pair { first: stringOf("aa"), sibling: stringOf("77") };
+    let x: Pair = Pair { first: stringOf("xx"), sibling: stringOf("88") };
+    let y: Pair = Pair { first: stringOf("yy"), sibling: stringOf("99") };
+    let g: bool = true;
+    pair = (g && eat(take pair.first) == 0) ? x : y;
+    if (i32(len(pair.first)) != 2) { return 9; }
+    if (i32(len(pair.sibling)) != 2) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("namedsub", source);
+    assert_no_asan("namedsub", &output);
+    assert_exit("namedsub", &output, 0);
+}
+
+/// A take of a conditional whose chosen arm is the destination itself is one
+/// ownership transfer: the arm move records the consumed save.
+#[test]
+fn should_keep_a_named_conditional_take_capture() {
+    let source = r#"module spec.rawstore.namedcond;
+
+import { String, stringOf } from std.text;
+
+func inner(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let v: String = stringOf("vv");
+    let x: String = stringOf("xx");
+    let y: String = stringOf("yyyy");
+    let z: String = stringOf("zzzzzz");
+    let g: bool = true;
+    let h: bool = true;
+    v = (g && inner(take (h ? v : z)) == 2) ? x : y;
+    return i32(len(v)) - 2;
+}
+"#;
+    let output = run_memory("namedcond", source);
+    assert_no_asan("namedcond", &output);
+    assert_exit("namedcond", &output, 0);
+}
+
+/// A fixed-array conditional operand taken inside its own store's condition
+/// records the chosen arm against the saved destination.
+#[test]
+fn should_keep_a_fixed_array_conditional_operand_capture() {
+    let source = r#"module spec.rawstore.arrayalt;
+
+import { String, stringOf } from std.text;
+
+struct A { items: String[2]; }
+
+func eatRows(take rows: String[2]): i32 {
+    return i32(len(rows[0])) - 2;
+}
+
+func main(): i32 {
+    let a: A = A { items: [stringOf("aa"), stringOf("bb")] };
+    let x: String[2] = [stringOf("xx"), stringOf("yy")];
+    let y: String[2] = [stringOf("mm"), stringOf("nn")];
+    let z: String[2] = [stringOf("pp"), stringOf("qq")];
+    let g: bool = true;
+    let h: bool = true;
+    unsafe {
+        let p: raw A = &a;
+        a.items = (g && eatRows(take (h ? (*p).items : z)) == 0) ? x : y;
+    }
+    if (i32(len(a.items[0])) != 2) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("arrayalt", source);
+    assert_no_asan("arrayalt", &output);
+    assert_exit("arrayalt", &output, 0);
+}
+
+/// A conditional arm whose literal reads the destination is evaluated into a
+/// temporary first, so every element reads the old array.
+#[test]
+fn should_evaluate_a_conditional_arm_literal_before_the_copy() {
+    let source = r#"module spec.rawstore.condrhs;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let y: i32[2] = [7, 8];
+    let c: bool = true;
+    a = c ? [a[1], a[0]] : y;
+    if (a[0] != 2) { return 9; }
+    if (a[1] != 1) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("condrhs", source);
+    assert_no_asan("condrhs", &output);
+    assert_exit("condrhs", &output, 0);
+}
+
+/// A fixed-array literal stored through a raw-deref destination uses the same
+/// temporary, so the element reads see the old bytes.
+#[test]
+fn should_evaluate_a_raw_destination_literal_before_the_copy() {
+    let source = r#"module spec.rawstore.rawrhs;
+
+struct Box { data: i32[2]; }
+
+func main(): i32 {
+    let b: Box = Box { data: [1, 2] };
+    unsafe {
+        let p: raw Box = &b;
+        (*p).data = [(*p).data[1], (*p).data[0]];
+    }
+    if (b.data[0] != 2) { return 9; }
+    if (b.data[1] != 1) { return 8; }
+    return 0;
+}
+"#;
+    let output = run_memory("rawrhs", source);
+    assert_no_asan("rawrhs", &output);
+    assert_exit("rawrhs", &output, 0);
+}

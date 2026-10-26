@@ -767,7 +767,11 @@ impl<'a> Emitter<'a> {
                         operand,
                     } => pointer_root_place(operand)
                         .is_some_and(|base| value_reads_base(value, base)),
-                    _ => false,
+                    // A raw pointer names its pointee storage; a literal that
+                    // reads through the same pointer root must use the
+                    // temporary, not the partly written destination.
+                    _ => pointer_root_place(pointer)
+                        .is_some_and(|base| value_reads_base(value, base)),
                 } || value_reads_alias(value);
                 if pointer_ty.is_fixed_array() {
                     // A fixed-array element is not assignable in C, so the
@@ -1862,6 +1866,7 @@ impl<'a> Emitter<'a> {
                 then_value,
                 else_value,
                 element_target,
+                literal_self_read,
             );
             return;
         }
@@ -2099,14 +2104,29 @@ impl<'a> Emitter<'a> {
         then_value: &Value,
         else_value: &Value,
         element_target: bool,
+        literal_self_read: bool,
     ) {
         if !self.needs_drop(ty) {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("    if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(target, ty, then_value, None, element_target);
+            self.emit_fixed_array_assign_arm(
+                target,
+                ty,
+                then_value,
+                None,
+                element_target,
+                literal_self_read,
+            );
             self.push("    } else {");
-            self.emit_fixed_array_assign_arm(target, ty, else_value, None, element_target);
+            self.emit_fixed_array_assign_arm(
+                target,
+                ty,
+                else_value,
+                None,
+                element_target,
+                literal_self_read,
+            );
             self.push("    }");
             return;
         }
@@ -2135,9 +2155,16 @@ impl<'a> Emitter<'a> {
         self.consumed_pointees(condition, &mut pointees);
         self.consumed_pointees(then_value, &mut pointees);
         self.consumed_pointees(else_value, &mut pointees);
-        let capture = pointees
-            .iter()
-            .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)))
+        // A named-place take of the destination is a place move-out; it also
+        // needs the capture. `arm_consumes_target` compares by containment, so
+        // a subobject take creates the capture and the runtime range decides.
+        let place_consumed = self.arm_consumes_target(condition, &target.text)
+            || self.arm_consumes_target(then_value, &target.text)
+            || self.arm_consumes_target(else_value, &target.text);
+        let capture = (place_consumed
+            || pointees
+                .iter()
+                .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee))))
             .then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
                 address: target.address.clone(),
@@ -2178,10 +2205,35 @@ impl<'a> Emitter<'a> {
         } else {
             self.push(&format!("        if ({condition_c}) {{"));
         }
-        self.emit_fixed_array_assign_arm(target, ty, then_value, Some(&save), element_target);
+        self.emit_fixed_array_assign_arm(
+            target,
+            ty,
+            then_value,
+            Some(&save),
+            element_target,
+            literal_self_read,
+        );
         self.push("        } else {");
-        self.emit_fixed_array_assign_arm(target, ty, else_value, Some(&save), element_target);
+        self.emit_fixed_array_assign_arm(
+            target,
+            ty,
+            else_value,
+            Some(&save),
+            element_target,
+            literal_self_read,
+        );
         self.push("        }");
+        // An arm-time take records the flag only while the chosen arm runs;
+        // clear the consumed save subrange after the branch as the scalar
+        // conditional store does.
+        if let Some(capture) = &alias_capture {
+            self.push(&format!("        if ({}) {{", capture.flag));
+            self.push(&format!(
+                "            memset((char *)({}) + ({}), 0, ({}));",
+                capture.save_base, capture.offset, capture.length
+            ));
+            self.push("        }");
+        }
         self.take_capture = saved_capture;
         self.emit_drop_expr(&save, ty);
         self.push("    }");
@@ -2349,7 +2401,7 @@ impl<'a> Emitter<'a> {
         let Some(target) = target else {
             return;
         };
-        self.emit_fixed_array_assign_arm(target, ty, arm, None, false);
+        self.emit_fixed_array_assign_arm(target, ty, arm, None, false, false);
     }
 
     /// Marks the caller storage a discarded place arm reads as used.
@@ -2411,6 +2463,7 @@ impl<'a> Emitter<'a> {
         arm: &Value,
         save: Option<&str>,
         element_target: bool,
+        literal_self_read: bool,
     ) {
         if let ValueKind::Conditional {
             condition,
@@ -2421,9 +2474,23 @@ impl<'a> Emitter<'a> {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("                if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(target, ty, then_value, save, element_target);
+            self.emit_fixed_array_assign_arm(
+                target,
+                ty,
+                then_value,
+                save,
+                element_target,
+                literal_self_read,
+            );
             self.push("                } else {");
-            self.emit_fixed_array_assign_arm(target, ty, else_value, save, element_target);
+            self.emit_fixed_array_assign_arm(
+                target,
+                ty,
+                else_value,
+                save,
+                element_target,
+                literal_self_read,
+            );
             self.push("                }");
             return;
         }
@@ -2486,7 +2553,29 @@ impl<'a> Emitter<'a> {
         }
         match &arm.kind {
             ValueKind::ArrayLit { elements, fill } => {
-                self.emit_array_assign_to(target, ty, elements, fill);
+                if literal_self_read {
+                    // Every element must read the old destination, so the
+                    // literal is evaluated into a zeroed temporary before the
+                    // bytes are copied in.
+                    let rhs = self.unique_local("__cl_rhs");
+                    self.push(&format!(
+                        "                {} = {};",
+                        declarator(ty, &rhs, &self.sema.table),
+                        self.empty_state(ty)
+                    ));
+                    let rhs_target = ArrayTarget::object(&rhs);
+                    self.emit_array_assign_to(&rhs_target, ty, elements, fill);
+                    self.push(&format!(
+                        "                memcpy({}, &({rhs}), {});",
+                        target.address, target.bytes
+                    ));
+                    self.push(&format!(
+                        "                memset(&({rhs}), 0, {});",
+                        target.bytes
+                    ));
+                } else {
+                    self.emit_array_assign_to(target, ty, elements, fill);
+                }
             }
             ValueKind::Call {
                 callee,
@@ -2569,6 +2658,7 @@ impl<'a> Emitter<'a> {
         if !self.needs_drop(&source_ty) {
             return;
         }
+        self.emit_take_alias(arm, &source_ty);
         if let ValueKind::Place(place) = &arm.kind {
             self.emit_move_zero_place(place, arm_c, &source_ty);
         } else {
@@ -3126,69 +3216,95 @@ impl<'a> Emitter<'a> {
     /// that stores the new value runs. The comparison is on the rendered C
     /// lvalue, so it matches the branch store's own target spelling.
     fn arm_consumes_target(&self, value: &Value, target_c: &str) -> bool {
+        self.arm_consumes_target_in(value, target_c, false)
+    }
+
+    /// The recursive walk behind [`Self::arm_consumes_target`].
+    ///
+    /// `materialized` is true inside a materialization: a taken conditional's
+    /// selected place arm is moved into the temporary, so it leaves the
+    /// caller's slot empty. A bare place outside one is only a read.
+    fn arm_consumes_target_in(
+        &self,
+        value: &Value,
+        target_c: &str,
+        materialized: bool,
+    ) -> bool {
         match &value.kind {
             ValueKind::Materialize {
                 value: inner,
                 move_outs,
                 ..
             } => {
-                move_outs.iter().any(|place| self.place(place) == target_c)
-                    || self.arm_consumes_target(inner, target_c)
+                move_outs
+                    .iter()
+                    .any(|place| place_may_overlap(&self.place(place), target_c))
+                    || self.arm_consumes_target_in(inner, target_c, true)
             }
             ValueKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => {
-                self.arm_consumes_target(condition, target_c)
-                    || self.arm_consumes_target(then_value, target_c)
-                    || self.arm_consumes_target(else_value, target_c)
+                self.arm_consumes_target_in(condition, target_c, materialized)
+                    || self.arm_consumes_target_in(then_value, target_c, materialized)
+                    || self.arm_consumes_target_in(else_value, target_c, materialized)
             }
-            ValueKind::Member { base, .. } => self.arm_consumes_target(base, target_c),
+            ValueKind::Place(place) => {
+                materialized && place_may_overlap(&self.place(place), target_c)
+            }
+            ValueKind::Member { base, .. } => {
+                self.arm_consumes_target_in(base, target_c, materialized)
+            }
             ValueKind::Index { base, index } => {
-                self.arm_consumes_target(base, target_c)
-                    || self.arm_consumes_target(index, target_c)
+                self.arm_consumes_target_in(base, target_c, materialized)
+                    || self.arm_consumes_target_in(index, target_c, materialized)
             }
-            ValueKind::Unary { operand, .. } => self.arm_consumes_target(operand, target_c),
+            ValueKind::Unary { operand, .. } => {
+                self.arm_consumes_target_in(operand, target_c, materialized)
+            }
             ValueKind::Binary { left, right, .. } => {
-                self.arm_consumes_target(left, target_c)
-                    || self.arm_consumes_target(right, target_c)
+                self.arm_consumes_target_in(left, target_c, materialized)
+                    || self.arm_consumes_target_in(right, target_c, materialized)
             }
-            ValueKind::Cast { value: inner, .. } => self.arm_consumes_target(inner, target_c),
+            ValueKind::Cast { value: inner, .. } => {
+                self.arm_consumes_target_in(inner, target_c, materialized)
+            }
             ValueKind::Call { args, receiver, .. } => {
-                receiver
-                    .as_deref()
-                    .is_some_and(|receiver| self.arm_consumes_target(receiver, target_c))
-                    || args
-                        .iter()
-                        .any(|arg| self.arm_consumes_target(arg, target_c))
+                receiver.as_deref().is_some_and(|receiver| {
+                    self.arm_consumes_target_in(receiver, target_c, materialized)
+                }) || args
+                    .iter()
+                    .any(|arg| self.arm_consumes_target_in(arg, target_c, materialized))
             }
             ValueKind::Intrinsic { args, .. } => args
                 .iter()
-                .any(|arg| self.arm_consumes_target(arg, target_c)),
+                .any(|arg| self.arm_consumes_target_in(arg, target_c, materialized)),
             ValueKind::StructLit { fields, .. } => fields
                 .iter()
-                .any(|(_, field)| self.arm_consumes_target(field, target_c)),
+                .any(|(_, field)| self.arm_consumes_target_in(field, target_c, materialized)),
             ValueKind::ArrayLit { elements, fill } => {
                 elements
                     .iter()
-                    .any(|element| self.arm_consumes_target(element, target_c))
-                    || fill
-                        .as_deref()
-                        .is_some_and(|fill| self.arm_consumes_target(fill, target_c))
+                    .any(|element| self.arm_consumes_target_in(element, target_c, materialized))
+                    || fill.as_deref().is_some_and(|fill| {
+                        self.arm_consumes_target_in(fill, target_c, materialized)
+                    })
             }
             ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
                 ValuePiece::Literal(_) => false,
-                ValuePiece::Placeholder(inner) => self.arm_consumes_target(inner, target_c),
+                ValuePiece::Placeholder(inner) => {
+                    self.arm_consumes_target_in(inner, target_c, materialized)
+                }
             }),
             ValueKind::Closure { captures, .. } => captures
                 .iter()
-                .any(|capture| self.arm_consumes_target(capture, target_c)),
+                .any(|capture| self.arm_consumes_target_in(capture, target_c, materialized)),
             ValueKind::ClosureCall { callable, args } => {
-                self.arm_consumes_target(callable, target_c)
+                self.arm_consumes_target_in(callable, target_c, materialized)
                     || args
                         .iter()
-                        .any(|arg| self.arm_consumes_target(arg, target_c))
+                        .any(|arg| self.arm_consumes_target_in(arg, target_c, materialized))
             }
             _ => false,
         }
@@ -3315,7 +3431,7 @@ impl<'a> Emitter<'a> {
     /// A raw-deref take names its pointee through the pointer; a named-place
     /// take names the place itself. A fixed-array parameter already is the
     /// array's address, so it takes no address-of operator.
-    fn take_alias_address(&self, value: &Value) -> Option<String> {
+    pub(super) fn take_alias_address(&self, value: &Value) -> Option<String> {
         match &value.kind {
             ValueKind::Place(place) => {
                 Some(self.array_source_address(value, &self.place(place)))
@@ -4193,6 +4309,21 @@ fn value_reads_base(value: &Value, target: &Place) -> bool {
     value_reads_place(value, &|place| place.base == target.base)
 }
 
+/// True when one rendered place may name the same storage as another.
+///
+/// An exact place is the obvious case; a projection of either place may also
+/// overlap it. The runtime range capture decides the taken subrange, so this
+/// only has to be conservative about containment.
+fn place_may_overlap(place: &str, target: &str) -> bool {
+    place == target
+        || place
+            .strip_prefix(target)
+            .is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+        || target
+            .strip_prefix(place)
+            .is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+}
+
 /// The root place a pointer's addressed projection reads.
 ///
 /// A store pointer is `&(place)` or `&(place.projection)`, so walking the
@@ -4204,6 +4335,12 @@ fn pointer_root_place(value: &Value) -> Option<&Place> {
         ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
             pointer_root_place(base)
         }
+        // A raw-deref operand projects through the pointer, so its root place
+        // is the pointer binding itself.
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } => pointer_root_place(operand),
         _ => None,
     }
 }
