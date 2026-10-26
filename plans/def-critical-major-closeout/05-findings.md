@@ -211,6 +211,43 @@ concrete parameter alias is the specification case. The `a[0]` fill twin keeps
 the per-element fill expression; both elements read the old destination, so
 `[3, 3]` holds.
 
+## Phase 2 Review — 2026-10-26
+
+Four lenses (correctness, memory safety, emission integrity, semantics) reviewed
+the phase diff against baseline `9cbe86990b8d601a10a99e098a5a720d7d0382c4`.
+The filed eleven DEFs' own specification and implementation cases are green, but
+the review found new-code escapes and pre-existing sibling spellings. The phase
+cannot proceed to Phase 3 until the rulings below.
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-001 | 2 | CRITICAL | take range: a C-adjusted array parameter's source extent is one element (`function.rs` / `guards.rs` extent helpers) | open — auto-design fix |
+| RV-002 | 2 | MAJOR | `constant_index` resolves a shadowing local as the module global (`own/expr.rs`) | open — auto-design fix |
+| RV-003 | 2 | MAJOR | wildcard element self-skip on distinct run-time indices (`own/expr.rs`) | open — depends on SR-001 |
+| RV-004 | 2 | MAJOR | indirect callee and module-initializer global writes are not tracked (`own/call.rs`, `own/expr.rs`) | open — auto-design fix |
+| RV-005 | 2 | MAJOR | a wildcard element move does not invalidate `initialized_elements` (`own/place.rs`) | open — auto-design fix |
+| RV-006 | 2 | MAJOR | `mentions_call` misses a call nested in an index/member (`own/place.rs`) | open — auto-design fix |
+| RV-007 | 2 | MAJOR | six store-before-move-out ordering pins weakened to presence (`conditional_projection_residue_impl_test.rs`) | open — auto-design fix |
+| RV-008 | 2 | MAJOR | the unplanned null-safe String shim makes a moved source readable and is the ST-11 oracle (`runtime/shim_*.c`) | open — user scope ruling |
+| SR-001 | 2 | MAJOR | the conditional element move is accepted although `spec/03` §4 / `spec/07` STR-12 require `E10026`; ST-9 encodes the acceptance | open — user spec ruling |
+| SR-M-001 | 2 | CRITICAL | named-place fixed-array destination take creates no capture (`codegen/function.rs` fixed-array core); pre-existing, inside the changed function | open — user scope ruling |
+| SR-M-002 | 2 | CRITICAL | named-place take of a destination subobject creates no capture (`arm_consumes_target` exact spelling); pre-existing | open — user scope ruling |
+| SR-M-003 | 2 | CRITICAL | `take (cond ? named-dest : other)` loses the selected arm; the plan's literal ST-5 shape; pre-existing | open — user scope ruling |
+| SR-M-004 | 2 | CRITICAL | fixed-array conditional `take (cond ? …)` tests the materialization temp, not the selected arm; pre-existing | open — user scope ruling |
+| SR-M-006 | 2 | CRITICAL | a plain (borrow) parameter moved into an owned conditional store double-frees; outside the batch | open — file a separate backlog DEF |
+| SR-E-003 | 2 | MAJOR | the `__cl_rhs` self-read temporary does not reach conditional arms or raw-deref destinations; pre-existing sibling of DEF-465 | open — user scope ruling |
+| SR-S-002/SR-S-003 | 2 | MINOR | callable-field index guard; computed destination index false rejection | report-only |
+| RV-010/RV-013/SR-006 | 2 | MINOR | loosened pins; untested receiver/address-of spellings; latent array extent | report-only |
+
+The new-code findings (RV-001…RV-007) are eligible auto-design fixes within the
+phase's mechanisms. The runtime shim (RV-008) was not in the plan; reverting it
+and observing the emptied source without reading a moved value is the smaller
+option. SR-001 is reserved because the frozen spec forbids the element move that
+ST-9 accepts. The pre-existing sibling spellings (SR-M-001…004, SR-E-003) are the
+same changed constructs' other spellings; fixing them now keeps the Batch B
+acceptance honest, but it is a scope decision for the user. SR-M-006 is outside
+the batch and needs its own roadmap row.
+
 ## Phase Records
 
 Execution adds one section per phase with the revalidation results, review
