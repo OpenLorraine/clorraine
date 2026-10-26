@@ -845,10 +845,16 @@ impl<'a> Emitter<'a> {
         let storage = arm_has_storage_root(arm);
         if storage {
             let source = self.value(arm);
-            format!(
-                "({target_c} = {value_text}, {})",
+            // A raw-deref arm source records the consumed pointee against
+            // every live conditional save in the same comma sequence. This is
+            // the expression-form twin of the arm source move.
+            let move_out = if value_moves_pointee(arm) {
+                self.deref_move_zero_expr(arm, ty)
+                    .unwrap_or_else(|| self.move_zero_text_expr(&source, ty))
+            } else {
                 self.move_zero_text_expr(&source, ty)
-            )
+            };
+            format!("({target_c} = {value_text}, {move_out})")
         } else {
             format!("({target_c} = {value_text})")
         }
@@ -1418,37 +1424,46 @@ impl<'a> Emitter<'a> {
         if !value_moves_pointee(value) {
             return None;
         }
-        let source = self.value(value);
-        let move_out = self.move_zero_text_expr(&source, ty);
-        let Some(capture) = &self.take_capture else {
+        let rendered = self.value(value);
+        let move_out = self.move_zero_text_expr(&rendered, ty);
+        if self.take_capture.is_empty() {
             return Some(move_out);
-        };
-        // The flag is set here, in the move-out's own comma sequence, so a
-        // skipped take never marks the save consumed. The addresses are cast to
-        // `void *`: a raw pointer cast can reach the destination's storage
-        // through a different nominal type, and an unrelated object simply
-        // compares unequal without a cross-type pointer warning.
+        }
+        // The flag and range are set here, in the move-out's own comma
+        // sequence, so a skipped take never marks a save consumed. Every live
+        // capture is checked, because a nested materialization keeps the
+        // outer store's save alive. The addresses are cast to unsigned long:
+        // the comparison is a range test, not a pointer relational test.
         let address = self.deref_value_address(value)?;
         let source = format!("((unsigned long)({address}))");
-        let destination = format!("((unsigned long)({}))", capture.address);
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
-        let destination_end =
-            format!("({destination} + (unsigned long)({}))", capture.save_bytes);
-        let contains = format!(
-            "((({source} >= {destination}) && ({source} < {destination_end})) || \
-             (({destination} >= {source}) && ({destination} < {source_end})))"
-        );
-        let start = format!("(({source} > {destination}) ? {source} : {destination})");
-        let end = format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
-        Some(format!(
-            "({flag} = ({flag} || {contains})), \
-             ({offset} = ({contains}) ? ({start}) - ({destination}) : {offset}), \
-             ({length} = ({contains}) ? ({end}) - ({start}) : {length}), \
-             {move_out}",
-            flag = capture.flag,
-            offset = capture.offset,
-            length = capture.length,
-        ))
+        let mut parts = Vec::new();
+        for capture in &self.take_capture {
+            let destination = format!("((unsigned long)({}))", capture.address);
+            let destination_end =
+                format!("({destination} + (unsigned long)({}))", capture.save_bytes);
+            let contains = format!(
+                "((({source} >= {destination}) && ({source} < {destination_end})) || \
+                 (({destination} >= {source}) && ({destination} < {source_end})))"
+            );
+            let start = format!("(({source} > {destination}) ? {source} : {destination})");
+            let end =
+                format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
+            parts.push(format!(
+                "({flag} = ({flag} || {contains}))",
+                flag = capture.flag
+            ));
+            parts.push(format!(
+                "({offset} = ({contains}) ? ({start}) - ({destination}) : {offset})",
+                offset = capture.offset
+            ));
+            parts.push(format!(
+                "({length} = ({contains}) ? ({end}) - ({start}) : {length})",
+                length = capture.length
+            ));
+        }
+        parts.push(move_out);
+        Some(format!("({})", parts.join(", ")))
     }
 
     /// The plain rendering of a value and its always-evaluated operand guards.

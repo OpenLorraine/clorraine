@@ -9409,10 +9409,11 @@ fn should_pin_the_owning_deref_arm_materialization() {
     assert_follows(
         tag,
         body,
-        "if (flag) {",
+        "if (__cl_cond_1) {",
         "__cl_tmp0 = cl_alt__String(p, q);",
     );
-    assert_follows(tag, body, "r = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+    assert_contains(tag, body, "r = *(__cl_tmp0);");
+    assert_contains(tag, body, "*(__cl_tmp0) = NULL;");
 }
 
 /// The guarded take of a place-pointer deref empties the pointee on the
@@ -10189,9 +10190,9 @@ fn should_keep_a_guarded_field_source_on_the_evaluated_path() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = *(q), (*(q) = NULL))",
+        ".s = *(q), (*(q) = NULL)",
     );
-    assert_absent(tag, body, "__cl_owned0.s = *(q);");
+    assert_absent(tag, body, ".s = *(q);");
     let exit = run_host_c(tag, &scratch, &emitted);
     assert_eq!(
         exit, 0,
@@ -10310,13 +10311,13 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = s, (s = NULL))",
+        ".s = s, (s = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = t, (t = NULL))",
+        ".s = t, (t = NULL)",
     );
     assert_absent(tag, body, "(ClBox){ s }");
 
@@ -10329,13 +10330,13 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = *(q), (*(q) = NULL))",
+        ".s = *(q), (*(q) = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = *(r), (*(r) = NULL))",
+        ".s = *(r), (*(r) = NULL)",
     );
 
     let body = function_body(
@@ -10347,13 +10348,13 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = h.s, (h.s = NULL))",
+        ".s = h.s, (h.s = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = k.s, (k.s = NULL))",
+        ".s = k.s, (k.s = NULL)",
     );
 
     let body = function_body(
@@ -10365,13 +10366,13 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.inner.s = s, (s = NULL))",
+        ".inner.s = s, (s = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.inner.s = t, (t = NULL))",
+        ".inner.s = t, (t = NULL)",
     );
 
     let body = function_body(
@@ -10383,25 +10384,25 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.ss[0] = a, (a = NULL))",
+        ".ss[0] = a, (a = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.ss[1] = b, (b = NULL))",
+        ".ss[1] = b, (b = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.ss[0] = c, (c = NULL))",
+        ".ss[0] = c, (c = NULL)",
     );
     assert_on_line_of(
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.ss[1] = d, (d = NULL))",
+        ".ss[1] = d, (d = NULL)",
     );
 
     let body = function_body(
@@ -10413,7 +10414,7 @@ fn should_pin_the_owned_literal_field_move_at_every_storage_position() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = s, (s = NULL))",
+        ".s = s, (s = NULL)",
     );
     assert_absent(tag, body, "(ClBox){ s }");
 }
@@ -10469,7 +10470,7 @@ fn should_pin_the_owned_literal_field_move_positions() {
         tag,
         body,
         "if ((g ||",
-        "(__cl_owned0.s = s, (s = NULL))",
+        ".s = s, (s = NULL)",
     );
 
     let body = function_body(
@@ -10481,7 +10482,7 @@ fn should_pin_the_owned_literal_field_move_positions() {
         tag,
         body,
         "if ((g &&",
-        "(__cl_owned0.s = s, (s = NULL))",
+        ".s = s, (s = NULL)",
     );
 
     let body = function_body(
@@ -10493,7 +10494,7 @@ fn should_pin_the_owned_literal_field_move_positions() {
         tag,
         body,
         "__cl_ret = (g ?",
-        "(__cl_owned0.s = s, (s = NULL))",
+        ".s = s, (s = NULL)",
     );
 }
 
@@ -12603,10 +12604,11 @@ func main(): i32 {
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439alias_main(void)\n{");
     assert_contains(tag, body, "ClString __cl_save_1 = v;");
     assert_contains(tag, body, "bool __cl_take_alias_1 = 0;");
-    assert_contains(
-        tag,
-        body,
-        "(__cl_take_alias_1 = (__cl_take_alias_1 || (((void *)(p)) == ((void *)(&(v))))))",
+    assert_contains(tag, body, "unsigned long __cl_take_off_1 = 0;");
+    assert_contains(tag, body, "unsigned long __cl_take_len_1 = 0;");
+    assert!(
+        body.contains("((unsigned long)(p))") && body.contains("((unsigned long)(&(v)))"),
+        "{tag}: the take range must compare the source and destination addresses; body:\n{body}"
     );
     assert!(
         body.contains("bool __cl_cond") && body.contains("= (g && "),
@@ -12621,8 +12623,10 @@ func main(): i32 {
         .nth(alias_line + 1)
         .unwrap_or_else(|| panic!("{tag}: the alias branch has no body; body:\n{body}"));
     assert!(
-        zeroing.contains("__cl_save_1 = NULL;"),
-        "{tag}: the aliasing branch must zero the save; line:\n{zeroing}"
+        zeroing.contains(
+            "memset((char *)(&(__cl_save_1)) + (__cl_take_off_1), 0, (__cl_take_len_1));"
+        ),
+        "{tag}: the aliasing branch must clear the consumed save range; line:\n{zeroing}"
     );
     assert_contains(tag, body, "v = x;");
     assert_contains(tag, body, "v = y;");
@@ -12659,10 +12663,9 @@ func main(): i32 {
     );
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_p439nonalias_main(void)\n{");
     assert_contains(tag, body, "p = &(w);");
-    assert_contains(
-        tag,
-        body,
-        "(__cl_take_alias_1 = (__cl_take_alias_1 || (((void *)(p)) == ((void *)(&(v))))))",
+    assert!(
+        body.contains("((unsigned long)(p))") && body.contains("((unsigned long)(&(v)))"),
+        "{tag}: the take range must compare the source and destination addresses; body:\n{body}"
     );
     assert_contains(tag, body, "v = y;");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
@@ -13003,15 +13006,16 @@ func main(): i32 {
     );
 }
 
-/// A plain raw-deref arm move does not set the take's alias flag.
+/// A raw-deref arm source records the save it consumes; an unrelated take
+/// does not.
 ///
 /// `p439plainarm` stores `*p` in the then arm and calls a `take` in the else
-/// arm, so a capture exists. The then arm's source move must not record an
-/// alias: the only flag assignment belongs to the else arm's take. The
-/// program's value loss comes from the pre-existing self-move of `*p` into its
-/// own storage and is not pinned here.
+/// arm. The then arm's source is the destination's own pointee, so it records
+/// the save; the else take reads `*q`, which is a different object, so it does
+/// not. The program's value loss comes from the pre-existing self-move of `*p`
+/// into its own storage and is not pinned here.
 #[test]
-fn should_not_mark_a_plain_raw_deref_arm_as_a_take() {
+fn should_record_a_raw_arm_source_and_ignore_an_unrelated_take() {
     let tag = "p439plainarm";
     let (_scratch, emitted) = emit_host(
         tag,
@@ -13040,16 +13044,16 @@ func main(): i32 {
         &emitted,
         "cl_spec_cprimpl_p439plainarm_main(void)\n{",
     );
-    assert_eq!(
-        body.matches("__cl_take_alias_1 = 1;").count(),
-        1,
-        "{tag}: only the take arm may set the alias flag; body:\n{body}"
+    assert_contains(tag, body, "v = *(p);");
+    assert_contains(tag, body, "*(p) = NULL;");
+    assert!(
+        body.contains("((unsigned long)(p))") && body.contains("((unsigned long)(&(v)))"),
+        "{tag}: the raw arm source must compare the pointee and destination addresses; body:\n{body}"
     );
-    assert_follows(tag, body, "v = *(p);", "*(p) = NULL;");
-    assert_contains(
-        tag,
-        body,
-        "if (((void *)(q)) == ((void *)(&(v)))) {",
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_p439plainarm_takeS(*(q))").count(),
+        1,
+        "{tag}: the unrelated take must evaluate once; body:\n{body}"
     );
 }
 
@@ -13092,10 +13096,9 @@ func main(): i32 {
         &emitted,
         "cl_spec_cprimpl_p439crosstype_main(void)\n{",
     );
-    assert_contains(
-        tag,
-        body,
-        "(((void *)(p)) == ((void *)(&(v))))",
+    assert!(
+        body.contains("((unsigned long)(p))") && body.contains("((unsigned long)(&(v)))"),
+        "{tag}: the take range must compare the source and destination addresses; body:\n{body}"
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
 
@@ -13128,10 +13131,9 @@ func main(): i32 {
         &emitted,
         "cl_spec_cprimpl_p439castalias_main(void)\n{",
     );
-    assert_contains(
-        tag,
-        body,
-        "(((void *)(p)) == ((void *)(&(v))))",
+    assert!(
+        body.contains("((unsigned long)(p))") && body.contains("((unsigned long)(&(v)))"),
+        "{tag}: the take range must compare the source and destination addresses; body:\n{body}"
     );
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0, "{tag}: the store must run");
 }

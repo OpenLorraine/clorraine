@@ -2064,9 +2064,13 @@ impl<'a> Emitter<'a> {
             self.push(&format!("        unsigned long {} = 0;", capture.offset));
             self.push(&format!("        unsigned long {} = 0;", capture.length));
         }
-        let saved_capture = std::mem::replace(&mut self.take_capture, capture);
+        let alias_capture = capture.clone();
+        let mut live_captures = self.take_capture.clone();
+        if let Some(capture) = capture {
+            live_captures.push(capture);
+        }
+        let saved_capture = std::mem::replace(&mut self.take_capture, live_captures);
         self.emit_guards(condition);
-        let alias_capture = self.take_capture.clone();
         let condition_c = self.value(condition);
         if has_capture {
             // Settle the take range before either arm runs, exactly as the
@@ -2876,7 +2880,12 @@ impl<'a> Emitter<'a> {
             self.push(&format!("    unsigned long {} = 0;", capture.offset));
             self.push(&format!("    unsigned long {} = 0;", capture.length));
         }
-        let saved_capture = std::mem::replace(&mut self.take_capture, capture);
+        let alias_capture = capture.clone();
+        let mut live_captures = self.take_capture.clone();
+        if let Some(capture) = capture {
+            live_captures.push(capture);
+        }
+        let saved_capture = std::mem::replace(&mut self.take_capture, live_captures);
         self.emit_guards(condition);
         // A condition whose evaluation consumed the destination already
         // transferred the old value to the callee, so the saved old value must
@@ -2887,7 +2896,6 @@ impl<'a> Emitter<'a> {
             }
         }
         let condition_c = self.value(condition);
-        let alias_capture = self.take_capture.clone();
         if has_capture {
             // The condition is evaluated once into a local so the alias range
             // is settled before the branches: the consumed subrange of the
@@ -3142,6 +3150,7 @@ impl<'a> Emitter<'a> {
                 out.extend(value_move_outs.iter());
                 self.consumed_pointees(inner, out);
             }
+            ValueKind::DiscardThen { value: inner, .. } => self.consumed_pointees(inner, out),
             ValueKind::Binary { left, right, .. } => {
                 self.consumed_pointees(left, out);
                 self.consumed_pointees(right, out);
@@ -3151,7 +3160,13 @@ impl<'a> Emitter<'a> {
                 self.consumed_pointees(base, out);
                 self.consumed_pointees(index, out);
             }
-            ValueKind::Unary { operand, .. } => self.consumed_pointees(operand, out),
+            ValueKind::Unary { op, operand } => {
+                if matches!(op, UnaryOp::Deref) {
+                    out.push(value);
+                } else {
+                    self.consumed_pointees(operand, out);
+                }
+            }
             ValueKind::Cast { value: inner, .. } => self.consumed_pointees(inner, out),
             ValueKind::Call { args, receiver, .. } => {
                 if let Some(receiver) = receiver {
@@ -3226,42 +3241,46 @@ impl<'a> Emitter<'a> {
     ///
     /// Only the `take` move-out paths call this. A plain arm source move or a
     /// store's own source copy does not consume the save, so it must not set
-    /// the flag. The comparison uses the taken value's address and a `void *`
-    /// cast: a raw pointer cast that reaches the destination through a
-    /// different nominal type is still recognized, an unrelated object simply
-    /// compares unequal, and no cross-type pointer comparison is emitted.
+    /// the flag. The comparison uses the taken value's address and every live
+    /// capture's destination range through integer addresses, so a raw pointer
+    /// cast that reaches a destination through a different nominal type is
+    /// still recognized and an unrelated object simply compares unequal.
     pub(super) fn emit_take_alias(&mut self, value: &Value, ty: &Ty) {
         if !self.needs_drop(ty) {
             return;
         }
-        let Some(capture) = self.take_capture.clone() else {
+        let captures = self.take_capture.clone();
+        if captures.is_empty() {
             return;
-        };
+        }
         let Some(address) = self.deref_value_address(value) else {
             return;
         };
         let source = format!("((unsigned long)({address}))");
-        let destination = format!("((unsigned long)({}))", capture.address);
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
-        let destination_end =
-            format!("({destination} + (unsigned long)({}))", capture.save_bytes);
-        let contains = format!(
-            "((({source} >= {destination}) && ({source} < {destination_end})) || \
-             (({destination} >= {source}) && ({destination} < {source_end})))"
-        );
-        let start = format!("(({source} > {destination}) ? {source} : {destination})");
-        let end = format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
-        self.push(&format!("    if ({contains}) {{"));
-        self.push(&format!("        {} = 1;", capture.flag));
-        self.push(&format!(
-            "        {} = ({start}) - ({destination});",
-            capture.offset
-        ));
-        self.push(&format!(
-            "        {} = ({end}) - ({start});",
-            capture.length
-        ));
-        self.push("    }");
+        for capture in &captures {
+            let destination = format!("((unsigned long)({}))", capture.address);
+            let destination_end =
+                format!("({destination} + (unsigned long)({}))", capture.save_bytes);
+            let contains = format!(
+                "((({source} >= {destination}) && ({source} < {destination_end})) || \
+                 (({destination} >= {source}) && ({destination} < {source_end})))"
+            );
+            let start = format!("(({source} > {destination}) ? {source} : {destination})");
+            let end =
+                format!("(({source_end} < {destination_end}) ? {source_end} : {destination_end})");
+            self.push(&format!("    if ({contains}) {{"));
+            self.push(&format!("        {} = 1;", capture.flag));
+            self.push(&format!(
+                "        {} = ({start}) - ({destination});",
+                capture.offset
+            ));
+            self.push(&format!(
+                "        {} = ({end}) - ({start});",
+                capture.length
+            ));
+            self.push("    }");
+        }
     }
 
     /// Empties the storage an arm's rendered value copied into the destination.
@@ -3278,6 +3297,12 @@ impl<'a> Emitter<'a> {
         // read no storage the store must empty.
         if self.carries_null_shape(arm) && self.carries_null_value(ty) {
             return;
+        }
+        // A raw-deref source moves the pointee into the destination. Every
+        // live conditional save whose storage contains that pointee is
+        // consumed, even when the source move belongs to a nested store.
+        if value_moves_pointee(arm) {
+            self.emit_take_alias(arm, ty);
         }
         match &arm.kind {
             ValueKind::Place(place) => {

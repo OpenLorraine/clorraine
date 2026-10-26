@@ -246,16 +246,15 @@ pub(super) struct Emitter<'a> {
     /// True while a planning pass runs; it suppresses output but records the
     /// labels the real pass needs.
     pub(super) suppress_output: bool,
-    /// The taking conditional store currently being emitted, when its saved
-    /// destination may be consumed through a raw pointer.
+    /// The live conditional stores whose saved destination may be consumed
+    /// through a raw pointer.
     ///
-    /// A raw-deref `take` in the store's condition or arms may empty the same
-    /// storage the store saved. The move-out records an alias flag in its own
-    /// comma sequence, so the flag is set only when that take actually ran and
-    /// its taken value names the saved destination. The store then zeroes the
-    /// save before either arm runs. The capture is restored after one store,
-    /// so a later store starts without a stale flag.
-    pub(super) take_capture: Option<TakeCapture>,
+    /// A nested materialization keeps its own save while the outer store is
+    /// still live, so one optional capture loses the outer flag. The stack
+    /// holds every live capture; a take sets each matching flag and range, and
+    /// each store clears its own saved subrange before its arms run. A store
+    /// restores the stack it found when it finishes.
+    pub(super) take_capture: Vec<TakeCapture>,
     /// The diagnostic sink, for the large-stack-frame warning.
     diagnostics: &'a mut crate::diag::Diagnostics,
 }
@@ -348,7 +347,7 @@ impl<'a> Emitter<'a> {
             copy_region: None,
             loop_entry: BTreeMap::new(),
             suppress_output: false,
-            take_capture: None,
+            take_capture: Vec::new(),
             diagnostics,
         };
         emitter.collect();
