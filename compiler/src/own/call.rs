@@ -318,6 +318,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Some(Value::new(field_ty, kind))
     }
 
+    /// True when a call may write a global of the current module.
+    ///
+    /// A same-module function body can assign any module binding, and a call
+    /// through a func-typed local can reach one. A call to an imported or
+    /// otherwise cross-module function cannot name this module's globals.
+    fn callee_may_write_current_globals(&self, callee: &Expr) -> bool {
+        match &callee.kind {
+            ExprKind::Name(name) => {
+                if let Some(id) = self.lookup(name) {
+                    return matches!(
+                        self.bindings[id].ty.kind,
+                        TyKind::Func(_) | TyKind::Param(_)
+                    );
+                }
+                self.module
+                    .decl(name)
+                    .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Func))
+            }
+            ExprKind::Qualified(name) => {
+                let prefix = format!("{}.", self.module.name);
+                name.to_dotted()
+                    .strip_prefix(&prefix)
+                    .and_then(|rest| self.module.decl(rest))
+                    .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Func))
+            }
+            _ => false,
+        }
+    }
+
     /// Lowers a call to its callable value, name, type arguments, and arguments.
     ///
     /// A dot-call's receiver becomes the first argument, matching the
@@ -332,6 +361,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         type_args: &'a [crate::ast::Type],
         args: &'a [Arg],
     ) -> LoweredCall {
+        // A same-module function may write a mutable module binding, so a
+        // later destination pin must not treat a global initializer as still
+        // current.
+        if self.callee_may_write_current_globals(callee) {
+            self.called_current_module = true;
+        }
         // A name that resolves to a func-typed local or parameter is called
         // through its binding, so the IR carries the binding's own spelling;
         // that keeps a shadowing or sanitized local distinct from any module

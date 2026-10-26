@@ -165,6 +165,20 @@ pub(super) struct PlaceState {
     pub(super) moved_if_owning: BTreeSet<Vec<ir::Projection>>,
     /// Top-level fields moved out, which makes whole use invalid.
     pub(super) partial: BTreeSet<String>,
+    /// Element paths consumed by a whole-element move or a conditional store
+    /// source.
+    ///
+    /// A run-time element path is a wildcard: the read of any element at that
+    /// position must be rejected because the selector may name it. The set is
+    /// kept apart from `partial`, which names struct fields only, because an
+    /// array element is a whole value rather than a partial field.
+    pub(super) moved_elements: BTreeSet<Vec<ir::Projection>>,
+    /// Element paths a definite store wrote on every path reaching this point.
+    ///
+    /// A later read of the written element (or of a sub-path of it) is safe
+    /// even when a wildcard moved path covers the same position: the store
+    /// re-initialized exactly that element.
+    pub(super) initialized_elements: BTreeSet<Vec<ir::Projection>>,
     /// The binding is assigned on all paths reaching this point.
     pub(super) initialized: bool,
     /// Top-level fields written on all paths reaching this point.
