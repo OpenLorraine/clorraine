@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-24
-> **Progress**: 0/76 tasks (0%)
+> **Last Updated**: 2026-10-25
+> **Progress**: 6/76 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -41,11 +41,11 @@ through the roadmap skill with evidence.
 
 ## Phase 0: Revalidation and Baseline
 
-> **Phase baseline tree**: recorded at phase start by the exec-plan skill
+> **Phase baseline tree**: `bdf231350a5e3371a40a524c0f9dc5ddc0d6ee55`
 > **Lenses**: correctness, memory safety, roadmap hygiene
 > **Reasoning**: medium — no behavior changes; establish which rows are real
 
-- [ ] 0.1.1 Build the workspace (`cargo build --workspace` in the container) and
+- [x] 0.1.1 Build the workspace (`cargo build --workspace` in the container) and
   confirm `target/debug/clc` matches the phase baseline before probing. Then
   re-run the evidence probe for all 35 DEF rows (34 active plus the stale
   `DEF-470`) and record the current diagnostic/ASAN/C result per row in
@@ -53,22 +53,27 @@ through the roadmap skill with evidence.
   `E10020` proof (the row is already Done in the working tree). Revalidate
   `DEF-506`/`DEF-507` explicitly. The binary build comes before the probes; the
   full clean baseline is 0.2.1.
-- [ ] 0.1.2 Verify `plans/00-roadmap.md` points the 34 active rows at this plan,
+  ✅ (completed: 2026-10-25 23:47)
+- [x] 0.1.2 Verify `plans/00-roadmap.md` points the 34 active rows at this plan,
   preserves their severity/evidence notes, and has `DEF-470` Done; record the
   links in `plans/def-critical-major-closeout/05-findings.md`.
-- [ ] 0.2.1 Capture the clean baseline: `make check`, `make verify`, and the
+  ✅ (completed: 2026-10-25 23:47)
+- [x] 0.2.1 Capture the clean baseline: `make check`, `make verify`, and the
   focused ownership/codegen suites; record it in
   `plans/def-critical-major-closeout/05-findings.md`.
-- [ ] 0.2.2 Create the four new spec/impl **pairs** (eight files) and use the
+  ✅ (completed: 2026-10-25 23:47)
+- [x] 0.2.2 Create the four new spec/impl **pairs** (eight files) and use the
   established per-file compile/run/ASAN/strict-C helper pattern; do not add a
   shared helper module. Reserve `compiler/src/own/tests.rs` for the internal
   source-set pin, but author that pin in 1.3.2 after the field exists; no
   behavior tests yet. Add the four pairs (and the pre-existing
   `store_emission_integrity_*` omission) to the `AGENTS.md` test-naming map.
-- [ ] 0.2.3 Confirm the baseline has no open critical/major row other than the
+  ✅ (completed: 2026-10-25 23:47)
+- [x] 0.2.3 Confirm the baseline has no open critical/major row other than the
   confirmed 34, and record the count in
   `plans/def-critical-major-closeout/05-findings.md`.
-- [ ] 0.2.4 Inventory every existing test that touches an active DEF and record
+  ✅ (completed: 2026-10-25 23:47)
+- [x] 0.2.4 Inventory every existing test that touches an active DEF and record
   the expected post-fix change: the stage-spec test, the E10213/E10214
   exclusion, `qinitstructname` (it must move from `emit_pair` success to the
   `E11101` rejection), the `generic-mixed`/`generic-mixed-local` counts, the
@@ -77,7 +82,7 @@ through the roadmap skill with evidence.
   eval-emission, module-initializer, callable-release, and `own`/`sema` unit
   families that pin a changed shape. Each phase close retargets the tests in
   its inventory and records every expected change.
-
+  ✅ (completed: 2026-10-25 23:47)
 **Verify**: `make check` green; every active DEF has a current-HEAD reproduction
 or a documented stale proof; the existing-test inventory is recorded.
 
@@ -261,8 +266,10 @@ program remains in Batch B.
 - [ ] 4.2.5 DEF-505 nested projection — `compiler/src/own/instance_check.rs`,
   `compiler/src/own/expr.rs`.
 - [ ] 4.2.6 DEF-506 static-only viewed position — revalidate; if it reproduces,
-  `compiler/src/own/call_check.rs` with the conservative proof; otherwise close
-  stale with a green HEAD pin and a `05-findings.md` proof.
+  `compiler/src/own/call_check.rs` with the conservative proof, plus the
+  view-return derivation in `compiler/src/own/place.rs`/`own/statements.rs`
+  when the probe reports `E10036`; otherwise close stale with a green HEAD pin
+  and a `05-findings.md` proof.
 - [ ] 4.2.7 DEF-507 static-return helper — revalidate; if it reproduces,
   `compiler/src/own/place.rs`/`own/statements.rs`; otherwise close stale with a
   green HEAD pin and a `05-findings.md` proof.

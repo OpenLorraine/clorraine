@@ -50,10 +50,13 @@ and a return-source check (507), not a cross-function summary store:
 
 - 506 must prove that every direct store/return of the slot is provably static
   and that no indirect call, lambda, or return can pass the view; otherwise the
-  conservative rejection stays and the row is not closed.
-- 507 is revalidated first; the documented `always(xs)` safe shapes are already
-  accepted at HEAD, so the row is closed stale under AR-16 unless the exact
-  filed shape still rejects.
+  conservative rejection stays and the row is not closed. The Phase 0 probe of
+  the documented safe shape reports one `E10036` at the callee return, so the
+  fix may also need the view-return derivation in `own/place.rs`/
+  `own/statements.rs`, not only the call scan.
+- 507 is revalidated first; the documented `always(xs)` safe shape is accepted
+  at HEAD (Phase 0 probe), so the row is closed stale under AR-16 with a green
+  pin unless a later probe of the exact filed shape still rejects.
 
 If the direct scan cannot prove the safe case without a new cross-function
 summary store, the executor stops under AR-12 and the Complexity Escalation
