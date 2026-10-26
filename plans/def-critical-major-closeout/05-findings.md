@@ -243,13 +243,14 @@ The user's rulings (2026-10-26): follow the frozen spec (R1, AR-26); fix the
 pre-existing sibling spellings now and file SR-M-006 separately (R2); revert the
 runtime shim (R3); apply the eligible new-code fixes (R4). All four batches are
 implemented; each fix was red at the prior head and green with its tests. SR-M-006
-is filed as `DEF-544`. The fix diff awaits the one-pass re-review.
+is filed as `DEF-544`. The one-pass re-review ran; its criticals were ruled and
+fixed or filed (`DEF-544`, `DEF-545`), and Phase 2 is closed.
 
 ## Phase 2 Review Fix Batch — 2026-10-26
 
 | Batch | Finding | Fix | Evidence |
 |---|---|---|---|
-| R1 (`e062cec`) | SR-001, RV-002…005 | follow the frozen v1 element-move rule: a different or unstable destination index reports `E10026`; a same-place stable self-arm stays a self-copy | raw-store ST-9 retargeted; conditional-projection spec 229 / impl 224 |
+| R1 (`e062cec`) | SR-001, RV-002…005 | follow the frozen v1 element-move rule: a different or unstable destination index reports `E10026`; a same-place self-arm with a literal index stays a self-copy (refined by AR-27 in the re-review rulings) | raw-store ST-9 retargeted; conditional-projection spec 229 / impl 224 |
 | R3 (`80e0986`) | RV-008 | revert the unplanned null-safe String accessors; observe the emptied source without reading it | raw-store suite 19/19 under ASAN |
 | R4 (`1651cce`) | RV-001, RV-006 | array-parameter take extent is the whole array; `mentions_call` follows index/member bases | implementation suite 13/13; extent probe ASAN-clean |
 | R4 (`5ae64df`) | RV-007 | restore the six store-before-zero ordering pins with a branch-aware helper | conditional-projection implementation 224/224 |
@@ -286,6 +287,10 @@ Rulings applied (2026-10-27): RR-002 literal-index self-copies only (AR-27);
 RR-003 and P1 fixed within the same AR-26/take-capture mechanisms (AR-28); P2
 filed as `DEF-545` because a single range slot is a structural design limit and
 the immediate-clear or multi-range redesign has a broad emission blast radius.
+
+Phase 2 is closed: every critical/major re-review finding is fixed, or filed as
+`DEF-544`/`DEF-545` with the user's ruling; RR-007 and the earlier minors remain
+report-only. The phase gate is green for Phase 3.
 
 ## Phase Records
 
