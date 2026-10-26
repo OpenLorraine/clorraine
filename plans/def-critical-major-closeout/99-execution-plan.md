@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-26
-> **Progress**: 18/76 tasks (24%)
+> **Progress**: 19/76 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -165,7 +165,8 @@ or a documented stale proof; the existing-test inventory is recorded.
 - [x] 2.2.1 DEF-454 guarded struct-literal raw move — `compiler/src/codegen/guards.rs`,
   `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs`.
   ✅ (completed: 2026-10-26 13:22)
-- [ ] 2.2.2 DEF-455 fixed-array take capture — `compiler/src/codegen/function.rs`.
+- [x] 2.2.2 DEF-455 fixed-array take capture — `compiler/src/codegen/function.rs`.
+  ✅ (completed: 2026-10-26 13:24)
 - [ ] 2.2.3 DEF-456 source/destination containment in both directions with
   integer addresses, the taken subrange mapped onto the save copy, and the
   capture carrying the range — `compiler/src/codegen/function.rs`.

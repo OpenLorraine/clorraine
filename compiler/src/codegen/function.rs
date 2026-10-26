@@ -2038,13 +2038,53 @@ impl<'a> Emitter<'a> {
             "        memcpy(&({save}), {}, {});",
             target.address, target.bytes
         ));
+        // A take of the destination inside the condition may transfer the
+        // saved array to a callee before the arm stores the replacement. The
+        // same runtime alias capture the scalar conditional store uses records
+        // whether that take ran and named this array, so the saved bytes are
+        // zeroed before the release instead of being freed again.
+        let mut pointees = Vec::new();
+        self.consumed_pointees(condition, &mut pointees);
+        self.consumed_pointees(then_value, &mut pointees);
+        self.consumed_pointees(else_value, &mut pointees);
+        let capture = pointees
+            .iter()
+            .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)))
+            .then(|| TakeCapture {
+                flag: self.unique_local("__cl_take_alias"),
+                address: target.address.clone(),
+            });
+        let has_capture = capture.is_some();
+        if let Some(capture) = &capture {
+            self.push(&format!("        bool {} = 0;", capture.flag));
+        }
+        let saved_capture = std::mem::replace(&mut self.take_capture, capture);
         self.emit_guards(condition);
+        let alias_flag = self
+            .take_capture
+            .as_ref()
+            .map(|capture| capture.flag.clone());
         let condition_c = self.value(condition);
-        self.push(&format!("        if ({condition_c}) {{"));
+        if has_capture {
+            // Settle the take alias before either arm runs, exactly as the
+            // scalar conditional store does: the condition runs once into a
+            // local, the flag is read, and the branch uses the local.
+            let cond_local = self.unique_local("__cl_cond");
+            self.push(&format!("        bool {cond_local} = {condition_c};"));
+            if let Some(flag) = alias_flag {
+                self.push(&format!("        if ({flag}) {{"));
+                self.emit_move_zero(&save, ty);
+                self.push("        }");
+            }
+            self.push(&format!("        if ({cond_local}) {{"));
+        } else {
+            self.push(&format!("        if ({condition_c}) {{"));
+        }
         self.emit_fixed_array_assign_arm(target, ty, then_value, Some(&save), element_target);
         self.push("        } else {");
         self.emit_fixed_array_assign_arm(target, ty, else_value, Some(&save), element_target);
         self.push("        }");
+        self.take_capture = saved_capture;
         self.emit_drop_expr(&save, ty);
         self.push("    }");
     }
@@ -2817,7 +2857,7 @@ impl<'a> Emitter<'a> {
                 .any(|pointee| self.needs_drop(&self.resolved_value_ty(pointee)));
             owns.then(|| TakeCapture {
                 flag: self.unique_local("__cl_take_alias"),
-                target: target_c.to_owned(),
+                address: format!("&({target_c})"),
             })
         });
         let has_capture = capture.is_some();
@@ -3179,10 +3219,10 @@ impl<'a> Emitter<'a> {
         if !self.needs_drop(ty) {
             return;
         }
-        let Some((flag, target)) = self
+        let Some((flag, target_address)) = self
             .take_capture
             .as_ref()
-            .map(|capture| (capture.flag.clone(), capture.target.clone()))
+            .map(|capture| (capture.flag.clone(), capture.address.clone()))
         else {
             return;
         };
@@ -3190,7 +3230,7 @@ impl<'a> Emitter<'a> {
             return;
         };
         self.push(&format!(
-            "    if (((void *)({address})) == ((void *)(&({target})))) {{"
+            "    if (((void *)({address})) == ((void *)({target_address}))) {{"
         ));
         self.push(&format!("        {flag} = 1;"));
         self.push("    }");

@@ -264,8 +264,12 @@ pub(super) struct Emitter<'a> {
 pub(super) struct TakeCapture {
     /// The boolean local that records whether an aliasing take ran.
     pub(super) flag: String,
-    /// The rendered destination lvalue the take may have consumed.
-    pub(super) target: String,
+    /// The destination address the take may have consumed.
+    ///
+    /// The value is a C address expression, not an lvalue: a fixed-array
+    /// parameter is already the array address and cannot take its own
+    /// address, while a scalar destination is rendered as `&(lvalue)`.
+    pub(super) address: String,
 }
 
 /// Emits the whole translation unit for a successful compilation.

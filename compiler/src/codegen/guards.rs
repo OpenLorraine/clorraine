@@ -1430,9 +1430,9 @@ impl<'a> Emitter<'a> {
         // compares unequal without a cross-type pointer warning.
         let address = self.deref_value_address(value)?;
         Some(format!(
-            "({flag} = ({flag} || (((void *)({address})) == ((void *)(&({target})))))), {move_out}",
+            "({flag} = ({flag} || (((void *)({address})) == ((void *)({target_address}))))), {move_out}",
             flag = capture.flag,
-            target = capture.target,
+            target_address = capture.address,
         ))
     }
 
