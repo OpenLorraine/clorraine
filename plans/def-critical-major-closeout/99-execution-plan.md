@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 70/76 tasks (92%)
+> **Progress**: 71/76 tasks (93%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -490,10 +490,15 @@ twin accepted.
   parse-only no-C contract, the E10213 spans/once with the re-enabled golden and
   the E10224 module-const split, the E11101 second-declaration span/once with
   the same-module control, and byte-identical re-emission)
-- [ ] 5.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [x] 5.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   stage/golden/`qinitstructname` tests and record every expected change; close
   DEF-167/171/416 through the roadmap skill with the frozen spec references;
   add the phase record to `05-findings.md`.
+  ✅ (completed: 2026-10-27; `make check` is green (74 test targets, the 110
+  compile-fail goldens) and the full `make verify` reports all legs passed,
+  including FS-UAE. The three rows are Done; the Phase 0 inventory's stage,
+  golden, and qinitstructname retargets are recorded in `05-findings.md`; the
+  plan is 71/76 with only the Phase 6 close left)
 
 **Verify**: `make check` and `make verify`; the strict-C corpus has no new
 failure; the stage-spec parse is green through the parse-only mode.

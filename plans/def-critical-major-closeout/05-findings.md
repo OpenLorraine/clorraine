@@ -560,3 +560,29 @@ the user's filing/deferral decision and do not expand Batch D.
   (3 executing major; 113 backlog).
 - **Pre-existing report-only:** the review's pre-existing table remains the
   user's filing/deferral decision; no Batch D scope expansion.
+
+
+## Phase 5 — Strict Build Close (2026-10-27)
+
+- **Baseline tree:** `6864b3286761c1a8e8169afdee469b20c82c3c01`.
+- **Fixes:** `DEF-167`, `DEF-171`, and `DEF-416` in `b39d090`; the
+  parse-only/stage-select driver mode lands with the `DEF-167` fix.
+- **Specification suite:** 5 cases, 5/5 (the three fix cases are red at the
+  baseline; the module-const `E10224` and same-module bare-name controls are
+  green).
+- **Implementation pins:** 4/4 in `def_strict_build_integrity_impl_test.rs`
+  (the `E10300` span/count with the parse-only no-C contract, the `E10213`
+  spans with the re-enabled golden and the `E10224` module-const split, the
+  `E11101` second-declaration span with the same-module control, and
+  byte-identical re-emission).
+- **Retargets (Phase 0 inventory):** the stage-spec generic-call case uses
+  `--parse-only`; the compile-fail harness moves `E10213` to
+  `ASSERTED_CODES` and keeps `E10214` excluded; `qinitstructname` moves from
+  the `emit_pair` success to the one-`E11101` rejection with no C. The new
+  spec/impl pair is in the `AGENTS.md` test-naming map. No other pin family
+  changed.
+- **Verification:** `make check` green (74 test targets, the 110 compile-fail
+  goldens); the full `make verify` reports all legs passed, including FS-UAE.
+- **Roadmap:** `DEF-167`, `DEF-171`, and `DEF-416` move to Done; the roadmap
+  reads 419/544 RD rows with 113 open (0 executing, 113 backlog). The plan is
+  71/76 with only the Phase 6 close left.
