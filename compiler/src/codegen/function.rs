@@ -4015,6 +4015,11 @@ impl<'a> Emitter<'a> {
                     self.empty_state(element)
                 ));
                 self.emit_struct_literal_fields(&local, element, fields);
+                // A fill that covers no slot still evaluates once; the marker
+                // keeps the filled local read under the strict C build.
+                if prefix >= extent {
+                    self.push(&format!("    if (sizeof({local})) {{ }}"));
+                }
                 for index in prefix..extent {
                     self.push(&format!("    {}[{index}] = {local};", target.text));
                 }

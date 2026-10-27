@@ -163,6 +163,18 @@ pub(super) struct PlaceState {
     /// copies. The empty path means the whole binding. A later use records the
     /// duplicability duty the per-instance audit discharges.
     pub(super) moved_if_owning: BTreeSet<Vec<ir::Projection>>,
+    /// The maybe-target destinations of the paths in
+    /// [`Self::moved_if_owning`], keyed by the moved path.
+    ///
+    /// A view destination copies while an owning one moves. The state is
+    /// flow-scoped with `moved_if_owning`, so a re-initialization on one path
+    /// cannot erase another path's destination at a join.
+    pub(super) maybe_move_destinations: BTreeMap<Vec<ir::Projection>, Vec<Ty>>,
+    /// Moved paths whose consuming move had no maybe-target destination.
+    ///
+    /// Such a move is strict at every owning instance. The state is
+    /// flow-scoped with `moved_if_owning`.
+    pub(super) maybe_move_strict: BTreeSet<Vec<ir::Projection>>,
     /// Top-level fields moved out, which makes whole use invalid.
     pub(super) partial: BTreeSet<String>,
     /// The binding is assigned on all paths reaching this point.

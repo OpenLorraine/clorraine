@@ -907,3 +907,59 @@ func main(): i32 {
     assert_no_sanitizer("staledest", &output);
     assert_exit("staledest", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Branching maybe-move destinations
+// ---------------------------------------------------------------------------
+
+/// A re-initialization on one branch does not erase the destination of the
+/// other path's maybe-move; the later use still reports `E10020`.
+#[test]
+fn should_keep_a_branching_maybe_move_destination() {
+    let source = r#"module spec.condval.branchdest;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, c2: bool, take h: T): i32 {
+    let s: String = stringOf("cd");
+    let r: T = c ? h : s;
+    if (c2) {
+        s = stringOf("ef");
+    }
+    let n: i32 = i32(len(s));
+    return n - 2;
+}
+
+func main(): i32 {
+    let h: String = stringOf("aa");
+    return pick<String>(true, false, take h);
+}
+"#;
+    assert_rejected_once("branchdest", source, "E10020", &["s"]);
+}
+
+/// A fill that covers no slot still evaluates once and builds under the strict
+/// host flags; its fields keep source order.
+#[test]
+fn should_evaluate_a_full_prefix_fill_once() {
+    let source = r#"module spec.condval.fullprefixfill;
+
+struct Inner { names: static str; }
+struct Outer { inner: Inner; tag: i32; }
+
+let trace: i32 = 0;
+
+func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
+func n1(): static str { trace = trace * 10 + 2; return "aa"; }
+
+func main(): i32 {
+    let os: Outer[1] = [Outer { inner: Inner { names: "x" }, tag: 1 };
+                        Outer { tag: tagOf(), inner: Inner { names: n1() } }];
+    if (os[0].tag != 1) { return 8; }
+    if (trace != 12) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_host("fullprefixfill", source);
+    assert_exit("fullprefixfill", &output, 0);
+}

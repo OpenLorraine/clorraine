@@ -478,20 +478,6 @@ struct FunctionChecker<'a, 'd> {
     /// the per-instance audit discharges every duty against each recorded
     /// concrete instantiation.
     duplicable_requirements: Vec<ir::RequiresDuplicable>,
-    /// The destinations of maybe-owning moves, keyed by the moved place path.
-    ///
-    /// A concrete source moved into a maybe-owning destination moves only at
-    /// an owning instance. The map is pruned when a path is written, and a
-    /// destination-less move marks the path strict, so the later-use duty can
-    /// tell a view instance (the store copies) from an owning one (the source
-    /// is moved).
-    maybe_move_destinations: BTreeMap<(usize, Vec<ir::Projection>), Vec<Ty>>,
-    /// Paths consumed by a maybe-owning move with no maybe-target destination.
-    ///
-    /// A take argument, a field store, or a return moves the source at every
-    /// owning instance, so its later-use duty keeps the strict judgment even
-    /// when another move of the path was a view copy.
-    maybe_move_strict: BTreeSet<(usize, Vec<ir::Projection>)>,
     /// Later-use duties already recorded, keyed by the binding and its moved
     /// paths. A later use updates the destinations, the strict flag, and the
     /// reported span instead of adding a second duty.
@@ -654,8 +640,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             report_diagnostics: true,
             defer_body: false,
             duplicable_requirements: Vec::new(),
-            maybe_move_destinations: BTreeMap::new(),
-            maybe_move_strict: BTreeSet::new(),
             recorded_duplicable: BTreeMap::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
@@ -1445,6 +1429,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A maybe-owning consume on either path survives the join,
                 // so a later use still deposits the duty.
                 moved_if_owning: a.moved_if_owning.union(&b.moved_if_owning).cloned().collect(),
+                // The destinations and the strict markers join by union, so a
+                // write on one path cannot hide the other path's move.
+                maybe_move_destinations: {
+                    let mut destinations = a.maybe_move_destinations.clone();
+                    for (path, found) in &b.maybe_move_destinations {
+                        let entry = destinations.entry(path.clone()).or_default();
+                        for destination in found {
+                            if !entry.contains(destination) {
+                                entry.push(destination.clone());
+                            }
+                        }
+                    }
+                    destinations
+                },
+                maybe_move_strict: a
+                    .maybe_move_strict
+                    .union(&b.maybe_move_strict)
+                    .cloned()
+                    .collect(),
                 partial: a.partial.union(&b.partial).cloned().collect(),
                 initialized: a.initialized && b.initialized,
                 initialized_fields,

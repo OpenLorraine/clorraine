@@ -262,6 +262,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.partial.clear();
                     place.moved = false;
                     place.moved_if_owning.clear();
+                    place.maybe_move_destinations.clear();
+                    place.maybe_move_strict.clear();
                     place.narrowed.clear();
                 }
                 Some(ir::Projection::Field(field)) => {
@@ -275,6 +277,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     place.moved = false;
                     place.moved_if_owning.retain(|path| {
+                        !written_path_clears(projections, path)
+                    });
+                    place.maybe_move_destinations.retain(|path, _| {
+                        !written_path_clears(projections, path)
+                    });
+                    place.maybe_move_strict.retain(|path| {
                         !written_path_clears(projections, path)
                     });
                     place
@@ -293,18 +301,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.moved_if_owning.retain(|path| {
                         !written_path_clears(projections, path)
                     });
+                    place.maybe_move_destinations.retain(|path, _| {
+                        !written_path_clears(projections, path)
+                    });
+                    place.maybe_move_strict.retain(|path| {
+                        !written_path_clears(projections, path)
+                    });
                     place
                         .narrowed
                         .retain(|path| !written_path_clears(projections, path));
                 }
             }
         });
-        // A re-initialization drops the move history for the written paths,
-        // including the destinations the later-use duty would otherwise read.
-        self.maybe_move_destinations
-            .retain(|(other_id, path), _| !(*other_id == id && written_path_clears(projections, path)));
-        self.maybe_move_strict
-            .retain(|(other_id, path)| !(*other_id == id && written_path_clears(projections, path)));
     }
 
     /// True when the parameter is a read-only lend.
@@ -568,12 +576,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         || moved.starts_with(projections)
                 })
                 .flat_map(|moved| {
-                    let key = (id, (*moved).clone());
-                    if self.maybe_move_strict.contains(&key) {
+                    if state.maybe_move_strict.contains(moved) {
                         strict_destination = true;
                     }
-                    self.maybe_move_destinations
-                        .get(&key)
+                    state
+                        .maybe_move_destinations
+                        .get(moved)
                         .into_iter()
                         .flatten()
                         .cloned()
@@ -668,23 +676,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
                 place.moved_if_owning.insert(projections.clone());
-            });
-            // The destination is needed at the later use: a view destination
-            // copies, so the maybe-move never happens there. A write prunes
-            // the map for the written paths, and a destination-less move marks
-            // the path strict; the audit judges the remaining owning ones.
-            match destination {
-                Some(destination) => self
-                    .maybe_move_destinations
-                    .entry((id, projections.clone()))
-                    .or_default()
-                    .push(destination.clone()),
-                // A move with no maybe-target destination keeps the strict
-                // judgment at every later use.
-                None => {
-                    self.maybe_move_strict.insert((id, projections.clone()));
+                match destination {
+                    Some(destination) => place
+                        .maybe_move_destinations
+                        .entry(projections.clone())
+                        .or_default()
+                        .push(destination.clone()),
+                    // A move with no maybe-target destination keeps the strict
+                    // judgment at every later use.
+                    None => {
+                        place.maybe_move_strict.insert(projections.clone());
+                    }
                 }
-            }
+            });
             // A move through a borrow element view is the v1 element-move
             // limit once the substituted place owns, so every maybe-owning
             // destination — a return, a binding, an assignment, a conditional
@@ -820,14 +824,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let key = (id, paths.clone());
         if let Some(index) = self.recorded_duplicable.get(&key).copied() {
             let requirement = &mut self.duplicable_requirements[index];
+            let mut changed = false;
             for destination in destinations {
                 if !requirement.destinations.contains(&destination) {
                     requirement.destinations.push(destination);
+                    changed = true;
                 }
             }
-            requirement.strict_destination |= strict_destination;
-            requirement.partial |= partial;
-            requirement.span = span;
+            if strict_destination && !requirement.strict_destination {
+                requirement.strict_destination = true;
+                changed = true;
+            }
+            // Keep the first use's span and partial flag unless a new
+            // destination changes the judgment; then the later use is the
+            // first one that can report.
+            if changed {
+                requirement.partial = partial;
+                requirement.span = span;
+            }
             return;
         }
         let ir_name = self.bindings[id].ir_name.clone();
