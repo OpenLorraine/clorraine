@@ -341,10 +341,9 @@ roadmap close in `3.3.3` records the proof for each. The active fixes are
   emission pin changes outside the fixed paths. The spec-source adjustments are
   the filed nested-conditional shape (ST-18), the restored original ST-20
   short-circuit call argument, and the array-fill twin.
-- **Verification:** `make check` passes; `make corpus-amiga` and
-  `make run-fault-amiga` pass; the focused ASAN runs are clean. The FS-UAE leg is
-  pending a fresh XAUTHORITY after the machine restart (environment-only); the
-  preceding full run passed all legs.
+- **Verification:** after the environment-only XAUTHORITY refresh, the full
+  `make verify` reports **all legs passed**, including the FS-UAE leg;
+  `make check` and the focused ASAN runs are clean.
 - **Roadmap:** the ten active Batch C rows move to Done; the re-review siblings
   are `DEF-551`…`DEF-555`; the progress is 419/544 with twelve executing rows
   left.
