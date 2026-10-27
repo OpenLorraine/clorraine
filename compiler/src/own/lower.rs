@@ -2158,7 +2158,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// fixed-array field no C brace list can spell, so it fills a destination
     /// temporary on the path that evaluates it. The fill's release frees the
     /// fresh roots the field values bound.
-    fn materialize_guard_literal(&mut self, value: Value) -> Value {
+    pub(super) fn materialize_guard_literal(&mut self, value: Value) -> Value {
         let ty = value.ty.clone();
         let temp = self.new_temp(ty.clone());
         self.mark_destination_temp(temp);
@@ -5589,14 +5589,39 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
     /// list would carry the owned source where the view belongs and the fresh
     /// root would have no owner. A nested literal recurses, so a literal inside
     /// an array element or a nested struct counts too.
-    fn literal_fields_need_stores(&self, value: &Value) -> bool {
+    pub(super) fn literal_fields_need_stores(&self, value: &Value) -> bool {
         match &value.kind {
-            ValueKind::StructLit { fields, .. } => fields
-                .iter()
-                .any(|(_, field)| self.literal_field_needs_stores(field)),
+            ValueKind::StructLit { name, fields } => {
+                // A C compound literal evaluates its entries in declaration
+                // order; a source order that differs needs the statement
+                // store so the side-effecting fields keep their written order.
+                if self.struct_literal_order_differs(name, fields) {
+                    return true;
+                }
+                fields
+                    .iter()
+                    .any(|(_, field)| self.literal_field_needs_stores(field))
+            }
             ValueKind::ArrayLit { .. } => self.array_literal_needs_stores(value),
             _ => false,
         }
+    }
+
+    /// True when a literal writes its fields in a non-declaration order.
+    ///
+    /// Only the written fields are compared; an omitted field has no
+    /// evaluation, so its declaration position does not matter.
+    fn struct_literal_order_differs(&self, name: &str, fields: &[(String, Value)]) -> bool {
+        let Some(declared) = self.sema.table.struct_fields(name) else {
+            return false;
+        };
+        let written: Vec<&str> = fields.iter().map(|(field, _)| field.as_str()).collect();
+        let declared_written: Vec<&str> = declared
+            .iter()
+            .map(|(field, _)| field.as_str())
+            .filter(|field| written.contains(field))
+            .collect();
+        written != declared_written
     }
 
     /// True when an array literal has an element no C brace list can spell.

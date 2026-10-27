@@ -2309,8 +2309,9 @@ impl<'a> Emitter<'a> {
     /// fields may be stored into the discard destination and released; an arm
     /// with an owning place field must not be copied there, because the
     /// destination's release would free storage the caller still owns. A
-    /// nested conditional keeps the fallback because its per-arm fields are not
-    /// distributed here.
+    /// nested conditional recurses through the per-arm store; only an
+    /// already-materialized temporary or an owning place arm keeps the
+    /// per-arm fallback.
     fn struct_conditional_discard_safe(&self, then_value: &Value, else_value: &Value) -> bool {
         self.struct_arm_discard_safe(then_value) && self.struct_arm_discard_safe(else_value)
     }
@@ -2318,9 +2319,9 @@ impl<'a> Emitter<'a> {
     /// True when one struct-conditional arm can be stored in the discard
     /// destination.
     ///
-    /// A nested conditional recurses: an all-fresh call pair can be rendered as
-    /// one C ternary into the destination. An already-materialized temporary or
-    /// an owning place arm keeps the per-arm fallback.
+    /// A nested conditional recurses through the same per-arm store. An
+    /// already-materialized temporary or an owning place arm keeps the
+    /// per-arm fallback.
     fn struct_arm_discard_safe(&self, arm: &Value) -> bool {
         match &arm.kind {
             ValueKind::Conditional {
@@ -3998,6 +3999,27 @@ impl<'a> Emitter<'a> {
                 }
             }
             return;
+        }
+        // A struct-literal fill whose fields need stores evaluates them once
+        // into a temporary and copies the value to every covered element. The
+        // direct expression form would render the compound literal once per
+        // element and evaluate its fields out of source order.
+        if let ValueKind::StructLit { name, fields } = &fill.kind {
+            if self.sema.table.duplicable(element)
+                && self.struct_literal_needs_stores(name, fields)
+            {
+                let local = self.unique_local("__cl_fill");
+                self.push(&format!(
+                    "    {} = {};",
+                    declarator(element, &local, &self.sema.table),
+                    self.empty_state(element)
+                ));
+                self.emit_struct_literal_fields(&local, element, fields);
+                for index in prefix..extent {
+                    self.push(&format!("    {}[{index}] = {local};", target.text));
+                }
+                return;
+            }
         }
         self.emit_guards(fill);
         let lowered = self.store_text(fill, element);

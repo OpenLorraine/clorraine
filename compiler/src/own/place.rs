@@ -670,9 +670,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 place.moved_if_owning.insert(projections.clone());
             });
             // The destination is needed at the later use: a view destination
-            // copies, so the maybe-move never happens there. Keep every
-            // destination seen for the path; the audit conservatively judges
-            // the owning ones.
+            // copies, so the maybe-move never happens there. A write prunes
+            // the map for the written paths, and a destination-less move marks
+            // the path strict; the audit judges the remaining owning ones.
             match destination {
                 Some(destination) => self
                     .maybe_move_destinations
@@ -792,7 +792,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Only a binding whose declared type mentions a type parameter carries the
     /// duty; the per-instance audit reports when the substituted type owns.
     /// `partial` marks a whole-binding use whose conflicting moves are member
-    /// paths, which the audit reports with the partial-move code.
+    /// paths, which the audit reports with the partial-move code. The duty
+    /// records the maybe-target destinations of the conflicting moves and a
+    /// strict flag for a destination-less move; a concrete source with a
+    /// maybe-owning destination still owes the per-instance judgment.
     pub(super) fn record_requires_duplicable(
         &mut self,
         id: usize,

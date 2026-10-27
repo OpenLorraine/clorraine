@@ -554,6 +554,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 *value = self.materialize_owned_argument(pending, *mode == Mode::Take);
             }
         }
+        // Every value position with a literal that needs a statement store is
+        // bound to a temporary where it stands: a call argument or receiver
+        // has no C value form for an order-mismatched literal, and materializing
+        // it here keeps the written field order on every path.
+        let mut value_literal = |value: Value| {
+            if matches!(
+                value.kind,
+                ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. }
+            ) && self.literal_fields_need_stores(&value)
+            {
+                self.materialize_guard_literal(value)
+            } else {
+                value
+            }
+        };
+        let receiver = receiver.map(&mut value_literal);
+        for value in values.iter_mut() {
+            let pending =
+                std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+            *value = value_literal(pending);
+        }
         LoweredCall {
             receiver,
             name,

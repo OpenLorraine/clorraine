@@ -151,6 +151,20 @@ fn assert_follows(tag: &str, emitted: &str, first: &str, second: &str) {
     );
 }
 
+/// Asserts `first` appears before `second` in the emitted text.
+fn assert_before(tag: &str, emitted: &str, first: &str, second: &str) {
+    let first_at = emitted
+        .find(first)
+        .unwrap_or_else(|| panic!("{tag}: {first:?} is missing; emitted C:\n{emitted}"));
+    let second_at = emitted
+        .find(second)
+        .unwrap_or_else(|| panic!("{tag}: {second:?} is missing; emitted C:\n{emitted}"));
+    assert!(
+        first_at < second_at,
+        "{tag}: expected {first:?} before {second:?}; emitted C:\n{emitted}"
+    );
+}
+
 /// The body of the function whose emitted signature is `signature`.
 ///
 /// Nested blocks close with an indented brace, so the first bare `}` closes
@@ -268,7 +282,7 @@ fn reject_once(tag: &str, source: &str, code: &str, fragment: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-471: the hidden deref-chain division guard
+// Hidden deref-chain division guard
 // ---------------------------------------------------------------------------
 
 /// A raw-deref generic division emits the `E11210` guard before the C divide.
@@ -304,7 +318,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-472 / 473: the maybe-target duties
+// Maybe-target duties
 // ---------------------------------------------------------------------------
 
 /// A concrete lend moved into an owning maybe-target reports one `E10034`.
@@ -390,7 +404,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-475: the mixed read base
+// Mixed read base
 // ---------------------------------------------------------------------------
 
 /// The mixed place/literal read base stores the literal into its own temporary
@@ -433,7 +447,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-476: the guarded duplicable literal
+// Guarded duplicable literal
 // ---------------------------------------------------------------------------
 
 /// A guarded duplicable literal passes the hidden array destination to the
@@ -477,7 +491,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-477: the nested conditional store
+// Nested conditional store
 // ---------------------------------------------------------------------------
 
 /// A nested conditional arm stores each literal through its own row calls.
@@ -530,7 +544,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-478: the deferred guarded take
+// Deferred guarded take
 // ---------------------------------------------------------------------------
 
 /// A guarded duplicable struct conditional take stays inside the `g` arm.
@@ -587,11 +601,11 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-479: the source-order field stores
+// Source-order field stores
 // ---------------------------------------------------------------------------
 
 /// A literal whose declaration order differs from its source order stores its
-/// fields in source order; the scalar twin pins the same rule.
+/// fields in source order; the fill twin evaluates them once.
 #[test]
 fn should_emit_the_source_order_field_stores() {
     let tag = "order479a";
@@ -608,63 +622,64 @@ let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
 func n1(): String { trace = trace * 10 + 2; return stringOf("aa"); }
+func useOuter(o: Outer): i32 { return 1; }
 
 func main(): i32 {
     let g: bool = true;
-    let other: Outer = Outer { inner: Inner { names: stringOf("other") }, tag: 0 };
-    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { names: n1() } } : other;
-    if (trace != 12) { return 9; }
-    return 0;
+    if (g && useOuter(Outer { tag: tagOf(), inner: Inner { names: n1() } }) == 1) {
+        if (trace != 12) { return 9; }
+        return 0;
+    }
+    return 8;
 }
 "#,
     );
     let body = function_body(tag, &emitted, "cl_spec_condval_order479a_main(void)\n{");
-    assert_follows(
+    assert_before(
         tag,
         body,
-        "__cl_arm_1.tag = cl_spec_condval_order479a_tagOf();",
-        "__cl_arm_1.inner = (ClInner){ cl_spec_condval_order479a_n1() };",
+        "__cl_tmp0.tag = cl_spec_condval_order479a_tagOf()",
+        "__cl_tmp0.inner.names = cl_spec_condval_order479a_n1()",
     );
+    assert_contains(tag, body, "cl_spec_condval_order479a_useOuter(__cl_tmp0)");
     assert_eq!(run_host_c(tag, &scratch, &emitted), 0);
 
-    let scalar_tag = "order479b";
+    let fill_tag = "order479fill";
     let (scratch, emitted) = emit_host(
-        scalar_tag,
-        r#"module spec.condval.order479b;
+        fill_tag,
+        r#"module spec.condval.order479fill;
 
-struct Inner { n: i32; }
+struct Inner { names: static str; }
 struct Outer { inner: Inner; tag: i32; }
 
 let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
-func n2(): i32 { trace = trace * 10 + 3; return 2; }
+func n1(): static str { trace = trace * 10 + 2; return "aa"; }
 
 func main(): i32 {
-    let g: bool = true;
-    let other: Outer = Outer { inner: Inner { n: 0 }, tag: 0 };
-    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { n: n2() } } : other;
-    if (trace != 13) { return 9; }
+    let os: Outer[2] = [; Outer { tag: tagOf(), inner: Inner { names: n1() } }];
+    if (trace != 12) { return 9; }
     return 0;
 }
 "#,
     );
     let body = function_body(
-        scalar_tag,
+        fill_tag,
         &emitted,
-        "cl_spec_condval_order479b_main(void)\n{",
+        "cl_spec_condval_order479fill_main(void)\n{",
     );
     assert_follows(
-        scalar_tag,
+        fill_tag,
         body,
-        "__cl_arm_1.tag = cl_spec_condval_order479b_tagOf();",
-        "__cl_arm_1.inner = (ClInner){ cl_spec_condval_order479b_n2() };",
+        "__cl_fill_1.tag = cl_spec_condval_order479fill_tagOf();",
+        "__cl_fill_1.inner = (ClInner){ cl_spec_condval_order479fill_n1() };",
     );
-    assert_eq!(run_host_c(scalar_tag, &scratch, &emitted), 0);
+    assert_eq!(run_host_c(fill_tag, &scratch, &emitted), 0);
 }
 
 // ---------------------------------------------------------------------------
-// DEF-480: the fresh conditional root
+// Fresh conditional root
 // ---------------------------------------------------------------------------
 
 /// The call-projected root releases the unselected Holder fields and the
@@ -702,7 +717,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-481: the conditional call-arm root
+// Conditional call-arm root
 // ---------------------------------------------------------------------------
 
 /// The selected call arm's root is bound and released after the view read.

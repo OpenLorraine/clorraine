@@ -306,7 +306,7 @@ fn assert_trap(tag: &str, output: &Output, expected: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-470: the stale generic field-projected take later move
+// Stale generic field-projected take
 // ---------------------------------------------------------------------------
 
 /// A generic field-projected take later whole use reports one `E10020`.
@@ -336,7 +336,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-471: the hidden generic deref-chain division
+// Hidden generic deref-chain division
 // ---------------------------------------------------------------------------
 
 /// A division through a raw-deref generic field emits the `E11210` guard.
@@ -372,7 +372,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-472: the concrete lend in a maybe-target conditional
+// Concrete lend in a maybe-target conditional
 // ---------------------------------------------------------------------------
 
 /// A concrete lend moved into an owning maybe-target instance reports one
@@ -421,7 +421,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-473: the maybe-target take and later concrete local use
+// Maybe-target take and later concrete local use
 // ---------------------------------------------------------------------------
 
 /// A concrete local moved on a maybe-target path reports `E10020` at its later
@@ -472,7 +472,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-475: the owned mixed conditional read base
+// Owned mixed conditional read base
 // ---------------------------------------------------------------------------
 
 /// A mixed place/literal conditional read base binds a per-arm destination and
@@ -499,7 +499,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-476: the guarded duplicable literal read base
+// Guarded duplicable literal read base
 // ---------------------------------------------------------------------------
 
 /// A guarded duplicable conditional literal read base stores the selected
@@ -523,12 +523,13 @@ func main(): i32 {
     return v;
 }
 "#;
-    let output = run_host("dupliteral476", source);
+    let output = run_memory("dupliteral476", source);
+    assert_no_sanitizer("dupliteral476", &output);
     assert_exit("dupliteral476", &output, 3);
 }
 
 // ---------------------------------------------------------------------------
-// DEF-477: nested conditional arms
+// Nested conditional arms
 // ---------------------------------------------------------------------------
 
 /// A conditional arm that is itself a conditional recurses in a literal store
@@ -566,12 +567,13 @@ func main(): i32 {
     return 0;
 }
 "#;
-    let output = run_host("nested477", source);
+    let output = run_memory("nested477", source);
+    assert_no_sanitizer("nested477", &output);
     assert_exit("nested477", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
-// DEF-478: the guarded duplicable struct conditional take
+// Guarded duplicable struct conditional take
 // ---------------------------------------------------------------------------
 
 /// A duplicable struct conditional take inside a guarded operand evaluates only
@@ -626,7 +628,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-479: nested literal field source order
+// Nested literal field source order
 // ---------------------------------------------------------------------------
 
 /// Nested literal fields evaluate in source order even when the struct
@@ -644,16 +646,19 @@ let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
 func n1(): String { trace = trace * 10 + 2; return stringOf("aa"); }
+func useOuter(o: Outer): i32 { return 1; }
 
 func main(): i32 {
     let g: bool = true;
-    let other: Outer = Outer { inner: Inner { names: stringOf("other") }, tag: 0 };
-    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { names: n1() } } : other;
-    if (trace != 12) { return 9; }
-    return 0;
+    if (g && useOuter(Outer { tag: tagOf(), inner: Inner { names: n1() } }) == 1) {
+        if (trace != 12) { return 9; }
+        return 0;
+    }
+    return 8;
 }
 "#;
-    let output = run_host("order479a", owning);
+    let output = run_memory("order479a", owning);
+    assert_no_sanitizer("order479a", &output);
     assert_exit("order479a", &output, 0);
 
     let scalar = r#"module spec.condval.order479b;
@@ -665,21 +670,44 @@ let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
 func n2(): i32 { trace = trace * 10 + 3; return 2; }
+func useOuter(o: Outer): i32 { return 1; }
 
 func main(): i32 {
     let g: bool = true;
-    let other: Outer = Outer { inner: Inner { n: 0 }, tag: 0 };
-    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { n: n2() } } : other;
-    if (trace != 13) { return 9; }
+    if (g && useOuter(Outer { tag: tagOf(), inner: Inner { n: n2() } }) == 1) {
+        if (trace != 13) { return 9; }
+        return 0;
+    }
+    return 8;
+}
+"#;
+    let output = run_memory("order479b", scalar);
+    assert_no_sanitizer("order479b", &output);
+    assert_exit("order479b", &output, 0);
+
+    let fill = r#"module spec.condval.order479fill;
+
+struct Inner { names: static str; }
+struct Outer { inner: Inner; tag: i32; }
+
+let trace: i32 = 0;
+
+func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
+func n1(): static str { trace = trace * 10 + 2; return "aa"; }
+
+func main(): i32 {
+    let os: Outer[2] = [; Outer { tag: tagOf(), inner: Inner { names: n1() } }];
+    if (trace != 12) { return 9; }
     return 0;
 }
 "#;
-    let output = run_host("order479b", scalar);
-    assert_exit("order479b", &output, 0);
+    let output = run_memory("order479fill", fill);
+    assert_no_sanitizer("order479fill", &output);
+    assert_exit("order479fill", &output, 0);
 }
 
 // ---------------------------------------------------------------------------
-// DEF-480: the fresh conditional root
+// Fresh conditional root
 // ---------------------------------------------------------------------------
 
 /// A fresh conditional root releases the selected projection's remaining
@@ -724,7 +752,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-481: the conditional call-arm root
+// Conditional call-arm root
 // ---------------------------------------------------------------------------
 
 /// A conditional read base over owning call arms releases the selected call

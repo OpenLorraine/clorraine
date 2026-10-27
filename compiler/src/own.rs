@@ -481,9 +481,10 @@ struct FunctionChecker<'a, 'd> {
     /// The destinations of maybe-owning moves, keyed by the moved place path.
     ///
     /// A concrete source moved into a maybe-owning destination moves only at
-    /// an owning instance. The later-use duty carries every destination seen
-    /// for the conflicting path, so the audit can tell a view instance (the
-    /// store copies) from an owning one (the source is moved).
+    /// an owning instance. The map is pruned when a path is written, and a
+    /// destination-less move marks the path strict, so the later-use duty can
+    /// tell a view instance (the store copies) from an owning one (the source
+    /// is moved).
     maybe_move_destinations: BTreeMap<(usize, Vec<ir::Projection>), Vec<Ty>>,
     /// Paths consumed by a maybe-owning move with no maybe-target destination.
     ///
