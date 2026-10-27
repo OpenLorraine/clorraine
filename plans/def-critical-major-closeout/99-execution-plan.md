@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 62/76 tasks (82%)
+> **Progress**: 64/76 tasks (84%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -424,7 +424,7 @@ twin accepted.
 
 ## Phase 5: Strict Build and Type Identity — DEF-167/171/416
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `6864b3286761c1a8e8169afdee469b20c82c3c01`
 > **Lenses**: correctness, semantics, emission integrity, type identity
 > **Reasoning**: medium — three bounded parser/analysis/table fixes
 >
@@ -432,12 +432,19 @@ twin accepted.
 > `let embed` reports `E10213`. The `spec/13` §1 sentence is recorded as a
 > frozen inconsistency; no spec chapter changes.
 
-- [ ] 5.1.1 [spec-author] Write ST-32, ST-33, and ST-34 in
+- [x] 5.1.1 [spec-author] Write ST-32, ST-33, and ST-34 in
   `compiler/tests/def_strict_build_integrity_spec_test.rs`; keep the frozen
   stage parse and the E10213 golden text unchanged; the E10213 golden is
   re-enabled in the harness.
-- [ ] 5.1.2 Confirm red: the generic-call C failure, accepted `embed`, and the
+  ✅ (completed: 2026-10-27; five cases: the non-generic type-argument forms
+  with the parse-only stage control, the embed contexts with the E10224
+  module-const control, the cross-module collision, and the same-module
+  bare-name control)
+- [x] 5.1.2 Confirm red: the generic-call C failure, accepted `embed`, and the
   type-table collision reproduce before the fixes.
+  ✅ (completed: 2026-10-27; the three fix cases are red — the stage/non-generic
+  type arguments are accepted, the local/module-let embed is accepted, and the
+  cross-module `Thing` collision is accepted; the two controls are green)
 - [ ] 5.2.1 DEF-167 explicit type arguments on a non-generic callee —
   `compiler/src/sema/call.rs`; reuse one `E10300` for free, qualified, dot,
   func-typed, **and non-callable local/parameter** forms. The filed stage shape
