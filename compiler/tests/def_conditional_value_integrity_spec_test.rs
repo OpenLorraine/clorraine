@@ -539,25 +539,28 @@ fn should_recurse_into_nested_conditional_arms() {
 
 import { String, stringOf } from std.text;
 
-struct Inner { names: String; }
+struct Inner { row: i32[1][1]; }
 struct O { names: String; }
 
 let calls: i32 = 0;
 let last: i32 = 0;
 
-func n1(): String { calls = calls + 1; last = 1; return stringOf("a"); }
-func n2(): String { calls = calls + 1; last = 2; return stringOf("bb"); }
-func n3(): String { calls = calls + 1; last = 3; return stringOf("ccc"); }
+func row1(): i32[1][1] { calls = calls + 1; last = 1; return [[1]]; }
+func row2(): i32[1][1] { calls = calls + 1; last = 2; return [[2]]; }
+func row3(): i32[1][1] { calls = calls + 1; last = 3; return [[3]]; }
+func name1(): String { calls = calls + 1; last = 1; return stringOf("a"); }
+func name2(): String { calls = calls + 1; last = 2; return stringOf("bb"); }
+func name3(): String { calls = calls + 1; last = 3; return stringOf("ccc"); }
 
 func consumeT(take o: O): i32 { return 0; }
 
 func main(): i32 {
     let ok1: bool = false;
     let ok2: bool = true;
-    let o: Inner = ok1 ? (ok2 ? Inner { names: n1() } : Inner { names: n2() }) : Inner { names: n3() };
+    let o: Inner = ok1 ? Inner { row: row1() } : (ok2 ? Inner { row: row2() } : Inner { row: row3() });
     if (calls != 1) { return 9; }
     if (last != 2) { return 8; }
-    let r: i32 = consumeT(take (ok1 ? O { names: n1() } : (ok2 ? O { names: n2() } : O { names: n3() })));
+    let r: i32 = consumeT(take (ok1 ? O { names: name1() } : (ok2 ? O { names: name2() } : O { names: name3() })));
     if (calls != 2) { return 7; }
     if (last != 2) { return 6; }
     return 0;

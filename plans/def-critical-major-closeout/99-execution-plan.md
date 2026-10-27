@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 37/76 tasks (49%)
+> **Progress**: 43/76 tasks (57%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -249,18 +249,29 @@ program remains in Batch B.
   `compiler/src/ir/mono.rs`, `compiler/src/own/instance_check.rs`.
   ✅ (completed: 2026-10-27; ST-15 reports one `E10020` at the later use, the
   view control exits 0; conditional-projection 230/224 unchanged)
-- [ ] 3.2.4 DEF-475 owned mixed read base — `compiler/src/codegen/guards.rs`,
+- [x] 3.2.4 DEF-475 owned mixed read base — `compiler/src/codegen/guards.rs`,
   `compiler/src/codegen/program.rs`.
-- [ ] 3.2.5 DEF-476 guarded duplicable literal store — `compiler/src/codegen/guards.rs`.
-- [ ] 3.2.6 DEF-477 nested conditional arm recursion — `compiler/src/codegen/function.rs`,
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-16 exits 3, strict C
+  builds, ASAN clean at HEAD; no code change)
+- [x] 3.2.5 DEF-476 guarded duplicable literal store — `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-27; ST-17 strict-C/exit-3 green; conditional-projection
+  61/27, residue 230/224, call-value 63/62 unchanged)
+- [x] 3.2.6 DEF-477 nested conditional arm recursion — `compiler/src/codegen/function.rs`,
   `compiler/src/codegen/guards.rs`.
-- [ ] 3.2.7 DEF-478 deferred duplicable take — `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-27; ST-18 strict-C/exit-0 green; only ST-20 remains red)
+- [x] 3.2.7 DEF-478 deferred duplicable take — `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-19's taken and skipped
+  twins both pass at HEAD; no code change)
 - [ ] 3.2.8 DEF-479 source-order nested fields including the scalar literal,
   with a struct declared in an order that differs from the source order —
   `compiler/src/codegen/guards.rs`, `compiler/src/codegen/expr.rs`.
-- [ ] 3.2.9 DEF-480 fresh-root release — `compiler/src/codegen/program.rs`,
+- [x] 3.2.9 DEF-480 fresh-root release — `compiler/src/codegen/program.rs`,
   `compiler/src/codegen/guards.rs`.
-- [ ] 3.2.10 DEF-481 call-arm release — `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-21 exits 3/4, strict C
+  builds, LSan clean at HEAD; no code change)
+- [x] 3.2.10 DEF-481 call-arm release — `compiler/src/codegen/guards.rs`.
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-22 exits 0, strict C
+  builds, LSan clean at HEAD; no code change)
 - [ ] 3.3.1 Green: focused conditional suites, strict-C builds, and ASAN/LSan
   for ST-12…ST-22.
 - [ ] 3.3.2 Implementation pins in `compiler/tests/def_conditional_value_integrity_impl_test.rs`:

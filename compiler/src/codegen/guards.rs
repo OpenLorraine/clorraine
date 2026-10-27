@@ -178,6 +178,19 @@ impl<'a> Emitter<'a> {
                             then_value,
                             else_value,
                         );
+                    } else if self.conditional_struct_needs_stores(&ty, then_value, else_value) {
+                        // A duplicable struct conditional cannot ride a C
+                        // `?:` when a literal arm's fixed-array field is
+                        // call-filled: the call needs its hidden destination.
+                        // Store the selected arm through the per-arm core on
+                        // the evaluated path.
+                        self.emit_struct_conditional_assign(
+                            &destination_c,
+                            &ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
                     } else {
                         self.push(&format!("    {destination_c} = {};", self.value(inner)));
                     }
@@ -1671,9 +1684,21 @@ impl<'a> Emitter<'a> {
                 // instance substitutes, exactly as the declaration does.
                 let inner_ty = self.resolved_value_ty(inner);
                 let destination = self.materialize_destination(*temp, destination_place);
-                let owned_conditional = self.needs_drop(&inner_ty)
-                    && !inner_ty.is_fixed_array()
-                    && matches!(inner.kind, ValueKind::Conditional { .. });
+                let conditional_needs_stores = matches!(
+                    &inner.kind,
+                    ValueKind::Conditional {
+                        then_value,
+                        else_value,
+                        ..
+                    } if self.conditional_struct_needs_stores(
+                        &inner_ty,
+                        then_value,
+                        else_value
+                    )
+                );
+                let stored_conditional = !inner_ty.is_fixed_array()
+                    && matches!(inner.kind, ValueKind::Conditional { .. })
+                    && (self.needs_drop(&inner_ty) || conditional_needs_stores);
                 if let (
                     true,
                     ValueKind::Conditional {
@@ -1681,18 +1706,24 @@ impl<'a> Emitter<'a> {
                         then_value,
                         else_value,
                     },
-                ) = (owned_conditional, &inner.kind)
+                ) = (stored_conditional, &inner.kind)
                 {
-                    // The conditional moves its chosen arm. Its condition's
-                    // guards embed with the store expression, and each arm's
-                    // guards embed where the arm is evaluated, so nothing is
-                    // hoisted out of the conditionally evaluated path. An
-                    // adopting carrier's consumer owns the value, so a re-fill
-                    // must not release the previous value; the consumer's own
-                    // cleanup is the sole owner.
+                    // The conditional moves or copies its chosen arm (a
+                    // duplicable struct copies). Its condition's guards embed
+                    // with the store expression, and each arm's guards embed
+                    // where the arm is evaluated, so nothing is hoisted out
+                    // of the conditionally evaluated path. An adopting
+                    // carrier's consumer owns the value, so a re-fill must not
+                    // release the previous value; the consumer's own cleanup
+                    // is the sole owner.
                     if !*adopting {
                         if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
-                            out.push(drop);
+                            // A duplicable destination's drop is the explicit
+                            // no-effect marker; a bare `0` comma operand warns
+                            // under `-Werror=unused-value`.
+                            if drop != "0" {
+                                out.push(drop);
+                            }
                         }
                     }
                     out.push(self.conditional_move_expr(

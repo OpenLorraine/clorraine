@@ -2668,11 +2668,19 @@ impl<'a> Emitter<'a> {
         if !matches!(&ty.kind, TyKind::Struct(..)) {
             return false;
         }
-        [then_value, else_value].into_iter().any(|arm| {
-            matches!(
-                &arm.kind,
-                ValueKind::StructLit { fields, .. } if self.struct_literal_needs_stores(fields)
-            )
+        [then_value, else_value].into_iter().any(|arm| match &arm.kind {
+            ValueKind::StructLit { fields, .. } => {
+                self.struct_literal_needs_stores(fields)
+            }
+            // A conditional arm is stored by the same per-arm rule, so a
+            // nested literal that needs stores makes the outer store a
+            // per-arm store too.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => self.conditional_struct_needs_stores(ty, then_value, else_value),
+            _ => false,
         })
     }
 
@@ -2704,6 +2712,18 @@ impl<'a> Emitter<'a> {
     /// a field that reads the target still sees the old value. Every other arm
     /// is a plain struct assignment.
     fn emit_struct_value_store_arm(&mut self, target_c: &str, ty: &Ty, arm: &Value) {
+        // A nested conditional selects its own arm; emit the same branch and
+        // per-arm store recursively, so a call-filled fixed-array field keeps
+        // its hidden destination on the evaluated path.
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_struct_conditional_assign(target_c, ty, condition, then_value, else_value);
+            return;
+        }
         if let ValueKind::StructLit { fields, .. } = &arm.kind {
             if self.struct_literal_needs_stores(fields) {
                 let local = self.unique_local("__cl_arm");
