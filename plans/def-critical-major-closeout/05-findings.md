@@ -322,3 +322,24 @@ cases run under `RDC_ASAN=1` as well. At HEAD `11140b3` the observed results are
 The four stale rows keep their green spec pins as the current-HEAD evidence; the
 roadmap close in `3.3.3` records the proof for each. The active fixes are
 `DEF-471`, `472`, `473`, `476`, `477`, and `479`.
+
+
+## Phase 3 — Conditional Materialization Close (2026-10-27)
+
+- **Baseline tree:** `11140b3` (the Phase 2 review gate).
+- **Fixes:** `DEF-471` (`ee9fea8`), `DEF-472`/`473` (`89c3760`), `DEF-476`/`477`
+  (`6c74563`), `DEF-479` (`3213dfb`).
+- **Stale closes (AR-16):** `DEF-475`, `DEF-478`, `DEF-480`, and `DEF-481` no
+  longer reproduce at HEAD; their ST-16/19/21/22 cases are the green pins.
+  `DEF-470` keeps its earlier stale close.
+- **Specification suite:** 13 cases, 13/13 strict-C and 13/13 under ASAN/LSan.
+- **Implementation pins:** 11/11 in `def_conditional_value_integrity_impl_test.rs`.
+- **Retargets:** the Phase 0 inventory expected the conditional-projection/
+  residue and fresh-root pins to change; the focused suites stayed green with no
+  emission pin changes outside the fixed paths. The two spec-source adjustments
+  are the filed nested-conditional shape (ST-18) and the guarded conditional
+  arm form for the source-order rule (ST-20).
+- **Verification:** `make check` passes; `make verify` reports all legs passed;
+  the focused ASAN runs are clean.
+- **Roadmap:** the ten active Batch C rows move to Done; the progress is
+  419/534 with twelve executing rows left.

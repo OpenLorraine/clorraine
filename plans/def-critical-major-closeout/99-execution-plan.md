@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 46/76 tasks (61%)
+> **Progress**: 47/76 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -216,7 +216,7 @@ program remains in Batch B.
 
 ## Phase 3: Conditional Materialization — DEF-470…481
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `11140b3`
 > **Lenses**: correctness, memory safety, emission integrity, semantics
 > **Reasoning**: high — hidden destinations, selected-arm evaluation, and
 > ownership release
@@ -286,11 +286,14 @@ program remains in Batch B.
   lend/local duties, the mixed base, the guarded literal, the nested store,
   the deferred take, source order, the fresh/call releases, and byte-identical
   re-emission)
-- [ ] 3.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [x] 3.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   conditional-projection/residue and fresh-root pins and record every expected
   change; close the Batch C rows through the
   roadmap skill (`DEF-470` stays a stale close); add the phase record to
   `05-findings.md`.
+  ✅ (completed: 2026-10-27; `make check` and `make verify` all legs pass; no
+  emission-pin retarget was needed; the ten active Batch C rows are Done and
+  the phase record is in `05-findings.md`)
 
 **Verify**: `make check` and `make verify`; ASAN/LSan clean; strict C builds.
 
