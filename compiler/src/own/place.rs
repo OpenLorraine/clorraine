@@ -814,8 +814,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return;
         }
+        // One duty per binding and moved-path set: a later use keeps the
+        // latest span and unions the destinations, so a later owning move is
+        // judged after an earlier view copy without a second report.
+        let key = (id, paths.clone());
+        if let Some(index) = self.recorded_duplicable.get(&key).copied() {
+            let requirement = &mut self.duplicable_requirements[index];
+            for destination in destinations {
+                if !requirement.destinations.contains(&destination) {
+                    requirement.destinations.push(destination);
+                }
+            }
+            requirement.strict_destination |= strict_destination;
+            requirement.partial |= partial;
+            requirement.span = span;
+            return;
+        }
         let ir_name = self.bindings[id].ir_name.clone();
         let declared = self.bindings[id].ty.clone();
+        let index = self.duplicable_requirements.len();
+        self.recorded_duplicable.insert(key, index);
         self.duplicable_requirements.push(ir::RequiresDuplicable {
             function: self.decl.name.clone(),
             binding: ir_name,

@@ -492,6 +492,11 @@ struct FunctionChecker<'a, 'd> {
     /// owning instance, so its later-use duty keeps the strict judgment even
     /// when another move of the path was a view copy.
     maybe_move_strict: BTreeSet<(usize, Vec<ir::Projection>)>,
+    /// Later-use duties already recorded, keyed by the binding and its moved
+    /// paths. A later use updates the destinations, the strict flag, and the
+    /// reported span instead of adding a second duty.
+    recorded_duplicable:
+        BTreeMap<(usize, Vec<Vec<crate::types::PlacePathStep>>), usize>,
     /// The borrowed-element move duties this body owes its instances.
     ///
     /// A value-consuming move through a `for (borrow e in xs)` element alias
@@ -651,6 +656,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             duplicable_requirements: Vec::new(),
             maybe_move_destinations: BTreeMap::new(),
             maybe_move_strict: BTreeSet::new(),
+            recorded_duplicable: BTreeMap::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             whole_out_slot_store_requirements: Vec::new(),
