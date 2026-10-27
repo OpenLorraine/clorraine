@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 61/76 tasks (80%)
+> **Progress**: 62/76 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -403,10 +403,16 @@ program remains in Batch B.
   `cl_f__arr2_u8`, the generic `cl_pack__H` and concrete `.tag.ptr` shapes, the
   `cl_readTag__H`/`static u8 *` read/return unit, and byte-identical re-
   emission; all five green)
-- [ ] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [x] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   semantic-parity and view-return pins and record every expected change; close
   the Batch D rows through the roadmap skill and record incidental minor
   closures without expanding scope; add the phase record to `05-findings.md`.
+  ✅ (completed: 2026-10-27; `make check` is green with 74 test targets and the
+  110 compile-fail goldens; the full `make verify` reports all legs passed,
+  including FS-UAE. The nine Batch D rows are Done (seven fixes, two AR-16
+  stale closes); the Phase 0 retarget and the phase record are in
+  `05-findings.md`; the new spec/impl pair is in the `AGENTS.md` test map; the
+  roadmap reads 419/544 RD rows with three executing rows left)
 
 **Verify**: `make check` and `make verify`; no safe twin regressed; no unsafe
 twin accepted.

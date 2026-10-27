@@ -454,3 +454,37 @@ frozen EL-4), and the genuine local-backed escape — returning the local's owne
 `name` field as a view — reports frozen BR-6's `E10035`, not `E10030`. The
 specification test follows the concrete twin and the frozen oracle; the plan
 row was the inconsistent artifact.
+
+
+## Phase 4 — Semantic Parity Close (2026-10-27)
+
+- **Baseline tree:** `283ced8` (the Phase 3 re-review gate).
+- **Fixes:** `DEF-411` (`3997166`), `DEF-412` (`159fd67`), `DEF-415`
+  (`47fe91e`), `DEF-505` (`23f45c7`), `DEF-506` (`2c7ea9e`), `DEF-513`
+  (`63c7faf`), `DEF-522` (`c510eea`). The close commit carries the
+  phase-verification corrections: the view-element/raw projection resolution,
+  the field-only take partial-move guard, and the ST-31 `.len`/`tag[0]`
+  controls.
+- **Stale closes (AR-16):** `DEF-413` and `DEF-507`; the ST-25/ST-29 cases are
+  the green HEAD pins and the roadmap rows record the proofs.
+- **Specification suite:** 9 cases, 9/9 in the plain and `RDC_ASAN` runs; every
+  safe control is ASAN/LSan clean. `ST-28`'s name twin and `ST-31`'s local arm
+  follow the frozen oracle (`E10036` and `E10035`), not the plan's
+  `E10034`/`E10030`; the corrections are recorded above.
+- **Implementation pins:** 5/5 in
+  `def_semantic_parity_integrity_impl_test.rs`.
+- **Retargets:** the Phase 0 inventory expected the conditional-projection/
+  residue and read/return pins to change; the focused suites stayed green. The
+  `genericvielelem` `String[]` element still reports the concrete `E10034`; the
+  `residual_defect_hardening` take-row return still accepts; the new pair is
+  added to the `AGENTS.md` test-naming map. The other pin families (checker 212,
+  borrow-store 58, eval-emission 68, callable-release 69, runtime-value 30,
+  element-loop 25, codegen-ownership 16) are unchanged. `PF-011`'s expected
+  `E10030` local-arm code is corrected by the frozen oracle: the local static tag
+  is accepted (`EL-4`) and the local owned-field view is `E10035` (`BR-6`).
+- **Verification:** `make check` is green (74 test targets and the spec check's
+  110 compile-fail goldens); `make verify` reports **all legs passed**, including
+  the amiga corpus, FS-UAE, and the six faults.
+- **Roadmap:** the nine Batch D rows move to Done (`DEF-411`, `412`, `413`,
+  `415`, `505`, `506`, `507`, `513`, `522`); the progress is 419/544 RD rows with
+  three executing rows left (`DEF-167`, `DEF-171`, `DEF-416`).

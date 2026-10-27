@@ -1055,6 +1055,21 @@ fn projected_type(
 ) -> Ty {
     let mut selected = root.clone();
     for step in path {
+        // A raw pointer's element is its pointee, and a string view's element
+        // is one byte: both are element selections, not field projections.
+        if matches!(step, crate::types::PlacePathStep::Element) {
+            if let TyKind::Raw(inner) = &selected.kind {
+                selected = (**inner).clone();
+                continue;
+            }
+            if matches!(
+                selected.kind,
+                TyKind::Str | TyKind::CString | TyKind::StaticStr
+            ) {
+                selected = Ty::scalar(crate::ast::ScalarType::U8);
+                continue;
+            }
+        }
         while let TyKind::Raw(inner) = &selected.kind {
             selected = (**inner).clone();
         }

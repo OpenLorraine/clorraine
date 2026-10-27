@@ -319,6 +319,14 @@ in `CMD`).
   `compiler/tests/store_emission_integrity_impl_test.rs` hold the
   **specification** and **implementation** tests for the store-emission batch
   (the store shapes, the guard forms, and the accepted-output pins).
+- `compiler/tests/def_semantic_parity_integrity_spec_test.rs` holds the
+  **specification tests** for the semantic-parity batch (the null-arm contexts,
+  substituted view-array returns, nested elements, per-arm nullable reports,
+  nested projections, static-only viewed positions, inline-iterable aliases, and
+  type-parameter view-member projections), and
+  `compiler/tests/def_semantic_parity_integrity_impl_test.rs` holds their
+  **implementation tests** (one-report counts, the no-placeholder emission,
+  concrete/generic parity, the read/return C, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

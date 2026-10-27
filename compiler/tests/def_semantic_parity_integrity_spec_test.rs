@@ -687,6 +687,54 @@ func main(): i32 {
     assert_no_sanitizer("st31", &output);
     assert_exit("st31", &output, 0);
 
+    // The same projection reads the static view's length and an element: both
+    // are value copies, not moves of either lend arm.
+    let len = r#"module spec.sempar.st31len;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+struct S { n: usize; }
+
+func packLen<T>(d: bool, borrow h1: T, borrow h2: T): S {
+    return S { n: (d ? h1 : h2).tag.len };
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa"), tag: "aa" };
+    let h2: H = H { name: stringOf("bb"), tag: "bb" };
+    let s: S = packLen<H>(true, h1, h2);
+    if (s.n != 2) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("st31len", len);
+    assert_no_sanitizer("st31len", &output);
+    assert_exit("st31len", &output, 0);
+
+    let byte = r#"module spec.sempar.st31byte;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+struct S { b: u8; }
+
+func packByte<T>(d: bool, borrow h1: T, borrow h2: T): S {
+    return S { b: (d ? h1 : h2).tag[0] };
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa"), tag: "aa" };
+    let h2: H = H { name: stringOf("bb"), tag: "bb" };
+    let s: S = packByte<H>(true, h1, h2);
+    if (s.b != 97) { return 9; }
+    return 0;
+}
+"#;
+    let output = run_memory("st31byte", byte);
+    assert_no_sanitizer("st31byte", &output);
+    assert_exit("st31byte", &output, 0);
+
     let read = r#"module spec.sempar.st31read;
 
 import { String, stringOf } from std.text;
