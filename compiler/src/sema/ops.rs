@@ -513,7 +513,8 @@ impl Checker<'_, '_> {
         // the substituted destination decides whether the null is legal.
         let open_destination = contains_param(expected);
         let null_arm = is_null_shaped(&arms.then_ty) || is_null_shaped(&arms.else_ty);
-        if open_destination && null_arm {
+        let nullable_arm = arms.then_ty.nullable || arms.else_ty.nullable;
+        if open_destination && (null_arm || nullable_arm) {
             arms.opaque = true;
         }
         arms.destination = Some(expected.clone());

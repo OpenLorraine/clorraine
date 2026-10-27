@@ -412,9 +412,38 @@ func main(): i32 {
         "cviimpl-callfield: a field of a call result has no caller storage to empty"
     );
     // The emitted unit must build: no `&(<call>().field)` guard may reach C.
-    let scratch = ScratchDir::new("cviimpl-callfield-build");
+    build_strict_host("cviimpl-callfield", &emitted);
+}
+
+/// A member projection of a conditional whose arms are fresh call results is
+/// an rvalue: re-rendering it in a guard would repeat both calls and produce
+/// invalid C, so no guard may be emitted.
+#[test]
+fn should_not_guard_a_member_of_a_fresh_conditional() {
+    let source = r#"module impl.cvi.condfield;
+import { String, stringOf } from std.text;
+struct Box { name: String; }
+func mkA(): Box { return Box { name: stringOf("ab") }; }
+func mkB(): Box { return Box { name: stringOf("cd") }; }
+func main(): i32 {
+    let ok: bool = true;
+    let c: String = (ok ? mkA() : mkB()).name;
+    return i32(len(c)) - 2;
+}
+"#;
+    let emitted = emit_host("cviimpl-condfield", source);
+    assert!(
+        !emitted.contains("(cl_impl_cvi_condfield_mk"),
+        "cviimpl-condfield: a fresh conditional projection must not be re-rendered in a guard"
+    );
+    build_strict_host("cviimpl-condfield", &emitted);
+}
+
+/// Compiles one emitted host translation unit under the strict warning set.
+fn build_strict_host(tag: &str, emitted: &str) {
+    let scratch = ScratchDir::new(&format!("{tag}-build"));
     let c_path = scratch.path().join("build.c");
-    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
     let program = scratch.path().join("prog");
     let built = Command::new("cc")
         .args([
@@ -431,7 +460,7 @@ func main(): i32 {
         .expect("failed to spawn the host C compiler");
     assert!(
         built.status.success(),
-        "cviimpl-callfield: the host C compiler rejected the emitted C; stderr:\n{}",
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
 }

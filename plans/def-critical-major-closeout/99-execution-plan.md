@@ -584,7 +584,7 @@ The chain is **risk order**, not a strict technical dependency:
    execution-filed backlog (`DEF-544`…`DEF-555`) and the pre-existing
    report-only findings are the user-scoped backlog.
 3. ✅ Every ST-1…ST-35 case for an active DEF was red before its fix and green
-   after it. ST-12 and the six AR-16 stale closes (`DEF-413`, `DEF-470`,
+   after it. ST-12 and the seven AR-16 stale closes (`DEF-413`, `DEF-470`,
    `DEF-475`, `DEF-478`, `DEF-480`, `DEF-481`, `DEF-507`) are the documented
    green pins.
 4. ✅ Memory rows are ASAN/LSan clean; emission rows build strict C.

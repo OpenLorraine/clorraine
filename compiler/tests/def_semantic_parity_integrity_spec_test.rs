@@ -469,6 +469,100 @@ func main(): i32 {
     assert_rejected("st26generic", generic, "E10010", 2, &["xs"]);
 }
 
+/// A nullable conditional passed as a generic call argument is judged after
+/// substitution: one `E10010` per nullable arm, exactly as a local or a return
+/// destination is.
+#[test]
+fn should_report_each_nullable_arm_of_a_generic_call_argument_once() {
+    let source = r#"module spec.sempar.st26call;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(x: T): i32 {
+    return i32(len(x));
+}
+
+func pick<T>(c: bool, s: String?, t: String?): i32 {
+    return sink<T>(c ? s : t);
+}
+
+func main(): i32 {
+    let r: i32 = pick<str>(true, null, stringOf("cd"));
+    return r - 2;
+}
+"#;
+    assert_rejected("st26call", source, "E10010", 2, &["s", "t"]);
+}
+
+/// A null-shaped arm already reports the site's single `E10012`; the sibling
+/// nullable arm must not add a second report for the same site.
+#[test]
+fn should_report_a_null_arm_once_at_a_type_parameter_destination() {
+    let source = r#"module spec.sempar.st26null;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String?; }
+
+func pick<T>(c: bool, xs: H[2]): T {
+    return c ? xs[0].name : null;
+}
+
+func main(): i32 {
+    let xs: H[2] = [H { name: stringOf("aa") }, H { name: null }];
+    let s: str = pick<str>(true, xs);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_once("st26null", source, "E10012", &["null"]);
+}
+
+/// A nullable arm the declaration's flow already narrowed is a proven
+/// non-null use in every instance, whether the arm is a local or a parameter.
+#[test]
+fn should_accept_a_narrowed_nullable_arm_in_every_instance() {
+    let local = r#"module spec.sempar.st26narrow;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, d: T): T {
+    let s: String? = stringOf("ab");
+    if (s == null) {
+        return d;
+    }
+    return c ? s : d;
+}
+
+func main(): i32 {
+    let r: str = pick<str>(true, "cd");
+    return i32(len(r)) - 2;
+}
+"#;
+    let output = run_memory("st26narrow", local);
+    assert_no_sanitizer("st26narrow", &output);
+    assert_exit("st26narrow", &output, 0);
+
+    let parameter = r#"module spec.sempar.st26narrowparam;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, s: String?, d: T): T {
+    if (s == null) {
+        return d;
+    }
+    return c ? s : d;
+}
+
+func main(): i32 {
+    let r: str = pick<str>(true, stringOf("ab"), "cd");
+    return i32(len(r)) - 2;
+}
+"#;
+    let output = run_memory("st26narrowparam", parameter);
+    assert_no_sanitizer("st26narrowparam", &output);
+    assert_exit("st26narrowparam", &output, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Nested projection parity
 // ---------------------------------------------------------------------------

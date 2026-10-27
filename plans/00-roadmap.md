@@ -577,7 +577,7 @@
 ## Batch N accounting (2026-10-19)
 
 - **Active rows**: 22/22 Done — the 20 red rows are fixed with the per-phase evidence, and the two controls `DEF-427`/`DEF-447` are Done with the false-positive control evidence.
-- **Parked**: `DEF-425` remains Deferred pending the user's ruling on the batch-M oracle conflict; `DEF-167` and `DEF-171` are now Done in `def-critical-major-closeout`.
+- **Parked**: `DEF-425` was closed by batch U after the user's 2026-10-21 ruling; `DEF-167` and `DEF-171` are now Done in `def-critical-major-closeout`.
 - **Filed during execution**: `DEF-449`..`DEF-483` (35 rows), each with a reproduction, base evidence, and a fix direction; `DEF-481` records the pre-existing call-arm read-base leak class, and `DEF-483` the scalar-`len` current-output fold.
 - **Roadmap totals (2026-10-19 snapshot)**: the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker reads 432/544 rows Done with 112 open (0 executing; 112 backlog).
 

@@ -199,6 +199,27 @@ pub struct RequiresViewReturnCandidates {
     pub span: Span,
 }
 
+/// A nullable conditional arm whose declaration-site flow already proved it
+/// non-null.
+///
+/// The destination may still mention a type parameter, so the possible-null
+/// rule is deferred to the instance. Flow narrowing does not depend on the
+/// substitution: an arm the declaration already narrowed with `!= null` is
+/// non-null in every instance, and the instance must not report it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresConditionalArmNarrowing {
+    /// The generic function whose conditional defers the judgment.
+    pub function: String,
+    /// The then arm's span, which identifies the site with the function.
+    pub then_span: Span,
+    /// The else arm's span, which identifies the site with the function.
+    pub else_span: Span,
+    /// True when the then arm's place is narrowed at the declaration site.
+    pub then_narrowed: bool,
+    /// True when the else arm's place is narrowed at the declaration site.
+    pub else_narrowed: bool,
+}
+
 /// A body's obligation that a lend may only be moved into an owned position
 /// when the instance's type is duplicable.
 ///
@@ -569,6 +590,7 @@ pub struct Monomorphization {
     opaque_store_requirements: Vec<RequiresOpaqueStore>,
     iterable_requirements: Vec<RequiresIterable>,
     view_return_requirements: Vec<RequiresViewReturnCandidates>,
+    conditional_narrowing_requirements: Vec<RequiresConditionalArmNarrowing>,
 }
 
 impl Monomorphization {
@@ -634,6 +656,16 @@ impl Monomorphization {
     /// Every recorded view-return candidate duty.
     pub fn view_return_requirements(&self) -> &[RequiresViewReturnCandidates] {
         &self.view_return_requirements
+    }
+
+    /// Records a narrowed conditional arm the instance audit must respect.
+    pub fn require_conditional_narrowing(&mut self, requirement: RequiresConditionalArmNarrowing) {
+        self.conditional_narrowing_requirements.push(requirement);
+    }
+
+    /// Every recorded conditional-arm narrowing duty.
+    pub fn conditional_narrowing_requirements(&self) -> &[RequiresConditionalArmNarrowing] {
+        &self.conditional_narrowing_requirements
     }
 
     /// Records a copy obligation the generic body owes.

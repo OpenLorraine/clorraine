@@ -2219,6 +2219,17 @@ fn check_opaque_conditionals(
                 continue;
             }
             let expected = expected.as_ref();
+            // The declaration's own flow may already have proved one arm
+            // non-null. That proof holds for every substitution, so the
+            // instance reports only the arms that can still be null.
+            let narrowing = mono
+                .conditional_narrowing_requirements()
+                .iter()
+                .find(|requirement| {
+                    requirement.function == conditional.function
+                        && requirement.then_span == conditional.then_span
+                        && requirement.else_span == conditional.else_span
+                });
             // A null arm faces the destination, or the sibling when the
             // conditional has no destination of its own. The instance keeps
             // the concrete twin's order: the null report first, then the
@@ -2280,20 +2291,27 @@ fn check_opaque_conditionals(
             }
             // A nullable-typed arm at a concrete destination is the same
             // possible-null rule the concrete twin reports: one E10010 per
-            // nullable arm, named by its written root when it has one.
+            // nullable arm, named by its written root when it has one. A
+            // null-shaped arm already reported the site's single E10012.
+            if !arm_reported {
             if let Some(expected) = expected {
-                for (arm, span, base) in [
+                for (arm, span, base, narrowed) in [
                     (
                         &then_ty,
                         conditional.then_span,
                         conditional.then_base.as_deref(),
+                        narrowing.is_some_and(|requirement| requirement.then_narrowed),
                     ),
                     (
                         &else_ty,
                         conditional.else_span,
                         conditional.else_base.as_deref(),
+                        narrowing.is_some_and(|requirement| requirement.else_narrowed),
                     ),
                 ] {
+                    if narrowed {
+                        continue;
+                    }
                     if crate::types::is_null_shaped(arm) {
                         continue;
                     }
@@ -2310,6 +2328,7 @@ fn check_opaque_conditionals(
                         arm_reported = true;
                     }
                 }
+            }
             }
             if arm_reported {
                 break;

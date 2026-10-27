@@ -1160,6 +1160,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.report_null_rule(span);
             return;
         }
+        // A conditional whose destination still mentions a parameter is judged
+        // per instance. Flow narrowing is substitution-independent, so record
+        // which arms the declaration's flow already proved non-null.
+        if crate::types::contains_param(expected) {
+            if let ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } = &expr.kind
+            {
+                self.conditional_narrowing_requirements.push(
+                    ir::RequiresConditionalArmNarrowing {
+                        function: self.decl.name.clone(),
+                        then_span: then_value.span,
+                        else_span: else_value.span,
+                        then_narrowed: self.expr_is_narrowed(then_value),
+                        else_narrowed: self.expr_is_narrowed(else_value),
+                    },
+                );
+            }
+        }
         if crate::types::nullable_value_needs_narrowing(&value_ty, expected) {
             // A conditional's nullable result comes from its arms: each
             // nullable arm is a separate possible-null use and reports once,
@@ -1184,6 +1205,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_nonnull_expr(expr, span);
             }
         }
+    }
+
+    /// True when an expression is a local place its flow already narrowed.
+    fn expr_is_narrowed(&self, expr: &Expr) -> bool {
+        self.plain_binding(expr)
+            .is_some_and(|(id, projections)| self.state.place(id).is_narrowed(&projections))
     }
 
     /// Reports the null rule at a position that requires a concrete value.

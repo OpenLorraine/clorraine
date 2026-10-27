@@ -115,6 +115,7 @@ pub fn check(
     let mut self_assign_duties = Vec::new();
     let mut opaque_store_duties = Vec::new();
     let mut view_return_duties = Vec::new();
+    let mut conditional_narrowing_duties = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -148,6 +149,7 @@ pub fn check(
                     self_assign_reqs,
                     opaque_store_reqs,
                     view_returns,
+                    conditional_narrowing,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -162,6 +164,7 @@ pub fn check(
                 self_assign_duties.extend(self_assign_reqs);
                 opaque_store_duties.extend(opaque_store_reqs);
                 view_return_duties.extend(view_returns);
+                conditional_narrowing_duties.extend(conditional_narrowing);
             }
         }
     }
@@ -227,6 +230,9 @@ pub fn check(
     }
     for duty in view_return_duties {
         monomorphization.require_view_return(duty);
+    }
+    for duty in conditional_narrowing_duties {
+        monomorphization.require_conditional_narrowing(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -561,6 +567,12 @@ struct FunctionChecker<'a, 'd> {
     /// reports the frozen view-return rule when the substituted candidates are
     /// not exactly the returned parameter.
     view_return_requirements: Vec<ir::RequiresViewReturnCandidates>,
+    /// The narrowed-arm duties this body owes its instances.
+    ///
+    /// A nullable conditional arm at a type-parameter destination is judged
+    /// per instance. The declaration records which arms its own flow already
+    /// narrowed, so the instance reports only the arms that can still be null.
+    conditional_narrowing_requirements: Vec<ir::RequiresConditionalArmNarrowing>,
     /// Opaque-store sites already recorded, so one site owes one duty.
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
@@ -636,6 +648,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             view_return_source_mixed: false,
             view_return_paths: Vec::new(),
             view_return_requirements: Vec::new(),
+            conditional_narrowing_requirements: Vec::new(),
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
@@ -713,6 +726,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresSelfAssign>,
         Vec<ir::RequiresOpaqueStore>,
         Vec<ir::RequiresViewReturnCandidates>,
+        Vec<ir::RequiresConditionalArmNarrowing>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -767,6 +781,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.self_assign_requirements,
             self.opaque_store_requirements,
             self.view_return_requirements,
+            self.conditional_narrowing_requirements,
         )
     }
 

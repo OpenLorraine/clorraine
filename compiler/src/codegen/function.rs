@@ -3445,23 +3445,42 @@ impl<'a> Emitter<'a> {
                 // A projection rooted in a call result has no storage the
                 // guard could name: `&(<call>().field)` is not an lvalue, and
                 // re-rendering the call in a guard would repeat its effects.
-                if Self::value_roots_in_call(value) {
-                    None
-                } else {
+                if Self::value_is_addressable(value) {
                     Some(format!("&({})", self.value(value)))
+                } else {
+                    None
                 }
             }
             _ => None,
         }
     }
 
-    /// True when a value's projection chain is rooted in a call result.
-    fn value_roots_in_call(value: &Value) -> bool {
+    /// True when a value's projection has storage whose address is legal.
+    ///
+    /// A call result and a conditional whose arms are not both places are
+    /// rvalues: `&(<fresh>.field)` is not a C lvalue, and re-rendering the
+    /// expression in a guard would repeat its call effects. A place, a
+    /// dereference, and a conditional of two places are addressable.
+    fn value_is_addressable(value: &Value) -> bool {
         match &value.kind {
+            ValueKind::Place(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Materialize { .. }
+            | ValueKind::Aggregate => true,
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                ..
+            } => true,
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-                Self::value_roots_in_call(base)
+                Self::value_is_addressable(base)
             }
-            ValueKind::Call { .. } => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                Self::value_is_addressable(then_value) && Self::value_is_addressable(else_value)
+            }
             _ => false,
         }
     }
