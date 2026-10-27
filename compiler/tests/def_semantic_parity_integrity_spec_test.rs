@@ -572,6 +572,58 @@ func main(): i32 {
     assert_no_sanitizer("st28caller", &output);
     assert_exit("st28caller", &output, 0);
 
+    // The static proof must survive substitution: a generic callee at a struct
+    // instance reads only the static field, exactly as its concrete twin does.
+    let generic = r#"module spec.sempar.st28generic;
+
+struct H { tag: static str; }
+
+func viewTagG<T>(borrow h: T): str { return h.tag; }
+
+func main(): i32 {
+    let h: H = H { tag: "aa" };
+    let s: str = viewTagG<H>(h);
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("st28generic", generic);
+    assert_no_sanitizer("st28generic", &output);
+    assert_exit("st28generic", &output, 0);
+
+    let generic_owned = r#"module spec.sempar.st28genericowned;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func viewTagG<T>(borrow h: T): str { return h.tag; }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("nn"), tag: "aa" };
+    let s: str = viewTagG<H>(h);
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("st28genericowned", generic_owned);
+    assert_no_sanitizer("st28genericowned", &output);
+    assert_exit("st28genericowned", &output, 0);
+
+    let generic_array = r#"module spec.sempar.st28genericarray;
+
+struct H { tag: static str; }
+
+func tagsG<T>(borrow h: T): str[2] { return [h.tag, h.tag]; }
+
+func main(): i32 {
+    let h: H = H { tag: "aa" };
+    let s: str[2] = tagsG<H>(h);
+    return i32(len(s[0])) - 2;
+}
+"#;
+    let output = run_memory("st28genericarray", generic_array);
+    assert_no_sanitizer("st28genericarray", &output);
+    assert_exit("st28genericarray", &output, 0);
+
     let owned = r#"module spec.sempar.st28name;
 
 import { String, stringOf } from std.text;
@@ -865,6 +917,25 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("st412two", two_lends, "E10036", &[]);
+
+    // A plain type-parameter parameter becomes a second lend at the instance;
+    // the concrete twin reports the two-candidate E10036 and so must the
+    // generic spelling.
+    let plain_second = r#"module spec.sempar.st412plain;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(borrow a: T, b: T): str[1] { return [a[0].name]; }
+
+func main(): i32 {
+    let hs: H[2] = [H { name: stringOf("aa") }, H { name: stringOf("bb") }];
+    let s: str[1] = f<H[2]>(hs, hs);
+    return i32(len(s[0])) - 2;
+}
+"#;
+    assert_rejected_once("st412plain", plain_second, "E10036", &[]);
 }
 
 /// A static return in one branch does not hide a wrong-source view return in
@@ -969,11 +1040,11 @@ fn should_accept_a_copied_inline_iterable_element() {
     let source = r#"module spec.sempar.st513copy;
 
 func f(): i32 {
-    for (borrow e in [1, 2, 3]) { return e - 1; }
+    for (borrow e in [1, 2, 3]) { return e; }
     return 9;
 }
 
-func main(): i32 { return f(); }
+func main(): i32 { return f() - 1; }
 "#;
     let output = run_memory("st513copy", source);
     assert_no_sanitizer("st513copy", &output);

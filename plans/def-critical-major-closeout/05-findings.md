@@ -508,7 +508,7 @@ report-only with base evidence and do not enter the phase verdict.
 | RV-002 / EIA-1 | MAJOR | DEF-411 iterable | fixed: a nullable iterable is judged by flow narrowing; the narrowed conditional accepts, the unnarrowed binding reports E10010 |
 | EIA-2 | MAJOR | DEF-415 arms | fixed: only a nullable arm takes the per-arm possible-null check; a declared non-null sibling accepts |
 | SR-003 | MAJOR | DEF-513 copy | fixed: the inline-alias report is a view-return escape; a copied element return accepts |
-| EIA-3 | MAJOR | DEF-505/522 take | fixed: a take field projection whose final step is a view's intrinsic `.ptr`/`.len` is a copy, not a partial move |
+| EIA-3 | MAJOR | DEF-505 take duty | fixed: a take field projection whose final step is a view's intrinsic `.ptr`/`.len` is a copy, not a partial move; the DEF-522 row's own fix was sound |
 | RV-004 | MINOR | test harness | fixed: the unused implementation-test helpers and imports are removed |
 | RV-005 | MINOR | documentation | fixed: the return-summary doc is attached to its function; the projection-span comment matches the whole-read span |
 
@@ -516,6 +516,18 @@ report-only with base evidence and do not enter the phase verdict.
 `make check` is green (74 test targets, the 110 compile-fail goldens) and the
 full `make verify` reports all legs passed. The specification suite grew to 15
 cases and the implementation pins to the five extended pins.
+
+The single fix-diff re-review (one pass, the four original lenses) confirmed
+every prior finding fixed and found three new items. Its own corrections were
+then applied and verified; the re-review budget forbids a third pass.
+
+| Finding | Severity | Ruling |
+|---|---|---|
+| EIA-R1 | MAJOR (new) | the new candidate duty falsely rejected a generic static view return at a struct instance (`viewTagG<H>`); fixed: the duty carries every returned parameter and member path and proves static storage at the instance; the ST-28 generic direct, owning, and array twins are green |
+| SR-101 | MAJOR (pre-existing, fixed by the duty) | a plain type-parameter parameter that becomes a lend at the instance was omitted from the candidate count; fixed: the duty records every non-`take` parameter and the instance re-counts; `f<T>(borrow a: T, b: T)` at `H[2]` now reports the concrete E10036, and `keep<T>(p: cstring, y: T)` keeps the bool instance accepted and rejects the `str` instance |
+| RR-001 / SR-102 | MINOR | the copied-element control returned `e - 1` and did not pin the gate; it now returns `e` (red at the fix base, green at the final head) |
+| SR-103 | MINOR (report-only) | the nullable iterable's `E10043` spelling, the `E10010` span, and the per-arm duplicate on `c ? a : a` are recorded; no behavior change |
+
 
 **Pre-existing, report-only (outside the phase verdict):**
 
@@ -532,3 +544,19 @@ cases and the implementation pins to the five extended pins.
 
 The phase closes on the phase's own findings; the pre-existing items above are
 the user's filing/deferral decision and do not expand Batch D.
+
+
+## Phase 4 Close — Final (2026-10-27)
+
+- **Fixes:** the seven active rows plus the two AR-16 stale closes; the
+  phase-review and re-review corrections are in the two review sections above.
+- **Specification suite:** 15 cases, 15/15 plain and `RDC_ASAN`; the six
+  review regressions are red on their fix base and green at the final head.
+- **Implementation pins:** 5/5, including the review count shapes.
+- **Verification:** `make check` green (74 test targets, the 110 compile-fail
+  goldens); the full `make verify` reports all legs passed, including FS-UAE.
+- **Roadmap:** the nine Batch D rows are Done; the progress is 419/544 RD rows
+  with three executing rows left (`DEF-167`, `DEF-171`, `DEF-416`), 116 open
+  (3 executing major; 113 backlog).
+- **Pre-existing report-only:** the review's pre-existing table remains the
+  user's filing/deferral decision; no Batch D scope expansion.

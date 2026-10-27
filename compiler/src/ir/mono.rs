@@ -188,6 +188,13 @@ pub struct RequiresViewReturnCandidates {
     /// The parameter the returned view derives from, when every return names
     /// the same one; `None` for a mixed derivation.
     pub returned: Option<String>,
+    /// The parameter and member path of every direct returned view.
+    ///
+    /// A return that reads a `static str` field needs no lend candidate even
+    /// when the borrowed type is an owning aggregate: the instance substitutes
+    /// the root and projects the path to prove the static storage. An empty
+    /// list is a return whose path the expression walk cannot name.
+    pub returns: Vec<(String, Vec<crate::types::PlacePathStep>)>,
     /// The function name's span, where the view-return rule reports.
     pub span: Span,
 }

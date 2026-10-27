@@ -326,6 +326,22 @@ func main(): i32 {
 }
 "#;
     assert_eq!(count("st411unnarrow", unnarrowed_loop, "E10010"), 1);
+
+    let plain_second = r#"module impl.sempar.st412plain;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func f<T>(borrow a: T, b: T): str[1] { return [a[0].name]; }
+
+func main(): i32 {
+    let hs: H[2] = [H { name: stringOf("aa") }, H { name: stringOf("bb") }];
+    let s: str[1] = f<H[2]>(hs, hs);
+    return i32(len(s[0])) - 2;
+}
+"#;
+    assert_eq!(count("st412plain", plain_second, "E10036"), 1);
 }
 
 /// A nested element substitution never reaches the emitter as a placeholder.

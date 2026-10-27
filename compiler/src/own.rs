@@ -325,6 +325,8 @@ struct FunctionChecker<'a, 'd> {
     view_return_source: Option<String>,
     /// True when different returns derive from different parameters.
     view_return_source_mixed: bool,
+    /// The parameter and member path of every direct returned view.
+    view_return_paths: Vec<(String, Vec<crate::types::PlacePathStep>)>,
     /// True when an observed view return derives from something other than
     /// the single candidate, so the postlude reports `E10036` even though the
     /// candidate count is one.
@@ -632,6 +634,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             elision_candidate_types: Vec::new(),
             view_return_source: None,
             view_return_source_mixed: false,
+            view_return_paths: Vec::new(),
             view_return_requirements: Vec::new(),
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,

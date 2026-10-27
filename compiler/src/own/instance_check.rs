@@ -55,7 +55,7 @@ pub fn check(
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_element_move_requirements(program, sema, mono, diagnostics);
-    check_view_return_candidates(program, mono, diagnostics);
+    check_view_return_candidates(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
@@ -1255,6 +1255,7 @@ fn check_element_move_requirements(
 /// One duty reports once — its first offending instance.
 fn check_view_return_candidates(
     program: &ProgramInfo,
+    sema: &SemaOutput,
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
@@ -1268,6 +1269,29 @@ fn check_view_return_candidates(
                 continue;
             }
             let bindings = crate::types::instance_bindings(&params, &instance.args);
+            // A return that reads static storage needs no lend candidate: the
+            // substituted root and member path prove the `static str` (or an
+            // array of static views) exactly as the concrete return does.
+            let all_static = !requirement.returns.is_empty()
+                && requirement.returns.iter().all(|(parameter, path)| {
+                    let Some((_, declared)) = requirement
+                        .candidates
+                        .iter()
+                        .find(|(name, _)| name == parameter)
+                    else {
+                        return false;
+                    };
+                    let substituted = crate::types::substitute(declared, &bindings);
+                    let selected = crate::types::project_place_path(
+                        &substituted,
+                        path,
+                        &sema.table,
+                    );
+                    static_view_ty(&selected)
+                });
+            if all_static {
+                continue;
+            }
             let lend: Vec<&str> = requirement
                 .candidates
                 .iter()
@@ -1292,6 +1316,19 @@ fn check_view_return_candidates(
             );
             break;
         }
+    }
+}
+
+/// True when a projected return selects static storage.
+///
+/// A `static str` names module-lifetime bytes; a fixed array of static views
+/// repeats that storage, exactly as the direct-return static scan treats it.
+/// Every other shape needs an elision candidate.
+fn static_view_ty(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::StaticStr => true,
+        TyKind::Array { element, .. } => static_view_ty(element),
+        _ => false,
     }
 }
 

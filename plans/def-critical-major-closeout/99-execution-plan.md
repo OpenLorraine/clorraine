@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 61/76 tasks (80%)
+> **Progress**: 62/76 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -408,11 +408,14 @@ program remains in Batch B.
   semantic-parity and view-return pins and record every expected change; close
   the Batch D rows through the roadmap skill and record incidental minor
   closures without expanding scope; add the phase record to `05-findings.md`.
-  ⏳ (implemented: 2026-10-27; the phase review found two critical and five
-  major regressions; the eligible technical fixes are applied, the suites
-  grew to 15 specification cases and the five extended pins, and `make check` /
-  `make verify` are green. The Batch D rows stay reopened until the single
-  fix-diff re-review is clean.)
+  ✅ (completed: 2026-10-27; the phase review found two critical and five
+  major regressions; the eligible technical fixes are applied and the single
+  fix-diff re-review confirmed them. The re-review's own corrections (the
+  static generic view return, the plain type-parameter candidate, the copied
+  control) are verified by the final full `make check` (74 targets, 110
+  goldens) and the full `make verify` (all legs, including FS-UAE). The suite
+  is 15/15 plain and `RDC_ASAN`, the pins are 5/5, and the nine Batch D rows
+  are Done; the roadmap is 419/544 with three executing rows left.)
 
 **Verify**: `make check` and `make verify`; no safe twin regressed; no unsafe
 twin accepted.

@@ -3893,30 +3893,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !is_elided_view(&self.returns) {
             return;
         }
-        let candidates: Vec<(String, Ty)> = self
+        // The declaration-time count keeps the concrete twin's candidates: a
+        // view/handle/array lend is a candidate, and an explicit `borrow T` is
+        // a maybe-candidate. A plain type-parameter parameter is not counted
+        // here because its concrete twin's plain argument may be a
+        // non-candidate (a cstring helper's bool `y`); the per-instance duty
+        // below re-counts every non-`take` parameter after substitution.
+        let all_candidates: Vec<(String, Ty)> = self
             .decl
             .params
             .iter()
-            .filter(|param| {
-                if param.mode == Mode::Take {
-                    return false;
-                }
-                let ty = self.resolve_with(&param.ty, &self.type_params);
-                // An explicit `borrow T` may be a view or an aggregate at its
-                // instance, so it is a potential candidate at the declaration.
-                // A plain type-parameter parameter keeps the concrete twin's
-                // count: the concrete twin's plain argument may be a
-                // non-candidate (a cstring helper's bool `y`), and counting it
-                // would false-reject the generic helper.
-                is_lend_candidate(&ty)
-                    || (param.mode == Mode::Borrow && super::lower::mentions_type_param(&ty))
-            })
+            .filter(|param| param.mode != Mode::Take)
             .map(|param| {
                 (
                     param.name.clone(),
                     self.resolve_with(&param.ty, &self.type_params),
                 )
             })
+            .collect();
+        let candidates: Vec<(String, Ty)> = all_candidates
+            .iter()
+            .filter(|(_, ty)| {
+                is_lend_candidate(ty)
+                    || (super::lower::mentions_type_param(ty))
+            })
+            .cloned()
             .collect();
         self.elision_candidates = candidates.len();
         self.elision_candidate = if candidates.len() == 1 {
@@ -3929,10 +3930,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // returned parameter; the instance audit re-counts them after the
         // substitution. A concrete-only candidate set stays a declaration-time
         // judgment.
-        self.elision_type_param_candidate = candidates
+        self.elision_type_param_candidate = all_candidates
             .iter()
             .any(|(_, ty)| super::lower::mentions_type_param(ty));
-        self.elision_candidate_types = candidates;
+        self.elision_candidate_types = all_candidates;
     }
 
     /// Reports `E10036` when a view return cannot elide a single parameter.
@@ -3962,6 +3963,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         function: self.decl.name.clone(),
                         candidates: self.elision_candidate_types.clone(),
                         returned,
+                        returns: self.view_return_paths.clone(),
                         span: self.decl.name_span,
                     });
             }

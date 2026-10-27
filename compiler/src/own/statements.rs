@@ -1675,6 +1675,59 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             && matches!(binding.base, Some(ir::PlaceBase::DerefTemp { .. }))
     }
 
+    /// Records the parameter and member path of every direct returned view.
+    ///
+    /// The per-instance candidate duty needs the paths to prove that a return
+    /// reads static storage even when the borrowed type is an owning aggregate
+    /// (`return h.tag`). The walk mirrors the provenance walk: a conditional
+    /// contributes both arms, an array literal every element and its fill, and
+    /// a plain place contributes its parameter root and projections.
+    fn record_return_view_paths(&mut self, value: &Expr) {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.record_return_view_paths(then_value);
+                self.record_return_view_paths(else_value);
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.record_return_view_paths(element);
+                }
+                if let Some(fill) = fill {
+                    self.record_return_view_paths(fill);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.record_return_view_paths(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.record_return_view_paths(value);
+            }
+            _ => {
+                let Some(PlaceTarget::Local(id, projections)) = self.place_target(value) else {
+                    return;
+                };
+                if self.bindings[id].kind != BindingKind::Param {
+                    return;
+                }
+                let path: Vec<crate::types::PlacePathStep> = projections
+                    .iter()
+                    .map(|projection| match projection {
+                        ir::Projection::Field(field) => {
+                            crate::types::PlacePathStep::Field(field.clone())
+                        }
+                        ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                            crate::types::PlacePathStep::Element
+                        }
+                    })
+                    .collect();
+                self.view_return_paths
+                    .push((self.bindings[id].name.clone(), path));
+            }
+        }
+    }
+
     /// Records one parameter a returned view derives from.
     ///
     /// A deferred view-return candidate duty needs the single returned
@@ -1748,6 +1801,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.suppress_elision = true;
             }
             if view_return && !inline_alias {
+                self.record_return_view_paths(value);
                 let provenance = self.view_provenance(value);
                 // The deferred candidate duty needs the parameter the returned
                 // view derives from; every storage component that is a
