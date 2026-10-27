@@ -245,9 +245,17 @@ fn check_not_lend_requirements(
                 })
                 .collect();
             let judged = projected_type(sema, &substituted, &path);
-            if sema.table.duplicable(&judged)
-                && !is_view_member_projection(sema, &substituted, &path)
-            {
+            // A view's `.ptr`/`.len` ABI member is a value read, not a move of
+            // the lend: the pointer and the length are copies. The element of
+            // a view is not exempt — an owning element (a `String[]` element)
+            // is the concrete lend move.
+            if is_view_intrinsic_projection(sema, &substituted, &path) {
+                continue;
+            }
+            // The instance decides whether the selected member owns. A
+            // duplicable member copies; an owning member is the lend move the
+            // concrete twin rejects.
+            if sema.table.duplicable(&judged) {
                 continue;
             }
             // A maybe-target store whose destination is a view copies the
@@ -936,6 +944,46 @@ fn opaque_escape(subject: &str, span: Span) -> Diagnostic {
 /// moved-value code (`E10020`) for a whole-binding move, and the partial-move
 /// code (`E10025`) when only a member path moved and the use names the whole
 /// binding, matching the concrete spelling's two judgments.
+/// True when a projection selects a view's intrinsic `.ptr`/`.len` member.
+///
+/// A view's ABI pointer and length are plain values: reading them copies the
+/// value and moves no storage. The check peels a raw base first and resolves
+/// each field through the concrete table; an unresolved intermediate step is
+/// not a proof, so the caller keeps the ordinary ownership judgment. An
+/// element of a view is not an intrinsic member.
+fn is_view_intrinsic_projection(
+    sema: &SemaOutput,
+    root: &Ty,
+    path: &[crate::types::PlacePathStep],
+) -> bool {
+    let mut selected = root.clone();
+    for step in path {
+        while let TyKind::Raw(inner) = &selected.kind {
+            selected = (**inner).clone();
+        }
+        if let crate::types::PlacePathStep::Field(field) = step {
+            if field == "ptr" || field == "len" {
+                if is_view(&selected) {
+                    return true;
+                }
+                if field == "len" && matches!(selected.kind, TyKind::Array { .. }) {
+                    return true;
+                }
+            }
+        }
+        let next = crate::types::project_place_path(
+            &selected,
+            std::slice::from_ref(step),
+            &sema.table,
+        );
+        if next.is_unknown() {
+            return false;
+        }
+        selected = next;
+    }
+    false
+}
+
 /// True when a projection selects a view member that the opaque lowering
 /// cannot emit through a type parameter.
 ///
@@ -994,12 +1042,12 @@ fn is_view_member_projection(
     false
 }
 
-/// True when a moved or selected projection reaches an owned value.
+/// The type a moved or selected projection reaches.
 ///
-/// The projection resolver stops at a type it does not model. A view's
-/// intrinsic `.ptr`/`.len` member and an element of a view reach no owned
-/// value, so they stay copies; any other unresolved projection falls back to
-/// the owning root, as the concrete spelling would.
+/// A view's intrinsic `.ptr`/`.len` member is a value read and its element is
+/// the concrete element type: an owning element (`String[]` selects a String)
+/// is the concrete lend move, while a byte or scalar copies. An unresolved
+/// projection falls back to the owning root, as the concrete spelling would.
 fn projected_type(
     sema: &SemaOutput,
     root: &Ty,
@@ -1018,12 +1066,6 @@ fn projected_type(
         {
             selected = Ty::usize_ty();
             continue;
-        }
-        // A view member (`.ptr`, `.len`, or an element of a view) is not
-        // lowered through an opaque type; the conservative duty keeps the
-        // store rejected instead of emitting invalid C.
-        if matches!(step, crate::types::PlacePathStep::Element) && is_view(&selected) {
-            return root.clone();
         }
         let next = crate::types::project_place_path(
             &selected,

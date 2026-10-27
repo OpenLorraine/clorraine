@@ -658,7 +658,8 @@ func main(): i32 {
 // ---------------------------------------------------------------------------
 
 /// The view-member projection over a type-parameter conditional is accepted in
-/// the move and read forms; a local-backed arm reports one `E10030`.
+/// the move and read forms, including a static tag read through a local arm;
+/// a local arm's owned-field view still reports the frozen view-return code.
 #[test]
 fn should_accept_a_type_parameter_view_member_projection() {
     let moved = r#"module spec.sempar.st31;
@@ -732,5 +733,32 @@ func main(): i32 {
     return 0;
 }
 "#;
-    assert_rejected_once("st31local", local, "E10030", &["l"]);
+    // A local aggregate's static tag still points at module-lifetime bytes;
+    // the pointer copy does not borrow the local frame.
+    let output = run_memory("st31local", local);
+    assert_no_sanitizer("st31local", &output);
+    assert_exit("st31local", &output, 0);
+
+    // The unsafe twin views the local's owned field: a returned view must
+    // derive from a parameter, not from a local, so the frozen view-return
+    // code reports it. The concrete spelling reports the same code.
+    let local_owned = r#"module spec.sempar.st31localowned;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func pack<T>(d: bool, borrow h1: T, borrow h2: T): str {
+    let l: H = H { name: stringOf("ll"), tag: "ll" };
+    return (d ? h1 : l).name;
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa"), tag: "aa" };
+    let h2: H = H { name: stringOf("bb"), tag: "bb" };
+    let s: str = pack<H>(true, h1, h2);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_once("st31localowned", local_owned, "E10035", &["l"]);
 }

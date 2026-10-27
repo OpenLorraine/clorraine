@@ -437,3 +437,20 @@ reports **E10036**, not the plan's expected E10034: an owned field is not a
 view-like lend candidate, so frozen EL-2/EL-3 and BR-7 require the view-return
 code. The specification test follows the frozen oracle; the plan row was the
 inconsistent artifact.
+
+
+### DEF-522 revalidation and control correction
+
+The intrinsic view-member forms (`(d ? h1 : h2).tag.ptr`, `.len`, `tag[0]`)
+are accepted through a type parameter: the instance exempts the view's ABI
+`.ptr`/`.len` member, and a view's element resolves to its concrete element
+type. An owning element (`String[]` selects a `String`) still reports the
+concrete E10034. The emitter already lowers the opaque member at the instance,
+so the accepted move/read/local-static forms build as strict C and run.
+
+The plan's ST-31 local arm expected `E10030` for a local aggregate's static tag
+pointer. The concrete twin accepts it (the pointer names module-lifetime bytes,
+frozen EL-4), and the genuine local-backed escape — returning the local's owned
+`name` field as a view — reports frozen BR-6's `E10035`, not `E10030`. The
+specification test follows the concrete twin and the frozen oracle; the plan
+row was the inconsistent artifact.

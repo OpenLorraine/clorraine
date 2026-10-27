@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 58/76 tasks (76%)
+> **Progress**: 59/76 tasks (78%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -374,8 +374,18 @@ program remains in Batch B.
   element-loop 25, codegen-ownership 16, eval-emission 68, callable-release 69,
   runtime-value 30, checker 212, borrow-store 58, and conditional-projection 61
   unchanged)
-- [ ] 4.2.9 DEF-522 type-parameter view-member move **and read/return** —
+- [x] 4.2.9 DEF-522 type-parameter view-member move **and read/return** —
   `compiler/src/own/instance_check.rs`, `compiler/src/codegen/expr.rs`.
+  ✅ (completed: 2026-10-27; the instance lend judgment exempts a view's
+  intrinsic `.ptr`/`.len` member (a value copy) and resolves a view's element
+  to its concrete element type, so an owning `String[]` element keeps the
+  concrete E10034. The move, read/return, and local static-tag forms are
+  accepted with valid strict C (`own/instance_check.rs` only; the emitter
+  already lowers the opaque member at the instance). ST-31 green. The plan's
+  local-arm E10030 conflicted with the concrete twin and frozen EL-4/BR-6;
+  the test follows the oracle — recorded in `05-findings.md`. Semantic 9,
+  borrow-generic 45, borrow-store 58, checker 212, and the eleven focused
+  regression suites unchanged)
 - [ ] 4.3.1 Green: focused parity suites, ASAN for safe controls, and strict-C
   comparison against the concrete twin.
 - [ ] 4.3.2 Implementation pins in `compiler/tests/def_semantic_parity_integrity_impl_test.rs`:
