@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-28
-> **Progress**: 0/57 tasks (0%)
+> **Progress**: 4/57 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -24,10 +24,14 @@ DEF rows and `make check`/`make verify` pass.
 > **Baseline tree**: `54197ce`
 > **Lenses**: correctness, semantics, memory, emission (probe routing only)
 
-- [ ] 0.1.1 [spec-author] Revalidate the Batch A and B rows (30: DEF-544…DEF-557, DEF-190…DEF-542) at HEAD `54197ce`; for each, run its recorded reproduction with the driver and record confirmed/stale/incidental plus the exact command and result in `05-findings.md`.
-- [ ] 0.1.2 [spec-author] Revalidate the Batch C and D rows (40: DEF-169…DEF-419, DEF-250…DEF-530) at HEAD; record the same evidence and flag any row whose fix needs a new ruling.
-- [ ] 0.1.3 [spec-author] Revalidate the Batch E and F rows (44: DEF-194…DEF-500, DEF-210…DEF-321) at HEAD; record the same evidence and flag any row whose fix needs a new ruling.
-- [ ] 0.1.4 [orchestrator] Close stale and incidentally fixed rows through the roadmap skill with HEAD evidence; confirm the remaining count and the batch mapping; if a row needs an unauthorized spec change or a new material surface, stop under AR-14.
+- [x] 0.1.1 [spec-author] Revalidate the Batch A and B rows (30: DEF-544…DEF-557, DEF-190…DEF-542) at HEAD `54197ce`; for each, run its recorded reproduction with the driver and record confirmed/stale/incidental plus the exact command and result in `05-findings.md`.
+  ✅ 2026-10-28: 30 rows probed at `2aa138c`; 26 confirmed, 3 stale (DEF-414/554/557), 1 manual (DEF-550).
+- [x] 0.1.2 [spec-author] Revalidate the Batch C and D rows (40: DEF-169…DEF-419, DEF-250…DEF-530) at HEAD; record the same evidence and flag any row whose fix needs a new ruling.
+  ✅ 2026-10-28: 40 rows probed; 29 confirmed, 4 stale, 3 incidental, 3 needs-ruling (DEF-169/214/252; 214 resolved by AR-4), 1 manual (DEF-370).
+- [x] 0.1.3 [spec-author] Revalidate the Batch E and F rows (44: DEF-194…DEF-500, DEF-210…DEF-321) at HEAD; record the same evidence and flag any row whose fix needs a new ruling.
+  ✅ 2026-10-28: 44 rows probed; 20 confirmed, 20 incidental, 4 manual (DEF-324/334/355/438).
+- [x] 0.1.4 [orchestrator] Close stale and incidentally fixed rows through the roadmap skill with HEAD evidence; confirm the remaining count and the batch mapping; if a row needs an unauthorized spec change or a new material surface, stop under AR-14.
+  ✅ 2026-10-28: 30 rows closed with HEAD evidence; 84 open (5 critical + 7 major + 72 minor); DEF-169 and DEF-252 are reserved for a user ruling before Phase 3/4.
 
 **Verify**: every open row has a HEAD evidence line; stale closes are recorded; the confirmed mapping is in `05-findings.md`.
 
