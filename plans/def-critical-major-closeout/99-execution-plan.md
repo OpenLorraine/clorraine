@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 59/76 tasks (78%)
+> **Progress**: 61/76 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -386,11 +386,23 @@ program remains in Batch B.
   the test follows the oracle — recorded in `05-findings.md`. Semantic 9,
   borrow-generic 45, borrow-store 58, checker 212, and the eleven focused
   regression suites unchanged)
-- [ ] 4.3.1 Green: focused parity suites, ASAN for safe controls, and strict-C
+- [x] 4.3.1 Green: focused parity suites, ASAN for safe controls, and strict-C
   comparison against the concrete twin.
-- [ ] 4.3.2 Implementation pins in `compiler/tests/def_semantic_parity_integrity_impl_test.rs`:
+  ✅ (completed: 2026-10-27; the semantic suite is 9/9 and `RDC_ASAN=1` is
+  clean for every safe control; the focused regression batch (borrow-generic
+  45, borrow-store 58, checker 212, conditional-projection 61, eval-emission
+  68, callable-release 69, runtime-value 30, element-loop 25, codegen-ownership
+  16, backlog-closeout 50, raw-store 29, conditional-value 18) is green; the
+  accepted generic view-member C builds under `-Werror` with the concrete
+  twin's `.tag.ptr` shape)
+- [x] 4.3.2 Implementation pins in `compiler/tests/def_semantic_parity_integrity_impl_test.rs`:
   one-report counts, no placeholder, concrete/generic parity, read/return C,
   determinism.
+  ✅ (completed: 2026-10-27; five pins: the six rejected shapes' exact error
+  counts (two E10010 and five single reports), no `#element` placeholder with
+  `cl_f__arr2_u8`, the generic `cl_pack__H` and concrete `.tag.ptr` shapes, the
+  `cl_readTag__H`/`static u8 *` read/return unit, and byte-identical re-
+  emission; all five green)
 - [ ] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   semantic-parity and view-return pins and record every expected change; close
   the Batch D rows through the roadmap skill and record incidental minor
