@@ -425,3 +425,15 @@ The active fixes are `DEF-411`, `412`, `415`, `505`, `506`, `513`, and `522`;
 `DEF-413` and `DEF-507` are stale closes with green pins. `DEF-411` is fixed:
 the bool `if`/cast/binary/loop-head null arms report `E10012`, and ST-23 is
 green.
+
+
+### DEF-506 revalidation and control correction
+
+The safe static-only shape (`viewTag(borrow h: H): str { return h.tag; }`) and
+its caller-returned form are accepted after the bounded static-storage proof:
+a `static str` value, and a callee whose every direct return is static, name
+module-lifetime bytes (frozen EL-4). The owned-field twin (`return h.name`)
+reports **E10036**, not the plan's expected E10034: an owned field is not a
+view-like lend candidate, so frozen EL-2/EL-3 and BR-7 require the view-return
+code. The specification test follows the frozen oracle; the plan row was the
+inconsistent artifact.

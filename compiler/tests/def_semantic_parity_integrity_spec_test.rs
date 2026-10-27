@@ -521,8 +521,9 @@ func main(): i32 {
 // Static-only viewed position
 // ---------------------------------------------------------------------------
 
-/// A callee that views only a static field is accepted; the owned-field twin
-/// still reports the concrete lend diagnostic.
+/// A callee that views only a static field is accepted, including when its
+/// caller returns that static view; the owned-field twin keeps the frozen
+/// view-return rejection because an owned field is not a view-like lend.
 #[test]
 fn should_accept_a_static_only_viewed_position() {
     let safe = r#"module spec.sempar.st28;
@@ -545,6 +546,33 @@ func main(): i32 {
     assert_no_sanitizer("st28", &output);
     assert_exit("st28", &output, 0);
 
+    // The filed rejection sat at a caller that passed a local mixed aggregate
+    // to a static-only viewed callee and returned the view. The call's result
+    // is static storage, so the local does not back it.
+    let caller = r#"module spec.sempar.st28caller;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func viewTag(borrow h: H): str {
+    return h.tag;
+}
+
+func caller(): str {
+    let h: H = H { name: stringOf("aa"), tag: "aa" };
+    return viewTag(h);
+}
+
+func main(): i32 {
+    let s: str = caller();
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("st28caller", caller);
+    assert_no_sanitizer("st28caller", &output);
+    assert_exit("st28caller", &output, 0);
+
     let owned = r#"module spec.sempar.st28name;
 
 import { String, stringOf } from std.text;
@@ -561,7 +589,10 @@ func main(): i32 {
     return i32(len(s)) - 2;
 }
 "#;
-    assert_rejected_once("st28name", owned, "E10034", &[]);
+    // An owned field is not a view-like lend source: the frozen view-return
+    // rule reports E10036, not a lend-store error. The static field above is
+    // the safe control because its bytes never live in the borrowed aggregate.
+    assert_rejected_once("st28name", owned, "E10036", &[]);
 }
 
 // ---------------------------------------------------------------------------

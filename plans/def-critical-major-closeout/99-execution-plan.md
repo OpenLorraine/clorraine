@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 56/76 tasks (74%)
+> **Progress**: 57/76 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -346,11 +346,21 @@ program remains in Batch B.
   projection records the partial-move duty. ST-27 green (accepted duplicable,
   one E10026 owning, one E10034 lend); checker 212, borrow-generic 45,
   conditional-projection 61, and borrow-store 58 unchanged)
-- [ ] 4.2.6 DEF-506 static-only viewed position — revalidate; if it reproduces,
+- [x] 4.2.6 DEF-506 static-only viewed position — revalidate; if it reproduces,
   `compiler/src/own/call_check.rs` with the conservative proof, plus the
   view-return derivation in `compiler/src/own/place.rs`/`own/statements.rs`
   when the probe reports `E10036`; otherwise close stale with a green HEAD pin
   and a `05-findings.md` proof.
+  ✅ (completed: 2026-10-27; the bounded proof lives in
+  `compiler/src/own/place.rs` beside the existing return-flow summary: a
+  `static str` value, and a callee whose every direct return is static, are
+  static storage. The static tag, the local static tag, and the caller-returned
+  static view are accepted with strict C/ASAN; the owned-field twin keeps the
+  frozen E10036. ST-28 green; eval-emission 68, runtime-value 30,
+  borrow-view 16, checker 212, borrow-store 58, and spec check 110 unchanged.
+  The plan's E10034 expectation for the name twin conflicted with the frozen
+  EL-2/EL-3/BR-7; the test follows the frozen oracle — recorded in
+  `05-findings.md`)
 - [x] 4.2.7 DEF-507 static-return helper — revalidate; if it reproduces,
   `compiler/src/own/place.rs`/`own/statements.rs`; otherwise close stale with a
   green HEAD pin and a `05-findings.md` proof.

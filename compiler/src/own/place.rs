@@ -980,6 +980,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Where a view value's storage comes from.
     pub(super) fn view_provenance(&self, expr: &Expr) -> Provenance {
+        // A `static str` value always names module-lifetime bytes: a literal,
+        // a `static str` parameter that received one, or a static field. The
+        // value's storage cannot die with the current frame, so the view needs
+        // no lend source even when it is read through a local or a borrow.
+        if matches!(self.ty(expr).kind, TyKind::StaticStr) {
+            return Provenance::Static;
+        }
         match &expr.kind {
             ExprKind::Name(name) => match self.lookup(name) {
                 Some(id) => self.place_provenance(id),
@@ -1005,18 +1012,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.view_provenance(value)
             }
             ExprKind::Call { callee, args, .. } => {
-                let provenance = self.call_provenance(callee, args);
-                // A call whose declared result is `static str` names static
-                // storage, which outlives every frame exactly like a literal;
-                // the result has no lend source to reborrow, so the call
-                // provenance alone cannot see it.
-                if provenance == Provenance::None
-                    && (matches!(self.ty(expr).kind, TyKind::StaticStr)
-                        || self.call_returns_static_view(callee, &self.ty(expr)))
+                let call_ty = self.ty(expr);
+                // A call whose result is static storage outlives every frame
+                // exactly like a literal. The callee's direct returns prove it
+                // even when one of its parameters is named in the return: a
+                // helper may read a static field of a borrow and return only
+                // that field. The declaration's own `static str` spelling is
+                // the same proof without a body scan.
+                if self.call_returns_static_view(callee, &call_ty)
+                    || matches!(call_ty.kind, TyKind::StaticStr)
                 {
                     Provenance::Static
                 } else {
-                    provenance
+                    self.call_provenance(callee, args)
                 }
             }
             // A projection points into the same storage as its base, so the
@@ -3080,6 +3088,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
             return false;
         };
+        // Every direct return may name a parameter and still hand back static
+        // storage: `return h.tag` reads a `static str` field of a borrow. The
+        // recorded type of each returned expression proves the value's
+        // storage; one non-static return keeps the conservative answer.
+        if body_returns_static_views(&decl.body, &self.sema.expr_types) {
+            return true;
+        }
         let mentioned = body_return_flow_names(&decl.body);
         decl.params
             .iter()
@@ -4540,6 +4555,99 @@ fn collect_return_value_if_names(decl: &IfStmt, names: &mut BTreeSet<String>) {
 }
 
 /// Collects the names every `return` in a block mentions.
+/// True when every return in `body` hands back static storage.
+///
+/// The recorded type of each returned expression decides: a `static str` (or
+/// a fixed array of static views) points at module-lifetime bytes, even when
+/// the expression reads a field of a borrow parameter. A body with no return,
+/// or with any return outside that shape, keeps the conservative answer. The
+/// walk visits only this function's own returns; a lambda body's returns
+/// belong to the lifted function.
+fn body_returns_static_views(
+    body: &Block,
+    expr_types: &std::collections::HashMap<usize, Ty>,
+) -> bool {
+    fn static_view(ty: &Ty) -> bool {
+        match &ty.kind {
+            TyKind::StaticStr => true,
+            TyKind::Array { element, .. } => static_view(element),
+            _ => false,
+        }
+    }
+    fn walk_statements(
+        statements: &[Stmt],
+        expr_types: &std::collections::HashMap<usize, Ty>,
+        returns: &mut usize,
+        all_static: &mut bool,
+    ) {
+        for statement in statements {
+            match statement {
+                Stmt::Return {
+                    value: Some(value), ..
+                } => {
+                    *returns += 1;
+                    if !expr_types
+                        .get(&(value as *const Expr as usize))
+                        .is_some_and(static_view)
+                    {
+                        *all_static = false;
+                    }
+                }
+                Stmt::Return { value: None, .. } => {
+                    *returns += 1;
+                    *all_static = false;
+                }
+                Stmt::If(decl) => {
+                    walk_statements(
+                        &decl.then_block.statements,
+                        expr_types,
+                        returns,
+                        all_static,
+                    );
+                    let mut branch = &decl.else_branch;
+                    while let Some(ElseBranch::If(nested)) = branch {
+                        walk_statements(
+                            &nested.then_block.statements,
+                            expr_types,
+                            returns,
+                            all_static,
+                        );
+                        branch = &nested.else_branch;
+                    }
+                    if let Some(ElseBranch::Block(block)) = branch {
+                        walk_statements(&block.statements, expr_types, returns, all_static);
+                    }
+                }
+                Stmt::While(decl) => {
+                    walk_statements(&decl.body.statements, expr_types, returns, all_static)
+                }
+                Stmt::DoWhile(decl) => {
+                    walk_statements(&decl.body.statements, expr_types, returns, all_static)
+                }
+                Stmt::ForC(decl) => {
+                    walk_statements(&decl.body.statements, expr_types, returns, all_static)
+                }
+                Stmt::ForIn(decl) => {
+                    walk_statements(&decl.body.statements, expr_types, returns, all_static)
+                }
+                Stmt::Switch(decl) => {
+                    for clause in &decl.clauses {
+                        walk_statements(&clause.statements, expr_types, returns, all_static);
+                    }
+                }
+                Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+                    walk_statements(&block.statements, expr_types, returns, all_static)
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut returns = 0usize;
+    let mut all_static = true;
+    walk_statements(&body.statements, expr_types, &mut returns, &mut all_static);
+    returns > 0 && all_static
+}
+
 fn collect_return_block_names(block: &Block, names: &mut BTreeSet<String>) {
     for statement in &block.statements {
         collect_return_stmt_names(statement, names);
