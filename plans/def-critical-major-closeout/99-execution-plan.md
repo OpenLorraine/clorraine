@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 71/76 tasks (93%)
+> **Progress**: 72/76 tasks (95%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -507,12 +507,16 @@ failure; the stage-spec parse is green through the parse-only mode.
 
 ## Phase 6: Full Verification, Review, and Close-out
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `b97f4da80bc4155dc1b61411dc86363a806f6c2a`
 > **Lenses**: all four review lenses
 > **Reasoning**: high — program gate; no open critical/major may survive
 
-- [ ] 6.1.1 Run the full `make check` and `make verify`; run every focused
+- [x] 6.1.1 Run the full `make check` and `make verify`; run every focused
   `RDC_ASAN=1` suite and the determinism pins.
+  ✅ (completed: 2026-10-27; `make check` is green with 74 test targets and the
+  110 compile-fail goldens; ten focused `RDC_ASAN=1` suites run 388 tests with
+  no sanitizer report; the full `make verify` reports all legs passed,
+  including FS-UAE)
 - [ ] 6.1.2 Dispatch the phase review: correctness plus memory-safety;
   emission-integrity for codegen; semantics for the language-rule batches.
 - [ ] 6.1.3 Fix critical/major review findings, verify, and perform the single
