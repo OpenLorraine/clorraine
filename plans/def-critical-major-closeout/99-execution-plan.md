@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 47/76 tasks (62%)
+> **Progress**: 51/76 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -301,24 +301,30 @@ program remains in Batch B.
 
 ## Phase 4: Semantic Parity — DEF-411…522
 
-> **Phase baseline tree**: recorded at phase start
+> **Phase baseline tree**: `283ced8`
 > **Lenses**: semantics, correctness, memory safety, emission integrity
 > **Reasoning**: high — null rules, substitution parity, and precision without
 > weakening safety
 
-- [ ] 4.1.1 [spec-author] Write ST-23 (`DEF-411`), ST-24 (`412`), ST-25
+- [x] 4.1.1 [spec-author] Write ST-23 (`DEF-411`), ST-24 (`412`), ST-25
   (`413`), ST-26 (`415`), and ST-27 (`505`) in
   `compiler/tests/def_semantic_parity_integrity_spec_test.rs`; split the
   DEF-411 contexts (including the nullable conditional loop head) and the
   DEF-505 accepted/owning cases.
-- [ ] 4.1.2 [spec-author] Write ST-28 (`DEF-506`), ST-29 (`507`), ST-30
+  ✅ (completed: 2026-10-27)
+- [x] 4.1.2 [spec-author] Write ST-28 (`DEF-506`), ST-29 (`507`), ST-30
   (`513`), and ST-31 (`522`) in the same file; pair every accepted precision
   fix with its unsafe twin and record the revalidation result for 506/507.
-- [ ] 4.1.3 Confirm red: false rejects and accepted-invalid null/placeholder
+  ✅ (completed: 2026-10-27)
+- [x] 4.1.3 Confirm red: false rejects and accepted-invalid null/placeholder
   shapes fail before the fixes; stale rows get a green HEAD pin instead.
-- [ ] 4.2.1 DEF-411 null-arm contexts, including the nullable conditional loop
+  ✅ (completed: 2026-10-27; red: 411, 412, 415, 505, 506, 513, 522; stale
+  green: 413, 507; the evidence table is in `05-findings.md`)
+- [x] 4.2.1 DEF-411 null-arm contexts, including the nullable conditional loop
   head reporting `E10012` — `compiler/src/sema/ops.rs`,
   `compiler/src/own/loops.rs`, `compiler/src/types/mod.rs` predicates.
+  ✅ (completed: 2026-10-27; ST-23 green; lib 379, checker 212, cpr 61, and
+  borrow-generic 45 unchanged)
 - [ ] 4.2.2 DEF-412 view-array return — `compiler/src/own/place.rs`,
   `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`.
 - [ ] 4.2.3 DEF-413 nested element substitution — `compiler/src/own/instance_check.rs`.

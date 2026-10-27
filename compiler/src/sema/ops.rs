@@ -98,6 +98,16 @@ impl Checker<'_, '_> {
         let left_ty = self.check_value(left, None);
         let right_ty = self.check_value(right, None);
         let (left_ty, right_ty) = self.adapt_operands(left, left_ty, right, right_ty);
+        // A conditional operand with a null arm is judged against the other
+        // operand's non-nullable base type. The nullable flag a literal
+        // inherits from the other side is stripped: the arithmetic result
+        // cannot carry a null arm.
+        let mut left_expected = right_ty.clone();
+        left_expected.nullable = false;
+        self.judge_conditional_argument(left, &left_expected);
+        let mut right_expected = left_ty.clone();
+        right_expected.nullable = false;
+        self.judge_conditional_argument(right, &right_expected);
         self.binary_result(op, &left_ty, left.span, &right_ty, right.span)
     }
 
@@ -502,12 +512,14 @@ impl Checker<'_, '_> {
         arms.opaque
     }
 
-    /// Applies a call argument's resolved destination to a conditional arm.
+    /// Applies a resolved destination to a conditional's null arms.
     ///
     /// A generic call types its arguments before its type arguments are
     /// inferred, so a conditional argument's null arm has no destination then.
     /// The recorded arm types let the call site apply the null rule once the
-    /// parameter resolves, without walking the expression a second time.
+    /// parameter resolves, without walking the expression a second time. The
+    /// same helper serves the `if` condition, a cast, and a binary operand:
+    /// each is a non-nullable context that the conditional's result feeds.
     pub(super) fn judge_conditional_argument(&mut self, expr: &Expr, expected: &Ty) {
         let ExprKind::Conditional { then_value, .. } = &expr.kind else {
             return;

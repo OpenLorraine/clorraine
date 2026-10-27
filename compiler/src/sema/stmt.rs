@@ -168,6 +168,19 @@ impl Checker<'_, '_> {
     fn check_if(&mut self, decl: &IfStmt) {
         let condition = self.check_value(&decl.condition, None);
         self.require_bool(&condition, decl.condition.span);
+        // A nullable bool conditional is still a bool condition; its null arm
+        // is a null in a non-nullable bool context. A non-bool condition keeps
+        // its own E10218 and does not also report the null arm.
+        if matches!(
+            condition.kind,
+            crate::types::TyKind::Scalar(crate::ast::ScalarType::Bool)
+        ) {
+            let expected = crate::types::Ty {
+                kind: crate::types::TyKind::Scalar(crate::ast::ScalarType::Bool),
+                nullable: false,
+            };
+            self.judge_conditional_argument(&decl.condition, &expected);
+        }
         self.check_block(&decl.then_block);
         match &decl.else_branch {
             Some(ElseBranch::If(nested)) => self.check_if(nested),

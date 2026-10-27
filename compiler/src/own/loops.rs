@@ -495,8 +495,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
         // The null literal's shape has no element sequence at all, so the loop
-        // reports the null rule instead of reaching the emitter.
-        if crate::types::is_null_shaped(&iterable_ty) {
+        // reports the null rule instead of reaching the emitter. A nullable
+        // iterable (a nullable binding) or a conditional with a null arm can
+        // select null, so it is the same invalid loop head. The conditional's
+        // typed result may not carry the nullable flag, so its arm types are
+        // inspected directly.
+        let null_arm = match &decl.iterable.kind {
+            crate::ast::ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                crate::types::is_null_shaped(&self.ty(then_value))
+                    || crate::types::is_null_shaped(&self.ty(else_value))
+            }
+            _ => false,
+        };
+        if crate::types::is_null_shaped(&iterable_ty) || iterable_ty.nullable || null_arm {
             self.error(
                 "E10012",
                 "'null' is not allowed here",

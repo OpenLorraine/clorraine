@@ -402,3 +402,26 @@ close.
 The re-review found no new memory-safety defect in the corrected paths; the new
 critical RR-01 and major RR-02 are fixed and red/green pinned. The phase gate is
 green for Phase 4, with `DEF-551`…`DEF-555` filed as backlog rows.
+
+
+## Phase 4 — Specification Cases and Red Confirmation (2026-10-27)
+
+The semantic-parity suite is `def_semantic_parity_integrity_spec_test.rs`
+(9 tests covering ST-23…ST-31). The phase baseline is `283ced8`. At that HEAD:
+
+| ST | DEF | HEAD result | Decision |
+|---|---|---|---|
+| ST-23 | 411 | the bool `if` is accepted; the i32 `if` reports E10218; the cast and binary are accepted; the annotated let reports E10012; the nullable let is accepted; the loop head is accepted | red (a, c, d, g) |
+| ST-24 | 412 | the substituted view-array return reports E10036; the concrete twin accepts | red |
+| ST-25 | 413 | accepted; no `#element` placeholder; strict C and exit 0 | stale close per AR-16 (green pin) |
+| ST-26 | 415 | accepted; no E10010 | red |
+| ST-27 | 505 | the duplicable nested projection reports E10200; the owning case reports E10200; the lend field form reports two E10034 plus E10200 | red |
+| ST-28 | 506 | the static-only `viewTag` reports E10036; the name-view twin reports E10036 | red |
+| ST-29 | 507 | accepted; strict C and exit 0 | stale close per AR-16 (green pin) |
+| ST-30 | 513 | the inline iterable alias return reports E10035, not E10030 | red (code) |
+| ST-31 | 522 | the generic move form reports E10034; the read form is accepted; the local-backed arm reports E10034, not E10030 | red |
+
+The active fixes are `DEF-411`, `412`, `415`, `505`, `506`, `513`, and `522`;
+`DEF-413` and `DEF-507` are stale closes with green pins. `DEF-411` is fixed:
+the bool `if`/cast/binary/loop-head null arms report `E10012`, and ST-23 is
+green.

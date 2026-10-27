@@ -1015,6 +1015,7 @@ impl Checker<'_, '_> {
     fn check_cast(&mut self, ty: &Type, value: &Expr) -> Ty {
         let target = self.resolve_type(ty);
         let source = self.check_value(value, None);
+        self.judge_conditional_argument(value, &target);
         if !scalar_cast_allowed(&source, &target) {
             self.error(
                 "E10201",
