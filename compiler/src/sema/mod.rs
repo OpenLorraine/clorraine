@@ -321,6 +321,19 @@ pub struct OpaqueIndex {
 /// Checks every module of the loaded program and records the result.
 pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded, AbiLayout::for_profile(profile));
+    // The table keeps the simple-name key for the emitter; the collision is
+    // reported here, once, at the second module's declaration. The same-module
+    // duplicate is the loader's declaration error and is not repeated.
+    for (name, module, span) in table.cross_module_struct_collisions() {
+        diagnostics.push(
+            Diagnostic::error(
+                "E11101",
+                format!("duplicate declaration of '{name}' in module '{module}'"),
+                span,
+            )
+            .with_help("remove one declaration; declaration merging forbids duplicates"),
+        );
+    }
     // A global initializer cycle has no valid initialization order, so it is
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);
@@ -392,6 +405,11 @@ struct Checker<'a, 'd> {
     callable_bound_params: Vec<String>,
     /// Name of the function currently being checked, for recursion checks.
     function_name: Option<String>,
+    /// True while a module `const` initializer is being checked.
+    ///
+    /// `embed` is legal only in a constant context; a module-level `let`, a
+    /// local `let`, and a local `const` are runtime positions.
+    in_const_context: bool,
     /// Return type of the function currently being checked.
     returns: Ty,
     /// `(node address, type)` for every checked expression, handed to the
@@ -489,6 +507,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             type_params: Vec::new(),
             callable_bound_params: Vec::new(),
             function_name: None,
+            in_const_context: false,
             returns: Ty::void(),
             recorded: Vec::new(),
             next_closure_id,

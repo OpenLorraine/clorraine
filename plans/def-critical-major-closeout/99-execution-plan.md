@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 64/76 tasks (84%)
+> **Progress**: 70/76 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -445,29 +445,51 @@ twin accepted.
   ✅ (completed: 2026-10-27; the three fix cases are red — the stage/non-generic
   type arguments are accepted, the local/module-let embed is accepted, and the
   cross-module `Thing` collision is accepted; the two controls are green)
-- [ ] 5.2.1 DEF-167 explicit type arguments on a non-generic callee —
+- [x] 5.2.1 DEF-167 explicit type arguments on a non-generic callee —
   `compiler/src/sema/call.rs`; reuse one `E10300` for free, qualified, dot,
   func-typed, **and non-callable local/parameter** forms. The filed stage shape
   is the local i32 `a`; the non-generic function form is the `DEF-418` twin.
-- [ ] 5.2.2 DEF-171 `embed` outside a constant context —
+  ✅ (completed: 2026-10-27; the shared type-argument check covers the free,
+  qualified, dot, func-typed, compiler-known text, and concrete value callee
+  forms; each reports one E10300 with no C; the stage shape and the non-generic
+  function form are pinned)
+- [x] 5.2.2 DEF-171 `embed` outside a constant context —
   `compiler/src/sema/expr.rs` and the compile-fail harness (`E10213` moves from
   `EXCLUDED_CODES` to `ASSERTED_CODES`; `E10214` stays excluded). Add a
   constant-context flag (`sema/items.rs`) so a module `const` keeps only
   `E10224`; a module-level `let embed` reports `E10213` (R-6).
-- [ ] 5.2.3 DEF-416 cross-module same-simple-name collision — report one
+  ✅ (completed: 2026-10-27; the `in_const_context` flag covers the module
+  const; the local let/const and the module let report one E10213 with no C;
+  the module const keeps one E10224 and no E10213; the E10213 golden is
+  asserted)
+- [x] 5.2.3 DEF-416 cross-module same-simple-name collision — report one
   `E11101` at the second declaration from a `compiler/src/sema/mod.rs`
   cross-module check with a pure `compiler/src/types/table.rs` collision query;
   keep the simple table and do not change `types/keys.rs`/`codegen/types.rs`.
   Retarget `qinitstructname` from `emit_pair` success to the rejection.
-- [ ] 5.2.4 DEF-167 parse-only/stage-select mode — add the `clc` option in
+  ✅ (completed: 2026-10-27; the table records each struct's module and name
+  span and exposes the cross-module collision query; the semantic stage reports
+  one E11101 at the second declaration and writes no C; the same-module control
+  accepts, and `qinitstructname` now asserts the rejection)
+- [x] 5.2.4 DEF-167 parse-only/stage-select mode — add the `clc` option in
   `compiler/src/driver.rs` and update `compiler/tests/stage_spec_test.rs` to use
   it for the `a < b > (c)` snippet; a full compile of the same local-i32 source
   reports one `E10300`.
-- [ ] 5.3.1 Green: focused strict-build suite, stage/compile-fail goldens, and a
+  ✅ (completed: 2026-10-27; `--parse-only` stops after the parser with the
+  parse diagnostics only; the stage parse case uses it and the full compile of
+  the same source reports one E10300; the stage suite is 56/56)
+- [x] 5.3.1 Green: focused strict-build suite, stage/compile-fail goldens, and a
   strict-C build of the same-module control; the collision case writes no C.
-- [ ] 5.3.2 Implementation pins in `compiler/tests/def_strict_build_integrity_impl_test.rs`:
+  ✅ (completed: 2026-10-27; the strict suite is 5/5, the stage 56/56, the
+  compile-fail goldens 3/3 with the E10213 golden asserted, and the checker
+  suite 212/212; the accepted controls build under `-Werror` and run)
+- [x] 5.3.2 Implementation pins in `compiler/tests/def_strict_build_integrity_impl_test.rs`:
   diagnostic spans/once, no translation unit, the collision, the parse-only
   mode, determinism.
+  ✅ (completed: 2026-10-27; four pins: the E10300 span/message/once with the
+  parse-only no-C contract, the E10213 spans/once with the re-enabled golden and
+  the E10224 module-const split, the E11101 second-declaration span/once with
+  the same-module control, and byte-identical re-emission)
 - [ ] 5.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   stage/golden/`qinitstructname` tests and record every expected change; close
   DEF-167/171/416 through the roadmap skill with the frozen spec references;

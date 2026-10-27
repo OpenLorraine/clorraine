@@ -121,10 +121,15 @@ impl Checker<'_, '_> {
         let ty = self.resolve_type(declared);
         self.check_nullable_type(&ty, name_span);
         self.check_overlay_value(&ty, declared.span);
+        // A module `const` initializer is the one constant context; a
+        // module-level `let` is a runtime position.
+        let saved_const_context = self.in_const_context;
+        self.in_const_context = constant;
         if constant {
             self.require_constant(value, integer_scalar(&ty));
         }
         self.check_into_slot(value, &ty);
+        self.in_const_context = saved_const_context;
     }
 
     /// Reports `E10224` or `E10223` when an expression is not foldable at the

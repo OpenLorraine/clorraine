@@ -14,6 +14,7 @@ use crate::ast::{
 };
 use crate::consts::ConstFolder;
 use crate::load::Loaded;
+use crate::span::Span;
 
 use super::layout::AbiLayout;
 use super::{int_literal_value, substitute_instance, FuncParam, FuncTy, Ty, TyKind};
@@ -104,6 +105,12 @@ struct EnumInfo {
 #[derive(Default)]
 pub struct TypeTable {
     structs: BTreeMap<String, StructInfo>,
+    /// Every module that declares each simple struct name, in build order.
+    ///
+    /// The table keeps its simple-name keys; the origins let the semantic
+    /// stage report a cross-module collision without changing the keys or the
+    /// emitter's type identity.
+    struct_origins: BTreeMap<String, Vec<(String, Span)>>,
     enums: BTreeMap<String, EnumInfo>,
     handles: BTreeSet<String>,
     functions: BTreeMap<String, BTreeMap<String, FuncSig>>,
@@ -113,6 +120,29 @@ pub struct TypeTable {
 }
 
 impl TypeTable {
+    /// Reports each cross-module struct-name collision at its second origin.
+    ///
+    /// The table still keys structs by simple name; this query only reads the
+    /// recorded declaration origins. A duplicate inside one module is the
+    /// loader's declaration error, so only the first origin from a different
+    /// module is returned for each name.
+    pub fn cross_module_struct_collisions(&self) -> Vec<(String, String, Span)> {
+        let mut collisions = Vec::new();
+        for (name, origins) in &self.struct_origins {
+            let Some((first_module, _)) = origins.first() else {
+                continue;
+            };
+            if let Some((module, span)) = origins
+                .iter()
+                .skip(1)
+                .find(|(module, _)| module != first_module)
+            {
+                collisions.push((name.clone(), module.clone(), *span));
+            }
+        }
+        collisions
+    }
+
     /// Collects the declarations of every module in two passes: first the name
     /// sets (so a reference can be classified), then the resolved types.
     pub fn build(loaded: &Loaded, layout: AbiLayout) -> Self {
@@ -127,6 +157,11 @@ impl TypeTable {
                 match item {
                     Item::Struct(decl) => {
                         table.structs.entry(decl.name.clone()).or_default();
+                        table
+                            .struct_origins
+                            .entry(decl.name.clone())
+                            .or_default()
+                            .push((module.name.clone(), decl.name_span));
                     }
                     Item::Enum(decl) => {
                         table.enums.entry(decl.name.clone()).or_insert_with(|| EnumInfo {

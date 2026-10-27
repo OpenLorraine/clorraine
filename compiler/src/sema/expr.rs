@@ -85,7 +85,9 @@ impl Checker<'_, '_> {
                 body,
             } => self.check_lambda(captures, params, body, expr.span),
             ExprKind::Unsafe(inner) => self.check_value(inner, expected),
-            ExprKind::IntrinsicCall { name, args } => self.check_intrinsic(name, args),
+            ExprKind::IntrinsicCall { name, args } => {
+                self.check_intrinsic(name, args, expr.span)
+            }
             ExprKind::Template(pieces) => self.check_template(pieces),
             ExprKind::Error => Ty::unknown(),
         }
@@ -1295,7 +1297,7 @@ impl Checker<'_, '_> {
 
     /// Types a reserved built-in call. Only the modeled diagnostics are
     /// checked; the rest return the type their signature promises.
-    fn check_intrinsic(&mut self, name: &str, args: &[IntrinsicArg]) -> Ty {
+    fn check_intrinsic(&mut self, name: &str, args: &[IntrinsicArg], span: Span) -> Ty {
         match name {
             "sizeof" => {
                 for arg in args {
@@ -1357,6 +1359,22 @@ impl Checker<'_, '_> {
                 }
                 self.check_intrinsic_expr_args(args.get(2..).unwrap_or(&[]));
                 Ty::void()
+            }
+            // Data inclusion is staged out, so the only implemented response
+            // is the constant-context rule: the runtime positions report the
+            // frozen diagnostic and no translation unit; the module `const`
+            // position keeps the constant folder's own report.
+            "embed" => {
+                self.check_intrinsic_expr_args(args);
+                if !self.in_const_context {
+                    self.error(
+                        "E10213",
+                        "'embed' is only allowed in a constant context",
+                        "use it in `const` or a module-level initializer",
+                        span,
+                    );
+                }
+                Ty::unknown()
             }
             _ => {
                 self.check_intrinsic_expr_args(args);

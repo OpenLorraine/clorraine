@@ -11128,10 +11128,28 @@ func main(): i32 {
 }
 "#;
     // The two loaded modules declare `Holder` with different fields. The
-    // semantic type table keeps the last declaration, which is this module's,
-    // so the field check accepts. The shared simple type name is the
-    // pre-existing DEF-416 collision, so this case stops at the front end.
-    let (_scratch, _emitted) = emit_pair("qinitstructname", holder, main);
+    // conservative cross-module collision report rejects the second module's
+    // declaration and writes no translation unit.
+    let (_scratch, output, c_path) = compile_pair("qinitstructname", holder, main);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "qinitstructname: the front end accepted the collision"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E11101:").count(),
+        1,
+        "qinitstructname: expected one E11101; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Holder"),
+        "qinitstructname: the collision report names the type; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "qinitstructname: a rejected program must not write a translation unit"
+    );
 
     let order_holder = r#"module spec.cc.qinitorder;
 

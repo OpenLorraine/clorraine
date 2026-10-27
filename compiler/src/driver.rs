@@ -29,6 +29,8 @@ struct Options {
     version: bool,
     /// Selected profile.
     profile: Option<String>,
+    /// Stop after the parser; the stage-select mode for parse-shaped sources.
+    parse_only: bool,
     /// Promote warnings to failure.
     deny_warnings: bool,
     /// Cap on reported errors.
@@ -45,6 +47,7 @@ impl Options {
         let mut options = Self {
             version: false,
             profile: None,
+            parse_only: false,
             deny_warnings: false,
             max_errors: None,
             output: None,
@@ -56,6 +59,7 @@ impl Options {
             match arg {
                 "--version" => options.version = true,
                 "--deny-warnings" => options.deny_warnings = true,
+                "--parse-only" => options.parse_only = true,
                 "--profile" => {
                     index += 1;
                     options.profile = Some(argument(args, index, "--profile")?);
@@ -275,6 +279,13 @@ pub fn run(args: Vec<String>) -> i32 {
             continue;
         }
         programs.push((file, program));
+    }
+    // A stage-select run stops after the parser: the source shapes a stage
+    // test exercises may be rejected by a later stage, while the parse is the
+    // stage under test. Syntax errors still report and fail the run.
+    if options.parse_only {
+        eprint!("{}", diagnostics.render(&sources));
+        return diagnostics.exit_code();
     }
     let Some(kind) = Profile::parse(profile) else {
         return EXIT_USAGE;

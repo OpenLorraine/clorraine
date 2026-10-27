@@ -53,6 +53,7 @@ impl Checker<'_, '_> {
                 let module = name.segments[..name.segments.len() - 1].join(".");
                 if let Some(signature) = self.table.function(&module, &last) {
                     if signature.type_params.is_empty() {
+                        self.check_non_generic_type_args(&last, type_args, span);
                         self.check_args_direct(
                             args,
                             &signature.params,
@@ -136,6 +137,7 @@ impl Checker<'_, '_> {
                     if !signature.type_params.is_empty() {
                         return self.check_generic_call(name, &signature, type_args, args, span);
                     }
+                    self.check_non_generic_type_args(name, type_args, span);
                     self.check_args_direct(
                         args,
                         &signature.params,
@@ -165,9 +167,7 @@ impl Checker<'_, '_> {
                 // shim conversion. Registering that return type here lets the
                 // `String`-to-`str` widening apply when it is passed to a view.
                 if name == "text" {
-                    for ty in type_args {
-                        self.resolve_type_argument(ty);
-                    }
+                    self.check_non_generic_type_args("text", type_args, span);
                     for arg in args {
                         self.check_value(&arg.value, None);
                     }
@@ -187,6 +187,14 @@ impl Checker<'_, '_> {
             }
         }
         let callee_ty = self.check_value(callee, None);
+        // A value callee has no type parameters of its own; a callable-bound
+        // type parameter and a bare type parameter keep their own judgments
+        // below. Every concrete value callee reports the written type
+        // arguments once here, including a non-callable local or parameter.
+        if !type_args.is_empty() && !matches!(callee_ty.kind, TyKind::Param(_)) {
+            let name = call_name(callee).unwrap_or("the callee");
+            self.check_non_generic_type_args(name, type_args, span);
+        }
         match &callee_ty.kind {
             TyKind::Func(signature) => {
                 let signature = signature.clone();
@@ -238,6 +246,29 @@ impl Checker<'_, '_> {
         Ty::unknown()
     }
 
+    /// Reports the frozen wrong-type-argument count for a non-generic callee.
+    ///
+    /// The grammar parses `a < b > (c)` as a generic call, so every callee form
+    /// that cannot take type arguments reports the same `E10300` once. The
+    /// written type arguments are still resolved so their own errors surface.
+    fn check_non_generic_type_args(&mut self, name: &str, type_args: &[Type], span: Span) {
+        if type_args.is_empty() {
+            return;
+        }
+        self.error(
+            "E10300",
+            format!(
+                "wrong number of type arguments for '{name}': expected 0, found {}",
+                type_args.len()
+            ),
+            "remove the type arguments",
+            span,
+        );
+        for ty in type_args {
+            self.resolve_type_argument(ty);
+        }
+    }
+
     /// Checks the fixed arity and absent type parameters of an intrinsic.
     ///
     /// `len` and `rawStr` are declared without type parameters, so a written
@@ -252,20 +283,7 @@ impl Checker<'_, '_> {
         type_args: &[Type],
         span: Span,
     ) {
-        if !type_args.is_empty() {
-            self.error(
-                "E10300",
-                format!(
-                    "wrong number of type arguments for '{name}': expected 0, found {}",
-                    type_args.len()
-                ),
-                "remove the type arguments",
-                span,
-            );
-            for ty in type_args {
-                self.resolve_type_argument(ty);
-            }
-        }
+        self.check_non_generic_type_args(name, type_args, span);
         if found_args != expected_args {
             self.error(
                 "E10308",
@@ -666,6 +684,7 @@ impl Checker<'_, '_> {
                 // A callable field carries its own parameter modes, so a
                 // `take` argument still moves and a call-site marker still
                 // matches, exactly as on a named call.
+                self.check_non_generic_type_args(name, type_args, span);
                 self.check_args_impl(
                     args,
                     &signature.params,
@@ -677,6 +696,7 @@ impl Checker<'_, '_> {
             }
             Some(DotCall::Function(signature)) => {
                 if signature.type_params.is_empty() {
+                    self.check_non_generic_type_args(name, type_args, span);
                     if let Some((receiver_param, rest)) = signature.params.split_first() {
                         // The receiver is a written argument at index zero, so a
                         // nullable borrow receiver takes the same exact-place rule

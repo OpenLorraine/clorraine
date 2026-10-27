@@ -33,7 +33,7 @@ const ASSERTED_CODES: &[&str] = &[
     "E10026", "E10030", "E10031", "E10032", "E10033", "E10034", "E10035", "E10036", "E10038",
     "E10039", "E10040", "E10041", "E10042", "E10043", "E10100", "E10101", "E10102", "E10103", "E10104",
     "E10200", "E10201", "E10202", "E10203", "E10204", "E10205", "E10206", "E10207", "E10208",
-    "E10209", "E10210", "E10211", "E10212", "E10215", "E10216", "E10217", "E10218", "E10219", "E10220",
+    "E10209", "E10210", "E10211", "E10212", "E10213", "E10215", "E10216", "E10217", "E10218", "E10219", "E10220",
     "E10221", "E10222", "E10223", "E10224", "E10226", "E10300", "E10301", "E10302", "E10303",
     "E10304", "E10305", "E10306", "E10307", "E10308", "E10400", "E10401", "E10402", "E10403",
     "E10404",
@@ -47,7 +47,6 @@ const ASSERTED_CODES: &[&str] = &[
 /// Golden codes excluded from the suite because the language feature is staged
 /// out of the MVP; each entry carries the reason shown in the skip report.
 const EXCLUDED_CODES: &[(&str, &str)] = &[
-    ("E10213", "data inclusion is not part of the implemented language subset"),
     ("E10214", "data inclusion is not part of the implemented language subset"),
 ];
 

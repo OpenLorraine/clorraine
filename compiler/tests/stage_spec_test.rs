@@ -89,18 +89,12 @@ fn run_clc(args: &[String]) -> Output {
 
 /// Compiles one source snippet and returns the captured process output.
 fn run_source(tag: &str, source: &str) -> Output {
-    let scratch = ScratchDir::new(tag);
-    let source_path = scratch.path().join("main.clo");
-    std::fs::write(&source_path, source)
-        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
-    let output_path = scratch.path().join("out.c");
-    run_clc(&[
-        "--profile".to_owned(),
-        "host".to_owned(),
-        "-o".to_owned(),
-        output_path.display().to_string(),
-        source_path.display().to_string(),
-    ])
+    run_source_with_flags(tag, source, &[])
+}
+
+/// Compiles one snippet in the parse-only mode.
+fn run_source_parse_only(tag: &str, source: &str) -> Output {
+    run_source_with_flags(tag, source, &["--parse-only"])
 }
 
 /// Compiles several source files in one invocation and returns its output.
@@ -150,6 +144,21 @@ fn diagnostic_code(line: &str) -> Option<&str> {
 /// pipeline.
 fn assert_front_end_accepts(tag: &str, source: &str) {
     let run = run_source(tag, source);
+    assert_front_end_output(tag, run);
+}
+
+/// Asserts that the parse-only mode accepts the snippet.
+///
+/// The stage test for the frozen generic-call shape must not depend on a later
+/// stage: the same source is rejected by a full compile, while the parser is
+/// the stage under test.
+fn assert_front_end_parses(tag: &str, source: &str) {
+    let run = run_source_parse_only(tag, source);
+    assert_front_end_output(tag, run);
+}
+
+/// Asserts one captured run reported no unacceptable stage diagnostic.
+fn assert_front_end_output(tag: &str, run: Output) {
     let stderr = String::from_utf8_lossy(&run.stderr);
     let mut errors = Vec::new();
     for line in stderr.lines().filter(|line| !line.is_empty()) {
@@ -531,7 +540,7 @@ func main(): i32 {
 /// produce a comparison diagnostic.
 #[test]
 fn comparison_and_generic_call_forms_parse() {
-    assert_front_end_accepts(
+    assert_front_end_parses(
         "parse-call-forms",
         "module spec.stage.parse_call_forms;
 

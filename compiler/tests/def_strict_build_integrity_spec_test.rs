@@ -258,7 +258,7 @@ func main(): i32 {
         String::from_utf8_lossy(&parsed.1.stderr)
     );
 
-    let non_generic_function = r#"module spec.strict.func;
+    let non_generic_function = r#"module spec.strict.nongeneric;
 
 func id(x: i32): i32 {
     return x;
