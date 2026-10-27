@@ -332,19 +332,22 @@ roadmap close in `3.3.3` records the proof for each. The active fixes are
 - **Stale closes (AR-16):** `DEF-475`, `DEF-478`, `DEF-480`, and `DEF-481` no
   longer reproduce at HEAD; their ST-16/19/21/22 cases are the green pins.
   `DEF-470` keeps its earlier stale close.
-- **Specification suite:** 16 cases (after the review fixes), 16/16 in the
+- **Specification suite:** 18 cases (after the re-review fixes), 18/18 in the
   plain and `RDC_ASAN` runs; every memory case uses `run_memory`, and the ST-13
   fault case stays a strict fault probe.
-- **Implementation pins:** 11/11 in `def_conditional_value_integrity_impl_test.rs`.
+- **Implementation pins:** 12/12 in `def_conditional_value_integrity_impl_test.rs`.
 - **Retargets:** the Phase 0 inventory expected the conditional-projection/
   residue and fresh-root pins to change; the focused suites stayed green with no
-  emission pin changes outside the fixed paths. The two spec-source adjustments
-  are the filed nested-conditional shape (ST-18) and the guarded conditional
-  arm form for the source-order rule (ST-20).
-- **Verification:** `make check` passes; `make verify` reports all legs passed;
-  the focused ASAN runs are clean.
-- **Roadmap:** the ten active Batch C rows move to Done; the progress is
-  419/534 with twelve executing rows left.
+  emission pin changes outside the fixed paths. The spec-source adjustments are
+  the filed nested-conditional shape (ST-18), the restored original ST-20
+  short-circuit call argument, and the array-fill twin.
+- **Verification:** `make check` passes; `make corpus-amiga` and
+  `make run-fault-amiga` pass; the focused ASAN runs are clean. The FS-UAE leg is
+  pending a fresh XAUTHORITY after the machine restart (environment-only); the
+  preceding full run passed all legs.
+- **Roadmap:** the ten active Batch C rows move to Done; the re-review siblings
+  are `DEF-551`…`DEF-555`; the progress is 419/544 with twelve executing rows
+  left.
 
 ## Phase 3 Review — 2026-10-27
 
@@ -376,3 +379,27 @@ escape as `DEF-550`, and the pre-existing emission gaps as `DEF-548`/`DEF-549`;
 apply the minor documentation and test-identifier fixes in the same batch.
 RV-001/RV-003 are fixed at `22722af`; RV-002 and the minors are fixed at
 `0f7dd70`.
+
+
+## Phase 3 Re-review — 2026-10-27
+
+A focused re-review over the review-fix diff (`034ce42..5a561e2` plus the
+re-review corrections) confirmed RV-001/RV-002/RV-003 and found two new
+regressions in those fixes. The re-review corrections are part of the phase
+close.
+
+| Finding | Severity | Finding | Status |
+|---|---|---|---|
+| RR-01 | CRITICAL (new) | the destination/strict prune was a function-wide strong update while `moved_if_owning` merges by union; a re-initialization on one branch erased the other path's destination, so a later use of a moved source was accepted (ASAN SEGV; the base reports `E10020`). | fixed: the destinations and strict set moved into `PlaceState` and join by union; `branchdest` is red at `5a561e2` and green |
+| RR-02 | MAJOR (new) | a fill that covers no slot (`prefix == extent`) emitted a set-but-unused `__cl_fill` local, so the strict C build failed. | fixed: the full-prefix fill keeps its single evaluation and emits a `sizeof` use marker; `fullprefixfill` is red at `5a561e2` and green |
+| RR-03 | MINOR (new) | the duty update ORed `partial` and moved the span to the latest use, so a whole-then-projected use reported `E10025` at the projected site. | fixed: the span/partial update only when the destination judgment changes |
+| RR-04 | MINOR | stale ledger counts (`13`/`11`) and the retarget sentence after the ST-20 restore. | fixed in this record |
+| RR-05 | MINOR (scope) | the expression-form and nested-row fills still evaluate once per element/row; the statement fill is fixed. | filed as `DEF-551` |
+| — | MAJOR (pre-existing) | a later order-mismatched argument is hoisted before an earlier argument's effects; the new hoist makes it deterministic. | filed as `DEF-552` |
+| P1 | MAJOR (pre-existing) | a module-initializer store-needing literal leaks its owning fields (init local not registered). | filed as `DEF-553` |
+| P2 | MAJOR (pre-existing) | an owned `String` widened into a view slot is not released. | filed as `DEF-554` |
+| P3 | MAJOR (pre-existing) | a module-initializer nested owning call field evaluates before earlier source fields. | filed as `DEF-555` |
+
+The re-review found no new memory-safety defect in the corrected paths; the new
+critical RR-01 and major RR-02 are fixed and red/green pinned. The phase gate is
+green for Phase 4, with `DEF-551`…`DEF-555` filed as backlog rows.
