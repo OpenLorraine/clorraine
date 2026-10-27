@@ -644,15 +644,13 @@ let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
 func n1(): String { trace = trace * 10 + 2; return stringOf("aa"); }
-func useOuter(o: Outer): i32 { return 1; }
 
 func main(): i32 {
     let g: bool = true;
-    if (g && useOuter(Outer { tag: tagOf(), inner: Inner { names: n1() } }) == 1) {
-        if (trace != 12) { return 9; }
-        return 0;
-    }
-    return 8;
+    let other: Outer = Outer { inner: Inner { names: stringOf("other") }, tag: 0 };
+    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { names: n1() } } : other;
+    if (trace != 12) { return 9; }
+    return 0;
 }
 "#;
     let output = run_host("order479a", owning);
@@ -667,15 +665,13 @@ let trace: i32 = 0;
 
 func tagOf(): i32 { trace = trace * 10 + 1; return 7; }
 func n2(): i32 { trace = trace * 10 + 3; return 2; }
-func useOuter(o: Outer): i32 { return 1; }
 
 func main(): i32 {
     let g: bool = true;
-    if (g && useOuter(Outer { tag: tagOf(), inner: Inner { n: n2() } }) == 1) {
-        if (trace != 13) { return 9; }
-        return 0;
-    }
-    return 8;
+    let other: Outer = Outer { inner: Inner { n: 0 }, tag: 0 };
+    let o: Outer = g ? Outer { tag: tagOf(), inner: Inner { n: n2() } } : other;
+    if (trace != 13) { return 9; }
+    return 0;
 }
 "#;
     let output = run_host("order479b", scalar);

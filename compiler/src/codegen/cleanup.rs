@@ -395,8 +395,8 @@ impl<'a> Emitter<'a> {
                 // jump below run with the value already stored.
                 let ret_ty = self.return_ty.clone();
                 let mut value_stored = false;
-                if let ValueKind::StructLit { fields, .. } = &value.kind {
-                    if self.struct_literal_needs_stores(fields) {
+                if let ValueKind::StructLit { name, fields } = &value.kind {
+                    if self.struct_literal_needs_stores(name, fields) {
                         if self.emit_struct_literal_return(&ret_ty, fields, releases, deferred, ctx)
                         {
                             return;

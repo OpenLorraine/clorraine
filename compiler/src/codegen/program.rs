@@ -1805,8 +1805,12 @@ impl<'a> Emitter<'a> {
                 self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
                 continue;
             }
-            if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
-                if self.struct_literal_needs_stores(inner) {
+            if let ValueKind::StructLit {
+                name: inner_name,
+                fields: inner,
+            } = &field.kind
+            {
+                if self.struct_literal_needs_stores(inner_name, inner) {
                     self.emit_init_literal_fields(&field_c, inner);
                     continue;
                 }
@@ -2294,7 +2298,9 @@ impl<'a> Emitter<'a> {
                 // from an expression. Bind it into an init local and store the
                 // fields per statement, as the body's assignment path does.
                 match &walked.kind {
-                    ValueKind::StructLit { fields, .. } if self.struct_literal_needs_stores(fields) => {
+                    ValueKind::StructLit { name, fields }
+                        if self.struct_literal_needs_stores(name, fields) =>
+                    {
                         self.materialize_init_literal(&walked, guard)
                     }
                     _ => walked,
@@ -2456,11 +2462,11 @@ impl<'a> Emitter<'a> {
                     || self.init_value_needs_materialization(then_value)
                     || self.init_value_needs_materialization(else_value)
             }
-            ValueKind::StructLit { fields, .. } => {
+            ValueKind::StructLit { name, fields } => {
                 // A literal whose fields need statements is bound into an init
                 // local wherever it stands, so a lazily evaluated position
                 // prepares it like a call that writes through a destination.
-                self.struct_literal_needs_stores(fields)
+                self.struct_literal_needs_stores(name, fields)
                     || fields
                         .iter()
                         .any(|(_, field)| self.init_value_needs_materialization(field))

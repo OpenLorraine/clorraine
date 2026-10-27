@@ -1564,8 +1564,8 @@ impl<'a> Emitter<'a> {
         // A literal with a field that has no C initializer form stores its
         // fields through statements, whether or not the type owns anything;
         // a fixed-array field is such a field even for a duplicable type.
-        if let ValueKind::StructLit { fields, .. } = &value.kind {
-            if self.struct_literal_needs_stores(fields) {
+        if let ValueKind::StructLit { name, fields } = &value.kind {
+            if self.struct_literal_needs_stores(name, fields) {
                 self.emit_struct_literal_store(target, &ty, fields);
                 return;
             }
@@ -2669,8 +2669,8 @@ impl<'a> Emitter<'a> {
             return false;
         }
         [then_value, else_value].into_iter().any(|arm| match &arm.kind {
-            ValueKind::StructLit { fields, .. } => {
-                self.struct_literal_needs_stores(fields)
+            ValueKind::StructLit { name, fields } => {
+                self.struct_literal_needs_stores(name, fields)
             }
             // A conditional arm is stored by the same per-arm rule, so a
             // nested literal that needs stores makes the outer store a
@@ -2724,8 +2724,8 @@ impl<'a> Emitter<'a> {
             self.emit_struct_conditional_assign(target_c, ty, condition, then_value, else_value);
             return;
         }
-        if let ValueKind::StructLit { fields, .. } = &arm.kind {
-            if self.struct_literal_needs_stores(fields) {
+        if let ValueKind::StructLit { name, fields } = &arm.kind {
+            if self.struct_literal_needs_stores(name, fields) {
                 let local = self.unique_local("__cl_arm");
                 self.push("        {");
                 self.push(&format!(
@@ -2811,7 +2811,17 @@ impl<'a> Emitter<'a> {
     /// the whole literal store every field through statements, in source
     /// order, which a C initializer cannot mix with without reordering
     /// side-effecting fields.
-    pub(super) fn struct_literal_needs_stores(&self, fields: &[(String, Value)]) -> bool {
+    pub(super) fn struct_literal_needs_stores(
+        &self,
+        name: &str,
+        fields: &[(String, Value)],
+    ) -> bool {
+        // A C aggregate initializer evaluates its entries in declaration
+        // order. A source order that differs would run side-effecting fields
+        // out of order, so the literal takes the per-field store form.
+        if self.struct_literal_order_differs(name, fields) {
+            return true;
+        }
         fields.iter().any(|(_, field)| {
             let field_ty = self.substitute(&field.ty);
             if field_ty.is_fixed_array()
@@ -2827,8 +2837,8 @@ impl<'a> Emitter<'a> {
             if has_deferred_fill(field) {
                 return true;
             }
-            if let ValueKind::StructLit { fields, .. } = &field.kind {
-                return self.struct_literal_needs_stores(fields);
+            if let ValueKind::StructLit { name, fields } = &field.kind {
+                return self.struct_literal_needs_stores(name, fields);
             }
             if let ValueKind::Conditional {
                 then_value,
@@ -2905,8 +2915,8 @@ impl<'a> Emitter<'a> {
                 self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
                 continue;
             }
-            if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
-                if self.struct_literal_needs_stores(inner) {
+            if let ValueKind::StructLit { name, fields: inner } = &field.kind {
+                if self.struct_literal_needs_stores(name, inner) {
                     self.emit_struct_literal_fields(&field_c, &field_ty, inner);
                     continue;
                 }
@@ -3917,8 +3927,8 @@ impl<'a> Emitter<'a> {
             }
             // A struct-literal element whose fields need stores has no C
             // initializer form; it is stored per field into the element.
-            if let ValueKind::StructLit { fields, .. } = &value.kind {
-                if self.struct_literal_needs_stores(fields) {
+            if let ValueKind::StructLit { name, fields } = &value.kind {
+                if self.struct_literal_needs_stores(name, fields) {
                     self.emit_struct_literal_fields(&sub.text, element, fields);
                     continue;
                 }

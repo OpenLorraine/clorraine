@@ -216,8 +216,8 @@ impl<'a> Emitter<'a> {
                     // operand: the call-filled field passes the destination and
                     // a view element reads the root the deferred fill bound.
                     let literal_stored = match &inner.kind {
-                        ValueKind::StructLit { fields, .. }
-                            if self.struct_literal_needs_guard_stores(&inner_ty, fields) =>
+                        ValueKind::StructLit { name, fields }
+                            if self.struct_literal_needs_guard_stores(name, &inner_ty, fields) =>
                         {
                             self.emit_struct_literal_fields(&destination, &inner_ty, fields);
                             true
@@ -850,7 +850,7 @@ impl<'a> Emitter<'a> {
             let hands_over = fields.iter().any(|(field, value)| {
                 self.value_hands_over_storage(&self.field_type(ty, field), value)
             });
-            if hands_over || self.struct_literal_needs_guard_stores(ty, fields) {
+            if hands_over || self.struct_literal_needs_guard_stores(name, ty, fields) {
                 if let Some(stored) = self.struct_assign_expr(target_c, ty, name, fields) {
                     return stored;
                 }
@@ -1225,6 +1225,27 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// True when a literal writes its fields in a non-declaration order.
+    ///
+    /// Only the written fields are compared: an omitted field has no
+    /// evaluation, so its position in the declaration does not matter.
+    pub(super) fn struct_literal_order_differs(
+        &self,
+        name: &str,
+        fields: &[(String, Value)],
+    ) -> bool {
+        let Some(declared) = self.sema.table.struct_fields(name) else {
+            return false;
+        };
+        let written: Vec<&str> = fields.iter().map(|(field, _)| field.as_str()).collect();
+        let declared_written: Vec<&str> = declared
+            .iter()
+            .map(|(field, _)| field.as_str())
+            .filter(|field| written.contains(field))
+            .collect();
+        written != declared_written
+    }
+
     /// True when a struct literal needs field-by-field stores inside a guard.
     ///
     /// Only a fixed-array field whose element is itself an aggregate forces the
@@ -1233,7 +1254,18 @@ impl<'a> Emitter<'a> {
     /// nested literal that names one has no initializer form either. Every
     /// other literal keeps its compound spelling, so an emission that names no
     /// such field stays unchanged.
-    fn struct_literal_needs_guard_stores(&self, ty: &Ty, fields: &[(String, Value)]) -> bool {
+    fn struct_literal_needs_guard_stores(
+        &self,
+        name: &str,
+        ty: &Ty,
+        fields: &[(String, Value)],
+    ) -> bool {
+        // The C compound literal evaluates its initializer in declaration
+        // order. A source order that differs would run the fields out of
+        // order, so the literal takes the per-field store form.
+        if self.struct_literal_order_differs(name, fields) {
+            return true;
+        }
         fields.iter().any(|(field, value)| {
             let field_ty = self.field_type(ty, field);
             let field_ty = if field_ty.is_unknown() {
@@ -1255,12 +1287,16 @@ impl<'a> Emitter<'a> {
                 return true;
             }
             if let ValueKind::StructLit {
+                name: inner_name,
                 fields: inner_fields,
-                ..
             } = &value.kind
             {
                 if matches!(field_ty.kind, TyKind::Struct(..)) {
-                    return self.struct_literal_needs_guard_stores(&field_ty, inner_fields);
+                    return self.struct_literal_needs_guard_stores(
+                        inner_name,
+                        &field_ty,
+                        inner_fields,
+                    );
                 }
             }
             false
@@ -1755,7 +1791,7 @@ impl<'a> Emitter<'a> {
                         );
                     let struct_store = match &inner.kind {
                         ValueKind::StructLit { name, fields }
-                            if self.struct_literal_needs_guard_stores(&inner_ty, fields) =>
+                            if self.struct_literal_needs_guard_stores(name, &inner_ty, fields) =>
                         {
                             self.struct_assign_expr(&destination, &inner_ty, name, fields)
                         }

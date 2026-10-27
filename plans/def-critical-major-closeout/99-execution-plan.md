@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 43/76 tasks (57%)
+> **Progress**: 44/76 tasks (58%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -262,9 +262,12 @@ program remains in Batch B.
 - [x] 3.2.7 DEF-478 deferred duplicable take — `compiler/src/codegen/guards.rs`.
   ✅ (completed: 2026-10-27; stale close per AR-16 — ST-19's taken and skipped
   twins both pass at HEAD; no code change)
-- [ ] 3.2.8 DEF-479 source-order nested fields including the scalar literal,
+- [x] 3.2.8 DEF-479 source-order nested fields including the scalar literal,
   with a struct declared in an order that differs from the source order —
   `compiler/src/codegen/guards.rs`, `compiler/src/codegen/expr.rs`.
+  ✅ (completed: 2026-10-27; the owning and scalar ST-20 traces are `12`/`13`;
+  the conditional suite is 13/13, and the call/eval/store/module pins are
+  unchanged)
 - [x] 3.2.9 DEF-480 fresh-root release — `compiler/src/codegen/program.rs`,
   `compiler/src/codegen/guards.rs`.
   ✅ (completed: 2026-10-27; stale close per AR-16 — ST-21 exits 3/4, strict C
