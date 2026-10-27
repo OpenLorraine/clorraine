@@ -3869,8 +3869,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .params
             .iter()
             .filter(|param| {
-                param.mode != Mode::Take
-                    && is_lend_candidate(&self.resolve_with(&param.ty, &self.type_params))
+                if param.mode == Mode::Take {
+                    return false;
+                }
+                let ty = self.resolve_with(&param.ty, &self.type_params);
+                // An explicit `borrow T` may be a view or an aggregate at its
+                // instance, so it is a potential single candidate at the
+                // declaration. A plain type-parameter parameter keeps the
+                // concrete twin's count: the concrete twin's plain argument
+                // may be a non-candidate (a cstring helper's bool `y`), and
+                // counting it would false-reject the generic helper. The
+                // instance's concrete member resolution decides whether the
+                // return derives from the borrow; the local-backed and
+                // duplicate-candidate rules still reject the unsafe shapes.
+                is_lend_candidate(&ty)
+                    || (param.mode == Mode::Borrow && super::lower::mentions_type_param(&ty))
             })
             .map(|param| param.name.clone())
             .collect();

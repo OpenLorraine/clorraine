@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 51/76 tasks (67%)
+> **Progress**: 53/76 tasks (70%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -327,7 +327,9 @@ program remains in Batch B.
   borrow-generic 45 unchanged)
 - [ ] 4.2.2 DEF-412 view-array return — `compiler/src/own/place.rs`,
   `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`.
-- [ ] 4.2.3 DEF-413 nested element substitution — `compiler/src/own/instance_check.rs`.
+- [x] 4.2.3 DEF-413 nested element substitution — `compiler/src/own/instance_check.rs`.
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-25 is accepted with no
+  placeholder and strict C at the baseline; no code change)
 - [ ] 4.2.4 DEF-415 same-arm nullable conditional — `compiler/src/sema/ops.rs`,
   `compiler/src/own/instance_check.rs`.
 - [ ] 4.2.5 DEF-505 nested projection — `compiler/src/own/instance_check.rs`,
