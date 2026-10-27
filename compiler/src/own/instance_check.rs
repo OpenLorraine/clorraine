@@ -1983,13 +1983,20 @@ fn resolved_conditional_arm(
     function: &str,
     arm_ty: &Ty,
     span: Span,
+    member: Option<&str>,
     bindings: &BTreeMap<String, Ty>,
 ) -> Ty {
     if !arm_ty.is_unknown() {
         return arm_ty.clone();
     }
+    // Only a projection that names the arm's final member resolves it. A
+    // dotted or postfix chain such as `h.inner.n` records the inner opaque
+    // projection `h.inner`; resolving that prefix would type the whole arm as
+    // the inner struct and invent a conversion the concrete read never makes.
     let Some(projection) = sema.opaque_projections.iter().find(|projection| {
-        projection.function == function && projection.span.start == span.start
+        projection.function == function
+            && projection.span.start == span.start
+            && member == Some(projection.name.as_str())
     }) else {
         return arm_ty.clone();
     };
@@ -2036,6 +2043,7 @@ fn check_opaque_conditionals(
                 &conditional.function,
                 &then_ty,
                 conditional.then_span,
+                conditional.then_member.as_deref(),
                 &bindings,
             );
             let else_ty = resolved_conditional_arm(
@@ -2043,6 +2051,7 @@ fn check_opaque_conditionals(
                 &conditional.function,
                 &else_ty,
                 conditional.else_span,
+                conditional.else_member.as_deref(),
                 &bindings,
             );
             let expected = conditional

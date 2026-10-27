@@ -805,7 +805,10 @@ impl Checker<'_, '_> {
             self.view_pointer_members
                 .insert(expr as *const Expr as usize);
         }
-        self.member_type(&base_ty, name, base.span)
+        // The projection records the whole read's span, not only the base's:
+        // the instance audit must be able to tell a bare opaque member from a
+        // longer nested chain that merely starts at the same place.
+        self.member_type(&base_ty, name, expr.span)
     }
 
     /// The type of a named field on a struct value, with the instance's type

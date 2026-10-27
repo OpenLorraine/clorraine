@@ -699,6 +699,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.projected_type(id, &projections)
             };
             self.note_borrowed_element_move(id, &projections, &move_ty, span);
+            // A take parameter's deeper projection is the same v1 partial-move
+            // limit once the substituted member owns. The declaration cannot
+            // resolve the member yet, so it records the duty; the instance
+            // audit reports E10026 for an owning substitution and accepts a
+            // duplicable one. A lend root keeps its own E10034 duty below.
+            self.note_take_element_move(id, &projections, &move_ty, span);
             let binding = &self.bindings[id];
             // A lend whose value is moved into an owned position owes the
             // post-substitution judgment. Out-parameter slots carry their own

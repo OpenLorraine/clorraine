@@ -416,6 +416,8 @@ impl Checker<'_, '_> {
             else_ty: else_ty.clone(),
             then_span: then_value.span,
             else_span: else_value.span,
+            then_member: super::expr::member_read_name(then_value),
+            else_member: super::expr::member_read_name(else_value),
             span,
             destination: expected.cloned(),
             opaque: contains_param(&then_ty)

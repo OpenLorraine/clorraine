@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 55/76 tasks (72%)
+> **Progress**: 56/76 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -337,8 +337,15 @@ program remains in Batch B.
   `compiler/src/own/instance_check.rs`.
   ✅ (completed: 2026-10-27; ST-26 reports two E10010 at the arms; checker 212,
   borrow-store 58, and conditional-projection 61/230 unchanged)
-- [ ] 4.2.5 DEF-505 nested projection — `compiler/src/own/instance_check.rs`,
+- [x] 4.2.5 DEF-505 nested projection — `compiler/src/own/instance_check.rs`,
   `compiler/src/own/expr.rs`.
+  ✅ (completed: 2026-10-27; the necessary projected-place correction also
+  touches `compiler/src/sema/{mod,ops,expr}.rs` and `compiler/src/own/place.rs`:
+  a conditional arm resolves only the projection naming its final member, the
+  whole-read span replaces the base span, and a take parameter's deep
+  projection records the partial-move duty. ST-27 green (accepted duplicable,
+  one E10026 owning, one E10034 lend); checker 212, borrow-generic 45,
+  conditional-projection 61, and borrow-store 58 unchanged)
 - [ ] 4.2.6 DEF-506 static-only viewed position — revalidate; if it reproduces,
   `compiler/src/own/call_check.rs` with the conservative proof, plus the
   view-return derivation in `compiler/src/own/place.rs`/`own/statements.rs`

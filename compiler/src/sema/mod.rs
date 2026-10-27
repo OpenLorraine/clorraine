@@ -237,6 +237,14 @@ pub struct OpaqueConditional {
     pub then_span: Span,
     /// The else arm's span, for the conversion and null-arm reports.
     pub else_span: Span,
+    /// The then arm's final member spelling, when it is a member read.
+    ///
+    /// A dotted or postfix chain records one projection per segment at the
+    /// same written span, so the instance resolves only the projection naming
+    /// this member, never an inner prefix of a longer chain.
+    pub then_member: Option<String>,
+    /// The else arm's final member spelling, when it is a member read.
+    pub else_member: Option<String>,
     /// The whole conditional's span, for the destination conversion.
     pub span: Span,
     /// The destination the conditional must convert to, when one is known.
@@ -268,6 +276,15 @@ pub struct ConditionalArms {
     pub then_span: Span,
     /// The else arm's span.
     pub else_span: Span,
+    /// The then arm's final member spelling, when it is a member read.
+    ///
+    /// A dotted or postfix member chain on a type parameter records one
+    /// projection per segment, all at the same written span. The instance must
+    /// resolve only the projection that names the arm's final member, not an
+    /// inner prefix of a longer chain.
+    pub then_member: Option<String>,
+    /// The else arm's final member spelling, when it is a member read.
+    pub else_member: Option<String>,
     /// The whole conditional's span.
     pub span: Span,
     /// The destination the conditional must convert to, when one is known.
@@ -518,6 +535,8 @@ impl<'a, 'd> Checker<'a, 'd> {
                 else_ty: arms.else_ty,
                 then_span: arms.then_span,
                 else_span: arms.else_span,
+                then_member: arms.then_member,
+                else_member: arms.else_member,
                 span: arms.span,
                 expected: arms.destination,
                 null_reported: arms.null_reported,
