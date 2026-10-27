@@ -1,7 +1,7 @@
 # Critical/Major DEF Closeout Implementation Plan
 
 > **Feature**: Close every open critical and major DEF in the Clorraine roadmap
-> **Status**: Close-out in progress — the 34 active rows are fixed; the final review reserves the DEF-506 generic caller and the pre-existing generic view-return critical for the user
+> **Status**: Complete — 34/34 active rows Done; the final review findings are fixed; PRE-1 and SR-002 are filed as `DEF-556`/`DEF-557`; the remaining pre-existing list is recorded for backlog triage
 > **Created**: 2026-10-23 01:00
 > **Defects**: DEF-543; DEF-454, DEF-455, DEF-456, DEF-457, DEF-458, DEF-460, DEF-461, DEF-462, DEF-464, DEF-465, DEF-466; DEF-470, DEF-471, DEF-472, DEF-473, DEF-475, DEF-476, DEF-477, DEF-478, DEF-479, DEF-480, DEF-481; DEF-411, DEF-412, DEF-413, DEF-415, DEF-505, DEF-506, DEF-507, DEF-513, DEF-522; DEF-167, DEF-171, DEF-416
 > **CodeOps Artifact Schema**: 1

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 73/76 tasks (96%)
+> **Progress**: 76/76 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -522,18 +522,25 @@ failure; the stage-spec parse is green through the parse-only mode.
   ✅ (completed: 2026-10-27; four lenses reviewed the final program; the
   findings are in `05-findings.md`: the SR-001 critical, the callfield major,
   the SR-002 major, the pre-existing PRE-1 critical, and the minor records)
-- [~] 6.1.3 Fix critical/major review findings, verify, and perform the single
+- [x] 6.1.3 Fix critical/major review findings, verify, and perform the single
   re-review on the fix diff; record minor rulings in `05-findings.md`.
-  ⏳ (implemented: 2026-10-27; the SR-001 generic nullable destination and the
-  callfield self-alias guard are fixed, and the full `make check`/`make verify`
-  pass. The SR-002 major is reserved — an AR-12 instance-bound static marker or
-  the recorded conservative limitation — and the pre-existing PRE-1 critical is
-  reserved for the user's filing/absorb decision. The single fix-diff re-review
-  is pending.)
-- [ ] 6.2.1 Close every remaining active DEF row through the roadmap skill with
+  ✅ (completed: 2026-10-27; the SR-001/EIA-F1 fixes and the single fix-diff
+  re-review's SR-101 critical, SR-102/RR-N1 majors, and SR-103/SR-104/RR-N2
+  minors are fixed at `c428953` and verified by the full `make check`/`make
+  verify` and the focused `RDC_ASAN=1` suites. SR-002 is recorded as the
+  conservative DEF-506 limitation and filed as `DEF-557`; the pre-existing
+  PRE-1 critical is filed as `DEF-556`; the remaining report-only list is in
+  `05-findings.md`.)
+- [x] 6.2.1 Close every remaining active DEF row through the roadmap skill with
   commit/evidence; verify no open critical or major row remains and the notes
   are preserved.
-- [ ] 6.2.2 Post-completion re-analysis, workspace cleanup, and final summary.
+  ✅ (completed: 2026-10-27; the 34 active rows are Done and their evidence
+  notes are preserved; no active row is open. The roadmap reads 432/546 rows
+  with 114 open backlog — 5 critical + 9 major + 100 minor — including the two
+  newly filed review-reserved rows.)
+- [x] 6.2.2 Post-completion re-analysis, workspace cleanup, and final summary.
+  ✅ (completed: 2026-10-27; the specialist check is refreshed, the temporary
+  probe artifacts are removed, and the close summary is in `05-findings.md`.)
 
 **Verify**: `make check` and `make verify`; zero open critical/major DEFs; all
 review findings closed or explicitly recorded.
@@ -581,7 +588,7 @@ The chain is **risk order**, not a strict technical dependency:
    evidence, so the plan tracks 35 DEF rows.
 2. ✅ None of the plan's 34 active rows remains open; the rows are synced
    through the roadmap skill and their evidence notes are preserved. The
-   execution-filed backlog (`DEF-544`…`DEF-555`) and the pre-existing
+   execution-filed backlog (`DEF-544`…`DEF-557`) and the pre-existing
    report-only findings are the user-scoped backlog.
 3. ✅ Every ST-1…ST-35 case for an active DEF was red before its fix and green
    after it. ST-12 and the seven AR-16 stale closes (`DEF-413`, `DEF-470`,

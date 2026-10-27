@@ -624,8 +624,58 @@ changes, plus an unrecorded pre-existing critical.
 | PRE-1 | CRITICAL (pre-existing) | reserved: a generic `T` view return skips EL-2/EL-3 and a caller can hold a dangling view; the user's filing/absorb decision |
 | RV-001…RV-006 / SR-003…SR-006 | MINOR | fixed or recorded: the spec plan identifiers and the duplicate AGENTS entry removed; the ledger/index/roadmap records and counts corrected; the E10213 help and the E10300 residue recorded |
 
-The pre-existing Phase 4/5 list (the other bool null contexts, the
-`.name.ptr`/`str[2]` invalid C, the eight accepted invalid-C units, the enum
-collision, the dotted `ffi`, the generic function value, the non-callable
-member call, the nullable type-argument iterable) and the new PRE-1 are the
-`6.2.1` filing decision.
+
+
+### Single Fix-Diff Re-Review (one pass)
+
+Four lenses re-reviewed `02fa132..7b4a5e4`. The memory lens was clean; the
+correctness lens found no new phase critical or major; the semantics and
+emission lenses found one critical, two majors, and three minors in the fix
+diff. All are fixed at `c428953` and re-verified:
+
+| Finding | Severity | Ruling |
+|---|---|---|
+| SR-101 | CRITICAL | fixed: a nullable-typed arm at a generic call-argument destination defers to the instance; the explicit and inferred spellings report one E10010 per arm (`st26call`) |
+| SR-102 | MAJOR (new) | fixed: the declaration's flow-narrowed arms travel as `RequiresConditionalArmNarrowing` and the instance skips them; the narrowed local and parameter twins are accepted and ASAN-clean (`st26narrow`, `st26narrowparam`) |
+| RR-N1 | MAJOR | fixed: a projection guard now requires legal C storage (place, temp, materialize, aggregate, deref; a conditional only when both arms are addressable); the fresh conditional field builds under `-Werror` (`cviimpl-condfield`) while the materialized conditional, temp, aggregate, and deref guards stay |
+| SR-103 | MINOR | fixed: a null-shaped arm's single E10012 suppresses the site's E10010 (`st26null`) |
+| SR-104 / RR-N2 | MINOR | fixed: the seven stale closes and the DEF-425 accounting sentence |
+| RV-004 | MINOR | fixed: the Batch N accounting paragraph is marked a snapshot and carries the current totals |
+
+The full `make check` (74 targets, 110 goldens), the focused `RDC_ASAN=1`
+suites (522 tests, no sanitizer report), and the full `make verify` (all legs,
+including FS-UAE) pass at the final head.
+
+### Phase 6 Backlog Filing (2026-10-27)
+
+The two review-reserved items are filed as backlog rows:
+
+| Row | Severity | Evidence |
+|---|---|---|
+| `DEF-556` | critical | PRE-1: a generic `T` view return skips EL-2/EL-3; `f<str>(a, b)` holds a freed view (ASAN heap-use-after-free; the concrete twin reports E10036) |
+| `DEF-557` | major | SR-002: the DEF-506 generic caller-returned static field rejects E10036 while the concrete twin is accepted; the AR-12 instance-bound marker needs a new ruling |
+
+The remaining pre-existing report-only items stay recorded here for the next
+backlog triage and are not absorbed by this plan: the other nullable-bool
+contexts (`while`, `do-while`, a ternary condition, unary, index), the
+`(d ? h1 : h2).name.ptr` and `f<str[2]>` invalid-C siblings, the recorded
+accepted-invalid-C units (the `cvi.callfield` unit is fixed by RR-N1 and the
+E10213 embed unit by Phase 5), the dotted `ffi` callee, the cross-module enum
+collision, the generic function value, the non-callable member call (already
+`DEF-214`), the parameter-container alias `E10035`, the unused `cl_zero`
+helpers, the nullable type-argument iterable (the Phase 4 review recorded an
+ASAN abort; re-confirm the exact loop spelling at triage), and the diagnostics
+minors SR-003…SR-006. Each is base-identical or explicitly scoped out.
+
+
+## Plan Close Summary (2026-10-27)
+
+The plan closes all 34 active critical/major rows (35 tracked including the
+stale `DEF-470` close) across seven phases; every row has a Done roadmap row
+with commit evidence. The final review and its single fix-diff re-review are
+closed: the in-scope criticals and majors are fixed, and the two
+review-reserved items are filed as `DEF-556` (critical, PRE-1) and `DEF-557`
+(major, SR-002); the remaining pre-existing report-only items are recorded
+above for backlog triage. Final verification: `make check` (74 targets, 110
+compile-fail goldens) and `make verify` (all legs, including FS-UAE), with the
+focused `RDC_ASAN=1` suites clean.
