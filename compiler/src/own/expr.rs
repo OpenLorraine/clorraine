@@ -1171,8 +1171,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..
             } = &expr.kind
             {
-                self.check_nonnull_expr(then_value, then_value.span);
-                self.check_nonnull_expr(else_value, else_value.span);
+                // A declared non-null arm is not a possible-null use; the
+                // whole-value judgment above already saw it. Only the nullable
+                // arm can supply the conditional's null value.
+                if self.ty(then_value).nullable {
+                    self.check_nonnull_expr(then_value, then_value.span);
+                }
+                if self.ty(else_value).nullable {
+                    self.check_nonnull_expr(else_value, else_value.span);
+                }
             } else {
                 self.check_nonnull_expr(expr, span);
             }

@@ -114,6 +114,7 @@ pub fn check(
     let mut storable_duties = Vec::new();
     let mut self_assign_duties = Vec::new();
     let mut opaque_store_duties = Vec::new();
+    let mut view_return_duties = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -146,6 +147,7 @@ pub fn check(
                     store_duties,
                     self_assign_reqs,
                     opaque_store_reqs,
+                    view_returns,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -159,6 +161,7 @@ pub fn check(
                 storable_duties.extend(store_duties);
                 self_assign_duties.extend(self_assign_reqs);
                 opaque_store_duties.extend(opaque_store_reqs);
+                view_return_duties.extend(view_returns);
             }
         }
     }
@@ -221,6 +224,9 @@ pub fn check(
     }
     for duty in opaque_store_duties {
         monomorphization.require_opaque_store(duty);
+    }
+    for duty in view_return_duties {
+        monomorphization.require_view_return(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -311,6 +317,14 @@ struct FunctionChecker<'a, 'd> {
     /// exactly one; the elision postlude compares the return's actual
     /// derivation against it.
     elision_candidate: Option<String>,
+    /// True when a view-return candidate's declared type mentions a parameter.
+    elision_type_param_candidate: bool,
+    /// The view-return candidates' declared types and names.
+    elision_candidate_types: Vec<(String, crate::types::Ty)>,
+    /// The parameter the returned view derives from, when it is a parameter.
+    view_return_source: Option<String>,
+    /// True when different returns derive from different parameters.
+    view_return_source_mixed: bool,
     /// True when an observed view return derives from something other than
     /// the single candidate, so the postlude reports `E10036` even though the
     /// candidate count is one.
@@ -538,6 +552,13 @@ struct FunctionChecker<'a, 'd> {
     /// (and reports the escape when the carrier is returned), while an owned
     /// member keeps the concrete implicit-conversion judgment.
     opaque_store_requirements: Vec<ir::RequiresOpaqueStore>,
+    /// The view-return candidate duties this body owes its instances.
+    ///
+    /// A view return whose candidates include a `borrow T` cannot decide the
+    /// elision count until the instance supplies T; the per-instance audit
+    /// reports the frozen view-return rule when the substituted candidates are
+    /// not exactly the returned parameter.
+    view_return_requirements: Vec<ir::RequiresViewReturnCandidates>,
     /// Opaque-store sites already recorded, so one site owes one duty.
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
@@ -607,6 +628,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             elision_candidates: 0,
             suppress_elision: false,
             elision_candidate: None,
+            elision_type_param_candidate: false,
+            elision_candidate_types: Vec::new(),
+            view_return_source: None,
+            view_return_source_mixed: false,
+            view_return_requirements: Vec::new(),
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
@@ -683,6 +709,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresStorableSlot>,
         Vec<ir::RequiresSelfAssign>,
         Vec<ir::RequiresOpaqueStore>,
+        Vec<ir::RequiresViewReturnCandidates>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -736,6 +763,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.storable_slot_requirements,
             self.self_assign_requirements,
             self.opaque_store_requirements,
+            self.view_return_requirements,
         )
     }
 

@@ -6,13 +6,8 @@
 //! byte-identical re-emission the accepted fixes rely on.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
-
-/// How long one program may run before the case fails as a hang.
-const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
     path: PathBuf,
@@ -127,69 +122,6 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     (scratch, output, c_path)
 }
 
-/// Emits, builds, and runs one host program, returning its output.
-fn run_host(tag: &str, source: &str) -> Output {
-    let scratch = ScratchDir::new(tag);
-    let emitted = emit_host(tag, source);
-    let c_path = scratch.path().join("build.c");
-    std::fs::write(&c_path, &emitted).expect("write the emitted C");
-    let program = scratch.path().join("prog");
-    let built = Command::new("cc")
-        .args([
-            "-std=c99",
-            "-O0",
-            "-g",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-o",
-            program.to_str().expect("program path"),
-            c_path.to_str().expect("emitted C path"),
-        ])
-        .output()
-        .expect("failed to spawn the host C compiler");
-    assert!(
-        built.status.success(),
-        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
-        String::from_utf8_lossy(&built.stderr)
-    );
-    run_program(tag, &program, &[])
-}
-
-/// Runs a built program with a time limit and the given environment values.
-///
-/// A program that is still running when the limit passes is killed and the case
-/// fails, so a regression that loops forever surfaces as one failing case
-/// instead of a frozen suite.
-fn run_program(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
-    let mut command = Command::new(program);
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (key, value) in env {
-        command.env(key, value);
-    }
-    let mut child = command
-        .spawn()
-        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
-    let deadline = Instant::now() + RUN_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                panic!("{tag}: the program did not finish within {RUN_TIMEOUT:?}");
-            }
-            Err(err) => panic!("{tag}: cannot wait for the program: {err}"),
-        }
-    }
-    child
-        .wait_with_output()
-        .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
-}
-
 /// Asserts the text contains a fragment.
 fn assert_contains(tag: &str, text: &str, needle: &str) {
     assert!(
@@ -205,52 +137,6 @@ fn assert_absent(tag: &str, text: &str, needle: &str) {
         "{tag}: the emitted C still contains {needle:?}"
     );
 }
-
-/// Asserts the first fragment appears before the second one in the text.
-fn assert_before(tag: &str, text: &str, first: &str, second: &str) {
-    let first_at = text
-        .find(first)
-        .unwrap_or_else(|| panic!("{tag}: the text does not contain {first:?}"));
-    let second_at = text
-        .find(second)
-        .unwrap_or_else(|| panic!("{tag}: the text does not contain {second:?}"));
-    assert!(
-        first_at < second_at,
-        "{tag}: expected {first:?} before {second:?}"
-    );
-}
-
-/// Asserts the front end rejects the program with `code` and writes no C.
-fn assert_rejected(tag: &str, source: &str, code: &str) {
-    assert_rejected_with(tag, source, code, &[]);
-}
-
-/// Asserts the front end rejects the program with `code`, that the message
-/// contains every fragment, and that no translation unit is written.
-fn assert_rejected_with(tag: &str, source: &str, code: &str, fragments: &[&str]) {
-    let (_scratch, output, c_path) = compile_only(tag, source);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "{tag}: the front end accepted a program that must be rejected"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(&format!("error {code}:")),
-        "{tag}: expected {code}; stderr:\n{stderr}"
-    );
-    for fragment in fragments {
-        assert!(
-            stderr.contains(fragment),
-            "{tag}: the diagnostic does not contain {fragment:?}; stderr:\n{stderr}"
-        );
-    }
-    assert!(
-        !c_path.exists(),
-        "{tag}: a rejected program must not produce a translation unit"
-    );
-}
-
 
 /// The rejected sites report exactly once per site or per nullable arm.
 #[test]
@@ -387,6 +273,59 @@ func main(): i32 {
 }
 "#;
     assert_eq!(count("st31localowned", local_owned, "E10035"), 1);
+
+    let owned_borrow = r#"module impl.sempar.st412owned;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func getName<T>(borrow h: T): str { return h.name; }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("ab") };
+    let s: str = getName<H>(h);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_eq!(count("st412owned", owned_borrow, "E10036"), 1);
+
+    let mixed_static = r#"module impl.sempar.st28mixed;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func pick(c: bool, borrow b: H): str {
+    if (c) { return b.tag; }
+    return b.name;
+}
+
+func main(): i32 {
+    let b: H = H { name: stringOf("bb"), tag: "bb" };
+    let s: str = pick(false, b);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_eq!(count("st28mixed", mixed_static, "E10036"), 1);
+
+    let unnarrowed_loop = r#"module impl.sempar.st411unnarrow;
+
+import { slice } from std.mem;
+
+func f(a: u8[]?): i32 {
+    let n: i32 = 0;
+    for (x in a) { n = n + i32(x); }
+    return n;
+}
+
+func main(): i32 {
+    let b: u8[2] = [1, 2];
+    let v: u8[] = slice(b, 0, 2);
+    return f(v);
+}
+"#;
+    assert_eq!(count("st411unnarrow", unnarrowed_loop, "E10010"), 1);
 }
 
 /// A nested element substitution never reaches the emitter as a placeholder.

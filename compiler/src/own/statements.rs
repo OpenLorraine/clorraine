@@ -1675,6 +1675,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             && matches!(binding.base, Some(ir::PlaceBase::DerefTemp { .. }))
     }
 
+    /// Records one parameter a returned view derives from.
+    ///
+    /// A deferred view-return candidate duty needs the single returned
+    /// parameter; different parameters in one return make the derivation
+    /// mixed, which the duty reports as no valid single candidate.
+    fn record_view_return_source(&mut self, id: usize) {
+        let source = self.bindings[id].name.clone();
+        match &self.view_return_source {
+            Some(existing) if existing != &source => self.view_return_source_mixed = true,
+            Some(_) => {}
+            None => self.view_return_source = Some(source),
+        }
+    }
+
     /// Checks a `return`.
     ///
     /// A non-duplicable return value is an ownership transfer, so it runs the
@@ -1735,6 +1749,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             if view_return && !inline_alias {
                 let provenance = self.view_provenance(value);
+                // The deferred candidate duty needs the parameter the returned
+                // view derives from; every storage component that is a
+                // parameter contributes, so a mixed return is marked mixed.
+                for atom in Self::storage_atoms(&provenance) {
+                    if let Provenance::Param(id) = atom {
+                        self.record_view_return_source(id);
+                    }
+                }
                 match provenance {
                     Provenance::Local(id) => {
                         self.suppress_elision = true;
@@ -1946,7 +1968,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 }
             }
-            if inline_alias {
+            if inline_alias && view_return {
                 self.error(
                     "E10030",
                     "borrow of a statement temporary does not live long enough",

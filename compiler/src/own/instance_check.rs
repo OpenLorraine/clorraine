@@ -55,6 +55,7 @@ pub fn check(
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_element_move_requirements(program, sema, mono, diagnostics);
+    check_view_return_candidates(program, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
@@ -1216,6 +1217,12 @@ fn check_element_move_requirements(
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
             let base = crate::types::substitute(&requirement.ty, &bound);
+            // A view's `.ptr`/`.len` ABI member is a value copy: the selected
+            // pointer or length is duplicable even though the owning root is
+            // not. The take partial-move limit does not apply to that read.
+            if is_view_intrinsic_projection(sema, &base, &requirement.path) {
+                continue;
+            }
             let moved = projected_type(sema, &base, &requirement.path);
             if moved.is_unknown()
                 || crate::types::contains_param(&moved)
@@ -1230,6 +1237,58 @@ fn check_element_move_requirements(
                     requirement.span,
                 )
                 .with_help("move the whole value instead"),
+            );
+            break;
+        }
+    }
+}
+
+/// Reports the frozen view-return rule when a type-parameter candidate set
+/// resolves to something other than exactly the returned parameter.
+///
+/// The declaration cannot count a `borrow T` as a view-like lend until the
+/// instance supplies T. This audit substitutes every candidate's declared
+/// type, counts the view-like lends, and requires the returned view to derive
+/// from the sole one. An owning aggregate argument therefore reports the same
+/// `E10036` its concrete twin reports, while a fixed array or slice argument
+/// keeps the accepted return. A mixed derivation names no single candidate.
+/// One duty reports once — its first offending instance.
+fn check_view_return_candidates(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.view_return_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let lend: Vec<&str> = requirement
+                .candidates
+                .iter()
+                .filter(|(_, ty)| {
+                    crate::borrow::is_lend_candidate(&crate::types::substitute(ty, &bindings))
+                })
+                .map(|(name, _)| name.as_str())
+                .collect();
+            let accepted = requirement.returned.as_deref().is_some_and(|returned| {
+                lend.len() == 1 && lend[0] == returned
+            });
+            if accepted {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10036",
+                    "view return does not derive from exactly one parameter",
+                    requirement.span,
+                )
+                .with_help("make exactly one parameter a view or handle lend"),
             );
             break;
         }
@@ -1944,9 +2003,8 @@ fn check_opaque_member_uses(
         let Some(Callee::User(decl)) = program.callee(&usage.function) else {
             continue;
         };
-        // The projection records the read's base span while the use records
-        // the whole read's span; both begin where the base expression begins,
-        // so the start identifies the site.
+        // The projection and the use both record the whole read's span; both
+        // begin at the same place, so the start identifies the site.
         let Some(projection) = sema.opaque_projections.iter().find(|projection| {
             projection.function == usage.function
                 && projection.name == usage.name

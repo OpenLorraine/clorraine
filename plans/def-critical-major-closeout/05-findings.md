@@ -467,8 +467,9 @@ row was the inconsistent artifact.
   controls.
 - **Stale closes (AR-16):** `DEF-413` and `DEF-507`; the ST-25/ST-29 cases are
   the green HEAD pins and the roadmap rows record the proofs.
-- **Specification suite:** 9 cases, 9/9 in the plain and `RDC_ASAN` runs; every
-  safe control is ASAN/LSan clean. `ST-28`'s name twin and `ST-31`'s local arm
+- **Specification suite:** 15 cases (the nine ST rows plus six phase-review
+  regressions), 15/15 in the plain and `RDC_ASAN` runs; every safe control is
+  ASAN/LSan clean. `ST-28`'s name twin and `ST-31`'s local arm
   follow the frozen oracle (`E10036` and `E10035`), not the plan's
   `E10034`/`E10030`; the corrections are recorded above.
 - **Implementation pins:** 5/5 in
@@ -488,3 +489,46 @@ row was the inconsistent artifact.
 - **Roadmap:** the nine Batch D rows move to Done (`DEF-411`, `412`, `413`,
   `415`, `505`, `506`, `507`, `513`, `522`); the progress is 419/544 RD rows with
   three executing rows left (`DEF-167`, `DEF-171`, `DEF-416`).
+
+
+## Phase 4 Review — 2026-10-27
+
+Four lenses (correctness, semantics, memory safety, emission integrity) reviewed
+the phase diff `283ced8..5f235ea`. The phase was not closable: two critical
+accepted-invalid programs and five major safe-program regressions. The eligible
+technical fixes were selected under the active auto-design; the frozen oracle
+and the concrete twins stayed the source of truth. The pre-existing findings are
+report-only with base evidence and do not enter the phase verdict.
+
+| Finding | Severity | Area | Ruling |
+|---|---|---|---|
+| RV-001 | CRITICAL | DEF-412 candidate | fixed: the instance re-counts the `borrow T` candidates and requires the returned parameter; `getName<H>` reports one E10036, the single-lend twin accepts |
+| SR-001 / MSA | CRITICAL | DEF-506 static latch | fixed: a wrong-source view return is judged before the function-wide static/local suppression; the mixed static/owned-field return reports one E10036 |
+| SR-002 / EIA-4 | MAJOR | DEF-412 count | fixed with RV-001: the `borrow T` beside a concrete lend accepts at an owning instance and reports E10036 at a two-lend instance |
+| RV-002 / EIA-1 | MAJOR | DEF-411 iterable | fixed: a nullable iterable is judged by flow narrowing; the narrowed conditional accepts, the unnarrowed binding reports E10010 |
+| EIA-2 | MAJOR | DEF-415 arms | fixed: only a nullable arm takes the per-arm possible-null check; a declared non-null sibling accepts |
+| SR-003 | MAJOR | DEF-513 copy | fixed: the inline-alias report is a view-return escape; a copied element return accepts |
+| EIA-3 | MAJOR | DEF-505/522 take | fixed: a take field projection whose final step is a view's intrinsic `.ptr`/`.len` is a copy, not a partial move |
+| RV-004 | MINOR | test harness | fixed: the unused implementation-test helpers and imports are removed |
+| RV-005 | MINOR | documentation | fixed: the return-summary doc is attached to its function; the projection-span comment matches the whole-read span |
+
+**Fix evidence:** the phase-review fixes are committed as the phase-review fix;
+`make check` is green (74 test targets, the 110 compile-fail goldens) and the
+full `make verify` reports all legs passed. The specification suite grew to 15
+cases and the implementation pins to the five extended pins.
+
+**Pre-existing, report-only (outside the phase verdict):**
+
+| Item | Evidence |
+|---|---|
+| The other bool null contexts (`while`, `do-while`, a ternary condition, unary, index) and a nullable bool use | accepted at the base and at the reviewed head; the filed DEF-411 contexts are the `if`/cast/binary/let/loop-head |
+| A type-parameter `(d ? h1 : h2).name.ptr` emits invalid C; the concrete twin reports E10212 | base and head byte-identical; sibling of DEF-413/522 |
+| A parameter-container `for (borrow e in xs)` view return reports E10035 | base and head identical; the inline form is DEF-513 |
+| Nine accepted corpus/test programs emit invalid host C (the `cvi.callfield` address, four null-shape `void*` conversions, three sequence-point cases, and the E10213 embed golden) | base and head identical; E10213 belongs to DEF-171 (Phase 5) |
+| A `f<str[2]>` nested element with an integer conversion is accepted and emits invalid C | base and head identical; the DEF-413 u8 pin does not cover it |
+| A nullable type-argument iterable (`f<T>(xs: T)` at `T = u8[]?`) accepts a null slice and ASAN aborts | base and head identical; DEF-411's conditional-loop fix does not cover a nullable type argument |
+| Unused `cl_zero_<instance>` helpers are emitted for every struct instance | base and head identical; no dead specialization in the changed shapes |
+| A static literal return plus a non-static view return | fixed incidentally by the SR-001 per-return judgment |
+
+The phase closes on the phase's own findings; the pre-existing items above are
+the user's filing/deferral decision and do not expand Batch D.

@@ -3893,7 +3893,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !is_elided_view(&self.returns) {
             return;
         }
-        let candidates: Vec<String> = self
+        let candidates: Vec<(String, Ty)> = self
             .decl
             .params
             .iter()
@@ -3903,25 +3903,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let ty = self.resolve_with(&param.ty, &self.type_params);
                 // An explicit `borrow T` may be a view or an aggregate at its
-                // instance, so it is a potential single candidate at the
-                // declaration. A plain type-parameter parameter keeps the
-                // concrete twin's count: the concrete twin's plain argument
-                // may be a non-candidate (a cstring helper's bool `y`), and
-                // counting it would false-reject the generic helper. The
-                // instance's concrete member resolution decides whether the
-                // return derives from the borrow; the local-backed and
-                // duplicate-candidate rules still reject the unsafe shapes.
+                // instance, so it is a potential candidate at the declaration.
+                // A plain type-parameter parameter keeps the concrete twin's
+                // count: the concrete twin's plain argument may be a
+                // non-candidate (a cstring helper's bool `y`), and counting it
+                // would false-reject the generic helper.
                 is_lend_candidate(&ty)
                     || (param.mode == Mode::Borrow && super::lower::mentions_type_param(&ty))
             })
-            .map(|param| param.name.clone())
+            .map(|param| {
+                (
+                    param.name.clone(),
+                    self.resolve_with(&param.ty, &self.type_params),
+                )
+            })
             .collect();
         self.elision_candidates = candidates.len();
         self.elision_candidate = if candidates.len() == 1 {
-            candidates.into_iter().next()
+            Some(candidates[0].0.clone())
         } else {
             None
         };
+        // A `borrow T` candidate is only a lend at the instances where T is a
+        // view-like type. The declaration records the candidates and the
+        // returned parameter; the instance audit re-counts them after the
+        // substitution. A concrete-only candidate set stays a declaration-time
+        // judgment.
+        self.elision_type_param_candidate = candidates
+            .iter()
+            .any(|(_, ty)| super::lower::mentions_type_param(ty));
+        self.elision_candidate_types = candidates;
     }
 
     /// Reports `E10036` when a view return cannot elide a single parameter.
@@ -3931,10 +3942,48 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so a view read through a different parameter is rejected here at the
     /// declaration instead of leaking a borrowed view to the caller.
     pub(super) fn elision_postlude(&mut self) {
-        if !is_elided_view(&self.returns) || self.suppress_elision {
+        if !is_elided_view(&self.returns) {
             return;
         }
-        if self.elision_candidates == 1 && !self.return_derivation_mismatch {
+        // A candidate set that still mentions a type parameter is judged per
+        // instance: the substituted type decides whether the `borrow T` is a
+        // view-like lend. The duty carries the candidates and the returned
+        // parameter; a return that derives from no parameter (a local or a
+        // static value) keeps its own report and owes no candidate duty.
+        if self.elision_type_param_candidate {
+            if let Some(returned) = self.view_return_source.clone() {
+                let returned = if self.view_return_source_mixed {
+                    None
+                } else {
+                    Some(returned)
+                };
+                self.view_return_requirements
+                    .push(ir::RequiresViewReturnCandidates {
+                        function: self.decl.name.clone(),
+                        candidates: self.elision_candidate_types.clone(),
+                        returned,
+                        span: self.decl.name_span,
+                    });
+            }
+            return;
+        }
+        // A return that derives from the wrong source is the per-return
+        // E10036 judgment. A static or local return in another branch must not
+        // hide it: those branches have their own reports, but this branch's
+        // view still needs an elision candidate.
+        if self.return_derivation_mismatch {
+            self.error(
+                "E10036",
+                "view return does not derive from exactly one parameter",
+                "make exactly one parameter a view or handle lend",
+                self.decl.name_span,
+            );
+            return;
+        }
+        if self.suppress_elision {
+            return;
+        }
+        if self.elision_candidates == 1 {
             return;
         }
         self.error(
@@ -4562,7 +4611,6 @@ fn collect_return_value_if_names(decl: &IfStmt, names: &mut BTreeSet<String>) {
     }
 }
 
-/// Collects the names every `return` in a block mentions.
 /// True when every return in `body` hands back static storage.
 ///
 /// The recorded type of each returned expression decides: a `static str` (or
@@ -4656,6 +4704,7 @@ fn body_returns_static_views(
     returns > 0 && all_static
 }
 
+/// Collects the names every `return` in a block mentions.
 fn collect_return_block_names(block: &Block, names: &mut BTreeSet<String>) {
     for statement in &block.statements {
         collect_return_stmt_names(statement, names);

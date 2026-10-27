@@ -11,7 +11,6 @@
 //!
 //! All temporary files live in a self-removing scratch directory.
 
-use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -809,4 +808,205 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("st31localowned", local_owned, "E10035", &["l"]);
+}
+
+// ---------------------------------------------------------------------------
+// Candidate and control regressions
+// ---------------------------------------------------------------------------
+
+/// A `borrow T` view-return candidate is counted after substitution: an
+/// owning aggregate reports one E10036, while a single concrete lend beside
+/// the borrow parameter stays accepted.
+#[test]
+fn should_judge_a_borrow_type_parameter_candidate_by_instance() {
+    let owned = r#"module spec.sempar.st412owned;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; }
+
+func getName<T>(borrow h: T): str { return h.name; }
+
+func main(): i32 {
+    let h: H = H { name: stringOf("ab") };
+    let s: str = getName<H>(h);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_once("st412owned", owned, "E10036", &[]);
+
+    let single = r#"module spec.sempar.st412single;
+
+struct H { tag: static str; }
+
+func g<T>(borrow xs: T, s: str): str { return s; }
+
+func main(): i32 {
+    let h: H = H { tag: "hh" };
+    let r: str = g<H>(h, "ab");
+    return i32(len(r)) - 2;
+}
+"#;
+    let output = run_memory("st412single", single);
+    assert_no_sanitizer("st412single", &output);
+    assert_exit("st412single", &output, 0);
+
+    let two_lends = r#"module spec.sempar.st412two;
+
+import { slice } from std.mem;
+
+func g<T>(borrow xs: T, s: str): str { return s; }
+
+func main(): i32 {
+    let b: u8[2] = [1, 2];
+    let xs: u8[] = slice(b, 0, 2);
+    let r: str = g<u8[]>(xs, "ab");
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected_once("st412two", two_lends, "E10036", &[]);
+}
+
+/// A static return in one branch does not hide a wrong-source view return in
+/// another branch.
+#[test]
+fn should_reject_a_mixed_static_view_return() {
+    let source = r#"module spec.sempar.st28mixed;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+
+func pick(c: bool, borrow b: H): str {
+    if (c) { return b.tag; }
+    return b.name;
+}
+
+func main(): i32 {
+    let b: H = H { name: stringOf("bb"), tag: "bb" };
+    let s: str = pick(false, b);
+    return i32(len(s)) - 2;
+}
+"#;
+    assert_rejected_once("st28mixed", source, "E10036", &[]);
+}
+
+/// A nullable iterable is judged by flow narrowing: the narrowed conditional
+/// accepts, while an unnarrowed nullable binding reports the possible-null
+/// rule.
+#[test]
+fn should_judge_a_nullable_iterable_by_flow_narrowing() {
+    let narrowed = r#"module spec.sempar.st411narrow;
+
+import { slice } from std.mem;
+
+func f(c: bool, a: u8[]?): i32 {
+    if (a == null) { return 0; }
+    let b: u8[2] = [1, 2];
+    let v: u8[] = slice(b, 0, 2);
+    let n: i32 = 0;
+    for (x in c ? a : v) { n = n + i32(x); }
+    return n;
+}
+
+func main(): i32 {
+    let b: u8[2] = [1, 2];
+    let v: u8[] = slice(b, 0, 2);
+    return f(true, v) - 3;
+}
+"#;
+    let output = run_memory("st411narrow", narrowed);
+    assert_no_sanitizer("st411narrow", &output);
+    assert_exit("st411narrow", &output, 0);
+
+    let unnarrowed = r#"module spec.sempar.st411unnarrow;
+
+import { slice } from std.mem;
+
+func f(a: u8[]?): i32 {
+    let n: i32 = 0;
+    for (x in a) { n = n + i32(x); }
+    return n;
+}
+
+func main(): i32 {
+    let b: u8[2] = [1, 2];
+    let v: u8[] = slice(b, 0, 2);
+    return f(v);
+}
+"#;
+    assert_rejected_once("st411unnarrow", unnarrowed, "E10010", &["a"]);
+}
+
+/// A conditional's declared non-null arm is not a possible-null use.
+#[test]
+fn should_skip_the_non_null_arm_of_a_nullable_conditional() {
+    let source = r#"module spec.sempar.st415ok;
+
+import { String, stringOf } from std.text;
+
+func f(c: bool, s: String?, t: String): i32 {
+    if (s == null) { return 0; }
+    let r: str = c ? s : t;
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    let t: String = stringOf("cd");
+    return f(true, s, t);
+}
+"#;
+    let output = run_memory("st415ok", source);
+    assert_no_sanitizer("st415ok", &output);
+    assert_exit("st415ok", &output, 0);
+}
+
+/// A copied inline-iterable element return creates no loan and stays
+/// accepted; the view-return alias remains the E10030 case.
+#[test]
+fn should_accept_a_copied_inline_iterable_element() {
+    let source = r#"module spec.sempar.st513copy;
+
+func f(): i32 {
+    for (borrow e in [1, 2, 3]) { return e - 1; }
+    return 9;
+}
+
+func main(): i32 { return f(); }
+"#;
+    let output = run_memory("st513copy", source);
+    assert_no_sanitizer("st513copy", &output);
+    assert_exit("st513copy", &output, 0);
+}
+
+/// A take parameter's intrinsic view-member projection is a value copy, not a
+/// partial move.
+#[test]
+fn should_accept_a_take_view_member_projection() {
+    let source = r#"module spec.sempar.st522take;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String; tag: static str; }
+struct S { p: raw u8; }
+
+func pack<T>(d: bool, take h1: T, take h2: T): S {
+    return S { p: (d ? h1 : h2).tag.ptr };
+}
+
+func main(): i32 {
+    let h1: H = H { name: stringOf("aa"), tag: "aa" };
+    let h2: H = H { name: stringOf("bb"), tag: "bb" };
+    unsafe {
+        let s: S = pack<H>(true, take h1, take h2);
+        if (s.p == null) { return 9; }
+        if (s.p[0] != 97) { return 8; }
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("st522take", source);
+    assert_no_sanitizer("st522take", &output);
+    assert_exit("st522take", &output, 0);
 }

@@ -171,6 +171,27 @@ pub struct RequiresElementMove {
     pub span: Span,
 }
 
+/// A view return whose elision candidates include a type parameter.
+///
+/// The declaration cannot count a `borrow T` as a view-like lend candidate
+/// until the instance supplies T: a fixed array or a slice is a candidate, an
+/// owning aggregate is not. The duty carries every candidate's declared type
+/// and the parameter the returned view derives from; the instance substitutes
+/// the types, counts the lend candidates, and reports the frozen view-return
+/// rule once when the count or the derivation is wrong.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresViewReturnCandidates {
+    /// The generic function whose view return owes the judgment.
+    pub function: String,
+    /// The non-`take` view-return candidates, with their declared types.
+    pub candidates: Vec<(String, Ty)>,
+    /// The parameter the returned view derives from, when every return names
+    /// the same one; `None` for a mixed derivation.
+    pub returned: Option<String>,
+    /// The function name's span, where the view-return rule reports.
+    pub span: Span,
+}
+
 /// A body's obligation that a lend may only be moved into an owned position
 /// when the instance's type is duplicable.
 ///
@@ -540,6 +561,7 @@ pub struct Monomorphization {
     self_assign_requirements: Vec<RequiresSelfAssign>,
     opaque_store_requirements: Vec<RequiresOpaqueStore>,
     iterable_requirements: Vec<RequiresIterable>,
+    view_return_requirements: Vec<RequiresViewReturnCandidates>,
 }
 
 impl Monomorphization {
@@ -595,6 +617,16 @@ impl Monomorphization {
     /// Every recorded opaque-iterable duty.
     pub fn iterable_requirements(&self) -> &[RequiresIterable] {
         &self.iterable_requirements
+    }
+
+    /// Records a view-return candidate duty the body owes its instances.
+    pub fn require_view_return(&mut self, requirement: RequiresViewReturnCandidates) {
+        self.view_return_requirements.push(requirement);
+    }
+
+    /// Every recorded view-return candidate duty.
+    pub fn view_return_requirements(&self) -> &[RequiresViewReturnCandidates] {
+        &self.view_return_requirements
     }
 
     /// Records a copy obligation the generic body owes.

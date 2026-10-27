@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 62/76 tasks (82%)
+> **Progress**: 61/76 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -388,7 +388,7 @@ program remains in Batch B.
   regression suites unchanged)
 - [x] 4.3.1 Green: focused parity suites, ASAN for safe controls, and strict-C
   comparison against the concrete twin.
-  ✅ (completed: 2026-10-27; the semantic suite is 9/9 and `RDC_ASAN=1` is
+  ✅ (completed: 2026-10-27; the semantic suite is 15/15 and `RDC_ASAN=1` is
   clean for every safe control; the focused regression batch (borrow-generic
   45, borrow-store 58, checker 212, conditional-projection 61, eval-emission
   68, callable-release 69, runtime-value 30, element-loop 25, codegen-ownership
@@ -398,21 +398,21 @@ program remains in Batch B.
 - [x] 4.3.2 Implementation pins in `compiler/tests/def_semantic_parity_integrity_impl_test.rs`:
   one-report counts, no placeholder, concrete/generic parity, read/return C,
   determinism.
-  ✅ (completed: 2026-10-27; five pins: the six rejected shapes' exact error
-  counts (two E10010 and five single reports), no `#element` placeholder with
-  `cl_f__arr2_u8`, the generic `cl_pack__H` and concrete `.tag.ptr` shapes, the
+  ✅ (completed: 2026-10-27; five pins: the rejected shapes' exact error
+  counts (the two-arm E10010 and the single reports, including the
+  phase-review regressions), no `#element` placeholder with `cl_f__arr2_u8`,
+  the generic `cl_pack__H` and concrete `.tag.ptr` shapes, the
   `cl_readTag__H`/`static u8 *` read/return unit, and byte-identical re-
   emission; all five green)
-- [x] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [~] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   semantic-parity and view-return pins and record every expected change; close
   the Batch D rows through the roadmap skill and record incidental minor
   closures without expanding scope; add the phase record to `05-findings.md`.
-  ✅ (completed: 2026-10-27; `make check` is green with 74 test targets and the
-  110 compile-fail goldens; the full `make verify` reports all legs passed,
-  including FS-UAE. The nine Batch D rows are Done (seven fixes, two AR-16
-  stale closes); the Phase 0 retarget and the phase record are in
-  `05-findings.md`; the new spec/impl pair is in the `AGENTS.md` test map; the
-  roadmap reads 419/544 RD rows with three executing rows left)
+  ⏳ (implemented: 2026-10-27; the phase review found two critical and five
+  major regressions; the eligible technical fixes are applied, the suites
+  grew to 15 specification cases and the five extended pins, and `make check` /
+  `make verify` are green. The Batch D rows stay reopened until the single
+  fix-diff re-review is clean.)
 
 **Verify**: `make check` and `make verify`; no safe twin regressed; no unsafe
 twin accepted.

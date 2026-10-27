@@ -511,13 +511,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => false,
         };
-        if crate::types::is_null_shaped(&iterable_ty) || iterable_ty.nullable || null_arm {
+        if crate::types::is_null_shaped(&iterable_ty) || null_arm {
             self.error(
                 "E10012",
                 "'null' is not allowed here",
                 "declare the type `T?` or avoid the empty state",
                 decl.span,
             );
+        } else if iterable_ty.nullable {
+            // A nullable iterable is usable only after a flow narrowing proves
+            // it non-null here. A conditional judges each arm; a bare place
+            // uses the same narrowing check as any other nullable read. A
+            // nullable value with no place to narrow keeps the null rule.
+            let mut narrowed_place = false;
+            if let crate::ast::ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } = &decl.iterable.kind
+            {
+                for arm in [then_value.as_ref(), else_value.as_ref()] {
+                    if self.ty(arm).nullable && self.plain_binding(arm).is_some() {
+                        narrowed_place = true;
+                        self.check_nonnull_expr(arm, arm.span);
+                    }
+                }
+            } else if self.plain_binding(&decl.iterable).is_some() {
+                narrowed_place = true;
+                self.check_nonnull_expr(&decl.iterable, decl.span);
+            }
+            if !narrowed_place {
+                self.error(
+                    "E10012",
+                    "'null' is not allowed here",
+                    "declare the type `T?` or avoid the empty state",
+                    decl.span,
+                );
+            } else if !matches!(
+                iterable_ty.kind,
+                TyKind::Array { .. } | TyKind::Param(_) | TyKind::Unknown
+            ) {
+                self.error(
+                    "E10043",
+                    format!("type '{}' cannot be iterated", iterable_ty.display()),
+                    "iterate a fixed array or a slice",
+                    decl.span,
+                );
+            }
         } else if !matches!(
             iterable_ty.kind,
             TyKind::Array { .. } | TyKind::Param(_) | TyKind::Unknown
