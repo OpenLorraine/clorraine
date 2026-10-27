@@ -130,6 +130,12 @@ pub struct RequiresDuplicable {
     /// duplicable member of an owning generic root stays a copy. An empty path
     /// is a whole-binding move and judges the whole substituted type.
     pub paths: Vec<Vec<crate::types::PlacePathStep>>,
+    /// The destinations of the maybe-owning moves that consumed the paths.
+    ///
+    /// A concrete source moved into a maybe-owning destination moves only at
+    /// an owning instance. The audit substitutes each destination and skips
+    /// the duty when none can own, because a view destination copies.
+    pub destinations: Vec<Ty>,
     /// The conflicting use, for the body-site diagnostic.
     pub span: Span,
 }
@@ -196,6 +202,14 @@ pub struct RequiresNotLend {
     /// nullable lend moved into an owned position would leave the source and
     /// the destination aliasing one allocation.
     pub stores_into_slot: bool,
+    /// The destination type of a maybe-target store, when known.
+    ///
+    /// A concrete lend moved into a maybe-owning destination is legal at a
+    /// view instance: the view copies the lend, so the audit skips the duty
+    /// when the substituted destination is duplicable and reports at an
+    /// owning one. A move with no maybe-target destination keeps the strict
+    /// judgment.
+    pub destination: Option<Ty>,
     /// The move site, for the diagnostic span.
     pub span: Span,
 }

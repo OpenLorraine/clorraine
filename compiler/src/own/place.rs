@@ -551,6 +551,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // The judgment follows the moved paths, not the use path: a whole
             // move conflicts with every later read, and a moved prefix owns
             // even when the read selects a duplicable member below it.
+            let destinations: Vec<Ty> = state
+                .moved_if_owning
+                .iter()
+                .filter(|moved| {
+                    moved.is_empty()
+                        || projections.is_empty()
+                        || projections.starts_with(moved)
+                        || moved.starts_with(projections)
+                })
+                .flat_map(|moved| {
+                    self.maybe_move_destinations
+                        .get(&(id, (*moved).clone()))
+                        .into_iter()
+                        .flatten()
+                        .cloned()
+                })
+                .collect();
             let moved: Vec<Vec<crate::types::PlacePathStep>> = state
                 .moved_if_owning
                 .iter()
@@ -575,7 +592,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .collect()
                 })
                 .collect();
-            self.record_requires_duplicable(id, span, partial, moved);
+            self.record_requires_duplicable(id, span, partial, moved, destinations);
         }
     }
 
@@ -592,29 +609,58 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// every site — including a return and a `take` argument — because the
     /// capture-move rule judges it instead.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, false);
+        self.mark_moved_if_owning_at(target, span, false, None);
     }
 
-    /// Records a maybe-owning move whose destination is a writable parameter
-    /// slot.
+    /// Records a maybe-owning move whose destination type is known.
     ///
-    /// The destination is the `borrow T?` out-slot carve-out for a nullable
-    /// instance, so the per-instance audit exempts a nullable substitution
-    /// only for these moves; every other destination keeps the strict
-    /// judgment.
-    pub(super) fn mark_moved_into_slot_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, true);
+    /// A concrete source moved into a maybe-owning destination moves only at
+    /// an owning instance; the destination travels with the later-use duty so
+    /// a view instance copies instead of reporting a move.
+    pub(super) fn mark_moved_if_owning_into(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        destination: &Ty,
+    ) {
+        self.mark_moved_if_owning_at(target, span, false, Some(destination));
+    }
+
+    /// Records a maybe-owning move into a writable slot with a destination.
+    pub(super) fn mark_moved_into_slot_if_owning_into(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        destination: &Ty,
+    ) {
+        self.mark_moved_if_owning_at(target, span, true, Some(destination));
     }
 
     /// Records a value-consuming move of a maybe-owning place.
     ///
     /// `stores_into_slot` flags a writable-parameter-slot destination for the
     /// out-slot carve-out.
-    fn mark_moved_if_owning_at(&mut self, target: PlaceTarget, span: Span, stores_into_slot: bool) {
+    fn mark_moved_if_owning_at(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        stores_into_slot: bool,
+        destination: Option<&Ty>,
+    ) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
                 place.moved_if_owning.insert(projections.clone());
             });
+            // The destination is needed at the later use: a view destination
+            // copies, so the maybe-move never happens there. Keep every
+            // destination seen for the path; the audit conservatively judges
+            // the owning ones.
+            if let Some(destination) = destination {
+                self.maybe_move_destinations
+                    .entry((id, projections.clone()))
+                    .or_default()
+                    .push(destination.clone());
+            }
             // A move through a borrow element view is the v1 element-move
             // limit once the substituted place owns, so every maybe-owning
             // destination — a return, a binding, an assignment, a conditional
@@ -660,6 +706,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 projections: projections.to_vec(),
                 writable_source,
                 stores_into_slot,
+                destination: destination.cloned(),
                 span,
             });
         }
@@ -728,11 +775,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         partial: bool,
         paths: Vec<Vec<crate::types::PlacePathStep>>,
+        destinations: Vec<Ty>,
     ) {
         if !self.recorded_requirements.insert((id, paths.clone())) {
             return;
         }
-        if !self.maybe_owns(&self.bindings[id].ty) {
+        // A concrete source with a maybe-owning destination still needs the
+        // duty: the instance decides whether the store moves or copies.
+        if !self.maybe_owns(&self.bindings[id].ty) && destinations.is_empty() {
             return;
         }
         let ir_name = self.bindings[id].ir_name.clone();
@@ -743,6 +793,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ty: declared,
             partial,
             paths,
+            destinations,
             span,
         });
     }

@@ -478,6 +478,13 @@ struct FunctionChecker<'a, 'd> {
     /// the per-instance audit discharges every duty against each recorded
     /// concrete instantiation.
     duplicable_requirements: Vec<ir::RequiresDuplicable>,
+    /// The destinations of maybe-owning moves, keyed by the moved place path.
+    ///
+    /// A concrete source moved into a maybe-owning destination moves only at
+    /// an owning instance. The later-use duty carries every destination seen
+    /// for the conflicting path, so the audit can tell a view instance (the
+    /// store copies) from an owning one (the source is moved).
+    maybe_move_destinations: BTreeMap<(usize, Vec<ir::Projection>), Vec<Ty>>,
     /// The borrowed-element move duties this body owes its instances.
     ///
     /// A value-consuming move through a `for (borrow e in xs)` element alias
@@ -636,6 +643,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             report_diagnostics: true,
             defer_body: false,
             duplicable_requirements: Vec::new(),
+            maybe_move_destinations: BTreeMap::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             whole_out_slot_store_requirements: Vec::new(),

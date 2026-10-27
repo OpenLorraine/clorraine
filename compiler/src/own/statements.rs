@@ -76,6 +76,13 @@ enum BindingEffect {
         /// because the destination is a concrete owned type; a maybe-owning
         /// destination keeps every source on the per-instance path.
         definite_sources: bool,
+        /// The destination type the move stores into.
+        ///
+        /// A maybe-owning destination judges the move per instance: a view
+        /// destination copies and an owning one moves. The concrete source
+        /// arms travel with this destination so the audit can report the
+        /// concrete twin's diagnostic.
+        destination: Ty,
     },
     /// A duplicable copy or a fresh value: no ownership effect.
     None,
@@ -1052,12 +1059,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     sources.extend(self.maybe_owning_projection_move_sources(value));
                 }
             }
+            // A concrete owning or lend arm keeps its per-instance duty at a
+            // maybe-owning destination: the destination instance decides
+            // whether the store moves it or copies it.
+            sources.extend(self.conditional_move_sources(value));
             if sources.is_empty() {
                 return BindingEffect::None;
             }
             return BindingEffect::MoveIfOwning {
                 sources,
                 definite_sources: false,
+                destination: target.clone(),
             };
         }
         if is_view_like(target) {
@@ -1101,6 +1113,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return BindingEffect::MoveIfOwning {
                     sources,
                     definite_sources: true,
+                    destination: target.clone(),
                 };
             }
         }
@@ -1115,6 +1128,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return BindingEffect::MoveIfOwning {
                 sources: projected,
                 definite_sources: true,
+                destination: target.clone(),
             };
         }
         if let Some(source) = self.place_target(value) {
@@ -1168,6 +1182,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             BindingEffect::MoveIfOwning {
                 sources,
                 definite_sources,
+                destination,
             } => {
                 // A move whose destination is a writable parameter slot may be
                 // the `borrow T?` out-slot carve-out at some instance, so the
@@ -1184,7 +1199,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     }
                     if into_slot {
-                        self.mark_moved_into_slot_if_owning(source, span);
+                        self.mark_moved_into_slot_if_owning_into(source, span, &destination);
                     } else if definite_sources && !self.source_is_lend(&source) {
                         // A concrete destination moves a local or take source
                         // definitely; a later use reports the moved value as
@@ -1192,7 +1207,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // per-instance duty (E10034 for an owning instance).
                         self.move_target(source, span);
                     } else {
-                        self.mark_moved_if_owning(source, span);
+                        self.mark_moved_if_owning_into(source, span, &destination);
                     }
                 }
             }

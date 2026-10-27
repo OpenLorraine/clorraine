@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 35/76 tasks (46%)
+> **Progress**: 37/76 tasks (49%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -238,13 +238,17 @@ program remains in Batch B.
 - [x] 3.2.1 DEF-471 deref-chain guard — `compiler/src/codegen/expr.rs`.
   ✅ (completed: 2026-10-27; ST-13 green; conditional-projection 230/224 and
   raw-store 29/29 under ASAN unchanged)
-- [ ] 3.2.2 DEF-472 concrete-lend maybe-target judgment with the recorded
+- [x] 3.2.2 DEF-472 concrete-lend maybe-target judgment with the recorded
   concrete arm and destination type — thread the destination through
   `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`,
   `compiler/src/ir/mono.rs`, and `compiler/src/own/instance_check.rs`.
-- [ ] 3.2.3 DEF-473 definite-move `E10020` with the destination-aware duty —
+  ✅ (completed: 2026-10-27; ST-14 owning instance reports one `E10034`, the
+  `T = str` control is ASAN clean; borrow-generic 45/21 unchanged)
+- [x] 3.2.3 DEF-473 definite-move `E10020` with the destination-aware duty —
   `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`,
   `compiler/src/ir/mono.rs`, `compiler/src/own/instance_check.rs`.
+  ✅ (completed: 2026-10-27; ST-15 reports one `E10020` at the later use, the
+  view control exits 0; conditional-projection 230/224 unchanged)
 - [ ] 3.2.4 DEF-475 owned mixed read base — `compiler/src/codegen/guards.rs`,
   `compiler/src/codegen/program.rs`.
 - [ ] 3.2.5 DEF-476 guarded duplicable literal store — `compiler/src/codegen/guards.rs`.

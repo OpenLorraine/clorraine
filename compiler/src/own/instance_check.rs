@@ -250,6 +250,15 @@ fn check_not_lend_requirements(
             {
                 continue;
             }
+            // A maybe-target store whose destination is a view copies the
+            // lend, so the concrete twin's rejection does not apply there.
+            if let Some(destination) = &requirement.destination {
+                let substituted_destination =
+                    substitute_instance(destination, &params, &instance.args);
+                if sema.table.duplicable(&substituted_destination) {
+                    continue;
+                }
+            }
             // A nullable substitution is the `borrow T?` out-slot carve-out,
             // so a move stays legal where the concrete spelling is — but only
             // for a writable lend moved into a slot that may be that out-slot.
@@ -1043,7 +1052,15 @@ fn check_duplicable_requirements(
         // The record carries the declared type, so a base-overridden binding
         // without a local entry is still judged.
         let declared = &requirement.ty;
-        if !mentions_type_param(declared) {
+        // A concrete source moved into a maybe-owning destination has no
+        // parameter in its own type, but the destination carries one; the
+        // duty still needs the per-instance judgment.
+        if !mentions_type_param(declared)
+            && requirement
+                .destinations
+                .iter()
+                .all(|destination| !mentions_type_param(destination))
+        {
             continue;
         }
         let params = type_param_names(&decl.type_params);
@@ -1058,6 +1075,16 @@ fn check_duplicable_requirements(
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
             let substituted = crate::types::substitute(declared, &bound);
+            // The store moves the source only when the destination can own at
+            // this instance. A view destination copies, so a later use of the
+            // source stays accepted even when the source type itself owns.
+            let destination_owns = requirement.destinations.iter().any(|destination| {
+                let substituted_destination = crate::types::substitute(destination, &bound);
+                !sema.table.duplicable(&substituted_destination)
+            });
+            if !requirement.destinations.is_empty() && !destination_owns {
+                continue;
+            }
             // The judgment follows every conflicting moved path. An empty
             // path is a whole-binding move and judges the whole substituted
             // type; a projected path judges the moved member.
