@@ -313,9 +313,9 @@ cases run under `RDC_ASAN=1` as well. At HEAD `11140b3` the observed results are
 | ST-15 | 473 | the owning `T = String` instance is accepted; the view control exits 0 | red (control green) |
 | ST-16 | 475 | the mixed place/literal read base exits 3, strict C builds, ASAN clean | **stale close (AR-16)**: no longer reproduces at HEAD |
 | ST-17 | 476 | strict C fails: the literal arm calls `n1`/`n2` without the hidden array destination, and the comma arm has no effect | red |
-| ST-18 | 477 | exit 8: the nested conditional store selects a non-selected arm (`last != 2`) | red |
+| ST-18 | 477 | the committed nested-else source fails strict C at base: the row calls have no hidden destination (the earlier then-arm shape exited 8) | red |
 | ST-19 | 478 | `g = true` selects `n1` only (exit 2); `g = false` calls nothing (exit 0) | **stale close (AR-16)**: no longer reproduces at HEAD |
-| ST-20 | 479 | exit 9: the trace follows declaration order (`21`/`31`) instead of source order (`12`/`13`) | red |
+| ST-20 | 479 | the original short-circuit call argument and the array fill exit 9: the trace follows declaration order (`21`/`31`, fill `2121`); the fixed trace is `12`/`13`/`12` | red |
 | ST-21 | 480 | the literal and call-projected arms exit 3/4, ASAN/LSan clean | **stale close (AR-16)**: no longer reproduces at HEAD |
 | ST-22 | 481 | the all-call read base exits 0, ASAN/LSan clean | **stale close (AR-16)**: no longer reproduces at HEAD |
 
@@ -332,7 +332,9 @@ roadmap close in `3.3.3` records the proof for each. The active fixes are
 - **Stale closes (AR-16):** `DEF-475`, `DEF-478`, `DEF-480`, and `DEF-481` no
   longer reproduce at HEAD; their ST-16/19/21/22 cases are the green pins.
   `DEF-470` keeps its earlier stale close.
-- **Specification suite:** 13 cases, 13/13 strict-C and 13/13 under ASAN/LSan.
+- **Specification suite:** 16 cases (after the review fixes), 16/16 in the
+  plain and `RDC_ASAN` runs; every memory case uses `run_memory`, and the ST-13
+  fault case stays a strict fault probe.
 - **Implementation pins:** 11/11 in `def_conditional_value_integrity_impl_test.rs`.
 - **Retargets:** the Phase 0 inventory expected the conditional-projection/
   residue and fresh-root pins to change; the focused suites stayed green with no
@@ -354,22 +356,23 @@ destination-aware paths. The phase gate is blocked pending the rulings below.
 
 | Finding | Severity | Finding | Status |
 |---|---|---|---|
-| RV-001 | CRITICAL (new) | a duplicable struct conditional that needs stores is routed through the expression-form owned move; a **place arm** is copied into the temporary and then `cl_zero`d, so the source is silently zeroed. The concrete twin copies. The ST-17 case uses literal arms only. | **open — ruling**: fix now |
-| RV-002 | CRITICAL (new/test) | the source-order predicate reaches the store/guard/return/initializer positions but not call arguments or array fills; the **original ST-20** short-circuit call argument still exits 9 at HEAD, and the committed ST-20 was retargeted to a conditional store. The live `spec/04` §3 order rule is not covered; the `DEF-479` close is too broad. | **open — ruling**: fix and restore the original case, or scope the close |
-| RV-003 | CRITICAL (new) | the destination map and the duplicability duty are function-wide, not flow-sensitive: `write_place` does not prune the map and the duty dedupes by `(binding, paths)`. A view-destination duty can suppress a later owning move (`two_store_min`/`two_store_generic` accepted, ASAN SIGSEGV; base reports one `E10020`), and a stale destination can false-reject a re-initialized source (`stale_dest`). | **open — ruling**: fix now |
-| RV-004 | MAJOR (phase-relevant) | the destination judgment is wired only through `BindingEffect` (let/const/whole assignment). A concrete lend returned through a maybe-owning conditional is accepted at `T = String` and double-frees; literal-element, conditional take-argument, and read paths false-reject valid view instances. The return shape is pre-existing (base also accepts and double-frees). | **open — ruling**: extend now or file separate DEFs; scope the 472/473 close to the let form |
-| RV-005 | MAJOR (pre-existing) | at a view destination the store copies but records no view loan/escape duty; a source mutation, returned view, or caller-slot store is accepted while the concrete twin reports `E10031`/`E10035`/`E10033`; ASAN shows heap-use-after-free. | **open — ruling**: file a new DEF (not part of 472/473) |
+| RV-001 | CRITICAL (new) | a duplicable struct conditional that needs stores is routed through the expression-form owned move; a **place arm** is copied into the temporary and then `cl_zero`d, so the source is silently zeroed. The concrete twin copies. The ST-17 case uses literal arms only. | resolved (`22722af`): only an owning arm is emptied; `placearm475b` and its implementation pin are red at the prior head |
+| RV-002 | CRITICAL (new/test) | the source-order predicate reaches the store/guard/return/initializer positions but not call arguments or array fills; the **original ST-20** short-circuit call argument still exits 9 at HEAD, and the committed ST-20 was retargeted to a conditional store. The live `spec/04` §3 order rule is not covered; the `DEF-479` close is too broad. | resolved (`0f7dd70`): the lowering materializes order-mismatched literals in call/receiver positions and the fill evaluates once into a local; the original ST-20 and the fill are green, and `DEF-479` keeps its close |
+| RV-003 | CRITICAL (new) | the destination map and the duplicability duty are function-wide, not flow-sensitive: `write_place` did not prune the map and the duty deduped by `(binding, paths)`. A view-destination duty could suppress a later owning move (`two_store_min`/`two_store_generic` accepted, ASAN SIGSEGV; base reports one `E10020`), and a stale destination could false-reject a re-initialized source (`stale_dest`). | resolved (`22722af`): the map and strict set are pruned on writes, a destination-less move marks the path strict, and the duty is recorded per use; the four destination-generation cases are red at the prior head |
+| RV-004 | MAJOR (phase-relevant) | the destination judgment is wired only through `BindingEffect` (let/const/whole assignment). A concrete lend returned through a maybe-owning conditional is accepted at `T = String` and double-frees; literal-element, conditional take-argument, and read paths false-reject valid view instances. The return shape is pre-existing (base also accepts and double-frees). | filed as `DEF-546` (return double-free, critical) and `DEF-547` (element/take/read view false rejects, major); the 472/473 close is scoped to the let/whole-assignment forms |
+| RV-005 | MAJOR (pre-existing) | at a view destination the store copies but records no view loan/escape duty; a source mutation, returned view, or caller-slot store is accepted while the concrete twin reports `E10031`/`E10035`/`E10033`; ASAN shows heap-use-after-free. | filed as `DEF-550` (critical, view-destination loan/escape) |
 | RV-006 | MINOR | two concrete lend arms in one conditional report two `E10034` at one site in the generic body; the concrete twin dedupes by span. | report-only |
-| RV-007 | MINOR | `record_requires_duplicable` and `maybe_move_destinations` docs still describe only parameter-rooted duties and overstate the conservative map. | fix in the ruling batch |
-| RV-008 | MINOR (standards) | the new spec/impl section comments reference `DEF-…` identifiers, against the repository's no-plan-identifiers rule. | fix in the ruling batch |
-| RV-009 | MINOR | the red table records the pre-retarget ST-18 observation; the committed ST-18 fails base with a strict-C error, and the filed then-arm fixed-array shape is not pinned. | fix the record; add the then-arm case if RV-002 is fixed |
-| EIA-1 | MINOR | `function.rs:2313-2336` comments still say a nested conditional keeps the ternary fallback after the recursion fix. | fix the comments |
-| EIA-2..4 | MAJOR (pre-existing) | runtime-index `StorePointer` bypasses the struct-store path (accepted invalid C); value-position literal order is the RV-002 class; a literal zero divisor is emitted and fails strict C. | file separate DEFs |
+| RV-007 | MINOR | `record_requires_duplicable` and `maybe_move_destinations` docs still describe only parameter-rooted duties and overstate the conservative map. | resolved (`0f7dd70`): the docs describe the destination-aware duty and the pruning/strict set |
+| RV-008 | MINOR (standards) | the new spec/impl section comments reference `DEF-…` identifiers, against the repository's no-plan-identifiers rule. | resolved (`0f7dd70`): the section comments are plain labels |
+| RV-009 | MINOR | the red table records the pre-retarget ST-18 observation; the committed ST-18 fails base with a strict-C error, and the filed then-arm fixed-array shape is not pinned. | resolved (`0f7dd70`): the red table and the ST-20 source record are corrected; the restored original ST-20 and the fill are pinned |
+| EIA-1 | MINOR | `function.rs:2313-2336` comments still say a nested conditional keeps the ternary fallback after the recursion fix. | resolved (`0f7dd70`): the comments describe the per-arm recursion |
+| EIA-2..4 | MAJOR (pre-existing) | runtime-index `StorePointer` bypasses the struct-store path (accepted invalid C); value-position literal order is the RV-002 class; a literal zero divisor is emitted and fails strict C. | `DEF-548` (runtime StorePointer, major); the value-position order is resolved with RV-002; `DEF-549` (literal zero divisor, major) |
 
-Recommendation: fix RV-001 and RV-003 now (both are new regressions from this
-phase); fix RV-002 and restore the original ST-20 (the filed `DEF-479` oracle),
-reopening that row until the value-position path is green; file RV-004's
-return/element/argument/read paths and RV-005's view-loan escape as new DEFs,
-keeping the `DEF-472/473` close scoped to the filed let forms; file the
-pre-existing emission defects separately; apply the minor documentation and
-test-identifier fixes in the same batch.
+Rulings applied (2026-10-27): fix RV-001 and RV-003 now (both are new
+regressions from this phase); fix RV-002 and restore the original ST-20, keeping
+`DEF-479` closed once the value-position path is green; file RV-004's
+return/element/argument/read paths as `DEF-546`/`DEF-547`, RV-005's view-loan
+escape as `DEF-550`, and the pre-existing emission gaps as `DEF-548`/`DEF-549`;
+apply the minor documentation and test-identifier fixes in the same batch.
+RV-001/RV-003 are fixed at `22722af`; RV-002 and the minors are fixed at
+`0f7dd70`.
