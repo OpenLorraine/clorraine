@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 44/76 tasks (58%)
+> **Progress**: 46/76 tasks (61%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -275,11 +275,17 @@ program remains in Batch B.
 - [x] 3.2.10 DEF-481 call-arm release — `compiler/src/codegen/guards.rs`.
   ✅ (completed: 2026-10-27; stale close per AR-16 — ST-22 exits 0, strict C
   builds, LSan clean at HEAD; no code change)
-- [ ] 3.3.1 Green: focused conditional suites, strict-C builds, and ASAN/LSan
+- [x] 3.3.1 Green: focused conditional suites, strict-C builds, and ASAN/LSan
   for ST-12…ST-22.
-- [ ] 3.3.2 Implementation pins in `compiler/tests/def_conditional_value_integrity_impl_test.rs`:
+  ✅ (completed: 2026-10-27; spec 13/13 strict and 13/13 under ASAN;
+  conditional-projection 61/61 and residue 230/230 under ASAN)
+- [x] 3.3.2 Implementation pins in `compiler/tests/def_conditional_value_integrity_impl_test.rs`:
   per-arm store shapes, evaluated-arm counts, source order, release counts,
   read/return C, determinism.
+  ✅ (completed: 2026-10-27; 11 pins pass: the E11210 guard, the one-report
+  lend/local duties, the mixed base, the guarded literal, the nested store,
+  the deferred take, source order, the fresh/call releases, and byte-identical
+  re-emission)
 - [ ] 3.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   conditional-projection/residue and fresh-root pins and record every expected
   change; close the Batch C rows through the
