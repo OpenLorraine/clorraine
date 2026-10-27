@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 53/76 tasks (70%)
+> **Progress**: 55/76 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -325,13 +325,18 @@ program remains in Batch B.
   `compiler/src/own/loops.rs`, `compiler/src/types/mod.rs` predicates.
   ✅ (completed: 2026-10-27; ST-23 green; lib 379, checker 212, cpr 61, and
   borrow-generic 45 unchanged)
-- [ ] 4.2.2 DEF-412 view-array return — `compiler/src/own/place.rs`,
+- [x] 4.2.2 DEF-412 view-array return — `compiler/src/own/place.rs`,
   `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`.
+  ✅ (completed: 2026-10-27; an explicit `borrow T` is a view-return candidate
+  and the plain `T` keeps the concrete twin's count; ST-24 green, checker 212
+  and borrow-store 58 unchanged)
 - [x] 4.2.3 DEF-413 nested element substitution — `compiler/src/own/instance_check.rs`.
   ✅ (completed: 2026-10-27; stale close per AR-16 — ST-25 is accepted with no
   placeholder and strict C at the baseline; no code change)
-- [ ] 4.2.4 DEF-415 same-arm nullable conditional — `compiler/src/sema/ops.rs`,
+- [x] 4.2.4 DEF-415 same-arm nullable conditional — `compiler/src/sema/ops.rs`,
   `compiler/src/own/instance_check.rs`.
+  ✅ (completed: 2026-10-27; ST-26 reports two E10010 at the arms; checker 212,
+  borrow-store 58, and conditional-projection 61/230 unchanged)
 - [ ] 4.2.5 DEF-505 nested projection — `compiler/src/own/instance_check.rs`,
   `compiler/src/own/expr.rs`.
 - [ ] 4.2.6 DEF-506 static-only viewed position — revalidate; if it reproduces,
@@ -339,9 +344,11 @@ program remains in Batch B.
   view-return derivation in `compiler/src/own/place.rs`/`own/statements.rs`
   when the probe reports `E10036`; otherwise close stale with a green HEAD pin
   and a `05-findings.md` proof.
-- [ ] 4.2.7 DEF-507 static-return helper — revalidate; if it reproduces,
+- [x] 4.2.7 DEF-507 static-return helper — revalidate; if it reproduces,
   `compiler/src/own/place.rs`/`own/statements.rs`; otherwise close stale with a
   green HEAD pin and a `05-findings.md` proof.
+  ✅ (completed: 2026-10-27; stale close per AR-16 — ST-29 is accepted, strict-
+  C, and ASAN-clean at the baseline; no code change)
 - [ ] 4.2.8 DEF-513 inline-iterable alias return — `compiler/src/own/expr.rs`,
   `compiler/src/own/loops.rs`.
 - [ ] 4.2.9 DEF-522 type-parameter view-member move **and read/return** —

@@ -1161,7 +1161,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         if crate::types::nullable_value_needs_narrowing(&value_ty, expected) {
-            self.check_nonnull_expr(expr, span);
+            // A conditional's nullable result comes from its arms: each
+            // nullable arm is a separate possible-null use and reports once,
+            // exactly as the concrete twin does. A non-conditional value
+            // keeps its own site.
+            if let ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } = &expr.kind
+            {
+                self.check_nonnull_expr(then_value, then_value.span);
+                self.check_nonnull_expr(else_value, else_value.span);
+            } else {
+                self.check_nonnull_expr(expr, span);
+            }
         }
     }
 
