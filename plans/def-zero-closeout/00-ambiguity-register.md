@@ -29,11 +29,15 @@ Every row is either ✅ Resolved with a recorded decision and owner, or ⏸ Defe
 | AR-16 | Scope | A confirmed row is fixed in the owning stage; no generalized analysis framework; the DEF-557 marker is the only approved new surface. | ✅ Resolved | auto-design |
 | AR-17 | Done | The plan is complete only when `plans/00-roadmap.md` has zero open DEF rows (546/546 Done) and the final reviews are clean or recorded. | ✅ Resolved | user goal |
 | AR-18 | Docs | Roadmap/ledger state is closed through the roadmap skill; plan progress stays in `99-execution-plan.md`. | ✅ Resolved | AGENTS.md |
+| AR-19 | Semantics | `DEF-549` uses the existing `E11210` runtime trap for a literal zero divisor in a non-constant division and never emits the bare `/ 0`; `E10223` applies only to a fully constant expression. | ✅ Resolved | auto-design, spec EX-16 |
+| AR-20 | ABI | `DEF-169` needs the key-component escaping scheme (the row's fix direction) or a collision diagnostic; the choice changes mangled symbols or a diagnostic, so it is reserved for the user before Phase 3. | ⏸ Deferred — user ruling pending | user |
+| AR-21 | Spec | `DEF-252` needs a diagnostic for a move out of a `const` binding; the registry has no code for it. Add a new code (proposed `E10044`) or reuse an existing one; reserved for the user before Phase 4. | ⏸ Deferred — user ruling pending | user |
+| AR-22 | Process | Six Phase 0 manual rows (`DEF-550`, 370, 324, 334, 355, 438) carry a re-derive task in their batch; none closes without a red pin or a recorded stale proof. | ✅ Resolved | plan policy |
 
 ## Deferred Items
 
-None.
+- AR-20 and AR-21 are pending user rulings; they block Phase 3 and Phase 4 respectively. Every other item is resolved.
 
 ## Gate Result
 
-✅ GATE PASSED — all 18 items resolved with a named owner and evidence; no deferred item is implemented by this plan.
+✅ GATE PASSED for Phases 0–2 — the 114-row baseline, the authorized spec changes, and the batch mapping are resolved. AR-20/AR-21 are the two Phase 0 discoveries that stop Phase 3/4 for a user ruling.
