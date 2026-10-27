@@ -404,7 +404,7 @@ program remains in Batch B.
   the generic `cl_pack__H` and concrete `.tag.ptr` shapes, the
   `cl_readTag__H`/`static u8 *` read/return unit, and byte-identical re-
   emission; all five green)
-- [~] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
+- [x] 4.3.3 `make check` and `make verify`; retarget the Phase 0 inventory's
   semantic-parity and view-return pins and record every expected change; close
   the Batch D rows through the roadmap skill and record incidental minor
   closures without expanding scope; add the phase record to `05-findings.md`.
