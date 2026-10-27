@@ -171,6 +171,24 @@ func main(): i32 {
 "#;
     assert_eq!(count("st26", nullable_arms, "E10010"), 2);
 
+    let generic_nullable = r#"module impl.sempar.st26generic;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String?; }
+
+func pick<T>(c: bool, xs: H[2]): i32 {
+    let r: T = c ? xs[0].name : xs[0].name;
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 {
+    let xs: H[2] = [H { name: stringOf("aa") }, H { name: null }];
+    return pick<str>(true, xs);
+}
+"#;
+    assert_eq!(count("st26generic", generic_nullable, "E10010"), 2);
+
     let owning_projection = r#"module impl.sempar.st27b;
 
 import { String, stringOf } from std.text;

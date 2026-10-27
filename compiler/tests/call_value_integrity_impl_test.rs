@@ -411,6 +411,29 @@ func main(): i32 {
         !emitted.contains("mk().name = NULL"),
         "cviimpl-callfield: a field of a call result has no caller storage to empty"
     );
+    // The emitted unit must build: no `&(<call>().field)` guard may reach C.
+    let scratch = ScratchDir::new("cviimpl-callfield-build");
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "cviimpl-callfield: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
 }
 
 /// A composite arm whose conditional field reads the destination evaluates

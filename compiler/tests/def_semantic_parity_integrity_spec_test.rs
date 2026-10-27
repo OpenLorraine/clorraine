@@ -447,6 +447,26 @@ func main(): i32 {
 }
 "#;
     assert_rejected("st26", source, "E10010", 2, &["xs"]);
+
+    // The same conditional at a type-parameter destination is judged after
+    // substitution: one E10010 per nullable arm, as the concrete twin does.
+    let generic = r#"module spec.sempar.st26generic;
+
+import { String, stringOf } from std.text;
+
+struct H { name: String?; }
+
+func pick<T>(c: bool, xs: H[2]): i32 {
+    let r: T = c ? xs[0].name : xs[0].name;
+    return i32(len(r)) - 2;
+}
+
+func main(): i32 {
+    let xs: H[2] = [H { name: stringOf("aa") }, H { name: null }];
+    return pick<str>(true, xs);
+}
+"#;
+    assert_rejected("st26generic", generic, "E10010", 2, &["xs"]);
 }
 
 // ---------------------------------------------------------------------------

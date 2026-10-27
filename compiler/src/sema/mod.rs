@@ -245,6 +245,10 @@ pub struct OpaqueConditional {
     pub then_member: Option<String>,
     /// The else arm's final member spelling, when it is a member read.
     pub else_member: Option<String>,
+    /// The then arm's written root binding, for the possible-null report.
+    pub then_base: Option<String>,
+    /// The else arm's written root binding, for the possible-null report.
+    pub else_base: Option<String>,
     /// The whole conditional's span, for the destination conversion.
     pub span: Span,
     /// The destination the conditional must convert to, when one is known.
@@ -285,6 +289,10 @@ pub struct ConditionalArms {
     pub then_member: Option<String>,
     /// The else arm's final member spelling, when it is a member read.
     pub else_member: Option<String>,
+    /// The then arm's written root binding, for the possible-null report.
+    pub then_base: Option<String>,
+    /// The else arm's written root binding, for the possible-null report.
+    pub else_base: Option<String>,
     /// The whole conditional's span.
     pub span: Span,
     /// The destination the conditional must convert to, when one is known.
@@ -556,6 +564,8 @@ impl<'a, 'd> Checker<'a, 'd> {
                 else_span: arms.else_span,
                 then_member: arms.then_member,
                 else_member: arms.else_member,
+                then_base: arms.then_base,
+                else_base: arms.else_base,
                 span: arms.span,
                 expected: arms.destination,
                 null_reported: arms.null_reported,

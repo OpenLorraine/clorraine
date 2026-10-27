@@ -5,7 +5,7 @@
 
 | Finding | Phase | Severity | Area | Ruling |
 |---|---|---|---|---|
-| — | — | — | Awaiting execution | — |
+| — | — | — | All seven phases executed; the phase records and review rulings are below | — |
 
 ## Preflight Rulings
 
@@ -50,14 +50,9 @@ full evidence. The applied corrections are:
 
 ## Red-Phase Evidence
 
-Every active row records one line per ST case before its fix:
-
-| ST | DEF | Command | Base commit | Observed failure |
-|---|---|---|---|---|
-| ST-N | DEF-N | `cargo test --test def_*_integrity_spec_test <name>` | `<sha>` | `<diagnostic, ASAN/LSan, strict-C, or trace>` |
-
-ST-12 and any AR-16 stale close record the HEAD command and the accepted result
-instead of a failure.
+Every active row records one line per ST case before its fix in its phase
+record. ST-12 and every AR-16 stale close record the HEAD command and the
+accepted result instead of a failure.
 
 ## Phase 0 — Revalidation and Baseline
 
@@ -610,3 +605,27 @@ The pre-existing findings (the eight accepted invalid-C units, the dotted `ffi`
 callee, the cross-module enum collision, the generic function value, the
 non-callable member call, and the Phase 4 report-only table) are recorded for
 the Phase 6 close/filing; Batch E does not expand.
+
+
+## Phase 6 Final Review — 2026-10-27
+
+Four lenses (correctness, semantics, memory safety, emission integrity)
+reviewed the final program at `02fa132` against the whole-plan tree
+`bdf23135`. The correctness lens found no phase critical or major (six minor
+record findings); the memory lens found none; the emission lens found one new
+major; the semantics lens found one critical and one major in the plan's own
+changes, plus an unrecorded pre-existing critical.
+
+| Finding | Severity | Ruling |
+|---|---|---|
+| SR-001 | CRITICAL | fixed: a nullable-typed arm at a type-parameter destination defers to the instance, which reports one E10010 per nullable arm after the arm agreement; the ST-26 generic twin is red-first and green, and the full check/verify pass |
+| EIA-F1 | MAJOR (new) | fixed: a member or index rooted in a call result emits no self-alias guard (`&(call().field)` is not an lvalue); the callfield implementation test now builds under `-Werror` |
+| SR-002 | MAJOR | reserved: the DEF-506 generic caller-returned static view needs an instance-bound static marker (AR-12/complexity) or the recorded conservative limitation; the user's ruling |
+| PRE-1 | CRITICAL (pre-existing) | reserved: a generic `T` view return skips EL-2/EL-3 and a caller can hold a dangling view; the user's filing/absorb decision |
+| RV-001…RV-006 / SR-003…SR-006 | MINOR | fixed or recorded: the spec plan identifiers and the duplicate AGENTS entry removed; the ledger/index/roadmap records and counts corrected; the E10213 help and the E10300 residue recorded |
+
+The pre-existing Phase 4/5 list (the other bool null contexts, the
+`.name.ptr`/`str[2]` invalid C, the eight accepted invalid-C units, the enum
+collision, the dotted `ffi`, the generic function value, the non-callable
+member call, the nullable type-argument iterable) and the new PRE-1 are the
+`6.2.1` filing decision.

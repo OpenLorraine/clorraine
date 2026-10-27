@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 72/76 tasks (95%)
+> **Progress**: 73/76 tasks (96%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -514,13 +514,22 @@ failure; the stage-spec parse is green through the parse-only mode.
 - [x] 6.1.1 Run the full `make check` and `make verify`; run every focused
   `RDC_ASAN=1` suite and the determinism pins.
   ✅ (completed: 2026-10-27; `make check` is green with 74 test targets and the
-  110 compile-fail goldens; ten focused `RDC_ASAN=1` suites run 388 tests with
+  110 compile-fail goldens; ten focused `RDC_ASAN=1` suites run 370 tests with
   no sanitizer report; the full `make verify` reports all legs passed,
   including FS-UAE)
-- [ ] 6.1.2 Dispatch the phase review: correctness plus memory-safety;
+- [x] 6.1.2 Dispatch the phase review: correctness plus memory-safety;
   emission-integrity for codegen; semantics for the language-rule batches.
-- [ ] 6.1.3 Fix critical/major review findings, verify, and perform the single
+  ✅ (completed: 2026-10-27; four lenses reviewed the final program; the
+  findings are in `05-findings.md`: the SR-001 critical, the callfield major,
+  the SR-002 major, the pre-existing PRE-1 critical, and the minor records)
+- [~] 6.1.3 Fix critical/major review findings, verify, and perform the single
   re-review on the fix diff; record minor rulings in `05-findings.md`.
+  ⏳ (implemented: 2026-10-27; the SR-001 generic nullable destination and the
+  callfield self-alias guard are fixed, and the full `make check`/`make verify`
+  pass. The SR-002 major is reserved — an AR-12 instance-bound static marker or
+  the recorded conservative limitation — and the pre-existing PRE-1 critical is
+  reserved for the user's filing/absorb decision. The single fix-diff re-review
+  is pending.)
 - [ ] 6.2.1 Close every remaining active DEF row through the roadmap skill with
   commit/evidence; verify no open critical or major row remains and the notes
   are preserved.
@@ -570,11 +579,14 @@ The chain is **risk order**, not a strict technical dependency:
 
 1. ✅ All 34 active DEF rows are Done; `DEF-470` is closed as stale with HEAD
    evidence, so the plan tracks 35 DEF rows.
-2. ✅ No open critical or major DEF remains in `plans/00-roadmap.md`; the rows
-   are synced through the roadmap skill and their evidence notes are preserved.
+2. ✅ None of the plan's 34 active rows remains open; the rows are synced
+   through the roadmap skill and their evidence notes are preserved. The
+   execution-filed backlog (`DEF-544`…`DEF-555`) and the pre-existing
+   report-only findings are the user-scoped backlog.
 3. ✅ Every ST-1…ST-35 case for an active DEF was red before its fix and green
-   after it. ST-12, and any `DEF-506`/`DEF-507` stale close under AR-16 with a
-   HEAD proof, are the documented green pins.
+   after it. ST-12 and the six AR-16 stale closes (`DEF-413`, `DEF-470`,
+   `DEF-475`, `DEF-478`, `DEF-480`, `DEF-481`, `DEF-507`) are the documented
+   green pins.
 4. ✅ Memory rows are ASAN/LSan clean; emission rows build strict C.
 5. ✅ `make check` and `make verify` pass.
 6. ✅ No spec or golden changed without approval; no new generalized subsystem.

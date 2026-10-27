@@ -305,11 +305,6 @@ in `CMD`).
   **specification** and **implementation** tests for the conditional
   materialization batch (the read base, per-arm stores, source order, and
   fresh-root release).
-- `compiler/tests/def_semantic_parity_integrity_spec_test.rs` and
-  `compiler/tests/def_semantic_parity_integrity_impl_test.rs` hold the
-  **specification** and **implementation** tests for the generic/null/
-  conditional parity batch (the null-arm contexts, substituted returns, nested
-  projections, and view-member move/read forms).
 - `compiler/tests/def_strict_build_integrity_spec_test.rs` and
   `compiler/tests/def_strict_build_integrity_impl_test.rs` hold the
   **specification** and **implementation** tests for the strict-build and

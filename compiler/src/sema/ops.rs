@@ -408,6 +408,10 @@ impl Checker<'_, '_> {
         // the instance resolves it before judging.
         let open_destination = expected.is_some_and(contains_param);
         let null_arm = is_null_shaped(&then_ty) || is_null_shaped(&else_ty);
+        // A nullable-typed arm at a destination that still names a type
+        // parameter is judged by the instance too: the substituted
+        // destination decides whether the arm's possible null is legal.
+        let nullable_arm = then_ty.nullable || else_ty.nullable;
         let unresolved_arm = (then_ty.is_unknown() && !is_null_shaped(&then_ty))
             || (else_ty.is_unknown() && !is_null_shaped(&else_ty));
         let arms = super::ConditionalArms {
@@ -418,12 +422,14 @@ impl Checker<'_, '_> {
             else_span: else_value.span,
             then_member: super::expr::member_read_name(then_value),
             else_member: super::expr::member_read_name(else_value),
+            then_base: super::expr::plain_binding_root(then_value),
+            else_base: super::expr::plain_binding_root(else_value),
             span,
             destination: expected.cloned(),
             opaque: contains_param(&then_ty)
                 || contains_param(&else_ty)
                 || unresolved_arm
-                || (null_arm && open_destination),
+                || ((null_arm || nullable_arm) && open_destination),
             null_reported,
         };
         match self.conditional_index.get(&key).copied() {

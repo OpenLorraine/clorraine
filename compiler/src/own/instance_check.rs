@@ -2224,22 +2224,20 @@ fn check_opaque_conditionals(
             // the concrete twin's order: the null report first, then the
             // settled result's conversion. Both arms are judged, and either
             // report ends the site so a second instance cannot repeat it.
+            let mut arm_reported = false;
             if !conditional.null_reported {
-                let then_reported = null_conditional_report(
+                arm_reported |= null_conditional_report(
                     &then_ty,
                     expected.unwrap_or(&else_ty),
                     conditional.then_span,
                     diagnostics,
                 );
-                let else_reported = null_conditional_report(
+                arm_reported |= null_conditional_report(
                     &else_ty,
                     expected.unwrap_or(&then_ty),
                     conditional.else_span,
                     diagnostics,
                 );
-                if then_reported || else_reported {
-                    break;
-                }
             }
             // The settled result follows the declaration's arm rule, then the
             // destination conversion the concrete twin's store applies.
@@ -2279,6 +2277,42 @@ fn check_opaque_conditionals(
                     );
                     break;
                 }
+            }
+            // A nullable-typed arm at a concrete destination is the same
+            // possible-null rule the concrete twin reports: one E10010 per
+            // nullable arm, named by its written root when it has one.
+            if let Some(expected) = expected {
+                for (arm, span, base) in [
+                    (
+                        &then_ty,
+                        conditional.then_span,
+                        conditional.then_base.as_deref(),
+                    ),
+                    (
+                        &else_ty,
+                        conditional.else_span,
+                        conditional.else_base.as_deref(),
+                    ),
+                ] {
+                    if crate::types::is_null_shaped(arm) {
+                        continue;
+                    }
+                    if crate::types::nullable_value_needs_narrowing(arm, expected) {
+                        let name = base.unwrap_or("value");
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10010",
+                                format!("value '{name}' may be null here"),
+                                span,
+                            )
+                            .with_help("check `!= null` before the use"),
+                        );
+                        arm_reported = true;
+                    }
+                }
+            }
+            if arm_reported {
+                break;
             }
         }
     }

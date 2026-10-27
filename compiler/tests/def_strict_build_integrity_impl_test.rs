@@ -196,7 +196,7 @@ fn run_host(tag: &str, source: &str) -> Output {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-167: explicit type arguments on every non-generic callee
+// Explicit type arguments on every non-generic callee
 // ---------------------------------------------------------------------------
 
 /// One E10300 at the call, no C; the parse-only mode keeps the stage parse.
@@ -253,7 +253,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-171: the embed constant context and the re-enabled golden
+// The embed constant context and the re-enabled golden
 // ---------------------------------------------------------------------------
 
 /// The runtime positions report one E10213 with their span; the module const
@@ -308,7 +308,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-416: the cross-module collision and its same-module control
+// The cross-module collision and its same-module control
 // ---------------------------------------------------------------------------
 
 /// One E11101 at the second module's declaration, no C; the same-module type

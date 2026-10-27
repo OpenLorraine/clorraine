@@ -207,7 +207,7 @@ fn assert_exit(tag: &str, output: &Output, code: i32) {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-167: explicit type arguments on a non-generic callee
+// Explicit type arguments on a non-generic callee
 // ---------------------------------------------------------------------------
 
 /// The stage-spec source `<i32>` locals full-compiles to one E10300; the
@@ -320,7 +320,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-171: embed outside a constant context
+// Embed outside a constant context
 // ---------------------------------------------------------------------------
 
 /// A function-body local `let`/`const` and a module-level `let` report one
@@ -407,7 +407,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-416: cross-module same-simple-name collision
+// Cross-module same-simple-name collision
 // ---------------------------------------------------------------------------
 
 /// Two modules declaring the same simple type name report one E11101 at the

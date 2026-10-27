@@ -3442,9 +3442,27 @@ impl<'a> Emitter<'a> {
                 operand,
             } => Some(self.value(operand)),
             ValueKind::Member { .. } | ValueKind::Index { .. } => {
-                Some(format!("&({})", self.value(value)))
+                // A projection rooted in a call result has no storage the
+                // guard could name: `&(<call>().field)` is not an lvalue, and
+                // re-rendering the call in a guard would repeat its effects.
+                if Self::value_roots_in_call(value) {
+                    None
+                } else {
+                    Some(format!("&({})", self.value(value)))
+                }
             }
             _ => None,
+        }
+    }
+
+    /// True when a value's projection chain is rooted in a call result.
+    fn value_roots_in_call(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                Self::value_roots_in_call(base)
+            }
+            ValueKind::Call { .. } => true,
+            _ => false,
         }
     }
 
