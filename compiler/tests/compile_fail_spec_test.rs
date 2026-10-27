@@ -24,8 +24,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// The list grows as later stages land; every code listed here must have at
 /// least one golden file in the compile-fail suite. The ownership, borrow, FFI,
 /// and unsafe codes come first; the type, constant, enum, and template codes
-/// follow, grouped with the front-end codes they build on: `E10213`/`E10214`
-/// stay out because data inclusion is staged out, and the retired `E10225` has
+/// follow, grouped with the front-end codes they build on: `E10214` stays out
+/// because data inclusion is staged out; `E10213` is enforced and asserted, and the retired `E10225` has
 /// no trigger and no golden. The warning codes come last; a warning golden
 /// exits zero in the default build and nonzero once `--deny-warnings` is set.
 const ASSERTED_CODES: &[&str] = &[

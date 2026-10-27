@@ -583,6 +583,30 @@ the user's filing/deferral decision and do not expand Batch D.
   changed.
 - **Verification:** `make check` green (74 test targets, the 110 compile-fail
   goldens); the full `make verify` reports all legs passed, including FS-UAE.
-- **Roadmap:** `DEF-167`, `DEF-171`, and `DEF-416` move to Done; the roadmap
-  reads 419/544 RD rows with 113 open (0 executing, 113 backlog). The plan is
-  71/76 with only the Phase 6 close left.
+- **Roadmap:** `DEF-167`, `DEF-171`, and `DEF-416` move to Done; the incidental
+  `DEF-418` filed shape is fixed and recorded. The roadmap reads 432/544 rows
+  with 112 open (0 executing; 112 backlog: 4 critical + 8 major + 100 minor).
+  The plan is 71/76 with only the Phase 6 close left.
+
+
+## Phase 5 Review — 2026-10-27
+
+Three lenses (correctness, semantics, emission integrity) reviewed the
+strict-build phase (`01c8491..b18a27b`; the recorded tree `6864b32`). No
+critical or major finding exists in the phase's own changes. The emission audit
+found none and confirmed the base/head C is byte-identical except the closed
+defects (the stage call and the embed `memcpy`; the collision's undeclared
+structs).
+
+| Finding | Severity | Ruling |
+|---|---|---|
+| RV-001 | MINOR | fixed: the unused spec helper is removed and the `E10224` case name is snake_case |
+| RV-002 | MINOR | fixed: the helper doc is narrowed and the harness comment corrected; the ffi, callable-bound, and cast gaps are recorded as pre-existing |
+| RV-003 / SR-003 | MINOR | fixed: the roadmap cells, the 432/544 count, and the incidental `DEF-418` close are recorded |
+| SR-001 | MINOR | recorded: the collision's stdlib origin/blame and the missing name poisoning are the AR-20 conservative limitation |
+| SR-002 | MINOR | recorded: the constant-context flag's `case`/lambda edges are diagnostics-only |
+
+The pre-existing findings (the eight accepted invalid-C units, the dotted `ffi`
+callee, the cross-module enum collision, the generic function value, the
+non-callable member call, and the Phase 4 report-only table) are recorded for
+the Phase 6 close/filing; Batch E does not expand.

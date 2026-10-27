@@ -246,11 +246,15 @@ impl Checker<'_, '_> {
         Ty::unknown()
     }
 
-    /// Reports the frozen wrong-type-argument count for a non-generic callee.
+    /// Reports the frozen wrong-type-argument count for a callee without type
+    /// parameters.
     ///
-    /// The grammar parses `a < b > (c)` as a generic call, so every callee form
-    /// that cannot take type arguments reports the same `E10300` once. The
-    /// written type arguments are still resolved so their own errors surface.
+    /// The grammar parses `a < b > (c)` as a generic call. The covered forms
+    /// (free, qualified, dot, func-typed, and concrete value callees) report
+    /// the same `E10300` once; an `ffi` declaration, a callable-bound type
+    /// parameter, and a type-cast spelling keep their own pre-existing
+    /// judgments. The written type arguments are still resolved so their own
+    /// errors surface.
     fn check_non_generic_type_args(&mut self, name: &str, type_args: &[Type], span: Span) {
         if type_args.is_empty() {
             return;

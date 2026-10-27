@@ -124,18 +124,6 @@ fn assert_rejected_once(tag: &str, sources: &[(&str, &str)], code: &str, fragmen
     );
 }
 
-/// Asserts the front end rejects one source with exactly `count` `code`s.
-fn assert_rejected_count(tag: &str, source: &str, code: &str, count: usize) {
-    let (_scratch, output, c_path) = compile_only(tag, source);
-    assert_ne!(output.status.code(), Some(0), "{tag}: expected a rejection");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        stderr.matches(&format!("error {code}:")).count(),
-        count,
-        "{tag}: expected {count} {code}; stderr:\n{stderr}"
-    );
-    assert!(!c_path.exists(), "{tag}: a rejected program must not write C");
-}
 
 /// Emits one host program and asserts the front end accepted it.
 fn emit_host(tag: &str, source: &str) -> String {
@@ -379,7 +367,7 @@ func main(): i32 {
 
 /// A module `const` keeps only the staged E10224 and no E10213.
 #[test]
-fn should_keep_the_module_const_embed_at_E10224() {
+fn should_keep_the_module_const_embed_at_e10224() {
     let module_const = r#"module spec.strict.embedmoduleconst;
 
 const LEVEL: u8[16] = embed("assets/logo.bin");
