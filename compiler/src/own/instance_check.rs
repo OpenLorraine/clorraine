@@ -1082,7 +1082,10 @@ fn check_duplicable_requirements(
                 let substituted_destination = crate::types::substitute(destination, &bound);
                 !sema.table.duplicable(&substituted_destination)
             });
-            if !requirement.destinations.is_empty() && !destination_owns {
+            if !requirement.strict_destination
+                && !requirement.destinations.is_empty()
+                && !destination_owns
+            {
                 continue;
             }
             // The judgment follows every conflicting moved path. An empty

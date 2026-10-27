@@ -753,3 +753,129 @@ func main(): i32 {
     assert_no_sanitizer("callroot481", &output);
     assert_exit("callroot481", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Conditional place arm
+// ---------------------------------------------------------------------------
+
+/// A guarded conditional that selects a duplicable place arm copies it and
+/// leaves the source usable; the concrete twin copies.
+#[test]
+fn should_copy_a_duplicable_conditional_place_arm() {
+    let source = r#"module spec.condval.placearm475b;
+
+struct Inner { row: i32[1][1]; }
+
+func n1(): i32[1][1] { return [[3]]; }
+
+func main(): i32 {
+    let other: Inner = Inner { row: [[4]] };
+    let g: bool = true;
+    let ok: bool = true;
+    let v: i32 = g ? ((ok ? other : Inner { row: n1() }).row[0][0]) : 0;
+    if (other.row[0][0] != 4) { return 9; }
+    return v;
+}
+"#;
+    let output = run_memory("placearm475b", source);
+    assert_no_sanitizer("placearm475b", &output);
+    assert_exit("placearm475b", &output, 4);
+}
+
+// ---------------------------------------------------------------------------
+// Destination generations
+// ---------------------------------------------------------------------------
+
+/// A later owning maybe-target move keeps the moved-value judgment even when
+/// an earlier move of the same source selected a view destination.
+#[test]
+fn should_judge_a_maybe_move_at_its_destination_generation() {
+    let two_store = r#"module spec.condval.twostoremin;
+
+import { String, stringOf } from std.text;
+
+func pick<T, U>(c: bool, take u: U, take s: T): i32 {
+    let q: U = c ? u : s;
+    let r: T = s;
+    let n: i32 = i32(len(s));
+    return n - 2;
+}
+
+func main(): i32 {
+    let u: str = "zz";
+    let s: String = stringOf("cd");
+    return pick<String, str>(false, take u, take s);
+}
+"#;
+    assert_rejected_once("twostoremin", two_store, "E10020", &["s"]);
+
+    let take_view = r#"module spec.condval.takeafterview;
+
+import { String, stringOf } from std.text;
+
+func pass<V>(take v: V): void { }
+
+func pick<T, U>(c: bool, take u: U, take s: T): i32 {
+    let q: U = c ? u : s;
+    pass<T>(take s);
+    let n: i32 = i32(len(s));
+    return n - 2;
+}
+
+func main(): i32 {
+    let u: str = "zz";
+    let s: String = stringOf("cd");
+    return pick<String, str>(false, take u, take s);
+}
+"#;
+    assert_rejected_once("takeafterview", take_view, "E10020", &["s"]);
+
+    let dedupe = r#"module spec.condval.dedupe2;
+
+import { String, stringOf } from std.text;
+
+func pick<T, U>(c: bool, c2: bool, take h: T, take h2: U): i32 {
+    let s: String = stringOf("cd");
+    let a: U = c2 ? h2 : s;
+    let n1: i32 = i32(len(s));
+    let b: T = c ? h : s;
+    let n2: i32 = i32(len(s));
+    return n1 + n2 - 4;
+}
+
+func main(): i32 {
+    let h: String = stringOf("aa");
+    let h2: str = "ee";
+    return pick<String, str>(true, true, take h, take h2);
+}
+"#;
+    assert_rejected_once("dedupe2", dedupe, "E10020", &["s"]);
+}
+
+/// A re-initialized source drops the old view destination, so its later use is
+/// accepted.
+#[test]
+fn should_drop_a_stale_destination_on_reinitialization() {
+    let source = r#"module spec.condval.staledest;
+
+import { String, stringOf } from std.text;
+
+func pick<T, U>(c: bool, c2: bool, take h: T, take h2: U): i32 {
+    let s: String = stringOf("cd");
+    let a: U = c2 ? h2 : s;
+    s = stringOf("ef");
+    let b: T = c ? h : s;
+    let n: i32 = i32(len(s));
+    return n - 2;
+}
+
+func main(): i32 {
+    let h: str = "aa";
+    let h2: String = stringOf("bb");
+    return pick<str, String>(true, true, take h, take h2);
+}
+"#;
+    let output = run_memory("staledest", source);
+    assert_no_sanitizer("staledest", &output);
+    assert_exit("staledest", &output, 0);
+}

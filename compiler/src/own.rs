@@ -485,6 +485,12 @@ struct FunctionChecker<'a, 'd> {
     /// for the conflicting path, so the audit can tell a view instance (the
     /// store copies) from an owning one (the source is moved).
     maybe_move_destinations: BTreeMap<(usize, Vec<ir::Projection>), Vec<Ty>>,
+    /// Paths consumed by a maybe-owning move with no maybe-target destination.
+    ///
+    /// A take argument, a field store, or a return moves the source at every
+    /// owning instance, so its later-use duty keeps the strict judgment even
+    /// when another move of the path was a view copy.
+    maybe_move_strict: BTreeSet<(usize, Vec<ir::Projection>)>,
     /// The borrowed-element move duties this body owes its instances.
     ///
     /// A value-consuming move through a `for (borrow e in xs)` element alias
@@ -554,7 +560,6 @@ struct FunctionChecker<'a, 'd> {
     recorded_self_assign: BTreeSet<(String, u32, u32)>,
     /// Later-use duties already recorded, keyed by the binding and the
     /// conflicting moved paths, so one moved-place set owes one duty.
-    recorded_requirements: BTreeSet<(usize, Vec<Vec<crate::types::PlacePathStep>>)>,
     /// Move sites already recorded, so one site owes one element-move duty.
     ///
     /// The speculative loop pass lowers the same body twice, so the site —
@@ -644,6 +649,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_body: false,
             duplicable_requirements: Vec::new(),
             maybe_move_destinations: BTreeMap::new(),
+            maybe_move_strict: BTreeSet::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             whole_out_slot_store_requirements: Vec::new(),
@@ -658,7 +664,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             recorded_whole_out_slot_store: BTreeSet::new(),
             recorded_storable_slot: BTreeSet::new(),
             recorded_self_assign: BTreeSet::new(),
-            recorded_requirements: BTreeSet::new(),
             recorded_element_moves: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,

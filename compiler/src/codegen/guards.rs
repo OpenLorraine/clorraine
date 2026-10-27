@@ -861,7 +861,10 @@ impl<'a> Emitter<'a> {
         // raw-deref read names caller storage the chosen arm moves: the copy
         // is emptied in the same expression, so only the destination owns it.
         let storage = arm_has_storage_root(arm);
-        if storage {
+        // Only an owning arm is emptied. A duplicable destination copies the
+        // arm, so zeroing its source would corrupt a value the source still
+        // owns.
+        if storage && self.needs_drop(ty) {
             let source = self.value(arm);
             // A storage arm is moved into the destination. When the arm is
             // the source of a taken conditional, the move-out records the

@@ -299,6 +299,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
         });
+        // A re-initialization drops the move history for the written paths,
+        // including the destinations the later-use duty would otherwise read.
+        self.maybe_move_destinations
+            .retain(|(other_id, path), _| !(*other_id == id && written_path_clears(projections, path)));
+        self.maybe_move_strict
+            .retain(|(other_id, path)| !(*other_id == id && written_path_clears(projections, path)));
     }
 
     /// True when the parameter is a read-only lend.
@@ -551,6 +557,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // The judgment follows the moved paths, not the use path: a whole
             // move conflicts with every later read, and a moved prefix owns
             // even when the read selects a duplicable member below it.
+            let mut strict_destination = false;
             let destinations: Vec<Ty> = state
                 .moved_if_owning
                 .iter()
@@ -561,8 +568,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         || moved.starts_with(projections)
                 })
                 .flat_map(|moved| {
+                    let key = (id, (*moved).clone());
+                    if self.maybe_move_strict.contains(&key) {
+                        strict_destination = true;
+                    }
                     self.maybe_move_destinations
-                        .get(&(id, (*moved).clone()))
+                        .get(&key)
                         .into_iter()
                         .flatten()
                         .cloned()
@@ -592,7 +603,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .collect()
                 })
                 .collect();
-            self.record_requires_duplicable(id, span, partial, moved, destinations);
+            self.record_requires_duplicable(
+                id,
+                span,
+                partial,
+                moved,
+                destinations,
+                strict_destination,
+            );
         }
     }
 
@@ -655,11 +673,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // copies, so the maybe-move never happens there. Keep every
             // destination seen for the path; the audit conservatively judges
             // the owning ones.
-            if let Some(destination) = destination {
-                self.maybe_move_destinations
+            match destination {
+                Some(destination) => self
+                    .maybe_move_destinations
                     .entry((id, projections.clone()))
                     .or_default()
-                    .push(destination.clone());
+                    .push(destination.clone()),
+                // A move with no maybe-target destination keeps the strict
+                // judgment at every later use.
+                None => {
+                    self.maybe_move_strict.insert((id, projections.clone()));
+                }
             }
             // A move through a borrow element view is the v1 element-move
             // limit once the substituted place owns, so every maybe-owning
@@ -776,13 +800,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         partial: bool,
         paths: Vec<Vec<crate::types::PlacePathStep>>,
         destinations: Vec<Ty>,
+        strict_destination: bool,
     ) {
-        if !self.recorded_requirements.insert((id, paths.clone())) {
-            return;
-        }
         // A concrete source with a maybe-owning destination still needs the
-        // duty: the instance decides whether the store moves or copies.
-        if !self.maybe_owns(&self.bindings[id].ty) && destinations.is_empty() {
+        // duty: the instance decides whether the store moves or copies. A
+        // destination-less move keeps the strict judgment.
+        if !self.maybe_owns(&self.bindings[id].ty)
+            && destinations.is_empty()
+            && !strict_destination
+        {
             return;
         }
         let ir_name = self.bindings[id].ir_name.clone();
@@ -794,6 +820,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             partial,
             paths,
             destinations,
+            strict_destination,
             span,
         });
     }

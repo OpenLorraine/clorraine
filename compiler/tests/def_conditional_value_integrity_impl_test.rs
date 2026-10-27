@@ -796,3 +796,34 @@ func main(): i32 {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Conditional place arm
+// ---------------------------------------------------------------------------
+
+/// A duplicable place arm is copied without zeroing the source.
+#[test]
+fn should_copy_a_duplicable_place_arm_in_a_guarded_conditional() {
+    let tag = "placearm475b";
+    let (scratch, emitted) = emit_host(
+        tag,
+        r#"module spec.condval.placearm475b;
+
+struct Inner { row: i32[1][1]; }
+
+func n1(): i32[1][1] { return [[3]]; }
+
+func main(): i32 {
+    let other: Inner = Inner { row: [[4]] };
+    let g: bool = true;
+    let ok: bool = true;
+    let v: i32 = g ? ((ok ? other : Inner { row: n1() }).row[0][0]) : 0;
+    if (other.row[0][0] != 4) { return 9; }
+    return v;
+}
+"#,
+    );
+    let body = function_body(tag, &emitted, "cl_spec_condval_placearm475b_main(void)\n{");
+    assert_absent(tag, body, "cl_zero(&other)");
+    assert_eq!(run_host_c(tag, &scratch, &emitted), 4);
+}

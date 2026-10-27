@@ -136,6 +136,12 @@ pub struct RequiresDuplicable {
     /// an owning instance. The audit substitutes each destination and skips
     /// the duty when none can own, because a view destination copies.
     pub destinations: Vec<Ty>,
+    /// True when a conflicting move had no maybe-target destination.
+    ///
+    /// A destination-less move (a take argument, a field store, a return)
+    /// moves at every owning instance; the duty keeps the strict judgment even
+    /// when another move of the same path was a view copy.
+    pub strict_destination: bool,
     /// The conflicting use, for the body-site diagnostic.
     pub span: Span,
 }
