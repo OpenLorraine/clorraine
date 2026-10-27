@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-27
-> **Progress**: 57/76 tasks (75%)
+> **Progress**: 58/76 tasks (76%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -366,8 +366,14 @@ program remains in Batch B.
   green HEAD pin and a `05-findings.md` proof.
   ✅ (completed: 2026-10-27; stale close per AR-16 — ST-29 is accepted, strict-
   C, and ASAN-clean at the baseline; no code change)
-- [ ] 4.2.8 DEF-513 inline-iterable alias return — `compiler/src/own/expr.rs`,
+- [x] 4.2.8 DEF-513 inline-iterable alias return — `compiler/src/own/expr.rs`,
   `compiler/src/own/loops.rs`.
+  ✅ (completed: 2026-10-27; the return recognizes a borrow element of an
+  inline iterable (no alias container, a compiler address temporary) and
+  reports one E10030 at the return instead of E10035. ST-30 green;
+  element-loop 25, codegen-ownership 16, eval-emission 68, callable-release 69,
+  runtime-value 30, checker 212, borrow-store 58, and conditional-projection 61
+  unchanged)
 - [ ] 4.2.9 DEF-522 type-parameter view-member move **and read/return** —
   `compiler/src/own/instance_check.rs`, `compiler/src/codegen/expr.rs`.
 - [ ] 4.3.1 Green: focused parity suites, ASAN for safe controls, and strict-C

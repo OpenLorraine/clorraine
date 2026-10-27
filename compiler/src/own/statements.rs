@@ -1655,6 +1655,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a value names a borrow element of an inline iterable.
+    ///
+    /// The loop binds such an element through a compiler address temporary:
+    /// the iterable expression owns no place, so the element's storage lives
+    /// only for the loop step. Returning the element is therefore a statement
+    /// temporary escape, not a view of a named local.
+    fn inline_alias_element(&self, value: &Expr) -> bool {
+        let Some(PlaceTarget::Local(id, projections)) = self.place_target(value) else {
+            return false;
+        };
+        if !projections.is_empty() {
+            return false;
+        }
+        let binding = &self.bindings[id];
+        binding.kind == BindingKind::Local
+            && binding.mode == Mode::Borrow
+            && binding.alias_root.is_none()
+            && matches!(binding.base, Some(ir::PlaceBase::DerefTemp { .. }))
+    }
+
     /// Checks a `return`.
     ///
     /// A non-duplicable return value is an ownership transfer, so it runs the
@@ -1704,7 +1724,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let view_return = is_view_like(&returns)
                 || (super::lower::mentions_type_param(&returns)
                     && is_view_like(&self.ty(value)));
-            if view_return {
+            // A borrow element of an inline iterable aliases the expression's
+            // compiler temporary. Its address temp lives only for the loop
+            // step, so returning the element hands the caller a view of that
+            // statement temporary. A named or parameter container keeps its
+            // own lifetime and is not this shape.
+            let inline_alias = self.inline_alias_element(value);
+            if view_return && inline_alias {
+                self.suppress_elision = true;
+            }
+            if view_return && !inline_alias {
                 let provenance = self.view_provenance(value);
                 match provenance {
                     Provenance::Local(id) => {
@@ -1865,7 +1894,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // (`E10030`) once per adopted backing. A plain local-derived view
             // keeps the local-owner judgment instead: only a mixed conditional
             // leaves its fresh arm unreportable by that judgment.
-            let local_only = local_view_owner.is_some() && !self.view_is_mixed(value);
+            let local_only =
+                (local_view_owner.is_some() || inline_alias) && !self.view_is_mixed(value);
             let temp_loans: Vec<LoanId> = if local_only {
                 Vec::new()
             } else {
@@ -1915,6 +1945,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         span,
                     );
                 }
+            }
+            if inline_alias {
+                self.error(
+                    "E10030",
+                    "borrow of a statement temporary does not live long enough",
+                    "finish the use before the owner's scope ends",
+                    span,
+                );
             }
             self.emit_return_cleanup();
             let releases = self.pending_release_copies();
