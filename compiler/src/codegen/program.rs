@@ -2277,19 +2277,34 @@ impl<'a> Emitter<'a> {
                 },
             ),
             ValueKind::StructLit { name, fields } => {
+                let mut walked_fields: Vec<(String, Value)> = Vec::with_capacity(fields.len());
+                for (index, (field_name, field_value)) in fields.iter().enumerate() {
+                    let walked = self.materialize_init_value(field_value, guard);
+                    // An impure field evaluates at its own source position. A
+                    // later field's statement fill must not hoist above that
+                    // effect, so an earlier effectful field stores once into
+                    // an init local here. Only a value whose copy carries no
+                    // ownership is stored; an owned result was already bound
+                    // by its own walk.
+                    let later_effect = fields[index + 1..].iter().any(|(_, later)| {
+                        !init_operand_is_pure(later)
+                            || self.init_value_needs_materialization(later)
+                    });
+                    let walked = if later_effect
+                        && !init_operand_is_pure(&walked)
+                        && !self.needs_drop(&walked.ty)
+                    {
+                        self.store_impure_init_operand(&walked, guard)
+                    } else {
+                        walked
+                    };
+                    walked_fields.push((field_name.clone(), walked));
+                }
                 let walked = Value::new(
                     value.ty.clone(),
                     ValueKind::StructLit {
                         name: name.clone(),
-                        fields: fields
-                            .iter()
-                            .map(|(field_name, field_value)| {
-                                (
-                                    field_name.clone(),
-                                    self.materialize_init_value(field_value, guard),
-                                )
-                            })
-                            .collect(),
+                        fields: walked_fields,
                     },
                 );
                 // A literal whose fields need statements (a fixed-array field,

@@ -102,6 +102,35 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// A module initializer stores an effectful field at its source position, so
+/// a later field's statement fill cannot hoist above it.
+#[test]
+fn should_evaluate_initializer_fields_in_source_order() {
+    let source = r#"module spec.zc.order555;
+
+struct Inner { xs: i32[2]; }
+struct Outer { a: i32; b: Inner; }
+
+let order: i32 = 0;
+func f(): i32 { order = order * 10 + 1; return 1; }
+func mkarr(): i32[2] { order = order * 10 + 2; return [7, 8]; }
+
+let o: Outer = Outer { a: f(), b: Inner { xs: mkarr() } };
+
+func main(): i32 {
+    return order - 12;
+}
+"#;
+    let emitted = emit_host("order555", source);
+    let output = run_strict_host("order555", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "order555: the initializer fields must run in source order; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A later argument whose literal has no C value expression is filled at its
 /// own position, after the effects of every earlier argument.
 #[test]

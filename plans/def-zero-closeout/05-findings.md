@@ -173,6 +173,9 @@ a user decision.
   earlier argument whose evaluation has an effect, so the fill follows that
   effect instead of hoisting above it. The cross-argument order is pinned in
   `def_zero_critical_spec_test`; `make check` is green.
+- `DEF-555` fixed: an effectful initializer field stores into an init local at
+  its source position when a later field needs a statement, so the later fill
+  cannot hoist above it. The 1-2 order is pinned; `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 
