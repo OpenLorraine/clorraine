@@ -203,6 +203,20 @@ a user decision.
   borrowed view-slot store; the generic and concrete twins are pinned and
   `make check` is green. **Phase 1 now has no open critical or major row.**
 
+**Phase 1 review (emission lens).** One critical finding: `DEF-555`'s new
+source-order store passed an earlier impure **fixed-array** initializer field
+to `store_impure_init_operand`, whose plain local assignment cannot spell a
+brace list or an arm-selected array, so a module initializer emitted invalid
+C. Fixed by a fixed-array branch in `materialize_init_local`: the local is
+declared zeroed and filled element-wise at the field's position (guarded when
+the operand is guarded). The re-audit over 4,084 programs found 4,082
+byte-identical emissions, the two intended new spec sources, zero acceptance
+changes, and clean host/amiga/freestanding strict builds; the new spec case is
+red on the pre-fix compiler. Report-only pre-existing shapes kept out of scope:
+a whole member of a call result as a fixed-array field (`mkw().rows`) still
+fails all three profiles (it never compiled on base), and a guarded pure
+bounds check can be emitted twice in the fixed-array fill path.
+
 ## Phase 2 — Null and Type Rules
 
 ## Phase 3 — Calls and Resolution

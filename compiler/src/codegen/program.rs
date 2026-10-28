@@ -1737,6 +1737,27 @@ impl<'a> Emitter<'a> {
                     self.push(&format!("    {call};"));
                 }
             }
+        } else if self.substitute(&value.ty).is_fixed_array() {
+            // A fixed-array value has no C assignment form: a brace list or
+            // an arm-selected array cannot be assigned to the local. Declare
+            // it zeroed and fill it element-wise at the value's own position,
+            // so a later field's fill cannot hoist above its effects.
+            let empty = self.empty_state(&value.ty);
+            self.push(&format!(
+                "    {} = {empty};",
+                declarator(&value.ty, &name, &self.sema.table)
+            ));
+            let target = ArrayTarget::object(&name);
+            match guard {
+                Some(enclosing) => {
+                    self.push(&format!("    if ({enclosing}) {{"));
+                    self.emit_fixed_array_assign_to(&target, &value.ty, value, false, false);
+                    self.push("    }");
+                }
+                None => {
+                    self.emit_fixed_array_assign_to(&target, &value.ty, value, false, false);
+                }
+            }
         } else {
             match guard {
                 Some(enclosing) => {

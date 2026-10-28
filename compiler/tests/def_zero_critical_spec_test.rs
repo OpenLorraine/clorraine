@@ -428,6 +428,54 @@ func main(): i32 {
     }
 }
 
+/// A module initializer with an impure fixed-array field followed by a
+/// statement-filled field fills the array element-wise at its source
+/// position, so the emitted C builds and the effects keep their order.
+#[test]
+fn should_fill_an_initializer_fixed_array_field_before_a_later_field() {
+    let nested = r#"module spec.zc.initarrayorder;
+
+struct Inner { ys: i32[2]; }
+struct S { xs: i32[2]; inner: Inner; }
+
+let c: bool = true;
+func f(): i32 { return 1; }
+let s: S = S { xs: c ? [f(), 2] : [3, 4], inner: Inner { ys: [1, 2] } };
+
+func main(): i32 { return s.xs[0] + s.inner.ys[1] - 3; }
+"#;
+    let emitted = emit_host("initarrayorder", nested);
+    let output = run_strict_host("initarrayorder", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "initarrayorder: the fixed-array field must fill without a C array assignment; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let order = r#"module spec.zc.initarraytrace;
+
+struct S { xs: i32[2]; other: i32; }
+
+let order: i32 = 0;
+func f(): i32 { order = order * 10 + 1; return 1; }
+func g(): i32 { order = order * 10 + 2; return 7; }
+
+let c: bool = true;
+let s: S = S { xs: c ? [f(), 2] : [3, 4], other: g() };
+
+func main(): i32 { return order - 12 + s.xs[0] - 1 + s.other - 7; }
+"#;
+    let emitted = emit_host("initarraytrace", order);
+    let output = run_strict_host("initarraytrace", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "initarraytrace: the fixed-array field's effect must precede the later field's; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A module initializer stores an effectful field at its source position, so
 /// a later field's statement fill cannot hoist above it.
 #[test]
