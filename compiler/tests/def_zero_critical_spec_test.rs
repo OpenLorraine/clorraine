@@ -147,6 +147,48 @@ func main(): i32 {
     }
 }
 
+/// A foreign view stored into a borrowed view slot escapes into the caller's
+/// slot; the generic instance reports the same `E10033` as the concrete twin.
+#[test]
+fn should_reject_a_foreign_view_stored_into_a_borrowed_view_slot() {
+    let generic = r#"module spec.zc.slot550;
+
+import { String, stringOf } from std.text;
+
+func put<T>(c: bool, h: T, borrow slot: T): void {
+    slot = c ? h : h;
+}
+
+func main(): i32 {
+    let b: String = stringOf("aa");
+    let h: str = b;
+    let slot: str = "zz";
+    put<str>(true, h, borrow slot);
+    b = stringOf("bb");
+    return i32(slot[0]) - 97;
+}
+"#;
+    assert_rejected("slot550", generic, "E10033", 1, &["'slot'"]);
+    let concrete = r#"module spec.zc.slot550c;
+
+import { String, stringOf } from std.text;
+
+func put(c: bool, h: str, borrow slot: str): void {
+    slot = c ? h : h;
+}
+
+func main(): i32 {
+    let b: String = stringOf("aa");
+    let h: str = b;
+    let slot: str = "zz";
+    put(true, h, borrow slot);
+    b = stringOf("bb");
+    return i32(slot[0]) - 97;
+}
+"#;
+    assert_rejected("slot550c", concrete, "E10033", 1, &["'slot'"]);
+}
+
 /// A type-parameter return becomes a view at its view instances and owes the
 /// same one-candidate rule as the concrete twin; a single candidate stays
 /// accepted.

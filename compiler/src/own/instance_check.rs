@@ -392,10 +392,66 @@ fn check_whole_out_slot_store_requirements(
                 continue;
             }
             let slot = substitute_instance(&requirement.slot_ty, &params, &instance.args);
+            let source = substitute_instance(&requirement.source_ty, &params, &instance.args);
             if !slot.nullable {
+                // A non-nullable view slot keeps the stored view in the
+                // caller's slot. A foreign lend, a frame-local view, or a
+                // taken view therefore escapes exactly as the concrete
+                // spelling reports.
+                if !is_whole_slot_view(&slot) {
+                    continue;
+                }
+                if requirement.source_is_local {
+                    if is_whole_slot_view(&source) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10030",
+                                format!(
+                                    "borrow of {} does not live long enough",
+                                    requirement.source
+                                ),
+                                requirement.span,
+                            )
+                            .with_help("finish the use before the owner's scope ends"),
+                        );
+                    }
+                    continue;
+                }
+                if requirement.source_is_take {
+                    if is_view(&source) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10030",
+                                format!(
+                                    "borrow of '{}' does not live long enough",
+                                    requirement.source
+                                ),
+                                requirement.span,
+                            )
+                            .with_help("finish the use before the owner's scope ends"),
+                        );
+                    }
+                    continue;
+                }
+                if requirement.source_is_capture && !is_view(&source) {
+                    continue;
+                }
+                if is_whole_slot_view(&source) || requirement.writable_source {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10033",
+                            format!(
+                                "borrow of '{}' escapes its scope",
+                                requirement.destination
+                            ),
+                            requirement.span,
+                        )
+                        .with_help("derive the view from a parameter or take ownership"),
+                    );
+                    break;
+                }
                 continue;
             }
-            let source = substitute_instance(&requirement.source_ty, &params, &instance.args);
             if requirement.source_is_copy && !is_whole_slot_view(&source) {
                 // The owned copy is already the lend-move report at its
                 // declaration; only a view copy owns the store report.

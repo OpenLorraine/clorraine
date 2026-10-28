@@ -197,6 +197,11 @@ a user decision.
   duty; at a view instance the substituted return applies the concrete
   one-candidate rule, while a single candidate or a static return stays
   accepted. `make check` is green.
+- `DEF-550` fixed: a generic store into a borrowed slot whose instance is a
+  view records the escape duty, so a foreign lend stored into the caller's
+  view slot reports the concrete `E10033`. The re-derived RV-005 probe is the
+  borrowed view-slot store; the generic and concrete twins are pinned and
+  `make check` is green. **Phase 1 now has no open critical or major row.**
 
 ## Phase 2 — Null and Type Rules
 
