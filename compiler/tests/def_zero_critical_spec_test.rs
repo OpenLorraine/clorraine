@@ -102,6 +102,36 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// A later argument whose literal has no C value expression is filled at its
+/// own position, after the effects of every earlier argument.
+#[test]
+fn should_evaluate_earlier_arguments_before_a_later_literal_fill() {
+    let source = r#"module spec.zc.order552;
+
+let order: i32 = 0;
+
+struct Outer { xs: i32[2]; n: i32; }
+
+func a(): i32 { order = order * 10 + 1; return 1; }
+func mk(): i32 { order = order * 10 + 2; return 7; }
+func useTwo(x: i32, o: Outer): i32 { order = order * 10 + 3; return x + o.n; }
+
+func main(): i32 {
+    let r: i32 = useTwo(a(), Outer { xs: [mk(), 8], n: 2 });
+    return order - 123 + r - 3;
+}
+"#;
+    let emitted = emit_host("order552", source);
+    let output = run_strict_host("order552", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "order552: the arguments must run in source order (got order {}); stderr:\n{}",
+        0,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A fill expression evaluates once, not once per covered element, including
 /// a nested-row fill that evaluates once per row.
 #[test]

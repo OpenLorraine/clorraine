@@ -169,6 +169,10 @@ a user decision.
   temporary is copied to every covered element; a pure fill keeps the inline
   spelling. The statement and nested-row counts are pinned; the emission pins
   stay green.
+- `DEF-552` fixed: a later argument that needs a statement fill pins every
+  earlier argument whose evaluation has an effect, so the fill follows that
+  effect instead of hoisting above it. The cross-argument order is pinned in
+  `def_zero_critical_spec_test`; `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 

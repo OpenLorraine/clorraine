@@ -393,6 +393,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || args
                 .iter()
                 .any(|arg| super::lower::contains_update(&arg.value));
+        // A later argument with no C value expression is filled by a statement
+        // before the call. C evaluates a call's arguments in an unspecified
+        // order, so every earlier argument whose evaluation has an effect must
+        // settle into its own statement first; otherwise the later fill runs
+        // before that effect, contrary to the frozen left-to-right order.
+        let store_positions: Vec<bool> = args
+            .iter()
+            .map(|arg| self.argument_needs_statement_position(&arg.value))
+            .collect();
+        let receiver_pin_store = dot_receiver.is_some_and(expression_has_effects)
+            && store_positions.iter().any(|needs| *needs);
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
         // The modes come from the callable the call actually reaches: a
@@ -425,7 +436,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // and an owning receiver binds at the same position exactly as
                 // a written argument does. A `take` receiver moves to the
                 // callee, so it keeps its place.
-                let value = if pin_updates {
+                let value = if pin_updates || receiver_pin_store {
                     self.pin_operand_location(value)
                 } else {
                     value
@@ -440,7 +451,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // deferred spelling. The eager ownership binding has to be a
                 // statement, so it runs only where a statement has a position.
                 let eager_binding = self.defer_move_outs == 0 && !self.in_loop_condition;
-                let value = if pin_updates {
+                let value = if pin_updates || receiver_pin_store {
                     if take {
                         if eager_binding && modes.is_some() {
                             self.materialize_owned_argument(value, true)
@@ -473,7 +484,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // pin leaves it to that binding. A `take` argument keeps its place —
         // the post-call move-out empties caller storage, which a temporary
         // would hide — and a constant has no position to lose.
-        for arg in args {
+        for (position, arg) in args.iter().enumerate() {
+            let pin_store = expression_has_effects(&arg.value)
+                && store_positions[position + 1..]
+                    .iter()
+                    .any(|needs| *needs);
             let value = self.lower_value(&arg.value);
             // A view-element array argument adopts each temporary element's
             // backing in this frame, exactly as a view binding does: the
@@ -494,7 +509,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // The argument's element locations settle at its own position, so
             // an indexed place argument's index update runs before a later
             // argument's pin instead of at the call's guards.
-            let value = if pin_updates {
+            let value = if pin_updates || pin_store {
                 self.pin_operand_location(value)
             } else {
                 value
@@ -509,7 +524,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // runs for every update-bearing argument: under a loop condition it
             // defers to the per-iteration fill.
             let eager_binding = self.defer_move_outs == 0 && !self.in_loop_condition;
-            let value = if pin_updates {
+            let value = if pin_updates || pin_store {
                 if take {
                     // A `take` argument moves to the callee, so the plain pin
                     // would hide the caller's slot; its ownership-safe
@@ -581,6 +596,42 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             type_args: resolved,
             args: values,
             modes,
+        }
+    }
+
+    /// True when an argument is filled by a statement before the call runs.
+    ///
+    /// Such an argument has no C value expression: a fixed-array value, an
+    /// owning value with no place of its own, or a literal whose fields only
+    /// stores can fill. The conservative literal answer keeps the simpler
+    /// rule: a struct or array literal may need the statement store, and its
+    /// fill runs at the argument's own position.
+    fn argument_needs_statement_position(&self, expr: &Expr) -> bool {
+        let ty = self.ty(expr);
+        if ty.is_fixed_array() && !is_place_expression(expr) {
+            return true;
+        }
+        if !self.sema.table.duplicable(&ty)
+            && !is_place_expression(expr)
+            && !is_view(&ty)
+            && !ty.is_unknown()
+        {
+            return true;
+        }
+        match &expr.kind {
+            ExprKind::StructLiteral { .. } | ExprKind::ArrayLiteral { .. } => true,
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.argument_needs_statement_position(then_value)
+                    || self.argument_needs_statement_position(else_value)
+            }
+            ExprKind::Cast { value, .. }
+            | ExprKind::RawCast { value, .. }
+            | ExprKind::Unsafe(value) => self.argument_needs_statement_position(value),
+            _ => false,
         }
     }
 
@@ -1095,4 +1146,72 @@ fn declared_ffi<'a>(
         crate::ast::Item::Ffi(block) => block.decls.iter().find(|decl| decl.name == name),
         _ => None,
     })
+}
+
+/// True when evaluating the expression can change program state.
+///
+/// A call, an intrinsic, an assignment, or an update has an effect; every
+/// other form is effectful only when one of its parts is. The predicate is
+/// conservative: a pure intrinsic still counts, so an earlier argument that
+/// could be skipped never folds into the later argument's fill.
+fn expression_has_effects(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Call { .. }
+        | ExprKind::IntrinsicCall { .. }
+        | ExprKind::Assign { .. } => true,
+        ExprKind::Unary { op, operand } => op.is_update() || expression_has_effects(operand),
+        ExprKind::Binary { left, right, .. } => {
+            expression_has_effects(left) || expression_has_effects(right)
+        }
+        ExprKind::Cast { value, .. }
+        | ExprKind::RawCast { value, .. }
+        | ExprKind::Unsafe(value) => expression_has_effects(value),
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            expression_has_effects(condition)
+                || expression_has_effects(then_value)
+                || expression_has_effects(else_value)
+        }
+        ExprKind::Member { base, .. } => expression_has_effects(base),
+        ExprKind::Index { base, index } => {
+            expression_has_effects(base) || expression_has_effects(index)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            fields.iter().any(|field| expression_has_effects(&field.value))
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements.iter().any(expression_has_effects)
+                || fill.as_deref().is_some_and(expression_has_effects)
+        }
+        ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            crate::ast::TemplatePiece::Placeholder(inner) => expression_has_effects(inner),
+            crate::ast::TemplatePiece::Literal(_) => false,
+        }),
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Lambda { .. }
+        | ExprKind::Error => false,
+    }
+}
+
+/// True when the expression names storage rather than producing a value.
+fn is_place_expression(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Name(_) | ExprKind::Qualified(_) => true,
+        ExprKind::Member { base, .. } => is_place_expression(base),
+        ExprKind::Index { base, index } => {
+            is_place_expression(base) && !expression_has_effects(index)
+        }
+        ExprKind::Cast { value, .. } | ExprKind::Unsafe(value) => is_place_expression(value),
+        _ => false,
+    }
 }
