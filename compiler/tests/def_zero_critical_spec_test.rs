@@ -102,6 +102,65 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// Asserts the front end rejected `source` with the given code and count.
+fn assert_rejected(tag: &str, source: &str, code: &str, expected: usize, fragments: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        expected,
+        "{tag}: expected {expected} error(s); stderr:\n{stderr}"
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A plain (borrow) parameter selected by a conditional may not be moved into
+/// an owned raw-deref destination; the store reports the lend rule once.
+#[test]
+fn should_reject_a_borrowed_parameter_moved_into_a_raw_destination() {
+    let source = r#"module spec.zc.store544;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(c: bool, p: String, q: String): i32 {
+    let b: Box = Box { v: stringOf("zz") };
+    let h: raw Box = unsafe &b;
+    unsafe { (*h).v = c ? p : q; }
+    return i32(len(b.v)) - 2;
+}
+
+func main(): i32 {
+    return pick(true, stringOf("ab"), stringOf("cd"));
+}
+"#;
+    assert_rejected("store544", source, "E10034", 1, &["p"]);
+}
+
 /// Builds and runs one emitted host translation unit under the strict set.
 fn run_strict_host(tag: &str, emitted: &str) -> Output {
     let scratch = ScratchDir::new(&format!("{tag}-run"));

@@ -1402,7 +1402,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         let view_target = is_view(&element_ty)
                             || (self.view_destination_adopts && is_view_like(&element_ty));
                         if !view_target {
-                            self.consume_owned_place(value, value.span);
+                            // A conditional selects one arm at run time. A
+                            // plain (borrow) parameter arm may not be moved
+                            // into an owned destination; the raw store path
+                            // judges every arm exactly as a named destination
+                            // does, skipping an arm that names the target as a
+                            // self-copy.
+                            let value_ty = self.ty(value);
+                            if matches!(value.kind, ExprKind::Conditional { .. })
+                                && !self.sema.table.duplicable(&value_ty)
+                            {
+                                let maybe_owning = self.maybe_owns(&value_ty);
+                                for (arm, source) in self.conditional_move_source_arms(value) {
+                                    if same_place_expr(target, arm) {
+                                        continue;
+                                    }
+                                    if maybe_owning {
+                                        self.mark_moved_if_owning(source, value.span);
+                                    } else {
+                                        self.move_target(source, value.span);
+                                    }
+                                }
+                            } else {
+                                self.consume_owned_place(value, value.span);
+                            }
                         }
                         let lowered = self.lower_value(value);
                         let lowered = self.materialize_owning_deref(lowered);

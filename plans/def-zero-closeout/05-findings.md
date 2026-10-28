@@ -162,6 +162,9 @@ a user decision.
   fixed-array call field is built in a statement temporary, stored, and
   emptied; the strict build and the stored value are pinned in
   `def_zero_critical_spec_test`; `make check` is green.
+- `DEF-544` fixed: a conditional stored through a raw-deref destination judges
+  every arm as a named destination does; a plain (borrow) parameter arm reports
+  one E10034 and is not moved. `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 
