@@ -146,6 +146,12 @@ pub(super) struct Emitter<'a> {
     /// member out after the store and registers the local for release, so the
     /// residual sibling fields free while the view keeps the member's storage.
     pub(super) init_literal_locals: BTreeSet<String>,
+    /// The store-needing literals created for the current global initializer.
+    ///
+    /// A view destination registers every one of them for release after the
+    /// read member is moved out, so nested literals do not leak their residual
+    /// fields.
+    pub(super) init_global_literals: Vec<(String, Ty)>,
     /// True while the current global's initializer feeds a view destination.
     ///
     /// A view keeps the storage it points into for the program's lifetime, so
@@ -333,6 +339,7 @@ impl<'a> Emitter<'a> {
             init_locals: 0,
             init_owners: Vec::new(),
             init_literal_locals: BTreeSet::new(),
+            init_global_literals: Vec::new(),
             init_retain_owners: false,
             init_skip_owner_binding: false,
             pointer_params: BTreeSet::new(),

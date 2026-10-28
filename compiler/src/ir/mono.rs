@@ -201,6 +201,13 @@ pub struct RequiresViewReturnCandidates {
     /// whose argument substitutes to an elided view; every other instance
     /// needs no lend candidate.
     pub return_ty: Ty,
+    /// The frame-local binding an owned type-parameter return widens at a
+    /// view instance.
+    ///
+    /// The declaration cannot reject the local move because an owning
+    /// instance is legal; the audit reports the concrete `E10035` at the view
+    /// instances.
+    pub local_owner: Option<String>,
     /// The function name's span, where the view-return rule reports.
     pub span: Span,
 }
@@ -274,9 +281,15 @@ pub struct RequiresNotLend {
     /// True when the move is a return arm rather than a store or argument.
     ///
     /// A conditional return owes one duty per lend arm, but the concrete twin
-    /// reports the return site once; the audit deduplicates only return-site
-    /// duties and keeps the per-arm report for a take or store site.
+    /// reports the return site once; the audit deduplicates return-site duties
+    /// and keeps the per-arm report for a take site.
     pub return_site: bool,
+    /// True when the move is a raw-pointer store arm.
+    ///
+    /// The concrete raw store reports one lend diagnostic per store site; the
+    /// audit deduplicates this flag like a return site while the take path
+    /// keeps its per-arm reports.
+    pub raw_store_site: bool,
     /// The move site, for the diagnostic span.
     pub span: Span,
 }

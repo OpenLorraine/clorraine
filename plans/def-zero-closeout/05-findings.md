@@ -228,3 +228,43 @@ bounds check can be emitted twice in the fixed-array fill path.
 ## Phase 6 — Initializers and Carriers
 
 ## Phase 7 — Final Verification and Close
+
+**Phase 1 review (correctness/semantics and memory lenses).** The independent
+reviews found eleven findings in the Phase 1 surface. Fixed in the review-fix
+batch:
+
+- Type-parameter view returns: a direct local owner reports `E10035` at a view
+  instance; a `take`-only or two-candidate return reports `E10036`; a
+  parameter-backed conditional records the mixed candidate duty. A local copy
+  of a parameter stays accepted, so the identity take/view round trip and the
+  narrowed-local case keep their acceptance.
+- Raw conditional stores: a type-parameter arm stored through a raw pointer
+  records the destination-aware duty (one report per raw store site), so a
+  concrete owning destination reports the same `E10034` as the concrete twin.
+- Owned local/temporary/take sources widened into a borrowed view slot report
+  `E10030`; the nested initializer literal registers every store-needing
+  literal and resolves a member read through the inner local, moving the read
+  member out before release.
+- Self-read runtime-index literal stores use the statement temporary; a cast
+  literal zero divisor (`i32(0)`, `%` included) emits the `E11210` trap; an
+  impure fixed-array initializer field fills element-wise; pure earlier
+  initializer fields and arguments pin before a later statement fill.
+- The nested-row fill evaluates the fill expression once for the whole fill
+  (the spec rule), and a conditional fill of store-needing struct literals
+  fills through the per-arm struct store.
+
+A user ruling resolved the one spec-test conflict: the parameter half of
+`should_accept_a_narrowed_nullable_arm_in_every_instance` now expects
+`E10036`, because `String?` and `str` are two view-like lend candidates
+(EL-1/EL-3) and the concrete twin already reports it. The local half stays
+accepted. Two pre-existing shapes remain report-only: a slice taken over a
+fixed-array field of an initializer temporary (`slice(S{...}.xs, ...)`) points
+into the init function's stack storage, and a view-array initializer of
+per-element literal projections leaks its element roots; both are base == head
+and belong to the Phase 6 initializer/carrier batch. A whole member of a call
+result as a fixed-array field (`mkw().rows`) and a duplicated pure bounds check
+in the fixed-array fill path are also pre-existing emission shapes; the emission
+re-audit classed them below the critical/major bar for this batch.
+
+Verification after the batch: `make check` green (75 targets, 110 goldens) and
+`make verify: all legs passed`. The Phase 1 re-review is the remaining gate.

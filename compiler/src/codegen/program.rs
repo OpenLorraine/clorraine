@@ -1015,6 +1015,7 @@ impl<'a> Emitter<'a> {
         self.init_retain_owners = declared_ty
             .as_ref()
             .is_some_and(|declared| self.stores_view_storage(declared));
+        self.init_global_literals.clear();
         let mut lowered = match self.loaded.module(module_name) {
             Some(module) => self.lower_global(module, value),
             None => Value {
@@ -1167,6 +1168,28 @@ impl<'a> Emitter<'a> {
                 _ => break,
             }
         }
+
+        // A literal whose field is a store-needing inner literal keeps that
+        // field as an init-local place. Resolve the first accessor through the
+        // literal's fields so a nested projection roots at the inner local.
+        if let ValueKind::StructLit { fields, .. } = &cursor.kind {
+            if let Some(first) = accessors.last() {
+                if let Some(field) = first.strip_prefix('.') {
+                    if let Some((_, field_value)) = fields.iter().find(|(name, _)| name == field) {
+                        if let ValueKind::Place(Place {
+                            base: PlaceBase::Local(name),
+                            ..
+                        }) = &field_value.kind
+                        {
+                            if self.init_literal_locals.contains(name) {
+                                cursor = field_value;
+                                accessors.pop();
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let literal_root = matches!(
             &cursor.kind,
             ValueKind::Place(Place {
@@ -1209,12 +1232,14 @@ impl<'a> Emitter<'a> {
             _ => None,
         };
         let (local, root_read) = if let Some(name) = literal_root {
-            // The literal already fills an init local of its own. Register it
-            // so its residual sibling fields free at the initializer's end;
-            // the read member is emptied below and keeps its storage for the
-            // view.
-            if !self.init_owners.iter().any(|(owner, _)| owner == &name) {
-                self.init_owners.push((name.clone(), root.ty.clone()));
+            // The literal already fills an init local of its own. Register
+            // every literal this initializer built so the residual sibling
+            // fields free at the initializer's end; the read member is emptied
+            // below and keeps its storage for the view.
+            for (literal, ty) in &self.init_global_literals {
+                if !self.init_owners.iter().any(|(owner, _)| owner == literal) {
+                    self.init_owners.push((literal.clone(), ty.clone()));
+                }
             }
             (name, root.clone())
         } else {
@@ -1227,7 +1252,7 @@ impl<'a> Emitter<'a> {
             self.init_retain_owners = retaining;
             (local, root_read)
         };
-        let read = Self::rebind_projection_root(value, root_read);
+        let read = self.rebuild_read_path(root_read, &accessors, &value.ty);
         let empty = match zero_view_helper(&value.ty) {
             // A struct-typed view position spells its empty state with the
             // zero view helper, exactly as a store into it would.
@@ -1375,6 +1400,63 @@ impl<'a> Emitter<'a> {
             ),
             _ => root,
         }
+    }
+
+    /// Rebuilds a projection read from a root and its accessor steps.
+    ///
+    /// The resolved chain may have dropped a step after a struct literal was
+    /// replaced by one of its init-local fields, so the original spelling
+    /// cannot simply be rebound at the root. Each step keeps the declared type
+    /// for an intermediate projection and the final read type for the last.
+    fn rebuild_read_path(
+        &self,
+        mut read: Value,
+        accessors: &[String],
+        final_ty: &Ty,
+    ) -> Value {
+        for (index, accessor) in accessors.iter().enumerate() {
+            let last = index + 1 == accessors.len();
+            if let Some(field) = accessor.strip_prefix('.') {
+                let ty = if last {
+                    final_ty.clone()
+                } else {
+                    self.sema
+                        .table
+                        .instance_field(&read.ty, field)
+                        .unwrap_or_else(Ty::unknown)
+                };
+                read = Value::new(
+                    ty,
+                    ValueKind::Member {
+                        base: Box::new(read),
+                        name: field.to_owned(),
+                    },
+                );
+                continue;
+            }
+            let Some(position) = accessor
+                .strip_prefix('[')
+                .and_then(|inner| inner.strip_suffix(']'))
+                .and_then(|inner| inner.parse::<i128>().ok())
+            else {
+                continue;
+            };
+            let ty = if last {
+                final_ty.clone()
+            } else {
+                read.ty.iterated_element()
+            };
+            read = Value::new(
+                ty,
+                ValueKind::Index {
+                    base: Box::new(read),
+                    // A constant index keeps the source spelling `[0]`; a
+                    // `usize` literal would render its `u` suffix here.
+                    index: Box::new(Value::new(Ty::i32_ty(), ValueKind::Int(position))),
+                },
+            );
+        }
+        read
     }
 
     /// Fills a fixed-array global element-wise.
@@ -1817,6 +1899,7 @@ impl<'a> Emitter<'a> {
         let name = self.next_init_local();
         if !self.init_skip_owner_binding {
             self.init_literal_locals.insert(name.clone());
+            self.init_global_literals.push((name.clone(), ty.clone()));
         }
         let empty = self.empty_state(&ty);
         self.push(&format!(
@@ -1930,6 +2013,9 @@ impl<'a> Emitter<'a> {
     fn stores_view_storage(&self, ty: &Ty) -> bool {
         match &ty.kind {
             TyKind::Str | TyKind::StaticStr | TyKind::CString => true,
+            // A slice is a view of its owner's storage, so its initializer's
+            // backing must outlive the program exactly like a `str` view.
+            TyKind::Array { .. } if ty.is_slice() => true,
             TyKind::Array { element, .. } => self.stores_view_storage(element),
             TyKind::Struct(name, _) => self
                 .sema
@@ -2349,11 +2435,29 @@ impl<'a> Emitter<'a> {
                         !init_operand_is_pure(later)
                             || self.init_value_needs_materialization(later)
                     });
+                    let already_stored = stored_init_read_name(&walked).is_some();
+                    let constant = matches!(
+                        walked.kind,
+                        ValueKind::Int(_)
+                            | ValueKind::Float(_)
+                            | ValueKind::Char(_)
+                            | ValueKind::Str(_)
+                            | ValueKind::Bool(_)
+                            | ValueKind::Null
+                            | ValueKind::Aggregate
+                    );
+                    // A later field's fill can mutate a place the earlier
+                    // field reads, so every non-constant earlier value stores
+                    // at its source position, not only an impure one. An owned
+                    // value was already bound by its own walk.
                     let walked = if later_effect
-                        && !init_operand_is_pure(&walked)
+                        && !already_stored
+                        && !constant
                         && !self.needs_drop(&walked.ty)
                     {
-                        self.store_impure_init_operand(&walked, guard)
+                        let zero = self.empty_state(&walked.ty);
+                        let (_, local) = self.materialize_init_local(&walked, guard, &zero);
+                        local
                     } else {
                         walked
                     };

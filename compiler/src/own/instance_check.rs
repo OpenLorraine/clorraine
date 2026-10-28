@@ -65,7 +65,7 @@ pub fn check(
     check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
-    check_whole_out_slot_store_requirements(program, mono, diagnostics);
+    check_whole_out_slot_store_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
     check_opaque_store_requirements(program, sema, mono, diagnostics);
     check_capture_move_requirements(program, sema, mono, diagnostics);
@@ -288,7 +288,7 @@ fn check_not_lend_requirements(
             {
                 continue;
             }
-            if requirement.return_site
+            if (requirement.return_site || requirement.raw_store_site)
                 && !reported_sites.insert((
                     requirement.function.clone(),
                     requirement.span.start,
@@ -379,6 +379,7 @@ fn check_storable_slot_requirements(
 /// source whose instance owns stays with the capture-move rule `E10401`.
 fn check_whole_out_slot_store_requirements(
     program: &ProgramInfo,
+    sema: &SemaOutput,
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
@@ -402,14 +403,19 @@ fn check_whole_out_slot_store_requirements(
                     continue;
                 }
                 if requirement.source_is_local {
-                    if is_whole_slot_view(&source) {
+                    // A local view is frame-tied, and so is an owning local
+                    // that widens into the view slot: both leave the caller's
+                    // slot reading this frame's storage.
+                    if is_whole_slot_view(&source) || !sema.table.duplicable(&source) {
+                        let subject = if requirement.source.is_empty() {
+                            "a statement temporary".to_string()
+                        } else {
+                            format!("'{}'", requirement.source)
+                        };
                         diagnostics.push(
                             Diagnostic::error(
                                 "E10030",
-                                format!(
-                                    "borrow of {} does not live long enough",
-                                    requirement.source
-                                ),
+                                format!("borrow of {subject} does not live long enough"),
                                 requirement.span,
                             )
                             .with_help("finish the use before the owner's scope ends"),
@@ -418,7 +424,7 @@ fn check_whole_out_slot_store_requirements(
                     continue;
                 }
                 if requirement.source_is_take {
-                    if is_view(&source) {
+                    if is_view(&source) || !sema.table.duplicable(&source) {
                         diagnostics.push(
                             Diagnostic::error(
                                 "E10030",
@@ -1343,6 +1349,17 @@ fn check_view_return_candidates(
             let return_ty = crate::types::substitute(&requirement.return_ty, &bindings);
             if !crate::borrow::is_elided_view(&return_ty) {
                 continue;
+            }
+            if let Some(owner) = &requirement.local_owner {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10035",
+                        format!("cannot return a view of local '{owner}'"),
+                        requirement.span,
+                    )
+                    .with_help("return an owned value or a view of a parameter"),
+                );
+                break;
             }
             // A return that reads static storage needs no lend candidate: the
             // substituted root and member path prove the `static str` (or an

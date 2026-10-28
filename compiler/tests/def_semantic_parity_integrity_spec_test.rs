@@ -518,7 +518,9 @@ func main(): i32 {
 }
 
 /// A nullable arm the declaration's flow already narrowed is a proven
-/// non-null use in every instance, whether the arm is a local or a parameter.
+/// non-null use in every instance. A local arm stays accepted; a nullable
+/// param arm plus a view param is two view-like lend candidates, so the
+/// generic reports the same `E10036` as its concrete twin (EL-1/EL-3).
 #[test]
 fn should_accept_a_narrowed_nullable_arm_in_every_instance() {
     let local = r#"module spec.sempar.st26narrow;
@@ -558,9 +560,7 @@ func main(): i32 {
     return i32(len(r)) - 2;
 }
 "#;
-    let output = run_memory("st26narrowparam", parameter);
-    assert_no_sanitizer("st26narrowparam", &output);
-    assert_exit("st26narrowparam", &output, 0);
+    assert_rejected_once("st26narrowparam", parameter, "E10036", &[]);
 }
 
 // ---------------------------------------------------------------------------

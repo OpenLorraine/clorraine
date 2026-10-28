@@ -1798,12 +1798,60 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // judgment too would double-report one site.
             let mut local_view_owner: Option<usize> = None;
             // A return type that still mentions a type parameter becomes a view
-            // at its view instantiation. When the returned value is already a
-            // view, the local-owner judgment applies now: the instance cannot
-            // make a view of this frame's storage outlive the frame.
+            // at its view instantiation. A value derived from a parameter can
+            // be that view; the instance audit applies the one-candidate rule
+            // and skips every non-view instance. A local-derived value keeps
+            // the existing gate: a scalar local move is legal at an owning
+            // instance, and only a concrete view return reports the frame
+            // escape at the declaration.
+            let provenance = self.view_provenance(value);
+            let param_backed = match &provenance {
+                Provenance::Param(_) => true,
+                Provenance::Composite(atoms) => atoms
+                    .iter()
+                    .any(|atom| matches!(atom, Provenance::Param(_))),
+                _ => false,
+            };
             let view_return = is_view_like(&returns)
                 || (super::lower::mentions_type_param(&returns)
-                    && is_view_like(&self.ty(value)));
+                    && (is_view_like(&self.ty(value)) || param_backed));
+            // A type-parameter return of a frame-local owner is a view at a
+            // view instance; the concrete spelling reports E10035 there.
+            if !view_return
+                && super::lower::mentions_type_param(&returns)
+                && matches!(value.kind, ExprKind::Name(_))
+            {
+                let local = match &provenance {
+                    Provenance::Local(id) => Some(*id),
+                    // A mixed conditional may select a parameter arm, which
+                    // keeps the caller's backing alive; only a purely local
+                    // composite is the frame-owner escape.
+                    Provenance::Composite(atoms)
+                        if atoms
+                            .iter()
+                            .all(|atom| matches!(atom, Provenance::Local(_))) =>
+                    {
+                        atoms.iter().find_map(|atom| match atom {
+                            Provenance::Local(id) => Some(*id),
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                };
+                if let Some(id) = local {
+                    // A local copy of a parameter aliases caller-backed
+                    // storage, so a view returned through it is not the
+                    // frame-owner escape; only a fresh or locally owned value
+                    // is.
+                    let aliases_param = matches!(
+                        self.bindings[id].copy_source,
+                        Some(Provenance::Param(_))
+                    );
+                    if !aliases_param {
+                        self.view_return_local_owner = Some(self.bindings[id].name.clone());
+                    }
+                }
+            }
             // A borrow element of an inline iterable aliases the expression's
             // compiler temporary. Its address temp lives only for the loop
             // step, so returning the element hands the caller a view of that
@@ -1815,7 +1863,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             if view_return && !inline_alias {
                 self.record_return_view_paths(value);
-                let provenance = self.view_provenance(value);
                 // The deferred candidate duty needs the parameter the returned
                 // view derives from; every storage component that is a
                 // parameter contributes, so a mixed return is marked mixed.

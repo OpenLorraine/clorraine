@@ -702,12 +702,22 @@ func main(): i32 {
     assert_contains(
         "rdhimpl-fill",
         &emitted,
-        "memcpy(&(g[0]), &(a), sizeof(g[0]));",
+        "memcpy(&(__cl_fillrow_1), &(a), sizeof(__cl_fillrow_1));",
     );
     assert_contains(
         "rdhimpl-fill",
         &emitted,
-        "memcpy(&(g[1]), &(b), sizeof(g[1]));",
+        "memcpy(&(__cl_fillrow_1), &(b), sizeof(__cl_fillrow_1));",
+    );
+    assert_contains(
+        "rdhimpl-fill",
+        &emitted,
+        "memcpy(&(g[0]), &(__cl_fillrow_1), sizeof(g[0]));",
+    );
+    assert_contains(
+        "rdhimpl-fill",
+        &emitted,
+        "memcpy(&(g[1]), &(__cl_fillrow_1), sizeof(g[1]));",
     );
 }
 

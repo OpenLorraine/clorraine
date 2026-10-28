@@ -364,7 +364,7 @@ func main(): i32 {
 }
 "#;
     assert_rejected("return546c", concrete, "E10034", 1, &["'s'"]);
-    let view = r#"module spec.zc.return546v;
+    let two_candidates = r#"module spec.zc.return546v;
 
 import { String, stringOf } from std.text;
 
@@ -378,12 +378,24 @@ func main(): i32 {
     return i32(len(r)) - 2;
 }
 "#;
-    let emitted = emit_host("return546v", view);
-    let output = run_strict_host("return546v", &emitted);
+    assert_rejected("return546v", two_candidates, "E10036", 1, &[]);
+    let one = r#"module spec.zc.return546one;
+
+func pick<T>(c: bool, h: T, n: i32): T {
+    return c ? h : h;
+}
+
+func main(): i32 {
+    let r: str = pick<str>(true, "ab", 1);
+    return i32(len(r)) - 2;
+}
+"#;
+    let emitted = emit_host("return546one", one);
+    let output = run_strict_host("return546one", &emitted);
     assert_eq!(
         output.status.code(),
         Some(0),
-        "return546v: the view instance must copy the concrete lend arm; stderr:\n{}",
+        "return546one: the single view candidate must stay accepted; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -406,6 +418,11 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("leak553", source);
+    assert!(
+        emitted.contains("__cl_itmp1.a = NULL;")
+            && emitted.contains("FreeString(__cl_itmp1.b)"),
+        "leak553: the residual sibling must release and the read member must move out; emitted C:\n{emitted}"
+    );
     let output = run_strict_host("leak553", &emitted);
     assert_eq!(
         output.status.code(),
@@ -580,8 +597,8 @@ func main(): i32 {
     let output = run_strict_host("fill551b", &emitted);
     assert_eq!(
         output.status.code(),
-        Some(21),
-        "fill551b: the nested-row fill must run once per row; stderr:\n{}",
+        Some(11),
+        "fill551b: the nested-row fill expression must run once for the whole fill; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

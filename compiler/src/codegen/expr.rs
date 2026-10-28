@@ -920,9 +920,7 @@ impl<'a> Emitter<'a> {
         // A literal zero divisor is a guaranteed runtime fault. Emitting the
         // division would fail the strict C build even though the trap runs
         // first, so the expression becomes the trap and a zero placeholder.
-        if matches!(op, BinaryOp::Div | BinaryOp::Rem)
-            && matches!(right.kind, ValueKind::Int(0))
-        {
+        if matches!(op, BinaryOp::Div | BinaryOp::Rem) && literal_zero_value(right) {
             // The dividend still evaluates first: a call in it must run once
             // before the fault. The comma expression keeps that order and
             // never spells the division the strict build rejects.
@@ -1559,5 +1557,18 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
             }
             parts
         }
+    }
+}
+
+/// True when a value is a literal zero, possibly through a cast.
+///
+/// A cast of a literal zero is the same guaranteed division fault as the bare
+/// literal, so the trap path must recognize both spellings.
+fn literal_zero_value(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Int(0) => true,
+        ValueKind::Cast { value, .. } => literal_zero_value(value),
+        ValueKind::Unary { operand, .. } => literal_zero_value(operand),
+        _ => false,
     }
 }

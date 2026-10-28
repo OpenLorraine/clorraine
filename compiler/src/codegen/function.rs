@@ -805,7 +805,7 @@ impl<'a> Emitter<'a> {
                         let target = ArrayTarget::object(&target_c);
                         self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, literal_self_read);
                     }
-                } else if !literal_self_read && self.value_needs_struct_stores(value) {
+                } else if self.value_needs_struct_stores(value) {
                     // A struct literal with a fixed-array call field (or a
                     // source-order/owned-field shape) has no C initializer
                     // form: the call needs its hidden fixed-array destination.
@@ -4056,21 +4056,75 @@ impl<'a> Emitter<'a> {
         // A fill covers every index the prefix did not: `[a, b; fill]` fills
         // from the prefix length to the extent, and `[; fill]` fills them all.
         if let Some(element_ty) = &nested_ty {
+            // The fill expression evaluates once; the row value is then copied
+            // to every covered row. A row has no C assignment form, so it
+            // fills a row temporary once and memcpy copies it.
+            let row = self.unique_local("__cl_fillrow");
+            self.push(&format!(
+                "    {} = {};",
+                declarator(element_ty, &row, &self.sema.table),
+                self.empty_state(element_ty)
+            ));
+            let row_target = ArrayTarget::object(&row);
             match &fill.kind {
                 ValueKind::ArrayLit { elements, fill } => {
-                    for index in prefix..extent {
-                        let sub = target.element(index);
-                        self.emit_array_assign_to(&sub, element_ty, elements, fill);
-                    }
+                    self.emit_array_assign_to(&row_target, element_ty, elements, fill);
                 }
                 _ => {
-                    for index in prefix..extent {
-                        let sub = target.element(index);
-                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false, false);
-                    }
+                    self.emit_fixed_array_assign_to(
+                        &row_target,
+                        element_ty,
+                        fill,
+                        false,
+                        false,
+                    );
                 }
             }
+            for index in prefix..extent {
+                let sub = target.element(index);
+                self.push(&format!(
+                    "    memcpy({}, &({row}), {});",
+                    sub.address, sub.bytes
+                ));
+            }
+            if prefix >= extent {
+                self.push(&format!("    if (sizeof({row})) {{ }}"));
+            }
             return;
+        }
+        // A conditional fill whose arms are struct literals that need stores
+        // cannot ride a C `?:`; each arm stores into one fill temporary, and
+        // the temporary is copied to every covered element.
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &fill.kind
+        {
+            if self.sema.table.duplicable(element)
+                && self.conditional_struct_needs_stores(element, then_value, else_value)
+            {
+                let local = self.unique_local("__cl_fill");
+                self.push(&format!(
+                    "    {} = {};",
+                    declarator(element, &local, &self.sema.table),
+                    self.empty_state(element)
+                ));
+                self.emit_struct_conditional_assign(
+                    &local,
+                    element,
+                    condition,
+                    then_value,
+                    else_value,
+                );
+                if prefix >= extent {
+                    self.push(&format!("    if (sizeof({local})) {{ }}"));
+                }
+                for index in prefix..extent {
+                    self.push(&format!("    {}[{index}] = {local};", target.text));
+                }
+                return;
+            }
         }
         // A struct-literal fill whose fields need stores evaluates them once
         // into a temporary and copies the value to every covered element. The

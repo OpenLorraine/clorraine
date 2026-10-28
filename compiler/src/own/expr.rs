@@ -1441,18 +1441,54 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // self-copy.
                             let value_ty = self.ty(value);
                             if matches!(value.kind, ExprKind::Conditional { .. })
-                                && !self.sema.table.duplicable(&value_ty)
+                                && (!self.sema.table.duplicable(&value_ty)
+                                    || self.maybe_owns(&value_ty))
                             {
                                 let maybe_owning = self.maybe_owns(&value_ty);
-                                for (arm, source) in self.conditional_move_source_arms(value) {
-                                    if same_place_expr(target, arm) {
-                                        continue;
+                                if maybe_owning {
+                                    // Every arm is judged at the instance, and
+                                    // the store destination decides whether an
+                                    // arm moves or copies.
+                                    let mut arms = self.maybe_owning_source_arms(value);
+                                    arms.extend(self.conditional_move_source_arms(value));
+                                    for (arm, source) in arms {
+                                        if same_place_expr(target, arm) {
+                                            continue;
+                                        }
+                                        self.mark_raw_store_moved_if_owning_into(
+                                            source,
+                                            value.span,
+                                            &element_ty,
+                                        );
                                     }
-                                    if maybe_owning {
-                                        self.mark_moved_if_owning(source, value.span);
-                                    } else {
+                                } else {
+                                    // A concrete destination moves its concrete
+                                    // arms at the declaration. An arm still
+                                    // typed by a parameter owes the same
+                                    // judgment at its owning instances, so it
+                                    // records the destination-aware duty.
+                                    for (arm, source) in
+                                        self.conditional_move_source_arms(value)
+                                    {
+                                        if same_place_expr(target, arm) {
+                                            continue;
+                                        }
                                         self.move_target(source, value.span);
                                     }
+                                }
+                                for source in self.type_param_conditional_sources(value) {
+                                    self.mark_raw_store_moved_if_owning_into(
+                                        source,
+                                        value.span,
+                                        &element_ty,
+                                    );
+                                }
+                                for source in self.maybe_owning_projection_move_sources(value) {
+                                    self.mark_raw_store_moved_if_owning_into(
+                                        source,
+                                        value.span,
+                                        &element_ty,
+                                    );
                                 }
                             } else {
                                 self.consume_owned_place(value, value.span);

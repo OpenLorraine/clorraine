@@ -329,6 +329,12 @@ struct FunctionChecker<'a, 'd> {
     elision_candidate_types: Vec<(String, crate::types::Ty)>,
     /// The parameter the returned view derives from, when it is a parameter.
     view_return_source: Option<String>,
+    /// The frame-local binding a type-parameter return reads.
+    ///
+    /// A return typed by a parameter becomes a view only at its view
+    /// instances; a local owner returned there is the concrete `E10035`
+    /// escape, which the instance audit reports.
+    view_return_local_owner: Option<String>,
     /// True when different returns derive from different parameters.
     view_return_source_mixed: bool,
     /// The parameter and member path of every direct returned view.
@@ -645,6 +651,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             elision_type_param_candidate: false,
             elision_candidate_types: Vec::new(),
             view_return_source: None,
+            view_return_local_owner: None,
             view_return_source_mixed: false,
             view_return_paths: Vec::new(),
             view_return_requirements: Vec::new(),

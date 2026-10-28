@@ -402,7 +402,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .iter()
             .map(|arg| self.argument_needs_statement_position(&arg.value))
             .collect();
-        let receiver_pin_store = dot_receiver.is_some_and(expression_has_effects)
+        let receiver_pin_store = dot_receiver.is_some()
             && store_positions.iter().any(|needs| *needs);
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
@@ -485,10 +485,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the post-call move-out empties caller storage, which a temporary
         // would hide — and a constant has no position to lose.
         for (position, arg) in args.iter().enumerate() {
-            let pin_store = expression_has_effects(&arg.value)
-                && store_positions[position + 1..]
-                    .iter()
-                    .any(|needs| *needs);
+            let pin_store = store_positions[position + 1..]
+                .iter()
+                .any(|needs| *needs);
             let value = self.lower_value(&arg.value);
             // A view-element array argument adopts each temporary element's
             // backing in this frame, exactly as a view binding does: the

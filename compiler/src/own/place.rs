@@ -635,7 +635,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// every site — including a return and a `take` argument — because the
     /// capture-move rule judges it instead.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, false, None, false);
+        self.mark_moved_if_owning_at(target, span, false, None, false, false);
     }
 
     /// Records a maybe-owning move whose destination type is known.
@@ -649,7 +649,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         destination: &Ty,
     ) {
-        self.mark_moved_if_owning_at(target, span, false, Some(destination), false);
+        self.mark_moved_if_owning_at(target, span, false, Some(destination), false, false);
     }
 
     /// Records a maybe-owning move into a return destination.
@@ -664,7 +664,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         destination: &Ty,
     ) {
-        self.mark_moved_if_owning_at(target, span, false, Some(destination), true);
+        self.mark_moved_if_owning_at(target, span, false, Some(destination), true, false);
+    }
+
+    /// Records a maybe-owning move into a raw-pointer store destination.
+    ///
+    /// The concrete raw store reports one lend diagnostic per site, so the
+    /// instance audit deduplicates the duty like a return site.
+    pub(super) fn mark_raw_store_moved_if_owning_into(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        destination: &Ty,
+    ) {
+        self.mark_moved_if_owning_at(target, span, false, Some(destination), false, true);
     }
 
     /// Records a maybe-owning move into a writable slot with a destination.
@@ -674,7 +687,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         destination: &Ty,
     ) {
-        self.mark_moved_if_owning_at(target, span, true, Some(destination), false);
+        self.mark_moved_if_owning_at(target, span, true, Some(destination), false, false);
     }
 
     /// Records a value-consuming move of a maybe-owning place.
@@ -688,6 +701,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         stores_into_slot: bool,
         destination: Option<&Ty>,
         return_site: bool,
+        raw_store_site: bool,
     ) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
@@ -766,6 +780,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 stores_into_slot,
                 destination: destination.cloned(),
                 return_site,
+                raw_store_site,
                 span,
             });
         }
@@ -3976,12 +3991,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // parameter; a return that derives from no parameter (a local or a
         // static value) keeps its own report and owes no candidate duty.
         if self.elision_type_param_candidate {
-            if let Some(returned) = self.view_return_source.clone() {
-                let returned = if self.view_return_source_mixed {
+            let returned = self.view_return_source.clone().and_then(|returned| {
+                if self.view_return_source_mixed {
                     None
                 } else {
                     Some(returned)
-                };
+                }
+            });
+            if self.view_return_source.is_some() || self.view_return_local_owner.is_some() {
                 self.view_return_requirements
                     .push(ir::RequiresViewReturnCandidates {
                         function: self.decl.name.clone(),
@@ -3989,6 +4006,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         returned,
                         returns: self.view_return_paths.clone(),
                         return_ty: self.returns.clone(),
+                        local_owner: self.view_return_local_owner.clone(),
                         span: self.decl.name_span,
                     });
             }
