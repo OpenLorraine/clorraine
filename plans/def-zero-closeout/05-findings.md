@@ -18,6 +18,8 @@
 | AR-7 | `DEF-191` drops the `unsafe` exemption at the index sites | 2026-10-28 (auto-design) |
 | AR-8 | `DEF-193` narrows through short-circuit right operands and loop heads | 2026-10-28 (auto-design) |
 | AR-9 | `DEF-263` evaluates a folded `len` receiver once | 2026-10-28 (auto-design) |
+| AR-20 | `DEF-169` escapes the type-key components (the user-approved ABI change) | 2026-10-28 |
+| AR-21 | `DEF-252` adds `E10044` for a move out of a `const` binding | 2026-10-28 |
 
 ## Phase 0 — Revalidation and Baseline (2026-10-28)
 
