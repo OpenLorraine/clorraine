@@ -147,6 +147,65 @@ func main(): i32 {
     }
 }
 
+/// A maybe-owning return judges a concrete lend arm per instance: an owning
+/// instance reports the lend move its concrete twin reports, while a view
+/// instance copies the arm.
+#[test]
+fn should_judge_a_lend_arm_of_a_maybe_owning_return_per_instance() {
+    let generic = r#"module spec.zc.return546;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, take h: T, s: String): T {
+    return c ? h : s;
+}
+
+func main(): i32 {
+    let s: String = stringOf("cd");
+    let r: String = pick<String>(true, stringOf("ab"), s);
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected("return546", generic, "E10034", 1, &["'s'"]);
+    let concrete = r#"module spec.zc.return546c;
+
+import { String, stringOf } from std.text;
+
+func pick(c: bool, take h: String, s: String): String {
+    return c ? h : s;
+}
+
+func main(): i32 {
+    let s: String = stringOf("cd");
+    let r: String = pick(true, stringOf("ab"), s);
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected("return546c", concrete, "E10034", 1, &["'s'"]);
+    let view = r#"module spec.zc.return546v;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, h: T, s: String): T {
+    return c ? h : s;
+}
+
+func main(): i32 {
+    let s: String = stringOf("cd");
+    let r: str = pick<str>(true, "ab", s);
+    return i32(len(r)) - 2;
+}
+"#;
+    let emitted = emit_host("return546v", view);
+    let output = run_strict_host("return546v", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "return546v: the view instance must copy the concrete lend arm; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A view destination that reads one member of a stored initializer literal
 /// releases the literal's residual sibling fields and keeps the read
 /// member's storage for the view.

@@ -265,6 +265,12 @@ pub struct RequiresNotLend {
     /// owning one. A move with no maybe-target destination keeps the strict
     /// judgment.
     pub destination: Option<Ty>,
+    /// True when the move is a return arm rather than a store or argument.
+    ///
+    /// A conditional return owes one duty per lend arm, but the concrete twin
+    /// reports the return site once; the audit deduplicates only return-site
+    /// duties and keeps the per-arm report for a take or store site.
+    pub return_site: bool,
     /// The move site, for the diagnostic span.
     pub span: Span,
 }

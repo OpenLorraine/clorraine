@@ -1596,7 +1596,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if (!self.sema.table.duplicable(&returns) || maybe_owning) && !returns.is_unknown() {
             if let Some(target) = self.place_target(value) {
                 if maybe_owning {
-                    self.mark_moved_if_owning(target, span);
+                    // The return destination is the maybe-owning type: an
+                    // owning instance moves the arm and judges a lend source,
+                    // while a view instance copies it.
+                    self.mark_return_moved_if_owning_into(target, span, &returns);
                 } else {
                     self.move_target(target, span);
                 }
@@ -1630,7 +1633,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // maybe-owning return records the duty instead.
                     for source in sources {
                         if maybe_owning {
-                            self.mark_moved_if_owning(source, span);
+                            self.mark_return_moved_if_owning_into(source, span, &returns);
                         } else {
                             self.move_target(source, span);
                         }
@@ -1649,6 +1652,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // an outer conditional.
                     for source in self.maybe_owning_projection_move_sources(value) {
                         self.mark_moved_if_owning(source, span);
+                    }
+                } else {
+                    // A maybe-owning destination also judges a concrete lend
+                    // arm: an owning instance moves it and reports the lend,
+                    // while a view instance copies it. The arm is absent from
+                    // the maybe-owning source list because its own type owns.
+                    let mut concrete = self.conditional_move_sources(value);
+                    concrete.extend(self.conditional_projection_move_sources(value));
+                    for source in concrete {
+                        self.mark_return_moved_if_owning_into(source, span, &returns);
                     }
                 }
             }

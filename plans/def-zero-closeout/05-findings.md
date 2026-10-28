@@ -184,6 +184,10 @@ a user decision.
 - `DEF-545` fixed: each consumed subrange is cleared in the same comma sequence
   as its move-out, so a second take of one saved destination cannot overwrite
   the first range. The case is ASAN clean; `make check` is green.
+- `DEF-546` fixed: a maybe-owning return threads its destination into the move
+  judgment; an owning instance reports the concrete lend arm's `E10034` once
+  per return site, while a view instance copies the arm. `make check` is
+  green.
 
 ## Phase 2 — Null and Type Rules
 

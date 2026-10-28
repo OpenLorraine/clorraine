@@ -635,7 +635,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// every site — including a return and a `take` argument — because the
     /// capture-move rule judges it instead.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, false, None);
+        self.mark_moved_if_owning_at(target, span, false, None, false);
     }
 
     /// Records a maybe-owning move whose destination type is known.
@@ -649,7 +649,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         destination: &Ty,
     ) {
-        self.mark_moved_if_owning_at(target, span, false, Some(destination));
+        self.mark_moved_if_owning_at(target, span, false, Some(destination), false);
+    }
+
+    /// Records a maybe-owning move into a return destination.
+    ///
+    /// A conditional return owes one duty per lend arm, but the concrete twin
+    /// reports the return site once; the flag lets the instance audit keep
+    /// that one-report shape while take and store sites keep their per-arm
+    /// reports.
+    pub(super) fn mark_return_moved_if_owning_into(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        destination: &Ty,
+    ) {
+        self.mark_moved_if_owning_at(target, span, false, Some(destination), true);
     }
 
     /// Records a maybe-owning move into a writable slot with a destination.
@@ -659,7 +674,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         destination: &Ty,
     ) {
-        self.mark_moved_if_owning_at(target, span, true, Some(destination));
+        self.mark_moved_if_owning_at(target, span, true, Some(destination), false);
     }
 
     /// Records a value-consuming move of a maybe-owning place.
@@ -672,6 +687,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
         stores_into_slot: bool,
         destination: Option<&Ty>,
+        return_site: bool,
     ) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
@@ -749,6 +765,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 writable_source,
                 stores_into_slot,
                 destination: destination.cloned(),
+                return_site,
                 span,
             });
         }

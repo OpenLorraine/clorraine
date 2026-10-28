@@ -217,6 +217,9 @@ fn check_not_lend_requirements(
     diagnostics: &mut Diagnostics,
 ) {
     let mut reported_stores = BTreeSet::new();
+    // One report per body site: a conditional return may owe the duty from
+    // several arms, but the concrete twin reports the site once.
+    let mut reported_sites: BTreeSet<(String, u32, u32)> = BTreeSet::new();
     for requirement in mono.not_lend_requirements() {
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
@@ -281,6 +284,15 @@ fn check_not_lend_requirements(
                 && !reported_stores.insert((
                     requirement.function.clone(),
                     requirement.span.start,
+                ))
+            {
+                continue;
+            }
+            if requirement.return_site
+                && !reported_sites.insert((
+                    requirement.function.clone(),
+                    requirement.span.start,
+                    requirement.span.end,
                 ))
             {
                 continue;
