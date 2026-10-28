@@ -1494,6 +1494,7 @@ impl<'a> Emitter<'a> {
         let source = format!("((unsigned long)({address}))");
         let source_end = format!("({source} + (unsigned long)(sizeof(*({address}))))");
         let mut parts = Vec::new();
+        let mut clears = Vec::new();
         for capture in &self.take_capture {
             if address == capture.address {
                 // The named place is the destination itself; the move-out
@@ -1502,6 +1503,12 @@ impl<'a> Emitter<'a> {
                 parts.push(format!("({} = 1)", capture.flag));
                 parts.push(format!("({} = 0)", capture.offset));
                 parts.push(format!("({} = {})", capture.length, capture.save_bytes));
+                // Clear the save at this move-out too: a second take of the
+                // same save must not be the only range the final clear sees.
+                clears.push(format!(
+                    "memset((char *)({}), 0, ({}))",
+                    capture.save_base, capture.save_bytes
+                ));
                 continue;
             }
             let destination = format!("((unsigned long)({}))", capture.address);
@@ -1526,7 +1533,15 @@ impl<'a> Emitter<'a> {
                 "({length} = ({contains}) ? ({end}) - ({start}) : {length})",
                 length = capture.length
             ));
+            // Each consumed subrange is cleared where it is consumed, so two
+            // takes that name different part of one saved destination both
+            // leave the save zeroed instead of overwriting one range.
+            clears.push(format!(
+                "(({contains}) && memset((char *)({}) + (({start}) - ({destination})), 0, (({end}) - ({start}))))",
+                capture.save_base
+            ));
         }
+        parts.extend(clears);
         parts.push(move_out);
         Some(format!("({})", parts.join(", ")))
     }
@@ -1559,6 +1574,7 @@ impl<'a> Emitter<'a> {
         };
         let source_end = format!("({source} + (unsigned long)({source_size}))");
         let mut parts = Vec::new();
+        let mut clears = Vec::new();
         for capture in &self.take_capture {
             if address == capture.address {
                 // The named place is the destination itself; the move-out runs
@@ -1567,6 +1583,10 @@ impl<'a> Emitter<'a> {
                 parts.push(format!("({} = 1)", capture.flag));
                 parts.push(format!("({} = 0)", capture.offset));
                 parts.push(format!("({} = {})", capture.length, capture.save_bytes));
+                clears.push(format!(
+                    "memset((char *)({}), 0, ({}))",
+                    capture.save_base, capture.save_bytes
+                ));
                 continue;
             }
             let destination = format!("((unsigned long)({}))", capture.address);
@@ -1591,7 +1611,12 @@ impl<'a> Emitter<'a> {
                 "({length} = ({contains}) ? ({end}) - ({start}) : {length})",
                 length = capture.length
             ));
+            clears.push(format!(
+                "(({contains}) && memset((char *)({}) + (({start}) - ({destination})), 0, (({end}) - ({start}))))",
+                capture.save_base
+            ));
         }
+        parts.extend(clears);
         parts.push(zero);
         format!("({})", parts.join(", "))
     }

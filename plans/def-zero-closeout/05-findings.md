@@ -181,6 +181,9 @@ a user decision.
   so the residual siblings free and the view keeps the member's storage. The
   case is strict-build and LSan clean under `RDC_ASAN=1`; `make check` is
   green.
+- `DEF-545` fixed: each consumed subrange is cleared in the same comma sequence
+  as its move-out, so a second take of one saved destination cannot overwrite
+  the first range. The case is ASAN clean; `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 

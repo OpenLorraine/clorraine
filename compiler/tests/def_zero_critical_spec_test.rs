@@ -102,6 +102,51 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// Two takes of one saved destination consume different subranges; each
+/// subrange is cleared at its own move-out, so the save release frees neither
+/// consumed value again.
+#[test]
+fn should_clear_every_subrange_consumed_from_a_saved_destination() {
+    let source = r#"module spec.zc.take545;
+
+import { String, stringOf } from std.text;
+
+struct Pair { first: String; sibling: String; }
+
+func eat(take s: String): i32 { return i32(len(s)); }
+
+func main(): i32 {
+    let pair: Pair = Pair { first: stringOf("ab"), sibling: stringOf("cd") };
+    let x: Pair = Pair { first: stringOf("ee"), sibling: stringOf("ff") };
+    let y: Pair = Pair { first: stringOf("gg"), sibling: stringOf("hh") };
+    let g: bool = true;
+    pair = (g && eat(take pair.first) > 0 && eat(take pair.sibling) > 0) ? x : y;
+    return i32(len(pair.first)) - 2;
+}
+"#;
+    let emitted = emit_host("take545", source);
+    let output = run_strict_host("take545", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "take545: both consumed subranges must be cleared before the save release; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if std::env::var_os("RDC_ASAN").is_some() {
+        let sanitized = run_sanitized_host("take545", &emitted);
+        let stderr = String::from_utf8_lossy(&sanitized.stderr);
+        assert_eq!(
+            sanitized.status.code(),
+            Some(0),
+            "take545: the sanitized run must stay clean; stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("LeakSanitizer") && !stderr.contains("AddressSanitizer"),
+            "take545: the save must not free a consumed handle twice; stderr:\n{stderr}"
+        );
+    }
+}
+
 /// A view destination that reads one member of a stored initializer literal
 /// releases the literal's residual sibling fields and keeps the read
 /// member's storage for the view.
