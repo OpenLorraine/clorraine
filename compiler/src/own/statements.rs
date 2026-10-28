@@ -1842,13 +1842,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // A local copy of a parameter aliases caller-backed
                     // storage, so a view returned through it is not the
                     // frame-owner escape; only a fresh or locally owned value
-                    // is.
+                    // is. The identity take/view round trip stays accepted
+                    // (the spec's identity instances).
                     let aliases_param = matches!(
                         self.bindings[id].copy_source,
                         Some(Provenance::Param(_))
                     );
                     if !aliases_param {
-                        self.view_return_local_owner = Some(self.bindings[id].name.clone());
+                        self.view_return_local_owner =
+                            Some(self.bindings[id].name.clone());
                     }
                 }
             }

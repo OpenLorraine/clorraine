@@ -1138,8 +1138,48 @@ impl<'a> Emitter<'a> {
         if matches!(value.kind, ValueKind::Conditional { .. }) {
             return self.retain_conditional_projection_roots(value);
         }
+        // A containing literal whose field is a store-needing inner literal
+        // must keep its other field initializers. Materialize the literal with
+        // the store form first, so every field evaluates in source order, then
+        // resolve the read member through the resulting init local.
+        let prepared = self.materialize_containing_literal(value);
+        let value = prepared.as_ref().unwrap_or(value);
         let (value, move_out) = self.retain_fresh_projection_root(value);
         (value, move_out.into_iter().collect())
+    }
+
+    /// Materializes the containing struct literal of a projection chain when
+    /// one of its fields is a store-needing inner literal local.
+    ///
+    /// Resolving the projection straight to the inner local would drop the
+    /// containing literal's other field initializers, including their effects;
+    /// the store form evaluates every field at its own position and leaves the
+    /// read member reachable through the resulting local.
+    fn materialize_containing_literal(&mut self, value: &Value) -> Option<Value> {
+        let mut cursor = value;
+        loop {
+            match &cursor.kind {
+                ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => cursor = base,
+                _ => break,
+            }
+        }
+        let ValueKind::StructLit { fields, .. } = &cursor.kind else {
+            return None;
+        };
+        let has_inner_literal = fields.iter().any(|(_, field)| {
+            matches!(
+                &field.kind,
+                ValueKind::Place(Place {
+                    base: PlaceBase::Local(name),
+                    ..
+                }) if self.init_literal_locals.contains(name)
+            )
+        });
+        if !has_inner_literal {
+            return None;
+        }
+        let stored = self.materialize_init_literal(cursor, None);
+        Some(Self::rebind_projection_root(value, stored))
     }
 
     /// The fresh owning root of a projection chain, with the chain's accessors.
@@ -1233,13 +1273,12 @@ impl<'a> Emitter<'a> {
         };
         let (local, root_read) = if let Some(name) = literal_root {
             // The literal already fills an init local of its own. Register
-            // every literal this initializer built so the residual sibling
-            // fields free at the initializer's end; the read member is emptied
-            // below and keeps its storage for the view.
-            for (literal, ty) in &self.init_global_literals {
-                if !self.init_owners.iter().any(|(owner, _)| owner == literal) {
-                    self.init_owners.push((literal.clone(), ty.clone()));
-                }
+            // only the resolved root: a containing literal materialized by the
+            // walk has already moved its inner fields into this root, while a
+            // sibling literal whose member widened into a view stored elsewhere
+            // must stay retained or the view backing is freed.
+            if !self.init_owners.iter().any(|(owner, _)| owner == &name) {
+                self.init_owners.push((name.clone(), root.ty.clone()));
             }
             (name, root.clone())
         } else {
@@ -1334,7 +1373,7 @@ impl<'a> Emitter<'a> {
         let retaining = std::mem::replace(&mut self.init_retain_owners, false);
         let (local, root_read) = self.materialize_init_local(root, Some(guard), &zero);
         self.init_retain_owners = retaining;
-        let read = Self::rebind_projection_root(arm, root_read);
+        let read = self.rebuild_read_path(root_read, &accessors, &arm.ty);
         let empty = match zero_view_helper(&arm.ty) {
             Some(helper) => format!("{helper}()"),
             None => self.empty_state(&arm.ty),

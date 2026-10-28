@@ -920,7 +920,10 @@ impl<'a> Emitter<'a> {
         // A literal zero divisor is a guaranteed runtime fault. Emitting the
         // division would fail the strict C build even though the trap runs
         // first, so the expression becomes the trap and a zero placeholder.
-        if matches!(op, BinaryOp::Div | BinaryOp::Rem) && literal_zero_value(right) {
+        if matches!(op, BinaryOp::Div | BinaryOp::Rem)
+            && self.substitute(&whole.ty).is_integer()
+            && constant_integer(right) == Some(0)
+        {
             // The dividend still evaluates first: a call in it must run once
             // before the fault. The comma expression keeps that order and
             // never spells the division the strict build rejects.
@@ -1560,15 +1563,70 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
     }
 }
 
-/// True when a value is a literal zero, possibly through a cast.
+/// Evaluates an integer constant value, including casts and arithmetic.
 ///
-/// A cast of a literal zero is the same guaranteed division fault as the bare
-/// literal, so the trap path must recognize both spellings.
-fn literal_zero_value(value: &Value) -> bool {
+/// The division trap must recognize a zero the C compiler sees as zero even
+/// when it is spelled through a cast or a folded expression (`u8(256)`,
+/// `i32(0.0)`, `2 - 2`). A non-constant value returns `None`, and a float
+/// operand is evaluated by its C truncation to the integer destination.
+fn constant_integer(value: &Value) -> Option<i128> {
     match &value.kind {
-        ValueKind::Int(0) => true,
-        ValueKind::Cast { value, .. } => literal_zero_value(value),
-        ValueKind::Unary { operand, .. } => literal_zero_value(operand),
-        _ => false,
+        ValueKind::Int(number) => Some(*number),
+        ValueKind::Bool(flag) => Some(if *flag { 1 } else { 0 }),
+        ValueKind::Char(character) => Some(*character as i128),
+        ValueKind::Float(number) => {
+            if number.is_finite() && number.abs() < i128::MAX as f64 {
+                Some(number.trunc() as i128)
+            } else {
+                None
+            }
+        }
+        ValueKind::Unary { op, operand } => {
+            let number = constant_integer(operand)?;
+            match op {
+                crate::ast::UnaryOp::Neg => number.checked_neg(),
+                crate::ast::UnaryOp::BitNot => Some(!number),
+                _ => None,
+            }
+        }
+        ValueKind::Cast { value: inner, .. } => {
+            let number = constant_integer(inner)?;
+            Some(cast_integer(number, &value.ty))
+        }
+        ValueKind::Binary { op, left, right } => {
+            let left = constant_integer(left)?;
+            let right = constant_integer(right)?;
+            match op {
+                BinaryOp::Add => left.checked_add(right),
+                BinaryOp::Sub => left.checked_sub(right),
+                BinaryOp::Mul => left.checked_mul(right),
+                BinaryOp::Div => left.checked_div(right),
+                BinaryOp::Rem => left.checked_rem(right),
+                BinaryOp::BitAnd => Some(left & right),
+                BinaryOp::BitOr => Some(left | right),
+                BinaryOp::BitXor => Some(left ^ right),
+                BinaryOp::Shl => u32::try_from(right).ok().and_then(|shift| left.checked_shl(shift)),
+                BinaryOp::Shr => u32::try_from(right).ok().and_then(|shift| left.checked_shr(shift)),
+                _ => None,
+            }
+        }
+        _ => None,
     }
+}
+
+/// Wraps an integer constant to a scalar destination's width and signedness.
+fn cast_integer(number: i128, ty: &Ty) -> i128 {
+    let TyKind::Scalar(scalar) = &ty.kind else {
+        return number;
+    };
+    let bits = crate::types::scalar_bits(*scalar);
+    if bits == 0 || bits >= 128 {
+        return number;
+    }
+    let mask = (1i128 << bits) - 1;
+    let mut wrapped = number & mask;
+    if crate::types::is_signed_scalar(*scalar) && (wrapped & (1i128 << (bits - 1))) != 0 {
+        wrapped -= 1i128 << bits;
+    }
+    wrapped
 }

@@ -402,8 +402,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .iter()
             .map(|arg| self.argument_needs_statement_position(&arg.value))
             .collect();
-        let receiver_pin_store = dot_receiver.is_some()
-            && store_positions.iter().any(|needs| *needs);
+        // A statement fill only reorders an earlier read when it can change
+        // the storage that read names; a pure materialization is a copy.
+        let effect_positions: Vec<bool> = args
+            .iter()
+            .zip(&store_positions)
+            .map(|(arg, needs)| *needs && expression_has_effects(&arg.value))
+            .collect();
+        // A callable receiver and a dot receiver are both position zero and
+        // must settle before a later argument's statement fill.
+        let receiver_pin_store =
+            (dot_receiver.is_some() || receiver.is_some() || self.is_dot_call(callee))
+                && effect_positions.iter().any(|needs| *needs);
+        // A callable field's holder is read only for its function pointer,
+        // which a later argument's ordinary effect cannot change; pinning it
+        // would only add a copy. The method/self receiver stays position zero.
+        let callable_field_receiver = match (&callee.kind, &receiver) {
+            (ExprKind::Member { name, .. }, Some(value)) => self
+                .sema
+                .table
+                .instance_field(&value.ty, name)
+                .is_some_and(|field| matches!(field.kind, TyKind::Func(_))),
+            _ => false,
+        };
+        let dot_callable_field = match &callee.kind {
+            ExprKind::Member { base, name } => self
+                .sema
+                .table
+                .instance_field(&self.ty(base), name)
+                .is_some_and(|field| matches!(field.kind, TyKind::Func(_))),
+            _ => false,
+        };
+        let receiver_self_pin =
+            receiver_pin_store && !callable_field_receiver && !dot_callable_field;
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
         // The modes come from the callable the call actually reaches: a
@@ -426,7 +457,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // zero: its element locations settle before the written arguments, so
         // a receiver index that updates a later argument's place runs first.
         let receiver = match receiver {
-            Some(value) if pin_updates => Some(self.pin_operand_location(value)),
+            Some(value) if pin_updates || receiver_self_pin => {
+                let value = self.pin_operand_location(value);
+                Some(if receiver_self_pin && !pin_updates {
+                    self.pin_update_value(value)
+                } else {
+                    value
+                })
+            }
             other => other,
         };
         if receiver.is_none() && self.is_dot_call(callee) {
@@ -436,7 +474,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // and an owning receiver binds at the same position exactly as
                 // a written argument does. A `take` receiver moves to the
                 // callee, so it keeps its place.
-                let value = if pin_updates || receiver_pin_store {
+                let value = if pin_updates || receiver_self_pin {
                     self.pin_operand_location(value)
                 } else {
                     value
@@ -451,7 +489,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // deferred spelling. The eager ownership binding has to be a
                 // statement, so it runs only where a statement has a position.
                 let eager_binding = self.defer_move_outs == 0 && !self.in_loop_condition;
-                let value = if pin_updates || receiver_pin_store {
+                let value = if pin_updates || receiver_self_pin {
                     if take {
                         if eager_binding && modes.is_some() {
                             self.materialize_owned_argument(value, true)
@@ -485,7 +523,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the post-call move-out empties caller storage, which a temporary
         // would hide — and a constant has no position to lose.
         for (position, arg) in args.iter().enumerate() {
-            let pin_store = store_positions[position + 1..]
+            let pin_store = effect_positions[position + 1..]
                 .iter()
                 .any(|needs| *needs);
             let value = self.lower_value(&arg.value);

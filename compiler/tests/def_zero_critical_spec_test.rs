@@ -147,6 +147,25 @@ func main(): i32 {
     }
 }
 
+/// A fresh owned temporary stored into a borrowed view slot dies with the
+/// frame and reports the concrete `E10030`.
+#[test]
+fn should_reject_a_statement_temporary_stored_into_a_borrowed_view_slot() {
+    let source = r#"module spec.zc.slottemporary;
+
+import { String, stringOf } from std.text;
+
+func put<T>(borrow slot: T): void { slot = stringOf("ab"); }
+
+func main(): i32 {
+    let slot: str = "zz";
+    put<str>(borrow slot);
+    return i32(slot[0]) - 97;
+}
+"#;
+    assert_rejected("slottemporary", source, "E10030", 1, &["statement temporary"]);
+}
+
 /// A foreign view stored into a borrowed view slot escapes into the caller's
 /// slot; the generic instance reports the same `E10033` as the concrete twin.
 #[test]
@@ -329,6 +348,58 @@ func main(): i32 {
     );
 }
 
+/// A raw out-slot store is duplicable and stays accepted; only a view slot
+/// carries the escape duty.
+#[test]
+fn should_accept_a_raw_out_slot_store() {
+    let source = r#"module spec.zc.rawslot;
+
+func put<T>(p: T, borrow slot: T): void { slot = p; }
+
+func main(): i32 {
+    let a: i32 = 1;
+    let p: raw i32 = unsafe &a;
+    let q: raw i32 = unsafe &a;
+    put<raw i32>(p, borrow q);
+    return 0;
+}
+"#;
+    let emitted = emit_host("rawslot", source);
+    let output = run_strict_host("rawslot", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "rawslot: a raw out-slot store must stay accepted; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A pure dot receiver evaluates before a later argument's statement fill.
+#[test]
+fn should_pin_a_pure_dot_receiver_before_a_later_fill() {
+    let source = r#"module spec.zc.receiverorder;
+
+struct B { v: i32; }
+struct Outer { xs: i32[2]; n: i32; }
+func set(p: raw B): i32[2] { unsafe { (*p).v = 9; } return [1, 2]; }
+func use(self: B, o: Outer): i32 { return self.v; }
+func main(): i32 {
+    let b: B = B { v: 5 };
+    let p: raw B = unsafe &b;
+    let r: i32 = b.use(Outer { xs: set(p), n: 2 });
+    return r;
+}
+"#;
+    let emitted = emit_host("receiverorder", source);
+    let output = run_strict_host("receiverorder", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "receiverorder: the receiver read must precede the later fill; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A maybe-owning return judges a concrete lend arm per instance: an owning
 /// instance reports the lend move its concrete twin reports, while a view
 /// instance copies the arm.
@@ -443,6 +514,116 @@ func main(): i32 {
             "leak553: the residual sibling must not leak and the view backing must stay alive; stderr:\n{stderr}"
         );
     }
+}
+
+/// A literal member widened into a view stored in another aggregate keeps its
+/// backing alive; only the resolved read root is released.
+#[test]
+fn should_not_free_a_view_backing_widened_from_a_literal_member() {
+    let source = r#"module spec.zc.viewmember;
+
+import { String, stringOf } from std.text;
+
+struct A { xs: i32[2]; a: String; }
+struct S { items: str[2]; tag: String; }
+
+let g: str = S { items: [A { xs: [1, 2], a: stringOf("ab") }.a, "zz"],
+                  tag: stringOf("tt") }.items[0];
+
+func main(): i32 { return i32(g[0]) - 97; }
+"#;
+    let emitted = emit_host("viewmember", source);
+    let output = run_strict_host("viewmember", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "viewmember: the widened literal member must stay alive; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if std::env::var_os("RDC_ASAN").is_some() {
+        let sanitized = run_sanitized_host("viewmember", &emitted);
+        let stderr = String::from_utf8_lossy(&sanitized.stderr);
+        assert_eq!(
+            sanitized.status.code(),
+            Some(0),
+            "viewmember: the sanitized run must stay clean; stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("LeakSanitizer") && !stderr.contains("AddressSanitizer"),
+            "viewmember: the view backing must not be freed; stderr:\n{stderr}"
+        );
+    }
+}
+
+/// A conditional initializer arm that reads through a resolved inner local
+/// reads the member the move-out empties, not a same-named nested member.
+#[test]
+fn should_read_the_resolved_member_on_a_conditional_initializer_arm() {
+    let source = r#"module spec.zc.condnested;
+
+import { String, stringOf } from std.text;
+
+struct C { c: String; }
+struct B { ys: i32[2]; inner: C; c: String; }
+struct A { inner: B; }
+func yes(): bool { return true; }
+
+let g: str = yes() ? A { inner: B { ys: [1, 2], inner: C { c: stringOf("zz") }, c: stringOf("ab") } }.inner.c
+                   : A { inner: B { ys: [3, 4], inner: C { c: stringOf("yy") }, c: stringOf("cd") } }.inner.c;
+
+func main(): i32 { return i32(g[0]) - 97; }
+"#;
+    let emitted = emit_host("condnested", source);
+    let output = run_strict_host("condnested", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "condnested: the conditional arm must read the resolved member; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if std::env::var_os("RDC_ASAN").is_some() {
+        let sanitized = run_sanitized_host("condnested", &emitted);
+        let stderr = String::from_utf8_lossy(&sanitized.stderr);
+        assert_eq!(
+            sanitized.status.code(),
+            Some(0),
+            "condnested: the sanitized run must stay clean; stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("LeakSanitizer") && !stderr.contains("AddressSanitizer"),
+            "condnested: the read member must match the move-out; stderr:\n{stderr}"
+        );
+    }
+}
+
+/// A containing literal whose field is a store-needing inner local keeps its
+/// other field initializers, including their effects, when a view reads a
+/// member through the inner local.
+#[test]
+fn should_keep_a_containing_literal_s_other_field_effects() {
+    let source = r#"module spec.zc.containingliteral;
+
+import { String, stringOf } from std.text;
+
+struct Inner { xs: i32[2]; name: String; }
+struct Outer { inner: Inner; other: i32; extra: i32; }
+
+let order: i32 = 0;
+func h(): i32 { order = order * 10 + 2; return 7; }
+func k(): i32 { order = order * 10 + 3; return 8; }
+
+let g: str = Outer { inner: Inner { xs: [1, 2], name: stringOf("ab") }, other: h(), extra: k() }.inner.name;
+
+func main(): i32 { return order - 23; }
+"#;
+    let emitted = emit_host("containingliteral", source);
+    let output = run_strict_host("containingliteral", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "containingliteral: both sibling effects must run; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// A module initializer with an impure fixed-array field followed by a
@@ -722,6 +903,123 @@ fn run_sanitized_host(tag: &str, emitted: &str) -> Output {
         .env("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")
         .output()
         .expect("failed to run the sanitized host program")
+}
+
+/// Only an integer literal zero divisor is a guaranteed fault. A cast of a
+/// literal zero and `%` trap; `~0` and a float zero divide normally.
+#[test]
+fn should_trap_only_an_integer_literal_zero_divisor() {
+    let cast = r#"module spec.zc.zerocast;
+
+func main(): i32 {
+    let a: i32 = 8;
+    let r: i32 = a / i32(0);
+    return r;
+}
+"#;
+    let emitted = emit_host("zerocast", cast);
+    assert!(
+        emitted.contains("cl_trap(\"E11210\""),
+        "zerocast: an integer cast zero must trap; emitted C:\n{emitted}"
+    );
+    let built = run_strict_host("zerocast", &emitted);
+    assert!(
+        !built.status.success(),
+        "zerocast: the trap must abort; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&built.stderr).contains("E11210"),
+        "zerocast: the runtime must name the trap; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    let bitnot = r#"module spec.zc.zerobitnot;
+
+func main(): i32 {
+    let a: i32 = 8;
+    let r: i32 = a / ~0;
+    return r + 8;
+}
+"#;
+    let emitted = emit_host("zerobitnot", bitnot);
+    let output = run_strict_host("zerobitnot", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "zerobitnot: the division must run normally; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let float = r#"module spec.zc.zerofloat;
+
+func main(): i32 {
+    let a: f64 = 1.0;
+    let r: f64 = a / f64(0);
+    if (r > 1000.0) { return 1; }
+    return 0;
+}
+"#;
+    let emitted = emit_host("zerofloat", float);
+    assert!(
+        !emitted.contains("E11210"),
+        "zerofloat: a float zero divide is Inf/NaN, not a trap; emitted C:\n{emitted}"
+    );
+    let output = run_strict_host("zerofloat", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "zerofloat: the division must produce Inf; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let narrowed = r#"module spec.zc.zeronarrow;
+
+func main(): i32 {
+    let x: u8 = 4;
+    let r: u8 = x / u8(256);
+    return i32(r);
+}
+"#;
+    let emitted = emit_host("zeronarrow", narrowed);
+    assert!(
+        emitted.contains("cl_trap(\"E11210\""),
+        "zeronarrow: a narrowing cast of 256 to u8 is zero; emitted C:\n{emitted}"
+    );
+    let built = run_strict_host("zeronarrow", &emitted);
+    assert!(
+        !built.status.success(),
+        "zeronarrow: the trap must abort; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    let float_cast = r#"module spec.zc.zerofloatcast;
+
+func main(): i32 {
+    let y: i32 = 4;
+    let r: i32 = y / i32(0.0);
+    return r;
+}
+"#;
+    let emitted = emit_host("zerofloatcast", float_cast);
+    assert!(
+        emitted.contains("cl_trap(\"E11210\""),
+        "zerofloatcast: an integer cast of float zero must trap; emitted C:\n{emitted}"
+    );
+
+    let rem = r#"module spec.zc.zerorem;
+
+func main(): i32 {
+    let a: i32 = 8;
+    let r: i32 = a % i32(0);
+    return r;
+}
+"#;
+    let emitted = emit_host("zerorem", rem);
+    assert!(
+        emitted.contains("cl_trap(\"E11210\""),
+        "zerorem: an integer cast zero remainder must trap; emitted C:\n{emitted}"
+    );
 }
 
 /// A runtime-indexed store of a struct literal with a fixed-array call field

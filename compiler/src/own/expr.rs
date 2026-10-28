@@ -1724,7 +1724,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         None
                     };
-                    if parameter_root.is_some() || local_source.is_some() {
+                    // A fresh owned temporary has no place and no named local;
+                    // its view backing dies with the frame just like a local's.
+                    let owned_temporary = parameter_root.is_none()
+                        && local_source.is_none()
+                        && self.place_target(value).is_none()
+                        && (!self.sema.table.duplicable(&value_ty) || self.maybe_owns(&value_ty))
+                        && !is_view_like(&value_ty);
+                    if parameter_root.is_some() || local_source.is_some() || owned_temporary {
                         let destination = self.bindings[id].name.clone();
                         let ir_name = self.bindings[id].ir_name.clone();
                         if self.recorded_whole_out_slot_store.insert((

@@ -268,3 +268,27 @@ re-audit classed them below the critical/major bar for this batch.
 
 Verification after the batch: `make check` green (75 targets, 110 goldens) and
 `make verify: all legs passed`. The Phase 1 re-review is the remaining gate.
+
+**Phase 1 review, second round (memory and emission lenses).** The re-audits
+found regressions in the first review-fix batch, all fixed:
+
+- Registering every initializer literal freed a view backing widened from a
+  literal member; only the resolved read root registers now, and a containing
+  literal is materialized with its field stores so its other initializers
+  (including effects) still run. The conditional nested-read path rebuilds the
+  read with the resolved accessors, matching its move-out.
+- `literal_zero_value` now evaluates integer constants, including casts and
+  folded arithmetic: `u8(256)`, `i32(0.0)`, and `2 - 2` trap, while `~0` and a
+  float zero divide normally. Cast and `%` forms are pinned.
+- A fresh owned temporary stored into a borrowed view slot reports `E10030`;
+  a raw out-slot stays accepted (it is duplicable, not a view slot).
+- A pure dot receiver and a pure written argument pin before a later
+  **effectful** statement fill; a pure materialization does not change the
+  emission. A callable-field holder keeps its direct call spelling.
+- The identity `take`/view round trip stays accepted per the spec identity
+  test; the local-owner view escape remains a separate row for the ruling
+  below.
+
+Second-round verification: `make check` green (75 targets, 110 goldens) and
+`make verify: all legs passed`; the new ASAN cases (widened literal member,
+conditional nested read) are clean.

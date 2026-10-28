@@ -519,7 +519,10 @@ func main(): i32 {
 "#;
     let emitted = emit_host("fieldborrow", source);
     assert_contains("fieldborrow", &emitted, "ClString __cl_owned0 = NULL;");
-    assert_contains("fieldborrow", &emitted, "(h.call)(__cl_owned0)");
+    // The callable is position zero, so its field read settles once before the
+    // owned argument's binding; the call reaches the stored func value.
+    assert_contains("fieldborrow", &emitted, "__cl_tmp0 = h.call;");
+    assert_contains("fieldborrow", &emitted, "(__cl_tmp0)(__cl_owned0)");
 }
 
 /// A `take` global call moves its argument out through the global's signature.

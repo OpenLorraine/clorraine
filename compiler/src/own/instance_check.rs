@@ -399,7 +399,9 @@ fn check_whole_out_slot_store_requirements(
                 // caller's slot. A foreign lend, a frame-local view, or a
                 // taken view therefore escapes exactly as the concrete
                 // spelling reports.
-                if !is_whole_slot_view(&slot) {
+                // A raw pointer is duplicable and not a view slot; only a
+                // view-like destination keeps the source's lifetime.
+                if !is_view_like(&slot) {
                     continue;
                 }
                 if requirement.source_is_local {
