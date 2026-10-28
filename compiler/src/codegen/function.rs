@@ -4098,10 +4098,33 @@ impl<'a> Emitter<'a> {
                 return;
             }
         }
+        // A pure fill has no effect to repeat, so its expression keeps the
+        // direct per-element spelling and the existing emission pins.
+        if super::program::init_operand_is_pure(fill) {
+            let lowered = self.store_text(fill, element);
+            for index in prefix..extent {
+                self.push(&format!("    {}[{index}] = {lowered};", target.text));
+            }
+            return;
+        }
+        // An impure fill evaluates once into a temporary and the temporary is
+        // copied to each covered element. Rendering the expression per element
+        // would re-run a call or conditional; the literal check already rejects
+        // a non-duplicable fill value, so the copy is safe.
         self.emit_guards(fill);
+        let local = self.unique_local("__cl_fill");
+        self.push(&format!(
+            "    {} = {};",
+            declarator(element, &local, &self.sema.table),
+            self.empty_state(element)
+        ));
         let lowered = self.store_text(fill, element);
+        self.push(&format!("    {local} = {lowered};"));
+        if prefix >= extent {
+            self.push(&format!("    if (sizeof({local})) {{ }}"));
+        }
         for index in prefix..extent {
-            self.push(&format!("    {}[{index}] = {lowered};", target.text));
+            self.push(&format!("    {}[{index}] = {local};", target.text));
         }
     }
 

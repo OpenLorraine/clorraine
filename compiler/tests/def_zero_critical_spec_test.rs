@@ -102,6 +102,57 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// A fill expression evaluates once, not once per covered element, including
+/// a nested-row fill that evaluates once per row.
+#[test]
+fn should_evaluate_an_array_fill_once() {
+    let statement = r#"module spec.zc.fill551;
+
+let calls: i32 = 0;
+
+func mk(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func main(): i32 {
+    let xs: i32[3] = [; mk()];
+    return xs[0] + calls * 10;
+}
+"#;
+    let emitted = emit_host("fill551", statement);
+    let output = run_strict_host("fill551", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(11),
+        "fill551: the statement fill must run once; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let nested = r#"module spec.zc.fill551b;
+
+let calls: i32 = 0;
+
+func mk(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func main(): i32 {
+    let m: i32[2][3] = [; [; mk()]];
+    return m[0][0] + calls * 10;
+}
+"#;
+    let emitted = emit_host("fill551b", nested);
+    let output = run_strict_host("fill551b", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(21),
+        "fill551b: the nested-row fill must run once per row; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Asserts the front end rejected `source` with the given code and count.
 fn assert_rejected(tag: &str, source: &str, code: &str, expected: usize, fragments: &[&str]) {
     let (_scratch, output, c_path) = compile_only(tag, source);

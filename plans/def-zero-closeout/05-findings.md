@@ -165,6 +165,10 @@ a user decision.
 - `DEF-544` fixed: a conditional stored through a raw-deref destination judges
   every arm as a named destination does; a plain (borrow) parameter arm reports
   one E10034 and is not moved. `make check` is green.
+- `DEF-551` fixed: an impure array fill evaluates once into a temporary and the
+  temporary is copied to every covered element; a pure fill keeps the inline
+  spelling. The statement and nested-row counts are pinned; the emission pins
+  stay green.
 
 ## Phase 2 — Null and Type Rules
 

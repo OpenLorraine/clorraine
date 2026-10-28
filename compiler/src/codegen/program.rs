@@ -3525,7 +3525,7 @@ fn stored_init_read_name(value: &Value) -> Option<String> {
 /// stored temporary runs effects or reads a name this phase cannot spell, so
 /// the init lowering stores it into an init local first; every other form is
 /// safe to render in place.
-fn init_operand_is_pure(value: &Value) -> bool {
+pub(super) fn init_operand_is_pure(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Call { .. }
         | ValueKind::Intrinsic { .. }
