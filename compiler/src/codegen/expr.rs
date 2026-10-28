@@ -917,6 +917,20 @@ impl<'a> Emitter<'a> {
 
     /// Renders a binary operator with the wrapping and masking strategy.
     fn binary(&self, op: BinaryOp, left: &Value, right: &Value, whole: &Value) -> String {
+        // A literal zero divisor is a guaranteed runtime fault. Emitting the
+        // division would fail the strict C build even though the trap runs
+        // first, so the expression becomes the trap and a zero placeholder.
+        if matches!(op, BinaryOp::Div | BinaryOp::Rem)
+            && matches!(right.kind, ValueKind::Int(0))
+        {
+            // The dividend still evaluates first: a call in it must run once
+            // before the fault. The comma expression keeps that order and
+            // never spells the division the strict build rejects.
+            return format!(
+                "((void)({}), cl_trap(\"E11210\", \"integer division by zero\"), 0)",
+                self.value(left)
+            );
+        }
         if let Some(test) = self.view_null_test(op, left, right) {
             return test;
         }

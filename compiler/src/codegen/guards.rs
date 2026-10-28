@@ -1919,6 +1919,11 @@ impl<'a> Emitter<'a> {
         if !ty.is_integer() {
             return None;
         }
+        // The value renderer turns a literal zero divisor into the trap
+        // expression, so a second guard would only repeat the trap.
+        if matches!(right.kind, ValueKind::Int(0)) {
+            return None;
+        }
         let dividend = self.value(left);
         let divisor = self.value(right);
         Some(match scalar_of(&ty) {
