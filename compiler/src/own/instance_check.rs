@@ -1281,6 +1281,13 @@ fn check_view_return_candidates(
                 continue;
             }
             let bindings = crate::types::instance_bindings(&params, &instance.args);
+            // A type-parameter return is a view only at the instances whose
+            // argument substitutes to an elided view. Every other instance
+            // needs no lend candidate.
+            let return_ty = crate::types::substitute(&requirement.return_ty, &bindings);
+            if !crate::borrow::is_elided_view(&return_ty) {
+                continue;
+            }
             // A return that reads static storage needs no lend candidate: the
             // substituted root and member path prove the `static str` (or an
             // array of static views) exactly as the concrete return does.

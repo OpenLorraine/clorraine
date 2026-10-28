@@ -195,6 +195,12 @@ pub struct RequiresViewReturnCandidates {
     /// the root and projects the path to prove the static storage. An empty
     /// list is a return whose path the expression walk cannot name.
     pub returns: Vec<(String, Vec<crate::types::PlacePathStep>)>,
+    /// The declared return type.
+    ///
+    /// A return typed with a type parameter is a view only at the instances
+    /// whose argument substitutes to an elided view; every other instance
+    /// needs no lend candidate.
+    pub return_ty: Ty,
     /// The function name's span, where the view-return rule reports.
     pub span: Span,
 }

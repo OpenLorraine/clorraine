@@ -193,6 +193,10 @@ a user decision.
   judgment, so a view instance copies a concrete lend arm instead of
   reporting the owning-instance move. The view element, take, and read cases
   are pinned; `make check` is green.
+- `DEF-556` fixed: a type-parameter return records a view-return candidate
+  duty; at a view instance the substituted return applies the concrete
+  one-candidate rule, while a single candidate or a static return stays
+  accepted. `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 

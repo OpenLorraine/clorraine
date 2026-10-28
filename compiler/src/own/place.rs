@@ -3907,7 +3907,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the return's actual derivation against it: a view return must derive
     /// from exactly one view-like lend parameter, not merely count one.
     pub(super) fn elision_prelude(&mut self) {
-        if !is_elided_view(&self.returns) {
+        // A type-parameter return becomes a view at its view instances; the
+        // declaration still collects the candidates so the instance audit can
+        // apply the same one-candidate rule there.
+        let type_param_return = super::lower::mentions_type_param(&self.returns);
+        if !is_elided_view(&self.returns) && !type_param_return {
             return;
         }
         // The declaration-time count keeps the concrete twin's candidates: a
@@ -3947,9 +3951,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // returned parameter; the instance audit re-counts them after the
         // substitution. A concrete-only candidate set stays a declaration-time
         // judgment.
-        self.elision_type_param_candidate = all_candidates
-            .iter()
-            .any(|(_, ty)| super::lower::mentions_type_param(ty));
+        self.elision_type_param_candidate = type_param_return
+            || all_candidates
+                .iter()
+                .any(|(_, ty)| super::lower::mentions_type_param(ty));
         self.elision_candidate_types = all_candidates;
     }
 
@@ -3960,7 +3965,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so a view read through a different parameter is rejected here at the
     /// declaration instead of leaking a borrowed view to the caller.
     pub(super) fn elision_postlude(&mut self) {
-        if !is_elided_view(&self.returns) {
+        if !is_elided_view(&self.returns)
+            && !super::lower::mentions_type_param(&self.returns)
+        {
             return;
         }
         // A candidate set that still mentions a type parameter is judged per
@@ -3981,6 +3988,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         candidates: self.elision_candidate_types.clone(),
                         returned,
                         returns: self.view_return_paths.clone(),
+                        return_ty: self.returns.clone(),
                         span: self.decl.name_span,
                     });
             }

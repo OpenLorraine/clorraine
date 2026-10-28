@@ -147,6 +147,67 @@ func main(): i32 {
     }
 }
 
+/// A type-parameter return becomes a view at its view instances and owes the
+/// same one-candidate rule as the concrete twin; a single candidate stays
+/// accepted.
+#[test]
+fn should_apply_the_one_candidate_rule_to_a_type_parameter_view_return() {
+    let two = r#"module spec.zc.return556;
+
+func f<T>(s: str, t: str): T { return t; }
+
+func main(): i32 {
+    let r: str = f<str>("ab", "cd");
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected("return556", two, "E10036", 1, &[]);
+    let concrete = r#"module spec.zc.return556c;
+
+func f(s: str, t: str): str { return t; }
+
+func main(): i32 {
+    let r: str = f("ab", "cd");
+    return i32(len(r)) - 2;
+}
+"#;
+    assert_rejected("return556c", concrete, "E10036", 1, &[]);
+    let one = r#"module spec.zc.return556one;
+
+func f<T>(s: str): T { return s; }
+
+func main(): i32 {
+    let r: str = f<str>("ab");
+    return i32(len(r)) - 2;
+}
+"#;
+    let emitted = emit_host("return556one", one);
+    let output = run_strict_host("return556one", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "return556one: the single view candidate must stay accepted; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let static_return = r#"module spec.zc.return556static;
+
+func f<T>(s: str): T { return "ab"; }
+
+func main(): i32 {
+    let r: str = f<str>("cd");
+    return i32(len(r)) - 2;
+}
+"#;
+    let emitted = emit_host("return556static", static_return);
+    let output = run_strict_host("return556static", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "return556static: a static view return needs no candidate; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A literal element, a take argument, and a read materialization thread the
 /// destination into the per-instance judgment, so a view instance copies a
 /// concrete lend arm instead of reporting the owning-instance move.
