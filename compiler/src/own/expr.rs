@@ -603,9 +603,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.maybe_owns(&ty) {
             // A read that materializes the conditional moves the chosen arm for
             // an owning instance, so a later use of either arm deposits the
-            // duplicability duty.
+            // duplicability duty. The materialized value is the destination: a
+            // view instance copies the arm and stays accepted.
             for source in self.maybe_owning_move_sources(expr) {
-                self.mark_moved_if_owning(source, expr.span);
+                self.mark_moved_if_owning_into(source, expr.span, &ty);
             }
             return;
         }
@@ -877,24 +878,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if self.discarded_conditional {
                         continue;
                     }
-                    let field_ty = self.ty(&field.value);
-                    if self.maybe_owns(&field_ty) {
-                        for source in self.maybe_owning_move_sources(&field.value) {
-                            self.mark_moved_if_owning(source, field.value.span);
+                    // The declared field type is the destination. A maybe-
+                    // owning field defers the arm judgment to its instances;
+                    // a view or duplicable field copies the arm; a concrete
+                    // owning field moves it exactly as the concrete spelling
+                    // does.
+                    let field_destination = self
+                        .sema
+                        .table
+                        .instance_field(&self.ty(expr), &field.name)
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    if self.maybe_owns(&field_destination) {
+                        let mut sources = self.maybe_owning_move_sources(&field.value);
+                        sources.extend(self.conditional_move_sources(&field.value));
+                        sources.extend(self.type_param_conditional_sources(&field.value));
+                        sources.extend(self.maybe_owning_projection_move_sources(&field.value));
+                        for source in sources {
+                            self.mark_moved_if_owning_into(
+                                source,
+                                field.value.span,
+                                &field_destination,
+                            );
                         }
+                    } else if self.sema.table.duplicable(&field_destination) {
+                        // The field copies its chosen arm; the source stays
+                        // usable.
                     } else {
                         for source in self.conditional_move_sources(&field.value) {
                             self.move_target(source, field.value.span);
                         }
-                    }
-                    // A conditional field whose arm is rooted at a type
-                    // parameter owns only at some instances, so the field
-                    // records the per-instance duty the audit resolves.
-                    for source in self.type_param_conditional_sources(&field.value) {
-                        self.mark_moved_if_owning(source, field.value.span);
-                    }
-                    for source in self.maybe_owning_projection_move_sources(&field.value) {
-                        self.mark_moved_if_owning(source, field.value.span);
+                        // A conditional field whose arm is rooted at a type
+                        // parameter owns only at some instances, so the field
+                        // records the per-instance duty the audit resolves.
+                        for source in self.type_param_conditional_sources(&field.value) {
+                            self.mark_moved_if_owning(source, field.value.span);
+                        }
+                        for source in self.maybe_owning_projection_move_sources(&field.value) {
+                            self.mark_moved_if_owning(source, field.value.span);
+                        }
                     }
                 }
             }
@@ -920,13 +941,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         continue;
                     }
                     self.consume_owned_place(element, element.span);
-                    // An owned conditional element moves its chosen arm into
-                    // the element; a maybe-owning element records the duty.
-                    let element_ty = self.ty(element);
+                    // The element's destination decides whether an arm moves:
+                    // a maybe-owning element type records the duty, a view or
+                    // duplicable one copies, and a concrete owning one moves
+                    // exactly as the concrete spelling does.
+                    let element_ty = ty.iterated_element();
                     if self.maybe_owns(&element_ty) {
-                        for source in self.maybe_owning_move_sources(element) {
-                            self.mark_moved_if_owning(source, element.span);
+                        let mut sources = self.maybe_owning_move_sources(element);
+                        sources.extend(self.conditional_move_sources(element));
+                        sources.extend(self.type_param_conditional_sources(element));
+                        sources.extend(self.maybe_owning_projection_move_sources(element));
+                        for source in sources {
+                            self.mark_moved_if_owning_into(source, element.span, &element_ty);
                         }
+                    } else if self.sema.table.duplicable(&element_ty) {
+                        // A view or duplicable element copies its chosen arm;
+                        // the source stays usable.
                     } else {
                         for source in self.conditional_move_sources(element) {
                             // A projected arm (an array row) travels through
@@ -939,15 +969,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 }
                             }
                         }
-                    }
-                    // An element whose arm is rooted at a type parameter owns
-                    // only at some instances, so the store records the
-                    // per-instance duty exactly as a struct-literal field does.
-                    for source in self.type_param_conditional_sources(element) {
-                        self.mark_moved_if_owning(source, element.span);
-                    }
-                    for source in self.maybe_owning_projection_move_sources(element) {
-                        self.mark_moved_if_owning(source, element.span);
+                        // An element whose arm is rooted at a type parameter
+                        // owns only at some instances, so the store records the
+                        // per-instance duty exactly as a struct-literal field
+                        // does.
+                        for source in self.type_param_conditional_sources(element) {
+                            self.mark_moved_if_owning(source, element.span);
+                        }
+                        for source in self.maybe_owning_projection_move_sources(element) {
+                            self.mark_moved_if_owning(source, element.span);
+                        }
                     }
                 }
                 if let Some(fill) = fill {

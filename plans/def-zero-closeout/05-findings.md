@@ -188,6 +188,11 @@ a user decision.
   judgment; an owning instance reports the concrete lend arm's `E10034` once
   per return site, while a view instance copies the arm. `make check` is
   green.
+- `DEF-547` fixed: the literal field/element visitor, the take-argument path,
+  and the read materialization thread the destination type into the move
+  judgment, so a view instance copies a concrete lend arm instead of
+  reporting the owning-instance move. The view element, take, and read cases
+  are pinned; `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 

@@ -147,6 +147,85 @@ func main(): i32 {
     }
 }
 
+/// A literal element, a take argument, and a read materialization thread the
+/// destination into the per-instance judgment, so a view instance copies a
+/// concrete lend arm instead of reporting the owning-instance move.
+#[test]
+fn should_accept_view_instances_of_literal_argument_and_read_maybe_targets() {
+    let element = r#"module spec.zc.maybe547element;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> { items: T[2]; }
+
+func mk<T>(c: bool, s: String, v: str): Wrap<T> {
+    return Wrap<T> { items: [c ? v : s, v] };
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let w: Wrap<str> = mk<str>(true, s, "cd");
+    return i32(len(w.items[0])) - 2;
+}
+"#;
+    let emitted = emit_host("maybe547element", element);
+    let output = run_strict_host("maybe547element", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "maybe547element: the view element must copy the lend arm; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let argument = r#"module spec.zc.maybe547argument;
+
+import { String, stringOf } from std.text;
+
+func eat<T>(take v: T): i32 { return i32(len(v)); }
+
+func pick<T>(c: bool, s: String, v: str): i32 {
+    return eat<T>(take (c ? v : s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return pick<str>(true, s, "cd") - 2;
+}
+"#;
+    let emitted = emit_host("maybe547argument", argument);
+    let output = run_strict_host("maybe547argument", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "maybe547argument: the view take must copy the lend arm; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let read = r#"module spec.zc.maybe547read;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(c: bool, p: T[2], q: T[2]): i32 {
+    let n: i32 = i32(len((c ? p : q)[0]));
+    return n;
+}
+
+func main(): i32 {
+    let p: str[2] = ["ab", "cd"];
+    let q: str[2] = ["ef", "gh"];
+    return pick<str>(true, p, q) - 2;
+}
+"#;
+    let emitted = emit_host("maybe547read", read);
+    let output = run_strict_host("maybe547read", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "maybe547read: the view read must copy the lend arm; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A maybe-owning return judges a concrete lend arm per instance: an owning
 /// instance reports the lend move its concrete twin reports, while a view
 /// instance copies the arm.

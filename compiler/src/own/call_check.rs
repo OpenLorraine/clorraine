@@ -1752,6 +1752,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match mode {
             Mode::Take => {
                 let maybe_owning = self.maybe_owns(arg_ty);
+                // The callee's parameter type is the destination of the take.
+                // A view instance copies a lend arm instead of consuming it,
+                // exactly as its concrete twin does; only an owning
+                // destination reports the lend move.
+                let destination = expected.unwrap_or(arg_ty);
                 // A move through a borrow element view is the v1 element-move
                 // limit once the moved place owns; while its type is still a
                 // parameter the site records the duty for the per-instance
@@ -1768,9 +1773,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         && self.bindings[*id].mode != Mode::Take
                         && (arg_ty.is_unknown() || crate::types::contains_param(arg_ty))
                     {
-                        self.mark_moved_if_owning(
+                        self.mark_moved_if_owning_into(
                             PlaceTarget::Local(*id, projections.clone()),
                             span,
+                            destination,
                         );
                     }
                 }
@@ -1783,7 +1789,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if let Some(arms) = self.unresolved_conditional_place_arms(expr) {
                         for (source, arm_ty) in arms {
                             if self.root_owns_moves(&source) {
-                                self.mark_moved_if_owning(source, span);
+                                self.mark_moved_if_owning_into(source, span, destination);
                                 continue;
                             }
                             if let PlaceTarget::Local(id, projections) = &source {
@@ -1799,17 +1805,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // whole arm records the maybe-owning move, exactly as the same
                 // arm does at a return or a binding.
                 for source in self.type_param_conditional_sources(expr) {
-                    self.mark_moved_if_owning(source, span);
+                    self.mark_moved_if_owning_into(source, span, destination);
                 }
                 // A projection over a conditional names each inner lend arm
                 // even when the projected conditional is the whole argument.
                 for source in self.maybe_owning_projection_move_sources(expr) {
-                    self.mark_moved_if_owning(source, span);
+                    self.mark_moved_if_owning_into(source, span, destination);
                 }
                 if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {
                         if maybe_owning {
-                            self.mark_moved_if_owning(target, span);
+                            self.mark_moved_if_owning_into(target, span, destination);
                         } else {
                             self.move_target(target, span);
                         }
@@ -1843,7 +1849,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // argument records the duplicability duty instead.
                             for source in sources {
                                 if maybe_owning {
-                                    self.mark_moved_if_owning(source, span);
+                                    self.mark_moved_if_owning_into(source, span, destination);
                                 } else {
                                     self.move_target(source, span);
                                 }
