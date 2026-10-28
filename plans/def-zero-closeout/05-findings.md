@@ -154,6 +154,11 @@ a user decision.
 
 ## Phase 1 — Critical/Major Backlog
 
+- `DEF-549` fixed at `2cf9c5e`: a literal zero divisor in a non-constant
+  division emits the E11210 trap and never the bare division; the
+  `def_zero_critical_spec_test` case is red before the fix and the full
+  `make check` is green (75 targets, 110 goldens).
+
 ## Phase 2 — Null and Type Rules
 
 ## Phase 3 — Calls and Resolution
