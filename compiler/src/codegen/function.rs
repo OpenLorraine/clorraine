@@ -805,6 +805,32 @@ impl<'a> Emitter<'a> {
                         let target = ArrayTarget::object(&target_c);
                         self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, literal_self_read);
                     }
+                } else if !literal_self_read && self.value_needs_struct_stores(value) {
+                    // A struct literal with a fixed-array call field (or a
+                    // source-order/owned-field shape) has no C initializer
+                    // form: the call needs its hidden fixed-array destination.
+                    // Build the literal in a statement temporary, then store
+                    // the temporary and empty it so the destination owns it.
+                    let ValueKind::StructLit { fields, .. } = &value.kind else {
+                        unreachable!("value_needs_struct_stores accepted a non-literal");
+                    };
+                    let ty = self.substitute(&value.ty);
+                    let dest = self.unique_local("__cl_store");
+                    self.push("    {");
+                    self.push(&format!(
+                        "        {} = {};",
+                        declarator(&ty, &dest, &self.sema.table),
+                        self.empty_state(&ty)
+                    ));
+                    self.emit_struct_literal_fields(&dest, &ty, fields);
+                    if self.needs_drop(&pointer_ty) {
+                        self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
+                    }
+                    self.push(&format!("        *({pointer_c}) = {dest};"));
+                    if self.needs_drop(&ty) {
+                        self.emit_move_zero(&dest, &ty);
+                    }
+                    self.push("    }");
                 } else if self.needs_drop(&pointer_ty) {
                     // An owned conditional moves the chosen arm into the
                     // element per path, exactly as it does for a named
@@ -2753,6 +2779,15 @@ impl<'a> Emitter<'a> {
     /// the per-field store form, exactly as the direct store spelling does. A
     /// nested literal renders inside the same initializer, so its own fields
     /// are searched too.
+    /// True when a struct literal must be built with per-field stores.
+    fn value_needs_struct_stores(&self, value: &Value) -> bool {
+        if let ValueKind::StructLit { name, fields } = &value.kind {
+            self.struct_literal_needs_stores(name, fields)
+        } else {
+            false
+        }
+    }
+
     fn fixed_array_field_needs_stores(&self, fields: &[(String, Value)]) -> bool {
         fields.iter().any(|(_, field)| {
             let field_ty = self.substitute(&field.ty);

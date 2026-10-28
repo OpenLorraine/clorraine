@@ -158,6 +158,10 @@ a user decision.
   division emits the E11210 trap and never the bare division; the
   `def_zero_critical_spec_test` case is red before the fix and the full
   `make check` is green (75 targets, 110 goldens).
+- `DEF-548` fixed at the runtime-index store path: a struct literal with a
+  fixed-array call field is built in a statement temporary, stored, and
+  emptied; the strict build and the stored value are pinned in
+  `def_zero_critical_spec_test`; `make check` is green.
 
 ## Phase 2 — Null and Type Rules
 

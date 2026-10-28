@@ -102,6 +102,63 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// Builds and runs one emitted host translation unit under the strict set.
+fn run_strict_host(tag: &str, emitted: &str) -> Output {
+    let scratch = ScratchDir::new(&format!("{tag}-run"));
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    Command::new(&program)
+        .output()
+        .expect("failed to run the host program")
+}
+
+/// A runtime-indexed store of a struct literal with a fixed-array call field
+/// builds the literal in a temporary so the call receives its hidden
+/// destination, then stores and empties the temporary.
+#[test]
+fn should_store_a_runtime_indexed_literal_with_a_fixed_array_call_field() {
+    let source = r#"module spec.zc.store548;
+
+struct S { xs: i32[2]; }
+
+func mkArr(): i32[2] { return [7, 8]; }
+
+func main(): i32 {
+    let i: usize = 1;
+    let arr: S[2] = [S { xs: [1, 2] }, S { xs: [3, 4] }];
+    arr[i] = S { xs: mkArr() };
+    return arr[1].xs[0] - 7;
+}
+"#;
+    let emitted = emit_host("store548", source);
+    let output = run_strict_host("store548", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "store548: the stored literal must hold the call result; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A literal zero divisor in a non-constant division is a runtime fault, and
 /// the emitted C must not contain the bare division the strict build rejects.
 #[test]
