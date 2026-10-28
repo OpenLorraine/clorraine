@@ -140,6 +140,12 @@ pub(super) struct Emitter<'a> {
     /// The release pass frees them in reverse order at the init function's
     /// end; a local an untaken path left zero drops nothing.
     pub(super) init_owners: Vec<(String, Ty)>,
+    /// Init locals that hold a store-needing struct literal.
+    ///
+    /// A view destination that reads one member of such a literal moves the
+    /// member out after the store and registers the local for release, so the
+    /// residual sibling fields free while the view keeps the member's storage.
+    pub(super) init_literal_locals: BTreeSet<String>,
     /// True while the current global's initializer feeds a view destination.
     ///
     /// A view keeps the storage it points into for the program's lifetime, so
@@ -326,6 +332,7 @@ impl<'a> Emitter<'a> {
             local_names: BTreeMap::new(),
             init_locals: 0,
             init_owners: Vec::new(),
+            init_literal_locals: BTreeSet::new(),
             init_retain_owners: false,
             init_skip_owner_binding: false,
             pointer_params: BTreeSet::new(),

@@ -102,6 +102,46 @@ fn build_strict_host(tag: &str, emitted: &str) {
     );
 }
 
+/// A view destination that reads one member of a stored initializer literal
+/// releases the literal's residual sibling fields and keeps the read
+/// member's storage for the view.
+#[test]
+fn should_release_the_residual_fields_of_a_stored_initializer_literal() {
+    let source = r#"module spec.zc.leak553;
+
+import { String, stringOf } from std.text;
+
+struct S { xs: i32[2]; a: String; b: String; }
+
+let g: str = S { xs: [1, 2], a: stringOf("ab"), b: stringOf("cd") }.a;
+
+func main(): i32 {
+    return i32(len(g)) - 2;
+}
+"#;
+    let emitted = emit_host("leak553", source);
+    let output = run_strict_host("leak553", &emitted);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "leak553: the view must read the kept member; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if std::env::var_os("RDC_ASAN").is_some() {
+        let sanitized = run_sanitized_host("leak553", &emitted);
+        let stderr = String::from_utf8_lossy(&sanitized.stderr);
+        assert_eq!(
+            sanitized.status.code(),
+            Some(0),
+            "leak553: the sanitized run must stay clean; stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("LeakSanitizer") && !stderr.contains("AddressSanitizer"),
+            "leak553: the residual sibling must not leak and the view backing must stay alive; stderr:\n{stderr}"
+        );
+    }
+}
+
 /// A module initializer stores an effectful field at its source position, so
 /// a later field's statement fill cannot hoist above it.
 #[test]
@@ -298,6 +338,39 @@ fn run_strict_host(tag: &str, emitted: &str) -> Output {
     Command::new(&program)
         .output()
         .expect("failed to run the host program")
+}
+
+/// Builds and runs one emitted host translation unit under AddressSanitizer
+/// with leak detection.
+fn run_sanitized_host(tag: &str, emitted: &str) -> Output {
+    let scratch = ScratchDir::new(&format!("{tag}-asan"));
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitized host build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    Command::new(&program)
+        .env("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")
+        .output()
+        .expect("failed to run the sanitized host program")
 }
 
 /// A runtime-indexed store of a struct literal with a fixed-array call field

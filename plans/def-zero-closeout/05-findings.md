@@ -176,6 +176,11 @@ a user decision.
 - `DEF-555` fixed: an effectful initializer field stores into an init local at
   its source position when a later field needs a statement, so the later fill
   cannot hoist above it. The 1-2 order is pinned; `make check` is green.
+- `DEF-553` fixed: a store-needing initializer literal registers its local for
+  release; a view destination that reads one member empties that member first,
+  so the residual siblings free and the view keeps the member's storage. The
+  case is strict-build and LSan clean under `RDC_ASAN=1`; `make check` is
+  green.
 
 ## Phase 2 — Null and Type Rules
 

@@ -975,6 +975,7 @@ impl<'a> Emitter<'a> {
             self.push("{");
             self.init_locals = 0;
             self.init_owners.clear();
+            self.init_literal_locals.clear();
             // An initializer resolves its names in its own module: a
             // same-named function elsewhere must not supply the callee's
             // symbol, signature, or parameter modes.
@@ -1166,8 +1167,16 @@ impl<'a> Emitter<'a> {
                 _ => break,
             }
         }
+        let literal_root = matches!(
+            &cursor.kind,
+            ValueKind::Place(Place {
+                base: PlaceBase::Local(name),
+                ..
+            }) if self.init_literal_locals.contains(name)
+        );
         if accessors.is_empty()
-            || !matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+            || !(matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+                || literal_root)
             || !self.needs_drop(&cursor.ty)
             // The read position itself need not own storage: a view position
             // reads storage the root never owned, so the root still binds for
@@ -1192,12 +1201,32 @@ impl<'a> Emitter<'a> {
         let Some((root, accessors)) = self.fresh_projection_chain(value) else {
             return (value.clone(), None);
         };
-        let zero = self.empty_state(&root.ty);
-        // The root's fields free at the initializer's end: the release
-        // registration must see the local even under a retaining destination.
-        let retaining = std::mem::replace(&mut self.init_retain_owners, false);
-        let (local, root_read) = self.materialize_init_local(root, None, &zero);
-        self.init_retain_owners = retaining;
+        let literal_root = match &root.kind {
+            ValueKind::Place(Place {
+                base: PlaceBase::Local(name),
+                ..
+            }) if self.init_literal_locals.contains(name) => Some(name.clone()),
+            _ => None,
+        };
+        let (local, root_read) = if let Some(name) = literal_root {
+            // The literal already fills an init local of its own. Register it
+            // so its residual sibling fields free at the initializer's end;
+            // the read member is emptied below and keeps its storage for the
+            // view.
+            if !self.init_owners.iter().any(|(owner, _)| owner == &name) {
+                self.init_owners.push((name.clone(), root.ty.clone()));
+            }
+            (name, root.clone())
+        } else {
+            let zero = self.empty_state(&root.ty);
+            // The root's fields free at the initializer's end: the release
+            // registration must see the local even under a retaining
+            // destination.
+            let retaining = std::mem::replace(&mut self.init_retain_owners, false);
+            let (local, root_read) = self.materialize_init_local(root, None, &zero);
+            self.init_retain_owners = retaining;
+            (local, root_read)
+        };
         let read = Self::rebind_projection_root(value, root_read);
         let empty = match zero_view_helper(&value.ty) {
             // A struct-typed view position spells its empty state with the
@@ -1765,6 +1794,9 @@ impl<'a> Emitter<'a> {
             _ => return value.clone(),
         };
         let name = self.next_init_local();
+        if !self.init_skip_owner_binding {
+            self.init_literal_locals.insert(name.clone());
+        }
         let empty = self.empty_state(&ty);
         self.push(&format!(
             "    {} = {empty};",
@@ -1783,6 +1815,12 @@ impl<'a> Emitter<'a> {
                 self.push("    }");
             }
             None => self.emit_init_literal_fields(&target_c, &fields),
+        }
+        if !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(&ty) {
+            // The literal owns fields, so the release pass frees them at the
+            // init function's end; a view destination registers the local
+            // only when it moves the read member out.
+            self.init_owners.push((name, ty.clone()));
         }
         Value::new(ty, ValueKind::Place(target))
     }
