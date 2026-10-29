@@ -1307,8 +1307,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
 
         self.switch_to(then_block);
-        for (id, projections, non_null) in &then_facts {
-            self.apply_narrowing(*id, projections, *non_null);
+        for (owner, projections, non_null) in &then_facts {
+            self.apply_narrowing(owner, projections, *non_null);
         }
         self.check_block(&decl.then_block);
         let then_terminated = self.is_terminated();
@@ -1319,8 +1319,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         self.state = before;
         self.switch_to(else_block);
-        for (id, projections, non_null) in &else_facts {
-            self.apply_narrowing(*id, projections, *non_null);
+        for (owner, projections, non_null) in &else_facts {
+            self.apply_narrowing(owner, projections, *non_null);
         }
         match &decl.else_branch {
             Some(ElseBranch::If(nested)) => self.check_if(nested),
@@ -1351,47 +1351,154 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &self,
         condition: &Expr,
     ) -> (
-        Vec<(usize, Vec<ir::Projection>, bool)>,
-        Vec<(usize, Vec<ir::Projection>, bool)>,
+        Vec<(super::place::NarrowOwner, Vec<ir::Projection>, bool)>,
+        Vec<(super::place::NarrowOwner, Vec<ir::Projection>, bool)>,
     ) {
         if let ExprKind::Binary { op, left, right } = &condition.kind {
             match op {
                 BinaryOp::LogicalAnd => {
                     let (left_true, _) = self.condition_facts(left);
                     let (right_true, _) = self.condition_facts(right);
-                    let mut facts = left_true;
+                    // The right operand can write a place the left comparison
+                    // proved non-null (a `borrow`/`take` argument or an
+                    // assignment). Such a fact no longer holds in the body.
+                    let mut facts: Vec<_> = left_true
+                        .into_iter()
+                        .filter(|(owner, _, _)| !self.expression_writes_owner(right, owner))
+                        .collect();
                     facts.extend(right_true);
                     return (facts, Vec::new());
                 }
                 BinaryOp::LogicalOr => {
                     let (_, left_false) = self.condition_facts(left);
                     let (_, right_false) = self.condition_facts(right);
-                    let mut facts = left_false;
+                    let mut facts: Vec<_> = left_false
+                        .into_iter()
+                        .filter(|(owner, _, _)| !self.expression_writes_owner(right, owner))
+                        .collect();
                     facts.extend(right_false);
                     return (Vec::new(), facts);
                 }
                 _ => {}
             }
         }
-        if let Some((id, projections, non_null)) = self.narrowing(condition) {
+        if let Some((owner, projections, non_null)) = self.narrowing(condition) {
             return (
-                vec![(id, projections.clone(), non_null)],
-                vec![(id, projections, !non_null)],
+                vec![(owner.clone(), projections.clone(), non_null)],
+                vec![(owner, projections, !non_null)],
             );
         }
         (Vec::new(), Vec::new())
     }
 
-    /// Records that a place path is (or is not) known to be not null.
-    pub(super) fn apply_narrowing(&mut self, id: usize, projections: &[ir::Projection], non_null: bool) {
-        let key = projections.to_vec();
-        self.with_place(id, |place| {
-            if non_null {
-                place.narrowed.insert(key);
-            } else {
-                place.narrowed.remove(&key);
+    /// True when an expression can write the binding `id`.
+    ///
+    /// An assignment or update anywhere in the expression is enough. A call
+    /// can write through any `borrow` or `take` argument rooted at the
+    /// binding; a plain read-only argument cannot. The walk is conservative for
+    /// nested calls and literals and only keeps the common read-only
+    /// short-circuit chain (`s != null && len(s) > 0`) narrowed.
+    fn expression_writes_owner(&self, expr: &Expr, owner: &super::place::NarrowOwner) -> bool {
+        if super::lower::contains_update(expr) {
+            return true;
+        }
+        let same_place = |candidate: &Expr| match owner {
+            super::place::NarrowOwner::Local(id) => self
+                .plain_binding(candidate)
+                .is_some_and(|(other, _)| other == *id),
+            super::place::NarrowOwner::Global(global) => matches!(
+                self.place_target(candidate),
+                Some(PlaceTarget::Global(ref other, _)) if other == global
+            ),
+        };
+        match &expr.kind {
+            ExprKind::Call { callee, args, .. } => {
+                args.iter().any(|arg| {
+                    matches!(
+                        arg.marker,
+                        crate::ast::Mode::Borrow | crate::ast::Mode::Take
+                    ) && same_place(&arg.value)
+                        || self.expression_writes_owner(&arg.value, owner)
+                }) || self.expression_writes_owner(callee, owner)
             }
-        });
+            ExprKind::Binary { left, right, .. } => {
+                self.expression_writes_owner(left, owner)
+                    || self.expression_writes_owner(right, owner)
+            }
+            ExprKind::Unary { operand, .. } => self.expression_writes_owner(operand, owner),
+            ExprKind::Index { base, index } => {
+                self.expression_writes_owner(base, owner)
+                    || self.expression_writes_owner(index, owner)
+            }
+            ExprKind::Member { base, .. } => self.expression_writes_owner(base, owner),
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.expression_writes_owner(value, owner)
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.expression_writes_owner(condition, owner)
+                    || self.expression_writes_owner(then_value, owner)
+                    || self.expression_writes_owner(else_value, owner)
+            }
+            ExprKind::Unsafe(inner) => self.expression_writes_owner(inner, owner),
+            ExprKind::StructLiteral { fields, .. } => fields
+                .iter()
+                .any(|field| self.expression_writes_owner(&field.value, owner)),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.expression_writes_owner(element, owner))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.expression_writes_owner(fill, owner))
+            }
+            ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+                crate::ast::IntrinsicArg::Expr(inner) => {
+                    self.expression_writes_owner(inner, owner)
+                }
+                crate::ast::IntrinsicArg::Type(_) => false,
+            }),
+            ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                crate::ast::TemplatePiece::Placeholder(inner) => {
+                    self.expression_writes_owner(inner, owner)
+                }
+                crate::ast::TemplatePiece::Literal(_) => false,
+            }),
+            ExprKind::Lambda { .. } => false,
+            _ => false,
+        }
+    }
+
+    /// Records that a place path is (or is not) known to be not null.
+    pub(super) fn apply_narrowing(
+        &mut self,
+        owner: &super::place::NarrowOwner,
+        projections: &[ir::Projection],
+        non_null: bool,
+    ) {
+        match owner {
+            super::place::NarrowOwner::Local(id) => {
+                let key = projections.to_vec();
+                self.with_place(*id, |place| {
+                    if non_null {
+                        place.narrowed.insert(key);
+                    } else {
+                        place.narrowed.remove(&key);
+                    }
+                });
+            }
+            super::place::NarrowOwner::Global(id) => {
+                let key = (id.clone(), projections.to_vec());
+                if non_null {
+                    self.global_narrowed.insert(key);
+                } else {
+                    self.global_narrowed.remove(&key);
+                }
+            }
+        }
     }
 
 

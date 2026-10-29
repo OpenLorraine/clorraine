@@ -1974,6 +1974,9 @@ func main(): i32 {
     if (t != null) {
         return 2;
     }
+    if (s == null) {
+        return 3;
+    }
     return i32(len(s)) - 2;
 }
 "#;

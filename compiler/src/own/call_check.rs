@@ -387,9 +387,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // used only here is used. The lowering still emits no read for
                 // a pure fixed-array place, which keeps the C unused marker.
                 self.eval(&arg.value);
-                if index == 0 && self.ty(&arg.value).nullable {
-                    self.check_nonnull_expr(&arg.value, span);
-                }
+                // The lowering path applies the operand's null judgment once;
+                // repeating it here would report the same site twice.
             }
             return;
         }

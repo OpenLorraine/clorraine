@@ -30,8 +30,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // part of the fixpoint.
             checker.eval(&decl.condition);
             let (facts, _) = checker.condition_facts(&decl.condition);
-            for (id, projections, non_null) in &facts {
-                checker.apply_narrowing(*id, projections, *non_null);
+            for (owner, projections, non_null) in &facts {
+                checker.apply_narrowing(owner, projections, *non_null);
             }
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
@@ -73,8 +73,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .push(ExitFrame::new(exit, Some(head), floor, floor));
         self.switch_to(body_block);
         let (facts, _) = self.condition_facts(&decl.condition);
-        for (id, projections, non_null) in &facts {
-            self.apply_narrowing(*id, projections, *non_null);
+        for (owner, projections, non_null) in &facts {
+            self.apply_narrowing(owner, projections, *non_null);
         }
         self.check_block(&decl.body);
         let body_terminated = self.is_terminated();
@@ -291,6 +291,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // effect belongs to the back edge and must be part of the fixpoint.
             if let Some(condition) = &decl.condition {
                 checker.eval(condition);
+                let (facts, _) = checker.condition_facts(condition);
+                for (owner, projections, non_null) in &facts {
+                    checker.apply_narrowing(owner, projections, *non_null);
+                }
             }
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
@@ -366,6 +370,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             continue_floor,
         ));
         self.switch_to(body_block);
+        if let Some(condition) = &decl.condition {
+            let (facts, _) = self.condition_facts(condition);
+            for (owner, projections, non_null) in &facts {
+                self.apply_narrowing(owner, projections, *non_null);
+            }
+        }
         self.check_block(&decl.body);
         let body_terminated = self.is_terminated();
         if !body_terminated {

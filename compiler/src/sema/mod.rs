@@ -595,7 +595,34 @@ impl<'a, 'd> Checker<'a, 'd> {
                 "remove the comptime declaration or wait for the staged feature",
                 decl.name_span,
             ),
-            Item::Handle(_) | Item::Ffi(_) | Item::Intrinsic(_) => {}
+            // FFI signatures face TY-4 at the declaration, not at the first
+            // call: an unused nullable scalar parameter or return is still an
+            // invalid declaration.
+            Item::Ffi(block) => {
+                for signature in &block.decls {
+                    // Resolve each written type once here, then cache the
+                    // result: the lazy call-site path must not resolve the same
+                    // declaration again and repeat its extent diagnostic.
+                    let mut params = Vec::with_capacity(signature.params.len());
+                    for param in &signature.params {
+                        let ty = self.resolve_type(&param.ty);
+                        self.check_nullable_type(&ty, param.ty.span);
+                        params.push(ty);
+                    }
+                    self.ffi_params.insert(signature.name.clone(), params);
+                    let returns = self.resolve_type(&signature.returns);
+                    self.check_nullable_type(&returns, signature.returns.span);
+                    let result = if returns.nullable
+                        && !crate::borrow::is_nullable_capable(&returns)
+                    {
+                        Ty::unknown()
+                    } else {
+                        Self::ffi_abi_result(returns)
+                    };
+                    self.ffi_results.insert(signature.name.clone(), result);
+                }
+            }
+            Item::Handle(_) | Item::Intrinsic(_) => {}
         }
     }
 

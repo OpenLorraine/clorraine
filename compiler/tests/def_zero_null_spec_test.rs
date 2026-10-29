@@ -691,3 +691,633 @@ func main(): i32 {
 "#;
     assert_rejected("d542c", concrete, "E10033", 1, &["'slot'"]);
 }
+
+/// A fixed array has no empty state; every null destination reports E10012.
+#[test]
+fn should_reject_a_null_fixed_array_destination() {
+    let local = r#"module spec.zn.n1local;
+
+func main(): i32 {
+    let a: i32[2] = null;
+    return a[0];
+}
+"#;
+    assert_rejected("n1local", local, "E10012", 1, &["'null' is not allowed here"]);
+
+    let assignment = r#"module spec.zn.n1assign;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    a = null;
+    return a[0];
+}
+"#;
+    assert_rejected(
+        "n1assign",
+        assignment,
+        "E10012",
+        1,
+        &["'null' is not allowed here"],
+    );
+
+    let view_array = r#"module spec.zn.n1view;
+
+func main(): i32 {
+    let a: str[2] = null;
+    return i32(len(a[0]));
+}
+"#;
+    assert_rejected("n1view", view_array, "E10012", 1, &["'null' is not allowed here"]);
+
+    let raw_array = r#"module spec.zn.n1raw;
+
+func main(): i32 {
+    let a: raw u8[2] = null;
+    return 0;
+}
+"#;
+    assert_rejected("n1raw", raw_array, "E10012", 1, &["'null' is not allowed here"]);
+
+    let returned = r#"module spec.zn.n1return;
+
+func f(): i32[2] {
+    return null;
+}
+
+func main(): i32 {
+    let a: i32[2] = f();
+    return a[0];
+}
+"#;
+    assert_rejected("n1return", returned, "E10012", 1, &["'null' is not allowed here"]);
+
+    let field = r#"module spec.zn.n1field;
+
+struct S { a: i32[2]; }
+
+func main(): i32 {
+    let s: S = S { a: null };
+    return s.a[0];
+}
+"#;
+    assert_rejected("n1field", field, "E10012", 1, &["'null' is not allowed here"]);
+
+    let element = r#"module spec.zn.n1element;
+
+func main(): i32 {
+    let a: i32[2][2] = [null, [1, 2]];
+    return a[1][0];
+}
+"#;
+    assert_rejected(
+        "n1element",
+        element,
+        "E10012",
+        1,
+        &["'null' is not allowed here"],
+    );
+
+    let fill = r#"module spec.zn.n1fill;
+
+func main(): i32 {
+    let a: i32[2][2] = [; null];
+    return a[1][0];
+}
+"#;
+    assert_rejected("n1fill", fill, "E10012", 1, &["'null' is not allowed here"]);
+
+    let global = r#"module spec.zn.n1global;
+
+let g: i32[2] = null;
+
+func main(): i32 {
+    return g[0];
+}
+"#;
+    assert_rejected("n1global", global, "E10012", 1, &["'null' is not allowed here"]);
+}
+
+/// A module initializer has no flow to narrow a cstring length; the operand
+/// reports the possible-null rule.
+#[test]
+fn should_reject_a_module_initializer_cstring_length_without_a_check() {
+    let global = r#"module spec.zn.n2global;
+
+let c: cstring = null;
+let n: usize = len(c);
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("n2global", global, "E10010", 1, &["value 'c'"]);
+
+    let field = r#"module spec.zn.n2field;
+
+struct W { c: cstring; n: i32; }
+
+let w: W = W { c: null, n: 0 };
+let n: usize = len(w.c);
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("n2field", field, "E10010", 1, &["value 'w'"]);
+}
+
+/// A write performed by a `&&` right operand invalidates the left narrowing
+/// fact before the body.
+#[test]
+fn should_drop_a_narrowing_fact_written_by_a_short_circuit_right() {
+    let string = r#"module spec.zn.n3string;
+
+import { String, stringOf } from std.text;
+
+func clear(borrow s: String?): bool {
+    s = null;
+    return true;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("abcd");
+    if (s != null && clear(borrow s)) {
+        return i32(len(s));
+    }
+    return 1;
+}
+"#;
+    assert_rejected("n3string", string, "E10010", 1, &["value 's'"]);
+
+    let cstring = r#"module spec.zn.n3cstring;
+
+import { String, stringOf, toCString } from std.text;
+
+struct W { name: String; c: cstring; }
+
+func clear(borrow w: W): bool {
+    w.c = null;
+    return true;
+}
+
+func main(): i32 {
+    let w: W = W { name: stringOf("ab"), c: toCString("abcd") };
+    if (w.c != null && clear(borrow w)) {
+        return i32(len(w.c)) - 4;
+    }
+    return 1;
+}
+"#;
+    assert_rejected("n3cstring", cstring, "E10010", 1, &["value 'w'"]);
+}
+
+/// A short-circuit right operand keeps its moves and writes; the guarded body
+/// cannot reuse a value it consumed or nulled.
+#[test]
+fn should_keep_a_short_circuit_right_operand_effects() {
+    let take = r#"module spec.zn.memtake;
+
+import { String, stringOf } from std.text;
+
+func eat(take p: String): bool {
+    return true;
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let s: String = stringOf("ab");
+    if (c && eat(take s)) { }
+    return i32(len(s));
+}
+"#;
+    assert_rejected("memtake", take, "E10020", 1, &["'s' was moved"]);
+
+    let or_write = r#"module spec.zn.memorwrite;
+
+import { String, stringOf } from std.text;
+
+func reset(borrow p: String?): bool {
+    p = null;
+    return false;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    if (s == null || reset(borrow s)) {
+        return 0;
+    }
+    return i32(len(s));
+}
+"#;
+    assert_rejected("memorwrite", or_write, "E10010", 1, &["value 's'"]);
+
+    let loop_write = r#"module spec.zn.memloopwrite;
+
+import { String, stringOf } from std.text;
+
+func reset(borrow p: String?): bool {
+    p = null;
+    return true;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    while (s != null && reset(borrow s)) {
+        return i32(len(s));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("memloopwrite", loop_write, "E10010", 1, &["value 's'"]);
+}
+
+/// A null-shaped binding does not satisfy a non-nullable handle destination.
+#[test]
+fn should_reject_a_null_shaped_binding_at_a_non_nullable_handle() {
+    let local = r#"module spec.zn.memhandle;
+
+import { String } from std.text;
+
+func main(): i32 {
+    let x = null;
+    let s: String = x;
+    return i32(len(s));
+}
+"#;
+    assert_rejected("memhandle", local, "E10012", 1, &["'null' is not allowed here"]);
+
+    let assignment = r#"module spec.zn.memhandleassign;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let x = null;
+    s = x;
+    return i32(len(s));
+}
+"#;
+    assert_rejected(
+        "memhandleassign",
+        assignment,
+        "E10012",
+        1,
+        &["'null' is not allowed here"],
+    );
+
+    let returned = r#"module spec.zn.memhandleret;
+
+import { String } from std.text;
+
+func get(): String {
+    let x = null;
+    return x;
+}
+
+func main(): i32 {
+    let s: String = get();
+    return i32(len(s));
+}
+"#;
+    assert_rejected(
+        "memhandleret",
+        returned,
+        "E10012",
+        1,
+        &["'null' is not allowed here"],
+    );
+}
+
+/// A module-level struct literal follows the same fixed-array null rule as a
+/// function-local literal.
+#[test]
+fn should_reject_a_module_initializer_fixed_array_field_null() {
+    let source = r#"module spec.zn.n1globalfield;
+
+struct S { a: i32[2]; }
+
+let s: S = S { a: null };
+
+func main(): i32 {
+    return s.a[0];
+}
+"#;
+    assert_rejected(
+        "n1globalfield",
+        source,
+        "E10012",
+        1,
+        &["'null' is not allowed here"],
+    );
+}
+
+/// Module initializers and module bindings obey the same null rules as body
+/// locals.
+#[test]
+fn should_reject_nullable_module_and_global_uses() {
+    let module_call = r#"module spec.zn.p1call;
+
+import { String, stringOf } from std.text;
+
+func get(): String? {
+    return stringOf("ab");
+}
+
+let g: str = get();
+
+func main(): i32 {
+    return i32(len(g)) - 2;
+}
+"#;
+    assert_rejected("p1call", module_call, "E10010", 1, &["value 'get()'"]);
+
+    let module_view = r#"module spec.zn.p1view;
+
+let v: u8[]? = null;
+let n: usize = v.len;
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("p1view", module_view, "E10010", 1, &["value 'v'"]);
+
+    let global_read = r#"module spec.zn.p2read;
+
+let p: raw i32? = null;
+
+func main(): i32 {
+    unsafe {
+        return p[0];
+    }
+}
+"#;
+    assert_rejected("p2read", global_read, "E10010", 1, &["value 'p'"]);
+
+    let global_store = r#"module spec.zn.p2store;
+
+let p: raw i32? = null;
+
+func main(): i32 {
+    unsafe {
+        p[0] = 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected("p2store", global_store, "E10010", 1, &["value 'p'"]);
+
+    let global_member = r#"module spec.zn.p2member;
+
+struct P { x: i32; }
+
+let p: raw P? = null;
+
+func main(): i32 {
+    unsafe {
+        p.x = 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected("p2member", global_member, "E10010", 1, &["value 'p'"]);
+
+    let global_cstring = r#"module spec.zn.p2cstring;
+
+let c: cstring = null;
+
+func main(): i32 {
+    return i32(len(c));
+}
+"#;
+    assert_rejected("p2cstring", global_cstring, "E10010", 1, &["value 'c'"]);
+
+    let narrowed = r#"module spec.zn.p2narrow;
+
+let p: raw i32? = null;
+
+func main(): i32 {
+    unsafe {
+        if (p != null) {
+            return p[0];
+        }
+    }
+    return 0;
+}
+"#;
+    let output = run_strict_host("p2narrow", narrowed);
+    assert_exit("p2narrow", &output, 0);
+}
+
+/// The dot spelling of `len` and the generic dot spelling obey the cstring
+/// null check and the instance length surface.
+#[test]
+fn should_judge_a_dot_len_receiver() {
+    let cstring = r#"module spec.zn.p4dot;
+
+func main(): i32 {
+    let c: cstring = null;
+    return i32(c.len());
+}
+"#;
+    assert_rejected("p4dot", cstring, "E10010", 1, &["value 'c'"]);
+
+    let narrowed = r#"module spec.zn.p4dotok;
+
+import { toCString } from std.text;
+
+func main(): i32 {
+    let c: cstring = toCString("abcd");
+    if (c == null) {
+        return 1;
+    }
+    return i32(c.len()) - 4;
+}
+"#;
+    let output = run_strict_host("p4dotok", narrowed);
+    assert_exit("p4dotok", &output, 0);
+
+    let generic = r#"module spec.zn.p5dot;
+
+func f<T>(x: T): i32 {
+    return i32(x.len());
+}
+
+func main(): i32 {
+    let n: u8 = 3;
+    return f<u8>(n);
+}
+"#;
+    assert_rejected("p5dot", generic, "E10200", 1, &["len is not defined"]);
+}
+
+/// Nested short-circuit chains, `for`-C heads, and `?:` arms carry the
+/// narrowing facts that their guarded position proves.
+#[test]
+fn should_narrow_nested_chains_for_c_and_conditional_arms() {
+    let chain = r#"module spec.zn.p6chain;
+
+func count(s: str?, t: str?): i32 {
+    let n: i32 = 0;
+    if (s != null && t != null && len(s) > 0 && len(t) > 0) {
+        n = n + i32(len(s)) + i32(len(t));
+    }
+    return n;
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    return count(s, s) - 4;
+}
+"#;
+    let output = run_strict_host("p6chain", chain);
+    assert_exit("p6chain", &output, 0);
+
+    let for_c = r#"module spec.zn.p6for;
+
+func count(s: str?): i32 {
+    let n: i32 = 0;
+    for (let i: usize = 0; s != null && i < 2; i = i + 1) {
+        n = n + i32(len(s));
+    }
+    return n;
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    return count(s) - 4;
+}
+"#;
+    let output = run_strict_host("p6for", for_c);
+    assert_exit("p6for", &output, 0);
+
+    let while_body = r#"module spec.zn.p6while;
+
+func count(s: str?): i32 {
+    let n: i32 = 0;
+    while (s != null && n < 4) {
+        n = n + i32(len(s));
+    }
+    return n;
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    return count(s) - 4;
+}
+"#;
+    let output = run_strict_host("p6while", while_body);
+    assert_exit("p6while", &output, 0);
+
+    let conditional = r#"module spec.zn.p6cond;
+
+func main(): i32 {
+    let c: cstring = null;
+    let n: usize = c == null ? 0 : len(c);
+    return i32(n);
+}
+"#;
+    let output = run_strict_host("p6cond", conditional);
+    assert_exit("p6cond", &output, 0);
+}
+
+/// A nullable raw member or element store reports before the write; a
+/// narrowed one stays accepted.
+#[test]
+fn should_reject_a_nullable_raw_store_target() {
+    let local = r#"module spec.zn.p7local;
+
+func write(borrow p: raw i32?): void {
+    unsafe {
+        p[0] = 1;
+    }
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("p7local", local, "E10010", 1, &["value 'p'"]);
+
+    let member = r#"module spec.zn.p7member;
+
+struct P { x: i32; }
+
+func write(borrow p: raw P?): void {
+    unsafe {
+        p.x = 1;
+    }
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("p7member", member, "E10010", 1, &["value 'p'"]);
+}
+
+/// FFI declarations face TY-4 at the declaration, and a nameless call callee
+/// still gets the possible-null report.
+#[test]
+fn should_report_ffi_types_and_nameless_call_results() {
+    let unused_param = r#"module spec.zn.p8param;
+
+ffi probe {
+    func F(x: i32?): i32;
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("p8param", unused_param, "E10011", 1, &["nullable type"]);
+
+    let unused_return = r#"module spec.zn.p8return;
+
+ffi probe {
+    func G(): i32?;
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("p8return", unused_return, "E10011", 1, &["nullable type"]);
+
+    let used_return = r#"module spec.zn.p8usedreturn;
+
+ffi probe {
+    func G(): i32?;
+}
+
+func main(): i32 {
+    unsafe {
+        return G();
+    }
+}
+"#;
+    assert_rejected("p8usedreturn", used_return, "E10011", 1, &["nullable type"]);
+
+    let lambda = r#"module spec.zn.p9lambda;
+
+import { String, stringOf } from std.text;
+
+func get(): String? {
+    return stringOf("ab");
+}
+
+func main(): i32 {
+    let g: str = (() => get())();
+    return i32(len(g)) - 2;
+}
+"#;
+    assert_rejected("p9lambda", lambda, "E10010", 1, &["value 'call()'"]);
+}
+
+/// A module conditional narrows a global cstring for its non-null arm.
+#[test]
+fn should_narrow_a_module_initializer_conditional() {
+    let source = r#"module spec.zn.p1cond;
+
+let c: cstring = null;
+let n: usize = c == null ? 0 : len(c);
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    let output = run_strict_host("p1cond", source);
+    assert_exit("p1cond", &output, 0);
+}

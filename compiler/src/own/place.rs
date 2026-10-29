@@ -7,6 +7,19 @@
 
 use super::*;
 
+/// The owner of a place path narrowed by a null check.
+///
+/// A local binding lives in the frame's flow state; a module binding has its
+/// own narrowing set, because it can be read from every function in the
+/// module.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum NarrowOwner {
+    /// A frame-local binding and its place id.
+    Local(usize),
+    /// A module-level binding.
+    Global(ir::GlobalId),
+}
+
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- place rules ---------------------------------------------------------
 
@@ -3870,7 +3883,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The narrowed path may be a projected place, so a nullable field can be
     /// narrowed without narrowing its owner.
-    pub(super) fn narrowing(&self, cond: &Expr) -> Option<(usize, Vec<ir::Projection>, bool)> {
+    pub(super) fn narrowing(&self, cond: &Expr) -> Option<(NarrowOwner, Vec<ir::Projection>, bool)> {
         let ExprKind::Binary { op, left, right } = &cond.kind else {
             return None;
         };
@@ -3884,7 +3897,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             (_, ExprKind::Null) => left,
             _ => return None,
         };
-        let (id, projections) = self.plain_binding(name)?;
+        let (owner, projections) = match self.place_target(name)? {
+            PlaceTarget::Local(id, projections) => (NarrowOwner::Local(id), projections),
+            PlaceTarget::Global(id, projections) => (NarrowOwner::Global(id), projections),
+        };
         // A run-time index names no stable path, so narrowing it would conflate
         // different elements; leave it unnarrowed and let the use be reported.
         if projections.iter().any(|projection| {
@@ -3895,7 +3911,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }) {
             return None;
         }
-        Some((id, projections, non_null))
+        Some((owner, projections, non_null))
     }
 
     // -- shared helpers ------------------------------------------------------

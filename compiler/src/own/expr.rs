@@ -774,14 +774,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let _left_ty = self.eval(left);
                 // The right operand runs only when the left comparison
                 // succeeded, so its nullable reads see that narrowing. The
-                // fact is local to the right operand; the branch handling adds
-                // it to the guarded body separately.
-                let saved = self.state.clone();
-                if let Some((id, projections, non_null)) = self.narrowing(left) {
-                    self.apply_narrowing(id, &projections, non_null);
+                // fact is transient: remove it after the right operand, but
+                // keep every move, write, and loan the right operand caused.
+                let facts = self.condition_facts(left).0;
+                for (owner, projections, non_null) in &facts {
+                    self.apply_narrowing(owner, projections, *non_null);
                 }
                 let _right_ty = self.eval(right);
-                self.state = saved;
+                for (owner, projections, _) in &facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
             }
             ExprKind::Binary {
                 op: BinaryOp::LogicalOr,
@@ -789,14 +791,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 right,
             } => {
                 let _left_ty = self.eval(left);
-                // The right operand runs only when the left comparison failed,
-                // so it sees the negation of the left's narrowing fact.
-                let saved = self.state.clone();
-                if let Some((id, projections, non_null)) = self.narrowing(left) {
-                    self.apply_narrowing(id, &projections, !non_null);
+                // The right operand runs only when the left comparison
+                // failed, so it sees the negation of the left's narrowing
+                // fact. Remove only that transient fact; right-operand moves
+                // and writes stay in the state.
+                let facts = self.condition_facts(left).1;
+                for (owner, projections, non_null) in &facts {
+                    self.apply_narrowing(owner, projections, *non_null);
                 }
                 let _right_ty = self.eval(right);
-                self.state = saved;
+                for (owner, projections, _) in &facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
             }
             ExprKind::Binary { op, left, right } => {
                 let left_ty = self.eval(left);
@@ -816,8 +822,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 else_value,
             } => {
                 self.eval(condition);
+                let (then_facts, else_facts) = self.condition_facts(condition);
+                for (owner, projections, non_null) in &then_facts {
+                    self.apply_narrowing(owner, projections, *non_null);
+                }
                 self.eval(then_value);
+                for (owner, projections, _) in &then_facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
+                for (owner, projections, non_null) in &else_facts {
+                    self.apply_narrowing(owner, projections, *non_null);
+                }
                 self.eval(else_value);
+                for (owner, projections, _) in &else_facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
             }
             ExprKind::Cast { value, .. } => {
                 self.eval(value);
@@ -1071,22 +1090,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // A generic operand is judged at each instance: the
                         // declaration cannot tell an array from a scalar, and
                         // a `cstring` substitution keeps the null requirement.
-                        if name == "len" && crate::types::contains_param(&operand_ty) {
-                            let key = (inner.span.start, inner.span.end);
-                            if self.recorded_len_operands.insert(key) {
-                                let base = self.plain_binding(inner).map(|(id, _)| {
-                                    self.bindings[id].name.clone()
-                                });
-                                self.len_operand_requirements.push(
-                                    ir::RequiresLenOperand {
-                                        function: self.decl.name.clone(),
-                                        ty: operand_ty,
-                                        span: inner.span,
-                                        narrowed: self.expr_is_narrowed(inner),
-                                        base,
-                                    },
-                                );
-                            }
+                        if name == "len" {
+                            let base = self.plain_binding(inner).map(|(id, _)| {
+                                self.bindings[id].name.clone()
+                            });
+                            let narrowed = self.expr_is_narrowed(inner);
+                            self.record_len_operand(&operand_ty, inner.span, narrowed, base);
                         }
                     }
                 }
@@ -1131,6 +1140,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         let Some(id) = self.lookup(first) else {
+            // A module binding has no frame slot; walk its declared type and
+            // field chain with the same null judgment the local path uses.
+            if let Some((global, fields)) = self.dotted_global(&name.segments) {
+                let mut current = self
+                    .program
+                    .globals
+                    .get(&global)
+                    .map(|info| info.ty.clone())
+                    .unwrap_or_else(Ty::unknown);
+                let mut prefix: Vec<ir::Projection> = Vec::new();
+                if current.nullable {
+                    self.check_nonnull_global(&global, &prefix, span);
+                }
+                for field in &fields {
+                    self.check_member_raw(&current, span);
+                    prefix.push(ir::Projection::Field(field.clone()));
+                    current = self.member_type(&current, field);
+                    if current.nullable {
+                        self.check_nonnull_global(&global, &prefix, span);
+                    }
+                }
+            }
             return;
         };
         let projections: Vec<ir::Projection> = name.segments[1..]
@@ -1209,18 +1240,66 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.check_nonnull_place(id, &projections, span);
             return;
         }
+        if let Some(PlaceTarget::Global(id, projections)) = self.place_target(expr) {
+            self.check_nonnull_global(&id, &projections, span);
+            return;
+        }
         // A call result has no binding to name, so the report spells the call
         // itself (`value 'get()' may be null here`), exactly as the frozen
         // message template's name slot expects.
         if let ExprKind::Call { callee, .. } = &expr.kind {
-            if let Some(name) = self.callee_name(callee) {
-                self.error(
-                    "E10010",
-                    format!("value '{name}()' may be null here"),
-                    "check `!= null` before the use",
-                    span,
-                );
-            }
+            // A named callee keeps its spelling; a lambda, closure, or
+            // conditional callee has no name, so the report uses the call
+            // fallback rather than silently accepting the widened null.
+            let name = self
+                .callee_name(callee)
+                .map(|name| format!("{name}()"))
+                .unwrap_or_else(|| "call()".to_owned());
+            self.report_null_once(&name, span);
+        }
+    }
+
+    /// Reports one possible-null site at most once.
+    ///
+    /// The ownership walk and the lowering can both judge the same site; the
+    /// frozen rule reports once per source position.
+    fn report_null_once(&mut self, name: &str, span: Span) {
+        self.error(
+            "E10010",
+            format!("value '{name}' may be null here"),
+            "check `!= null` before the use",
+            span,
+        );
+    }
+
+    /// Reports the possible-null rule for one module-binding path.
+    pub(super) fn check_nonnull_global(
+        &mut self,
+        id: &ir::GlobalId,
+        projections: &[ir::Projection],
+        span: Span,
+    ) {
+        if self
+            .global_narrowed
+            .contains(&(id.clone(), projections.to_vec()))
+        {
+            return;
+        }
+        let name = id.name.clone();
+        self.report_null_once(&name, span);
+    }
+
+    /// Reports the possible-null rule for a lowered place value.
+    ///
+    /// A dot-call `len` receiver has already been lowered to a place, so the
+    /// null judgment uses that place's local or module root instead of an AST
+    /// expression.
+    pub(super) fn check_nonnull_value(&mut self, value: &Value, span: Span) {
+        let ValueKind::Place(place) = &value.kind else {
+            return;
+        };
+        if let crate::ir::PlaceBase::Global(id) = &place.base {
+            self.check_nonnull_global(id, &place.projections, span);
         }
     }
 
@@ -1239,12 +1318,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let name = self.bindings[id].name.clone();
-        self.error(
-            "E10010",
-            format!("value '{name}' may be null here"),
-            "check `!= null` before the use",
-            span,
-        );
+        self.report_null_once(&name, span);
     }
 
     /// Requires a write target's element base to be non-null.
@@ -1257,12 +1331,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &target.kind {
             ExprKind::Index { base, .. } => {
                 let base_ty = self.ty(base);
-                if !matches!(base_ty.kind, TyKind::Raw(_)) && base_ty.nullable {
+                if base_ty.nullable {
                     self.check_nonnull_expr(base, span);
                 }
                 self.check_store_index_nonnull(base, span);
             }
-            ExprKind::Member { base, .. } => self.check_store_index_nonnull(base, span),
+            ExprKind::Member { base, .. } => {
+                if self.ty(base).nullable {
+                    self.check_nonnull_expr(base, span);
+                }
+                self.check_store_index_nonnull(base, span);
+            }
             ExprKind::Unsafe(inner) => {
                 self.unsafe_depth += 1;
                 self.check_store_index_nonnull(inner, span);
@@ -1358,7 +1437,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// True when an expression is a local place its flow already narrowed.
-    fn expr_is_narrowed(&self, expr: &Expr) -> bool {
+    pub(super) fn expr_is_narrowed(&self, expr: &Expr) -> bool {
         self.plain_binding(expr)
             .is_some_and(|(id, projections)| self.state.place(id).is_narrowed(&projections))
     }
@@ -1369,15 +1448,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// empty value, so a null shape lowers to the destination's own empty
     /// value there. A scalar, enum, or fixed array has no empty value.
     fn null_capable_destination(ty: &Ty) -> bool {
-        matches!(
-            &ty.kind,
-            TyKind::Raw(_)
-                | TyKind::CString
-                | TyKind::Str
-                | TyKind::StaticStr
-                | TyKind::Handle(_)
-                | TyKind::Array { .. }
-        )
+        match &ty.kind {
+            TyKind::Raw(_) | TyKind::CString | TyKind::Str | TyKind::StaticStr => true,
+            // Only a slice view carries the empty state; a fixed array is
+            // inline storage and cannot be assigned null.
+            TyKind::Array { .. } => ty.is_slice(),
+            _ => false,
+        }
     }
 
     /// Reports the null rule at a position that requires a concrete value.
@@ -2143,6 +2220,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 }
+                // The store replaces the narrowed storage; a later read must
+                // prove its null state again.
+                self.global_narrowed.retain(|(global, path)| {
+                    !(global == &id
+                        && path.starts_with(&projections))
+                });
                 // The element-write rule runs after the `const` report above,
                 // so a rejected write keeps exactly one diagnostic; a reported
                 // write skips the emission below.
@@ -4645,8 +4728,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A field write through a raw pointer is a dereference whether the
         // pointer is a local or a module-level binding, so both roots are
         // walked for the unsafe gate.
-        let (mut current, projections) = match base {
-            PlaceTarget::Local(id, projections) => (self.bindings[id].ty.clone(), projections),
+        let (mut current, projections, owner) = match base {
+            PlaceTarget::Local(id, projections) => (
+                self.bindings[id].ty.clone(),
+                projections,
+                Some(super::place::NarrowOwner::Local(id)),
+            ),
             PlaceTarget::Global(id, projections) => {
                 let ty = self
                     .program
@@ -4654,9 +4741,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .get(&id)
                     .map(|global| global.ty.clone())
                     .unwrap_or_else(Ty::unknown);
-                (ty, projections)
+                (ty, projections, Some(super::place::NarrowOwner::Global(id)))
             }
         };
+        // A field store through a nullable raw pointer dereferences the
+        // pointer just as the read path does. An index store checks its own
+        // base in `check_store_index_nonnull`, so only a field projection is
+        // checked here.
+        if current.nullable && projections.iter().any(|p| matches!(p, ir::Projection::Field(_))) {
+            if let Some(owner) = owner {
+                match owner {
+                    super::place::NarrowOwner::Local(id) => {
+                        self.check_nonnull_place(id, &[], target.span)
+                    }
+                    super::place::NarrowOwner::Global(id) => {
+                        self.check_nonnull_global(&id, &[], target.span)
+                    }
+                }
+            }
+        }
         for projection in &projections {
             match projection {
                 ir::Projection::Field(field) => {

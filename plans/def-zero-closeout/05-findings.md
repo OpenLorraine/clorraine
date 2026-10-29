@@ -367,3 +367,41 @@ implemented and the new `def_zero_null_spec_test.rs` (14 cases) is green:
 `def_zero_null_impl_test.rs` pins the runtime cstring length call, the inferred
 nullable instance, and the narrowed loop-head C condition. `make check` is
 green (77 targets, 110 goldens) and `make verify` passes all legs.
+
+**Phase 2 review (emission, memory, semantics).** The three lenses reviewed
+`1ff9ccf` and found further critical and major shapes. Fixed in the review
+batch:
+
+- Fixed arrays are no longer treated as null-capable destinations; a literal or
+  null-shaped value at a fixed-array destination reports `E10012` in locals,
+  assignments, returns, fields, elements, fills, and module initializers.
+- Module initializers run a null/aggregate walk: a nullable call result, a
+  nullable global read, a fixed-array null field/element, and a module
+  `len(cstring)` report before startup. The walk also applies conditional-arm
+  narrowing.
+- Module bindings now have null narrowing state and null checks: global raw
+  index/store/member reads, global cstring lengths, and global qualified reads
+  report `E10010`; a `!= null` guard narrows a global for the guarded body.
+- Short-circuit evaluation keeps the right operand's moves and writes while
+  removing only its transient narrowing fact; a `borrow`/`take` argument or a
+  write in the right operand drops the left fact before the guarded body.
+  `&&`/`||` chains narrow through every left fact, `for`-C heads narrow the
+  body, and `?:` arms carry their edge facts.
+- Dot `len` requires the cstring null check; generic dot `len` records the
+  per-instance length duty; the duty key includes the source file and function,
+  so two same-offset sites report separately.
+- Nullable raw store targets (index and member) report `E10010`.
+- FFI parameter and return types are validated at the declaration, including
+  unused declarations; an invalid nullable return types as unresolved so its
+  use does not add a dependent `E10010`.
+- A call result with a nameless callee (lambda, closure, or conditional value)
+  reports `E10010` with the `call()` fallback.
+
+One specification-test conflict was resolved by user ruling (A): the nullable
+global `s` in `module_initializer_integrity_spec_test` now checks `s == null`
+before `len(s)`, because the global TY-6 rule applies to module bindings as
+well. The implementation test's matching source received the same guard.
+
+Review-batch verification: `make check` green (77 targets, 110 goldens); `make
+verify: all legs passed`; focused ASAN/LSan runs of the narrowed global,
+module-conditional, and cstring paths are clean.

@@ -2287,7 +2287,12 @@ fn check_len_operand_requirements(
             if instance.function != requirement.function {
                 continue;
             }
-            let key = (requirement.span.start, requirement.span.end);
+            let key = (
+                requirement.function.clone(),
+                requirement.span.file,
+                requirement.span.start,
+                requirement.span.end,
+            );
             if reported.contains(&key) {
                 break;
             }

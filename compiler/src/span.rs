@@ -6,7 +6,7 @@
 //! character columns.
 
 /// Identifies one source file registered in a [`SourceMap`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u32);
 
 /// A half-open byte range `[start, end)` inside one source file.

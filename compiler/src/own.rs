@@ -199,6 +199,29 @@ pub fn check(
             &mut next_lifted,
         );
         checker.check_initializer_writes(&values);
+        for item in &module.items {
+            match item {
+                Item::GlobalLet(decl) => {
+                    let ty = sema
+                        .table
+                        .global(&module.name, &decl.name)
+                        .cloned()
+                        .unwrap_or_else(Ty::unknown);
+                    checker.check_initializer_reads(&decl.value);
+                    checker.check_initializer_nulls(&ty, &decl.value);
+                }
+                Item::GlobalConst(decl) => {
+                    let ty = sema
+                        .table
+                        .global(&module.name, &decl.name)
+                        .cloned()
+                        .unwrap_or_else(Ty::unknown);
+                    checker.check_initializer_reads(&decl.value);
+                    checker.check_initializer_nulls(&ty, &decl.value);
+                }
+                _ => {}
+            }
+        }
         let (sites, lifted) = checker.lift_initializer_lambdas(&values);
         init_lambdas.extend(sites);
         functions.extend(lifted);
@@ -600,6 +623,11 @@ struct FunctionChecker<'a, 'd> {
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// `len` operand sites already recorded, so one site owes one duty.
     recorded_len_operands: BTreeSet<(u32, u32)>,
+    /// Narrowed module-binding paths, shared by the module's functions.
+    ///
+    /// A module binding outlives the frame, so a `!= null` check narrows it
+    /// for the rest of the current function exactly as it narrows a local.
+    global_narrowed: BTreeSet<(ir::GlobalId, Vec<ir::Projection>)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Store spans that already emitted the concrete lend-move report.
@@ -721,6 +749,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             opaque_store_requirements: Vec::new(),
             recorded_opaque_stores: BTreeSet::new(),
             recorded_len_operands: BTreeSet::new(),
+            global_narrowed: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
             reported_store_spans: BTreeSet::new(),
             recorded_whole_out_slot_store: BTreeSet::new(),
@@ -814,6 +843,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.conditional_narrowing_requirements,
             self.len_operand_requirements,
         )
+    }
+
+    /// Records a `len` operand whose declared type still mentions a parameter.
+    ///
+    /// The free and dot spellings share the duty; one site records once even
+    /// when the ownership walk visits the expression twice.
+    pub(super) fn record_len_operand(
+        &mut self,
+        ty: &Ty,
+        span: Span,
+        narrowed: bool,
+        base: Option<String>,
+    ) {
+        if !crate::types::contains_param(ty) {
+            return;
+        }
+        let key = (span.start, span.end);
+        if !self.recorded_len_operands.insert(key) {
+            return;
+        }
+        self.len_operand_requirements.push(ir::RequiresLenOperand {
+            function: self.decl.name.clone(),
+            ty: ty.clone(),
+            span,
+            narrowed,
+            base,
+        });
     }
 
     // -- scopes and bindings -------------------------------------------------

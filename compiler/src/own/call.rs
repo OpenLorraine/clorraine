@@ -902,6 +902,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     Some(arg) => self.lower_value(&arg.value),
                     None => Value::new(Ty::unknown(), ValueKind::Aggregate),
                 };
+                let value_ty = value.ty.clone();
+                if let Some(arg) = args.first() {
+                    if value_ty.nullable || matches!(value_ty.kind, TyKind::CString) {
+                        self.check_nonnull_expr(&arg.value, callee.span);
+                    }
+                    let base = self.plain_binding(&arg.value).map(|(id, _)| {
+                        self.bindings[id].name.clone()
+                    });
+                    let narrowed = self.expr_is_narrowed(&arg.value);
+                    self.record_len_operand(&value_ty, arg.value.span, narrowed, base);
+                }
                 let value = self.bind_intrinsic_argument(value);
                 return Some((
                     Ty::usize_ty(),
@@ -917,6 +928,64 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // receiver, so an ownerless owned result needs the caller-side
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
+            let receiver_ty = receiver.ty.clone();
+            // A nullable receiver is already judged by `eval_dot_receiver`;
+            // this path adds the bare-`cstring` empty-pointer check, which its
+            // nullable flag does not express.
+            let may_be_null =
+                matches!(receiver_ty.kind, TyKind::CString) && !receiver_ty.nullable;
+            let mut base = None;
+            let mut narrowed = false;
+            match &callee.kind {
+                ExprKind::Member { base: receiver_base, .. } => {
+                    if may_be_null {
+                        self.check_nonnull_expr(receiver_base, callee.span);
+                    }
+                    base = self
+                        .plain_binding(receiver_base)
+                        .map(|(id, _)| self.bindings[id].name.clone());
+                    narrowed = self.expr_is_narrowed(receiver_base);
+                }
+                ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                    let method = name.segments.len() - 1;
+                    let head = &name.segments[0];
+                    if let Some(id) = self.lookup(head) {
+                        let projections: Vec<ir::Projection> = name.segments[1..method]
+                            .iter()
+                            .map(|segment| ir::Projection::Field(segment.clone()))
+                            .collect();
+                        if may_be_null && !self.state.place(id).is_narrowed(&projections) {
+                            self.check_nonnull_place(id, &projections, callee.span);
+                        }
+                        narrowed = self.state.place(id).is_narrowed(&projections);
+                        base = Some(self.bindings[id].name.clone());
+                    } else if let Some((global, fields)) =
+                        self.dotted_global(&name.segments[..method])
+                    {
+                        let projections: Vec<ir::Projection> = fields
+                            .iter()
+                            .map(|field| ir::Projection::Field(field.clone()))
+                            .collect();
+                        if may_be_null
+                            && !self
+                                .global_narrowed
+                                .contains(&(global.clone(), projections.clone()))
+                        {
+                            self.check_nonnull_global(&global, &projections, callee.span);
+                        }
+                        narrowed = self
+                            .global_narrowed
+                            .contains(&(global.clone(), projections));
+                        base = Some(global.name.clone());
+                    }
+                }
+                _ => {
+                    if may_be_null {
+                        self.check_nonnull_value(&receiver, callee.span);
+                    }
+                }
+            }
+            self.record_len_operand(&receiver_ty, callee.span, narrowed, base);
             let receiver = self.bind_intrinsic_argument(receiver);
             return Some((
                 Ty::usize_ty(),

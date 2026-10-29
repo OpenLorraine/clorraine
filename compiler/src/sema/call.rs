@@ -1265,7 +1265,6 @@ impl Checker<'_, '_> {
         let mut params = Vec::with_capacity(signature.params.len());
         for param in &signature.params {
             let resolved = self.resolve_type(&param.ty);
-            self.check_nullable_type(&resolved, param.ty.span);
             params.push(resolved);
         }
         self.ffi_params.insert(name.to_owned(), params.clone());
@@ -1284,7 +1283,15 @@ impl Checker<'_, '_> {
         if let Some(result) = self.ffi_results.get(name) {
             return result.clone();
         }
-        let result = Self::ffi_abi_result(self.resolve_type(&signature.returns));
+        let declared = self.resolve_type(&signature.returns);
+        // The declaration pass already reports an invalid nullable return.
+        // Keeping the invalid shape here would let a use report the dependent
+        // possible-null rule instead, so the call types as unresolved.
+        if declared.nullable && !crate::borrow::is_nullable_capable(&declared) {
+            self.ffi_results.insert(name.to_owned(), Ty::unknown());
+            return Ty::unknown();
+        }
+        let result = Self::ffi_abi_result(declared);
         self.ffi_results.insert(name.to_owned(), result.clone());
         result
     }
@@ -1296,7 +1303,7 @@ impl Checker<'_, '_> {
     /// result types as the pointer to its first element. Every use then judges
     /// through the frozen conversion rules instead of reading a struct the ABI
     /// never returns.
-    fn ffi_abi_result(ty: Ty) -> Ty {
+    pub(super) fn ffi_abi_result(ty: Ty) -> Ty {
         match &ty.kind {
             TyKind::Str | TyKind::StaticStr => Ty {
                 kind: TyKind::Raw(Box::new(Ty::scalar(crate::ast::ScalarType::U8))),

@@ -885,6 +885,175 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Checks a module initializer against its declared type for the null rule.
+    ///
+    /// A module initializer has no binding statement and no flow-narrowing
+    /// scope, so the body's `check_value_into` call never reaches it. The walk
+    /// recurses into a struct literal's fields, an array literal's elements and
+    /// fill, and a conditional's arms so a literal null at a fixed-array or
+    /// scalar destination reports E10012 instead of reaching an invalid C
+    /// initializer.
+    /// Checks a module initializer's nullable bases and length operands.
+    ///
+    /// The initializer walk has no function-body `eval`, so a dotted read of a
+    /// nullable global (`v.len`), an index of a nullable global, and a
+    /// `len` operand need the same null judgment directly.
+    pub(super) fn check_initializer_reads(&mut self, value: &'a Expr) {
+        match &value.kind {
+            ExprKind::Qualified(name) => {
+                if let Some((global, fields)) = self.dotted_global(&name.segments) {
+                    let mut current = self
+                        .program
+                        .globals
+                        .get(&global)
+                        .map(|info| info.ty.clone())
+                        .unwrap_or_else(Ty::unknown);
+                    let mut prefix: Vec<ir::Projection> = Vec::new();
+                    if current.nullable {
+                        self.check_nonnull_global(&global, &prefix, value.span);
+                    }
+                    for field in &fields {
+                        prefix.push(ir::Projection::Field(field.clone()));
+                        current = self.member_type(&current, field);
+                        if current.nullable {
+                            self.check_nonnull_global(&global, &prefix, value.span);
+                        }
+                    }
+                }
+            }
+            ExprKind::Member { base, .. } => {
+                if self.ty(base).nullable {
+                    self.check_nonnull_expr(base, value.span);
+                }
+                self.check_initializer_reads(base);
+            }
+            ExprKind::Index { base, index } => {
+                if self.ty(base).nullable {
+                    self.check_nonnull_expr(base, value.span);
+                }
+                self.check_initializer_reads(base);
+                self.check_initializer_reads(index);
+            }
+            ExprKind::Call { callee, args, .. } => {
+                self.check_initializer_reads(callee);
+                for arg in args {
+                    self.check_initializer_reads(&arg.value);
+                }
+            }
+            ExprKind::IntrinsicCall { name, args } => {
+                for arg in args {
+                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
+                        if name == "len" {
+                            let ty = self.ty(inner);
+                            if ty.nullable || matches!(ty.kind, TyKind::CString) {
+                                self.check_nonnull_expr(inner, value.span);
+                            }
+                        }
+                        self.check_initializer_reads(inner);
+                    }
+                }
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.check_initializer_reads(left);
+                self.check_initializer_reads(right);
+            }
+            ExprKind::Unary { operand, .. } => self.check_initializer_reads(operand),
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.check_initializer_reads(value)
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.check_initializer_reads(condition);
+                let (then_facts, else_facts) = self.condition_facts(condition);
+                for (owner, projections, non_null) in &then_facts {
+                    self.apply_narrowing(owner, projections, *non_null);
+                }
+                self.check_initializer_reads(then_value);
+                for (owner, projections, _) in &then_facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
+                for (owner, projections, non_null) in &else_facts {
+                    self.apply_narrowing(owner, projections, *non_null);
+                }
+                self.check_initializer_reads(else_value);
+                for (owner, projections, _) in &else_facts {
+                    self.apply_narrowing(owner, projections, false);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.check_initializer_reads(inner),
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.check_initializer_reads(&field.value);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.check_initializer_reads(element);
+                }
+                if let Some(fill) = fill {
+                    self.check_initializer_reads(fill);
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        self.check_initializer_reads(inner);
+                    }
+                }
+            }
+            ExprKind::Assign { target, value, .. } => {
+                self.check_initializer_reads(target);
+                self.check_initializer_reads(value);
+            }
+            ExprKind::Lambda { .. }
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Char(_)
+            | ExprKind::Str(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Null
+            | ExprKind::Error
+            | ExprKind::Name(_) => {}
+        }
+    }
+
+    pub(super) fn check_initializer_nulls(&mut self, expected: &Ty, value: &'a Expr) {
+        match &value.kind {
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    let destination = self
+                        .sema
+                        .table
+                        .instance_field(&self.ty(value), &field.name)
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    self.check_initializer_nulls(&destination, &field.value);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let element = self.ty(value).iterated_element();
+                for element_value in elements {
+                    self.check_initializer_nulls(&element, element_value);
+                }
+                if let Some(fill) = fill {
+                    self.check_initializer_nulls(&element, fill);
+                }
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.check_initializer_nulls(expected, then_value);
+                self.check_initializer_nulls(expected, else_value);
+                self.check_value_into(value, expected, value.span);
+            }
+            _ => self.check_value_into(value, expected, value.span),
+        }
+    }
+
     /// Reports a write through a `const` module binding or an immutable view.
     ///
     /// Mirrors the update path's module-level judgment: a `const` binding
