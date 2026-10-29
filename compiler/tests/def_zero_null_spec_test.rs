@@ -1920,3 +1920,103 @@ func main(): i32 { return i32(v) - 7; }
 "#;
     assert_rejected("m4rvolatile", volatile, "E10604", 1, &["volatile"]);
 }
+
+/// A raw pointer argument may alias a narrowed local; the call is a write.
+#[test]
+fn should_treat_a_raw_pointer_call_argument_as_a_local_write() {
+    let source = r#"module spec.zn.l1rraw;
+
+import { toCString } from std.text;
+
+func clearRaw(p: raw cstring): bool {
+    unsafe {
+        *p = null;
+        return true;
+    }
+}
+
+func main(): i32 {
+    let c: cstring = toCString("abcd");
+    let p: raw cstring = unsafe &c;
+    if (c != null && clearRaw(p)) {
+        return i32(len(c));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("l1rraw", source, "E10010", 1, &["value 'c'"]);
+}
+
+/// Dot `len` on a conditional, dereference, or call-result element checks the
+/// non-place cstring root.
+#[test]
+fn should_check_non_place_cstring_dot_len_roots() {
+    let conditional = r#"module spec.zn.m1rcond;
+
+import { toCString } from std.text;
+
+func f(flag: bool): i32 {
+    let a: cstring = toCString("ab");
+    let b: cstring = null;
+    return i32((flag ? a : b).len());
+}
+
+func main(): i32 {
+    return f(false);
+}
+"#;
+    assert_rejected("m1rcond", conditional, "E10010", 1, &["may be null"]);
+
+    let deref = r#"module spec.zn.m1rderef;
+
+func main(): i32 {
+    let c: cstring = null;
+    let p: raw cstring = unsafe &c;
+    unsafe {
+        return i32((*p).len());
+    }
+}
+"#;
+    assert_rejected("m1rderef", deref, "E10010", 1, &["may be null"]);
+
+    let array = r#"module spec.zn.m1rarray;
+
+struct W { cs: cstring[2]; }
+
+func make(): W {
+    return W { cs: [null, null] };
+}
+
+func main(): i32 {
+    return i32(make().cs[0].len());
+}
+"#;
+    assert_rejected("m1rarray", array, "E10010", 1, &["may be null"]);
+}
+
+/// A sibling field write does not invalidate a different field's narrowing.
+#[test]
+fn should_keep_a_narrowing_across_a_sibling_field_write() {
+    let source = r#"module spec.zn.l1rsibling;
+
+import { String, stringOf } from std.text;
+
+struct W { a: String?; b: String?; }
+
+func resetB(borrow b: String?): bool {
+    b = null;
+    return true;
+}
+
+func main(): i32 {
+    let w: W = W { a: stringOf("ab"), b: stringOf("cd") };
+    if (w.a != null) {
+        if (w.a != null && resetB(w.b)) { }
+        return i32(len(w.a)) - 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_strict_host("l1rsibling", source);
+    assert_exit("l1rsibling", &output, 0);
+}

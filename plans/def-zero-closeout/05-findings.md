@@ -451,3 +451,27 @@ surface and unchanged by the Phase 2 fixes.
 
 Verification: `make check` green (77 targets, 110 goldens); `make verify: all
 legs passed`.
+
+**Phase 2 review, fourth round (non-place cstring and raw aliases).** The last
+critical shapes were fixed:
+
+- A raw-pointer argument to a call is treated as a possible write to a local
+  owner, so a nulled cstring cannot be read after the call.
+- A non-place cstring root (conditional, dereference, call-result element,
+  array-literal element) reports `E10010` for a dot or free `len`/index use.
+- A sibling field write is path-sensitive and no longer drops a different
+  field's narrowing.
+- The module array-literal index form is rejected instead of emitting invalid
+  C.
+
+Report-only precision trade-offs, not DEF rows: a no-argument user call is
+conservatively treated as writing every module binding, so a different global
+or a pure function-pointer call may be falsely rejected after a global guard;
+and the qualified module-value dot `len` spelling (`probe.n.c.len`) remains
+unsupported while the free spelling works. Pre-existing conditional
+`String`/raw null-dereference shapes are unchanged at base and head.
+
+Final Phase 2 verification: `def_zero_null_spec_test` 43 cases and the two
+implementation pins are green; `make check` green (77 targets, 110 goldens);
+`make verify: all legs passed`; ASAN/LSan probes of the accepted controls are
+clean.

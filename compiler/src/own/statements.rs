@@ -1364,7 +1364,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // assignment). Such a fact no longer holds in the body.
                     let mut facts: Vec<_> = left_true
                         .into_iter()
-                        .filter(|(owner, _, _)| !self.expression_writes_owner(right, owner))
+                        .filter(|(owner, projections, _)| {
+                            !self.expression_writes_owner(right, owner, projections)
+                        })
                         .collect();
                     facts.extend(right_true);
                     return (facts, Vec::new());
@@ -1374,7 +1376,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     let (_, right_false) = self.condition_facts(right);
                     let mut facts: Vec<_> = left_false
                         .into_iter()
-                        .filter(|(owner, _, _)| !self.expression_writes_owner(right, owner))
+                        .filter(|(owner, projections, _)| {
+                            !self.expression_writes_owner(right, owner, projections)
+                        })
                         .collect();
                     facts.extend(right_false);
                     return (Vec::new(), facts);
@@ -1417,17 +1421,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .and_then(|name| self.callee_modes(&name))
     }
 
-    fn expression_writes_owner(&self, expr: &Expr, owner: &super::place::NarrowOwner) -> bool {
+    fn expression_writes_owner(
+        &self,
+        expr: &Expr,
+        owner: &super::place::NarrowOwner,
+        projections: &[ir::Projection],
+    ) -> bool {
         if super::lower::contains_update(expr) {
             return true;
         }
+        let paths_overlap = |left: &[ir::Projection], right: &[ir::Projection]| {
+            left.starts_with(right) || right.starts_with(left)
+        };
         let same_place = |candidate: &Expr| match owner {
             super::place::NarrowOwner::Local(id) => self
                 .plain_binding(candidate)
-                .is_some_and(|(other, _)| other == *id),
+                .is_some_and(|(other, path)| other == *id && paths_overlap(&path, projections)),
             super::place::NarrowOwner::Global(global) => matches!(
                 self.place_target(candidate),
-                Some(PlaceTarget::Global(ref other, _)) if other == global
+                Some(PlaceTarget::Global(ref other, ref path))
+                    if other == global && paths_overlap(path, projections)
             ),
         };
         match &expr.kind {
@@ -1436,6 +1449,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // call may write it, so a left fact cannot survive the call.
                 if matches!(owner, super::place::NarrowOwner::Global(_))
                     && self.call_may_write_globals(callee)
+                {
+                    return true;
+                }
+                // A raw pointer argument may alias a local owner; the call has
+                // no alias summary, so it is treated as a possible write.
+                if matches!(owner, super::place::NarrowOwner::Local(_))
+                    && self.call_may_write_globals(callee)
+                    && args
+                        .iter()
+                        .any(|arg| matches!(self.ty(&arg.value).kind, TyKind::Raw(_)))
                 {
                     return true;
                 }
@@ -1478,52 +1501,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         mode,
                         crate::ast::Mode::Borrow | crate::ast::Mode::Take
                     ) && same_place(&arg.value)
-                        || self.expression_writes_owner(&arg.value, owner)
-                }) || self.expression_writes_owner(callee, owner)
+                        || self.expression_writes_owner(&arg.value, owner, projections)
+                }) || self.expression_writes_owner(callee, owner, projections)
             }
             ExprKind::Binary { left, right, .. } => {
-                self.expression_writes_owner(left, owner)
-                    || self.expression_writes_owner(right, owner)
+                self.expression_writes_owner(left, owner, projections)
+                    || self.expression_writes_owner(right, owner, projections)
             }
-            ExprKind::Unary { operand, .. } => self.expression_writes_owner(operand, owner),
+            ExprKind::Unary { operand, .. } => self.expression_writes_owner(operand, owner, projections),
             ExprKind::Index { base, index } => {
-                self.expression_writes_owner(base, owner)
-                    || self.expression_writes_owner(index, owner)
+                self.expression_writes_owner(base, owner, projections)
+                    || self.expression_writes_owner(index, owner, projections)
             }
-            ExprKind::Member { base, .. } => self.expression_writes_owner(base, owner),
+            ExprKind::Member { base, .. } => self.expression_writes_owner(base, owner, projections),
             ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-                self.expression_writes_owner(value, owner)
+                self.expression_writes_owner(value, owner, projections)
             }
             ExprKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => {
-                self.expression_writes_owner(condition, owner)
-                    || self.expression_writes_owner(then_value, owner)
-                    || self.expression_writes_owner(else_value, owner)
+                self.expression_writes_owner(condition, owner, projections)
+                    || self.expression_writes_owner(then_value, owner, projections)
+                    || self.expression_writes_owner(else_value, owner, projections)
             }
-            ExprKind::Unsafe(inner) => self.expression_writes_owner(inner, owner),
+            ExprKind::Unsafe(inner) => self.expression_writes_owner(inner, owner, projections),
             ExprKind::StructLiteral { fields, .. } => fields
                 .iter()
-                .any(|field| self.expression_writes_owner(&field.value, owner)),
+                .any(|field| self.expression_writes_owner(&field.value, owner, projections)),
             ExprKind::ArrayLiteral { elements, fill } => {
                 elements
                     .iter()
-                    .any(|element| self.expression_writes_owner(element, owner))
+                    .any(|element| self.expression_writes_owner(element, owner, projections))
                     || fill
                         .as_deref()
-                        .is_some_and(|fill| self.expression_writes_owner(fill, owner))
+                        .is_some_and(|fill| self.expression_writes_owner(fill, owner, projections))
             }
             ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
                 crate::ast::IntrinsicArg::Expr(inner) => {
-                    self.expression_writes_owner(inner, owner)
+                    self.expression_writes_owner(inner, owner, projections)
                 }
                 crate::ast::IntrinsicArg::Type(_) => false,
             }),
             ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
                 crate::ast::TemplatePiece::Placeholder(inner) => {
-                    self.expression_writes_owner(inner, owner)
+                    self.expression_writes_owner(inner, owner, projections)
                 }
                 crate::ast::TemplatePiece::Literal(_) => false,
             }),
@@ -1590,7 +1613,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         right: &Expr,
     ) {
         for ((owner, projections, non_null), held) in facts.iter().zip(states) {
-            if self.expression_writes_owner(right, owner) {
+            if self.expression_writes_owner(right, owner, projections) {
                 self.apply_narrowing(owner, projections, false);
             } else if *held {
                 self.apply_narrowing(owner, projections, *non_null);

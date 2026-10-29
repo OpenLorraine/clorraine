@@ -1263,6 +1263,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .map(|name| format!("{name}()"))
                 .unwrap_or_else(|| "call()".to_owned());
             self.report_null_once(&name, span);
+            return;
+        }
+        // Any other non-place value (a conditional, an indexed call result, a
+        // dereference) with a nullable or bare-cstring type has no proven
+        // non-null place. The use needs a check just as a named place would.
+        if let Some(ty) = self.recorded_ty(expr) {
+            if ty.nullable || matches!(ty.kind, TyKind::CString) {
+                let name = match &expr.kind {
+                    ExprKind::Conditional { .. } => "conditional",
+                    ExprKind::Index { .. } => "element",
+                    ExprKind::Unary { .. } => "pointer",
+                    _ => "value",
+                };
+                self.report_null_once(name, span);
+            }
         }
     }
 
