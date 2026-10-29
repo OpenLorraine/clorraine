@@ -252,9 +252,14 @@ linker never sees a name the program did not export.
 `<module>` is the dotted module path with dots replaced by underscores, so
 `Demo.Copy` mangles to `Demo_Copy`. Generics are **monomorphized** (G3): one
 `static` func per distinct instantiation, keyed by a canonical `<typekey>` of the
-type arguments (for example `i32`, `String`, or `Point_i32_i32`). Identical keys
-dedupe to one symbol; an over-long key appends a stable hash. C macros and C
-templates are not used, because they would be extensions.
+type arguments (for example `i32`, `String`, or `Point_i32_i32`). A user-derived
+type component keeps its spelling when it is plain; a component containing a
+fixed separator (`_`), the nullable marker (`Q`), a non-identifier byte, or a
+reserved type spelling is escaped as `u<length>_<name>`, and a generic parameter
+always uses `p<length>_<name>`, so a user identifier cannot collide with a
+generated key. Identical keys dedupe to one symbol; an over-long key appends a
+stable hash. C macros and C templates are not used, because they would be
+extensions.
 
 ## 8. Lambdas and closures - P7
 
