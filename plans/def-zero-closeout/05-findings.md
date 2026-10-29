@@ -620,3 +620,12 @@ Verification: `make check` green (80 targets, 111 compile-fail goldens) and
 Verification after this round: `make check` green (80 targets, 111
 compile-fail goldens) and `make verify: all legs passed`. Remaining Phase 4
 rows: `DEF-484`, `DEF-490`, `DEF-492`.
+
+The three remaining rows need a sound whole-program take-argument summary, not
+a local callee suppression. An attempted call-site audit was reverted after the
+phase reviews found two critical holes: a caller-retained slot could keep a
+view into a callee-frame temporary (ASan heap-use-after-free), and dot/value
+calls were not recorded, so `all()` over a partial call set accepted a dynamic
+carrier. The next attempt must fail closed for temporary, parameter, and
+unrecorded call forms, and key the judgment by declaration identity rather
+than the simple function name.
