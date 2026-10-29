@@ -1606,3 +1606,317 @@ func main(): i32 {
     let output = run_strict_host("outernarrow", source);
     assert_exit("outernarrow", &output, 0);
 }
+
+/// A call through a function value can write a global.
+#[test]
+fn should_invalidate_global_narrowing_through_a_function_value() {
+    let source = r#"module spec.zn.fnptrglobal;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("ab");
+
+func reset(): bool {
+    g = null;
+    return true;
+}
+
+func main(): i32 {
+    let f: func(): bool = reset;
+    if (g != null && f()) {
+        return i32(len(g));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("fnptrglobal", source, "E10010", 1, &["value 'g'"]);
+}
+
+/// The dot `len` spelling narrows in the branch where its guard holds.
+#[test]
+fn should_narrow_a_dot_len_receiver_in_the_guarded_branch() {
+    let local = r#"module spec.zn.conddotlocal;
+
+import { toCString } from std.text;
+
+func main(): i32 {
+    let c: cstring = toCString("ab");
+    if (c != null && c.len() > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_strict_host("conddotlocal", local);
+    assert_exit("conddotlocal", &output, 1);
+
+    let global = r#"module spec.zn.globaldotguard;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("ab");
+
+func main(): i32 {
+    if (g != null) {
+        return i32(g.len()) - 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_strict_host("globaldotguard", global);
+    assert_exit("globaldotguard", &output, 0);
+
+    let conditional = r#"module spec.zn.globaldotcond;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("ab");
+
+func main(): i32 {
+    return (g != null) ? i32(g.len()) - 2 : 0;
+}
+"#;
+    let output = run_strict_host("globaldotcond", conditional);
+    assert_exit("globaldotcond", &output, 0);
+
+    let module_and = r#"module spec.zn.moduleanddot;
+
+import { toCString } from std.text;
+
+let c: cstring = toCString("ab");
+let n: i32 = (c != null && c.len() > 0) ? i32(c.len()) : 0;
+
+func main(): i32 {
+    return n - 2;
+}
+"#;
+    let output = run_strict_host("moduleanddot", module_and);
+    assert_exit("moduleanddot", &output, 0);
+}
+
+/// A callable value shadowing a module name uses its own parameter modes, and
+/// a func-typed value may write a global.
+#[test]
+fn should_resolve_callable_identity_and_func_value_globals() {
+    let local = r#"module spec.zn.f1rlocal;
+
+import { String, stringOf } from std.text;
+
+func clear(s: String): bool { return true; }
+func reset(borrow s: String?): bool { s = null; return true; }
+
+func main(): i32 {
+    let s: String? = stringOf("abcd");
+    let clear: func(borrow String?): bool = reset;
+    if (s != null && clear(s)) {
+        return i32(len(s));
+    }
+    return 1;
+}
+"#;
+    assert_rejected("f1rlocal", local, "E10010", 1, &["value 's'"]);
+
+    let field = r#"module spec.zn.f1rfield;
+
+import { String, stringOf } from std.text;
+
+struct S { clear: func(borrow String?): bool; }
+func clear(s: String): bool { return true; }
+func reset(borrow s: String?): bool { s = null; return true; }
+
+func main(): i32 {
+    let s: String? = stringOf("abcd");
+    let st: S = S { clear: reset };
+    if (s != null && st.clear(s)) {
+        return i32(len(s));
+    }
+    return 1;
+}
+"#;
+    assert_rejected("f1rfield", field, "E10010", 1, &["value 's'"]);
+
+    let func_global = r#"module spec.zn.f1rglobal;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("abcd");
+func resetG(): bool { g = null; return true; }
+
+func main(): i32 {
+    let f: func(): bool = resetG;
+    if (g != null) {
+        f();
+        return i32(len(g));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("f1rglobal", func_global, "E10010", 1, &["value 'g'"]);
+}
+
+/// A fact restored after a short-circuit right operand is dropped when that
+/// operand writes the owner.
+#[test]
+fn should_not_restore_a_fact_written_by_the_right_operand() {
+    let local = r#"module spec.zn.l1rlocal;
+
+import { String, stringOf } from std.text;
+
+func reset(borrow s: String?): bool { s = null; return true; }
+
+func main(): i32 {
+    let s: String? = stringOf("abcd");
+    if (s != null) {
+        if (s != null && reset(s)) { }
+        return i32(len(s));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("l1rlocal", local, "E10010", 1, &["value 's'"]);
+
+    let global = r#"module spec.zn.l1rglobal;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("abcd");
+func resetG(): bool { g = null; return true; }
+
+func main(): i32 {
+    if (g != null) {
+        if (g != null && resetG()) { }
+        return i32(len(g));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("l1rglobal", global, "E10010", 1, &["value 'g'"]);
+
+    let module = r#"module spec.zn.l1rmodule;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("abcd");
+func resetG(): bool { g = null; return true; }
+let b: bool = g != null && (resetG() && len(g) > 0);
+
+func main(): i32 {
+    if (b) { return 1; }
+    return 0;
+}
+"#;
+    assert_rejected("l1rmodule", module, "E10010", 1, &["value 'g'"]);
+}
+
+/// A dot `len` receiver rooted at a call result has no place to narrow.
+#[test]
+fn should_reject_a_member_of_a_call_result_as_a_dot_len_receiver() {
+    let module = r#"module spec.zn.m1rmodule;
+
+struct W { c: cstring; }
+func make(): W { return W { c: null }; }
+
+let n: usize = make().c.len();
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("m1rmodule", module, "E10010", 1, &["value 'c'"]);
+
+    let body = r#"module spec.zn.m1rbody;
+
+struct W { c: cstring; }
+func make(): W { return W { c: null }; }
+
+func main(): i32 {
+    return i32(make().c.len());
+}
+"#;
+    assert_rejected("m1rbody", body, "E10010", 1, &["value 'c'"]);
+}
+
+/// Module generic calls substitute their explicit type arguments, and a dot
+/// method call checks its written arguments.
+#[test]
+fn should_check_module_generic_and_dot_method_arguments() {
+    let generic = r#"module spec.zn.m3rgeneric;
+
+import { String, stringOf } from std.text;
+
+func get(): String? { return stringOf("ab"); }
+func f<T>(x: T): i32 { return i32(len(x)); }
+
+let n: i32 = f<str>(get());
+
+func main(): i32 {
+    return n - 2;
+}
+"#;
+    assert_rejected("m3rgeneric", generic, "E10010", 1, &["value 'get()'"]);
+
+    let nullable = r#"module spec.zn.m3rnullable;
+
+func f<T>(x: T): i32 { return 1; }
+
+let n: i32 = f<String?>(null);
+
+func main(): i32 {
+    return n - 1;
+}
+"#;
+    let output = run_strict_host("m3rnullable", nullable);
+    assert_exit("m3rnullable", &output, 0);
+
+    let method = r#"module spec.zn.m3rmethod;
+
+import { String, stringOf } from std.text;
+
+struct W { x: i32; }
+func make(): W { return W { x: 1 }; }
+func get(): String? { return stringOf("ab"); }
+func h(borrow recv: W, x: str): i32 { return i32(len(x)) + recv.x; }
+
+let n: i32 = make().h(get());
+
+func main(): i32 {
+    return n - 3;
+}
+"#;
+    assert_rejected("m3rmethod", method, "E10010", 1, &["value 'get()'"]);
+}
+
+/// Module-initializer raw arithmetic, casts, and volatile reads keep the body's
+/// unsafe gate.
+#[test]
+fn should_gate_module_raw_arithmetic_casts_and_volatile() {
+    let arithmetic = r#"module spec.zn.m4rarith;
+
+let a: i32 = 7;
+let p: raw i32 = unsafe &a;
+let q: raw i32 = p + 1;
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("m4rarith", arithmetic, "E10602", 1, &["pointer arithmetic"]);
+
+    let cast = r#"module spec.zn.m4rcast;
+
+let a: i32 = 7;
+let p: raw i32 = unsafe &a;
+let q: raw u8 = raw u8(p);
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("m4rcast", cast, "E10603", 1, &["raw pointer cast"]);
+
+    let volatile = r#"module spec.zn.m4rvolatile;
+
+let a: u32 = 7;
+let p: raw u32 = unsafe &a;
+let v: u32 = readVolatile32(p);
+
+func main(): i32 { return i32(v) - 7; }
+"#;
+    assert_rejected("m4rvolatile", volatile, "E10604", 1, &["volatile"]);
+}

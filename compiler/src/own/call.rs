@@ -929,18 +929,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
             let receiver_ty = receiver.ty.clone();
-            // A nullable receiver is already judged by `eval_dot_receiver`;
-            // this path adds the bare-`cstring` empty-pointer check, which its
-            // nullable flag does not express.
-            let may_be_null =
-                matches!(receiver_ty.kind, TyKind::CString) && !receiver_ty.nullable;
+            // The null judgment runs in `eval_dot_receiver`, where the
+            // branch's flow facts are active; this lowering path only records
+            // the generic-instance duty and its receiver name.
             let mut base = None;
             let mut narrowed = false;
             match &callee.kind {
                 ExprKind::Member { base: receiver_base, .. } => {
-                    if may_be_null {
-                        self.check_nonnull_expr(receiver_base, callee.span);
-                    }
                     base = self
                         .plain_binding(receiver_base)
                         .map(|(id, _)| self.bindings[id].name.clone());
@@ -954,9 +949,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .iter()
                             .map(|segment| ir::Projection::Field(segment.clone()))
                             .collect();
-                        if may_be_null && !self.state.place(id).is_narrowed(&projections) {
-                            self.check_nonnull_place(id, &projections, callee.span);
-                        }
                         narrowed = self.state.place(id).is_narrowed(&projections);
                         base = Some(self.bindings[id].name.clone());
                     } else if let Some((global, fields)) =
@@ -966,14 +958,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .iter()
                             .map(|field| ir::Projection::Field(field.clone()))
                             .collect();
-                        if may_be_null
-                            && !self
-                                .state
-                                .global_narrowed
-                                .contains(&(global.clone(), projections.clone()))
-                        {
-                            self.check_nonnull_global(&global, &projections, callee.span);
-                        }
                         narrowed = self
                             .state
                             .global_narrowed
@@ -981,11 +965,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         base = Some(global.name.clone());
                     }
                 }
-                _ => {
-                    if may_be_null {
-                        self.check_nonnull_value(&receiver, callee.span);
-                    }
-                }
+                _ => {}
             }
             self.record_len_operand(&receiver_ty, callee.span, narrowed, base);
             let receiver = self.bind_intrinsic_argument(receiver);

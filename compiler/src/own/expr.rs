@@ -780,7 +780,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let previous = self.fact_states(&facts);
                 self.apply_facts(&facts);
                 let _right_ty = self.eval(right);
-                self.restore_facts(&facts, &previous);
+                self.restore_facts_after(&facts, &previous, right);
             }
             ExprKind::Binary {
                 op: BinaryOp::LogicalOr,
@@ -796,7 +796,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let previous = self.fact_states(&facts);
                 self.apply_facts(&facts);
                 let _right_ty = self.eval(right);
-                self.restore_facts(&facts, &previous);
+                self.restore_facts_after(&facts, &previous, right);
             }
             ExprKind::Binary { op, left, right } => {
                 let left_ty = self.eval(left);
@@ -820,11 +820,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let then_previous = self.fact_states(&then_facts);
                 self.apply_facts(&then_facts);
                 self.eval(then_value);
-                self.restore_facts(&then_facts, &then_previous);
+                self.restore_facts_after(&then_facts, &then_previous, then_value);
                 let else_previous = self.fact_states(&else_facts);
                 self.apply_facts(&else_facts);
                 self.eval(else_value);
-                self.restore_facts(&else_facts, &else_previous);
+                self.restore_facts_after(&else_facts, &else_previous, else_value);
             }
             ExprKind::Cast { value, .. } => {
                 self.eval(value);
@@ -1234,6 +1234,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(PlaceTarget::Global(id, projections)) = self.place_target(expr) {
             self.check_nonnull_global(&id, &projections, span);
             return;
+        }
+        // A member read rooted at a call result or another non-place value
+        // has no binding to narrow; a bare `cstring` field or a nullable view
+        // field still needs the empty-state check.
+        if let Some(ty) = self.recorded_ty(expr) {
+            if ty.nullable || matches!(ty.kind, TyKind::CString) {
+                let name = match &expr.kind {
+                    ExprKind::Member { name, .. } => Some(name.clone()),
+                    ExprKind::Qualified(name) => name.segments.last().cloned(),
+                    _ => None,
+                };
+                if let Some(name) = name {
+                    self.report_null_once(&name, span);
+                    return;
+                }
+            }
         }
         // A call result has no binding to name, so the report spells the call
         // itself (`value 'get()' may be null here`), exactly as the frozen

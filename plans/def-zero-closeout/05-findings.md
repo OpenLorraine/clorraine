@@ -425,3 +425,29 @@ spellings of the same rules; all are fixed:
 Second-round verification: `make check` green (77 targets, 110 goldens); `make
 verify: all legs passed`; focused ASAN/LSan probes of the newly narrowed and
 rejected global/module paths are clean.
+
+**Phase 2 review, third round (final residuals).** The remaining criticals and
+major call-shape findings were fixed:
+
+- A callable value (local, parameter, field, or module func-typed binding)
+  resolves its own signature before any same-named module function, so an
+  unmarked `borrow`/`write` through a value clears the fact; a func-typed call
+  also invalidates module narrowing.
+- A fact restored after a short-circuit right operand is dropped when that
+  operand writes the owner, including the module-initializer forms.
+- A member of a call result used as a dot `len` receiver reports `E10010`;
+  the non-place member has no binding to narrow.
+- Module generic calls substitute their explicit type arguments and dot-method
+  arguments check the written parameters.
+- Module raw arithmetic, raw-pointer casts, and volatile intrinsics keep the
+  `unsafe` gate.
+- Transient short-circuit restoration preserves outer local/global facts only
+  when the right operand did not write them.
+
+Report-only, pre-existing: a dot `len` on a module-qualified value
+(`probe.n.c.len()` / `probe.n.c.len`) is rejected by the qualified path while
+the free `len(probe.n.c)` spelling works; this spelling is outside the row
+surface and unchanged by the Phase 2 fixes.
+
+Verification: `make check` green (77 targets, 110 goldens); `make verify: all
+legs passed`.

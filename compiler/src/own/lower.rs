@@ -807,7 +807,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         match &expr.kind {
-            ExprKind::Call { callee, args, .. } => {
+            ExprKind::Call { callee, type_args, args } => {
                 self.collect_initializer_lambdas(callee, sites);
                 for arg in args {
                     self.collect_initializer_lambdas(&arg.value, sites);
@@ -897,21 +897,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The initializer walk has no `check_arguments` pass, so a nullable call
     /// result passed to a non-null parameter would otherwise go unchecked.
-    fn initializer_call_params(&self, callee: &Expr) -> Option<Vec<Ty>> {
+    fn initializer_call_params(&self, callee: &Expr, type_args: &[crate::ast::Type]) -> Option<Vec<Ty>> {
         if let Some(field_ty) = self.callee_field_type(callee) {
-            return self
-                .callable_signature(&field_ty)
-                .map(|params| params.into_iter().map(|(_, ty)| ty).collect());
+            if let Some(params) = self.callable_signature(&field_ty) {
+                return Some(params.into_iter().map(|(_, ty)| ty).collect());
+            }
         }
         if let Some(name) = self.callee_name(callee) {
             match self.resolved_callee(&name) {
                 Some(Callee::User(decl)) => {
                     let type_params: Vec<String> =
                         decl.type_params.iter().map(|param| param.name.clone()).collect();
+                    let written: Vec<Ty> = decl
+                        .params
+                        .iter()
+                        .map(|param| self.resolve_with(&param.ty, &type_params))
+                        .collect();
+                    if type_args.is_empty() {
+                        return Some(written);
+                    }
+                    let bindings: std::collections::BTreeMap<String, Ty> = decl
+                        .type_params
+                        .iter()
+                        .zip(type_args)
+                        .map(|(param, ty)| (param.name.clone(), self.resolve(ty)))
+                        .collect();
                     return Some(
-                        decl.params
+                        written
                             .iter()
-                            .map(|param| self.resolve_with(&param.ty, &type_params))
+                            .map(|ty| crate::types::substitute(ty, &bindings))
                             .collect(),
                     );
                 }
@@ -985,7 +999,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_initializer_reads(base);
                 self.check_initializer_reads(index);
             }
-            ExprKind::Call { callee, args, .. } => {
+            ExprKind::Call { callee, type_args, args } => {
                 // The dot and qualified spellings of the `len` intrinsic use
                 // a call node, not `IntrinsicCall`; apply the same receiver
                 // null rule here.
@@ -1044,9 +1058,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
                 self.check_initializer_reads(callee);
-                if let Some(params) = self.initializer_call_params(callee) {
+                if let Some(params) = self.initializer_call_params(callee, type_args) {
                     let dot = self.is_dot_call(callee);
-                    let callable_field = self.callee_field_type(callee).is_some();
+                    let callable_field = self
+                        .callee_field_type(callee)
+                        .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_) | TyKind::Param(_)));
                     let offset = if dot && !callable_field { 1 } else { 0 };
                     for (index, arg) in args.iter().enumerate() {
                         if let Some(expected) = params.get(index + offset) {
@@ -1057,8 +1073,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for arg in args {
                     self.check_initializer_reads(&arg.value);
                 }
+                if self.call_may_write_globals(callee) {
+                    self.state.global_narrowed.clear();
+                }
             }
             ExprKind::IntrinsicCall { name, args } => {
+                if crate::ffi::is_volatile_intrinsic(name) && self.unsafe_depth == 0 {
+                    self.report_unsafe(UnsafeOp::Volatile, value.span);
+                }
                 for arg in args {
                     if let crate::ast::IntrinsicArg::Expr(inner) = arg {
                         if name == "len" {
@@ -1081,7 +1103,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let previous = self.fact_states(&facts);
                 self.apply_facts(&facts);
                 self.check_initializer_reads(right);
-                self.restore_facts(&facts, &previous);
+                self.restore_facts_after(&facts, &previous, right);
             }
             ExprKind::Binary {
                 op: crate::ast::BinaryOp::LogicalOr,
@@ -1093,9 +1115,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let previous = self.fact_states(&facts);
                 self.apply_facts(&facts);
                 self.check_initializer_reads(right);
-                self.restore_facts(&facts, &previous);
+                self.restore_facts_after(&facts, &previous, right);
             }
-            ExprKind::Binary { left, right, .. } => {
+            ExprKind::Binary { op, left, right } => {
+                let left_ty = self.ty(left);
+                let right_ty = self.ty(right);
+                if matches!(op, crate::ast::BinaryOp::Add | crate::ast::BinaryOp::Sub)
+                    && (matches!(left_ty.kind, TyKind::Raw(_))
+                        || matches!(right_ty.kind, TyKind::Raw(_)))
+                    && self.unsafe_depth == 0
+                {
+                    self.report_unsafe(UnsafeOp::PointerArithmetic, value.span);
+                }
                 self.check_initializer_reads(left);
                 self.check_initializer_reads(right);
             }
@@ -1118,8 +1149,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.check_initializer_reads(operand);
             }
-            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-                self.check_initializer_reads(value)
+            ExprKind::Cast { value, .. } => self.check_initializer_reads(value),
+            ExprKind::RawCast { value, .. } => {
+                if matches!(self.ty(value).kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+                    self.report_unsafe(UnsafeOp::PointerCast, value.span);
+                }
+                self.check_initializer_reads(value);
             }
             ExprKind::Conditional {
                 condition,
@@ -1131,11 +1166,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let then_previous = self.fact_states(&then_facts);
                 self.apply_facts(&then_facts);
                 self.check_initializer_reads(then_value);
-                self.restore_facts(&then_facts, &then_previous);
+                self.restore_facts_after(&then_facts, &then_previous, then_value);
                 let else_previous = self.fact_states(&else_facts);
                 self.apply_facts(&else_facts);
                 self.check_initializer_reads(else_value);
-                self.restore_facts(&else_facts, &else_previous);
+                self.restore_facts_after(&else_facts, &else_previous, else_value);
             }
             ExprKind::Unsafe(inner) => {
                 self.unsafe_depth += 1;
@@ -1265,7 +1300,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.walk_initializer_writes(target);
                 self.walk_initializer_writes(value);
             }
-            ExprKind::Call { callee, args, .. } => {
+            ExprKind::Call { callee, type_args, args } => {
                 self.walk_initializer_writes(callee);
                 for arg in args {
                     self.walk_initializer_writes(&arg.value);
@@ -6798,7 +6833,7 @@ pub(super) fn contains_update(expr: &Expr) -> bool {
         } => contains_update(condition) || contains_update(then_value) || contains_update(else_value),
         ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => contains_update(value),
         ExprKind::Unsafe(inner) => contains_update(inner),
-        ExprKind::Call { callee, args, .. } => {
+        ExprKind::Call { callee, type_args, args } => {
             contains_update(callee) || args.iter().any(|arg| contains_update(&arg.value))
         }
         ExprKind::StructLiteral { fields, .. } => {

@@ -22,23 +22,45 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// conservatively; a callable field or value is the same. The compiler
     /// intrinsics (`len` and the view builders) only read their operands.
     pub(super) fn call_may_write_globals(&self, callee: &Expr) -> bool {
-        if self.callee_field_type(callee).is_some() {
+        // A local, parameter, or capture binding shadows a module function of
+        // the same written name, so its callable identity comes first.
+        if self.func_binding_callee(callee).is_some() {
             return true;
         }
-        let Some(name) = self.callee_name(callee) else {
-            return true;
-        };
-        let simple = name.rsplit('.').next().unwrap_or(&name);
-        if matches!(simple, "len" | "slice" | "rawSlice" | "rawStr") {
-            return false;
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if matches!(field_ty.kind, TyKind::Func(_) | TyKind::Param(_)) {
+                return true;
+            }
         }
-        if matches!(
-            self.resolved_callee(&name),
-            Some(Callee::User(_)) | Some(Callee::Ffi(_))
-        ) {
+        if self
+            .recorded_ty(callee)
+            .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_) | TyKind::Param(_)))
+        {
             return true;
         }
-        self.is_dot_call(callee)
+        let name = self.callee_name(callee);
+        let simple = name.as_deref().and_then(|name| name.rsplit('.').next());
+        if let Some(simple) = simple {
+            if matches!(simple, "len" | "slice" | "rawSlice" | "rawStr") {
+                if matches!(
+                    name.as_deref().and_then(|name| self.resolved_callee(name)),
+                    Some(Callee::User(_)) | Some(Callee::Ffi(_))
+                ) {
+                    return true;
+                }
+                return false;
+            }
+        }
+        if let Some(name) = name.as_deref() {
+            if matches!(
+                self.resolved_callee(name),
+                Some(Callee::User(_)) | Some(Callee::Ffi(_))
+            ) {
+                return true;
+            }
+        }
+        // Any remaining value callee or dot call is conservatively a writer.
+        true
     }
 
     pub(super) fn check_call_expr(
@@ -307,7 +329,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // covers the view-consuming intrinsics reached as dot calls
                 // (`s.len()`), whose receiver otherwise bypasses the member
                 // read path.
-                if self.ty(base).nullable {
+                let base_ty = self.ty(base);
+                if base_ty.nullable || matches!(base_ty.kind, TyKind::CString) {
                     self.check_nonnull_expr(base, callee.span);
                 }
             }
@@ -326,7 +349,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // type: a nullable owner under a non-nullable receiver, or a
                 // non-nullable field under a nullable-typed head, is judged
                 // by what the call actually reads.
-                if self.dot_receiver_type(callee).nullable {
+                let receiver_ty = self.dot_receiver_type(callee);
+                if receiver_ty.nullable || matches!(receiver_ty.kind, TyKind::CString) {
                     let receiver = if path.segments.len() == 1 {
                         Expr {
                             kind: ExprKind::Name(path.segments[0].clone()),

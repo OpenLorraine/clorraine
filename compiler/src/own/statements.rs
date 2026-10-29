@@ -1400,15 +1400,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// short-circuit chain (`s != null && len(s) > 0`) narrowed.
     /// The declared parameter modes of a call's callee, when it has them.
     fn call_parameter_modes(&self, callee: &Expr) -> Option<Vec<crate::ast::Mode>> {
-        if let Some(name) = self.callee_name(callee) {
-            if let Some(modes) = self.callee_modes(&name) {
-                return Some(modes);
-            }
-        }
         if let Some(id) = self.func_binding_callee(callee) {
             return self.callable_modes(&self.bindings[id].ty);
         }
-        self.callable_modes(&self.ty(callee))
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if let Some(params) = self.callable_signature(&field_ty) {
+                return Some(params.into_iter().map(|(mode, _)| mode).collect());
+            }
+        }
+        if let Some(ty) = self.recorded_ty(callee) {
+            if let Some(modes) = self.callable_modes(&ty) {
+                return Some(modes);
+            }
+        }
+        self.callee_name(callee)
+            .and_then(|name| self.callee_modes(&name))
     }
 
     fn expression_writes_owner(&self, expr: &Expr, owner: &super::place::NarrowOwner) -> bool {
@@ -1572,6 +1578,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ) {
         for ((owner, projections, non_null), held) in facts.iter().zip(states) {
             self.apply_narrowing(owner, projections, if *held { *non_null } else { false });
+        }
+    }
+
+    /// Restores facts after evaluating a right operand, dropping any fact the
+    /// operand itself wrote.
+    pub(super) fn restore_facts_after(
+        &mut self,
+        facts: &[(super::place::NarrowOwner, Vec<ir::Projection>, bool)],
+        states: &[bool],
+        right: &Expr,
+    ) {
+        for ((owner, projections, non_null), held) in facts.iter().zip(states) {
+            if self.expression_writes_owner(right, owner) {
+                self.apply_narrowing(owner, projections, false);
+            } else if *held {
+                self.apply_narrowing(owner, projections, *non_null);
+            } else {
+                self.apply_narrowing(owner, projections, false);
+            }
         }
     }
 
