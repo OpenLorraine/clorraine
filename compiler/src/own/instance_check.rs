@@ -62,6 +62,7 @@ pub fn check(
     check_opaque_indexes(program, sema, mono, diagnostics);
     check_opaque_member_uses(program, sema, mono, diagnostics);
     check_opaque_conditionals(program, sema, mono, diagnostics);
+    check_len_operand_requirements(program, mono, diagnostics);
     check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
@@ -2262,6 +2263,67 @@ fn resolved_conditional_arm(
         return arm_ty.clone();
     }
     resolved_member_ty(sema, &base, &projection.name).unwrap_or_else(|| arm_ty.clone())
+}
+
+/// Reports a generic `len` operand's substituted length surface.
+///
+/// The declaration accepts `len(x)` while `x` is still a type parameter. Each
+/// instance substitutes the operand type: a scalar or arbitrary struct reports
+/// `E10200`, while a nullable view or handle (and any `cstring`, whose empty
+/// pointer has no `?` spelling) keeps the possible-null rule unless the
+/// declaration already narrowed the operand.
+fn check_len_operand_requirements(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut reported = std::collections::BTreeSet::new();
+    for requirement in mono.len_operand_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let key = (requirement.span.start, requirement.span.end);
+            if reported.contains(&key) {
+                break;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let ty = crate::types::substitute(&requirement.ty, &bindings);
+            if ty.is_unknown() || crate::types::contains_param(&ty) {
+                continue;
+            }
+            if !crate::types::len_operand_capable(&ty) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10200",
+                        format!("len is not defined for '{}'", ty.display()),
+                        requirement.span,
+                    )
+                    .with_help("pass an array, slice, `str`, or `cstring`"),
+                );
+                reported.insert(key);
+                break;
+            }
+            let may_be_null = ty.nullable || matches!(ty.kind, TyKind::CString);
+            if may_be_null && !requirement.narrowed {
+                let name = requirement.base.as_deref().unwrap_or("value");
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10010",
+                        format!("value '{name}' may be null here"),
+                        requirement.span,
+                    )
+                    .with_help("check `!= null` before the use"),
+                );
+                reported.insert(key);
+                break;
+            }
+        }
+    }
 }
 
 /// Reports the conditional rule on an opaque site's substituted arms.

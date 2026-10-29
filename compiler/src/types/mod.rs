@@ -934,6 +934,25 @@ pub fn null_arm_needs_report(arm: &Ty, context: &Ty) -> bool {
     is_null_shaped(arm) && context_requires_concrete(context)
 }
 
+/// True when a type carries a length for the `len` intrinsic.
+///
+/// The frozen surface is an array or slice, a `str`, a `cstring`, the owned
+/// `String` handle, and the growable `Array<T>`. A raw pointer keeps the
+/// historical empty-length fallback; a scalar, enum, or arbitrary struct does
+/// not.
+pub fn len_operand_capable(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Array { .. }
+        | TyKind::Str
+        | TyKind::StaticStr
+        | TyKind::CString
+        | TyKind::Raw(_) => true,
+        TyKind::Handle(name) => name == "String",
+        TyKind::Struct(name, _) => name == "Array",
+        _ => false,
+    }
+}
+
 /// True when a nullable value reaches a context that cannot hold null.
 ///
 /// A non-nullable concrete destination keeps the possible-null rule; a

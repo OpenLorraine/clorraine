@@ -238,6 +238,26 @@ pub struct RequiresConditionalArmNarrowing {
     pub else_narrowed: bool,
 }
 
+/// A `len` operand whose declared type still names a type parameter.
+///
+/// The declaration cannot tell whether an instance is a length-bearing type or
+/// a scalar; the per-instance audit substitutes the operand type and reports
+/// `E10200` for a scalar. A `cstring` substitution also keeps the possible-null
+/// requirement unless the declaration's flow already narrowed the operand.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresLenOperand {
+    /// The generic function whose `len` operand defers the judgment.
+    pub function: String,
+    /// The operand type as written at the declaration.
+    pub ty: Ty,
+    /// The operand's span, which identifies the site with the function.
+    pub span: Span,
+    /// True when the declaration's flow already narrowed the operand.
+    pub narrowed: bool,
+    /// The written binding name, when the operand names one.
+    pub base: Option<String>,
+}
+
 /// A body's obligation that a lend may only be moved into an owned position
 /// when the instance's type is duplicable.
 ///
@@ -621,6 +641,7 @@ pub struct Monomorphization {
     iterable_requirements: Vec<RequiresIterable>,
     view_return_requirements: Vec<RequiresViewReturnCandidates>,
     conditional_narrowing_requirements: Vec<RequiresConditionalArmNarrowing>,
+    len_operand_requirements: Vec<RequiresLenOperand>,
 }
 
 impl Monomorphization {
@@ -696,6 +717,16 @@ impl Monomorphization {
     /// Every recorded conditional-arm narrowing duty.
     pub fn conditional_narrowing_requirements(&self) -> &[RequiresConditionalArmNarrowing] {
         &self.conditional_narrowing_requirements
+    }
+
+    /// Records a `len` operand the instance audit must judge.
+    pub fn require_len_operand(&mut self, requirement: RequiresLenOperand) {
+        self.len_operand_requirements.push(requirement);
+    }
+
+    /// Every recorded `len` operand duty.
+    pub fn len_operand_requirements(&self) -> &[RequiresLenOperand] {
+        &self.len_operand_requirements
     }
 
     /// Records a copy obligation the generic body owes.

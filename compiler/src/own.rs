@@ -116,6 +116,7 @@ pub fn check(
     let mut opaque_store_duties = Vec::new();
     let mut view_return_duties = Vec::new();
     let mut conditional_narrowing_duties = Vec::new();
+    let mut len_operand_duties = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -150,6 +151,7 @@ pub fn check(
                     opaque_store_reqs,
                     view_returns,
                     conditional_narrowing,
+                    len_operands,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -165,6 +167,7 @@ pub fn check(
                 opaque_store_duties.extend(opaque_store_reqs);
                 view_return_duties.extend(view_returns);
                 conditional_narrowing_duties.extend(conditional_narrowing);
+                len_operand_duties.extend(len_operands);
             }
         }
     }
@@ -233,6 +236,9 @@ pub fn check(
     }
     for duty in conditional_narrowing_duties {
         monomorphization.require_conditional_narrowing(duty);
+    }
+    for duty in len_operand_duties {
+        monomorphization.require_len_operand(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -584,8 +590,16 @@ struct FunctionChecker<'a, 'd> {
     /// per instance. The declaration records which arms its own flow already
     /// narrowed, so the instance reports only the arms that can still be null.
     conditional_narrowing_requirements: Vec<ir::RequiresConditionalArmNarrowing>,
+    /// The `len` operands this body owes its instances.
+    ///
+    /// A generic `len(x)` can be a scalar at one instance and an array at
+    /// another; the declaration records the site and the audit applies the
+    /// frozen length surface after substitution.
+    len_operand_requirements: Vec<ir::RequiresLenOperand>,
     /// Opaque-store sites already recorded, so one site owes one duty.
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
+    /// `len` operand sites already recorded, so one site owes one duty.
+    recorded_len_operands: BTreeSet<(u32, u32)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Store spans that already emitted the concrete lend-move report.
@@ -662,6 +676,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             view_return_paths: Vec::new(),
             view_return_requirements: Vec::new(),
             conditional_narrowing_requirements: Vec::new(),
+            len_operand_requirements: Vec::new(),
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
@@ -705,6 +720,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self_assign_requirements: Vec::new(),
             opaque_store_requirements: Vec::new(),
             recorded_opaque_stores: BTreeSet::new(),
+            recorded_len_operands: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
             reported_store_spans: BTreeSet::new(),
             recorded_whole_out_slot_store: BTreeSet::new(),
@@ -740,6 +756,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresOpaqueStore>,
         Vec<ir::RequiresViewReturnCandidates>,
         Vec<ir::RequiresConditionalArmNarrowing>,
+        Vec<ir::RequiresLenOperand>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -795,6 +812,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.opaque_store_requirements,
             self.view_return_requirements,
             self.conditional_narrowing_requirements,
+            self.len_operand_requirements,
         )
     }
 

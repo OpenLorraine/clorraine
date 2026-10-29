@@ -1061,11 +1061,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // A `cstring` can hold the empty pointer even without
                         // the `?` suffix, so its length reads the null state
                         // just as a nullable view does.
+                        let operand_ty = self.ty(inner);
                         if name == "len"
-                            && (self.ty(inner).nullable
-                                || matches!(self.ty(inner).kind, TyKind::CString))
+                            && (operand_ty.nullable
+                                || matches!(operand_ty.kind, TyKind::CString))
                         {
                             self.check_nonnull_expr(inner, expr.span);
+                        }
+                        // A generic operand is judged at each instance: the
+                        // declaration cannot tell an array from a scalar, and
+                        // a `cstring` substitution keeps the null requirement.
+                        if name == "len" && crate::types::contains_param(&operand_ty) {
+                            let key = (inner.span.start, inner.span.end);
+                            if self.recorded_len_operands.insert(key) {
+                                let base = self.plain_binding(inner).map(|(id, _)| {
+                                    self.bindings[id].name.clone()
+                                });
+                                self.len_operand_requirements.push(
+                                    ir::RequiresLenOperand {
+                                        function: self.decl.name.clone(),
+                                        ty: operand_ty,
+                                        span: inner.span,
+                                        narrowed: self.expr_is_narrowed(inner),
+                                        base,
+                                    },
+                                );
+                            }
                         }
                     }
                 }

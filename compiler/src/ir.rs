@@ -44,7 +44,7 @@ pub use guards::value_needs_guards;
 pub use mono::{
     CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
     RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOpaqueStore,
-    RequiresConditionalArmNarrowing, RequiresViewReturnCandidates,
+    RequiresConditionalArmNarrowing, RequiresLenOperand, RequiresViewReturnCandidates,
     RequiresWholeOutSlotStore, OpaqueFrame, OpaqueSource, RequiresOutSlotPlace,
     RequiresSelfAssign, RequiresStorableSlot,
     StructInstance,

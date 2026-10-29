@@ -1482,17 +1482,7 @@ impl Checker<'_, '_> {
             // A generic operand is judged at its instances.
             return;
         }
-        let capable = match &ty.kind {
-            TyKind::Array { .. }
-            | TyKind::Str
-            | TyKind::StaticStr
-            | TyKind::CString
-            | TyKind::Raw(_) => true,
-            TyKind::Handle(name) => name == "String",
-            TyKind::Struct(name, _) => name == "Array",
-            _ => false,
-        };
-        if !capable {
+        if !crate::types::len_operand_capable(ty) {
             self.error(
                 "E10200",
                 format!("len is not defined for '{}'", ty.display()),

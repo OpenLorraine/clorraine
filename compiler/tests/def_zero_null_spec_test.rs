@@ -310,6 +310,55 @@ func main(): i32 {
 }
 "#;
     assert_rejected("d195u8", u8_operand, "E10200", 1, &["len"]);
+
+    let generic_scalar = r#"module spec.zn.d195generic;
+
+func f<T>(x: T): i32 {
+    return i32(len(x));
+}
+
+func main(): i32 {
+    let n: u8 = 3;
+    return f<u8>(n);
+}
+"#;
+    assert_rejected("d195generic", generic_scalar, "E10200", 1, &["len"]);
+
+    let generic_cstring = r#"module spec.zn.d195genericcstring;
+
+func f<T>(x: T): i32 {
+    return i32(len(x));
+}
+
+func main(): i32 {
+    let c: cstring = null;
+    return f<cstring>(c);
+}
+"#;
+    assert_rejected(
+        "d195genericcstring",
+        generic_cstring,
+        "E10010",
+        1,
+        &["value 'x'"],
+    );
+
+    let generic_cstring_narrowed = r#"module spec.zn.d195genericcstringok;
+
+func f<T>(x: T): i32 {
+    if (x == null) {
+        return 0;
+    }
+    return i32(len(x));
+}
+
+func main(): i32 {
+    let c: cstring = null;
+    return f<cstring>(c);
+}
+"#;
+    let output = run_strict_host("d195genericcstringok", generic_cstring_narrowed);
+    assert_exit("d195genericcstringok", &output, 0);
 }
 
 /// The literal null in an aggregate field or array element reports the frozen

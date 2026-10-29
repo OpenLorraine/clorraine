@@ -339,7 +339,10 @@ implemented and the new `def_zero_null_spec_test.rs` (14 cases) is green:
   `usize`/`u8` reports `E10200`. A `cstring` can hold the empty pointer without
   a `?`, so `len(c)` requires a `!= null` narrowing and the unchecked spelling
   reports `E10010` (the runtime helper is not null-safe). The frozen
-  raw-pointer empty-length fallback stays accepted.
+  raw-pointer empty-length fallback stays accepted. A generic `len(x)` records
+  a per-instance duty: a scalar substitution reports `E10200`, and a
+  `cstring` substitution keeps the `E10010` null requirement unless the
+  declaration already narrowed the operand.
 - `DEF-246`: a literal `null` in a struct field or array element reports
   `E10012`; the established null-shape binding lowering stays accepted.
 - `DEF-247`: a read or store through a null-shaped head reports `E10212`.
