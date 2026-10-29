@@ -1292,7 +1292,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// state after the `if` is the state of the branches that still reach it.
     pub(super) fn check_if(&mut self, decl: &'a IfStmt) {
         self.eval(&decl.condition);
-        let narrow = self.narrowing(&decl.condition);
+        let (then_facts, else_facts) = self.condition_facts(&decl.condition);
         let before = self.state.clone();
 
         let then_block = self.new_block();
@@ -1307,7 +1307,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
 
         self.switch_to(then_block);
-        if let Some((id, projections, non_null)) = &narrow {
+        for (id, projections, non_null) in &then_facts {
             self.apply_narrowing(*id, projections, *non_null);
         }
         self.check_block(&decl.then_block);
@@ -1319,8 +1319,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         self.state = before;
         self.switch_to(else_block);
-        if let Some((id, projections, non_null)) = &narrow {
-            self.apply_narrowing(*id, projections, !*non_null);
+        for (id, projections, non_null) in &else_facts {
+            self.apply_narrowing(*id, projections, *non_null);
         }
         match &decl.else_branch {
             Some(ElseBranch::If(nested)) => self.check_if(nested),
@@ -1341,8 +1341,49 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.switch_to(join);
     }
 
+    /// The narrowing facts that hold on a condition's true and false edges.
+    ///
+    /// A direct null comparison gives its fact and the negated fact. A
+    /// conjunction's true edge combines both operands; a disjunction's false
+    /// edge combines both failed operands. The other edge of a conjunction or
+    /// disjunction has no safe single fact, so it stays empty.
+    pub(super) fn condition_facts(
+        &self,
+        condition: &Expr,
+    ) -> (
+        Vec<(usize, Vec<ir::Projection>, bool)>,
+        Vec<(usize, Vec<ir::Projection>, bool)>,
+    ) {
+        if let ExprKind::Binary { op, left, right } = &condition.kind {
+            match op {
+                BinaryOp::LogicalAnd => {
+                    let (left_true, _) = self.condition_facts(left);
+                    let (right_true, _) = self.condition_facts(right);
+                    let mut facts = left_true;
+                    facts.extend(right_true);
+                    return (facts, Vec::new());
+                }
+                BinaryOp::LogicalOr => {
+                    let (_, left_false) = self.condition_facts(left);
+                    let (_, right_false) = self.condition_facts(right);
+                    let mut facts = left_false;
+                    facts.extend(right_false);
+                    return (Vec::new(), facts);
+                }
+                _ => {}
+            }
+        }
+        if let Some((id, projections, non_null)) = self.narrowing(condition) {
+            return (
+                vec![(id, projections.clone(), non_null)],
+                vec![(id, projections, !non_null)],
+            );
+        }
+        (Vec::new(), Vec::new())
+    }
+
     /// Records that a place path is (or is not) known to be not null.
-    fn apply_narrowing(&mut self, id: usize, projections: &[ir::Projection], non_null: bool) {
+    pub(super) fn apply_narrowing(&mut self, id: usize, projections: &[ir::Projection], non_null: bool) {
         let key = projections.to_vec();
         self.with_place(id, |place| {
             if non_null {

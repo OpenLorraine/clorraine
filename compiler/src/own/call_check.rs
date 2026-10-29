@@ -922,8 +922,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let sibling_fixed = resolved.is_some_and(|ty| {
                     !ty.is_unknown() && !ty.nullable && !crate::types::contains_param(ty)
                 });
-                if null_argument && (null_parameter || sibling_fixed) {
-                    self.report_null_rule(arg.span);
+                if null_argument {
+                    if null_parameter || sibling_fixed {
+                        self.report_null_rule(arg.span);
+                    } else if resolved.is_some_and(|ty| ty.nullable) {
+                        // The inferred instance resolved the parameter to a
+                        // nullable type, so the null argument is legal exactly
+                        // as it is at the explicit nullable instance.
+                    } else {
+                        self.check_value_into(&arg.value, expected, arg.span);
+                    }
                 } else {
                     self.check_value_into(&arg.value, expected, arg.span);
                 }
@@ -2026,7 +2034,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // `cstring`, views, and a literal `null`. A handle or
                 // aggregate is rejected whether or not it is nullable: a
                 // narrowed value still owns storage.
-                if is_handle_or_aggregate(&arg_ty) && !matches!(arg.value.kind, ExprKind::Null) {
+                if (is_handle_or_aggregate(&arg_ty)
+                    || crate::types::is_null_shaped(&arg_ty))
+                    && !matches!(arg.value.kind, ExprKind::Null)
+                {
                     let param_name = signature.params[index].name.clone();
                     self.error(
                         "E10101",

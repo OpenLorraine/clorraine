@@ -323,3 +323,42 @@ for a later initializer/carrier batch, not reopened as Phase 1 rows.
 Verification at the Phase 1 close: `make check` green (75 targets, 110
 goldens); `make verify: all legs passed`; the focused `RDC_ASAN=1` spec suite
 is clean (20/20).
+
+**Phase 2 implementation (null and type rules).** The null/type batch is
+implemented and the new `def_zero_null_spec_test.rs` (14 cases) is green:
+
+- `DEF-190`: a nullable call result widened into a non-nullable view reports
+  `E10010` naming the call (`value 'get()' may be null here`).
+- `DEF-191`: the index and store-index null checks no longer exempt `unsafe`.
+- `DEF-192`: a qualified read checks the null state of every hop's base, so
+  `v.len`/`v.ptr` on a nullable slice reports `E10010`.
+- `DEF-193`: `&&`/`||` evaluate their right operand under the left comparison's
+  narrowing fact; the true edge of `&&` and the false edge of `||` narrow the
+  body, and a loop head narrows the loop body.
+- `DEF-195`/`DEF-483`: `len(cstring)` emits `cl_cstring_len`; `len` on
+  `usize`/`u8` reports `E10200`. The frozen raw-pointer empty-length fallback
+  stays accepted.
+- `DEF-246`: a literal `null` in a struct field or array element reports
+  `E10012`; the established null-shape binding lowering stays accepted.
+- `DEF-247`: a read or store through a null-shaped head reports `E10212`.
+- `DEF-248`: a null-shaped binding in an arithmetic or comparison operand
+  reports `E10012`; the legal null comparison against a view and the
+  uncontracted-ffi null report keep their frozen paths.
+- `DEF-249`: a null-shaped condition reports `E10218`.
+- `DEF-383`: an inferred generic call with a null argument uses the resolved
+  nullable parameter, so `pair(s, null)` with `s: str?` keys `cl_pair__strQ`
+  and accepts exactly as `pair<str?>(s, null)`.
+- `DEF-417`: TY-4 recurses through function signatures, array elements, and raw
+  pointees and now covers enum backing, lambda parameters, ffi parameters, and
+  `sizeof`/`offsetof` written types.
+- `DEF-420`: a negated float literal takes its f32 destination context.
+- `DEF-467`: a raw self-copy of a nullable out-slot borrow reports the direct
+  spelling's `E10020`; the non-nullable borrow keeps its frozen `E10034`.
+- `DEF-542`: at HEAD the generic `copy<str>(borrow v, borrow slot)` already
+  reports `E10033` exactly as the concrete twin, so the row is already green;
+  the new spec case pins both spellings. `DEF-414` was closed stale in Phase 0
+  and needs no Phase 2 work.
+
+`def_zero_null_impl_test.rs` pins the runtime cstring length call, the inferred
+nullable instance, and the narrowed loop-head C condition. `make check` is
+green (77 targets, 110 goldens) and `make verify` passes all legs.

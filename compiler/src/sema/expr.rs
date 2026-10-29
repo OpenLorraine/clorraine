@@ -186,7 +186,11 @@ impl Checker<'_, '_> {
 
         let param_types: Vec<Ty> = params
             .iter()
-            .map(|param| self.resolve_type(&param.ty))
+            .map(|param| {
+                let ty = self.resolve_type(&param.ty);
+                self.check_nullable_type(&ty, param.ty.span);
+                ty
+            })
             .collect();
 
         let listed: Vec<String> = captures
@@ -879,6 +883,19 @@ impl Checker<'_, '_> {
                     }
                 }
             }
+            // A null-shaped head has no member surface. The unresolved type
+            // carries no field table, so every read and store reports the
+            // frozen unknown-member rule rather than emitting a C member path.
+            TyKind::Unknown if base_ty.nullable => {
+                self.error(
+                    "E10212",
+                    format!("'{name}' is not a member of 'unknown'"),
+                    "check the declaration or the spelling",
+                    span,
+                );
+                Ty::unknown()
+            }
+            TyKind::Unknown => Ty::unknown(),
             // A field reached through a raw pointer is typed from the
             // pointee, because the dereference is implied: a raw struct's
             // field resolves, while a raw enum's member is the value form of
@@ -1302,7 +1319,8 @@ impl Checker<'_, '_> {
             "sizeof" => {
                 for arg in args {
                     if let IntrinsicArg::Type(ty) = arg {
-                        let _ = self.resolve_type(ty);
+                        let resolved = self.resolve_type(ty);
+                        self.check_nullable_type(&resolved, ty.span);
                     }
                 }
                 Ty::usize_ty()
@@ -1311,7 +1329,8 @@ impl Checker<'_, '_> {
                 for arg in args {
                     match arg {
                         IntrinsicArg::Type(ty) => {
-                            let _ = self.resolve_type(ty);
+                            let resolved = self.resolve_type(ty);
+                            self.check_nullable_type(&resolved, ty.span);
                         }
                         IntrinsicArg::Expr(expr) => {
                             self.check_value(expr, None);
@@ -1323,7 +1342,8 @@ impl Checker<'_, '_> {
             "len" => {
                 for arg in args {
                     if let IntrinsicArg::Expr(expr) = arg {
-                        self.check_value(expr, None);
+                        let ty = self.check_value(expr, None);
+                        self.check_len_operand(&ty, expr.span);
                     }
                 }
                 Ty::usize_ty()
@@ -1452,9 +1472,45 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// Requires a length-bearing operand, reporting `E10200` otherwise.
+    ///
+    /// The frozen length surface is an array or slice, a `str`, a `cstring`,
+    /// the owned `String` handle, and the growable `Array<T>`. A scalar has no
+    /// length, so the accepted scalar spelling cannot silently fold to zero.
+    pub(super) fn check_len_operand(&mut self, ty: &Ty, span: Span) {
+        if ty.is_unknown() || ty.is_param() {
+            // A generic operand is judged at its instances.
+            return;
+        }
+        let capable = match &ty.kind {
+            TyKind::Array { .. }
+            | TyKind::Str
+            | TyKind::StaticStr
+            | TyKind::CString
+            | TyKind::Raw(_) => true,
+            TyKind::Handle(name) => name == "String",
+            TyKind::Struct(name, _) => name == "Array",
+            _ => false,
+        };
+        if !capable {
+            self.error(
+                "E10200",
+                format!("len is not defined for '{}'", ty.display()),
+                "pass an array, slice, `str`, or `cstring`",
+                span,
+            );
+        }
+    }
+
     /// Requires a `bool` operand, reporting `E10218` otherwise.
     pub(super) fn require_bool(&mut self, ty: &Ty, span: Span) {
-        if ty.is_bool() || ty.is_unknown() || ty.is_param() {
+        // A null-shaped value has no boolean surface even though its kind is
+        // unresolved; an ordinary unresolved or generic condition stays
+        // deferred, as before.
+        if ty.is_bool()
+            || ty.is_param()
+            || (ty.is_unknown() && !crate::types::is_null_shaped(ty))
+        {
             return;
         }
         self.error(

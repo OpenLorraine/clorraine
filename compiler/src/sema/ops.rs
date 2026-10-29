@@ -32,6 +32,20 @@ impl Checker<'_, '_> {
         expected: Option<&Ty>,
     ) -> Ty {
         if op == UnaryOp::Neg {
+            // The folded negation of a float literal takes its destination
+            // float width, exactly as the positive literal does. The integer
+            // branch below has the same shape with a fit check.
+            if matches!(operand.kind, ExprKind::Float(_)) {
+                if let Some(expected) = expected {
+                    if matches!(
+                        expected.kind,
+                        TyKind::Scalar(ScalarType::F32 | ScalarType::F64)
+                    ) {
+                        let ty = self.check_value(operand, Some(expected));
+                        return ty;
+                    }
+                }
+            }
             if let Some(value) = int_literal_value(expr) {
                 if let Some(scalar) = expected.and_then(Self::integer_context) {
                     if !int_fits(value, scalar) {
@@ -98,6 +112,58 @@ impl Checker<'_, '_> {
         let left_ty = self.check_value(left, None);
         let right_ty = self.check_value(right, None);
         let (left_ty, right_ty) = self.adapt_operands(left, left_ty, right, right_ty);
+        // The null shape has no operator surface. A literal `null` keeps its
+        // legal comparison and narrowing uses; a binding inferred from `null`
+        // is a concrete use and reports the null rule against the other
+        // operand's type.
+        let left_null = is_null_shaped(&left_ty) && !matches!(left.kind, ExprKind::Null);
+        let right_null = is_null_shaped(&right_ty) && !matches!(right.kind, ExprKind::Null);
+        if left_null
+            && !is_null_shaped(&right_ty)
+            && !(matches!(op, BinaryOp::Eq | BinaryOp::Ne)
+                && crate::borrow::is_nullable_capable(&right_ty))
+        {
+            self.error(
+                "E10012",
+                "'null' is not allowed here",
+                "declare the type `T?` or avoid the empty state",
+                left.span,
+            );
+            return match op {
+                BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::LogicalAnd
+                | BinaryOp::LogicalOr => Ty::boolean(),
+                _ => Ty::unknown(),
+            };
+        }
+        if right_null
+            && !is_null_shaped(&left_ty)
+            && !(matches!(op, BinaryOp::Eq | BinaryOp::Ne)
+                && crate::borrow::is_nullable_capable(&left_ty))
+        {
+            self.error(
+                "E10012",
+                "'null' is not allowed here",
+                "declare the type `T?` or avoid the empty state",
+                right.span,
+            );
+            return match op {
+                BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::LogicalAnd
+                | BinaryOp::LogicalOr => Ty::boolean(),
+                _ => Ty::unknown(),
+            };
+        }
         // A conditional operand with a null arm is judged against the other
         // operand's non-nullable base type. The nullable flag a literal
         // inherits from the other side is stripped: the arithmetic result

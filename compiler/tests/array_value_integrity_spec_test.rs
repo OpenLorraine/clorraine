@@ -1044,7 +1044,7 @@ func main(): i32 {
 /// accepted and memory-clean, while its scalar fallback value is recorded in
 /// the implementation pin rather than asserted here.
 #[test]
-fn should_report_the_view_length_matrix_and_accept_the_filed_scalar_len_probe() {
+fn should_report_the_view_length_matrix_and_reject_the_filed_scalar_len_probe() {
     let matrix = r#"module spec.avi.viewlengthcontrol;
 
 import { String, stringOf } from std.text;
@@ -1080,8 +1080,12 @@ func main(): i32 {
     return get(w, 1);
 }
 "#;
-    let output = run_memory("viewlengthfiled", filed);
-    assert_no_asan("viewlengthfiled", &output);
+    assert_rejected_with(
+        "viewlengthfiled",
+        filed,
+        "E10200",
+        &["len is not defined for 'u8'"],
+    );
 }
 
 /// A folded `len` operand still evaluates a non-call effectful shape.

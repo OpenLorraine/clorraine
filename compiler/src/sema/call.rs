@@ -75,7 +75,8 @@ impl Checker<'_, '_> {
                                 &last, args.len(), 1, type_args, span,
                             );
                             for arg in args {
-                                self.check_value(&arg.value, None);
+                                let ty = self.check_value(&arg.value, None);
+                                self.check_len_operand(&ty, arg.span);
                             }
                             return Ty::usize_ty();
                         }
@@ -683,7 +684,18 @@ impl Checker<'_, '_> {
         args: &[Arg],
         span: Span,
     ) -> Ty {
-        match self.dot_call(&receiver, name) {
+        let call = self.dot_call(&receiver, name);
+        // Only the intrinsic `len` receiver is a length operand; a callable
+        // field (or a user function) named `len` keeps its own signature.
+        let intrinsic_len = matches!(
+            &call,
+            Some(DotCall::Function(signature))
+                if signature.params.len() == 1 && signature.params[0].is_unknown()
+        );
+        if name == "len" && intrinsic_len {
+            self.check_len_operand(&receiver, span);
+        }
+        match call {
             Some(DotCall::Field(signature)) => {
                 // A callable field carries its own parameter modes, so a
                 // `take` argument still moves and a call-site marker still
@@ -1252,7 +1264,9 @@ impl Checker<'_, '_> {
         }
         let mut params = Vec::with_capacity(signature.params.len());
         for param in &signature.params {
-            params.push(self.resolve_type(&param.ty));
+            let resolved = self.resolve_type(&param.ty);
+            self.check_nullable_type(&resolved, param.ty.span);
+            params.push(resolved);
         }
         self.ffi_params.insert(name.to_owned(), params.clone());
         params

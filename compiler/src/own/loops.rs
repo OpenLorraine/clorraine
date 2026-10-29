@@ -29,6 +29,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // effect (a move, for example) belongs to the back edge and must be
             // part of the fixpoint.
             checker.eval(&decl.condition);
+            let (facts, _) = checker.condition_facts(&decl.condition);
+            for (id, projections, non_null) in &facts {
+                checker.apply_narrowing(*id, projections, *non_null);
+            }
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -68,6 +72,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.exits
             .push(ExitFrame::new(exit, Some(head), floor, floor));
         self.switch_to(body_block);
+        let (facts, _) = self.condition_facts(&decl.condition);
+        for (id, projections, non_null) in &facts {
+            self.apply_narrowing(*id, projections, *non_null);
+        }
         self.check_block(&decl.body);
         let body_terminated = self.is_terminated();
         if !body_terminated {

@@ -77,6 +77,7 @@ impl Checker<'_, '_> {
     /// must be a constant expression that fits the backing type.
     pub(super) fn check_enum(&mut self, decl: &EnumDecl) {
         let backing = self.resolve_type(&decl.backing);
+        self.check_nullable_type(&backing, decl.backing.span);
         if !backing.is_unknown() && !backing.is_param() && !backing.is_integer() {
             self.error(
                 "E10211",
@@ -159,6 +160,29 @@ impl Checker<'_, '_> {
     /// reports of the same program. The span is the declaration's own name
     /// span, so the site matches the ownership check exactly.
     pub(super) fn check_nullable_type(&mut self, ty: &Ty, span: Span) {
+        self.check_nullable_type_shallow(ty, span);
+        // A declared type can carry a function signature, a fixed-array
+        // element, a raw pointee, or a struct argument. Every nested node
+        // faces the same rule, so `func(i32?)` and `Box<i32?>` report too.
+        match &ty.kind {
+            TyKind::Array { element, .. } | TyKind::Raw(element) => {
+                self.check_nullable_type(element, span);
+            }
+            TyKind::Func(signature) => {
+                for param in &signature.params {
+                    self.check_nullable_type(&param.ty, span);
+                }
+                self.check_nullable_type(&signature.returns, span);
+            }
+            _ => {}
+        }
+    }
+
+    /// Reports one nullable node without walking its children.
+    ///
+    /// The type-argument walk visits every node itself, so it uses this form to
+    /// keep one report per offending node.
+    fn check_nullable_type_shallow(&mut self, ty: &Ty, span: Span) {
         if !ty.nullable || is_nullable_capable(ty) {
             return;
         }
@@ -205,7 +229,7 @@ impl Checker<'_, '_> {
                     folder.integer_at(expr, Some(ScalarType::Usize))
                 })
             };
-            self.check_nullable_type(&resolved, ty.span);
+            self.check_nullable_type_shallow(&resolved, ty.span);
         }
         match &ty.kind {
             TypeKind::Array { element, extents } => {

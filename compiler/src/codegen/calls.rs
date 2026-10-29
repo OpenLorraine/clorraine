@@ -348,6 +348,11 @@ impl Emitter<'_> {
                         TyKind::Handle(name) if name == "String" => {
                             format!("(cl_string_view({inner_c})).len")
                         }
+                        // The zero-terminated view keeps no length field; the
+                        // runtime helper walks to the terminator.
+                        TyKind::CString => {
+                            format!("cl_cstring_len({inner_c})")
+                        }
                         // The growable array keeps its element count in a
                         // `count` field, so `len` reads that field.
                         TyKind::Struct(struct_name, _) if struct_name == "Array" => {

@@ -683,7 +683,7 @@ func main(): i32 {
 /// fallback, so the filed probe returns `0 - 2 = 254`. The fold is current
 /// output, not a frozen rule: a future scalar-`len` change needs a user ruling.
 #[test]
-fn should_pin_the_view_length_matrix_and_scalar_len_fallback() {
+fn should_pin_the_view_length_matrix() {
     let tag = "viewlengthimpl";
     let scratch = ScratchDir::new(tag);
     let emitted = emit_host(
@@ -701,15 +701,9 @@ func get(w: W, i: i32): i32 {
     return element + owned - 4;
 }
 
-func filed(w: W, i: i32): i32 {
-    return i32(len(w.items[i][0])) - 2;
-}
-
 func main(): i32 {
     let w: W = W { items: ["AA", "CC"], name: stringOf("dd") };
-    let matrix: i32 = get(w, 1);
-    if (matrix != 0) { return matrix; }
-    return filed(w, 1);
+    return get(w, 1);
 }
 "#,
     );
@@ -721,16 +715,12 @@ func main(): i32 {
         emitted.contains("(cl_string_view(w.name)).len"),
         "{tag}: the owned string length must read the string view"
     );
-    assert!(
-        emitted.contains("(i32)((u32)(i32)(0) - (u32)2)"),
-        "{tag}: the scalar length must fold to the current 0 fallback"
-    );
     let program = build_host_c(tag, &scratch, &emitted);
     let output = run_with_timeout(tag, &program);
     assert_eq!(
         output.status.code(),
-        Some(254),
-        "{tag}: the filed probe's current output is 254; stderr:\n{}",
+        Some(0),
+        "{tag}: the view lengths must compute the expected total; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

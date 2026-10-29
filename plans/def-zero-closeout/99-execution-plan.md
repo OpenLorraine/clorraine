@@ -60,13 +60,13 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: high — null and narrowing rules touch every stage; the `len` and `E10010` rulings are authorized.
 > **Lenses**: correctness, semantics, memory
 
-- [ ] 2.1.1 [spec-author] Write ST-15…ST-20 in `def_zero_null_spec_test.rs` for DEF-190…DEF-195 and confirm red.
-- [ ] 2.1.2 [spec-author] Write ST-21…ST-24 for DEF-246…DEF-249 and confirm red.
-- [ ] 2.1.3 [spec-author] Write ST-25…ST-31 for DEF-383, DEF-414, DEF-417, DEF-420, DEF-467, DEF-483, DEF-542 and confirm red.
-- [ ] 2.2.1 [impl-author] Fix DEF-190…DEF-195: the nameless nullable call subject (AR-6), the `unsafe` null-rule conformance (AR-7), the qualified nullable read, the short-circuit/loop narrowing (AR-8), and the `len` surface (AR-3; `cstring` runtime length, scalar `E10200`). Update the authorized `spec/04`/appendix notes.
-- [ ] 2.2.2 [impl-author] Fix DEF-246…DEF-249 and DEF-383: the aggregate, member, arithmetic, condition, and inferred-call null positions.
-- [ ] 2.2.3 [impl-author] Fix DEF-414, DEF-417, DEF-420, DEF-467, DEF-483: the nullable-gated report, TY-4 coverage, the negated float literal, the raw out-slot self-assign, and scalar `len`.
-- [ ] 2.2.4 [impl-author] Fix DEF-542: the generic non-nullable view out-slot store, matching the concrete twin.
+- [x] 2.1.1 [spec-author] Write ST-15…ST-20 in `def_zero_null_spec_test.rs` for DEF-190…DEF-195 and confirm red.
+- [x] 2.1.2 [spec-author] Write ST-21…ST-24 for DEF-246…DEF-249 and confirm red.
+- [x] 2.1.3 [spec-author] Write ST-25…ST-31 for DEF-383, DEF-414, DEF-417, DEF-420, DEF-467, DEF-483, DEF-542 and confirm red.
+- [x] 2.2.1 [impl-author] Fix DEF-190…DEF-195: the nameless nullable call subject (AR-6), the `unsafe` null-rule conformance (AR-7), the qualified nullable read, the short-circuit/loop narrowing (AR-8), and the `len` surface (AR-3; `cstring` runtime length, scalar `E10200`). Update the authorized `spec/04`/appendix notes.
+- [x] 2.2.2 [impl-author] Fix DEF-246…DEF-249 and DEF-383: the aggregate, member, arithmetic, condition, and inferred-call null positions.
+- [x] 2.2.3 [impl-author] Fix DEF-414, DEF-417, DEF-420, DEF-467, DEF-483: the nullable-gated report, TY-4 coverage, the negated float literal, the raw out-slot self-assign, and scalar `len`.
+- [x] 2.2.4 [impl-author] Fix DEF-542: the generic non-nullable view out-slot store, matching the concrete twin.
 - [ ] 2.3.1 [impl-author] Write the `def_zero_null_impl_test.rs` pins, run the focused ASAN/strict legs, and dispatch the phase review; fix critical/major findings.
 - [ ] 2.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 

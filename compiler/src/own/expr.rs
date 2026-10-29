@@ -738,7 +738,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let base_ty = self.eval(base);
                 if matches!(base_ty.kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
                     self.report_unsafe(UnsafeOp::PointerArithmetic, expr.span);
-                } else if base_ty.nullable && self.unsafe_depth == 0 {
+                }
+                if base_ty.nullable {
                     self.check_nonnull_expr(base, expr.span);
                 }
                 self.eval(index);
@@ -764,6 +765,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.check_nonnull_expr(operand, expr.span);
                     }
                 }
+            }
+            ExprKind::Binary {
+                op: BinaryOp::LogicalAnd,
+                left,
+                right,
+            } => {
+                let _left_ty = self.eval(left);
+                // The right operand runs only when the left comparison
+                // succeeded, so its nullable reads see that narrowing. The
+                // fact is local to the right operand; the branch handling adds
+                // it to the guarded body separately.
+                let saved = self.state.clone();
+                if let Some((id, projections, non_null)) = self.narrowing(left) {
+                    self.apply_narrowing(id, &projections, non_null);
+                }
+                let _right_ty = self.eval(right);
+                self.state = saved;
+            }
+            ExprKind::Binary {
+                op: BinaryOp::LogicalOr,
+                left,
+                right,
+            } => {
+                let _left_ty = self.eval(left);
+                // The right operand runs only when the left comparison failed,
+                // so it sees the negation of the left's narrowing fact.
+                let saved = self.state.clone();
+                if let Some((id, projections, non_null)) = self.narrowing(left) {
+                    self.apply_narrowing(id, &projections, !non_null);
+                }
+                let _right_ty = self.eval(right);
+                self.state = saved;
             }
             ExprKind::Binary { op, left, right } => {
                 let left_ty = self.eval(left);
@@ -888,6 +921,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .table
                         .instance_field(&self.ty(expr), &field.name)
                         .unwrap_or_else(|| self.ty(&field.value));
+                    // The declared field type is a concrete destination. The
+                    // literal null reports here; a null-shaped binding keeps
+                    // its established empty-value lowering (the destination
+                    // position rule).
+                    if matches!(field.value.kind, ExprKind::Null) {
+                        self.check_value_into(&field.value, &field_destination, field.value.span);
+                    }
                     if self.maybe_owns(&field_destination) {
                         let mut sources = self.maybe_owning_move_sources(&field.value);
                         sources.extend(self.conditional_move_sources(&field.value));
@@ -928,8 +968,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // an argument, a field, or a return — so the element sources
                 // are never consumed, whatever the surrounding expression is.
                 let view_elements = self.view_array_literal_depth > 0 || is_view_like(&ty);
+                let element_destination = ty.iterated_element();
                 for element in elements {
                     self.eval(element);
+                    // An array element is a concrete destination. The literal
+                    // null reports here; a null-shaped binding keeps its
+                    // established empty-value lowering.
+                    if matches!(element.kind, ExprKind::Null) {
+                        self.check_value_into(element, &element_destination, element.span);
+                    }
                     if view_elements {
                         continue;
                     }
@@ -983,6 +1030,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 if let Some(fill) = fill {
                     self.eval(fill);
+                    if matches!(fill.kind, ExprKind::Null) {
+                        self.check_value_into(fill, &element_destination, fill.span);
+                    }
                 }
             }
             ExprKind::Unsafe(inner) => {
@@ -1062,8 +1112,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect();
         self.read_place(id, &projections, span);
         let mut current = self.bindings[id].ty.clone();
+        let mut prefix: Vec<ir::Projection> = Vec::new();
         for segment in &name.segments[1..] {
+            // A qualified read checks the null state of each hop's base, not
+            // only the final member: `v.len` and `f.name` read through a
+            // nullable head exactly as a postfix member read would.
+            if current.nullable {
+                self.check_nonnull_place(id, &prefix, span);
+            }
             self.check_member_raw(&current, span);
+            prefix.push(ir::Projection::Field(segment.clone()));
             current = self.member_type(&current, segment);
         }
     }
@@ -1121,16 +1179,45 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// reported unless that exact field path was narrowed.
     pub(super) fn check_nonnull_expr(&mut self, expr: &Expr, span: Span) {
         if let Some((id, projections)) = self.plain_binding(expr) {
-            if !self.state.place(id).is_narrowed(&projections) {
-                let name = self.bindings[id].name.clone();
+            self.check_nonnull_place(id, &projections, span);
+            return;
+        }
+        // A call result has no binding to name, so the report spells the call
+        // itself (`value 'get()' may be null here`), exactly as the frozen
+        // message template's name slot expects.
+        if let ExprKind::Call { callee, .. } = &expr.kind {
+            if let Some(name) = self.callee_name(callee) {
                 self.error(
                     "E10010",
-                    format!("value '{name}' may be null here"),
+                    format!("value '{name}()' may be null here"),
                     "check `!= null` before the use",
                     span,
                 );
             }
         }
+    }
+
+    /// Reports the possible-null rule for one binding path.
+    ///
+    /// The path is the narrowed key, so a nullable field reports only when
+    /// that exact field path is not known non-null. A qualified read uses the
+    /// path of the segment whose base is nullable.
+    pub(super) fn check_nonnull_place(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        span: Span,
+    ) {
+        if self.state.place(id).is_narrowed(projections) {
+            return;
+        }
+        let name = self.bindings[id].name.clone();
+        self.error(
+            "E10010",
+            format!("value '{name}' may be null here"),
+            "check `!= null` before the use",
+            span,
+        );
     }
 
     /// Requires a write target's element base to be non-null.
@@ -1143,10 +1230,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &target.kind {
             ExprKind::Index { base, .. } => {
                 let base_ty = self.ty(base);
-                if !matches!(base_ty.kind, TyKind::Raw(_))
-                    && base_ty.nullable
-                    && self.unsafe_depth == 0
-                {
+                if !matches!(base_ty.kind, TyKind::Raw(_)) && base_ty.nullable {
                     self.check_nonnull_expr(base, span);
                 }
                 self.check_store_index_nonnull(base, span);
@@ -1170,7 +1254,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// other nullable value keeps the possible-null rule.
     pub(super) fn check_value_into(&mut self, expr: &Expr, expected: &Ty, span: Span) {
         if matches!(expr.kind, ExprKind::Null) {
-            if !expected.nullable && !expected.is_unknown() {
+            // A raw pointer, a `cstring`, a view, and a handle carry the
+            // empty state without a `?` suffix; a scalar, enum, or fixed array
+            // needs the declared nullable form.
+            // A handle needs the declared `?` form; the other null-capable
+            // destinations use the empty value directly.
+            let inherently_nullable = Self::null_capable_destination(expected)
+                && !matches!(expected.kind, TyKind::Handle(_));
+            if !expected.nullable && !expected.is_unknown() && !inherently_nullable {
                 self.report_null_rule(span);
             }
             return;
@@ -1180,7 +1271,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // declaration has no concrete substitution to compare against.
         let concrete = !expected.nullable
             && !expected.is_unknown()
-            && !crate::types::contains_param(expected);
+            && !crate::types::contains_param(expected)
+            && !Self::null_capable_destination(expected);
         if crate::types::is_null_shaped(&value_ty) {
             if concrete {
                 self.report_null_rule(span);
@@ -1244,6 +1336,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .is_some_and(|(id, projections)| self.state.place(id).is_narrowed(&projections))
     }
 
+    /// True when a destination carries the empty state without a `?` suffix.
+    ///
+    /// Raw pointers, `cstring`, views, and handles all use zero/NULL as their
+    /// empty value, so a null shape lowers to the destination's own empty
+    /// value there. A scalar, enum, or fixed array has no empty value.
+    fn null_capable_destination(ty: &Ty) -> bool {
+        matches!(
+            &ty.kind,
+            TyKind::Raw(_)
+                | TyKind::CString
+                | TyKind::Str
+                | TyKind::StaticStr
+                | TyKind::Handle(_)
+                | TyKind::Array { .. }
+        )
+    }
+
     /// Reports the null rule at a position that requires a concrete value.
     pub(super) fn report_null_rule(&mut self, span: Span) {
         self.error(
@@ -1275,6 +1384,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // target's writability and lend checks and still emits the target's
         // index guard, so the no-op transfer keeps its observable checks.
         let raw_self = self.is_raw_self_alias(target, value);
+        // The direct `p = p` spelling of an out-slot self-copy reports the
+        // moved-value rule; the raw spelling reads the same storage, so it
+        // keeps the same judgment instead of silently bypassing the lend rule.
+        if compound.is_none() && raw_self {
+            if let Some((id, projections)) = self.plain_binding(target) {
+                if projections.is_empty()
+                    && self.is_caller_slot(id)
+                    && self.is_out_slot_binding(id)
+                {
+                    let name = self.bindings[id].name.clone();
+                    self.error(
+                        "E10020",
+                        format!("'{name}' was moved and cannot be used"),
+                        "re-initialize the binding or use a view",
+                        value.span,
+                    );
+                    return;
+                }
+            }
+        }
         // An identical projected target and value (`w.items[i] = w.items[i]`)
         // is a self-copy. The skip is limited to a generic body (the instance
         // decides ownership) or a run-time element; a concrete constant-index
