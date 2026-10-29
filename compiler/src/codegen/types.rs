@@ -412,6 +412,17 @@ mod tests {
     }
 
     #[test]
+    fn a_type_parameter_uses_the_p_prefixed_spelling() {
+        let table = TypeTable::default();
+        let param = Ty {
+            kind: TyKind::Param("T".to_owned()),
+            nullable: false,
+        };
+        assert_eq!(type_key(&param), "p1_T");
+        assert_eq!(c_type(&param, &table), "Clp1_T");
+    }
+
+    #[test]
     fn arrays_and_pointers_get_a_declarator_suffix() {
         let table = TypeTable::default();
         let array = Ty::array(Ty::scalar(ScalarType::U32), vec![Some(2)]);

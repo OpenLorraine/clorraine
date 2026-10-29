@@ -808,8 +808,13 @@ func main(): i32 {
             .expect("failed to spawn the compiler binary");
         assert_ne!(output.status.code(), Some(0), "{tag}: expected E10010");
         let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.matches("E10010").count(),
+            1,
+            "{tag}: one report per site; stderr:\n{stderr}"
+        );
         assert!(
-            stderr.contains("E10010") && stderr.contains("may be null here"),
+            stderr.contains("may be null here"),
             "{tag}: expected the cstring empty-state report; stderr:\n{stderr}"
         );
         assert!(!c_path.exists(), "{tag}: a rejected program must not write C");
@@ -820,6 +825,32 @@ func main(): i32 {
         &[("holder.clo", holder), ("main.clo", guard)],
     );
     assert_exit("pathlenguard", &output, 0);
+
+    let conditional = r#"module spec.zc.pathlencond;
+func main(): i32 {
+    return (spec.zc.pathlenmod.nc == null) ? 0 : i32(spec.zc.pathlenmod.nc.len()) - 4;
+}
+"#;
+    let output = run_strict_files(
+        "pathlencond",
+        &[("holder.clo", holder), ("main.clo", conditional)],
+    );
+    assert_exit("pathlencond", &output, 0);
+
+    let short_circuit = r#"module spec.zc.pathlenshort;
+func main(): i32 {
+    let n: i32 = 0;
+    if (spec.zc.pathlenmod.nc != null && spec.zc.pathlenmod.nc.len() > 0) { n = 1; }
+    if (spec.zc.pathlenmod.nc == null || spec.zc.pathlenmod.nc.len() > 0) { n = n + 2; }
+    while (spec.zc.pathlenmod.nc != null && n < 2) { n = n + 1; }
+    return n - 2;
+}
+"#;
+    let output = run_strict_files(
+        "pathlenshort",
+        &[("holder.clo", holder), ("main.clo", short_circuit)],
+    );
+    assert_exit("pathlenshort", &output, 0);
 }
 
 /// ST-39b: a null-shaped callee reports the non-callable rule.
@@ -850,6 +881,18 @@ func main(): i32 {
 "#;
     let output = run_strict_host("revinfer", source);
     assert_exit("revinfer", &output, 0);
+
+    let unfit = r#"module spec.zc.revinferfit;
+
+func pair<T>(x: T, n: T): T { return x; }
+
+func main(): i32 {
+    let a: u8 = 3;
+    let b: u8 = pair(300, a);
+    return i32(b);
+}
+"#;
+    assert_rejected("revinferfit", unfit, "E10202", 1, &["literal does not fit 'u8'"]);
 }
 
 /// ST-53c: a type parameter shadows an import alias of the same name.

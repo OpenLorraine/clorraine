@@ -959,29 +959,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
             let receiver_ty = receiver.ty.clone();
-            // A module-path receiver has no AST node of its own at this point;
-            // resolve the written path so a bare cstring or nullable view is
-            // checked before the intrinsic reads it.
-            if receiver_ty.nullable || matches!(receiver_ty.kind, TyKind::CString) {
-                if let ExprKind::Qualified(name) = &callee.kind {
-                    if name.segments.len() >= 2 {
-                        let last = name.segments.len() - 1;
-                        let head = &name.segments[0];
-                        // A value-headed receiver is judged by
-                        // `eval_dot_receiver`; only a module-path receiver has
-                        // no expression for that walk to visit.
-                        if self.lookup(head).is_none()
-                            && self.global_type(head).is_none()
-                            && self.dotted_global(&name.segments[..last]).is_some()
-                        {
-                            self.check_qualified_receiver_null(
-                                &name.segments[..last],
-                                callee.span,
-                            );
-                        }
-                    }
-                }
-            }
             let mut base = None;
             let mut narrowed = false;
             match &callee.kind {

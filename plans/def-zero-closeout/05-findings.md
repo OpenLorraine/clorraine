@@ -567,3 +567,21 @@ raw-call, and freestanding probes are ASAN/LSan clean.
 
 Final Phase 3 verification: 30 spec cases and two impl pins; `make check` green
 (79 targets, 111 goldens); `make verify: all legs passed`.
+
+**Phase 3 review, final round.** The module-path cstring `.len` null check is
+now evaluated in the expression walk where `if`, `&&`, `||`, `while`, and `?:`
+narrowing facts are active. Null body/field/nested/initializer uses report one
+`E10010`; guarded forms accept and run. The reverse-inference unfit case and
+the `Clp1_T` parameter C spelling are pinned.
+
+Report-only residuals: a user `struct String` works standalone but a program
+that also imports `std.text` still resolves the shared stdlib handle and
+rejects `E10036`; destination-context generic inference and generic `cstring`
+literals remain `E10200` because the frozen token-conformance test pins that
+route; zero-parameter value-headed dot calls keep `E10212` while Array/module
+paths use `E10308`; a module-path aggregate receiver keeps `E10038`; and
+qualified module-value cstring indexing is a pre-existing crash at base and
+head.
+
+Final verification: 30 spec cases, two impl pins, and the parameter C pin;
+`make check` green (79 targets, 111 goldens); `make verify: all legs passed`.
