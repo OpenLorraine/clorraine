@@ -42,16 +42,16 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: high — the five critical and nine major rows are the safety gate.
 > **Lenses**: correctness, semantics, memory, emission
 
-- [ ] 1.1.1 [spec-author] Write ST-1…ST-5 in `def_zero_critical_spec_test.rs` for DEF-544…DEF-548 and confirm each is red on the Phase 0 baseline.
-- [ ] 1.1.2 [spec-author] Write ST-6…ST-10 for DEF-549…DEF-553 and confirm red.
-- [ ] 1.1.3 [spec-author] Write ST-11…ST-14 for DEF-554…DEF-557 and confirm red (DEF-557 red = the generic rejection while the concrete twin is accepted).
-- [ ] 1.2.1 [impl-author] Fix DEF-544…DEF-547: the plain-parameter conditional store, the multi-subrange take capture, the conditional lend return, and the maybe-target view instances. Keep every safe control accepted and ASAN-clean.
-- [ ] 1.2.2 [impl-author] Fix DEF-548…DEF-552: the runtime-index store path, the literal zero divisor, the view-destination loan/escape duty, the expression-form array fill, and the argument order hoist.
-- [ ] 1.2.3 [impl-author] Fix DEF-553…DEF-557: the initializer literal leak/order rows, the generic `T` view-return duty, and the bounded instance-bound static-return marker (AR-5) with its `spec/16` note.
-- [ ] 1.3.1 [impl-author] Write `def_zero_critical_impl_test.rs` pins, run the focused `RDC_ASAN=1` and strict-C legs, and dispatch the four-lens phase review; fix every critical/major finding through the one allowed re-review.
-- [ ] 1.3.2 [orchestrator] Run `make check` and `make verify`; commit and push through the git-commit skill in push mode; record the phase result in `05-findings.md`.
+- [x] 1.1.1 [spec-author] Write ST-1…ST-5 in `def_zero_critical_spec_test.rs` for DEF-544…DEF-548 and confirm each is red on the Phase 0 baseline.
+- [x] 1.1.2 [spec-author] Write ST-6…ST-10 for DEF-549…DEF-553 and confirm red.
+- [x] 1.1.3 [spec-author] Write ST-11…ST-14 for DEF-554…DEF-557 and confirm red (DEF-557 red = the generic rejection while the concrete twin is accepted).
+- [x] 1.2.1 [impl-author] Fix DEF-544…DEF-547: the plain-parameter conditional store, the multi-subrange take capture, the conditional lend return, and the maybe-target view instances. Keep every safe control accepted and ASAN-clean.
+- [x] 1.2.2 [impl-author] Fix DEF-548…DEF-552: the runtime-index store path, the literal zero divisor, the view-destination loan/escape duty, the expression-form array fill, and the argument order hoist.
+- [x] 1.2.3 [impl-author] Fix DEF-553…DEF-557: the initializer literal leak/order rows, the generic `T` view-return duty, and the bounded instance-bound static-return marker (AR-5) with its `spec/16` note.
+- [x] 1.3.1 [impl-author] Write `def_zero_critical_impl_test.rs` pins, run the focused `RDC_ASAN=1` and strict-C legs, and dispatch the four-lens phase review; fix every critical/major finding through the one allowed re-review.
+- [x] 1.3.2 [orchestrator] Run `make check` and `make verify`; commit and push through the git-commit skill in push mode; record the phase result in `05-findings.md`.
 
-**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
+**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded. **Phase 1 result (2026-10-29)**: all 12 live rows fixed; the three-lens review findings were fixed through the review-fix batches; `make check` green and `make verify: all legs passed`; report-only pre-existing shapes are recorded in `05-findings.md`.
 
 ---
 

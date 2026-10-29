@@ -3998,7 +3998,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     Some(returned)
                 }
             });
-            if self.view_return_source.is_some() || self.view_return_local_owner.is_some() {
+            if self.view_return_source.is_some()
+                || self.view_return_local_owner.is_some()
+                || self.view_return_fresh
+            {
                 self.view_return_requirements
                     .push(ir::RequiresViewReturnCandidates {
                         function: self.decl.name.clone(),
@@ -4007,6 +4010,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         returns: self.view_return_paths.clone(),
                         return_ty: self.returns.clone(),
                         local_owner: self.view_return_local_owner.clone(),
+                        fresh_return: self.view_return_fresh,
                         span: self.decl.name_span,
                     });
             }

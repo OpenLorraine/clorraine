@@ -335,6 +335,11 @@ struct FunctionChecker<'a, 'd> {
     /// instances; a local owner returned there is the concrete `E10035`
     /// escape, which the instance audit reports.
     view_return_local_owner: Option<String>,
+    /// True when a type-parameter return reads a fresh owned temporary.
+    ///
+    /// The view has no local name and no parameter source; the instance audit
+    /// reports the concrete one-candidate rule when the return is a view.
+    view_return_fresh: bool,
     /// True when different returns derive from different parameters.
     view_return_source_mixed: bool,
     /// The parameter and member path of every direct returned view.
@@ -652,6 +657,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             elision_candidate_types: Vec::new(),
             view_return_source: None,
             view_return_local_owner: None,
+            view_return_fresh: false,
             view_return_source_mixed: false,
             view_return_paths: Vec::new(),
             view_return_requirements: Vec::new(),

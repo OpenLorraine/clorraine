@@ -518,11 +518,11 @@ func main(): i32 {
 }
 
 /// A nullable arm the declaration's flow already narrowed is a proven
-/// non-null use in every instance. A local arm stays accepted; a nullable
-/// param arm plus a view param is two view-like lend candidates, so the
-/// generic reports the same `E10036` as its concrete twin (EL-1/EL-3).
+/// non-null use in every instance. It is still a lifetime decision: a local
+/// owner reports the concrete `E10035`, and a nullable param arm plus a view
+/// param is two view-like lend candidates (`E10036`, EL-1/EL-3).
 #[test]
-fn should_accept_a_narrowed_nullable_arm_in_every_instance() {
+fn should_judge_a_narrowed_nullable_arm_per_instance() {
     let local = r#"module spec.sempar.st26narrow;
 
 import { String, stringOf } from std.text;
@@ -540,9 +540,7 @@ func main(): i32 {
     return i32(len(r)) - 2;
 }
 "#;
-    let output = run_memory("st26narrow", local);
-    assert_no_sanitizer("st26narrow", &output);
-    assert_exit("st26narrow", &output, 0);
+    assert_rejected_once("st26narrow", local, "E10035", &["'s'"]);
 
     let parameter = r#"module spec.sempar.st26narrowparam;
 

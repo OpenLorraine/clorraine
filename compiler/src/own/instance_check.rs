@@ -1363,6 +1363,17 @@ fn check_view_return_candidates(
                 );
                 break;
             }
+            if requirement.fresh_return {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10036",
+                        "view return does not derive from exactly one parameter",
+                        requirement.span,
+                    )
+                    .with_help("make exactly one parameter a view or handle lend"),
+                );
+                break;
+            }
             // A return that reads static storage needs no lend candidate: the
             // substituted root and member path prove the `static str` (or an
             // array of static views) exactly as the concrete return does.

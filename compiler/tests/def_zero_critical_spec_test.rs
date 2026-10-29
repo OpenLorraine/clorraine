@@ -596,6 +596,49 @@ func main(): i32 { return i32(g[0]) - 97; }
     }
 }
 
+/// A type-parameter return of a local member, element, or conditional owner
+/// reports the concrete `E10035`; a fresh owned temporary reports `E10036`.
+#[test]
+fn should_reject_local_and_fresh_type_parameter_view_returns() {
+    let member = r#"module spec.zc.localmember;
+
+import { String, stringOf } from std.text;
+
+struct S { a: String; }
+func f<T>(): T { let s: S = S { a: stringOf("ab") }; return s.a; }
+
+func main(): i32 { let r: str = f<str>(); return i32(r[0]) - 97; }
+"#;
+    assert_rejected("localmember", member, "E10035", 1, &["'s'"]);
+    let element = r#"module spec.zc.localelement;
+
+import { String, stringOf } from std.text;
+
+func g<T>(): T { let xs: String[2] = [stringOf("ab"), stringOf("cd")]; return xs[0]; }
+
+func main(): i32 { let r: str = g<str>(); return i32(r[0]) - 97; }
+"#;
+    assert_rejected("localelement", element, "E10035", 1, &["'xs'"]);
+    let conditional = r#"module spec.zc.localconditional;
+
+import { String, stringOf } from std.text;
+
+func h<T>(c: bool, p: T): T { let s: String = stringOf("ab"); return c ? p : s; }
+
+func main(): i32 { let r: str = h<str>(false, "cd"); return i32(r[0]) - 97; }
+"#;
+    assert_rejected("localconditional", conditional, "E10035", 1, &["'s'"]);
+    let fresh = r#"module spec.zc.localfresh;
+
+import { String, stringOf } from std.text;
+
+func temp<T>(): T { return stringOf("ab"); }
+
+func main(): i32 { let r: str = temp<str>(); return i32(r[0]) - 97; }
+"#;
+    assert_rejected("localfresh", fresh, "E10036", 1, &[]);
+}
+
 /// A containing literal whose field is a store-needing inner local keeps its
 /// other field initializers, including their effects, when a view reads a
 /// member through the inner local.

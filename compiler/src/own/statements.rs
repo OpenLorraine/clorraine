@@ -1816,34 +1816,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 || (super::lower::mentions_type_param(&returns)
                     && (is_view_like(&self.ty(value)) || param_backed));
             // A type-parameter return of a frame-local owner is a view at a
-            // view instance; the concrete spelling reports E10035 there.
-            if !view_return
-                && super::lower::mentions_type_param(&returns)
-                && matches!(value.kind, ExprKind::Name(_))
-            {
+            // view instance; the concrete spelling reports E10035 there. A
+            // local copy of a parameter aliases caller-backed storage, so the
+            // identity take/view round trip stays accepted. A value with no
+            // place and no parameter source is a fresh temporary, which owes
+            // the one-candidate rule at a view instance.
+            if !view_return && super::lower::mentions_type_param(&returns) {
                 let local = match &provenance {
                     Provenance::Local(id) => Some(*id),
-                    // A mixed conditional may select a parameter arm, which
-                    // keeps the caller's backing alive; only a purely local
-                    // composite is the frame-owner escape.
-                    Provenance::Composite(atoms)
-                        if atoms
-                            .iter()
-                            .all(|atom| matches!(atom, Provenance::Local(_))) =>
-                    {
+                    Provenance::Composite(atoms) => {
                         atoms.iter().find_map(|atom| match atom {
-                            Provenance::Local(id) => Some(*id),
+                            Provenance::Local(id) if !matches!(
+                                self.bindings[*id].copy_source,
+                                Some(Provenance::Param(_))
+                            ) => Some(*id),
                             _ => None,
                         })
                     }
                     _ => None,
                 };
                 if let Some(id) = local {
-                    // A local copy of a parameter aliases caller-backed
-                    // storage, so a view returned through it is not the
-                    // frame-owner escape; only a fresh or locally owned value
-                    // is. The identity take/view round trip stays accepted
-                    // (the spec's identity instances).
                     let aliases_param = matches!(
                         self.bindings[id].copy_source,
                         Some(Provenance::Param(_))
@@ -1852,6 +1844,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.view_return_local_owner =
                             Some(self.bindings[id].name.clone());
                     }
+                } else if !param_backed
+                    && self.place_target(value).is_none()
+                    && !is_view_like(&self.ty(value))
+                {
+                    self.view_return_fresh = true;
                 }
             }
             // A borrow element of an inline iterable aliases the expression's

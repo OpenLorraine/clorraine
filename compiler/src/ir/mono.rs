@@ -208,6 +208,11 @@ pub struct RequiresViewReturnCandidates {
     /// instance is legal; the audit reports the concrete `E10035` at the view
     /// instances.
     pub local_owner: Option<String>,
+    /// True when the type-parameter return reads a fresh owned temporary.
+    ///
+    /// A fresh temporary has no local name and no parameter source; a view
+    /// instance reports the concrete one-candidate rule.
+    pub fresh_return: bool,
     /// The function name's span, where the view-return rule reports.
     pub span: Span,
 }

@@ -292,3 +292,34 @@ found regressions in the first review-fix batch, all fixed:
 Second-round verification: `make check` green (75 targets, 110 goldens) and
 `make verify: all legs passed`; the new ASAN cases (widened literal member,
 conditional nested read) are clean.
+
+**Phase 1 review, third round (local view returns).** A user ruling resolved the
+last spec-test conflict: a narrowed nullable **local** returned as a
+type-parameter view reports the concrete `E10035` (spec/06 FN-5), while the
+nullable **parameter** half reports `E10036` (two view-like candidates). The
+local-owner duty now covers a direct local, a member, an element, and a
+conditional with a local owner; a fresh owned temporary reports `E10036`; a
+local copy of a parameter keeps the spec's identity take/view round trip
+accepted. The semantic-parity test was renamed to
+`should_judge_a_narrowed_nullable_arm_per_instance` and both halves now pin the
+rejections; member/element/conditional/fresh cases are in
+`def_zero_critical_spec_test.rs`.
+
+**Phase 1 result.** All 12 live critical/major rows are fixed and verified.
+The three-lens review found and the batch fixed: initializer literal
+over-registration and conditional nested reads (two heap-use-after-frees),
+nested containing-literal effects, constant integer zero divisors, statement
+temporaries and raw slots in the view-slot rule, pure receiver/argument order,
+local/member/element/conditional/fresh type-parameter view returns, and the
+earlier direct-local/take/two-candidate rules. Report-only, pre-existing and
+outside the 114-row scope: a module-level `slice` over a fixed-array
+initializer temporary is stack-backed; a view-array initializer of per-element
+literal projections leaks its element roots; a non-store literal projection
+leaks its unread sibling; a `take` view identity can leave an 11-byte backing
+(the spec's identity test requires acceptance); `mkw().rows` never compiled on
+any revision; and a duplicated pure bounds check remains. These are recorded
+for a later initializer/carrier batch, not reopened as Phase 1 rows.
+
+Verification at the Phase 1 close: `make check` green (75 targets, 110
+goldens); `make verify: all legs passed`; the focused `RDC_ASAN=1` spec suite
+is clean (20/20).
