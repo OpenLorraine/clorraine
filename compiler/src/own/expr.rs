@@ -1530,7 +1530,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if compound.is_some() && matches!(target_ty.kind, TyKind::Raw(_)) {
             self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
         }
+        // An `unsafe` prefix on a field store is the enclosing context for the
+        // raw member read; the block spelling already lowers with the depth.
+        let prefixed_raw = has_unsafe_prefix(target);
+        if prefixed_raw {
+            self.unsafe_depth += 1;
+        }
         self.check_place_raw(target);
+        if prefixed_raw {
+            self.unsafe_depth -= 1;
+        }
         self.check_store_index_nonnull(target, target.span);
         // A raw read of the target place (`x = *(&x)`,
         // `a[i].inner = *(&a[i].inner)`) copies the place onto itself: the
@@ -1602,7 +1611,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // dereference exactly as the enclosing block does. A bare
                 // prefix target keeps its existing limitation.
                 let prefixed =
-                    !projections.is_empty() && matches!(target.kind, ExprKind::Unsafe(_));
+                    !projections.is_empty() && has_unsafe_prefix(target);
                 if prefixed {
                     self.unsafe_depth += 1;
                 }
@@ -1693,6 +1702,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         operand: Box::new(projected.clone()),
                     },
                 );
+                // A raw-deref read on the right side names its pointer through
+                // a dereference, not a place walk; mark those bindings used
+                // before lowering the value.
+                self.eval_raw_deref_sources(value);
                 let stored = match compound {
                     Some(binary) => {
                         // The compound store reads the selected storage through
@@ -3432,7 +3445,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let (false, false, Some(root_id)) = (global, whole_out_slot, root_id) {
             let root_ty = self.bindings[root_id].ty.clone();
             let root_is_concrete = !crate::types::contains_param(&root_ty);
-            if root_is_concrete && !self.sema.table.copies_whole_value(&root_ty) {
+            if root_is_concrete
+                && !self.sema.table.copies_whole_value(&root_ty)
+                && self.bindings[root_id].kind != BindingKind::Local
+            {
                 let foreign_parameter = self
                     .dynamic_parameter_roots(value)
                     .into_iter()
@@ -4774,6 +4790,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Walking the projections rather than the whole expression keeps the
     /// target from being read as a value, which would be wrong for a field of
     /// a partially initialized or partially moved struct.
+    /// Marks the pointer operands of raw-deref reads in a value as used.
+    fn eval_raw_deref_sources(&mut self, expr: &'a Expr) {
+        match &expr.kind {
+            ExprKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => {
+                self.eval(operand);
+                self.eval_raw_deref_sources(operand);
+            }
+            ExprKind::Member { base, .. }
+            | ExprKind::Index { base, .. }
+            | ExprKind::Unsafe(base)
+            | ExprKind::Cast { value: base, .. }
+            | ExprKind::RawCast { value: base, .. } => self.eval_raw_deref_sources(base),
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.eval_raw_deref_sources(then_value);
+                self.eval_raw_deref_sources(else_value);
+            }
+            _ => {}
+        }
+    }
+
     pub(super) fn check_place_raw(&mut self, target: &'a Expr) {
         let Some(base) = self.place_target(target) else {
             return;
@@ -4952,6 +4995,15 @@ fn same_place_expr(left: &Expr, right: &Expr) -> bool {
                 && left_op == right_op
                 && same_place_expr(left_operand, right_operand)
         }
+        _ => false,
+    }
+}
+
+/// True when the store target carries an `unsafe` wrapper on any base link.
+fn has_unsafe_prefix(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Unsafe(_) => true,
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => has_unsafe_prefix(base),
         _ => false,
     }
 }

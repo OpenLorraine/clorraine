@@ -334,7 +334,10 @@ impl Checker<'_, '_> {
     /// report single, and a composite records at its innermost move site
     /// before the enclosing site's walk reaches the same name.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
-        self.record_capture_move(value, false, None);
+        // A read-only borrow capture is a borrow, so a move at a let or
+        // assignment site is the capture rule too; a duplicable capture copies
+        // and the per-instance judgment skips it.
+        self.record_capture_move(value, true, None);
     }
 
     /// Records a capture move at a store for the per-instance audit.
@@ -370,6 +373,12 @@ impl Checker<'_, '_> {
             if borrowed && !borrows {
                 continue;
             }
+            // A write-borrow capture has its own store site; a plain local
+            // let/assignment in the body keeps the lend-store report unless
+            // the move is a read-only capture.
+            if dest.is_none() && matches!(self.capture_mode(root), Some(CaptureMode::WriteBorrow)) {
+                continue;
+            }
             let ty = self.lambda_captures.iter().rev().find_map(|captures| {
                 captures
                     .iter()
@@ -379,7 +388,11 @@ impl Checker<'_, '_> {
             let Some(ty) = ty else {
                 continue;
             };
-            if !crate::types::contains_param(&ty) {
+            // A concrete by-value copy is not a capture move; the generic
+            // spelling still records the duty for its instances.
+            if !crate::types::contains_param(&ty)
+                && (!borrowed || !path.is_empty())
+            {
                 continue;
             }
             let Some(records) = self.captured_move_records.last_mut() else {

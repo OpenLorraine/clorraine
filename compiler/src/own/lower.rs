@@ -216,6 +216,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // side-effecting one is stored once and the guard and the
                 // operation share it.
                 let left = self.lower_value(left);
+                let left = self.own_conditional_operand_root(left);
                 // The pin runs at the operand's own position: a nested
                 // update or read inside the right operand must not reorder
                 // the left one, so the temporary is emitted here rather than
@@ -236,6 +237,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     self.lower_value(right)
                 };
+                let right = self.own_conditional_operand_root(right);
                 let right = if pin_updates {
                     self.pin_update_value(right)
                 } else {
@@ -1784,6 +1786,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .get(&info.name)
                     .copied()
                     .unwrap_or(false),
+                capture_read_only: matches!(info.mode, CaptureMode::ReadOnlyBorrow),
                 capture_whole_out_slot: capture_out_slots
                     .get(&info.name)
                     .copied()
@@ -5064,6 +5067,23 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
         )
     }
 
+    /// Binds an operand conditional's ownerless projection roots.
+    ///
+    /// A conditional used as a binary operand is not a consumed projection
+    /// chain, so the ordinary member/root hooks do not visit its arms. The
+    /// fresh arm's root still owns residual storage (`mkBox(7).n`), so bind
+    /// each ownerless arm on its own path before the operation reads the
+    /// selected value.
+    fn own_conditional_operand_root(&mut self, value: Value) -> Value {
+        if matches!(value.kind, ValueKind::Conditional { .. })
+            && self.conditional_projection_root_owns_residual(&value)
+        {
+            self.own_ownerless_conditional_arms(value)
+        } else {
+            value
+        }
+    }
+
     /// Binds a consumed projection's call root for a conditionally evaluated
     /// operand.
     ///
@@ -5123,6 +5143,11 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
                 } else {
                     value
                 }
+            }
+            ValueKind::Conditional { .. }
+                if self.conditional_projection_root_owns_residual(&value) =>
+            {
+                self.own_ownerless_conditional_arms(value)
             }
             // A conditional whose arms own their values is bound as one value
             // through the deferred materialization: the guard emitter fills it

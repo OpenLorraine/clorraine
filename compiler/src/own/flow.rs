@@ -119,6 +119,8 @@ pub(super) struct Binding {
     /// frame. The lifted body cannot tell the origin from the capture mode
     /// alone, so the enclosing checker records the destination's frame here.
     pub(super) capture_caller_slot: bool,
+    /// True for a lifted lambda's read-only borrow capture.
+    pub(super) capture_read_only: bool,
     /// True when a lifted lambda's capture names a whole `borrow T?` out-slot.
     ///
     /// The capture is a parameter binding in the lifted body, so its original

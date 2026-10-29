@@ -585,3 +585,26 @@ head.
 
 Final verification: 30 spec cases, two impl pins, and the parameter C pin;
 `make check` green (79 targets, 111 goldens); `make verify: all legs passed`.
+
+**Phase 4 partial execution (borrow and loans).** Eight rows are fixed and
+pinned by `def_zero_loans_spec_test.rs` (eight cases):
+
+- `DEF-250`: a concrete read-only capture moved at a `let` reports one
+  `E10401`; the lend-store `E10034` is suppressed only where the capture duty
+  records the site.
+- `DEF-252`: moving out of a `const` binding reports one `E10023`.
+- `DEF-311`: the operand and guarded conditional projection roots bind and
+  release on their own paths; the host ASan probes are clean.
+- `DEF-370`: a move-only `S[2]` lend no longer warns `W10001`.
+- `DEF-422`: an `unsafe` prefix on a raw member store supplies the unsafe
+  context; the store builds and reads back.
+- `DEF-434`: an overwritten element clears the literal element loan; the
+  overwritten carrier runs clean.
+- `DEF-463`: the raw-store right-side pointer binding is marked used, so
+  `(*p).items = (*q).items` does not warn `W10000`.
+- `DEF-524`: the maybe-use duty is keyed by the enclosing statement span, so
+  two later uses in one generic body report twice.
+
+Verification: `make check` green (80 targets, 111 compile-fail goldens) and
+`make verify: all legs passed`. Remaining Phase 4 rows: `DEF-312`, `DEF-444`,
+`DEF-484`, `DEF-490`, `DEF-491`, `DEF-492`.

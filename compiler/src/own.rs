@@ -544,7 +544,7 @@ struct FunctionChecker<'a, 'd> {
     /// paths. A later use updates the destinations, the strict flag, and the
     /// reported span instead of adding a second duty.
     recorded_duplicable:
-        BTreeMap<(usize, Vec<Vec<crate::types::PlacePathStep>>), usize>,
+        BTreeMap<(usize, Vec<Vec<crate::types::PlacePathStep>>, u32, u32), usize>,
     /// The borrowed-element move duties this body owes its instances.
     ///
     /// A value-consuming move through a `for (borrow e in xs)` element alias
@@ -1335,6 +1335,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             generated: false,
             capture_dies_with_frame: false,
             capture_caller_slot: false,
+            capture_read_only: false,
             capture_whole_out_slot: false,
             capture_written: false,
         });

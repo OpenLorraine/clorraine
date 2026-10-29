@@ -94,11 +94,19 @@ fn check_capture_move_requirements(
             continue;
         };
         let params = type_param_names(&decl.type_params);
+        let mut bindings: Vec<BTreeMap<String, Ty>> = Vec::new();
         for instance in mono.instances() {
-            if instance.function != requirement.function {
-                continue;
+            if instance.function == requirement.function {
+                bindings.push(crate::types::instance_bindings(&params, &instance.args));
             }
-            let bound = crate::types::instance_bindings(&params, &instance.args);
+        }
+        // A non-generic function such as the entry point has no
+        // monomorphization instance; its concrete captures still owe the
+        // rule, so judge one empty binding.
+        if bindings.is_empty() {
+            bindings.push(BTreeMap::new());
+        }
+        for bound in bindings {
             // A record from a store: only a nullable owning slot consumes the
             // value there. A duplicable destination copies the value in (a
             // view widening is the case) and a non-nullable one keeps the

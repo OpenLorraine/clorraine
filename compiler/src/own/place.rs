@@ -456,6 +456,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         current
     }
 
+    /// True when the semantic stage recorded a capture move at this site.
+    fn capture_move_recorded(&self, name: &str, span: Span) -> bool {
+        self.sema.capture_moves.iter().any(|requirement| {
+            requirement.function == self.decl.name
+                && requirement.capture == name
+                && requirement.span.start <= span.end
+                && span.start <= requirement.span.end
+        })
+    }
+
     /// Moves out of a place, applying partial-move and loan rules.
     pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         self.note_opaque_owner_write(id, projections, span, true);
@@ -469,13 +479,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.report_element_move_limit(span);
             return;
         }
+        if binding.is_const {
+            if self.report_diagnostics
+                && !self.reported_store_spans.insert((span.start, span.end))
+            {
+                return;
+            }
+            let name = binding.name.clone();
+            self.error(
+                "E10023",
+                format!("cannot move out of immutable '{name}'"),
+                "copy the value or declare it with `let`",
+                span,
+            );
+            return;
+        }
         if binding.kind == BindingKind::Param
             && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
-            // A by-value capture owns its environment field, so moving it (or
-            // a field of it) is judged by the capture-move rule, exactly as a
-            // whole move is; the lend-storage report would name it a borrowed
-            // parameter of the enclosing function.
+            // A capture field, by value or by borrow, is judged by the
+            // capture-move rule; the lend-storage report would name it a
+            // borrowed parameter of the enclosing function.
             && !is_by_value_capture_base(&binding.base)
+            && !(binding.capture_read_only && self.capture_move_recorded(&binding.name, span))
         {
             if self.report_diagnostics
                 && !self.reported_store_spans.insert((span.start, span.end))
@@ -877,10 +902,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return;
         }
-        // One duty per binding and moved-path set: a later use keeps the
-        // latest span and unions the destinations, so a later owning move is
-        // judged after an earlier view copy without a second report.
-        let key = (id, paths.clone());
+        // One duty per binding, moved-path set, and enclosing statement: a
+        // later use in the same statement unions its destinations, while two
+        // distinct later-use statements each get their own report.
+        let key = (
+            id,
+            paths.clone(),
+            self.current_span.start,
+            self.current_span.end,
+        );
         if let Some(index) = self.recorded_duplicable.get(&key).copied() {
             let requirement = &mut self.duplicable_requirements[index];
             let mut changed = false;
