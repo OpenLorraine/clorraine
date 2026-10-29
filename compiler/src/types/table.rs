@@ -656,9 +656,16 @@ pub fn resolve_ty_folded(
     loaded: &Loaded,
 ) -> Ty {
     let mut folder = ConstFolder::for_extents(table, module, loaded);
-    resolve_ty_with(ty, type_params, table, &mut |expr| {
-        folder.integer_at(expr, Some(ScalarType::Usize))
-    })
+    let mut alias = |name: &str| {
+        module.import(name).map(|binding| binding.original.clone())
+    };
+    resolve_ty_with_alias(
+        ty,
+        type_params,
+        table,
+        &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+        &mut alias,
+    )
 }
 
 /// Resolves an AST type, folding each array extent with `fold`.

@@ -20,6 +20,12 @@
  * `exit`/`abort`/`malloc` keeps that archive's other objects out of the link.
  */
 
+/* The generated cast from a raw pointer to an integer names the standard
+ * pointer-sized integer. The freestanding shim includes no header, so it
+ * supplies the C99 spelling here; on m68k `unsigned long` is 32-bit, matching
+ * the profile's `usize`. */
+typedef unsigned long uintptr_t;
+
 /* --- portable runtime ---------------------------------------------------- */
 
 /* The byte helpers GCC lowers aggregate copies and string literals to. They are

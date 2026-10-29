@@ -524,3 +524,18 @@ and `DEF-388` is already fixed by the Phase 2 null-member rule (`E10212` on
 
 Verification: `make check` green (79 targets, 111 compile-fail goldens) and
 `make verify: all legs passed`.
+
+**Phase 3 review (emission).** The emission audit found two critical
+accepted-source shapes:
+
+- The raw-to-integer cast named `uintptr_t`, which the freestanding shim did
+  not declare. The shim now defines the C99 pointer-sized integer, and the
+  spec test pins a freestanding `-nostdlib` compile.
+- An import-aliased global was re-resolved by the emitter without the module's
+  alias binding. The shared folded resolver now applies import aliases, so
+  globals, parameters, returns, locals, arrays, and struct fields all reach the
+  declared type; the alias test covers every position.
+
+The emission corpus diff otherwise contains only the intended symbol, arrow,
+cast, literal-context, and diagnostic changes; rejected programs write no C,
+and the accepted corpus builds under the strict legs.

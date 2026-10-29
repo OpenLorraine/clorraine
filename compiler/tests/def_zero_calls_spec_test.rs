@@ -664,3 +664,86 @@ func main(): i32 {
     let output = run_strict_host("aliastype", source);
     assert_exit("aliastype", &output, 0);
 }
+
+/// ST-53b: an import-renamed type resolves in globals, parameters, returns, and
+/// arrays, not only in a struct field.
+#[test]
+fn should_resolve_an_import_renamed_type_in_every_type_position() {
+    let holder = r#"module spec.zc.aliasallholder;
+
+export struct W { v: i32; }
+export func make(v: i32): W { return W { v: v }; }
+"#;
+    let main = r#"module spec.zc.aliasallmain;
+
+import { W as V, make } from spec.zc.aliasallholder;
+
+let g: V = make(5);
+
+func use(v: V): i32 { return v.v; }
+func give(): V { return make(4); }
+
+func main(): i32 {
+    let w: V = make(3);
+    let a: V[2] = [make(1), make(2)];
+    return use(w) + use(give()) + g.v + a[0].v - 13;
+}
+"#;
+    let output = run_strict_files(
+        "aliasall",
+        &[("holder.clo", holder), ("main.clo", main)],
+    );
+    assert_exit("aliasall", &output, 0);
+}
+
+/// ST-46b: the raw-to-integer cast spelling builds on the freestanding profile.
+#[test]
+fn should_build_the_raw_to_integer_cast_on_freestanding() {
+    let source = r#"module spec.zc.rawcastfree;
+
+func main(): i32 {
+    let s: str = "ab";
+    let n: usize = usize(s.ptr);
+    return i32(n) - i32(n);
+}
+"#;
+    let scratch = ScratchDir::new("rawcastfree");
+    let source_path = scratch.path().join("main.clo");
+    let c_path = scratch.path().join("out.c");
+    std::fs::write(&source_path, source).expect("write source");
+    let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(["--profile", "freestanding", "-o"])
+        .arg(&c_path)
+        .arg(&source_path)
+        .output()
+        .expect("failed to spawn the compiler binary");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "rawcastfree: the freestanding emit rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let object = scratch.path().join("out.o");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-nostdlib",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-c",
+            "-o",
+        ])
+        .arg(&object)
+        .arg(&c_path)
+        .output()
+        .expect("failed to spawn the freestanding host compiler");
+    assert!(
+        built.status.success(),
+        "rawcastfree: the freestanding C rejected the cast; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}
