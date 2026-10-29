@@ -273,11 +273,25 @@ import { toCString } from std.text;
 
 func main(): i32 {
     let c: cstring = toCString("abcd");
+    if (c == null) {
+        return 1;
+    }
     return i32(len(c)) - 4;
 }
 "#;
     let output = run_strict_host("d195", accepted);
     assert_exit("d195", &output, 0);
+
+    let unchecked = r#"module spec.zn.d195unchecked;
+
+import { toCString } from std.text;
+
+func main(): i32 {
+    let c: cstring = toCString("abcd");
+    return i32(len(c)) - 4;
+}
+"#;
+    assert_rejected("d195unchecked", unchecked, "E10010", 1, &["value 'c'"]);
 
     let usize_operand = r#"module spec.zn.d195usize;
 

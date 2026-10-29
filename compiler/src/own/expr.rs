@@ -1058,7 +1058,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // read; the widening is a use and reports like a
                         // direct use. The other view builders are declared
                         // functions and are checked at their call site.
-                        if name == "len" && self.ty(inner).nullable {
+                        // A `cstring` can hold the empty pointer even without
+                        // the `?` suffix, so its length reads the null state
+                        // just as a nullable view does.
+                        if name == "len"
+                            && (self.ty(inner).nullable
+                                || matches!(self.ty(inner).kind, TyKind::CString))
+                        {
                             self.check_nonnull_expr(inner, expr.span);
                         }
                     }

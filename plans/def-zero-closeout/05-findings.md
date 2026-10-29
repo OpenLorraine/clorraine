@@ -336,8 +336,10 @@ implemented and the new `def_zero_null_spec_test.rs` (14 cases) is green:
   narrowing fact; the true edge of `&&` and the false edge of `||` narrow the
   body, and a loop head narrows the loop body.
 - `DEF-195`/`DEF-483`: `len(cstring)` emits `cl_cstring_len`; `len` on
-  `usize`/`u8` reports `E10200`. The frozen raw-pointer empty-length fallback
-  stays accepted.
+  `usize`/`u8` reports `E10200`. A `cstring` can hold the empty pointer without
+  a `?`, so `len(c)` requires a `!= null` narrowing and the unchecked spelling
+  reports `E10010` (the runtime helper is not null-safe). The frozen
+  raw-pointer empty-length fallback stays accepted.
 - `DEF-246`: a literal `null` in a struct field or array element reports
   `E10012`; the established null-shape binding lowering stays accepted.
 - `DEF-247`: a read or store through a null-shaped head reports `E10212`.

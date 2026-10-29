@@ -106,6 +106,9 @@ import { toCString } from std.text;
 
 func main(): i32 {
     let c: cstring = toCString("abcd");
+    if (c == null) {
+        return 1;
+    }
     return i32(len(c)) - 4;
 }
 "#;
