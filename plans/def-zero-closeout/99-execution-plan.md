@@ -86,10 +86,10 @@ DEF rows and `make check`/`make verify` pass.
 - [x] 3.2.2 [impl-author] Fix DEF-212, DEF-214, DEF-236, DEF-239, DEF-240, DEF-241: the unused-index local, `E10309` (AR-4) with its `spec/14` registry row and compile-fail golden, the func-value arity, the Array dot-call, the qualified arity, and the raw receiver arrow.
 - [x] 3.2.3 [impl-author] Fix DEF-244, DEF-254, DEF-349, DEF-382: the ffi parameter validation, `--max-errors 0`, the host-clean cast help, and the literal-context argument route.
 - [x] 3.2.4 [impl-author] Fix DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419: the free-function member shadow, the null-base member, the module-path method error, the cstring literal argument, the explicit-generic literal, and the import-renamed type names.
-- [ ] 3.3.1 [impl-author] Write the `def_zero_calls_impl_test.rs` pins, run the focused legs, and dispatch the phase review; fix critical/major findings.
-- [ ] 3.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
+- [x] 3.3.1 [impl-author] Write the `def_zero_calls_impl_test.rs` pins, run the focused legs, and dispatch the phase review; fix critical/major findings.
+- [x] 3.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 
-**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
+**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded. **Phase 3 result (2026-10-29)**: 19 open rows closed (169, 173, 198, 205, 212, 214, 236, 239, 241, 244, 254, 349, 382, 387, 388, 389, 404, 405, 419); 174/203/240 were already Done. 30 spec cases, two impl pins, and the `Clp1_T` unit pin; `make check` green (79 targets, 111 goldens) and `make verify: all legs passed`. Report-only residuals are recorded in `05-findings.md`.
 
 ---
 
