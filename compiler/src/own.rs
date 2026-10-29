@@ -500,6 +500,12 @@ struct FunctionChecker<'a, 'd> {
     /// plumbing, so the member-receiver bind must not also fire there: the
     /// condition machinery already binds the calls it contains.
     in_loop_condition: bool,
+    /// True while the ownership pass evaluates a loop condition.
+    ///
+    /// The lowering flag marks the deferred-emission context after the
+    /// expression is evaluated; the take-argument check needs the same
+    /// context during evaluation.
+    in_loop_condition_check: bool,
     /// True while an arm of a conditional that was lowered in an eager context
     /// is being lowered.
     ///
@@ -545,6 +551,15 @@ struct FunctionChecker<'a, 'd> {
     /// reported span instead of adding a second duty.
     recorded_duplicable:
         BTreeMap<(usize, Vec<Vec<crate::types::PlacePathStep>>, u32, u32), usize>,
+    /// The source field paths a view loan names.
+    ///
+    /// A carrier loan is keyed by its owner for liveness, but a write to a
+    /// different field of that owner does not invalidate the view. The paths
+    /// let the write check skip a conflict only when every loan on the owner
+    /// reaches a disjoint member path. An empty entry keeps the whole-owner
+    /// judgment.
+    loan_source_paths:
+        BTreeMap<LoanId, Vec<Vec<crate::types::PlacePathStep>>>,
     /// The borrowed-element move duties this body owes its instances.
     ///
     /// A value-consuming move through a `for (borrow e in xs)` element alias
@@ -726,6 +741,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             pending_releases: Vec::new(),
             defer_move_outs: 0,
             in_loop_condition: false,
+            in_loop_condition_check: false,
             eager_conditional_arm: false,
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
@@ -734,6 +750,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_body: false,
             duplicable_requirements: Vec::new(),
             recorded_duplicable: BTreeMap::new(),
+            loan_source_paths: BTreeMap::new(),
             element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             whole_out_slot_store_requirements: Vec::new(),

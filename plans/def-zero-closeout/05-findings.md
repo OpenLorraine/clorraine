@@ -606,5 +606,17 @@ pinned by `def_zero_loans_spec_test.rs` (eight cases):
   two later uses in one generic body report twice.
 
 Verification: `make check` green (80 targets, 111 compile-fail goldens) and
-`make verify: all legs passed`. Remaining Phase 4 rows: `DEF-312`, `DEF-444`,
-`DEF-484`, `DEF-490`, `DEF-491`, `DEF-492`.
+`make verify: all legs passed`. Follow-up round:
+
+- `DEF-312`: a view loan now carries its source member paths; a write to a
+  different owner member (`b.v` beside a loan through `b.w`) no longer reports
+  `E10031`, while the same-member write still does.
+- `DEF-444`: a `take` through a raw dereference in a loop condition reports
+  `E10020` at the site, preventing the second-iteration double move.
+- `DEF-491`: a conditional whose arms are frame-resident places or literals is
+  judged as a frame value for a local destination, so the literal arm no longer
+  adds `E10033`; the later owner write still reports `E10031`.
+
+Verification after this round: `make check` green (80 targets, 111
+compile-fail goldens) and `make verify: all legs passed`. Remaining Phase 4
+rows: `DEF-484`, `DEF-490`, `DEF-492`.

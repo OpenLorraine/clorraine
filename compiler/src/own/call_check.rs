@@ -1810,6 +1810,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let target = self.place_target(expr);
         match mode {
             Mode::Take => {
+                // A raw-deref take moves the pointee. In a loop condition the
+                // same place is a candidate on every iteration, so the second
+                // iteration would consume a moved value. The loop fixpoint
+                // cannot see the pointee move through a raw pointer, so reject
+                // the shape at its site rather than emit a double free.
+                if (self.in_loop_condition || self.in_loop_condition_check)
+                    && contains_raw_deref(expr)
+                    && !self.sema.table.duplicable(arg_ty)
+                {
+                    self.error(
+                        "E10020",
+                        "a loop-head take may move its pointee again on the next iteration"
+                            .to_owned(),
+                        "move the take outside the loop or reinitialize the pointee each iteration",
+                        span,
+                    );
+                    return;
+                }
                 let maybe_owning = self.maybe_owns(arg_ty);
                 // The callee's parameter type is the destination of the take.
                 // A view instance copies a lend arm instead of consuming it,
@@ -2840,5 +2858,27 @@ fn collect_expression_initializers<'a>(expr: &'a Expr, out: &mut BTreeMap<String
             }
         }
         _ => {}
+    }
+}
+
+
+/// True when an expression reads through a raw dereference anywhere.
+///
+/// A take of `*p` or of a member/element under `*p` consumes part of the
+/// pointee; the loop-head rule only needs to know that the argument reaches
+/// through a raw dereference, so the walk stops at the first one.
+fn contains_raw_deref(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Unary {
+            op: crate::ast::UnaryOp::Deref,
+            ..
+        } => true,
+        ExprKind::Unsafe(inner)
+        | ExprKind::Cast { value: inner, .. }
+        | ExprKind::RawCast { value: inner, .. } => contains_raw_deref(inner),
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+            contains_raw_deref(base)
+        }
+        _ => false,
     }
 }

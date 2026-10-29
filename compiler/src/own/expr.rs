@@ -8,6 +8,21 @@
 
 use super::*;
 
+/// One view position a literal stores, with its source member path.
+///
+/// The destination path names where the view lands; `source` names the field
+/// path the value reads on its owner. The write check uses the source path to
+/// leave a write to a different owner field accepted.
+#[derive(Clone)]
+pub(super) struct ViewPosition {
+    /// The destination path from the literal's root.
+    pub(super) path: Vec<ir::Projection>,
+    /// The owner whose storage the view reads.
+    pub(super) owner: LoanOwner,
+    /// The source member path from the owner, empty for a whole-owner view.
+    pub(super) source: Vec<crate::types::PlacePathStep>,
+}
+
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- expressions ---------------------------------------------------------
 
@@ -1854,7 +1869,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let saved_literal_views = self.literal_views;
                 self.literal_views = if alias_root.is_none()
                     && !caller_slot
-                    && Self::is_frame_literal(value)
+                    && (Self::is_frame_literal(value)
+                        || self.conditional_frame_literal(value))
                 {
                     LiteralViews::Frame
                 } else {
@@ -3693,10 +3709,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the leaf's own type, because an owned value widens to the view the
     /// position holds. Only real owners matter here, so a literal or a module
     /// binding contributes nothing.
-    pub(super) fn literal_view_loan_positions(
-        &self,
-        expr: &Expr,
-    ) -> Vec<(Vec<ir::Projection>, LoanOwner)> {
+    pub(super) fn literal_view_loan_positions(&self, expr: &Expr) -> Vec<ViewPosition> {
         let mut positions = Vec::new();
         let position = self.ty(expr);
         self.collect_literal_view_positions(expr, &position, &mut Vec::new(), &mut positions);
@@ -3709,7 +3722,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         expr: &Expr,
         position: &Ty,
         path: &mut Vec<ir::Projection>,
-        positions: &mut Vec<(Vec<ir::Projection>, LoanOwner)>,
+        positions: &mut Vec<ViewPosition>,
     ) {
         match &expr.kind {
             ExprKind::StructLiteral { name, fields, .. } => {
@@ -3762,7 +3775,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 for atom in Self::storage_atoms(&self.view_provenance(expr)) {
                     if let Provenance::Local(owner) | Provenance::Param(owner) = atom {
-                        positions.push((path.clone(), LoanOwner::Binding(owner)));
+                        let source = match self.place_target(expr) {
+                            Some(PlaceTarget::Local(base, projections)) if base == owner => {
+                                super::place::projection_path_steps(&projections)
+                            }
+                            _ => Vec::new(),
+                        };
+                        positions.push(ViewPosition {
+                            path: path.clone(),
+                            owner: LoanOwner::Binding(owner),
+                            source,
+                        });
                     }
                 }
             }
@@ -3926,19 +3949,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &mut self,
         id: usize,
         base: &[ir::Projection],
-        positions: &[(Vec<ir::Projection>, LoanOwner)],
+        positions: &[ViewPosition],
         span: Span,
     ) {
-        let mut by_path: BTreeMap<Vec<ir::Projection>, BTreeSet<LoanOwner>> = BTreeMap::new();
-        for (path, owner) in positions {
+        let mut by_path: BTreeMap<
+            Vec<ir::Projection>,
+            BTreeMap<LoanOwner, Vec<Vec<crate::types::PlacePathStep>>>,
+        > = BTreeMap::new();
+        for position in positions {
             let mut full = base.to_vec();
-            full.extend(path.iter().cloned());
-            by_path.entry(full).or_default().insert(*owner);
+            full.extend(position.path.iter().cloned());
+            by_path
+                .entry(full)
+                .or_default()
+                .entry(position.owner)
+                .or_default()
+                .push(position.source.clone());
         }
         for (path, owners) in by_path {
             let mut loans = BTreeSet::new();
-            for owner in owners {
-                if let Some(loan) = self.record_view_loan(owner, LoanKind::Shared, span) {
+            for (owner, sources) in owners {
+                let sources: Vec<_> = sources.into_iter().filter(|source| !source.is_empty()).collect();
+                if let Some(loan) = self.record_view_loan_with_paths(owner, sources, LoanKind::Shared, span)
+                {
                     loans.insert(loan);
                 }
             }
@@ -3953,6 +3986,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// array of literals is materialized in the frame the same way; any other
     /// value — a call, a place, or a mix — is not, and its fields keep the
     /// escape report.
+    /// True when a conditional's arms are frame-resident values.
+    ///
+    /// A conditional that selects between a local carrier and a literal is a
+    /// frame value as a whole: the destination local keeps either arm in this
+    /// frame, so a literal arm's local-backed view does not escape. A fresh
+    /// call arm stays outside this judgment, leaving its own frame rule to
+    /// report a temporary backing.
+    pub(super) fn conditional_frame_literal(&self, value: &Expr) -> bool {
+        match &value.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.conditional_frame_literal(then_value)
+                    && self.conditional_frame_literal(else_value)
+            }
+            _ => {
+                Self::is_frame_literal(value)
+                    || matches!(
+                        self.place_target(value),
+                        Some(PlaceTarget::Local(..) | PlaceTarget::Global(..))
+                    )
+            }
+        }
+    }
+
     pub(super) fn is_frame_literal(expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::StructLiteral { .. } => true,

@@ -304,3 +304,101 @@ func main(): i32 {
     assert_eq!(output.status.code(), Some(0));
     assert_no_sanitizer("overwrite", &output);
 }
+
+#[test]
+fn should_keep_a_loan_on_another_member_accepted() {
+    let accepted = r#"module spec.zl.memberloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: i32; w: String; }
+struct Holder { names: str[1]; }
+
+func main(): i32 {
+    let b: Box = Box { v: 1, w: stringOf("AA") };
+    let h: Holder = Holder { names: [b.w] };
+    b.v = 2;
+    return i32(h.names[0][0]) - 65;
+}
+"#;
+    let output = run_source("memberloan", accepted);
+    assert_eq!(output.status.code(), Some(0));
+    assert_no_sanitizer("memberloan", &output);
+
+    let rejected = r#"module spec.zl.memberloanwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: i32; w: String; }
+struct Holder { names: str[1]; }
+
+func main(): i32 {
+    let b: Box = Box { v: 1, w: stringOf("AA") };
+    let h: Holder = Holder { names: [b.w] };
+    b.w = stringOf("ZZ");
+    return i32(h.names[0][0]) - 65;
+}
+"#;
+    let (_scratch, output, c_path) = compile("memberloanwrite", rejected, false);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("error E10031:").count(), 1, "{stderr}");
+    assert!(!c_path.exists());
+}
+
+#[test]
+fn should_reject_a_loop_head_take_through_a_raw_deref() {
+    let source = r#"module spec.zl.looptake;
+
+import { String, stringOf } from std.text;
+
+func eat(take s: String): i32 { return i32(len(s)); }
+
+func loopPlaceTake(p: raw String): i32 {
+    let i: i32 = 0;
+    while (i < 2 && eat(take unsafe *p) > 0) {
+        i = i + 1;
+    }
+    return i - 2;
+}
+
+func main(): i32 {
+    let s: String = stringOf("aa");
+    let p: raw String = unsafe &s;
+    return loopPlaceTake(p);
+}
+"#;
+    let (_scratch, output, c_path) = compile("looptake", source, false);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("error E10020:").count(), 1, "{stderr}");
+    assert!(stderr.contains("loop-head take"), "{stderr}");
+    assert!(!c_path.exists());
+}
+
+#[test]
+fn should_not_report_an_escape_for_a_local_conditional_literal_arm() {
+    let source = r#"module spec.zl.condliteral;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("aa") };
+    let h3: Holder = Holder { names: ["CC", "DD"] };
+    let h: Holder = c ? h3 : Holder { names: [b.v, "EE"] };
+    b.v = stringOf("zz");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return use(true) - 99; }
+"#;
+    let (_scratch, output, c_path) = compile("condliteral", source, false);
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("error E10031:").count(), 1, "{stderr}");
+    assert!(!stderr.contains("E10033"), "{stderr}");
+    assert!(!c_path.exists());
+}

@@ -49,7 +49,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // here, and a use of it in the condition is recorded against that loan.
         self.state = entry.clone();
         self.switch_to(head);
+        let saved_condition_check = self.in_loop_condition_check;
+        self.in_loop_condition_check = true;
         self.eval(&decl.condition);
+        self.in_loop_condition_check = saved_condition_check;
         let saved_loop_condition = self.in_loop_condition;
         self.in_loop_condition = true;
         let mut condition = self.lower_value(&decl.condition);
@@ -151,7 +154,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // The condition's materialized temporaries are registered while it is
         // evaluated, so only the entries added after this point belong to it.
         let release_floor = self.pending_releases.len();
+        let saved_condition_check = self.in_loop_condition_check;
+        self.in_loop_condition_check = true;
         self.eval(&decl.condition);
+        self.in_loop_condition_check = saved_condition_check;
         let saved_loop_condition = self.in_loop_condition;
         self.in_loop_condition = true;
         let mut condition = self.lower_value(&decl.condition);

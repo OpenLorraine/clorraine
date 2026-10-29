@@ -320,11 +320,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // frame storage, so a frame- or caller-backed view field is accepted
         // here and its loan follows the binding below.
         let saved_literal_views = self.literal_views;
-        self.literal_views = if decl
-            .value
-            .as_ref()
-            .is_some_and(FunctionChecker::is_frame_literal)
-        {
+        self.literal_views = if decl.value.as_ref().is_some_and(|value| {
+            FunctionChecker::is_frame_literal(value) || self.conditional_frame_literal(value)
+        }) {
             LiteralViews::Frame
         } else {
             LiteralViews::Escaping
@@ -823,7 +821,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // frame storage, so a frame- or caller-backed view field is accepted
         // here and its loan follows the binding below.
         let saved_literal_views = self.literal_views;
-        self.literal_views = if FunctionChecker::is_frame_literal(&decl.value) {
+        self.literal_views = if FunctionChecker::is_frame_literal(&decl.value)
+            || self.conditional_frame_literal(&decl.value)
+        {
             LiteralViews::Frame
         } else {
             LiteralViews::Escaping
@@ -1282,6 +1282,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.report_diagnostics {
             self.record_event(LoanEventKind::Request { owner, kind }, span);
             self.record_event(LoanEventKind::Created { loan, owner, kind }, span);
+        }
+        Some(loan)
+    }
+
+    /// Records a view loan with the source field paths the view names.
+    ///
+    /// The liveness pass still keys the loan by its owner; the paths are used
+    /// only by the write check, which may skip a conflict when every live loan
+    /// on that owner reaches a disjoint field.
+    pub(super) fn record_view_loan_with_paths(
+        &mut self,
+        owner: LoanOwner,
+        paths: Vec<Vec<crate::types::PlacePathStep>>,
+        kind: LoanKind,
+        span: Span,
+    ) -> Option<LoanId> {
+        let loan = self.record_view_loan(owner, kind, span)?;
+        if matches!(owner, LoanOwner::Binding(_)) && !paths.is_empty() {
+            self.loan_source_paths
+                .entry(loan)
+                .or_default()
+                .extend(paths);
         }
         Some(loan)
     }

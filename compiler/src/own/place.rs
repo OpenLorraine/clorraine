@@ -206,7 +206,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.record_event(LoanEventKind::Used { loan }, span);
                 }
             }
-        } else {
+        } else if self.owner_loan_conflicts_at_path(id, projections) {
             self.record_event(
                 LoanEventKind::Access {
                     owner: LoanOwner::Binding(id),
@@ -519,13 +519,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let owner_kind = binding.kind;
         let owner_mode = binding.mode;
         let owns_environment_field = is_by_value_capture_base(&binding.base);
-        self.record_event(
-            LoanEventKind::Access {
-                owner: LoanOwner::Binding(id),
-                access: AccessKind::Move,
-            },
-            span,
-        );
+        if self.owner_loan_conflicts_at_path(id, projections) {
+            self.record_event(
+                LoanEventKind::Access {
+                    owner: LoanOwner::Binding(id),
+                    access: AccessKind::Move,
+                },
+                span,
+            );
+        }
         if projections.is_empty() {
             // A read always precedes a move in the same expression, so a move
             // of an already-moved value has already been diagnosed; repeating
@@ -1186,6 +1188,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// owners.
     pub(super) fn binding_loans(&self, id: usize) -> BTreeSet<LoanId> {
         self.state.loans.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// True when a write at `projections` reaches a live loan's source path.
+    ///
+    /// A loan with no recorded paths is whole-owner and conflicts with every
+    /// write. A write with no projections covers the whole binding and
+    /// conflicts with every loan. Otherwise the two member paths overlap only
+    /// when one is a prefix of the other.
+    fn owner_loan_conflicts_at_path(
+        &self,
+        owner: usize,
+        projections: &[ir::Projection],
+    ) -> bool {
+        let written = projection_path_steps(projections);
+        for (origin, loan) in &self.loan_ids {
+            if origin.owner != LoanOwner::Binding(owner) {
+                continue;
+            }
+            let Some(paths) = self.loan_source_paths.get(loan) else {
+                return true;
+            };
+            if paths.is_empty()
+                || paths
+                    .iter()
+                    .any(|path| place_paths_overlap(path, &written))
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// The owners of the loans a binding carries.
@@ -4148,6 +4180,33 @@ fn element_index(expr: &Expr) -> Option<usize> {
 /// capture owns its field, while a `[borrow x]` capture points at the
 /// enclosing frame. Such a capture's storage is the environment, not a
 /// parameter, so the lend-storage rules must not name it a borrowed parameter.
+/// Converts a place projection path to the ownership stage's path steps.
+pub(super) fn projection_path_steps(
+    projections: &[ir::Projection],
+) -> Vec<crate::types::PlacePathStep> {
+    projections
+        .iter()
+        .map(|projection| match projection {
+            ir::Projection::Field(field) => crate::types::PlacePathStep::Field(field.clone()),
+            ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                crate::types::PlacePathStep::Element
+            }
+        })
+        .collect()
+}
+
+/// True when two member paths select overlapping storage.
+///
+/// An empty path names the whole binding and overlaps every path. Otherwise
+/// two paths overlap only when their common prefix is one of the whole paths.
+fn place_paths_overlap(
+    left: &[crate::types::PlacePathStep],
+    right: &[crate::types::PlacePathStep],
+) -> bool {
+    let common = left.len().min(right.len());
+    left[..common] == right[..common]
+}
+
 fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
     matches!(
         base,
