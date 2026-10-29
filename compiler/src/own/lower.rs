@@ -893,6 +893,50 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// fill, and a conditional's arms so a literal null at a fixed-array or
     /// scalar destination reports E10012 instead of reaching an invalid C
     /// initializer.
+    /// The written parameter types of a call's callee, when they are known.
+    ///
+    /// The initializer walk has no `check_arguments` pass, so a nullable call
+    /// result passed to a non-null parameter would otherwise go unchecked.
+    fn initializer_call_params(&self, callee: &Expr) -> Option<Vec<Ty>> {
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            return self
+                .callable_signature(&field_ty)
+                .map(|params| params.into_iter().map(|(_, ty)| ty).collect());
+        }
+        if let Some(name) = self.callee_name(callee) {
+            match self.resolved_callee(&name) {
+                Some(Callee::User(decl)) => {
+                    let type_params: Vec<String> =
+                        decl.type_params.iter().map(|param| param.name.clone()).collect();
+                    return Some(
+                        decl.params
+                            .iter()
+                            .map(|param| self.resolve_with(&param.ty, &type_params))
+                            .collect(),
+                    );
+                }
+                Some(Callee::Ffi(signature)) => {
+                    return Some(
+                        signature
+                            .params
+                            .iter()
+                            .map(|param| self.resolve_with(&param.ty, &[]))
+                            .collect(),
+                    );
+                }
+                _ => {}
+            }
+        }
+        if let Some(id) = self.func_binding_callee(callee) {
+            return self
+                .callable_signature(&self.bindings[id].ty)
+                .map(|params| params.into_iter().map(|(_, ty)| ty).collect());
+        }
+        self.recorded_ty(callee)
+            .and_then(|ty| self.callable_signature(&ty))
+            .map(|params| params.into_iter().map(|(_, ty)| ty).collect())
+    }
+
     /// Checks a module initializer's nullable bases and length operands.
     ///
     /// The initializer walk has no function-body `eval`, so a dotted read of a
@@ -913,6 +957,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.check_nonnull_global(&global, &prefix, value.span);
                     }
                     for field in &fields {
+                        self.check_member_raw(&current, value.span);
                         prefix.push(ir::Projection::Field(field.clone()));
                         current = self.member_type(&current, field);
                         if current.nullable {
@@ -922,12 +967,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::Member { base, .. } => {
+                if matches!(self.ty(base).kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+                    self.report_unsafe(UnsafeOp::Deref, value.span);
+                }
                 if self.ty(base).nullable {
                     self.check_nonnull_expr(base, value.span);
                 }
                 self.check_initializer_reads(base);
             }
             ExprKind::Index { base, index } => {
+                if matches!(self.ty(base).kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+                    self.report_unsafe(UnsafeOp::PointerArithmetic, value.span);
+                }
                 if self.ty(base).nullable {
                     self.check_nonnull_expr(base, value.span);
                 }
@@ -935,7 +986,74 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_initializer_reads(index);
             }
             ExprKind::Call { callee, args, .. } => {
+                // The dot and qualified spellings of the `len` intrinsic use
+                // a call node, not `IntrinsicCall`; apply the same receiver
+                // null rule here.
+                let call_name = self.callee_name(callee);
+                let simple = call_name
+                    .as_deref()
+                    .and_then(|name| name.rsplit('.').next());
+                let receiver_ty = if self.is_dot_call(callee) {
+                    self.dot_receiver_type(callee)
+                } else {
+                    Ty::unknown()
+                };
+                let view_receiver = matches!(
+                    receiver_ty.kind,
+                    TyKind::CString | TyKind::Str | TyKind::StaticStr | TyKind::Array { .. }
+                );
+                let is_intrinsic_len = simple == Some("len")
+                    && (self.callee_field_type(callee).is_none() || view_receiver);
+                if is_intrinsic_len {
+                    if self.is_dot_call(callee) {
+                        let receiver_ty = self.dot_receiver_type(callee);
+                        if receiver_ty.nullable
+                            || matches!(receiver_ty.kind, TyKind::CString)
+                        {
+                            match &callee.kind {
+                                ExprKind::Member { base, .. } => {
+                                    self.check_nonnull_expr(base, value.span);
+                                }
+                                ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                                    let last = name.segments.len() - 1;
+                                    let path = crate::ast::QualifiedName {
+                                        segments: name.segments[..last].to_vec(),
+                                        span: name.span,
+                                    };
+                                    let receiver = if path.segments.len() == 1 {
+                                        Expr {
+                                            kind: ExprKind::Name(path.segments[0].clone()),
+                                            span: name.span,
+                                        }
+                                    } else {
+                                        Expr {
+                                            kind: ExprKind::Qualified(path),
+                                            span: name.span,
+                                        }
+                                    };
+                                    self.check_nonnull_expr(&receiver, value.span);
+                                }
+                                _ => {}
+                            }
+                        }
+                    } else if let Some(arg) = args.first() {
+                        let ty = self.ty(&arg.value);
+                        if ty.nullable || matches!(ty.kind, TyKind::CString) {
+                            self.check_nonnull_expr(&arg.value, value.span);
+                        }
+                    }
+                }
                 self.check_initializer_reads(callee);
+                if let Some(params) = self.initializer_call_params(callee) {
+                    let dot = self.is_dot_call(callee);
+                    let callable_field = self.callee_field_type(callee).is_some();
+                    let offset = if dot && !callable_field { 1 } else { 0 };
+                    for (index, arg) in args.iter().enumerate() {
+                        if let Some(expected) = params.get(index + offset) {
+                            self.check_value_into(&arg.value, expected, arg.span);
+                        }
+                    }
+                }
                 for arg in args {
                     self.check_initializer_reads(&arg.value);
                 }
@@ -953,11 +1071,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
             }
+            ExprKind::Binary {
+                op: crate::ast::BinaryOp::LogicalAnd,
+                left,
+                right,
+            } => {
+                self.check_initializer_reads(left);
+                let facts = self.condition_facts(left).0;
+                let previous = self.fact_states(&facts);
+                self.apply_facts(&facts);
+                self.check_initializer_reads(right);
+                self.restore_facts(&facts, &previous);
+            }
+            ExprKind::Binary {
+                op: crate::ast::BinaryOp::LogicalOr,
+                left,
+                right,
+            } => {
+                self.check_initializer_reads(left);
+                let facts = self.condition_facts(left).1;
+                let previous = self.fact_states(&facts);
+                self.apply_facts(&facts);
+                self.check_initializer_reads(right);
+                self.restore_facts(&facts, &previous);
+            }
             ExprKind::Binary { left, right, .. } => {
                 self.check_initializer_reads(left);
                 self.check_initializer_reads(right);
             }
-            ExprKind::Unary { operand, .. } => self.check_initializer_reads(operand),
+            ExprKind::Unary { op, operand } => {
+                match op {
+                    crate::ast::UnaryOp::AddressOf => {
+                        if self.unsafe_depth == 0 {
+                            self.report_unsafe(UnsafeOp::AddressOf, value.span);
+                        }
+                    }
+                    crate::ast::UnaryOp::Deref => {
+                        if self.unsafe_depth == 0 {
+                            self.report_unsafe(UnsafeOp::Deref, value.span);
+                        }
+                        if self.ty(operand).nullable {
+                            self.check_nonnull_expr(operand, value.span);
+                        }
+                    }
+                    _ => {}
+                }
+                self.check_initializer_reads(operand);
+            }
             ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
                 self.check_initializer_reads(value)
             }
@@ -968,22 +1128,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } => {
                 self.check_initializer_reads(condition);
                 let (then_facts, else_facts) = self.condition_facts(condition);
-                for (owner, projections, non_null) in &then_facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                let then_previous = self.fact_states(&then_facts);
+                self.apply_facts(&then_facts);
                 self.check_initializer_reads(then_value);
-                for (owner, projections, _) in &then_facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
-                for (owner, projections, non_null) in &else_facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                self.restore_facts(&then_facts, &then_previous);
+                let else_previous = self.fact_states(&else_facts);
+                self.apply_facts(&else_facts);
                 self.check_initializer_reads(else_value);
-                for (owner, projections, _) in &else_facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
+                self.restore_facts(&else_facts, &else_previous);
             }
-            ExprKind::Unsafe(inner) => self.check_initializer_reads(inner),
+            ExprKind::Unsafe(inner) => {
+                self.unsafe_depth += 1;
+                self.check_initializer_reads(inner);
+                self.unsafe_depth -= 1;
+            }
             ExprKind::StructLiteral { fields, .. } => {
                 for field in fields {
                     self.check_initializer_reads(&field.value);
@@ -1000,6 +1158,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Template(pieces) => {
                 for piece in pieces {
                     if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        let expected = Ty {
+                            kind: TyKind::Str,
+                            nullable: false,
+                        };
+                        self.check_value_into(inner, &expected, inner.span);
                         self.check_initializer_reads(inner);
                     }
                 }

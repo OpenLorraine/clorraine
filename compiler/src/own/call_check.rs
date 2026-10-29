@@ -16,6 +16,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the ownership walk reads the field and applies the signature's
     /// parameter modes to the arguments — a `take` marks its move, a `borrow`
     /// records its lend, and a plain lend only reads.
+    /// True when a call can write a module binding.
+    ///
+    /// A user or `ffi` function has no effect summary here, so it is treated
+    /// conservatively; a callable field or value is the same. The compiler
+    /// intrinsics (`len` and the view builders) only read their operands.
+    pub(super) fn call_may_write_globals(&self, callee: &Expr) -> bool {
+        if self.callee_field_type(callee).is_some() {
+            return true;
+        }
+        let Some(name) = self.callee_name(callee) else {
+            return true;
+        };
+        let simple = name.rsplit('.').next().unwrap_or(&name);
+        if matches!(simple, "len" | "slice" | "rawSlice" | "rawStr") {
+            return false;
+        }
+        if matches!(
+            self.resolved_callee(&name),
+            Some(Callee::User(_)) | Some(Callee::Ffi(_))
+        ) {
+            return true;
+        }
+        self.is_dot_call(callee)
+    }
+
     pub(super) fn check_call_expr(
         &mut self,
         callee: &'a Expr,

@@ -1398,6 +1398,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// binding; a plain read-only argument cannot. The walk is conservative for
     /// nested calls and literals and only keeps the common read-only
     /// short-circuit chain (`s != null && len(s) > 0`) narrowed.
+    /// The declared parameter modes of a call's callee, when it has them.
+    fn call_parameter_modes(&self, callee: &Expr) -> Option<Vec<crate::ast::Mode>> {
+        if let Some(name) = self.callee_name(callee) {
+            if let Some(modes) = self.callee_modes(&name) {
+                return Some(modes);
+            }
+        }
+        if let Some(id) = self.func_binding_callee(callee) {
+            return self.callable_modes(&self.bindings[id].ty);
+        }
+        self.callable_modes(&self.ty(callee))
+    }
+
     fn expression_writes_owner(&self, expr: &Expr, owner: &super::place::NarrowOwner) -> bool {
         if super::lower::contains_update(expr) {
             return true;
@@ -1413,9 +1426,50 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         match &expr.kind {
             ExprKind::Call { callee, args, .. } => {
-                args.iter().any(|arg| {
+                // A module owner has no call effect summary: any user or ffi
+                // call may write it, so a left fact cannot survive the call.
+                if matches!(owner, super::place::NarrowOwner::Global(_))
+                    && self.call_may_write_globals(callee)
+                {
+                    return true;
+                }
+                // The declaration is authoritative: a call may omit the
+                // written `borrow`/`take` marker and still write through the
+                // declared parameter mode.
+                let declared = self.call_parameter_modes(callee);
+                let dot = self.is_dot_call(callee);
+                let callable_field = self.callee_field_type(callee).is_some();
+                let mut offset = if dot && !callable_field { 1 } else { 0 };
+                let receiver_writes = if dot && !callable_field {
+                    match &callee.kind {
+                        ExprKind::Member { base, .. } => {
+                            let mode = declared
+                                .as_ref()
+                                .and_then(|modes| modes.first().copied())
+                                .unwrap_or(crate::ast::Mode::None);
+                            matches!(
+                                mode,
+                                crate::ast::Mode::Borrow | crate::ast::Mode::Take
+                            ) && same_place(base)
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                };
+                if receiver_writes {
+                    return true;
+                }
+                if offset > declared.as_ref().map_or(0, Vec::len) {
+                    offset = 0;
+                }
+                args.iter().enumerate().any(|(index, arg)| {
+                    let mode = declared
+                        .as_ref()
+                        .and_then(|modes| modes.get(index + offset).copied())
+                        .unwrap_or(arg.marker);
                     matches!(
-                        arg.marker,
+                        mode,
                         crate::ast::Mode::Borrow | crate::ast::Mode::Take
                     ) && same_place(&arg.value)
                         || self.expression_writes_owner(&arg.value, owner)
@@ -1472,6 +1526,55 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a narrowing fact already holds in the current state.
+    pub(super) fn fact_holds(
+        &self,
+        owner: &super::place::NarrowOwner,
+        projections: &[ir::Projection],
+    ) -> bool {
+        match owner {
+            super::place::NarrowOwner::Local(id) => {
+                self.state.place(*id).is_narrowed(projections)
+            }
+            super::place::NarrowOwner::Global(id) => self
+                .state
+                .global_narrowed
+                .contains(&(id.clone(), projections.to_vec())),
+        }
+    }
+
+    /// Applies every fact in a condition edge.
+    pub(super) fn apply_facts(
+        &mut self,
+        facts: &[(super::place::NarrowOwner, Vec<ir::Projection>, bool)],
+    ) {
+        for (owner, projections, non_null) in facts {
+            self.apply_narrowing(owner, projections, *non_null);
+        }
+    }
+
+    /// Captures which facts already held before a transient edge.
+    pub(super) fn fact_states(
+        &self,
+        facts: &[(super::place::NarrowOwner, Vec<ir::Projection>, bool)],
+    ) -> Vec<bool> {
+        facts
+            .iter()
+            .map(|(owner, projections, _)| self.fact_holds(owner, projections))
+            .collect()
+    }
+
+    /// Restores the pre-transient state of each fact.
+    pub(super) fn restore_facts(
+        &mut self,
+        facts: &[(super::place::NarrowOwner, Vec<ir::Projection>, bool)],
+        states: &[bool],
+    ) {
+        for ((owner, projections, non_null), held) in facts.iter().zip(states) {
+            self.apply_narrowing(owner, projections, if *held { *non_null } else { false });
+        }
+    }
+
     /// Records that a place path is (or is not) known to be not null.
     pub(super) fn apply_narrowing(
         &mut self,
@@ -1493,9 +1596,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             super::place::NarrowOwner::Global(id) => {
                 let key = (id.clone(), projections.to_vec());
                 if non_null {
-                    self.global_narrowed.insert(key);
+                    self.state.global_narrowed.insert(key);
                 } else {
-                    self.global_narrowed.remove(&key);
+                    self.state.global_narrowed.remove(&key);
                 }
             }
         }

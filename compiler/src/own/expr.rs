@@ -777,13 +777,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // fact is transient: remove it after the right operand, but
                 // keep every move, write, and loan the right operand caused.
                 let facts = self.condition_facts(left).0;
-                for (owner, projections, non_null) in &facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                let previous = self.fact_states(&facts);
+                self.apply_facts(&facts);
                 let _right_ty = self.eval(right);
-                for (owner, projections, _) in &facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
+                self.restore_facts(&facts, &previous);
             }
             ExprKind::Binary {
                 op: BinaryOp::LogicalOr,
@@ -796,13 +793,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // fact. Remove only that transient fact; right-operand moves
                 // and writes stay in the state.
                 let facts = self.condition_facts(left).1;
-                for (owner, projections, non_null) in &facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                let previous = self.fact_states(&facts);
+                self.apply_facts(&facts);
                 let _right_ty = self.eval(right);
-                for (owner, projections, _) in &facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
+                self.restore_facts(&facts, &previous);
             }
             ExprKind::Binary { op, left, right } => {
                 let left_ty = self.eval(left);
@@ -823,20 +817,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } => {
                 self.eval(condition);
                 let (then_facts, else_facts) = self.condition_facts(condition);
-                for (owner, projections, non_null) in &then_facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                let then_previous = self.fact_states(&then_facts);
+                self.apply_facts(&then_facts);
                 self.eval(then_value);
-                for (owner, projections, _) in &then_facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
-                for (owner, projections, non_null) in &else_facts {
-                    self.apply_narrowing(owner, projections, *non_null);
-                }
+                self.restore_facts(&then_facts, &then_previous);
+                let else_previous = self.fact_states(&else_facts);
+                self.apply_facts(&else_facts);
                 self.eval(else_value);
-                for (owner, projections, _) in &else_facts {
-                    self.apply_narrowing(owner, projections, false);
-                }
+                self.restore_facts(&else_facts, &else_previous);
             }
             ExprKind::Cast { value, .. } => {
                 self.eval(value);
@@ -1123,6 +1111,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.discarded_conditional = false;
                 self.discarded_literal_field = false;
                 self.check_call_expr(callee, type_args, args, expr.span);
+                if self.call_may_write_globals(callee) {
+                    self.state.global_narrowed.clear();
+                }
                 self.discarded_conditional = saved_discarded;
                 self.discarded_literal_field = saved_discarded_field;
             }
@@ -1280,6 +1271,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
     ) {
         if self
+            .state
             .global_narrowed
             .contains(&(id.clone(), projections.to_vec()))
         {
@@ -2222,7 +2214,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 // The store replaces the narrowed storage; a later read must
                 // prove its null state again.
-                self.global_narrowed.retain(|(global, path)| {
+                self.state.global_narrowed.retain(|(global, path)| {
                     !(global == &id
                         && path.starts_with(&projections))
                 });

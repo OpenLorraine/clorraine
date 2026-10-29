@@ -405,3 +405,23 @@ well. The implementation test's matching source received the same guard.
 Review-batch verification: `make check` green (77 targets, 110 goldens); `make
 verify: all legs passed`; focused ASAN/LSan runs of the narrowed global,
 module-conditional, and cstring paths are clean.
+
+**Phase 2 review, second round (re-audit).** The re-audits found residual
+spellings of the same rules; all are fixed:
+
+- Global narrowing now lives in the flow state, so branch joins, else edges,
+  and loop exits keep or drop a module-binding fact exactly as a local one.
+  A user or `ffi` call is treated as a possible global write; an unmarked
+  `borrow` argument is recognized from the declaration rather than the optional
+  call-site marker.
+- Module-initializer reads now cover the dot `len` spelling, `&&`/`||` right
+  operands, nested call arguments, template placeholders, and the unsafe gate
+  for raw index/member/address-of reads.
+- A transient `&&`/`||` edge restores facts that were already true, so an outer
+  local or global narrowing survives an inner short-circuit.
+- The module initializer spec test's nullable global gained the user-approved
+  `s == null` guard; the matching implementation test was updated.
+
+Second-round verification: `make check` green (77 targets, 110 goldens); `make
+verify: all legs passed`; focused ASAN/LSan probes of the newly narrowed and
+rejected global/module paths are clean.

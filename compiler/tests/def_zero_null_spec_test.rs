@@ -1321,3 +1321,288 @@ func main(): i32 {
     let output = run_strict_host("p1cond", source);
     assert_exit("p1cond", &output, 0);
 }
+
+/// A `borrow` declaration is authoritative even when the call omits the marker.
+#[test]
+fn should_judge_an_unmarked_borrow_call_as_a_write() {
+    let source = r#"module spec.zn.unmarkedborrow;
+
+import { String, stringOf } from std.text;
+
+func clear(borrow s: String?): bool {
+    s = null;
+    return true;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("abcd");
+    if (s != null && clear(s)) {
+        return i32(len(s));
+    }
+    return 1;
+}
+"#;
+    assert_rejected("unmarkedborrow", source, "E10010", 1, &["value 's'"]);
+}
+
+/// The dot `len` spelling in a module initializer checks its cstring receiver.
+#[test]
+fn should_judge_a_module_initializer_dot_len() {
+    let global = r#"module spec.zn.moduledotlen;
+
+let c: cstring = null;
+let n: usize = c.len();
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("moduledotlen", global, "E10010", 1, &["value 'c'"]);
+
+    let field = r#"module spec.zn.moduledotlenfield;
+
+struct W { c: cstring; }
+
+let w: W = W { c: null };
+let n: usize = w.c.len();
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    assert_rejected("moduledotlenfield", field, "E10010", 1, &["value 'w'"]);
+}
+
+/// A global narrowing fact is scoped to the branch or loop that proved it, and
+/// a user call may write a global.
+#[test]
+fn should_scope_and_invalidate_global_narrowing() {
+    let after_if = r#"module spec.zn.globalnarrowif;
+
+let g: cstring = null;
+
+func main(): i32 {
+    if (g != null && true) { }
+    return i32(len(g));
+}
+"#;
+    assert_rejected("globalnarrowif", after_if, "E10010", 1, &["value 'g'"]);
+
+    let after_loop = r#"module spec.zn.globalnarrowloop;
+
+let g: cstring = null;
+
+func main(): i32 {
+    let n: i32 = 0;
+    while (g != null && n < 1) {
+        n = n + 1;
+    }
+    return i32(len(g));
+}
+"#;
+    assert_rejected(
+        "globalnarrowloop",
+        after_loop,
+        "E10010",
+        1,
+        &["value 'g'"],
+    );
+
+    let call_in_condition = r#"module spec.zn.globalcallcond;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("ab");
+
+func reset(): bool {
+    g = null;
+    return true;
+}
+
+func main(): i32 {
+    if (g != null && reset()) {
+        return i32(len(g));
+    }
+    return 0;
+}
+"#;
+    assert_rejected(
+        "globalcallcond",
+        call_in_condition,
+        "E10010",
+        1,
+        &["value 'g'"],
+    );
+
+    let call_in_body = r#"module spec.zn.globalcallbody;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("ab");
+
+func reset(): bool {
+    g = null;
+    return true;
+}
+
+func main(): i32 {
+    if (g != null) {
+        reset();
+        return i32(len(g));
+    }
+    return 0;
+}
+"#;
+    assert_rejected("globalcallbody", call_in_body, "E10010", 1, &["value 'g'"]);
+}
+
+/// A global narrowed by a guard that returns on the null path stays narrowed
+/// afterward.
+#[test]
+fn should_keep_a_global_narrowed_after_an_early_return() {
+    let source = r#"module spec.zn.globalearlyreturn;
+
+import { toCString } from std.text;
+
+let g: cstring = toCString("abcd");
+
+func main(): i32 {
+    if (g == null) {
+        return 1;
+    }
+    return i32(len(g)) - 4;
+}
+"#;
+    let output = run_strict_host("globalearlyreturn", source);
+    assert_exit("globalearlyreturn", &output, 0);
+}
+
+/// Module-initializer short-circuit chains narrow their right operands.
+#[test]
+fn should_narrow_a_module_initializer_short_circuit() {
+    let and = r#"module spec.zn.moduleand;
+
+let c: cstring = null;
+let b: bool = c != null && len(c) > 0;
+
+func main(): i32 {
+    if (b) { return 1; }
+    return 0;
+}
+"#;
+    let output = run_strict_host("moduleand", and);
+    assert_exit("moduleand", &output, 0);
+
+    let or = r#"module spec.zn.moduleor;
+
+let c: cstring = null;
+let b: bool = c == null || len(c) > 0;
+
+func main(): i32 {
+    if (b) { return 1; }
+    return 0;
+}
+"#;
+    let output = run_strict_host("moduleor", or);
+    assert_exit("moduleor", &output, 1);
+}
+
+/// Module-initializer call arguments and template placeholders face their
+/// concrete destinations.
+#[test]
+fn should_judge_module_initializer_call_and_template_arguments() {
+    let call = r#"module spec.zn.modulecallarg;
+
+import { String, stringOf } from std.text;
+
+func get(): String? {
+    return stringOf("ab");
+}
+
+func f(x: str): i32 {
+    return i32(len(x));
+}
+
+let n: i32 = f(get());
+
+func main(): i32 {
+    return n - 2;
+}
+"#;
+    assert_rejected("modulecallarg", call, "E10010", 1, &["value 'get()'"]);
+
+    let template = r#"module spec.zn.moduletemplate;
+
+import { String, stringOf } from std.text;
+
+func get(): String? {
+    return stringOf("ab");
+}
+
+let s: str = $"x{get()}";
+
+func main(): i32 {
+    return i32(len(s)) - 3;
+}
+"#;
+    assert_rejected("moduletemplate", template, "E10010", 1, &["value 'get()'"]);
+}
+
+/// Module-initializer raw reads obey the unsafe gate.
+#[test]
+fn should_gate_module_initializer_raw_reads() {
+    let index = r#"module spec.zn.moduleindex;
+
+let a: i32 = 7;
+let p: raw i32 = unsafe &a;
+let n: i32 = p[0];
+
+func main(): i32 { return n - 7; }
+"#;
+    assert_rejected("moduleindex", index, "E10602", 1, &["pointer arithmetic"]);
+
+    let member = r#"module spec.zn.modulemember;
+
+struct P { x: i32; }
+
+let p: P = P { x: 7 };
+let q: raw P = unsafe &p;
+let n: i32 = q.x;
+
+func main(): i32 { return n - 7; }
+"#;
+    assert_rejected("modulemember", member, "E10600", 1, &["dereference"]);
+
+    let address = r#"module spec.zn.moduleaddr;
+
+let a: i32 = 7;
+let p: raw i32 = &a;
+
+func main(): i32 { return 0; }
+"#;
+    assert_rejected("moduleaddr", address, "E10601", 1, &["address-of"]);
+}
+
+/// An outer local narrowing survives an inner short-circuit transient.
+#[test]
+fn should_keep_an_outer_narrowing_through_an_inner_short_circuit() {
+    let source = r#"module spec.zn.outernarrow;
+
+func f(s: str?): i32 {
+    if (s != null) {
+        if (s != null && len(s) > 0) { } else {
+            return i32(len(s));
+        }
+        return i32(len(s));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    return f(s) - 2;
+}
+"#;
+    let output = run_strict_host("outernarrow", source);
+    assert_exit("outernarrow", &output, 0);
+}

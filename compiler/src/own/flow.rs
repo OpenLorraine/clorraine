@@ -263,6 +263,13 @@ pub(super) struct FlowState {
     /// must not hide the other path's use. A set of covered write paths joins
     /// by intersection, so only an all-path write clears the state.
     pub(super) reinitialized_sources: BTreeSet<(usize, Vec<ir::Projection>)>,
+    /// Module-binding paths proved not null on every path reaching this point.
+    ///
+    /// Module bindings live outside the frame, but their null facts must follow
+    /// the same branch and loop joins as local places: a fact established on
+    /// one branch does not hold after the join, and a loop head's fact does not
+    /// survive the loop exit.
+    pub(super) global_narrowed: BTreeSet<(ir::GlobalId, Vec<ir::Projection>)>,
 }
 
 impl FlowState {

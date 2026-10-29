@@ -968,12 +968,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             .collect();
                         if may_be_null
                             && !self
+                                .state
                                 .global_narrowed
                                 .contains(&(global.clone(), projections.clone()))
                         {
                             self.check_nonnull_global(&global, &projections, callee.span);
                         }
                         narrowed = self
+                            .state
                             .global_narrowed
                             .contains(&(global.clone(), projections));
                         base = Some(global.name.clone());

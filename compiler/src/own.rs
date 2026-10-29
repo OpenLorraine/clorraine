@@ -623,11 +623,6 @@ struct FunctionChecker<'a, 'd> {
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// `len` operand sites already recorded, so one site owes one duty.
     recorded_len_operands: BTreeSet<(u32, u32)>,
-    /// Narrowed module-binding paths, shared by the module's functions.
-    ///
-    /// A module binding outlives the frame, so a `!= null` check narrows it
-    /// for the rest of the current function exactly as it narrows a local.
-    global_narrowed: BTreeSet<(ir::GlobalId, Vec<ir::Projection>)>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Store spans that already emitted the concrete lend-move report.
@@ -749,7 +744,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             opaque_store_requirements: Vec::new(),
             recorded_opaque_stores: BTreeSet::new(),
             recorded_len_operands: BTreeSet::new(),
-            global_narrowed: BTreeSet::new(),
             recorded_not_lend: BTreeSet::new(),
             reported_store_spans: BTreeSet::new(),
             recorded_whole_out_slot_store: BTreeSet::new(),
@@ -1625,12 +1619,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .intersection(&second.reinitialized_sources)
             .cloned()
             .collect();
+        let global_narrowed = first
+            .global_narrowed
+            .intersection(&second.global_narrowed)
+            .cloned()
+            .collect();
         FlowState {
             places,
             loans,
             element_loans,
             carried_owners,
             reinitialized_sources,
+            global_narrowed,
         }
     }
 
