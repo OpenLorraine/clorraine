@@ -1030,22 +1030,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 }
                                 ExprKind::Qualified(name) if name.segments.len() >= 2 => {
                                     let last = name.segments.len() - 1;
-                                    let path = crate::ast::QualifiedName {
-                                        segments: name.segments[..last].to_vec(),
-                                        span: name.span,
-                                    };
-                                    let receiver = if path.segments.len() == 1 {
-                                        Expr {
-                                            kind: ExprKind::Name(path.segments[0].clone()),
-                                            span: name.span,
-                                        }
-                                    } else {
-                                        Expr {
-                                            kind: ExprKind::Qualified(path),
-                                            span: name.span,
-                                        }
-                                    };
-                                    self.check_nonnull_expr(&receiver, value.span);
+                                    self.check_qualified_receiver_null(
+                                        &name.segments[..last],
+                                        value.span,
+                                    );
                                 }
                                 _ => {}
                             }

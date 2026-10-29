@@ -167,7 +167,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// path whose leading segments spell a module resolves the binding after
     /// them, so `m.a.holder` reads module `m.a`'s binding even though the path
     /// itself mentions no name.
-    fn receiver_path_type(&self, segments: &[String]) -> Option<Ty> {
+    pub(super) fn receiver_path_type(&self, segments: &[String]) -> Option<Ty> {
         let (first, rest) = segments.split_first()?;
         // A receiver path that names a loaded module is a module qualifier, not
         // a binding, unless a lexical binding shadows the head.
@@ -959,9 +959,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
             let receiver_ty = receiver.ty.clone();
-            // The null judgment runs in `eval_dot_receiver`, where the
-            // branch's flow facts are active; this lowering path only records
-            // the generic-instance duty and its receiver name.
+            // A module-path receiver has no AST node of its own at this point;
+            // resolve the written path so a bare cstring or nullable view is
+            // checked before the intrinsic reads it.
+            if receiver_ty.nullable || matches!(receiver_ty.kind, TyKind::CString) {
+                if let ExprKind::Qualified(name) = &callee.kind {
+                    if name.segments.len() >= 2 {
+                        let last = name.segments.len() - 1;
+                        let head = &name.segments[0];
+                        // A value-headed receiver is judged by
+                        // `eval_dot_receiver`; only a module-path receiver has
+                        // no expression for that walk to visit.
+                        if self.lookup(head).is_none()
+                            && self.global_type(head).is_none()
+                            && self.dotted_global(&name.segments[..last]).is_some()
+                        {
+                            self.check_qualified_receiver_null(
+                                &name.segments[..last],
+                                callee.span,
+                            );
+                        }
+                    }
+                }
+            }
             let mut base = None;
             let mut narrowed = false;
             match &callee.kind {

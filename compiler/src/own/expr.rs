@@ -1281,6 +1281,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Reports a nullable qualified receiver path through its global or local
+    /// root.
+    ///
+    /// A module-path dot call lowers the receiver to a synthesized place; the
+    /// ordinary expression walk has no AST node to attach the check to. This
+    /// resolves the written path directly so the cstring/view empty state is
+    /// judged against the flow narrowing state.
+    pub(super) fn check_qualified_receiver_null(&mut self, segments: &[String], span: Span) {
+        if let Some((global, fields)) = self.dotted_global(segments) {
+            let projections: Vec<ir::Projection> = fields
+                .iter()
+                .map(|field| ir::Projection::Field(field.clone()))
+                .collect();
+            self.check_nonnull_global(&global, &projections, span);
+            return;
+        }
+        if let Some(first) = segments.first() {
+            if let Some(id) = self.lookup(first) {
+                let projections: Vec<ir::Projection> = segments[1..]
+                    .iter()
+                    .map(|field| ir::Projection::Field(field.clone()))
+                    .collect();
+                self.check_nonnull_place(id, &projections, span);
+            }
+        }
+    }
+
     /// Reports one possible-null site at most once.
     ///
     /// The ownership walk and the lowering can both judge the same site; the

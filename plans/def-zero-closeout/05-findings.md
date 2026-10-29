@@ -539,3 +539,31 @@ accepted-source shapes:
 The emission corpus diff otherwise contains only the intended symbol, arrow,
 cast, literal-context, and diagnostic changes; rejected programs write no C,
 and the accepted corpus builds under the strict legs.
+
+**Phase 3 review (correctness/semantics).** The semantics review found three
+criticals and six majors. Fixed:
+
+- The freestanding shim declares `uintptr_t`; the raw cast builds there.
+- Module-path cstring `.len` resolves the receiver's global/projection path in
+  bodies and initializers and reports `E10010`; guarded forms stay accepted.
+- A null-shaped callee reports `E10309`.
+- Import aliases no longer override a type parameter of the same name.
+- Reverse generic inference binds a literal from a later non-literal argument.
+- Reserved user type names are escaped and a user `struct String` resolves to
+  its own struct; `TyKind::Param` uses the same `p<len>_` C spelling as its key.
+- Private target-module functions are not reachable through a module-path
+  receiver.
+- The qualified-arity pin now uses an actual `std.text.toCString` qualified
+  call.
+
+Report-only residuals, not DEF rows: a value-headed dot call on a zero-parameter
+free function keeps the spec-pinned `E10212` while the Array/module-path arms
+report `E10308`; a module-path value receiver is an aggregate lend and keeps
+`E10038`; destination-context inference (`let x: u8 = identity(5)`) and generic
+cstring literals remain `E10200` because the frozen token-conformance test pins
+that route; and qualified module-value cstring indexing is a pre-existing crash
+at base and head. The accepted module-path, alias, generic-literal, key-escape,
+raw-call, and freestanding probes are ASAN/LSan clean.
+
+Final Phase 3 verification: 30 spec cases and two impl pins; `make check` green
+(79 targets, 111 goldens); `make verify: all legs passed`.

@@ -104,7 +104,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         }
         TyKind::Func(signature) => func_pointer_type(signature, table),
         TyKind::Closure(closure) => closure_type(closure),
-        TyKind::Param(name) => format!("Cl{}", crate::types::type_component(name)),
+        TyKind::Param(_) => format!("Cl{}", type_key(ty)),
         // The null literal's shape carries no C type of its own; it lowers to
         // the generic pointer its null value can inhabit. A non-nullable
         // unknown keeps the integer default.

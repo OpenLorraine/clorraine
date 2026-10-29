@@ -143,16 +143,20 @@ impl Checker<'_, '_> {
                             name.span,
                         );
                     }
-                    if let Some(signature) = self.table.function(module, &member).cloned() {
-                        return self.check_dot_function(
-                            None,
-                            receiver,
-                            &member,
-                            type_args,
-                            args,
-                            &signature,
-                            name.span,
-                        );
+                    if module == &self.module.name
+                        || self.loaded.module_exports(module, &member)
+                    {
+                        if let Some(signature) = self.table.function(module, &member).cloned() {
+                            return self.check_dot_function(
+                                None,
+                                receiver,
+                                &member,
+                                type_args,
+                                args,
+                                &signature,
+                                name.span,
+                            );
+                        }
                     }
                     if member == "len" {
                         self.check_non_generic_type_args("len", type_args, name.span);
@@ -309,11 +313,17 @@ impl Checker<'_, '_> {
                     callee.span,
                 );
             }
-            TyKind::Unknown | TyKind::Void => {}
+            TyKind::Unknown if !callee_ty.nullable => {}
+            TyKind::Void => {}
             _ => {
+                let type_name = if crate::types::is_null_shaped(&callee_ty) {
+                    "null".to_owned()
+                } else {
+                    callee_ty.display()
+                };
                 self.error(
                     "E10309",
-                    format!("value of type '{}' is not callable", callee_ty.display()),
+                    format!("value of type '{type_name}' is not callable"),
                     "call a function or a func-typed value",
                     callee.span,
                 );
@@ -567,8 +577,39 @@ impl Checker<'_, '_> {
         }
 
         if type_args.is_empty() {
-            for ((ty, _, _), param) in arg_types.iter().zip(&signature.params) {
-                match_param(param, ty, &declared, &mut bindings);
+            // A non-literal argument keeps its own type and is the stable
+            // anchor for inference; a numeric literal may take either side's
+            // type, so it binds only after the non-literals have fixed the
+            // parameters it does not yet constrain.
+            for (index, ((ty, _, _), param)) in
+                arg_types.iter().zip(&signature.params).enumerate()
+            {
+                if !matches!(
+                    args[index].value.kind,
+                    ExprKind::Int(_)
+                        | ExprKind::Float(_)
+                        | ExprKind::Char(_)
+                        | ExprKind::Str(_)
+                        | ExprKind::Bool(_)
+                        | ExprKind::Null
+                ) {
+                    match_param(param, ty, &declared, &mut bindings);
+                }
+            }
+            for (index, ((ty, _, _), param)) in
+                arg_types.iter().zip(&signature.params).enumerate()
+            {
+                if matches!(
+                    args[index].value.kind,
+                    ExprKind::Int(_)
+                        | ExprKind::Float(_)
+                        | ExprKind::Char(_)
+                        | ExprKind::Str(_)
+                        | ExprKind::Bool(_)
+                        | ExprKind::Null
+                ) {
+                    match_param(param, ty, &declared, &mut bindings);
+                }
             }
             // The inference fixed a parameter from another argument; a literal
             // argument now takes that substituted type instead of its default
@@ -805,7 +846,10 @@ impl Checker<'_, '_> {
         if signature.params.is_empty() {
             self.error(
                 "E10308",
-                format!("wrong number of arguments for '{name}': expected 0, found 1"),
+                format!(
+                    "wrong number of arguments for '{name}': expected 0, found {}",
+                    args.len() + 1
+                ),
                 "call a function that takes the receiver as its first parameter",
                 span,
             );
@@ -1275,9 +1319,9 @@ impl Checker<'_, '_> {
             }
         }
         if let Some(signature) = self.free_function(name) {
-            // A candidate must accept the receiver as its first parameter, so
-            // a function with no parameters is not a candidate; the intrinsic
-            // lookup still runs, because `len` is offered for the same shape.
+            // A value-headed dot call needs a receiver-taking parameter. The
+            // Array and module-path arms report the zero-parameter arity;
+            // a value receiver keeps the unknown-member report.
             if !signature.params.is_empty() {
                 return Some(DotCall::Function(signature));
             }
@@ -1289,9 +1333,11 @@ impl Checker<'_, '_> {
         // ownership rules.
         if let TyKind::Struct(struct_name, _) = &base.kind {
             if let Some(module) = self.struct_module(struct_name) {
-                if let Some(signature) = self.table.function(module, name) {
-                    if !signature.params.is_empty() {
-                        return Some(DotCall::Function(signature.clone()));
+                if module == self.module.name || self.loaded.module_exports(module, name) {
+                    if let Some(signature) = self.table.function(module, name) {
+                        if !signature.params.is_empty() {
+                            return Some(DotCall::Function(signature.clone()));
+                        }
                     }
                 }
             }

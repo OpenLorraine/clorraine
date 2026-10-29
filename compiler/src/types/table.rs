@@ -739,7 +739,12 @@ where
             for arg in args {
                 resolved_args.push(resolve_ty_with_alias(arg, type_params, table, fold, alias));
             }
-            let aliased = if name.segments.len() == 1 {
+            let aliased = if name.segments.len() == 1
+                && !name
+                    .segments
+                    .first()
+                    .is_some_and(|name| type_params.iter().any(|param| param == name))
+            {
                 name.segments.first().and_then(|name| alias(name)).map(|original| {
                     QualifiedName {
                         segments: vec![original],
@@ -784,14 +789,14 @@ fn resolve_named(
     if name.segments.len() == 1 && type_params.iter().any(|param| param == last) {
         return TyKind::Param(last.clone());
     }
+    if table.is_struct(last) {
+        return TyKind::Struct(last.clone(), args);
+    }
     if last == "String" {
         return TyKind::Handle("String".to_owned());
     }
     if table.is_handle(last) {
         return TyKind::Handle(last.clone());
-    }
-    if table.is_struct(last) {
-        return TyKind::Struct(last.clone(), args);
     }
     if table.is_enum(last) {
         return TyKind::Enum(last.clone());

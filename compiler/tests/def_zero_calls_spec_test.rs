@@ -414,11 +414,11 @@ func main(): i32 {
 fn should_report_the_arity_of_a_module_qualified_call() {
     let source = r#"module spec.zc.qualifiedarity;
 
-import { stringOf } from std.text;
+import { toCString } from std.text;
 
 func main(): i32 {
     let s: str = "ab";
-    let o: String = stringOf(s, 1);
+    let o: cstring = std.text.toCString(s, 1);
     return 0;
 }
 "#;
@@ -427,7 +427,7 @@ func main(): i32 {
         source,
         "E10308",
         1,
-        &["wrong number of arguments for 'stringOf'"],
+        &["wrong number of arguments for 'toCString'"],
     );
 }
 
@@ -746,4 +746,186 @@ func main(): i32 {
         "rawcastfree: the freestanding C rejected the cast; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
+}
+
+/// ST-50b: module-path intrinsic `len` checks a nullable cstring receiver in
+/// bodies and initializers, and honors a guard.
+#[test]
+fn should_reject_a_null_module_path_len_receiver() {
+    let holder = r#"module spec.zc.pathlenmod;
+
+import { toCString } from std.text;
+
+export let nc: cstring = null;
+export let cstr: cstring = toCString("abcd");
+export struct W { c: cstring; }
+export let w: W = W { c: null };
+export struct O { w: W; }
+export let o: O = O { w: W { c: null } };
+"#;
+    let body = r#"module spec.zc.pathlenbody;
+func main(): i32 { return i32(spec.zc.pathlenmod.nc.len()); }
+"#;
+    let field = r#"module spec.zc.pathlenfield;
+func main(): i32 { return i32(spec.zc.pathlenmod.w.c.len()); }
+"#;
+    let nested = r#"module spec.zc.pathlennested;
+func main(): i32 { return i32(spec.zc.pathlenmod.o.w.c.len()); }
+"#;
+    let init = r#"module spec.zc.pathleninit;
+let n: usize = spec.zc.pathlenmod.nc.len();
+func main(): i32 { return i32(n); }
+"#;
+    let init_field = r#"module spec.zc.pathleninitfield;
+let n: usize = spec.zc.pathlenmod.w.c.len();
+func main(): i32 { return i32(n); }
+"#;
+    let guard = r#"module spec.zc.pathlenguard;
+func main(): i32 {
+    if (spec.zc.pathlenmod.nc == null) { return 0; }
+    return i32(spec.zc.pathlenmod.nc.len()) - 4;
+}
+"#;
+    for (tag, main) in [
+        ("pathlenbody", body),
+        ("pathlenfield", field),
+        ("pathlennested", nested),
+        ("pathleninit", init),
+        ("pathleninitfield", init_field),
+    ] {
+        let scratch = ScratchDir::new(tag);
+        let holder_path = scratch.path().join("holder.clo");
+        let main_path = scratch.path().join("main.clo");
+        let c_path = scratch.path().join("out.c");
+        std::fs::write(&holder_path, holder).expect("write holder");
+        std::fs::write(&main_path, main).expect("write main");
+        let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+            .args(["--profile", "host", "-o"])
+            .arg(&c_path)
+            .arg(&main_path)
+            .arg(&holder_path)
+            .output()
+            .expect("failed to spawn the compiler binary");
+        assert_ne!(output.status.code(), Some(0), "{tag}: expected E10010");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("E10010") && stderr.contains("may be null here"),
+            "{tag}: expected the cstring empty-state report; stderr:\n{stderr}"
+        );
+        assert!(!c_path.exists(), "{tag}: a rejected program must not write C");
+    }
+
+    let output = run_strict_files(
+        "pathlenguard",
+        &[("holder.clo", holder), ("main.clo", guard)],
+    );
+    assert_exit("pathlenguard", &output, 0);
+}
+
+/// ST-39b: a null-shaped callee reports the non-callable rule.
+#[test]
+fn should_reject_a_null_call_callee() {
+    let source = r#"module spec.zc.nullcallee;
+
+func main(): i32 {
+    let n: i32 = null();
+    return n;
+}
+"#;
+    assert_rejected("nullcallee", source, "E10309", 1, &["value of type 'null' is not callable"]);
+}
+
+/// ST-40b: reverse inference binds a literal from the non-literal sibling.
+#[test]
+fn should_infer_a_generic_literal_from_a_later_non_literal_argument() {
+    let source = r#"module spec.zc.revinfer;
+
+func pair<T>(x: T, n: T): T { return x; }
+
+func main(): i32 {
+    let a: u8 = 3;
+    let b: u8 = pair(6, a);
+    return i32(b) - 6;
+}
+"#;
+    let output = run_strict_host("revinfer", source);
+    assert_exit("revinfer", &output, 0);
+}
+
+/// ST-53c: a type parameter shadows an import alias of the same name.
+#[test]
+fn should_let_a_type_parameter_shadow_an_import_alias() {
+    let source = r#"module spec.zc.aliasparam;
+
+import { Array as A, arrayNew } from std.mem;
+
+struct Box<A> { value: A; }
+
+func main(): i32 {
+    let b: Box<i32> = Box<i32> { value: 1 };
+    return b.value - 1;
+}
+"#;
+    let output = run_strict_host("aliasparam", source);
+    assert_exit("aliasparam", &output, 0);
+}
+
+/// ST-32b: a user struct that reuses a reserved built-in name is escaped and
+/// remains usable.
+#[test]
+fn should_allow_a_user_struct_named_like_the_builtin_string() {
+    let source = r#"module spec.zc.userstring;
+
+struct String { x: i32; }
+
+func main(): i32 {
+    let s: String = String { x: 1 };
+    return s.x - 1;
+}
+"#;
+    let emitted = emit_host("userstring", source);
+    assert!(
+        emitted.contains("Clu6_String"),
+        "userstring: the reserved user name must be escaped; emitted C:\n{emitted}"
+    );
+    let output = run_strict_host("userstring", source);
+    assert_exit("userstring", &output, 0);
+}
+
+/// ST-50c: a private function in the target module is not reachable through a
+/// module-path receiver.
+#[test]
+fn should_not_resolve_a_private_module_path_function() {
+    let holder = r#"module spec.zc.privatemod;
+
+export struct Origin { x: i32; }
+export let origin: Origin = Origin { x: 1 };
+func secret(o: Origin): i32 { return o.x; }
+"#;
+    let main = r#"module spec.zc.privatemain;
+
+func main(): i32 {
+    return spec.zc.privatemod.origin.secret();
+}
+"#;
+    let scratch = ScratchDir::new("privatemethod");
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    let c_path = scratch.path().join("out.c");
+    std::fs::write(&holder_path, holder).expect("write holder");
+    std::fs::write(&main_path, main).expect("write main");
+    let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(["--profile", "host", "-o"])
+        .arg(&c_path)
+        .arg(&main_path)
+        .arg(&holder_path)
+        .output()
+        .expect("failed to spawn the compiler binary");
+    assert_ne!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("E10219") && stderr.contains("is not declared"),
+        "privatemethod: expected the undeclared path; stderr:\n{stderr}"
+    );
+    assert!(!c_path.exists());
 }

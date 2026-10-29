@@ -1750,6 +1750,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &callee.kind {
             ExprKind::Member { base, .. } => self.ty(base),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let last = name.segments.len() - 1;
+                if let Some(ty) = self.receiver_path_type(&name.segments[..last]) {
+                    return ty;
+                }
                 let Some(head) = name.segments.first() else {
                     return Ty::unknown();
                 };
@@ -1760,7 +1764,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     return Ty::unknown();
                 };
-                let last = name.segments.len() - 1;
                 for segment in &name.segments[1..last] {
                     ty = self.member_type(&ty, segment);
                 }
