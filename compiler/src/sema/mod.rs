@@ -695,9 +695,14 @@ impl<'a, 'd> Checker<'a, 'd> {
         let table = self.table;
         let type_params = &self.type_params;
         let folder = &mut self.extent_folder;
-        let resolved = resolve_ty_with(ty, type_params, table, &mut |expr| {
-            folder.integer_at(expr, Some(ScalarType::Usize))
-        });
+        let module = self.module;
+        let resolved = crate::types::resolve_ty_with_alias(
+            ty,
+            type_params,
+            table,
+            &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+            &mut |name| module.import(name).map(|binding| binding.original.clone()),
+        );
         self.reject_fixed_array_sequence(&resolved, ty.span);
         // The built-in `String` handle is heap-backed: its drop and view use
         // `FreeString`/`cl_string_ptr`/`cl_string_len`, which the freestanding
@@ -1062,6 +1067,25 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.table
             .function(&binding.module, &binding.original)
             .cloned()
+    }
+
+    /// The module that declares a struct type.
+    ///
+    /// A dot call on a value can reach a method-shaped free function exported
+    /// from the type's own module, even when the caller imported only the type.
+    /// The program-wide type table stores the simple name, so the declaring
+    /// module is recovered from the loaded items.
+    fn struct_module(&self, name: &str) -> Option<&'a str> {
+        for module in self.loaded.modules.values() {
+            for item in &module.items {
+                if let crate::ast::Item::Struct(decl) = item {
+                    if decl.name == name {
+                        return Some(module.name.as_str());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// The written signature of an `ffi` function declared in this module.

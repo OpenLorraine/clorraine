@@ -21,6 +21,38 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
     }
 }
 
+/// Reserved type-key spellings that a user component may not reuse.
+const RESERVED_COMPONENTS: &[&str] = &[
+    "void", "bool", "i8", "i16", "i32", "u8", "u16", "u32", "usize", "isize", "f32",
+    "f64", "str", "cstring", "static_str", "unknown", "String",
+];
+
+/// Escapes one user-derived type component.
+///
+/// A common identifier keeps its spelling, so existing ABI keys stay stable.
+/// An identifier that contains a fixed separator (`_`), the nullable marker
+/// (`Q`), a non-identifier byte, or a reserved type spelling is prefixed with
+/// `u<length>_`; an unescaped component can never start with that shape, and
+/// the length makes the spelling injective. A type parameter is always prefixed
+/// with `p<length>_`, so a parameter named like a user type cannot collide with
+/// that type's key.
+pub(crate) fn type_component(name: &str) -> String {
+    let plain = !name.is_empty()
+        && name.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        && (!name.contains('Q') || name == "Q")
+        && !RESERVED_COMPONENTS.contains(&name);
+    if plain {
+        name.to_owned()
+    } else {
+        format!("u{}_{}", name.len(), name)
+    }
+}
+
+/// Escapes a generic parameter name, keeping it distinct from a user type.
+fn param_component(name: &str) -> String {
+    format!("p{}_{}", name.len(), name)
+}
+
 /// A stable key naming a type in a symbol.
 ///
 /// A fixed array renders every extent, so `i32[2]` and `i32[3]` never share a
@@ -33,11 +65,9 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
 /// (with its mode, because a `borrow` parameter reaches the callee as a
 /// pointer and mode-differing signatures are different types) and the return
 /// key, as `fn_<params>__<return>` — so two signatures never share a key. The
-/// `_` separators and the `borrow_`/`take_`/`const_` prefixes are fixed
-/// spellings, so a crafted user identifier can textually collide with a
-/// signature (`struct borrow_i32` against `func(borrow i32)`); like the `Q`
-/// marker this is fail-closed — a collision produces a redefinition the strict
-/// build rejects, never a runnable wrong program.
+/// User components are escaped by [`type_component`] when they could collide
+/// with a fixed spelling, so a crafted identifier cannot textually collide with
+/// a signature (`struct fn_borrow_i32__i32` against `func(borrow i32)`).
 ///
 /// A nullable type carries a `Q` suffix. Nullability changes the C
 /// representation of a borrow parameter and the identity of an instance, so
@@ -54,13 +84,22 @@ pub(crate) fn type_key(ty: &Ty) -> String {
         TyKind::StaticStr => "static_str".to_owned(),
         TyKind::CString => "cstring".to_owned(),
         TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
-        TyKind::Handle(name) | TyKind::Enum(name) | TyKind::Param(name) => name.clone(),
-        TyKind::Struct(name, args) => {
-            if args.is_empty() {
+        TyKind::Handle(name) => {
+            if name == "String" {
                 name.clone()
             } else {
+                type_component(name)
+            }
+        }
+        TyKind::Enum(name) => type_component(name),
+        TyKind::Param(name) => param_component(name),
+        TyKind::Struct(name, args) => {
+            let base = type_component(name);
+            if args.is_empty() {
+                base
+            } else {
                 let rendered: Vec<String> = args.iter().map(type_key).collect();
-                format!("{name}__{}", rendered.join("_"))
+                format!("{base}__{}", rendered.join("_"))
             }
         }
         TyKind::Array { element, extents } => {

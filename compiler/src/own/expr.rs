@@ -4560,6 +4560,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // An assignment through a conditional base materializes it, which
         // moves the chosen owned arm.
         self.mark_read_conditional_move(base);
+        // The index is a read of every local it names; without this walk a
+        // local used only as a store index would be reported unused.
+        self.eval(index);
         let index_value = self.lower_value(index);
         // A compound store reads the element and takes its address, so the
         // index and base appear in two guarded positions. An impure operand is

@@ -699,7 +699,7 @@ impl<'a> Emitter<'a> {
             return;
         }
         for name in names {
-            self.push(&format!("typedef void *Cl{name};"));
+            self.push(&format!("typedef void *Cl{};", crate::types::type_component(&name)));
         }
         self.push("");
     }
@@ -791,7 +791,7 @@ impl<'a> Emitter<'a> {
         let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
         let mut fields = Vec::with_capacity(decl.fields.len());
         let symbol = if decl.type_params.is_empty() {
-            format!("Cl{}", decl.name)
+            format!("Cl{}", crate::types::type_component(&decl.name))
         } else {
             format!(
                 "Cl{}",
@@ -799,8 +799,14 @@ impl<'a> Emitter<'a> {
             )
         };
         let mut deps: Vec<String> = Vec::new();
-        for field in &decl.fields {
-            let ty = resolve_ty(&field.ty, &params, &self.sema.table);
+        let declared_fields = self.sema.table.struct_fields(&decl.name);
+        for (index, field) in decl.fields.iter().enumerate() {
+            // The type table resolves imported type aliases in the declaring
+            // module; the AST alone cannot recover the alias binding here.
+            let ty = declared_fields
+                .and_then(|fields| fields.get(index))
+                .map(|(_, ty)| ty.clone())
+                .unwrap_or_else(|| resolve_ty(&field.ty, &params, &self.sema.table));
             let ty = substitute_instance(&ty, &params, args);
             collect_value_deps(&ty, &mut deps, &self.sema.table);
             fields.push((field.name.clone(), ty, field.volatile));
@@ -815,7 +821,11 @@ impl<'a> Emitter<'a> {
     /// Writes the enum constants as macros over the backing integer type.
     pub(super) fn emit_enum(&mut self, decl: &EnumDecl) {
         let backing = resolve_ty(&decl.backing, &[], &self.sema.table);
-        self.push(&format!("typedef {} Cl{};", c_type(&backing, &self.sema.table), decl.name));
+        self.push(&format!(
+            "typedef {} Cl{};",
+            c_type(&backing, &self.sema.table),
+            crate::types::type_component(&decl.name)
+        ));
         let mut next: i128 = 0;
         let members: Vec<(String, i128)> = decl
             .members

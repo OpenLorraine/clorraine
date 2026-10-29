@@ -300,33 +300,46 @@ impl TypeTable {
                     match item {
                         Item::Struct(decl) => {
                             let params = type_param_names(&decl.type_params);
-                            let fields = decl
-                                .fields
-                                .iter()
-                                .map(|field| {
-                                    let ty = resolve_ty_with(
-                                        &field.ty,
-                                        &params,
-                                        self,
-                                        &mut |expr| {
-                                            folder.integer_at(expr, Some(ScalarType::Usize))
-                                        },
-                                    );
-                                    (field.name.clone(), ty)
-                                })
-                                .collect();
+                            let mut alias = |name: &str| {
+                                module.import(name).map(|binding| binding.original.clone())
+                            };
+                            let mut fields = Vec::with_capacity(decl.fields.len());
+                            for field in &decl.fields {
+                                let ty = resolve_ty_with_alias(
+                                    &field.ty,
+                                    &params,
+                                    self,
+                                    &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+                                    &mut alias,
+                                );
+                                fields.push((field.name.clone(), ty));
+                            }
                             struct_updates.push((decl.name.clone(), fields));
                         }
                         Item::GlobalLet(decl) => {
-                            let ty = resolve_ty_with(&decl.ty, &[], self, &mut |expr| {
-                                folder.integer_at(expr, Some(ScalarType::Usize))
-                            });
+                            let mut alias = |name: &str| {
+                                module.import(name).map(|binding| binding.original.clone())
+                            };
+                            let ty = resolve_ty_with_alias(
+                                &decl.ty,
+                                &[],
+                                self,
+                                &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+                                &mut alias,
+                            );
                             global_updates.push((module.name.clone(), decl.name.clone(), ty));
                         }
                         Item::GlobalConst(decl) => {
-                            let ty = resolve_ty_with(&decl.ty, &[], self, &mut |expr| {
-                                folder.integer_at(expr, Some(ScalarType::Usize))
-                            });
+                            let mut alias = |name: &str| {
+                                module.import(name).map(|binding| binding.original.clone())
+                            };
+                            let ty = resolve_ty_with_alias(
+                                &decl.ty,
+                                &[],
+                                self,
+                                &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+                                &mut alias,
+                            );
                             global_updates.push((module.name.clone(), decl.name.clone(), ty));
                         }
                         _ => {}
@@ -662,17 +675,38 @@ pub fn resolve_ty_with<F>(
 where
     F: FnMut(&Expr) -> Option<i128>,
 {
+    resolve_ty_with_alias(ty, type_params, table, fold, &mut |_| None)
+}
+
+/// Resolves a written type with a module's import aliases.
+///
+/// `alias` maps a simple written name (for example `A`) to its original
+/// declaration name (`Array`). It is consulted before the table lookup, so an
+/// imported type alias reaches the same `Ty` as its original spelling.
+pub fn resolve_ty_with_alias<F, A>(
+    ty: &Type,
+    type_params: &[String],
+    table: &TypeTable,
+    fold: &mut F,
+    alias: &mut A,
+) -> Ty
+where
+    F: FnMut(&Expr) -> Option<i128>,
+    A: FnMut(&str) -> Option<String>,
+{
     let kind = match &ty.kind {
         TypeKind::Void => TyKind::Void,
         TypeKind::Scalar(scalar) => TyKind::Scalar(*scalar),
         TypeKind::Str => TyKind::Str,
         TypeKind::CString => TyKind::CString,
         TypeKind::StaticStr => TyKind::StaticStr,
-        TypeKind::Raw(inner) => {
-            TyKind::Raw(Box::new(resolve_ty_with(inner, type_params, table, fold)))
-        }
+        TypeKind::Raw(inner) => TyKind::Raw(Box::new(resolve_ty_with_alias(
+            inner, type_params, table, fold, alias,
+        ))),
         TypeKind::Array { element, extents } => TyKind::Array {
-            element: Box::new(resolve_ty_with(element, type_params, table, fold)),
+            element: Box::new(resolve_ty_with_alias(
+                element, type_params, table, fold, alias,
+            )),
             extents: extents
                 .iter()
                 .map(|extent| {
@@ -685,18 +719,35 @@ where
             params: params
                 .iter()
                 .map(|param| FuncParam {
-                    ty: resolve_ty_with(&param.ty, type_params, table, fold),
+                    ty: resolve_ty_with_alias(&param.ty, type_params, table, fold, alias),
                     mode: param.mode,
                 })
                 .collect(),
-            returns: Box::new(resolve_ty_with(returns, type_params, table, fold)),
+            returns: Box::new(resolve_ty_with_alias(
+                returns, type_params, table, fold, alias,
+            )),
         }),
         TypeKind::Named { name, args } => {
             let mut resolved_args = Vec::with_capacity(args.len());
             for arg in args {
-                resolved_args.push(resolve_ty_with(arg, type_params, table, fold));
+                resolved_args.push(resolve_ty_with_alias(arg, type_params, table, fold, alias));
             }
-            resolve_named(name, resolved_args, type_params, table)
+            let aliased = if name.segments.len() == 1 {
+                name.segments.first().and_then(|name| alias(name)).map(|original| {
+                    QualifiedName {
+                        segments: vec![original],
+                        span: name.span,
+                    }
+                })
+            } else {
+                None
+            };
+            resolve_named(
+                aliased.as_ref().unwrap_or(name),
+                resolved_args,
+                type_params,
+                table,
+            )
         }
         TypeKind::Error => TyKind::Unknown,
     };

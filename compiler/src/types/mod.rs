@@ -19,9 +19,9 @@ mod keys;
 mod layout;
 mod table;
 
-pub(crate) use keys::{closure_key, type_key, view_element, view_type};
+pub(crate) use keys::{closure_key, type_component, type_key, view_element, view_type};
 pub use layout::AbiLayout;
-pub use table::{resolve_ty, resolve_ty_folded, resolve_ty_with, FuncSig, TypeParamSig, TypeTable};
+pub use table::{resolve_ty, resolve_ty_folded, resolve_ty_with, resolve_ty_with_alias, FuncSig, TypeParamSig, TypeTable};
 
 /// A checked type: a shape plus the `?` empty-state flag.
 #[derive(Clone, Debug, PartialEq, Eq)]

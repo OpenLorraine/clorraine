@@ -1403,7 +1403,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// nested calls and literals and only keeps the common read-only
     /// short-circuit chain (`s != null && len(s) > 0`) narrowed.
     /// The declared parameter modes of a call's callee, when it has them.
-    fn call_parameter_modes(&self, callee: &Expr) -> Option<Vec<crate::ast::Mode>> {
+    pub(super) fn call_parameter_modes(&self, callee: &Expr) -> Option<Vec<crate::ast::Mode>> {
         if let Some(id) = self.func_binding_callee(callee) {
             return self.callable_modes(&self.bindings[id].ty);
         }

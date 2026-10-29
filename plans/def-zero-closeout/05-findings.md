@@ -475,3 +475,52 @@ Final Phase 2 verification: `def_zero_null_spec_test` 43 cases and the two
 implementation pins are green; `make check` green (77 targets, 110 goldens);
 `make verify: all legs passed`; ASAN/LSan probes of the accepted controls are
 clean.
+
+**Phase 3 implementation (calls and resolution).** The call/resolution batch
+is implemented with `def_zero_calls_spec_test.rs` (22 cases) and
+`def_zero_calls_impl_test.rs` (two emission pins):
+
+- `DEF-169`: user-derived type-key components are escaped (`u<length>_` for a
+  component with a separator/`Q`/reserved spelling, `p<length>_` for a
+  generic parameter), and the C type definitions use the same component, so a
+  crafted struct name cannot redefine a func-type instance. `spec/17` records
+  the ABI spelling.
+- `DEF-173`: a module-level func-typed global is resolved before a same-named
+  function in another loaded module, so the global's own modes type the call.
+- `DEF-198`: the module-initializer call walk runs the written-marker check, so
+  `f(take ...)` reports `E10039` exactly as the body twin does.
+- `DEF-205`: a func-typed local, parameter, or module binding named like a view
+  builder is called through its value; the intrinsic gate does not intercept
+  it.
+- `DEF-212`: a store index is evaluated as a read for the unused-local marker.
+- `DEF-214`: a call of a non-callable field or value reports the approved
+  `E10309` (registry row and compile-fail golden added).
+- `DEF-236`: a func-value call reports `E10308` for an arity mismatch.
+- `DEF-239`: a zero-parameter free function reached with the dot spelling
+  reports `E10308` instead of emitting a receiver argument.
+- `DEF-241`: a callable field through a raw receiver renders the implied
+  `->`.
+- `DEF-254`: `--max-errors 0` is rejected as an invalid limit and writes no
+  translation unit.
+- `DEF-349`: a raw-pointer-to-integer cast routes through `uintptr_t`, so the
+  sanctioned `usize(p)` spelling stays host-strict clean.
+- `DEF-382`/`DEF-405`: explicit and inferred generic type arguments type a
+  fitting literal before judging it, and an unfit literal reports `E10202`.
+- `DEF-387`: a bare member read no longer borrows a free function's spelling;
+  only the dot-call path reaches the function candidate.
+- `DEF-389`: a module-path receiver resolves its callable field, the target
+  module's free function, or the intrinsic `len`; a resolved borrowing method
+  reports the ownership rule rather than `E10212`.
+- `DEF-404`: the dot-call path accepts a static string literal for a `cstring`
+  parameter exactly as the direct spelling does.
+- `DEF-419`: type resolution honors a module's import aliases, including
+  struct fields and globals, so `Array as A` reaches the declared instance.
+
+`DEF-174`, `DEF-203`, and `DEF-240` were already Done in Phase 0; the batch
+adds regression pins for their fixed behavior. `DEF-244` is already fixed by
+the Phase 2 FFI declaration validation (`E10226` on an unused declaration),
+and `DEF-388` is already fixed by the Phase 2 null-member rule (`E10212` on
+`null.foo`); both are pinned by the batch's stale cases.
+
+Verification: `make check` green (79 targets, 111 compile-fail goldens) and
+`make verify: all legs passed`.

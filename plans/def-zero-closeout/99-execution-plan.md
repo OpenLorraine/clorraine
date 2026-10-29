@@ -79,13 +79,13 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: medium — bounded resolution/diagnostic rules; `E10309` is the only registry addition.
 > **Lenses**: correctness, semantics, emission
 
-- [ ] 3.1.1 [spec-author] Write ST-32…ST-39 in `def_zero_calls_spec_test.rs` for DEF-169, DEF-173, DEF-174, DEF-198, DEF-203, DEF-205, DEF-212, DEF-214 and confirm red.
-- [ ] 3.1.2 [spec-author] Write ST-40…ST-47 for DEF-236, DEF-239, DEF-240, DEF-241, DEF-244, DEF-254, DEF-349, DEF-382 and confirm red.
-- [ ] 3.1.3 [spec-author] Write ST-48…ST-53 for DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419 and confirm red.
-- [ ] 3.2.1 [impl-author] Fix DEF-169, DEF-173, DEF-174, DEF-198, DEF-203, DEF-205: the func-type key collision, the cross-module mode lookup, the closure/initializer markers, the initializer global receiver, and the intrinsic gate.
-- [ ] 3.2.2 [impl-author] Fix DEF-212, DEF-214, DEF-236, DEF-239, DEF-240, DEF-241: the unused-index local, `E10309` (AR-4) with its `spec/14` registry row and compile-fail golden, the func-value arity, the Array dot-call, the qualified arity, and the raw receiver arrow.
-- [ ] 3.2.3 [impl-author] Fix DEF-244, DEF-254, DEF-349, DEF-382: the ffi parameter validation, `--max-errors 0`, the host-clean cast help, and the literal-context argument route.
-- [ ] 3.2.4 [impl-author] Fix DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419: the free-function member shadow, the null-base member, the module-path method error, the cstring literal argument, the explicit-generic literal, and the import-renamed type names.
+- [x] 3.1.1 [spec-author] Write ST-32…ST-39 in `def_zero_calls_spec_test.rs` for DEF-169, DEF-173, DEF-174, DEF-198, DEF-203, DEF-205, DEF-212, DEF-214 and confirm red.
+- [x] 3.1.2 [spec-author] Write ST-40…ST-47 for DEF-236, DEF-239, DEF-240, DEF-241, DEF-244, DEF-254, DEF-349, DEF-382 and confirm red.
+- [x] 3.1.3 [spec-author] Write ST-48…ST-53 for DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419 and confirm red.
+- [x] 3.2.1 [impl-author] Fix DEF-169, DEF-173, DEF-174, DEF-198, DEF-203, DEF-205: the func-type key collision, the cross-module mode lookup, the closure/initializer markers, the initializer global receiver, and the intrinsic gate.
+- [x] 3.2.2 [impl-author] Fix DEF-212, DEF-214, DEF-236, DEF-239, DEF-240, DEF-241: the unused-index local, `E10309` (AR-4) with its `spec/14` registry row and compile-fail golden, the func-value arity, the Array dot-call, the qualified arity, and the raw receiver arrow.
+- [x] 3.2.3 [impl-author] Fix DEF-244, DEF-254, DEF-349, DEF-382: the ffi parameter validation, `--max-errors 0`, the host-clean cast help, and the literal-context argument route.
+- [x] 3.2.4 [impl-author] Fix DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419: the free-function member shadow, the null-base member, the module-path method error, the cstring literal argument, the explicit-generic literal, and the import-renamed type names.
 - [ ] 3.3.1 [impl-author] Write the `def_zero_calls_impl_test.rs` pins, run the focused legs, and dispatch the phase review; fix critical/major findings.
 - [ ] 3.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 

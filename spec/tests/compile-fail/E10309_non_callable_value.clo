@@ -1,0 +1,9 @@
+// expect-error E10309
+// trigger: a call whose callee is a value, not a function or func-typed value
+module tests.compile_fail.E10309;
+
+func main(): i32 {
+    let n: i32 = 1;
+    n();   // E10309: value of type 'i32' is not callable
+    return 0;
+}

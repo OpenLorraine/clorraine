@@ -304,14 +304,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::Qualified(name) => {
-                // The receiver resolves module-aware and the last segment is
-                // the called member, exactly as the checker splits the two:
-                // `m.holder.g` reads the module path's binding `holder` and
-                // calls its field `g`, while a plain head keeps its binding.
+                // A qualified field call through a value (including a raw
+                // pointer) renders the base and the field separately, so the
+                // raw base keeps its `->` spelling. A module-path receiver
+                // keeps the path spelling when no value receiver is available.
                 let last = name.segments.len() - 1;
-                let mut segments = self.global_head_segments(&name.segments[..last]);
-                segments.push(name.segments[last].clone());
-                ValueKind::Path(segments)
+                if let Some(receiver) = self.lower_dot_receiver(callee) {
+                    ValueKind::Member {
+                        base: Box::new(receiver),
+                        name: name.segments[last].clone(),
+                    }
+                } else {
+                    let mut segments = self.global_head_segments(&name.segments[..last]);
+                    segments.push(name.segments[last].clone());
+                    ValueKind::Path(segments)
+                }
             }
             _ => return None,
         };
@@ -447,10 +454,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             match local_callee_id {
                 Some(id) => self.callable_modes(&self.bindings[id].ty),
-                None => self.callee_modes(&name).or_else(|| {
-                    self.value_callee_global_type(callee)
-                        .and_then(|ty| self.callable_modes(&ty))
-                }),
+                // A module-level func-typed global is the callee the call
+                // actually reaches; a same-named function in another loaded
+                // module must not supply its modes.
+                None => self
+                    .value_callee_global_type(callee)
+                    .and_then(|ty| self.callable_modes(&ty))
+                    .or_else(|| self.callee_modes(&name)),
             }
         };
         // The callee expression of a func-field call is that call's position
@@ -818,6 +828,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if matches!(field_ty.kind, TyKind::Func(_) | TyKind::Param(_)) {
                 return None;
             }
+        }
+        // A func-typed local or module binding named like a view builder is a
+        // call through its value, not the compiler intrinsic.
+        if self
+            .func_binding_callee(callee)
+            .is_some_and(|id| matches!(self.bindings[id].ty.kind, TyKind::Func(_) | TyKind::Param(_)))
+        {
+            return None;
+        }
+        if self
+            .value_callee_global_type(callee)
+            .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_) | TyKind::Param(_)))
+        {
+            return None;
+        }
+        if self
+            .recorded_ty(callee)
+            .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_) | TyKind::Param(_)))
+        {
+            return None;
         }
         if name == "len" && type_args.is_empty() {
             // A fixed array's `len` is its structural extent: the length is a

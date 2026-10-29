@@ -88,6 +88,19 @@ impl<'a> Emitter<'a> {
                 let target = self.substitute(&value.ty);
                 match &target.kind {
                     TyKind::Void => format!("(void)({})", self.value(inner)),
+                    _ if target.is_integer()
+                        && matches!(self.resolved_value_ty(inner).kind, TyKind::Raw(_)) =>
+                    {
+                        // A direct pointer-to-integer cast warns under the
+                        // host's -Werror=pointer-to-int-cast. Route through
+                        // uintptr_t, the standard pointer-sized integer, so
+                        // the sanctioned explicit cast stays host-clean.
+                        format!(
+                            "({})(uintptr_t)({})",
+                            c_type(&target, &self.sema.table),
+                            self.value(inner)
+                        )
+                    }
                     _ => format!("({})({})", c_type(&target, &self.sema.table), self.value(inner)),
                 }
             }

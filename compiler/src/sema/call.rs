@@ -122,13 +122,77 @@ impl Checker<'_, '_> {
                     _ => {}
                 }
             }
-            // A dotted callee whose head is a value in scope is a dot-call,
-            // exactly like the `Member` shape the parser builds elsewhere.
-            if name.segments.len() >= 2 && self.name_is_value(&name.segments[0]) {
+            // A dotted callee whose receiver is a value or a module-path
+            // binding is a dot-call, exactly like the `Member` shape the
+            // parser builds elsewhere. A module-path receiver resolves a
+            // callable field, the target module's free function, or the
+            // intrinsic `len` before it is treated as an undeclared path.
+            if name.segments.len() >= 2 {
+                let last = name.segments.len() - 1;
+                let module_binding = self.module_path_binding(&name.segments[..last]);
                 let receiver = self.qualified_receiver_type(name);
-                if let Some(member) = name.segments.last() {
-                    let member = member.clone();
-                    return self.check_dot_call(None, receiver, &member, type_args, args, name.span);
+                if let Some((module, _)) = &module_binding {
+                    let member = name.segments[last].clone();
+                    if self.field_type(&receiver, &member).is_some() {
+                        return self.check_dot_call(
+                            None,
+                            receiver,
+                            &member,
+                            type_args,
+                            args,
+                            name.span,
+                        );
+                    }
+                    if let Some(signature) = self.table.function(module, &member).cloned() {
+                        return self.check_dot_function(
+                            None,
+                            receiver,
+                            &member,
+                            type_args,
+                            args,
+                            &signature,
+                            name.span,
+                        );
+                    }
+                    if member == "len" {
+                        self.check_non_generic_type_args("len", type_args, name.span);
+                        if !args.is_empty() {
+                            self.error(
+                                "E10308",
+                                "wrong number of arguments for 'len': expected 0, found 1",
+                                "call `len` with no written arguments",
+                                name.span,
+                            );
+                        }
+                        self.check_len_operand(&receiver, name.span);
+                        for arg in args {
+                            self.check_value(&arg.value, None);
+                        }
+                        return Ty::usize_ty();
+                    }
+                    self.error(
+                        "E10219",
+                        format!("'{}' is not declared", name.segments.join(".")),
+                        "check the spelling, the import, or the module",
+                        name.span,
+                    );
+                    for arg in args {
+                        self.check_value(&arg.value, None);
+                    }
+                    return Ty::unknown();
+                }
+                if !receiver.is_unknown() {
+                    if let Some(member) = name.segments.last() {
+                        let member = member.clone();
+                        return self.check_dot_call(
+                            None,
+                            receiver,
+                            &member,
+                            type_args,
+                            args,
+                            name.span,
+                        );
+                    }
                 }
             }
         }
@@ -199,7 +263,8 @@ impl Checker<'_, '_> {
         match &callee_ty.kind {
             TyKind::Func(signature) => {
                 let signature = signature.clone();
-                self.check_args_func(args, &signature.params);
+                let callee_name = call_name(callee).unwrap_or("the callable value");
+                self.check_args_func(args, &signature.params, Some((callee_name, span)));
                 return (*signature.returns).clone();
             }
             // A direct call of a capturing lambda literal goes through the
@@ -216,7 +281,11 @@ impl Checker<'_, '_> {
                         mode: crate::ast::Mode::None,
                     })
                     .collect();
-                self.check_args_func(args, &params);
+                self.check_args_func(
+                    args,
+                    &params,
+                    Some(("the callable value", callee.span)),
+                );
                 return (*closure.returns).clone();
             }
             // A callable-bound type parameter is called through its bound, so
@@ -224,7 +293,8 @@ impl Checker<'_, '_> {
             // though the parameter itself is opaque.
             TyKind::Param(name) if self.callable_bound_params.iter().any(|p| p == name) => {
                 if let Some(bound) = self.current_callable_bound(name) {
-                    self.check_args_func(args, &bound.params);
+                    let callee_name = call_name(callee).unwrap_or("the callable value");
+                    self.check_args_func(args, &bound.params, Some((callee_name, span)));
                     return (*bound.returns).clone();
                 }
             }
@@ -239,7 +309,15 @@ impl Checker<'_, '_> {
                     callee.span,
                 );
             }
-            _ => {}
+            TyKind::Unknown | TyKind::Void => {}
+            _ => {
+                self.error(
+                    "E10309",
+                    format!("value of type '{}' is not callable", callee_ty.display()),
+                    "call a function or a func-typed value",
+                    callee.span,
+                );
+            }
         }
         for arg in args {
             self.check_value(&arg.value, None);
@@ -398,14 +476,39 @@ impl Checker<'_, '_> {
             .iter()
             .map(|param| param.name.clone())
             .collect();
+        // Explicit type arguments are resolved before the written arguments,
+        // so a fitting literal takes the substituted parameter's type exactly
+        // as the concrete twin does.
+        let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
+        if !type_args.is_empty() {
+            let mut resolved = Vec::with_capacity(type_args.len());
+            for ty in type_args {
+                resolved.push(self.resolve_type_argument(ty));
+            }
+            if type_args.len() != declared.len() {
+                self.error(
+                    "E10300",
+                    format!(
+                        "wrong number of type arguments for '{name}': expected {}, found {}",
+                        declared.len(),
+                        type_args.len()
+                    ),
+                    "list all type arguments",
+                    span,
+                );
+            }
+            for (param, ty) in declared.iter().zip(resolved) {
+                bindings.insert(param.clone(), ty);
+            }
+        }
         // A literal at a parameter that does not name a type parameter is
         // typed by that parameter, exactly as a non-generic call types it: the
         // destination supplies the context, and a value that does not fit
-        // reports the fit rule at the literal. The parameter is concrete
-        // before inference, so the context is available here. Every other
-        // argument stays context-free: a parameter that still names a type
-        // parameter needs its argument's own type to bind the instance.
-        let arg_types: Vec<(Ty, Span, bool)> = args
+        // reports the fit rule at the literal. An explicit binding supplies the
+        // substituted context before inference. Every other argument stays
+        // context-free: a parameter that still names a type parameter needs its
+        // argument's own type to bind the instance.
+        let mut arg_types: Vec<(Ty, Span, bool)> = args
             .iter()
             .enumerate()
             .map(|(index, arg)| {
@@ -414,14 +517,28 @@ impl Checker<'_, '_> {
                     .get(index)
                     .copied()
                     .unwrap_or(crate::ast::Mode::None);
-                let (ty, judged) = match signature.params.get(index) {
-                    Some(param)
+                let expected = signature
+                    .params
+                    .get(index)
+                    .map(|param| substitute(param, &bindings));
+                let (ty, judged) = match (signature.params.get(index), expected) {
+                    (Some(param), Some(expected))
+                        if !self.is_out_slot_param(&expected, mode)
+                            && Self::literal_takes_param_context(&expected, &arg.value) =>
+                    {
+                        if is_cstring_literal_argument(&arg.value, &expected)
+                            && !crate::types::contains_param(param)
+                        {
+                            (self.check_value(&arg.value, None), true)
+                        } else {
+                            (self.check_into(&arg.value, &expected), true)
+                        }
+                    }
+                    (Some(param), _)
                         if !self.is_out_slot_param(param, mode)
                             && Self::literal_takes_param_context(param, &arg.value) =>
                     {
                         if is_cstring_literal_argument(&arg.value, param) {
-                            // A static string literal crosses as a C string,
-                            // exactly as a direct call accepts it.
                             (self.check_value(&arg.value, None), true)
                         } else {
                             (self.check_into(&arg.value, param), true)
@@ -449,10 +566,35 @@ impl Checker<'_, '_> {
             );
         }
 
-        let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
         if type_args.is_empty() {
             for ((ty, _, _), param) in arg_types.iter().zip(&signature.params) {
                 match_param(param, ty, &declared, &mut bindings);
+            }
+            // The inference fixed a parameter from another argument; a literal
+            // argument now takes that substituted type instead of its default
+            // one. Only literals are re-typed, so no non-literal expression is
+            // evaluated twice.
+            for (index, arg) in args.iter().enumerate() {
+                if arg_types.get(index).is_some_and(|(_, _, judged)| *judged) {
+                    continue;
+                }
+                let Some(param) = signature.params.get(index) else {
+                    continue;
+                };
+                let expected = substitute(param, &bindings);
+                if expected.is_unknown()
+                    || crate::types::contains_param(&expected)
+                    || is_cstring_literal_argument(&arg.value, &expected)
+                    || !Self::literal_takes_param_context(&expected, &arg.value)
+                {
+                    continue;
+                }
+                let ty = if is_cstring_literal_argument(&arg.value, &expected) {
+                    self.check_value(&arg.value, None)
+                } else {
+                    self.check_into(&arg.value, &expected)
+                };
+                arg_types[index] = (ty, arg.value.span, true);
             }
             // A written count that disagrees with the declared parameters is
             // reported on its own: the inference cannot bind from arguments
@@ -474,26 +616,6 @@ impl Checker<'_, '_> {
                         span,
                     );
                 }
-            }
-        } else {
-            let mut resolved = Vec::with_capacity(type_args.len());
-            for ty in type_args {
-                resolved.push(self.resolve_type_argument(ty));
-            }
-            if type_args.len() != declared.len() {
-                self.error(
-                    "E10300",
-                    format!(
-                        "wrong number of type arguments for '{name}': expected {}, found {}",
-                        declared.len(),
-                        type_args.len()
-                    ),
-                    "list all type arguments",
-                    span,
-                );
-            }
-            for (param, ty) in declared.iter().zip(resolved) {
-                bindings.insert(param.clone(), ty);
             }
         }
 
@@ -669,6 +791,63 @@ impl Checker<'_, '_> {
         })
     }
 
+    /// Checks a free-function candidate reached with the dot spelling.
+    fn check_dot_function(
+        &mut self,
+        receiver_expr: Option<&Expr>,
+        receiver: Ty,
+        name: &str,
+        type_args: &[Type],
+        args: &[Arg],
+        signature: &FuncSig,
+        span: Span,
+    ) -> Ty {
+        if signature.params.is_empty() {
+            self.error(
+                "E10308",
+                format!("wrong number of arguments for '{name}': expected 0, found 1"),
+                "call a function that takes the receiver as its first parameter",
+                span,
+            );
+            for arg in args {
+                self.check_value(&arg.value, None);
+            }
+            return signature.returns.clone();
+        }
+        if signature.type_params.is_empty() {
+            self.check_non_generic_type_args(name, type_args, span);
+            let (receiver_param, rest) = signature
+                .params
+                .split_first()
+                .expect("the empty candidate was handled above");
+            let receiver_mode = signature
+                .modes
+                .first()
+                .copied()
+                .unwrap_or(crate::ast::Mode::None);
+            self.check_dot_receiver(
+                receiver_expr,
+                &receiver,
+                receiver_param,
+                receiver_mode,
+                span,
+            );
+            let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
+            self.check_args_impl(args, rest, rest_modes, true, Some((name, span)));
+            signature.returns.clone()
+        } else {
+            self.check_generic_dot_call(
+                receiver_expr,
+                &receiver,
+                name,
+                type_args,
+                args,
+                signature,
+                span,
+            )
+        }
+    }
+
     /// Types a dot-call `receiver.name(args)`.
     ///
     /// A callable field wins over a free function and carries no receiver
@@ -711,51 +890,15 @@ impl Checker<'_, '_> {
                 signature.returns
             }
             Some(DotCall::Function(signature)) => {
-                if signature.type_params.is_empty() {
-                    self.check_non_generic_type_args(name, type_args, span);
-                    if let Some((receiver_param, rest)) = signature.params.split_first() {
-                        // The receiver is a written argument at index zero, so a
-                        // nullable borrow receiver takes the same exact-place rule
-                        // as a direct call's argument.
-                        let receiver_mode = signature
-                            .modes
-                            .first()
-                            .copied()
-                            .unwrap_or(crate::ast::Mode::None);
-                        self.check_dot_receiver(
-                            receiver_expr,
-                            &receiver,
-                            receiver_param,
-                            receiver_mode,
-                            span,
-                        );
-                        // The receiver is not a written argument, so the remaining
-                        // modes line up with the written arguments; a nullable
-                        // borrow parameter keeps its exact-place rule on this route.
-                        let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
-                        self.check_args_impl(args, rest, rest_modes, false, Some((name, span)));
-                    } else {
-                        self.check_args(args, &signature.params, Some((name, span)));
-                    }
-                } else {
-                    // A generic candidate's type arguments are fixed at this
-                    // call site from the receiver and the written arguments,
-                    // exactly as a plain call fixes them from its arguments.
-                    // Judging a written argument against the declared type
-                    // parameter would accept anything, and recording the
-                    // declared parameter against the enclosing function would
-                    // judge the callee's parameter with the caller's instance.
-                    return self.check_generic_dot_call(
-                        receiver_expr,
-                        &receiver,
-                        name,
-                        type_args,
-                        args,
-                        &signature,
-                        span,
-                    );
-                }
-                signature.returns
+                self.check_dot_function(
+                    receiver_expr,
+                    receiver,
+                    name,
+                    type_args,
+                    args,
+                    &signature,
+                    span,
+                )
             }
             None => {
                 // A field of a bare type parameter is not callable: its
@@ -772,15 +915,19 @@ impl Checker<'_, '_> {
                                 span,
                             );
                         }
+                    } else if !receiver.is_unknown() {
+                        self.error(
+                            "E10309",
+                            format!("value of type '{}' is not callable", field_ty.display()),
+                            "call a function or a func-typed value",
+                            span,
+                        );
                     }
-                }
-                // A receiver whose surface holds no field of that name and
-                // no matching function candidate has an unknown member: the
-                // call may not reach the emitter, where it would become an
-                // implicit call. A field of the name that is not callable
-                // keeps its own path, and an unresolved receiver (error
-                // recovery) stays silent so one error is not reported twice.
-                if self.field_type(&receiver, name).is_none() && !receiver.is_unknown() {
+                } else if !receiver.is_unknown() {
+                    // A receiver whose surface holds no field of that name and
+                    // no matching function candidate has an unknown member: the
+                    // call may not reach the emitter, where it would become an
+                    // implicit call.
                     self.error(
                         "E10212",
                         format!("'{name}' is not a member of '{}'", receiver.display()),
@@ -1099,22 +1246,25 @@ impl Checker<'_, '_> {
     /// field, a visible free function is a `Function` candidate, and the
     /// receiver-taking `len` intrinsic stands in as one so `xs.len()` works.
     fn dot_call(&self, base: &Ty, name: &str) -> Option<DotCall> {
+        // A field lookup follows a raw pointer to its pointee, so a callable
+        // field reached through `raw S` is the same candidate as a value
+        // receiver's field.
+        if let Some(field_ty) = self.field_type(base, name) {
+            return match &field_ty.kind {
+                TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
+                    params: signature
+                        .params
+                        .iter()
+                        .map(|param| param.ty.clone())
+                        .collect(),
+                    modes: signature.params.iter().map(|param| param.mode).collect(),
+                    returns: (*signature.returns).clone(),
+                    type_params: Vec::new(),
+                })),
+                _ => None,
+            };
+        }
         if let TyKind::Struct(struct_name, _) = &base.kind {
-            if let Some(field_ty) = self.field_type(base, name) {
-                return match &field_ty.kind {
-                    TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
-                        params: signature
-                            .params
-                            .iter()
-                            .map(|param| param.ty.clone())
-                            .collect(),
-                        modes: signature.params.iter().map(|param| param.mode).collect(),
-                        returns: (*signature.returns).clone(),
-                        type_params: Vec::new(),
-                    })),
-                    _ => None,
-                };
-            }
             // The growable array's operations are compiler-known standard
             // library functions; a caller reaches them through a dot-call
             // without importing each method name.
@@ -1130,6 +1280,20 @@ impl Checker<'_, '_> {
             // lookup still runs, because `len` is offered for the same shape.
             if !signature.params.is_empty() {
                 return Some(DotCall::Function(signature));
+            }
+        }
+        // A method-shaped call on a value may reach a free function exported
+        // from the type's declaring module. The caller needs only the type
+        // import; the receiver still has to match the function's first
+        // parameter, so the ordinary dot-call check enforces the borrow and
+        // ownership rules.
+        if let TyKind::Struct(struct_name, _) = &base.kind {
+            if let Some(module) = self.struct_module(struct_name) {
+                if let Some(signature) = self.table.function(module, name) {
+                    if !signature.params.is_empty() {
+                        return Some(DotCall::Function(signature.clone()));
+                    }
+                }
             }
         }
         self.intrinsic_dot_call(name)
@@ -1168,10 +1332,15 @@ impl Checker<'_, '_> {
     /// still accepts the lend. The callee is a value, not a declared name, so
     /// an arity mismatch has no member to report and is left to the C
     /// prototype.
-    fn check_args_func(&mut self, args: &[Arg], params: &[FuncParam]) {
+    fn check_args_func(
+        &mut self,
+        args: &[Arg],
+        params: &[FuncParam],
+        callee: Option<(&str, Span)>,
+    ) {
         let types: Vec<Ty> = params.iter().map(|param| param.ty.clone()).collect();
         let modes: Vec<crate::ast::Mode> = params.iter().map(|param| param.mode).collect();
-        self.check_args_impl(args, &types, &modes, false, None);
+        self.check_args_impl(args, &types, &modes, false, callee);
     }
 
     /// Like [`Self::check_args`] for a direct call of a named function.

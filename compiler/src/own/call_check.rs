@@ -166,22 +166,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return;
         };
-        let Some(resolved) = self.resolved_callee(&name) else {
-            // A bare name may resolve to a module-level func-typed global:
-            // the global's value is the callable, so its signature types the
-            // call exactly as any other callable's does.
-            if let Some(params) = self
-                .value_callee_global_type(callee)
-                .and_then(|ty| self.callable_signature(&ty))
-            {
-                if let Some(name) = self.callee_name(callee) {
-                    self.check_marker_matches(&name, args, &params);
-                }
-                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
-                let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
-                return;
+        // A module-level func-typed global is a value callee even when a
+        // same-named function exists in another loaded module: the global's
+        // own signature, not the foreign function's modes, types the call.
+        if let Some(params) = self
+            .value_callee_global_type(callee)
+            .and_then(|ty| self.callable_signature(&ty))
+        {
+            if let Some(name) = self.callee_name(callee) {
+                self.check_marker_matches(&name, args, &params);
             }
+            let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+            let mut lent: BTreeSet<usize> = BTreeSet::new();
+            self.check_arguments(args, &params, &effective, span, &mut lent, None, false);
+            return;
+        }
+        let Some(resolved) = self.resolved_callee(&name) else {
             // The callee may be an intrinsic reached as a dot-call, such as
             // `xs.len()`; its receiver is still read, so a local used only
             // there must not be reported unused. A `func`-typed local or a

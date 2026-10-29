@@ -111,8 +111,13 @@ fn argument(args: &[String], index: usize, flag: &str) -> Result<String, String>
 
 /// Parses the `--max-errors` value.
 fn error_limit(raw: &str) -> Result<usize, String> {
-    raw.parse::<usize>()
-        .map_err(|_| format!("--max-errors expects a number, got '{raw}'"))
+    let limit = raw
+        .parse::<usize>()
+        .map_err(|_| format!("--max-errors expects a number, got '{raw}'"))?;
+    if limit == 0 {
+        return Err("--max-errors expects a positive number".to_owned());
+    }
+    Ok(limit)
 }
 
 /// Parses and adds every embedded standard-library module the program imports.
@@ -390,9 +395,9 @@ mod tests {
         assert_eq!(separate.profile.as_deref(), Some("host"));
         assert_eq!(separate.max_errors, Some(3));
         assert_eq!(separate.output.as_deref(), Some("out.c"));
-        let joined = Options::parse(&args(&["--profile=hosted-amiga", "--max-errors=0", "a.clo"])).expect("joined flags");
+        let joined = Options::parse(&args(&["--profile=hosted-amiga", "--max-errors=2", "a.clo"])).expect("joined flags");
         assert_eq!(joined.profile.as_deref(), Some("hosted-amiga"));
-        assert_eq!(joined.max_errors, Some(0));
+        assert_eq!(joined.max_errors, Some(2));
     }
 
     #[test]

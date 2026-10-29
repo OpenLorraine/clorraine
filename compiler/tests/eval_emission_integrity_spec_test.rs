@@ -4868,7 +4868,7 @@ func store(s: str, borrow slot: str?): void { slot = s; }
 func outer(p: str, c: bool, borrow slot: str?): void {
     let a: Box = Box { v: stringOf("aa") };
     let av: str = a.v;
-    store(([c] (ys: str, zs: str) => c ? ys : zs)(p, av, c), borrow slot);
+    store(([c] (ys: str, zs: str) => c ? ys : zs)(p, av), borrow slot);
 }
 
 func main(): i32 {

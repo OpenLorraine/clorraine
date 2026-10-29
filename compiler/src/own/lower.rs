@@ -1069,6 +1069,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             self.check_value_into(&arg.value, expected, arg.span);
                         }
                     }
+                    // The body call checker judges a written marker against
+                    // the declaration; the initializer walk must do the same.
+                    if let Some(modes) = self.call_parameter_modes(callee) {
+                        let rest = modes.get(offset..).unwrap_or(&[]);
+                        let params: Vec<(crate::ast::Mode, Ty)> =
+                            rest.iter().map(|mode| (*mode, Ty::unknown())).collect();
+                        let name = self
+                            .callee_name(callee)
+                            .unwrap_or_else(|| "the callee".to_owned());
+                        self.check_marker_matches(&name, args, &params);
+                    }
                 }
                 for arg in args {
                     self.check_initializer_reads(&arg.value);

@@ -391,7 +391,9 @@ func demo(): i32 {
 func main(): i32 { return 0; }
 "#,
     );
-    assert_accepts(
+    // A free function of the same spelling does not make a bare member read
+    // legal; only the dot-call form reaches the function candidate.
+    assert_codes(
         r#"module test;
 struct Bag { count: i32; }
 func tally(n: i32): i32 { return n; }
@@ -401,6 +403,7 @@ func demo(): i32 {
 }
 func main(): i32 { return 0; }
 "#,
+        &["E10212"],
     );
 }
 

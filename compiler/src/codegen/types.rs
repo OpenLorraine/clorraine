@@ -87,10 +87,10 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         TyKind::Raw(inner) => pointer_to_array_type(inner, table)
             .unwrap_or_else(|| format!("{} *", c_type(inner, table))),
         TyKind::Handle(name) => handle_type(name),
-        TyKind::Enum(name) => format!("Cl{name}"),
+        TyKind::Enum(name) => format!("Cl{}", crate::types::type_component(name)),
         TyKind::Struct(name, args) => {
             if args.is_empty() {
-                format!("Cl{name}")
+                format!("Cl{}", crate::types::type_component(name))
             } else {
                 format!("Cl{}", type_key(ty))
             }
@@ -104,7 +104,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         }
         TyKind::Func(signature) => func_pointer_type(signature, table),
         TyKind::Closure(closure) => closure_type(closure),
-        TyKind::Param(name) => format!("Cl{name}"),
+        TyKind::Param(name) => format!("Cl{}", crate::types::type_component(name)),
         // The null literal's shape carries no C type of its own; it lowers to
         // the generic pointer its null value can inhabit. A non-nullable
         // unknown keeps the integer default.
@@ -216,7 +216,7 @@ pub(super) fn handle_type(name: &str) -> String {
     }
     abi::contract_handle(name)
         .map(str::to_owned)
-        .unwrap_or_else(|| format!("Cl{name}"))
+        .unwrap_or_else(|| format!("Cl{}", crate::types::type_component(name)))
 }
 
 /// The C extent suffix of a fixed array: `[M]`, `[M][K]`, or so on.

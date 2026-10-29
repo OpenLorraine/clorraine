@@ -775,6 +775,33 @@ impl Checker<'_, '_> {
         None
     }
 
+    /// The module that declares a module-path receiver binding.
+    ///
+    /// For `m.holder.member(args)` this returns `m` and the type of `holder`;
+    /// the caller uses it to distinguish a module-path receiver from a value
+    /// receiver when a method-shaped call has no local candidate.
+    pub(super) fn module_path_binding(&self, segments: &[String]) -> Option<(String, Ty)> {
+        for split in (1..segments.len()).rev() {
+            let module = segments[..split].join(".");
+            if module.is_empty() {
+                continue;
+            }
+            let binding = &segments[split];
+            let visible = if module == self.module.name {
+                self.module.decls.contains_key(binding)
+            } else {
+                self.loaded.has_module(&module) && self.loaded.module_exports(&module, binding)
+            };
+            if !visible {
+                continue;
+            }
+            if let Some(declared) = self.table.global(&module, binding) {
+                return Some((module, declared.clone()));
+            }
+        }
+        None
+    }
+
     /// Types the receiver of a value-headed dotted callee.
     ///
     /// For `a.b.c(args)` the receiver is `a.b` and the last segment `c` is the
@@ -843,14 +870,12 @@ impl Checker<'_, '_> {
                 if let Some(field_ty) = self.field_type(base_ty, name) {
                     return field_ty;
                 }
-                if self.free_function(name).is_none() {
-                    self.error(
-                        "E10212",
-                        format!("'{name}' is not a member of '{struct_name}'"),
-                        "check the declaration or the spelling",
-                        span,
-                    );
-                }
+                self.error(
+                    "E10212",
+                    format!("'{name}' is not a member of '{struct_name}'"),
+                    "check the declaration or the spelling",
+                    span,
+                );
                 Ty::unknown()
             }
             // The frozen member table spells an enum member `Type.MEMBER`:
@@ -949,9 +974,6 @@ impl Checker<'_, '_> {
     /// name that is a free function is not reported; every other unknown
     /// member reports the registered rule with the base as written.
     fn report_unknown_member(&mut self, base_ty: &Ty, name: &str, span: Span) {
-        if self.free_function(name).is_some() {
-            return;
-        }
         self.error(
             "E10212",
             format!("'{name}' is not a member of '{}'", base_ty.display()),
