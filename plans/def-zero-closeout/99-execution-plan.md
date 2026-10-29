@@ -67,10 +67,10 @@ DEF rows and `make check`/`make verify` pass.
 - [x] 2.2.2 [impl-author] Fix DEF-246…DEF-249 and DEF-383: the aggregate, member, arithmetic, condition, and inferred-call null positions.
 - [x] 2.2.3 [impl-author] Fix DEF-414, DEF-417, DEF-420, DEF-467, DEF-483: the nullable-gated report, TY-4 coverage, the negated float literal, the raw out-slot self-assign, and scalar `len`.
 - [x] 2.2.4 [impl-author] Fix DEF-542: the generic non-nullable view out-slot store, matching the concrete twin.
-- [ ] 2.3.1 [impl-author] Write the `def_zero_null_impl_test.rs` pins, run the focused ASAN/strict legs, and dispatch the phase review; fix critical/major findings.
-- [ ] 2.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
+- [x] 2.3.1 [impl-author] Write the `def_zero_null_impl_test.rs` pins, run the focused ASAN/strict legs, and dispatch the phase review; fix critical/major findings.
+- [x] 2.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 
-**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
+**Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded. **Phase 2 result (2026-10-29)**: all 15 open rows closed; 43 spec cases and two impl pins; the three review lenses and re-audits were resolved; `make check` green (77 targets, 110 goldens) and `make verify: all legs passed`. Report-only precision trade-offs are recorded in `05-findings.md`.
 
 ---
 
