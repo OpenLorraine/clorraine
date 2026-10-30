@@ -301,6 +301,24 @@ for a future initializer batch.
 
 ## Phase 7 — Final Verification and Close
 
+The roadmap is 546/546 Done with zero open DEF rows. Final verification:
+`make check` green (27 spec files, 111 compile-fail goldens, 85 Rust test
+targets) and `make verify: all legs passed` (hosted-amiga corpus, FS-UAE
+graphics/interrupt programs, and all six runtime faults). The focused
+`RDC_ASAN=1` critical and loan suites pass serially; the always-ASAN
+initializer suite passes. The backlog ASAN suite still shows the container's
+pre-existing random child-run flake: a handful of tests hang in LSan and pass
+in isolation. The pipe defect behind `DEF-358` is fixed (file-capture output),
+but the environment flake remains report-only and is not a code regression.
+
+Final review: the Phase 5/6 three-lens reviews and the single fix-diff
+re-review are recorded above. All critical/major findings were fixed; the
+remaining residuals are report-only (the parallel ASAN child-run flake, the
+top-level-`while`-only loop split, `null -> bool` cast policy, and the
+base-identical initializer view-array fill/nested/func-typed variants).
+Commits: `53d0acd` (implementation, tests, roadmap) and `b9de3cc` (plan
+close-out).
+
 **Phase 1 review (correctness/semantics and memory lenses).** The independent
 reviews found eleven findings in the Phase 1 surface. Fixed in the review-fix
 batch:

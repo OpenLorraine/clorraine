@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-30
-> **Progress**: 53/57 tasks (93%)
+> **Progress**: 57/57 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -175,10 +175,21 @@ committed and pushed as `53d0acd`.
 > **Reasoning**: high — program gate; zero open DEF rows and a clean final review.
 > **Lenses**: all four
 
-- [ ] 7.1.1 [orchestrator] Run the full `make check`, `make verify`, and every focused `RDC_ASAN=1` suite; confirm the determinism pins.
-- [ ] 7.1.2 [orchestrator] Dispatch the final four-lens review; fix critical/major findings and perform the single fix-diff re-review; record minor rulings.
-- [ ] 7.1.3 [orchestrator] Close every remaining row through the roadmap skill; confirm 546/546 Done and zero open; update the ledger and plan to 100%.
-- [ ] 7.1.4 [orchestrator] Post-completion re-analysis, workspace cleanup, and the final summary.
+- [x] 7.1.1 [orchestrator] Run the full `make check`, `make verify`, and every focused `RDC_ASAN=1` suite; confirm the determinism pins.
+- [x] 7.1.2 [orchestrator] Dispatch the final four-lens review; fix critical/major findings and perform the single fix-diff re-review; record minor rulings.
+- [x] 7.1.3 [orchestrator] Close every remaining row through the roadmap skill; confirm 546/546 Done and zero open; update the ledger and plan to 100%.
+- [x] 7.1.4 [orchestrator] Post-completion re-analysis, workspace cleanup, and the final summary.
+
+**Phase 7 result (2026-10-30).** The roadmap is **546/546 Done, zero open DEF
+rows**. `make check` is green (27 spec files, 111 compile-fail goldens, 85 Rust
+test targets) and `make verify` passes every hosted-amiga, FS-UAE, and fault
+leg. The focused `RDC_ASAN=1` critical and loan suites pass serially; the
+initializer spec suite is always ASAN and passes. The backlog ASAN suite still
+shows the pre-existing container child-run flake (a random handful of tests
+hang under LSan; each passes in isolation), recorded as the `DEF-358` residual.
+The three Phase 5/6 reviews and the single fix-diff re-review are recorded in
+`05-findings.md`; no critical/major finding remains open. The final commits are
+`53d0acd` (implementation, tests, roadmap) and `b9de3cc` (plan close-out).
 
 **Verify**: zero open DEF rows; `make check` and `make verify` all legs pass; the final review is clean or recorded; the plan is 100%.
 
