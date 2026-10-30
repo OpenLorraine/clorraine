@@ -401,6 +401,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .map(|source| self.source_atoms(source))
             .unwrap_or_default();
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
+        if let Some(value) = &decl.value {
+            self.bindings[id].static_view_carrier = self.static_initializer(value, &target);
+        }
         if let Some(source) = copy_provenance {
             if !matches!(source, Provenance::None) {
                 self.bindings[id].copy_source = Some(source);
@@ -877,6 +880,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let copy_provenance = self.store_source_provenance(&decl.value);
         let initial_sources = self.source_atoms(&copy_provenance);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
+        self.bindings[id].static_view_carrier =
+            self.static_initializer(&decl.value, &target);
         if !matches!(copy_provenance, Provenance::None) {
             self.bindings[id].copy_source = Some(copy_provenance);
         }

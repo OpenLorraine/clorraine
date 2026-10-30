@@ -163,6 +163,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// that field and clears its portion of the narrowing facts; writing a
     /// field of a wholly moved value is a use after move.
     pub(super) fn write_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        // A write can install a view the declaration proof does not cover.
+        self.bindings[id].static_view_carrier = false;
         self.note_opaque_owner_write(id, projections, span, false);
         self.bindings[id].used = true;
         let binding = &self.bindings[id];

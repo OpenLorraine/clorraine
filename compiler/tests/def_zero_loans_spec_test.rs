@@ -402,3 +402,355 @@ func main(): i32 { return use(true) - 99; }
     assert!(!stderr.contains("E10033"), "{stderr}");
     assert!(!c_path.exists());
 }
+
+#[test]
+fn should_accept_a_proven_static_take_carrier() {
+    let inline = r#"module spec.zl.takestaticinline;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    store(Holder { names: ["AA", "BB"] }, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_source("takestaticinline", inline);
+    assert_eq!(output.status.code(), Some(0));
+
+    let alias = r#"module spec.zl.takealias;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    let hs: Holder[1] = [Holder { names: ["AA", "BB"] }];
+    for (borrow e in hs) { store(take e, borrow out); }
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_source("takealias", alias);
+    assert_eq!(output.status.code(), Some(0));
+
+    let factory = r#"module spec.zl.takefactory;
+
+struct Holder { names: str[2]; }
+func makeStatic(): Holder { return Holder { names: ["AA", "BB"] }; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    let h: Holder = makeStatic();
+    store(take h, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 65;
+}
+"#;
+    let output = run_source("takefactory", factory);
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn should_fail_closed_for_unproven_take_carriers() {
+    let call_result = r#"module spec.zl.takecallresult;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+func make(v: str): Holder { return Holder { names: [v, "EE"] }; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    let a: Box = Box { v: stringOf("aa") };
+    store(make(a.v), borrow out);
+    return 0;
+}
+"#;
+    let temporary = r#"module spec.zl.taketemporary;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+func fill(borrow out: str?): void {
+    store(Holder { names: [stringOf("AA"), "BB"] }, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let dot_call = r#"module spec.zl.takedot;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    let a: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: [a.v, "EE"] };
+    h.store(borrow out);
+    return 0;
+}
+"#;
+    let value_call = r#"module spec.zl.takevalue;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func main(): i32 {
+    let out: str? = null;
+    let f: func(take Holder, borrow str?): void = store;
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    f(take h, borrow out);
+    return 0;
+}
+"#;
+    for (tag, source) in [
+        ("takecallresult", call_result),
+        ("taketemporary", temporary),
+        ("takedot", dot_call),
+        ("takevalue", value_call),
+    ] {
+        let (_scratch, output, c_path) = compile(tag, source, false);
+        assert_ne!(output.status.code(), Some(0), "{tag}: accepted");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.matches("error E10030:").count(),
+            1,
+            "{tag}:\n{stderr}"
+        );
+        assert!(!c_path.exists(), "{tag}: emitted a translation unit");
+    }
+}
+
+#[test]
+fn should_fail_closed_for_laundered_take_carriers() {
+    let global_value = r#"module spec.zl.takeglobalvalue;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+let g: func(take Holder, borrow str?): void = store;
+
+func fill(borrow out: str?): void {
+    g(Holder { names: [stringOf("QQ"), "BB"] }, borrow out);
+}
+
+func main(): i32 {
+    let staticOut: str? = null;
+    let out: str? = null;
+    store(Holder { names: ["AA", "BB"] }, borrow staticOut);
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let call_result_local = r#"module spec.zl.takecallresultlocal;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+func id(v: str): Holder { return Holder { names: [v, "BB"] }; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let h: Holder = id(stringOf("QQ"));
+    store(take h, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let raw_write = r#"module spec.zl.takerawwrite;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    unsafe { let hp: raw Holder = &h; (*hp).names[0] = a.v; }
+    store(take h, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let raw_view = r#"module spec.zl.takerawview;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let v: str = "AA";
+    let s: String = stringOf("QQ");
+    let p: raw str = unsafe &v;
+    unsafe { *p = s; }
+    store(Holder { names: [v, "BB"] }, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let ffi_view = r#"module spec.zl.takeffiview;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+ffi probe { func Poke(p: raw str, v: str): void; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let v: str = "AA";
+    let s: String = stringOf("QQ");
+    let p: raw str = unsafe &v;
+    unsafe { Poke(p, s); }
+    store(Holder { names: [v, "BB"] }, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let borrow_write = r#"module spec.zl.takeborrowwrite;
+
+import { String, stringOf } from std.text;
+
+struct Holder { label: String; names: str[2]; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+func corrupt(borrow h: Holder, borrow v: str): void {
+    unsafe { let p: raw Holder = &h; (*p).names[0] = v; }
+}
+
+func fill(borrow out: str?): void {
+    let s: String = stringOf("QQ");
+    let h: Holder = Holder { label: stringOf("x"), names: ["AA", "BB"] };
+    corrupt(borrow h, borrow s);
+    store(take h, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let capture_write = r#"module spec.zl.takecapturewrite;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    ([borrow h, borrow a] () => { h.names[0] = a.v; })();
+    store(take h, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let factory_shadow = r#"module spec.zl.takefactoryshadow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+func make(): Holder {
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    let v: String = stringOf("aa");
+    unsafe { let hp: raw Holder = &h; (*hp).names[0] = v; }
+    return h;
+}
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let h: Holder = Holder { names: ["CC", "DD"] };
+    let x: Holder = make();
+    store(take x, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    let capture_address = r#"module spec.zl.takecaptureaddress;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; }
+struct Box { v: String; }
+func store(take h: Holder, borrow slot: str?): void { slot = h.names[0]; }
+
+func fill(borrow out: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let h: Holder = Holder { names: ["AA", "BB"] };
+    ([borrow h, borrow a] () => {
+        unsafe { let p: raw Holder = &h; (*p).names[0] = a.v; }
+    })();
+    store(take h, borrow out);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+    for (tag, source) in [
+        ("takeglobalvalue", global_value),
+        ("takecallresultlocal", call_result_local),
+        ("takerawwrite", raw_write),
+        ("takerawview", raw_view),
+        ("takeffiview", ffi_view),
+        ("takeborrowwrite", borrow_write),
+        ("takecapturewrite", capture_write),
+        ("takefactoryshadow", factory_shadow),
+        ("takecaptureaddress", capture_address),
+    ] {
+        let (_scratch, output, c_path) = compile(tag, source, false);
+        assert_ne!(output.status.code(), Some(0), "{tag}: accepted");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.matches("error E10030:").count(),
+            1,
+            "{tag}:\n{stderr}"
+        );
+        assert!(!c_path.exists(), "{tag}: emitted a translation unit");
+    }
+}

@@ -80,6 +80,12 @@ pub(super) struct Binding {
     /// scan cannot see. The caller frame guard owns that shape; the store duty
     /// must not treat the declaration initializer as the current source.
     pub(super) rebound: bool,
+    /// True when the initializer proves every view position static.
+    ///
+    /// The take-carrier call-site audit accepts a local only when this proof
+    /// is set and the binding has no live view loan; an opaque raw write or a
+    /// later store clears it.
+    pub(super) static_view_carrier: bool,
     /// An explicit place base that overrides the binding's usual local or
     /// parameter spelling.
     ///

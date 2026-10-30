@@ -617,15 +617,25 @@ Verification: `make check` green (80 targets, 111 compile-fail goldens) and
   judged as a frame value for a local destination, so the literal arm no longer
   adds `E10033`; the later owner write still reports `E10031`.
 
-Verification after this round: `make check` green (80 targets, 111
-compile-fail goldens) and `make verify: all legs passed`. Remaining Phase 4
-rows: `DEF-484`, `DEF-490`, `DEF-492`.
+Verification after this round: `make check` green (81 targets, 111
+compile-fail goldens) and `make verify: all legs passed`.
 
-The three remaining rows need a sound whole-program take-argument summary, not
-a local callee suppression. An attempted call-site audit was reverted after the
-phase reviews found two critical holes: a caller-retained slot could keep a
-view into a callee-frame temporary (ASan heap-use-after-free), and dot/value
-calls were not recorded, so `all()` over a partial call set accepted a dynamic
-carrier. The next attempt must fail closed for temporary, parameter, and
-unrecorded call forms, and key the judgment by declaration identity rather
-than the simple function name.
+Final Phase 4 round (`DEF-484`, `DEF-490`, `DEF-492`): the take-view store is
+deferred to a whole-program call summary keyed by declaration identity. A call
+is accepted only when every call form is recorded, the function is never used
+as a value, and each argument proves a static view position at the stored
+path. Locals carry a static-initializer proof; the proof is cleared by writes,
+address-of, writable borrows, capture writes, and capture address escapes.
+Call results, temporaries, parameters, dot/value calls, raw/FFI writes, and
+factories whose returns are not syntactic static literals fail closed. The
+summary is pinned by `def_zero_loans_impl_test.rs` and the expanded spec cases.
+
+Review record: correctness and memory-safety reviews ran four rounds. Critical
+findings fixed across the rounds: caller-slot temporary acceptance, dot/value
+call omissions, module-initializer value aliases, call-result laundering, raw
+and FFI writes to a view local, writable-borrow writes, factory scope shadowing,
+and capture address escapes. Accepted static shapes are ASAN/LSan clean; every
+laundering shape is now rejected before emission. Remaining minor over-rejections
+(a prior read-only borrow clears the proof, a factory returning a static local
+is rejected, per-path backing is conservative, and one report covers N bad call
+sites) are recorded as report-only residuals.

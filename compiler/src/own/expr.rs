@@ -739,9 +739,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {
                     self.read_place(id, &[], expr.span);
+                } else if let Some(Callee::User(decl)) = self.resolved_callee(name) {
+                    self.function_value_uses
+                        .insert(super::function_identity(self.loaded, decl));
                 }
             }
-            ExprKind::Qualified(name) => self.eval_qualified(name, expr.span),
+            ExprKind::Qualified(name) => {
+                let written = name.segments.join(".");
+                if let Some(Callee::User(decl)) = self.resolved_callee(&written) {
+                    self.function_value_uses
+                        .insert(super::function_identity(self.loaded, decl));
+                }
+                self.eval_qualified(name, expr.span)
+            }
             ExprKind::Member { base, .. } => {
                 let base_ty = self.eval(base);
                 if base_ty.nullable {
@@ -771,6 +781,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 if matches!(op, UnaryOp::AddressOf) && self.unsafe_depth == 0 {
                     self.report_unsafe(UnsafeOp::AddressOf, expr.span);
+                }
+                if matches!(op, UnaryOp::AddressOf) {
+                    if let Some(PlaceTarget::Local(id, _)) = self.place_target(operand) {
+                        self.bindings[id].static_view_carrier = false;
+                    }
                 }
                 if matches!(op, UnaryOp::Deref) {
                     if self.unsafe_depth == 0 {
@@ -3491,6 +3506,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // backing the destination cannot keep reports even when every recorded
         // component fits: a frame-dying one at a caller slot, and every one at
         // a global, which outlives the caller that owns it.
+        if !global {
+            if let Some(Provenance::Local(owner) | Provenance::Param(owner)) = &failing {
+                let binding = &self.bindings[*owner];
+                if binding.kind == BindingKind::Param && binding.mode == Mode::Take {
+                    if let Some(parameter_index) = self
+                        .decl
+                        .params
+                        .iter()
+                        .position(|param| param.name == binding.name)
+                    {
+                        let path = match self.place_target(value) {
+                            Some(PlaceTarget::Local(base, projections)) if base == *owner => {
+                                projections
+                            }
+                            _ => Vec::new(),
+                        };
+                        let key = (self.decl.name.clone(), span.start, span.end);
+                        if self.report_diagnostics && self.recorded_take_escapes.insert(key) {
+                            self.take_view_requirements.push(super::TakeViewRequirement {
+                                function: super::function_identity(self.loaded, self.decl),
+                                parameter: binding.name.clone(),
+                                parameter_index,
+                                path,
+                                span,
+                            });
+                        }
+                        return;
+                    }
+                }
+            }
+        }
         let subject = match failing {
             Some(atom) => Some(match &atom {
                 Provenance::Local(owner) | Provenance::Param(owner) => {

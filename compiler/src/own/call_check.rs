@@ -280,6 +280,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     },
                     callee_stores_whole_out_slot,
                 );
+                let identity = super::function_identity(self.loaded, decl);
+                for (index, arg) in args.iter().enumerate() {
+                    self.take_call_arguments.push(super::TakeCallArgument {
+                        function: identity.clone(),
+                        parameter_index: index + skip,
+                        arg_ty: self.ty(&arg.value),
+                        safe: self.take_argument_is_static(&arg.value),
+                    });
+                }
                 // A slot parameter whose declared type still mentions a type
                 // parameter may become a nullable out-slot only at the
                 // instance; the audit applies the exact-place rule once the
@@ -511,6 +520,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(_) => {
                     self.bindings[id].provenance = Provenance::Local(id);
                     self.bindings[id].capture_written = true;
+                    self.bindings[id].static_view_carrier = false;
                     // A recorded static position from the initializer no longer
                     // describes the value the closure wrote.
                     self.state.element_loans.remove(&id);
@@ -592,7 +602,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { base, .. } => {
                 self.scan_capture_expr(base, name, captures, written, safe);
             }
-            ExprKind::Unary { operand, .. } => {
+            ExprKind::Unary { op, operand } => {
+                if matches!(op, crate::ast::UnaryOp::AddressOf)
+                    && expression_mentions_name(operand, name)
+                {
+                    *written = true;
+                    *safe = false;
+                }
                 self.scan_capture_expr(operand, name, captures, written, safe);
             }
             ExprKind::Binary { left, right, .. } => {
@@ -1697,6 +1713,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             None => (Mode::None, None),
         };
         self.eval_dot_receiver(callee);
+        if let Some(name) = self.callee_name(callee) {
+            if let Some(Callee::User(decl)) = self.resolved_callee(&name) {
+                // A dot receiver is an unproven call form for the summary; a
+                // static method call is conservatively rejected rather than
+                // silently omitted.
+                self.take_call_arguments.push(super::TakeCallArgument {
+                    function: super::function_identity(self.loaded, decl),
+                    parameter_index: 0,
+                    arg_ty: arg_ty.clone(),
+                    safe: false,
+                });
+            }
+        }
         let receiver = match &callee.kind {
             ExprKind::Member { .. } => None,
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
@@ -1789,6 +1818,223 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             Some(ty) if ty.nullable => false,
             _ => self.sema.table.duplicable(arg_ty) && !is_view(arg_ty),
+        }
+    }
+
+    /// True when a call argument is a proven-static carrier for a take pass.
+    ///
+    /// A local carrier is trusted only when it carries no live view loan and
+    /// no adopted view owner; a dynamic view carrier records one of those. A
+    /// literal is walked position by position so a `stringOf(...)` or a
+    /// `String` field is rejected even though the destination field is `str`.
+    /// Every other form (a call result, a parameter, a field) fails closed.
+    fn take_argument_is_static(&self, expr: &Expr) -> bool {
+        let ty = self.ty(expr);
+        if let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) {
+            let id = self.alias_resolved_root(id);
+            if self.bindings[id].kind != BindingKind::Local
+                || !self.bindings[id].static_view_carrier
+            {
+                return false;
+            }
+            return self.binding_loans(id).is_empty()
+                && self
+                    .state
+                    .element_loans
+                    .get(&id)
+                    .is_none_or(|paths| paths.values().all(|loans| loans.is_empty()))
+                && self
+                    .state
+                    .carried_owners
+                    .get(&id)
+                    .is_none_or(|owners| owners.is_empty());
+        }
+        self.static_carrier_literal(expr, &ty)
+    }
+
+    /// Proves an initializer's view positions static for a take carrier.
+    ///
+    /// A literal is walked directly. A zero-argument user factory is accepted
+    /// only when every return in its body is a proven-static literal; a call
+    /// with arguments, a parameter, or a local without an initializer stays
+    /// unproven. This keeps the static factory carrier accepted without
+    /// trusting a call result that hides a temporary or a lend.
+    pub(super) fn static_initializer(&self, value: &Expr, target: &Ty) -> bool {
+        if let ExprKind::Call { callee, args, .. } = &value.kind {
+            if args.is_empty() {
+                if let Some(name) = self.callee_name(callee) {
+                    if let Some(Callee::User(decl)) = self.resolved_callee(&name) {
+                        return self.function_returns_static_carrier(decl);
+                    }
+                }
+            }
+            return false;
+        }
+        self.static_carrier_literal(value, target)
+    }
+
+    /// True when every return in a user function is a static carrier literal.
+    fn function_returns_static_carrier(&self, decl: &crate::ast::FuncDecl) -> bool {
+        let returns = self.resolve(&decl.returns);
+        let mut seen = false;
+        let mut all = true;
+        fn walk(
+            checker: &FunctionChecker<'_, '_>,
+            block: &crate::ast::Block,
+            returns: &Ty,
+            seen: &mut bool,
+            all: &mut bool,
+        ) {
+            for statement in &block.statements {
+                match statement {
+                    crate::ast::Stmt::Return { value: Some(value), .. } => {
+                        *seen = true;
+                        *all &= checker.static_carrier_syntax(value, returns);
+                    }
+                    crate::ast::Stmt::Return { value: None, .. } => *all = false,
+                    crate::ast::Stmt::If(decl) => {
+                        walk(checker, &decl.then_block, returns, seen, all);
+                        if let Some(crate::ast::ElseBranch::Block(block)) = &decl.else_branch {
+                            walk(checker, block, returns, seen, all);
+                        } else if let Some(crate::ast::ElseBranch::If(nested)) = &decl.else_branch {
+                            let _ = nested;
+                            *all = false;
+                        }
+                    }
+                    crate::ast::Stmt::Block(block) | crate::ast::Stmt::Unsafe(block) => {
+                        walk(checker, block, returns, seen, all)
+                    }
+                    crate::ast::Stmt::While(decl) => walk(checker, &decl.body, returns, seen, all),
+                    crate::ast::Stmt::DoWhile(decl) => walk(checker, &decl.body, returns, seen, all),
+                    crate::ast::Stmt::ForC(decl) => walk(checker, &decl.body, returns, seen, all),
+                    crate::ast::Stmt::ForIn(decl) => walk(checker, &decl.body, returns, seen, all),
+                    crate::ast::Stmt::Switch(_) => *all = false,
+                    _ => {}
+                }
+            }
+        }
+        walk(self, &decl.body, &returns, &mut seen, &mut all);
+        seen && all
+    }
+
+    /// Proves a factory return syntactic without consulting caller bindings.
+    ///
+    /// A factory's local names are not the caller's, so the proof there may
+    /// only use literal positions and static text. A place, call, or owned
+    /// value is unproven and keeps the call-site judgment rejecting it.
+    fn static_carrier_syntax(&self, expr: &Expr, position: &Ty) -> bool {
+        match &expr.kind {
+            ExprKind::StructLiteral { fields, .. } => fields.iter().all(|field| {
+                let field_ty = self
+                    .sema
+                    .table
+                    .instance_field(position, &field.name)
+                    .unwrap_or_else(|| self.ty(&field.value));
+                self.static_carrier_syntax(&field.value, &field_ty)
+            }),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let element = position.iterated_element();
+                elements
+                    .iter()
+                    .all(|value| self.static_carrier_syntax(value, &element))
+                    && fill
+                        .as_deref()
+                        .is_none_or(|value| self.static_carrier_syntax(value, &element))
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.static_carrier_syntax(then_value, position)
+                    && self.static_carrier_syntax(else_value, position)
+            }
+            ExprKind::Unsafe(inner)
+            | ExprKind::Cast { value: inner, .. }
+            | ExprKind::RawCast { value: inner, .. } => {
+                self.static_carrier_syntax(inner, position)
+            }
+            _ => {
+                let expression_ty = self.ty(expr);
+                if !is_view_like(position)
+                    && !is_view_like(&expression_ty)
+                    && !self.may_carry_view(position)
+                    && !self.may_carry_view(&expression_ty)
+                {
+                    return true;
+                }
+                matches!((&expr.kind, &expression_ty.kind), (ExprKind::Str(_), TyKind::StaticStr))
+            }
+        }
+    }
+
+    /// Walks a literal carrier's positions and proves each view leaf static.
+    fn static_carrier_literal(&self, expr: &Expr, position: &Ty) -> bool {
+        match &expr.kind {
+            ExprKind::StructLiteral { fields, .. } => fields.iter().all(|field| {
+                let field_ty = self
+                    .sema
+                    .table
+                    .instance_field(position, &field.name)
+                    .unwrap_or_else(|| self.ty(&field.value));
+                self.static_carrier_literal(&field.value, &field_ty)
+            }),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let element = position.iterated_element();
+                elements
+                    .iter()
+                    .all(|value| self.static_carrier_literal(value, &element))
+                    && fill
+                        .as_deref()
+                        .is_none_or(|value| self.static_carrier_literal(value, &element))
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.static_carrier_literal(then_value, position)
+                    && self.static_carrier_literal(else_value, position)
+            }
+            ExprKind::Unsafe(inner)
+            | ExprKind::Cast { value: inner, .. }
+            | ExprKind::RawCast { value: inner, .. } => {
+                self.static_carrier_literal(inner, position)
+            }
+            _ => {
+                let expression_ty = self.ty(expr);
+                if !is_view_like(position)
+                    && !is_view_like(&expression_ty)
+                    && !self.may_carry_view(position)
+                    && !self.may_carry_view(&expression_ty)
+                {
+                    return true;
+                }
+                if matches!(expression_ty.kind, TyKind::StaticStr) {
+                    return true;
+                }
+                if matches!(expression_ty.kind, TyKind::Handle(_)) {
+                    return false;
+                }
+                if let Some(PlaceTarget::Local(id, _)) = self.place_target(expr) {
+                    let id = self.alias_resolved_root(id);
+                    let binding = &self.bindings[id];
+                    return binding.kind == BindingKind::Local
+                        && binding.static_view_carrier
+                        && self.binding_loans(id).is_empty()
+                        && self
+                            .state
+                            .element_loans
+                            .get(&id)
+                            .is_none_or(|paths| paths.values().all(|loans| loans.is_empty()))
+                        && self
+                            .state
+                            .carried_owners
+                            .get(&id)
+                            .is_none_or(|owners| owners.is_empty());
+                }
+                false
+            }
         }
     }
 
@@ -1936,6 +2182,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             Mode::Borrow => {
+                // A writable lend can install a view through the alias, so a
+                // local carrier's declaration proof no longer covers it.
+                if let Some(PlaceTarget::Local(id, _)) = &target {
+                    let root = self.alias_resolved_root(*id);
+                    self.bindings[root].static_view_carrier = false;
+                }
                 // A borrow reads the place, so a later use of a consumed
                 // maybe-owning path records the duplicability duty here.
                 if let Some(PlaceTarget::Local(id, projections)) = &target {

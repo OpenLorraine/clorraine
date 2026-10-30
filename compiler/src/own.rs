@@ -88,6 +88,191 @@ pub struct OwnershipOutput {
     pub init_lambdas: BTreeMap<usize, usize>,
 }
 
+/// The declaration identity a take-view requirement and its call records share.
+fn function_identity(loaded: &Loaded, decl: &FuncDecl) -> String {
+    for module in loaded.modules.values() {
+        for item in &module.items {
+            if let Item::Func(candidate) = item {
+                if std::ptr::eq(candidate, decl) {
+                    return format!("{}.{}", module.name, candidate.name);
+                }
+            }
+        }
+    }
+    decl.name.clone()
+}
+
+/// A take parameter's view store that needs a call-site judgment.
+#[derive(Clone, Debug)]
+struct TakeViewRequirement {
+    function: String,
+    parameter: String,
+    parameter_index: usize,
+    path: Vec<ir::Projection>,
+    span: Span,
+}
+
+/// One user-call argument seen while checking a caller body.
+#[derive(Clone, Debug)]
+struct TakeCallArgument {
+    function: String,
+    parameter_index: usize,
+    arg_ty: Ty,
+    safe: bool,
+}
+
+/// Marks user functions used as values in module initializers.
+///
+/// The initializer walkers do not evaluate a function name as a call, so a
+/// global `func` value would otherwise be invisible to the fail-closed check.
+/// A call's own callee is skipped: only a function used as a value makes the
+/// call form unknown.
+fn collect_global_value_uses(
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    out: &mut BTreeSet<String>,
+) {
+    for module in loaded.modules.values() {
+        for item in &module.items {
+            match item {
+                Item::GlobalLet(decl) => {
+                    collect_expr_value_uses(&decl.value, module, loaded, program, out)
+                }
+                Item::GlobalConst(decl) => {
+                    collect_expr_value_uses(&decl.value, module, loaded, program, out)
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn collect_expr_value_uses(
+    expr: &Expr,
+    module: &crate::load::Module,
+    loaded: &Loaded,
+    program: &ProgramInfo<'_>,
+    out: &mut BTreeSet<String>,
+) {
+    match &expr.kind {
+        ExprKind::Name(name) => {
+            if let Some(decl) = resolve_initializer_function(module, name, loaded, program) {
+                out.insert(function_identity(loaded, decl));
+            }
+        }
+        ExprKind::Qualified(name) => {
+            let written = name.segments.join(".");
+            if let Some(decl) = program.user_function(&written) {
+                out.insert(function_identity(loaded, decl));
+            }
+        }
+        ExprKind::Call { callee, args, .. } => {
+            if !matches!(callee.kind, ExprKind::Name(_) | ExprKind::Qualified(_)) {
+                collect_expr_value_uses(callee, module, loaded, program, out);
+            }
+            for arg in args {
+                collect_expr_value_uses(&arg.value, module, loaded, program, out);
+            }
+        }
+        ExprKind::Unary { operand, .. }
+        | ExprKind::Cast { value: operand, .. }
+        | ExprKind::RawCast { value: operand, .. }
+        | ExprKind::Unsafe(operand) => {
+            collect_expr_value_uses(operand, module, loaded, program, out)
+        }
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+            collect_expr_value_uses(base, module, loaded, program, out);
+            if let ExprKind::Index { index, .. } = &expr.kind {
+                collect_expr_value_uses(index, module, loaded, program, out);
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            collect_expr_value_uses(left, module, loaded, program, out);
+            collect_expr_value_uses(right, module, loaded, program, out);
+        }
+        ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => {
+            collect_expr_value_uses(then_value, module, loaded, program, out);
+            collect_expr_value_uses(else_value, module, loaded, program, out);
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_expr_value_uses(&field.value, module, loaded, program, out);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                collect_expr_value_uses(element, module, loaded, program, out);
+            }
+            if let Some(fill) = fill {
+                collect_expr_value_uses(fill, module, loaded, program, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Resolves a function name in a module initializer's own scope.
+///
+/// A module-local declaration wins, then an import binding, then the
+/// program-wide fallback. This matches the call checker's resolution order and
+/// keeps a same-named function in another module from stealing the value-use
+/// record.
+fn resolve_initializer_function<'a>(
+    module: &'a crate::load::Module,
+    name: &str,
+    loaded: &'a Loaded,
+    program: &ProgramInfo<'a>,
+) -> Option<&'a FuncDecl> {
+    if let Some(decl) = module.decl(name) {
+        if decl.kind == crate::load::DeclKind::Func {
+            return module.items.iter().find_map(|item| match item {
+                Item::Func(function) if function.name == name => Some(function),
+                _ => None,
+            });
+        }
+        return None;
+    }
+    if let Some(binding) = module.import(name) {
+        if binding.poisoned {
+            return None;
+        }
+        return loaded
+            .module(&binding.module)
+            .and_then(|target| target.items.iter().find_map(|item| match item {
+                Item::Func(function) if function.name == binding.original => Some(function),
+                _ => None,
+            }));
+    }
+    program.user_function(name)
+}
+
+/// True when the named path on an argument is a view leaf that can outlive a
+/// call. The path resolves fields and elements from the argument type; a
+/// `String` leaf is owned storage, so it does not qualify.
+fn take_path_is_view(
+    table: &crate::types::TypeTable,
+    arg_ty: &Ty,
+    path: &[ir::Projection],
+) -> bool {
+    let mut current = arg_ty.clone();
+    for step in path {
+        current = match step {
+            ir::Projection::Field(name) => match table.instance_field(&current, name) {
+                Some(field) => field,
+                None => return false,
+            },
+            ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                current.iterated_element()
+            }
+        };
+    }
+    is_view_like(&current)
+}
+
 /// Checks the ownership, borrow, and FFI rules of every function body and
 /// returns the lowered IR and the monomorphization inputs codegen consumes.
 ///
@@ -117,6 +302,9 @@ pub fn check(
     let mut view_return_duties = Vec::new();
     let mut conditional_narrowing_duties = Vec::new();
     let mut len_operand_duties = Vec::new();
+    let mut take_view_requirements: Vec<TakeViewRequirement> = Vec::new();
+    let mut take_call_arguments: Vec<TakeCallArgument> = Vec::new();
+    let mut function_value_uses: BTreeSet<String> = BTreeSet::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -152,6 +340,9 @@ pub fn check(
                     view_returns,
                     conditional_narrowing,
                     len_operands,
+                    take_requirements,
+                    take_calls,
+                    value_uses,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -168,9 +359,47 @@ pub fn check(
                 view_return_duties.extend(view_returns);
                 conditional_narrowing_duties.extend(conditional_narrowing);
                 len_operand_duties.extend(len_operands);
+                take_view_requirements.extend(take_requirements);
+                take_call_arguments.extend(take_calls);
+                function_value_uses.extend(value_uses);
             }
         }
     }
+    collect_global_value_uses(loaded, &program, &mut function_value_uses);
+    // A take parameter's view store is safe only when every call to the
+    // declaration passes a proven-static carrier for the stored path. A
+    // function used as a value has call forms this pass cannot see, so it
+    // fails closed. No call site at all keeps the callee rejection.
+    for requirement in take_view_requirements {
+        let calls: Vec<&TakeCallArgument> = take_call_arguments
+            .iter()
+            .filter(|call| {
+                call.function == requirement.function
+                    && call.parameter_index == requirement.parameter_index
+            })
+            .collect();
+        let safe = !requirement.path.is_empty()
+            && !calls.is_empty()
+            && !function_value_uses.contains(&requirement.function)
+            && calls.iter().all(|call| call.safe)
+            && calls.iter().all(|call| {
+                take_path_is_view(&sema.table, &call.arg_ty, &requirement.path)
+            });
+        if !safe {
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10030",
+                    format!(
+                        "borrow of '{}' does not live long enough",
+                        requirement.parameter
+                    ),
+                    requirement.span,
+                )
+                .with_help("finish the use before the owner's scope ends"),
+            );
+        }
+    }
+
     // A module initializer has no enclosing body, so the capture-less lambdas
     // it spells are lifted here through a synthetic function context; the
     // emitter resolves each one by the lambda node's address.
@@ -634,6 +863,14 @@ struct FunctionChecker<'a, 'd> {
     /// another; the declaration records the site and the audit applies the
     /// frozen length surface after substitution.
     len_operand_requirements: Vec<ir::RequiresLenOperand>,
+    /// Take view stores deferred to the call-site summary.
+    take_view_requirements: Vec<TakeViewRequirement>,
+    /// Take-view sites already recorded, so one store site reports once.
+    recorded_take_escapes: BTreeSet<(String, u32, u32)>,
+    /// Every normal/dot user-call argument recorded for the summary.
+    take_call_arguments: Vec<TakeCallArgument>,
+    /// Function declarations used as values, so their call forms are unknown.
+    function_value_uses: BTreeSet<String>,
     /// Opaque-store sites already recorded, so one site owes one duty.
     recorded_opaque_stores: BTreeSet<(String, u32, u32)>,
     /// `len` operand sites already recorded, so one site owes one duty.
@@ -715,6 +952,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             view_return_requirements: Vec::new(),
             conditional_narrowing_requirements: Vec::new(),
             len_operand_requirements: Vec::new(),
+            take_view_requirements: Vec::new(),
+            recorded_take_escapes: BTreeSet::new(),
+            take_call_arguments: Vec::new(),
+            function_value_uses: BTreeSet::new(),
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
@@ -797,6 +1038,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresViewReturnCandidates>,
         Vec<ir::RequiresConditionalArmNarrowing>,
         Vec<ir::RequiresLenOperand>,
+        Vec<TakeViewRequirement>,
+        Vec<TakeCallArgument>,
+        BTreeSet<String>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -853,6 +1097,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.view_return_requirements,
             self.conditional_narrowing_requirements,
             self.len_operand_requirements,
+            self.take_view_requirements,
+            self.take_call_arguments,
+            self.function_value_uses,
         )
     }
 
@@ -1353,6 +1600,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             capture_dies_with_frame: false,
             capture_caller_slot: false,
             capture_read_only: false,
+            static_view_carrier: false,
             capture_whole_out_slot: false,
             capture_written: false,
         });

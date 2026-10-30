@@ -98,13 +98,13 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: high — ownership, loans, and capture subjects; ASAN is the primary oracle.
 > **Lenses**: correctness, semantics, memory
 
-- [ ] 4.1.1 [spec-author] Write ST-54…ST-62 in `def_zero_loans_spec_test.rs` for DEF-250, DEF-252, DEF-311, DEF-312, DEF-354, DEF-370, DEF-422, DEF-434, DEF-444 and confirm red.
-- [ ] 4.1.2 [spec-author] Write ST-63…ST-71 for DEF-463, DEF-474, DEF-484, DEF-490, DEF-491, DEF-492, DEF-494, DEF-524, DEF-530 and confirm red.
-- [ ] 4.2.1 [impl-author] Fix DEF-250, DEF-252, DEF-311, DEF-312, DEF-354, DEF-370, DEF-422: capture subjects, const moves, residual roots, element-loan owners, duplicate capture reports, move-only arrays, and the raw-prefix store.
-- [ ] 4.2.2 [impl-author] Fix DEF-434, DEF-444, DEF-463, DEF-474, DEF-484: the overwritten literal provenance, the loop-head pointee move, the raw-store unused warning, the generic view conditional, and the loop-alias static carrier.
-- [ ] 4.2.3 [impl-author] Fix DEF-490, DEF-491, DEF-492, DEF-494, DEF-524, DEF-530: the inline static aggregate, the frame-backed arm, the zero-arg factory, the taken view double report, the shared later-use report, and the two carrier returns.
-- [ ] 4.3.1 [impl-author] Write the `def_zero_loans_impl_test.rs` pins, run the focused ASAN legs, and dispatch the phase review; fix critical/major findings.
-- [ ] 4.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
+- [x] 4.1.1 [spec-author] Write ST-54…ST-62 in `def_zero_loans_spec_test.rs` for DEF-250, DEF-252, DEF-311, DEF-312, DEF-354, DEF-370, DEF-422, DEF-434, DEF-444 and confirm red.
+- [x] 4.1.2 [spec-author] Write ST-63…ST-71 for DEF-463, DEF-474, DEF-484, DEF-490, DEF-491, DEF-492, DEF-494, DEF-524, DEF-530 and confirm red.
+- [x] 4.2.1 [impl-author] Fix DEF-250, DEF-252, DEF-311, DEF-312, DEF-354, DEF-370, DEF-422: capture subjects, const moves, residual roots, element-loan owners, duplicate capture reports, move-only arrays, and the raw-prefix store.
+- [x] 4.2.2 [impl-author] Fix DEF-434, DEF-444, DEF-463, DEF-474, DEF-484: the overwritten literal provenance, the loop-head pointee move, the raw-store unused warning, the generic view conditional, and the loop-alias static carrier.
+- [x] 4.2.3 [impl-author] Fix DEF-490, DEF-491, DEF-492, DEF-494, DEF-524, DEF-530: the inline static aggregate, the frame-backed arm, the zero-arg factory, the taken view double report, the shared later-use report, and the two carrier returns.
+- [x] 4.3.1 [impl-author] Write the `def_zero_loans_impl_test.rs` pins, run the focused ASAN legs, and dispatch the phase review; fix critical/major findings.
+- [x] 4.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 
 **Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
 

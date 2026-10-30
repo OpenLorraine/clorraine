@@ -1787,6 +1787,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .copied()
                     .unwrap_or(false),
                 capture_read_only: matches!(info.mode, CaptureMode::ReadOnlyBorrow),
+                static_view_carrier: false,
                 capture_whole_out_slot: capture_out_slots
                     .get(&info.name)
                     .copied()
