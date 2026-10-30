@@ -40,7 +40,7 @@ mod place;
 
 pub use control::{BranchShape, LoopKind};
 pub use global::GlobalId;
-pub use guards::value_needs_guards;
+pub use guards::{value_has_materialize, value_needs_guards};
 pub use mono::{
     CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
     RequiresElementMove, RequiresIterable, RequiresNotLend, RequiresOpaqueStore,

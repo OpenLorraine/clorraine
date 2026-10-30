@@ -11,6 +11,65 @@ use crate::types::TyKind;
 
 use super::{Value, ValueKind, ValuePiece};
 
+/// True when a value contains a materialized operand.
+///
+/// A materialization needs a statement position. A loop header cannot carry
+/// one, so `while` emission splits a short-circuit condition whose right side
+/// contains a materialization into two tests; the first test guards the right
+/// side's statement fill and preserves short-circuit evaluation.
+pub fn value_has_materialize(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Materialize { .. } => true,
+        ValueKind::Binary { left, right, .. } => {
+            value_has_materialize(left) || value_has_materialize(right)
+        }
+        ValueKind::Index { base, index } => {
+            value_has_materialize(base) || value_has_materialize(index)
+        }
+        ValueKind::Cast { value: inner, .. } | ValueKind::Unary { operand: inner, .. } => {
+            value_has_materialize(inner)
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            value_has_materialize(condition)
+                || value_has_materialize(then_value)
+                || value_has_materialize(else_value)
+        }
+        ValueKind::Member { base, .. } => value_has_materialize(base),
+        ValueKind::Call {
+            args, receiver, ..
+        } => {
+            receiver
+                .as_deref()
+                .is_some_and(value_has_materialize)
+                || args.iter().any(value_has_materialize)
+        }
+        ValueKind::Intrinsic { args, .. } => args.iter().any(value_has_materialize),
+        ValueKind::StructLit { fields, .. } => {
+            fields.iter().any(|(_, field)| value_has_materialize(field))
+        }
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.iter().any(value_has_materialize)
+                || fill.as_deref().is_some_and(value_has_materialize)
+        }
+        ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            ValuePiece::Literal(_) => false,
+            ValuePiece::Placeholder(inner) => value_has_materialize(inner),
+        }),
+        ValueKind::Closure { captures, .. } => captures.iter().any(value_has_materialize),
+        ValueKind::ClosureCall { callable, args } => {
+            value_has_materialize(callable) || args.iter().any(value_has_materialize)
+        }
+        ValueKind::DiscardThen { effects, value } => {
+            value_has_materialize(effects) || value_has_materialize(value)
+        }
+        _ => false,
+    }
+}
+
 /// True when evaluating a value cannot live in a structured loop header.
 ///
 /// A guard is a division check, a bounds check, or a float-to-integer range

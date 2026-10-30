@@ -6,7 +6,7 @@
 //! `slice` here so the view struct and its bounds guard live in one place.
 
 use crate::ast::Mode;
-use crate::ir::{Value, ValueKind};
+use crate::ir::{PlaceBase, Value, ValueKind};
 use crate::types::{contains_param, Ty, TyKind};
 
 use super::render::escape_c_string;
@@ -39,6 +39,13 @@ impl Emitter<'_> {
         let source = self.slice_source(view);
         let lo_c = self.value(lo);
         let hi_c = self.value(hi);
+        // A zero low bound and a zero high bound are both satisfiable for
+        // every unsigned length: `0 > 0` and `0 > len` are false. Emitting
+        // the upper comparison would be dead code, and GCC reports the
+        // unsigned form under `-Werror=type-limits`.
+        if matches!(lo.kind, ValueKind::Int(0)) && matches!(hi.kind, ValueKind::Int(0)) {
+            return None;
+        }
         let upper = format!("(usize)({hi_c}) > {}", source.length);
         // A constant zero low bound can never exceed an unsigned high bound,
         // so the lower clause is skipped; emitting `0 > x` would be dead code
@@ -261,6 +268,24 @@ impl Emitter<'_> {
             )
     }
 
+    /// Renders a closure call's arguments against the lambda's own parameter
+    /// types.
+    ///
+    /// A closure's value carries its parameter list separately from a named
+    /// function's signature. The same widening and literal conversions apply:
+    /// an owned `String` passed to a `str` parameter becomes the view, and a
+    /// `static str` passed to a `cstring` parameter stays the raw pointer.
+    pub(super) fn closure_arguments(
+        &self,
+        args: &[Value],
+        params: Option<&[Ty]>,
+    ) -> Vec<String> {
+        args.iter()
+            .enumerate()
+            .map(|(index, arg)| self.argument_text(arg, params.and_then(|p| p.get(index))))
+            .collect()
+    }
+
     /// Renders one argument, widening an owned `String` to the `str` view a
     /// parameter expects, or a literal to the C string pointer a `cstring`
     /// expects.
@@ -271,7 +296,7 @@ impl Emitter<'_> {
     /// evaluated exactly once. A `static str` literal is already a
     /// NUL-terminated C string, so a `cstring` parameter takes it directly
     /// instead of a `ClStr` view.
-    fn argument_text(&self, arg: &Value, expected: Option<&Ty>) -> String {
+    pub(super) fn argument_text(&self, arg: &Value, expected: Option<&Ty>) -> String {
         let wants_cstring = expected.is_some_and(|expected| {
             matches!(self.substitute(expected).kind, TyKind::CString)
         });
@@ -407,6 +432,27 @@ impl Emitter<'_> {
                     type_key(&element)
                 )
             }
+            // The second argument is the field spelling the parser recorded
+            // as a path. The C `offsetof` macro carries the same spelling and
+            // measures the real padded layout, so the value position and the
+            // constant position agree.
+            "offsetof" => match type_arg {
+                Some(ty) => {
+                    let ty = self.substitute(ty);
+                    // A deferred type parameter can instantiate with a type
+                    // that has no struct members; the pre-fix spelling was the
+                    // zero fallback, which keeps the translation unit valid.
+                    if !matches!(ty.kind, TyKind::Struct(..)) {
+                        return "0".to_owned();
+                    }
+                    let field = args
+                        .first()
+                        .and_then(offsetof_field_name)
+                        .unwrap_or_default();
+                    format!("offsetof({}, {})", c_type(&ty, &self.sema.table), field)
+                }
+                None => "0".to_owned(),
+            },
             "sizeof" => match type_arg {
                 Some(ty) => {
                     let ty = self.substitute(ty);
@@ -481,6 +527,22 @@ impl Emitter<'_> {
             TyKind::Raw(inner) => (**inner).clone(),
             _ => Ty::unknown(),
         }
+    }
+}
+
+/// The field spelling of an `offsetof` argument.
+///
+/// The parser records the field as a simple name; lowering keeps it as a path
+/// so it names no storage. A place spelling is accepted too, which keeps the
+/// renderer total for a lowered form that resolved the name early.
+fn offsetof_field_name(value: &Value) -> Option<String> {
+    match &value.kind {
+        ValueKind::Path(path) => path.last().cloned(),
+        ValueKind::Place(place) => match &place.base {
+            PlaceBase::Local(name) | PlaceBase::Param(name) => Some(name.clone()),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

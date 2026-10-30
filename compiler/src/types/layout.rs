@@ -10,6 +10,7 @@
 use crate::ast::ScalarType;
 use crate::profile::Profile;
 
+use super::substitute_instance;
 use super::table::{scalar_size, TypeTable};
 use super::Ty;
 use super::TyKind;
@@ -73,6 +74,29 @@ impl AbiLayout {
         self.align_at(table, ty, 0)
     }
 
+    /// The byte offset of one struct field under this ABI.
+    ///
+    /// Each preceding field starts at its own alignment and advances by its
+    /// padded size, so the result is the same offset the emitted C
+    /// `offsetof` reports.
+    pub fn offset_of(&self, table: &TypeTable, base: &Ty, field: &str) -> Option<usize> {
+        let TyKind::Struct(name, args) = &base.kind else {
+            return None;
+        };
+        let params = table.struct_type_params(name).unwrap_or(&[]);
+        let mut offset = 0usize;
+        for (field_name, field_ty) in table.struct_fields(name)? {
+            let field_ty = substitute_instance(field_ty, params, args);
+            let align = self.align_at(table, &field_ty, 0)?;
+            offset = self.round_up(offset, align)?;
+            if field_name == field {
+                return Some(offset);
+            }
+            offset = offset.checked_add(self.size_at(table, &field_ty, 0)?)?;
+        }
+        None
+    }
+
     /// Depth-limited worker for [`AbiLayout::size_of`].
     ///
     /// A malformed self-referential declaration would otherwise recurse without
@@ -84,12 +108,28 @@ impl AbiLayout {
         match &ty.kind {
             TyKind::Void => Some(0),
             TyKind::Scalar(scalar) => scalar_size(*scalar),
-            TyKind::Raw(_) | TyKind::Func(_) => Some(self.pointer),
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) => Some(self.pointer),
             // The emitted `str` view is a pointer-and-length struct; a
             // `cstring` is the bare C string pointer.
-            TyKind::Str => self.struct_size(table, &[Ty::raw(Ty::scalar(ScalarType::U8)), Ty::usize_ty()], depth),
+            TyKind::Str | TyKind::StaticStr => self.struct_size(
+                table,
+                &[Ty::raw(Ty::scalar(ScalarType::U8)), Ty::usize_ty()],
+                depth,
+            ),
             TyKind::CString => Some(self.pointer),
+            TyKind::Enum(name) => table
+                .enum_backing(name)
+                .and_then(|backing| self.size_at(table, backing, depth + 1)),
             TyKind::Array { element, extents } => {
+                // An omitted extent is a slice view: a pointer and a length,
+                // whatever the element and later extents are.
+                if extents.iter().any(Option::is_none) {
+                    return self.struct_size(
+                        table,
+                        &[Ty::raw(Ty::scalar(ScalarType::U8)), Ty::usize_ty()],
+                        depth,
+                    );
+                }
                 let mut total = self.size_at(table, element, depth + 1)?;
                 for extent in extents {
                     total = total.checked_mul((*extent)?)?;
@@ -139,15 +179,26 @@ impl AbiLayout {
                 let size = scalar_size(*scalar)?;
                 Some(size.min(self.scalar_align_cap).max(1))
             }
-            TyKind::Raw(_) | TyKind::Func(_) | TyKind::CString => {
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) | TyKind::CString => {
                 Some(self.pointer.min(self.scalar_align_cap).max(1))
             }
-            TyKind::Str => {
+            TyKind::Str | TyKind::StaticStr => {
                 let pointer = self.pointer.min(self.scalar_align_cap).max(1);
                 let length = 4usize.min(self.scalar_align_cap).max(1);
                 Some(pointer.max(length))
             }
-            TyKind::Array { element, .. } => self.align_at(table, element, depth + 1),
+            TyKind::Enum(name) => table
+                .enum_backing(name)
+                .and_then(|backing| self.align_at(table, backing, depth + 1)),
+            TyKind::Array { element, extents } => {
+                if extents.iter().any(Option::is_none) {
+                    let pointer = self.pointer.min(self.scalar_align_cap).max(1);
+                    let length = 4usize.min(self.scalar_align_cap).max(1);
+                    Some(pointer.max(length))
+                } else {
+                    self.align_at(table, element, depth + 1)
+                }
+            }
             TyKind::Struct(name, args) => {
                 let params = table.struct_type_params(name).unwrap_or(&[]);
                 let fields = table.struct_fields(name)?;

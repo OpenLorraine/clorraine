@@ -337,9 +337,16 @@ impl Resolver<'_, '_> {
                 self.pop_scope();
             }
             ExprKind::Unsafe(inner) => self.resolve_expr(inner),
-            ExprKind::IntrinsicCall { args, .. } => {
-                for arg in args {
+            ExprKind::IntrinsicCall { name, args } => {
+                for (index, arg) in args.iter().enumerate() {
                     match arg {
+                        // `offsetof`'s final argument is a field spelling, not
+                        // a name read: it denotes a declared member and must
+                        // not be resolved as a binding.
+                        IntrinsicArg::Expr(inner)
+                            if name == "offsetof"
+                                && index + 1 == args.len()
+                                && matches!(inner.kind, ExprKind::Name(_)) => {}
                         IntrinsicArg::Expr(inner) => self.resolve_expr(inner),
                         IntrinsicArg::Type(ty) => self.resolve_type(ty),
                     }

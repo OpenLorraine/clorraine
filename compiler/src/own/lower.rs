@@ -620,6 +620,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for arg in args {
                     match arg {
                         IntrinsicArg::Expr(inner) => {
+                            // `offsetof`'s second argument is a field spelling,
+                            // not a value read. Keeping it as a path avoids
+                            // asking the place walk for a binding of the same
+                            // name and lets the emitter spell the C macro.
+                            if name == "offsetof" {
+                                if let ExprKind::Name(field) = &inner.kind {
+                                    values.push(Value {
+                                        ty: Ty::unknown(),
+                                        kind: ValueKind::Path(vec![field.clone()]),
+                                    });
+                                    continue;
+                                }
+                            }
                             // An intrinsic only borrows its expression
                             // arguments, so an unnamed owned result passed here
                             // needs the caller-side binding its cleanup uses.
@@ -5335,8 +5348,20 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
     /// machinery and are excluded. A chain that already roots in storage, or a
     /// root that owns nothing, is returned unchanged.
     pub(super) fn bind_member_receiver(&mut self, value: Value) -> Value {
-        if self.defer_move_outs > 0 || self.in_loop_condition {
+        if self.in_loop_condition {
             return value;
+        }
+        if self.defer_move_outs > 0 {
+            // A member argument under a guard is evaluated only on the path
+            // that reaches it, so its fresh root binds through the deferred
+            // fill. The scalar read keeps the root alive until the statement's
+            // release, and a skipped path never runs the call.
+            return match value.kind {
+                ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                    self.bind_guarded_projection_root(value)
+                }
+                other => Value::new(value.ty, other),
+            };
         }
         match value.kind {
             ValueKind::Member { .. } => self.bind_ownerless_projection_root(value),

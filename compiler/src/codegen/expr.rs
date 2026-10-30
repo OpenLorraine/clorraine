@@ -29,6 +29,9 @@ impl<'a> Emitter<'a> {
 
     /// Renders a typed IR value as a C expression.
     pub(super) fn value(&self, value: &Value) -> String {
+        if let Some(alias) = self.value_aliases.get(&(value as *const Value as usize)) {
+            return alias.clone();
+        }
         match &value.kind {
             ValueKind::Place(place) => self.place(place),
             // The effects run where this value is evaluated; the yielded value
@@ -824,6 +827,9 @@ impl<'a> Emitter<'a> {
     /// spells the widening, because one C `?:` must carry one type in both
     /// arms.
     pub(super) fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
+        if self.is_prefilled_materialization(value) {
+            return self.value(value);
+        }
         // An arm whose effects run where it is evaluated keeps its guard
         // expression inside the arm, so the skipped path never runs it.
         if matches!(value.kind, ValueKind::DiscardThen { .. }) {
@@ -1311,7 +1317,31 @@ impl<'a> Emitter<'a> {
         args: &[Value],
         destination: Option<&str>,
     ) -> String {
-        let mut rendered: Vec<String> = args.iter().map(|arg| self.value(arg)).collect();
+        // A closure's parameters live on the recorded closure site or on the
+        // two-word value's own type. They are what the argument renderer needs
+        // to widen an owned `String` to a `str` parameter, exactly as a named
+        // call does.
+        let params_from_ty = || match &self.substitute(&callable.ty).kind {
+            TyKind::Closure(closure) => Some(closure.params.clone()),
+            TyKind::Func(signature) => Some(
+                signature
+                    .params
+                    .iter()
+                    .map(|param| param.ty.clone())
+                    .collect(),
+            ),
+            _ => None,
+        };
+        let params: Option<Vec<Ty>> = if let ValueKind::Closure { site, .. } = &callable.kind {
+            self.sema
+                .closures
+                .get(site)
+                .map(|closure| closure.params.clone())
+                .or_else(params_from_ty)
+        } else {
+            params_from_ty()
+        };
+        let mut rendered: Vec<String> = self.closure_arguments(args, params.as_deref());
         if let Some(destination) = destination {
             rendered.push(destination.to_owned());
         }

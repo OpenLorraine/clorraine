@@ -148,6 +148,11 @@ pub struct OpaqueProjection {
     pub ty: Ty,
     /// The member's spelling.
     pub name: String,
+    /// True when the read sits inside an `unsafe` block.
+    ///
+    /// A substituted raw base still needs the gate; recording the context lets
+    /// the instance audit accept the wrapped spelling and reject the bare one.
+    pub in_unsafe: bool,
     /// The read's span, for the diagnostic.
     pub span: Span,
 }
@@ -418,6 +423,12 @@ struct Checker<'a, 'd> {
     /// `embed` is legal only in a constant context; a module-level `let`, a
     /// local `let`, and a local `const` are runtime positions.
     in_const_context: bool,
+    /// Nesting depth of `unsafe { ... }` blocks in the current expression.
+    ///
+    /// The type stage uses the depth only to record whether an opaque member
+    /// read sits inside `unsafe`; the ownership stage still owns the concrete
+    /// raw-operation diagnostics.
+    unsafe_depth: u32,
     /// Return type of the function currently being checked.
     returns: Ty,
     /// `(node address, type)` for every checked expression, handed to the
@@ -516,6 +527,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             callable_bound_params: Vec::new(),
             function_name: None,
             in_const_context: false,
+            unsafe_depth: 0,
             returns: Ty::void(),
             recorded: Vec::new(),
             next_closure_id,

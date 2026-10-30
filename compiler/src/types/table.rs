@@ -527,9 +527,18 @@ impl TypeTable {
         match &ty.kind {
             TyKind::Void => Some(0),
             TyKind::Scalar(scalar) => scalar_size(*scalar),
-            TyKind::Raw(_) | TyKind::Func(_) => Some(4),
-            TyKind::Str | TyKind::CString => Some(8),
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) => Some(4),
+            TyKind::Str | TyKind::StaticStr | TyKind::CString => Some(8),
+            // An enum's storage is its declared backing scalar.
+            TyKind::Enum(name) => self
+                .enum_backing(name)
+                .and_then(|backing| self.size_of_at(backing, depth + 1)),
             TyKind::Array { element, extents } => {
+                // An omitted extent is a view: its storage is one pointer and
+                // one length, regardless of the element or later extents.
+                if extents.iter().any(Option::is_none) {
+                    return Some(8);
+                }
                 let element = self.size_of_at(element, depth + 1)?;
                 let mut total = element;
                 for extent in extents {
@@ -549,6 +558,15 @@ impl TypeTable {
             }
             _ => None,
         }
+    }
+
+    /// The byte offset of a struct field under the target ABI.
+    ///
+    /// `offset_of` sums the declared widths without alignment padding; an
+    /// emitted `offsetof` and an extent position both use the C layout, so the
+    /// two positions agree on a padded struct.
+    pub fn abi_offset_of(&self, base: &Ty, field: &str) -> Option<usize> {
+        self.layout.offset_of(self, base, field)
     }
 
     /// The byte offset of a struct field, when every earlier field's size is
@@ -1078,16 +1096,16 @@ mod tests {
             table.size_of(&Ty::array(scalar(ScalarType::U16), vec![Some(3), Some(2)])),
             Some(12)
         );
-        // A slice has an omitted extent, so its size is not known yet.
+        // A slice carries one pointer and one length, whatever its element.
         assert_eq!(
             table.size_of(&Ty::array(scalar(ScalarType::U16), vec![None])),
-            None
+            Some(8)
         );
         assert_eq!(table.size_of(&Ty::unknown()), None);
     }
 
     #[test]
-    fn an_unmodelled_field_size_defers_the_whole_layout() {
+    fn a_slice_field_contributes_its_view_width_to_the_layout() {
         let mut table = TypeTable::default();
         insert_struct(
             &mut table,
@@ -1098,10 +1116,11 @@ mod tests {
                 ("tail", Ty::i32_ty()),
             ],
         );
-        assert_eq!(table.size_of(&Ty::struct_("Flexible")), None);
+        // The slice view is a pointer and a length, so the declared layout is
+        // 1 + 8 + 4 bytes; the tail starts after the view.
+        assert_eq!(table.size_of(&Ty::struct_("Flexible")), Some(13));
         assert_eq!(table.offset_of(&Ty::struct_("Flexible"), "head"), Some(0));
-        // The first field has a known offset; the one past the slice does not.
-        assert_eq!(table.offset_of(&Ty::struct_("Flexible"), "tail"), None);
+        assert_eq!(table.offset_of(&Ty::struct_("Flexible"), "tail"), Some(9));
     }
 
     #[test]

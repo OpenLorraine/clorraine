@@ -548,7 +548,7 @@ impl<'a> ConstFolder<'a> {
                 };
                 let offset = self
                     .table
-                    .offset_of(&resolved, field_name)
+                    .abi_offset_of(&resolved, field_name)
                     .ok_or(ConstError::NotConstant(span))?;
                 Ok(usize_value(offset))
             }

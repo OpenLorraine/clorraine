@@ -77,7 +77,12 @@ impl Checker<'_, '_> {
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Switch(decl) => self.check_switch(decl),
-            Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => self.check_block(block),
+            Stmt::Defer(block) | Stmt::Block(block) => self.check_block(block),
+            Stmt::Unsafe(block) => {
+                self.unsafe_depth += 1;
+                self.check_block(block);
+                self.unsafe_depth -= 1;
+            }
         }
     }
 

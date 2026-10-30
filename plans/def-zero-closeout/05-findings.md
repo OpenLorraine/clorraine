@@ -225,7 +225,79 @@ bounds check can be emitted twice in the fixed-array fill path.
 
 ## Phase 5 — Emission and ABI
 
+Phase 5 fixed the 21 open emission/ABI rows and pinned the already-correct
+stale rows. The new `def_zero_emission_spec_test.rs` (26 cases) and
+`def_zero_emission_impl_test.rs` (7 pins) cover the zero-high slice guard,
+closure `str` widening, the one-guard initializer, nested instance expansion,
+raw member/instance gates, parked-owner phrase, `sizeof` enums/handles/views,
+padded `offsetof` on host and freestanding, null-cast rejection, and the
+read-only loop-receiver carrier. `DEF-327` now builds the motivating loop on
+host GCC 15.2: the `&&` right side becomes two tests, a boolean local freezes
+the arm condition, and the arm fill runs as a statement before the callable
+designator.
+
+Three independent reviews (correctness/semantics, emission, memory) found and
+the batch fixed:
+
+- **Critical loop regression:** the first prefill descended into nested
+  `&&`/`||` right operands, so an operand the language skips could trap
+  (`sc_or`/`sc_and`). The walk now stops at a nested short-circuit's right
+  side and leaves that residual on the old inline spelling.
+- **Critical condition re-read:** the fill could change the condition and the
+  final test then selected the other, unfilled arm. Each pure condition is now
+  frozen into a `bool` local read by both the fill and the test.
+- **Critical initializer guard drop:** a conditional fixed-array initializer
+  arm skipped its division/bounds guard. `init_walked_guards` now applies only
+  to the unguarded walk; the arm store emits the guard inside the branch.
+- **`offsetof` validation:** unknown fields, non-name arguments, non-struct
+  types, and module-global shadowing are rejected with `E10212`; the
+  module-initializer lowering keeps the field spelling as a path.
+- **Freestanding `offsetof`:** the freestanding shim now defines the C99
+  `offsetof` macro, and the strict `-nostdlib` build passes.
+- **Generic raw parameter members:** `raw T` member reads inside `unsafe` are
+  deferred to the instance audit instead of being rejected at the declaration.
+- **Initializer take parity:** the initializer predicate now mirrors the body's
+  call-root/conditional-arm rule, rejecting `sink(mk().xs[0])` and
+  `sink(c ? two()[0] : two()[1])` while accepting the body's accepted
+  `(c ? two() : two())[0]` spelling.
+- **Timeout harness:** `run_with_timeout` now captures stdout and stderr
+  through temporary files instead of pipes, so a chatty ASan child (and any
+  helper it forks) cannot fill a pipe or keep a reader from seeing EOF. The
+  row's pipe deadlock is removed; the container ASAN suite still shows its
+  pre-existing random child-run flake (base-identical, tests pass in
+  isolation), which is recorded as an environment residual.
+
+User ruling (2026-10-30): the raw conformance specification tests are updated
+to expect `E10600` for a generic raw struct member outside `unsafe`; the raw
+enum instance cases wrap the read in `unsafe` and keep `E10212` with the
+restored span pins.
+
+Verification: `make check` green (27 spec files, 111 compile-fail goldens,
+85 Rust test targets) and `make verify: all legs passed`. Report-only residuals:
+the split covers only the top-level `while` `&&` shape (`for`/`do-while` and
+call/re-associated conditions keep the base-identical GCC 15 false positive);
+`null -> bool` is now rejected with the integer casts and needs a spec ruling
+if a bool spelling is intended; the new view-array retention does not cover the
+fill form or nested rows (base-identical leaks); and an indexed call-root
+projection remains base-identical.
+
 ## Phase 6 — Initializers and Carriers
+
+Phase 6 fixed the three open rows: the initializer take-element leak
+(`DEF-210`), the guarded duplicable member root (`DEF-316`), and the
+module-initializer carrier residual (`DEF-318`). The ASAN spec suite
+(`def_zero_initializers_spec_test.rs`, 4 cases) and the implementation pins
+(`def_zero_initializers_impl_test.rs`, 3 pins) are green. The memory review
+confirmed no new leak, double free, use-after-free, or release-count error in
+the changed shapes.
+
+Report-only residuals, all base-identical or improved by the batch: a
+multi-element view-array initializer retains the selected element but still
+leaks the unselected read roots (head 11 B versus base 44 B); the view-array
+**fill** form, nested view rows, func-typed `take` callees, and an indexed
+call-root projection keep their pre-existing leaks (base evidence recorded by
+the memory auditor). These are outside the row reproductions and are carried
+for a future initializer batch.
 
 ## Phase 7 — Final Verification and Close
 

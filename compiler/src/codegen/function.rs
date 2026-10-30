@@ -4042,7 +4042,12 @@ impl<'a> Emitter<'a> {
                     continue;
                 }
             }
-            self.emit_guards(value);
+            // The module-initializer walk already emitted this operand's
+            // guards where it evaluated the operand; the store core must not
+            // emit the same division or bounds check a second time.
+            if !self.init_walked_guards {
+                self.emit_guards(value);
+            }
             let lowered = self.store_text(value, element);
             self.push(&format!("    {} = {lowered};", sub.text));
             if self.needs_drop(element) {

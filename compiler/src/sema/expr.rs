@@ -84,7 +84,12 @@ impl Checker<'_, '_> {
                 params,
                 body,
             } => self.check_lambda(captures, params, body, expr.span),
-            ExprKind::Unsafe(inner) => self.check_value(inner, expected),
+            ExprKind::Unsafe(inner) => {
+                self.unsafe_depth += 1;
+                let ty = self.check_value(inner, expected);
+                self.unsafe_depth -= 1;
+                ty
+            }
             ExprKind::IntrinsicCall { name, args } => {
                 self.check_intrinsic(name, args, expr.span)
             }
@@ -948,11 +953,38 @@ impl Checker<'_, '_> {
                         Ty::unknown()
                     }
                 },
-                TyKind::Enum(_) => {
+                // A raw pointer to a view still implies one dereference, so
+                // the view's ABI members remain reachable. Every other raw
+                // pointee is not a member surface: accepting `.ptr` or `.len`
+                // on `raw u8` would emit a struct-member arrow on a pointer.
+                TyKind::Str | TyKind::StaticStr | TyKind::Array { .. } => {
+                    match crate::types::view_member_ty(inner, name) {
+                        Some(member_ty) => member_ty,
+                        None => {
+                            self.report_unknown_member(base_ty, name, span);
+                            Ty::unknown()
+                        }
+                    }
+                }
+                // A raw pointer to a type parameter defers the member to the
+                // instance, exactly as the bare parameter does. The audit
+                // resolves the pointee and applies the same unsafe gate.
+                TyKind::Param(_) => {
+                    if let Some(function) = self.function_name.clone() {
+                        self.opaque_projections.push(OpaqueProjection {
+                            function,
+                            ty: base_ty.clone(),
+                            name: name.to_owned(),
+                            in_unsafe: self.unsafe_depth > 0,
+                            span,
+                        });
+                    }
+                    Ty::unknown()
+                }
+                _ => {
                     self.report_unknown_member(base_ty, name, span);
                     Ty::unknown()
                 }
-                _ => Ty::unknown(),
             },
             // A member of an opaque base is resolved after substitution: the
             // instance decides whether the substituted type has the field, so
@@ -964,6 +996,7 @@ impl Checker<'_, '_> {
                         function,
                         ty: base_ty.clone(),
                         name: name.to_owned(),
+                        in_unsafe: self.unsafe_depth > 0,
                         span,
                     });
                 }
@@ -1073,7 +1106,18 @@ impl Checker<'_, '_> {
         let target = self.resolve_type(ty);
         let source = self.check_value(value, None);
         self.judge_conditional_argument(value, &target);
-        if !scalar_cast_allowed(&source, &target) {
+        // The null literal's shape is an unresolved pointer, not a scalar.
+        // The open-type allowance in `scalar_cast_allowed` must not let it
+        // reach an integer destination: the emitted cast would convert a
+        // `void *` to an integer and fail `-Werror=pointer-to-int-cast`.
+        if crate::types::is_null_shaped(&source) {
+            self.error(
+                "E10201",
+                format!("cannot cast 'null' to '{}'", target.display()),
+                "convert through a supported value or `raw` in `unsafe`",
+                value.span,
+            );
+        } else if !scalar_cast_allowed(&source, &target) {
             self.error(
                 "E10201",
                 format!(
@@ -1361,16 +1405,56 @@ impl Checker<'_, '_> {
                 Ty::usize_ty()
             }
             "offsetof" => {
-                for arg in args {
-                    match arg {
-                        IntrinsicArg::Type(ty) => {
-                            let resolved = self.resolve_type(ty);
-                            self.check_nullable_type(&resolved, ty.span);
-                        }
-                        IntrinsicArg::Expr(expr) => {
-                            self.check_value(expr, None);
+                let mut base = None;
+                let mut field = None;
+                let mut reported = false;
+                if let Some(IntrinsicArg::Type(ty)) = args.first() {
+                    let resolved = self.resolve_type(ty);
+                    self.check_nullable_type(&resolved, ty.span);
+                    base = Some(resolved);
+                }
+                if let Some(IntrinsicArg::Expr(expr)) = args.get(1) {
+                    if let ExprKind::Name(name) = &expr.kind {
+                        // The field spelling is not a value read, but the
+                        // ownership walk still asks for a recorded type at
+                        // this node so it can visit it safely.
+                        self.recorded
+                            .push((expr as *const Expr as usize, Ty::unknown()));
+                        field = Some((name.clone(), expr.span));
+                    } else {
+                        reported = true;
+                        self.error(
+                            "E10212",
+                            "offsetof requires a field name",
+                            "pass the field's identifier, not an expression",
+                            expr.span,
+                        );
+                    }
+                }
+                match (base, field) {
+                    (Some(ty), Some((name, span))) => {
+                        // A bare type parameter defers the layout to its
+                        // instance; the emitter substitutes the concrete
+                        // struct and spells the same `offsetof` macro.
+                        if !crate::types::contains_param(&ty)
+                            && (!matches!(ty.kind, TyKind::Struct(..))
+                                || self.field_type(&ty, &name).is_none())
+                        {
+                            self.error(
+                                "E10212",
+                                format!("'{name}' is not a member of '{}'", ty.display()),
+                                "check the declaration or the spelling",
+                                span,
+                            );
                         }
                     }
+                    _ if !reported => self.error(
+                        "E10212",
+                        "offsetof requires a struct type and a field name",
+                        "write `offsetof(Type, field)`",
+                        span,
+                    ),
+                    _ => {}
                 }
                 Ty::usize_ty()
             }

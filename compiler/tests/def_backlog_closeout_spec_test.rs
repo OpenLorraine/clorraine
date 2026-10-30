@@ -31,13 +31,19 @@
 //! The memory helper runs the same program as an ordinary strict host build
 //! and adds leak and use-after-free detection when `RDC_ASAN` is set.
 
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// How long one program may run before the case fails as a hang.
-const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+///
+/// The ASan suite runs many instrumented children in parallel, so a loaded
+/// container can take well over half a minute for one child. The timeout is
+/// only a hang guard; the pipes are drained concurrently, so a slow child is
+/// not mistaken for a deadlock.
+const RUN_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -145,8 +151,21 @@ fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
 /// fails, so a regression that loops forever surfaces as one failing case
 /// instead of a frozen suite.
 fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
+    // Capture the child through files, not pipes. An ASan child (and any
+    // helper it forks) can inherit a pipe's write end and keep the reader
+    // from seeing EOF; a regular file has no such back-pressure. The capture
+    // directory is removed when this function returns.
+    let capture = ScratchDir::new(&format!("run-{tag}"));
+    let stdout_path = capture.path().join("stdout");
+    let stderr_path = capture.path().join("stderr");
+    let stdout_file = File::create(&stdout_path)
+        .unwrap_or_else(|err| panic!("{tag}: cannot create stdout capture: {err}"));
+    let stderr_file = File::create(&stderr_path)
+        .unwrap_or_else(|err| panic!("{tag}: cannot create stderr capture: {err}"));
     let mut command = Command::new(program);
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
     for (key, value) in env {
         command.env(key, value);
     }
@@ -165,12 +184,23 @@ fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
                 let _ = child.wait();
                 panic!("{tag}: the program did not finish within {RUN_TIMEOUT:?}");
             }
-            Err(err) => panic!("{tag}: cannot wait for the program: {err}"),
+            Err(err) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{tag}: cannot wait for the program: {err}");
+            }
         }
     }
-    child
-        .wait_with_output()
-        .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
+    let status = child
+        .wait()
+        .unwrap_or_else(|err| panic!("{tag}: cannot collect the program status: {err}"));
+    let stdout = std::fs::read(&stdout_path).unwrap_or_default();
+    let stderr = std::fs::read(&stderr_path).unwrap_or_default();
+    Output {
+        status,
+        stdout,
+        stderr,
+    }
 }
 
 /// Emits, builds, and runs one host program, returning its output.

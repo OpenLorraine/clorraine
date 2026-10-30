@@ -695,6 +695,13 @@ fn check_initializer_call<'a>(
                 let Some(param) = params.get(index) else {
                     break;
                 };
+                check_initializer_take_element(
+                    &arg.value,
+                    arg.span,
+                    param.mode,
+                    sema,
+                    diagnostics,
+                );
                 check_initializer_global_borrow(
                     &arg.value,
                     arg.span,
@@ -718,6 +725,13 @@ fn check_initializer_call<'a>(
                 let Some(param) = params.get(index + 1) else {
                     break;
                 };
+                check_initializer_take_element(
+                    &arg.value,
+                    arg.span,
+                    param.mode,
+                    sema,
+                    diagnostics,
+                );
                 check_initializer_global_borrow(
                     &arg.value,
                     arg.span,
@@ -739,6 +753,13 @@ fn check_initializer_call<'a>(
                 let Some(param) = params.get(index + 1) else {
                     break;
                 };
+                check_initializer_take_element(
+                    &arg.value,
+                    arg.span,
+                    param.mode,
+                    sema,
+                    diagnostics,
+                );
                 check_initializer_global_borrow(
                     &arg.value,
                     arg.span,
@@ -799,6 +820,84 @@ fn check_initializer_global_borrow_mode(
         return;
     };
     report_initializer_global_borrow(global, span, program, diagnostics);
+}
+
+/// Reports the element-move limit for an initializer `take` argument.
+///
+/// A function body reports `E10026` when a `take` argument projects one
+/// element out of an ownerless array result; the initializer walk must apply
+/// the same rule so the module-level spelling is not accepted with a leak.
+fn check_initializer_take_element(
+    expr: &Expr,
+    span: Span,
+    mode: Mode,
+    sema: &SemaOutput,
+    diagnostics: &mut Diagnostics,
+) {
+    if mode != Mode::Take || !initializer_ownerless_element_move(expr, sema) {
+        return;
+    }
+    diagnostics.push(
+        Diagnostic::error(
+            "E10026",
+            "partial moves are limited to top-level fields in v1",
+            span,
+        )
+        .with_help("move the whole value instead"),
+    );
+}
+
+/// True when an expression moves an owning element from an ownerless root.
+///
+/// This mirrors the function-body predicate: an index chain rooted at a call
+/// selects an element with no place to move out of, and a conditional whose
+/// arms contain such a read is judged by its arms. A conditional **root** is
+/// not a call root, so `(c ? two() : two())[0]` stays accepted exactly as the
+/// body accepts it.
+fn initializer_ownerless_element_move(expr: &Expr, sema: &SemaOutput) -> bool {
+    fn roots_in_call(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Index { base, .. } | ExprKind::Member { base, .. } => roots_in_call(base),
+            ExprKind::Call { .. } => true,
+            _ => false,
+        }
+    }
+    fn selects_element(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Index { .. } => true,
+            ExprKind::Member { base, .. } => selects_element(base),
+            _ => false,
+        }
+    }
+    let selected = selects_element(expr) && roots_in_call(expr);
+    let conditional = match &expr.kind {
+        ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => {
+            [then_value.as_ref(), else_value.as_ref()]
+                .into_iter()
+                .any(|arm| {
+                    if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                        initializer_ownerless_element_move(arm, sema)
+                    } else {
+                        selects_element(arm)
+                            && roots_in_call(arm)
+                            && sema
+                                .expr_types
+                                .get(&(arm as *const Expr as usize))
+                                .is_some_and(|ty| !sema.table.duplicable(ty))
+                    }
+                })
+        }
+        _ => false,
+    };
+    (selected || conditional)
+        && sema
+            .expr_types
+            .get(&(expr as *const Expr as usize))
+            .is_some_and(|ty| !sema.table.duplicable(ty))
 }
 
 /// Checks a func-typed callee's written arguments.

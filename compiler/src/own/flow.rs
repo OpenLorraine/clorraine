@@ -29,6 +29,7 @@ pub(super) enum BindingKind {
 }
 
 /// One declared binding of the function currently being checked.
+#[derive(Clone)]
 pub(super) struct Binding {
     /// The written name.
     pub(super) name: String,

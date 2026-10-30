@@ -165,6 +165,31 @@ pub(super) struct Emitter<'a> {
     /// subtree records an owner; the values flow into the callee unreleased
     /// here, exactly as the base behaved before the release pass existed.
     pub(super) init_skip_owner_binding: bool,
+    /// True while a module initializer's walked literal fields are stored.
+    ///
+    /// The initializer walk already emitted each operand's runtime guards at
+    /// the operand's source position. The fixed-array store core would emit
+    /// them again, so this flag suppresses the second copy for that path.
+    pub(super) init_walked_guards: bool,
+    /// Materializations whose fill was already emitted as a statement.
+    ///
+    /// A loop condition whose right `&&` operand carries a conditional
+    /// receiver fills the receiver's temporary before the test. The renderer
+    /// then reads the temporary instead of embedding the fill a second time.
+    pub(super) prefilled_materializations: BTreeSet<ir::TempId>,
+    /// Values rendered through a bound local instead of their own expression.
+    ///
+    /// The loop split freezes a conditional's condition into a boolean local
+    /// before filling an arm. The final test reads the same local, so a fill
+    /// that changes the condition cannot select the other, unfilled arm.
+    pub(super) value_aliases: BTreeMap<usize, String>,
+    /// Nesting depth of the conditional arms being prefilled in a loop test.
+    ///
+    /// A conditional nested inside an outer arm cannot freeze its condition
+    /// at the outer scope: the declaration would live in the branch but the
+    /// test reads it outside. Such a nested conditional keeps its inline
+    /// guarded spelling.
+    pub(super) prefill_branch_depth: usize,
     /// Parameters rendered as a pointer because they are a writable lend of a
     /// non-duplicable struct; a member access on one dereferences first.
     pub(super) pointer_params: BTreeSet<String>,
@@ -342,6 +367,10 @@ impl<'a> Emitter<'a> {
             init_global_literals: Vec::new(),
             init_retain_owners: false,
             init_skip_owner_binding: false,
+            init_walked_guards: false,
+            prefilled_materializations: BTreeSet::new(),
+            value_aliases: BTreeMap::new(),
+            prefill_branch_depth: 0,
             pointer_params: BTreeSet::new(),
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),

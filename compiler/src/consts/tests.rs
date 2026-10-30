@@ -534,7 +534,9 @@ func main(): i32 { return 0; }
             },
             span: span(),
         };
-        assert_eq!(folder.fold(&offset), Ok(ConstValue::Int(3)));
+        // The offset uses the target ABI's padding: `count` ends at 4 and
+        // `value` starts there.
+        assert_eq!(folder.fold(&offset), Ok(ConstValue::Int(4)));
         let missing = Expr {
             kind: ExprKind::IntrinsicCall {
                 name: "offsetof".to_owned(),

@@ -1693,15 +1693,22 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-p4grow", source);
+    // The loop condition splits its `&&` operands, so the growable fill and
+    // its previous-value release are statements before the right test.
     assert_contains(
         "cviimpl-p4grow",
         &emitted,
-        "(__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0)",
+        "if (__cl_tmp0[0].data) { FreeBuffer(__cl_tmp0[0].data); }",
     );
     assert_contains(
         "cviimpl-p4grow",
         &emitted,
-        "cl_impl_cvi_p4grow_growable(__cl_tmp0)",
+        "cl_impl_cvi_p4grow_growable(__cl_tmp0);",
+    );
+    assert_contains(
+        "cviimpl-p4grow",
+        &emitted,
+        "if (!((__cl_tmp0[0].count > 0))) break;",
     );
 }
 
@@ -1739,7 +1746,7 @@ func main(): i32 {
     assert_contains(
         "cviimpl-p4growstr",
         &emitted,
-        "(cl_impl_cvi_p4growstr_grow(__cl_tmp0))",
+        "cl_impl_cvi_p4growstr_grow(__cl_tmp0);",
     );
     assert_contains("cviimpl-p4growstr", &emitted, "if (__cl_tmp0[0].data) {");
     let release_sites = emitted.matches("__cl_tmp0[0].count = 0;").count();

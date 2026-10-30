@@ -493,6 +493,11 @@ pub fn check(
         monomorphization.require_len_operand(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
+    // The IR walk records struct instances a declaration-only walk cannot
+    // see, such as a `sizeof(T[])` type argument at a concrete function
+    // instance. Expand their fields now so a nested `Pair<T>` inside
+    // `Box<i32>` is recorded before the emitter writes the unit.
+    generics::collect_struct_instances(loaded, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
     OwnershipOutput {
         functions,
@@ -1364,6 +1369,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.rolled_back_generated.insert(id);
             }
         }
+        // The deferred body's bindings are removed from the live scopes, but
+        // their ids stay reserved. A later binding that reuses a parked id
+        // would otherwise give the escaped owner report the later binding's
+        // name; keeping the binding table slots makes the generated owner
+        // recognizable at every report site.
+        let parked = self.bindings[saved_bindings..].to_vec();
         self.bindings.truncate(saved_bindings);
         self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
@@ -1374,6 +1385,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // so its state must not be inherited by a later local that reuses the
         // id.
         self.state.drop_bindings_from(saved_bindings);
+        // Reserve the parked ids with inert binding slots. A `Param` kind with
+        // an explicit base is never declared as a C local, and the restored
+        // scopes cannot reach it, so only the binding table's identity and the
+        // recorded display name remain.
+        for mut binding in parked {
+            binding.kind = BindingKind::Param;
+            binding.base = Some(ir::PlaceBase::Local(binding.ir_name.clone()));
+            binding.used = true;
+            self.bindings.push(binding);
+        }
     }
 
     /// Repeats `run_body` in a speculative pass until the loop state stops

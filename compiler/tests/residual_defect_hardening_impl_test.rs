@@ -507,19 +507,22 @@ func main(): i32 {
         calls, 1,
         "rdhimpl-p3fixedstr: the fixed-array condition call writes one temp"
     );
-    // The re-store empties the previous row in the expression form.
+    // The condition splits its `&&` operands, so the previous row is emptied
+    // by a statement before the right test.
     assert_contains(
         "rdhimpl-p3fixedstr",
         &emitted,
-        "(__cl_tmp0[0] ? (FreeString(__cl_tmp0[0]), __cl_tmp0[0] = NULL) : 0)",
+        "if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }",
     );
-    // The final value is released once through the statement form.
+    assert_contains("rdhimpl-p3fixedstr", &emitted, "__cl_tmp0[0] = NULL;");
+    // One release empties the previous iteration and one releases the final
+    // value after the loop.
     let releases = emitted
         .matches("if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }")
         .count();
     assert_eq!(
-        releases, 1,
-        "rdhimpl-p3fixedstr: the fixed-array temp has one final release"
+        releases, 2,
+        "rdhimpl-p3fixedstr: the fixed-array temp has one refill and one final release"
     );
 }
 

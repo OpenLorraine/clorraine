@@ -26,6 +26,11 @@
  * the profile's `usize`. */
 typedef unsigned long uintptr_t;
 
+/* The freestanding shim includes no header, so the generated `offsetof`
+ * spelling needs the C99 macro here. The member is never evaluated; the
+ * address arithmetic is a compile-time constant. */
+#define offsetof(type, member) ((unsigned long)&(((type *)0)->member))
+
 /* --- portable runtime ---------------------------------------------------- */
 
 /* The byte helpers GCC lowers aggregate copies and string literals to. They are

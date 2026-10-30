@@ -2024,6 +2024,18 @@ fn check_opaque_projections(
             if crate::types::contains_param(&substituted) || substituted.is_unknown() {
                 continue;
             }
+            // A member reached through a substituted raw pointer is an implied
+            // dereference. The declaration cannot see the raw kind, so the
+            // unsafe gate is judged here unless the read sits inside an
+            // `unsafe` block.
+            if matches!(substituted.kind, TyKind::Raw(_)) && !projection.in_unsafe {
+                let op = crate::ffi::UnsafeOp::Deref;
+                diagnostics.push(
+                    Diagnostic::error(op.code(), op.message(), projection.span)
+                        .with_help(op.help()),
+                );
+                break;
+            }
             if projection_resolves(sema, &substituted, &projection.name) {
                 continue;
             }
@@ -2701,6 +2713,12 @@ fn projection_resolves(sema: &SemaOutput, ty: &Ty, name: &str) -> bool {
         TyKind::Raw(inner) => match &inner.kind {
             TyKind::Struct(..) => sema.table.instance_field(inner, name).is_some(),
             TyKind::Raw(_) => projection_resolves(sema, inner, name),
+            // A raw pointer to a view still implies one dereference, so the
+            // view's ABI members remain reachable exactly as the concrete
+            // `raw str` / `raw u8[]` spelling accepts them.
+            TyKind::Str | TyKind::StaticStr | TyKind::Array { .. } => {
+                projection_resolves(sema, inner, name)
+            }
             _ => false,
         },
         // A view's ABI members are its pointer and its element count; only a

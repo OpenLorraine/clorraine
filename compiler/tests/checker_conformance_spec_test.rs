@@ -906,13 +906,14 @@ func main(): i32 {
     assert_exit("memok", &output, 7);
 }
 
-/// A projection through a raw pointer to a struct instance resolves.
+/// A projection through a raw pointer to a struct instance requires `unsafe`.
 ///
-/// The audit mirrors the value-form checker's raw arm, so the pointee's field
-/// resolves and the accepted read runs (red at the fix-round base: the audit
-/// reported the field missing).
+/// The audit mirrors the value-form checker's raw arm: the pointee's field
+/// resolves only when the read sits inside an `unsafe` block. The bare instance
+/// reports the same `E10600` the concrete `p.foo` twin reports; the wrapped
+/// control resolves the field and runs.
 #[test]
-fn should_accept_a_raw_pointer_projection_at_a_struct_instance() {
+fn should_reject_a_raw_pointer_projection_at_a_struct_instance_without_unsafe() {
     let source = r#"module spec.cc.memraw;
 
 struct S {
@@ -929,8 +930,32 @@ func main(): i32 {
     return get<raw S>(p);
 }
 "#;
-    let output = run_host("memraw", source);
-    assert_exit("memraw", &output, 7);
+    assert_rejected_once(
+        "memraw",
+        source,
+        "E10600",
+        &["dereference of a raw pointer requires 'unsafe'"],
+        &[],
+    );
+
+    let wrapped = r#"module spec.cc.memrawunsafe;
+
+struct S {
+    foo: i32;
+}
+
+func get<T>(x: T): i32 {
+    unsafe { return x.foo; }
+}
+
+func main(): i32 {
+    let s: S = S { foo: 7 };
+    let p: raw S = unsafe &s;
+    return get<raw S>(p);
+}
+"#;
+    let output = run_host("memrawunsafe", wrapped);
+    assert_exit("memrawunsafe", &output, 7);
 }
 
 /// A value-form enum member on an instance reports the unknown member.
@@ -7778,7 +7803,7 @@ func main(): i32 {
 enum E : u8 { A, B }
 
 func read<T>(x: T): i32 {
-    return i32(x.B);
+    unsafe { return i32(x.B); }
 }
 
 func main(): i32 {
@@ -7791,7 +7816,7 @@ func main(): i32 {
         "rawenuminstance",
         instance,
         "E10212",
-        &["'B' is not a member of 'raw E'", "main.clo:6:16"],
+        &["'B' is not a member of 'raw E'", "main.clo:6:25"],
         &[],
     );
 
@@ -7800,7 +7825,7 @@ func main(): i32 {
 enum E : u8 { A, B }
 
 func read<T>(x: T): i32 {
-    return i32(x.N);
+    unsafe { return i32(x.N); }
 }
 
 func main(): i32 {
@@ -7813,7 +7838,7 @@ func main(): i32 {
         "rawenuminstmissing",
         instance_missing,
         "E10212",
-        &["'N' is not a member of 'raw E'", "main.clo:6:16"],
+        &["'N' is not a member of 'raw E'", "main.clo:6:25"],
         &[],
     );
 

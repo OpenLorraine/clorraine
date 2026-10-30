@@ -122,6 +122,9 @@ impl<'a> Emitter<'a> {
                 value_move_outs,
                 adopting,
             } => {
+                if self.is_prefilled_materialization(value) {
+                    return;
+                }
                 // An adopting carrier's consumer owns the value, so the
                 // previous value must not be released on a re-fill: the
                 // destination's own cleanup is the sole owner.
@@ -146,7 +149,20 @@ impl<'a> Emitter<'a> {
                     self.emit_statement_discard_fill(&destination_c, inner);
                     return;
                 }
-                self.emit_guards(inner);
+                // An array literal's store core emits the guards for each
+                // element and for its fill at the position each is evaluated.
+                // A struct literal whose fields need stores emits them too.
+                // Emitting either here as well would evaluate a nested fresh
+                // root twice.
+                let stored_struct = match &inner.kind {
+                    ValueKind::StructLit { name, fields } => {
+                        self.struct_literal_needs_guard_stores(name, &inner_ty, fields)
+                    }
+                    _ => false,
+                };
+                if !matches!(inner.kind, ValueKind::ArrayLit { .. }) && !stored_struct {
+                    self.emit_guards(inner);
+                }
                 if let ValueKind::Conditional {
                     condition,
                     then_value,
@@ -342,6 +358,9 @@ impl<'a> Emitter<'a> {
                 adopting,
                 ..
             } => {
+                if self.is_prefilled_materialization(value) {
+                    return;
+                }
                 let inner_ty = self.substitute(&inner.ty);
                 let destination_c = self.materialize_destination(*temp, destination);
                 if !*adopting
@@ -493,6 +512,159 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// True when a materialization was already filled by a statement.
+    pub(super) fn is_prefilled_materialization(&self, value: &Value) -> bool {
+        matches!(
+            &value.kind,
+            ValueKind::Materialize {
+                temp: Some(temp),
+                ..
+            } if self.prefilled_materializations.contains(temp)
+        )
+    }
+
+    /// Fills the materializations a loop condition's selected right side
+    /// evaluates.
+    ///
+    /// The left `&&` operand has already been tested, so every statement here
+    /// runs only on the path that evaluates the right side. A conditional arm
+    /// is filled inside its own branch; a materialization directly on the
+    /// path is filled once. The temporary ids are recorded so the renderer
+    /// reads them instead of embedding a comma fill inside the callable
+    /// designator, which GCC 15 rejects as a sequence-point violation.
+    pub(super) fn prefill_loop_condition_materializations(&mut self, value: &Value) {
+        match &value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                // A nested conditional's declaration would live in the outer
+                // arm while the test reads it at the loop-body scope. Leave
+                // that residual on its inline guarded spelling.
+                if self.prefill_branch_depth > 0 {
+                    return;
+                }
+                // Only a pure condition can be frozen into a local safely.
+                // The fill may change a place the condition reads, so the
+                // final test must read the same frozen decision, never the
+                // condition expression a second time.
+                let condition_c = match &condition.kind {
+                    ValueKind::Place(_) => {
+                        let key = condition.as_ref() as *const Value as usize;
+                        if let Some(alias) = self.value_aliases.get(&key) {
+                            alias.clone()
+                        } else {
+                            let name = self.unique_local("__cl_loopcond");
+                            let source = self.value(condition);
+                            self.push(&format!("    bool {name} = {source};"));
+                            self.value_aliases.insert(key, name.clone());
+                            name
+                        }
+                    }
+                    ValueKind::Bool(_) | ValueKind::Temp(_) => self.value(condition),
+                    _ => return,
+                };
+                if !crate::ir::value_has_materialize(then_value)
+                    && !crate::ir::value_has_materialize(else_value)
+                {
+                    return;
+                }
+                self.push(&format!("    if ({condition_c}) {{"));
+                self.prefill_branch_depth += 1;
+                self.prefill_loop_condition_materializations(then_value);
+                self.prefill_branch_depth -= 1;
+                self.push("    } else {");
+                self.prefill_branch_depth += 1;
+                self.prefill_loop_condition_materializations(else_value);
+                self.prefill_branch_depth -= 1;
+                self.push("    }");
+            }
+            ValueKind::Materialize {
+                temp: Some(temp), ..
+            } if !self.prefilled_materializations.contains(temp) => {
+                self.emit_guards(value);
+                self.prefilled_materializations.insert(*temp);
+            }
+            ValueKind::Member { base, .. } => {
+                self.prefill_loop_condition_materializations(base);
+            }
+            ValueKind::Index { base, index } => {
+                self.prefill_loop_condition_materializations(base);
+                self.prefill_loop_condition_materializations(index);
+            }
+            ValueKind::Cast { value: inner, .. } | ValueKind::Unary { operand: inner, .. } => {
+                self.prefill_loop_condition_materializations(inner);
+            }
+            // The right side of a nested short-circuit is evaluated only if
+            // its own left operand decides. Prefilling into it would run an
+            // operand the program must skip; keep the old inline guarded
+            // spelling for that residual shape.
+            ValueKind::Binary {
+                op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr,
+                left,
+                ..
+            } => {
+                self.prefill_loop_condition_materializations(left);
+            }
+            ValueKind::Binary { left, right, .. } => {
+                self.prefill_loop_condition_materializations(left);
+                self.prefill_loop_condition_materializations(right);
+            }
+            ValueKind::Call {
+                args, receiver, ..
+            } => {
+                if let Some(receiver) = receiver {
+                    self.prefill_loop_condition_materializations(receiver);
+                }
+                for arg in args {
+                    self.prefill_loop_condition_materializations(arg);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.prefill_loop_condition_materializations(callable);
+                for arg in args {
+                    self.prefill_loop_condition_materializations(arg);
+                }
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                for arg in args {
+                    self.prefill_loop_condition_materializations(arg);
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.prefill_loop_condition_materializations(field);
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.prefill_loop_condition_materializations(element);
+                }
+                if let Some(fill) = fill {
+                    self.prefill_loop_condition_materializations(fill);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.prefill_loop_condition_materializations(inner);
+                    }
+                }
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.prefill_loop_condition_materializations(capture);
+                }
+            }
+            ValueKind::DiscardThen { effects, value } => {
+                self.prefill_loop_condition_materializations(effects);
+                self.prefill_loop_condition_materializations(value);
+            }
+            _ => {}
+        }
+    }
+
     /// Renders a value whose evaluation is conditional, with its guards
     /// embedded as expressions.
     ///
@@ -503,6 +675,9 @@ impl<'a> Emitter<'a> {
     /// or `?:` keeps its own conditional guards nested inside the same
     /// expression.
     pub(super) fn guarded_value(&self, value: &Value) -> String {
+        if self.is_prefilled_materialization(value) {
+            return self.value(value);
+        }
         match &value.kind {
             ValueKind::Binary {
                 op: BinaryOp::LogicalAnd,
@@ -1742,6 +1917,9 @@ impl<'a> Emitter<'a> {
                 value_move_outs,
                 adopting,
             } => {
+                if self.is_prefilled_materialization(value) {
+                    return;
+                }
                 // The carried value's type can still be opaque in a generic
                 // body — an unresolved conditional take's selected member —
                 // so the expression fill resolves it through the value the

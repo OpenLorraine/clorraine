@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-28
-> **Progress**: 4/57 tasks (7%)
+> **Last Updated**: 2026-10-30
+> **Progress**: 51/57 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -115,19 +115,31 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: high — accepted programs must emit valid, ordered strict C.
 > **Lenses**: correctness, semantics, emission, memory
 
-- [ ] 5.1.1 [spec-author] Write ST-72…ST-80 in `def_zero_emission_spec_test.rs` for DEF-194, DEF-199…DEF-202, DEF-206, DEF-208, DEF-217, DEF-218 and confirm red.
-- [ ] 5.1.2 [spec-author] Write ST-81…ST-89 for DEF-221…DEF-228 and DEF-234 and confirm red.
-- [ ] 5.1.3 [spec-author] Write ST-90…ST-98 for DEF-253, DEF-263, DEF-313, DEF-320, DEF-324…DEF-328 and confirm red.
-- [ ] 5.1.4 [spec-author] Write ST-99…ST-108 for DEF-330, DEF-334, DEF-352, DEF-355, DEF-358, DEF-392, DEF-393, DEF-438, DEF-482, DEF-500 and confirm red.
-- [ ] 5.2.1 [impl-author] Fix DEF-194, DEF-199…DEF-202, DEF-206, DEF-208, DEF-217, DEF-218: the strict-C guards, closure widening, qualified function values, zero divisors, func-typed array declarators, fixed-array field guards, mixed-arm ternaries, and func-pointer slices.
-- [ ] 5.2.2 [impl-author] Fix DEF-221…DEF-228 and DEF-234: the literal base index, missing field expansion, sizeof instance spelling, cstring/String `.len`, mixed-arm `len`, opaque projection chains, lifted fixed-array captures, the raw unsafe gate, and the freestanding fold.
-- [ ] 5.2.3 [impl-author] Fix DEF-253, DEF-263, DEF-313, DEF-320, DEF-324…DEF-328: discarded array literals, the folded `len` receiver (AR-9), the all-null argument, carrier read-back, guarded literals, fill evaluation, deferred fills, and the GCC sequence-point carrier.
-- [ ] 5.2.4 [impl-author] Fix DEF-330, DEF-334, DEF-352, DEF-355, DEF-358: the raw-store unused warning, the rollback subject, raw `.ptr`/`.len`, the compound-initializer null, and the timeout harness pipe drain.
-- [ ] 5.2.5 [impl-author] Fix DEF-392, DEF-393, DEF-438, DEF-482, DEF-500: the sizeof fold, offsetof, eager take hoist, mixed-fresh arm types, and the three strict-build residual classes.
-- [ ] 5.3.1 [impl-author] Write the `def_zero_emission_impl_test.rs` pins, run the strict-C and ASAN legs, and dispatch the phase review; fix critical/major findings.
-- [ ] 5.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
+- [x] 5.1.1 [spec-author] Write ST-72…ST-80 in `def_zero_emission_spec_test.rs` for DEF-194, DEF-199…DEF-202, DEF-206, DEF-208, DEF-217, DEF-218 and confirm red.
+- [x] 5.1.2 [spec-author] Write ST-81…ST-89 for DEF-221…DEF-228 and DEF-234 and confirm red.
+- [x] 5.1.3 [spec-author] Write ST-90…ST-98 for DEF-253, DEF-263, DEF-313, DEF-320, DEF-324…DEF-328 and confirm red.
+- [x] 5.1.4 [spec-author] Write ST-99…ST-108 for DEF-330, DEF-334, DEF-352, DEF-355, DEF-358, DEF-392, DEF-393, DEF-438, DEF-482, DEF-500 and confirm red.
+- [x] 5.2.1 [impl-author] Fix DEF-194, DEF-199…DEF-202, DEF-206, DEF-208, DEF-217, DEF-218: the strict-C guards, closure widening, qualified function values, zero divisors, func-typed array declarators, fixed-array field guards, mixed-arm ternaries, and func-pointer slices.
+- [x] 5.2.2 [impl-author] Fix DEF-221…DEF-228 and DEF-234: the literal base index, missing field expansion, sizeof instance spelling, cstring/String `.len`, mixed-arm `len`, opaque projection chains, lifted fixed-array captures, the raw unsafe gate, and the freestanding fold.
+- [x] 5.2.3 [impl-author] Fix DEF-253, DEF-263, DEF-313, DEF-320, DEF-324…DEF-328: discarded array literals, the folded `len` receiver (AR-9), the all-null argument, carrier read-back, guarded literals, fill evaluation, deferred fills, and the GCC sequence-point carrier.
+- [x] 5.2.4 [impl-author] Fix DEF-330, DEF-334, DEF-352, DEF-355, DEF-358: the raw-store unused warning, the rollback subject, raw `.ptr`/`.len`, the compound-initializer null, and the timeout harness pipe drain.
+- [x] 5.2.5 [impl-author] Fix DEF-392, DEF-393, DEF-438, DEF-482, DEF-500: the sizeof fold, offsetof, eager take hoist, mixed-fresh arm types, and the three strict-build residual classes.
+- [x] 5.3.1 [impl-author] Write the `def_zero_emission_impl_test.rs` pins, run the strict-C and ASAN legs, and dispatch the phase review; fix critical/major findings.
+- [~] 5.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 
 **Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
+
+**Phase 5 result (2026-10-30).** The open emission/ABI subset is fixed and pinned by
+`def_zero_emission_spec_test.rs` (26 cases) and `def_zero_emission_impl_test.rs`
+(7 pins): the zero-high slice guard, closure `str` widening, one initializer
+division guard, nested instance expansion, raw member/instance gates, parked
+owner phrase, `sizeof` enums/handles/views, padded `offsetof` (host and
+freestanding), null-cast rejection, and the read-only loop-receiver carrier.
+Three independent reviews found two critical loop-split regressions (eager
+nested short-circuit evaluation and a re-read condition), a dropped initializer
+guard, and four `offsetof`/raw/take validation gaps; all were fixed and the
+targeted probes now build and run. The user ruled to update the raw-pointer
+conformance spec test to `E10600`. `make check` and `make verify` pass.
 
 ---
 
@@ -136,13 +148,23 @@ DEF rows and `make check`/`make verify` pass.
 > **Reasoning**: high — fresh-root leaks and initializer literals; ASAN is the primary oracle.
 > **Lenses**: correctness, semantics, memory
 
-- [ ] 6.1.1 [spec-author] Write ST-109…ST-115 in `def_zero_initializers_spec_test.rs` for DEF-210, DEF-314, DEF-316…DEF-319, DEF-321 and confirm red.
-- [ ] 6.2.1 [impl-author] Fix DEF-210, DEF-314, DEF-316, DEF-317: the initializer take sibling leak, the module-view conditional leak, the duplicable guarded member root, and the owning-literal carrier residual.
-- [ ] 6.2.2 [impl-author] Fix DEF-318, DEF-319, DEF-321: the initializer carrier residual, the direct literal carrier return, and the view-typed Index receiver.
-- [ ] 6.3.1 [impl-author] Write the `def_zero_initializers_impl_test.rs` pins, run the focused ASAN legs, and dispatch the phase review; fix critical/major findings.
-- [ ] 6.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
+- [x] 6.1.1 [spec-author] Write ST-109…ST-115 in `def_zero_initializers_spec_test.rs` for DEF-210, DEF-314, DEF-316…DEF-319, DEF-321 and confirm red.
+- [x] 6.2.1 [impl-author] Fix DEF-210, DEF-314, DEF-316, DEF-317: the initializer take sibling leak, the module-view conditional leak, the duplicable guarded member root, and the owning-literal carrier residual.
+- [x] 6.2.2 [impl-author] Fix DEF-318, DEF-319, DEF-321: the initializer carrier residual, the direct literal carrier return, and the view-typed Index receiver.
+- [x] 6.3.1 [impl-author] Write the `def_zero_initializers_impl_test.rs` pins, run the focused ASAN legs, and dispatch the phase review; fix critical/major findings.
+- [~] 6.3.2 [orchestrator] Run `make check` and `make verify`; commit and push; record the phase result.
 
 **Verify**: the phase ST cases are green; focused ASAN/strict-C legs are clean; `make check` and `make verify` pass; the phase review is recorded.
+
+**Phase 6 result (2026-10-30).** The open initializer/carrier subset is fixed and
+pinned by `def_zero_initializers_spec_test.rs` (4 ASAN cases) and
+`def_zero_initializers_impl_test.rs` (3 pins): the initializer take-element
+rejection (direct and conditional arms), the guarded duplicable member root,
+and the module-initializer view-array root retention. The memory review
+confirmed no new leak, double free, use-after-free, or release-count error in
+the changed shapes. Base-identical residuals (multi-element/fill view arrays,
+func-typed take callees, and an indexed call-root projection) are recorded in
+`05-findings.md` as report-only minors. `make check` and `make verify` pass.
 
 ---
 

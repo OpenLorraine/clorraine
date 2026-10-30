@@ -1248,8 +1248,12 @@ impl<'a> Emitter<'a> {
             }) if self.init_literal_locals.contains(name)
         );
         if accessors.is_empty()
-            || !(matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
-                || literal_root)
+            || !(matches!(
+                cursor.kind,
+                ValueKind::Call { .. }
+                    | ValueKind::ClosureCall { .. }
+                    | ValueKind::StructLit { .. }
+            ) || literal_root)
             || !self.needs_drop(&cursor.ty)
             // The read position itself need not own storage: a view position
             // reads storage the root never owned, so the root still binds for
@@ -1961,6 +1965,11 @@ impl<'a> Emitter<'a> {
             ty: ty.clone(),
         };
         let target_c = self.place(&target);
+        let saved_walked_guards = self.init_walked_guards;
+        // Under a branch guard the walk leaves operand guards to the store
+        // core, which runs them inside the arm. Only the unguarded path has
+        // already emitted them.
+        self.init_walked_guards = guard.is_none();
         match guard {
             Some(enclosing) => {
                 self.push(&format!("    if ({enclosing}) {{"));
@@ -1969,6 +1978,7 @@ impl<'a> Emitter<'a> {
             }
             None => self.emit_init_literal_fields(&target_c, &fields),
         }
+        self.init_walked_guards = saved_walked_guards;
         if !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(&ty) {
             // The literal owns fields, so the release pass frees them at the
             // init function's end; a view destination registers the local
@@ -1976,6 +1986,46 @@ impl<'a> Emitter<'a> {
             self.init_owners.push((name, ty.clone()));
         }
         Value::new(ty, ValueKind::Place(target))
+    }
+
+    /// Retains the fresh roots a view-array field's elements read.
+    ///
+    /// A module initializer's view destination keeps the storage its views
+    /// point into. An element such as `mk().v` reads one member of a fresh
+    /// owning root, so the root binds into an init local the release pass
+    /// empties and the read member is emptied after the array store: the
+    /// view keeps that member's bytes while the root's other fields free.
+    fn retain_view_array_field_elements(
+        &mut self,
+        field: &Value,
+        field_ty: &Ty,
+    ) -> (Value, Vec<String>) {
+        let TyKind::Array { element, .. } = &field_ty.kind else {
+            return (field.clone(), Vec::new());
+        };
+        if !crate::borrow::is_view_like(element) {
+            return (field.clone(), Vec::new());
+        }
+        let ValueKind::ArrayLit { elements, fill } = &field.kind else {
+            return (field.clone(), Vec::new());
+        };
+        let mut stored_elements = Vec::with_capacity(elements.len());
+        let mut move_outs = Vec::new();
+        for element in elements {
+            let (stored, mut moves) = self.retain_view_member_root(element);
+            stored_elements.push(stored);
+            move_outs.append(&mut moves);
+        }
+        (
+            Value::new(
+                field.ty.clone(),
+                ValueKind::ArrayLit {
+                    elements: stored_elements,
+                    fill: fill.clone(),
+                },
+            ),
+            move_outs,
+        )
     }
 
     /// Stores a walked literal's fields into a rendered C lvalue.
@@ -1992,8 +2042,23 @@ impl<'a> Emitter<'a> {
             let field_ty = self.substitute(&field.ty);
             let field_c = format!("{target_c}.{field_name}");
             if field_ty.is_fixed_array() {
+                // A view-array field in a module initializer reads fresh
+                // members (`names: [mk().v]`). Retain each element's root and
+                // empty the read member after the store, so the root's other
+                // owning fields release while the view keeps its backing.
+                let (stored_field, move_outs) =
+                    self.retain_view_array_field_elements(field, &field_ty);
                 let field_target = ArrayTarget::object(&field_c);
-                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false, false);
+                self.emit_fixed_array_assign_to(
+                    &field_target,
+                    &field_ty,
+                    &stored_field,
+                    false,
+                    false,
+                );
+                for move_out in move_outs {
+                    self.push(&format!("    {move_out};"));
+                }
                 continue;
             }
             if let ValueKind::StructLit {
@@ -2504,8 +2569,21 @@ impl<'a> Emitter<'a> {
                         && !constant
                         && !self.needs_drop(&walked.ty)
                     {
+                        // A view-array field stored before a later effect can
+                        // read fresh members (`names: [mk().v]`). Retain each
+                        // element's root and empty the read member after the
+                        // array local is filled, so the root's other owning
+                        // fields release while the view keeps its backing.
+                        let (walked, move_outs) = if self.init_retain_owners {
+                            self.retain_view_array_field_elements(&walked, &walked.ty)
+                        } else {
+                            (walked, Vec::new())
+                        };
                         let zero = self.empty_state(&walked.ty);
                         let (_, local) = self.materialize_init_local(&walked, guard, &zero);
+                        for move_out in move_outs {
+                            self.push(&format!("    {move_out};"));
+                        }
                         local
                     } else {
                         walked
@@ -2839,7 +2917,22 @@ impl<'a> Emitter<'a> {
                 let mut type_arg = None;
                 for arg in args {
                     match arg {
-                        IntrinsicArg::Expr(inner) => values.push(self.lower_global(module, inner)),
+                        IntrinsicArg::Expr(inner) => {
+                            // `offsetof`'s field spelling is not a value read.
+                            // A module binding of the same name must not turn
+                            // it into a place whose name the C macro cannot
+                            // spell.
+                            if name == "offsetof" {
+                                if let ExprKind::Name(field) = &inner.kind {
+                                    values.push(Value::new(
+                                        Ty::unknown(),
+                                        ValueKind::Path(vec![field.clone()]),
+                                    ));
+                                    continue;
+                                }
+                            }
+                            values.push(self.lower_global(module, inner));
+                        }
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve_written(written)),
                     }
                 }

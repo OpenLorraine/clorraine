@@ -2649,13 +2649,25 @@ fn should_store_a_loop_condition_literal_arm_wholesale() {
     assert_contains(
         tag,
         body,
-        "__cl_tmp0 = (ClH){ cl_spec_cprimpl_loopcondwalk_addOne, cl_std_text_stringOf(cl_str(\"x\")) }",
+        "__cl_arm_2.call = cl_spec_cprimpl_loopcondwalk_addOne;",
     );
     assert_contains(
         tag,
         body,
-        "__cl_tmp0 = (ClH){ cl_spec_cprimpl_loopcondwalk_addOne, cl_std_text_stringOf(cl_str(\"y\")) }",
+        "__cl_arm_2.s = cl_std_text_stringOf(cl_str(\"x\"));",
     );
+    assert_contains(tag, body, "__cl_tmp0 = __cl_arm_2;");
+    assert_contains(
+        tag,
+        body,
+        "__cl_arm_3.call = cl_spec_cprimpl_loopcondwalk_addOne;",
+    );
+    assert_contains(
+        tag,
+        body,
+        "__cl_arm_3.s = cl_std_text_stringOf(cl_str(\"y\"));",
+    );
+    assert_contains(tag, body, "__cl_tmp0 = __cl_arm_3;");
     assert_absent(tag, body, "__cl_tmp1");
     assert_release_after(
         tag,
@@ -4925,15 +4937,22 @@ fn should_settle_a_mixed_arm_receiver_at_argument_position_zero() {
         &emitted,
         "cl_spec_cprimpl_implrecvsettle_looped(bool c, ClH a, i32 k)\n{",
     );
-    // A loop condition's fills live in the condition's own per-iteration
-    // placement, so the borrowing receiver keeps its deferred spelling: the
-    // fresh arm binds its own temporary and the place arm stays a read.
+    // A loop condition whose right `&&` side carries a conditional receiver
+    // splits into two tests: the fresh arm fills its temporary in a statement
+    // inside the evaluated branch, and the designator reads the temporary.
+    // The inline comma fill is gone, so GCC 15 no longer reports a
+    // sequence-point violation.
+    assert_contains(tag, looped, "bool __cl_loopcond_");
+    assert_contains(tag, looped, " = c;");
+    assert_contains(tag, looped, "if (__cl_loopcond_");
     assert_contains(
         tag,
         looped,
-        "(__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH())",
+        "__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH();",
     );
-    assert_contains(tag, looped, " : a).call)(5)");
+    assert_contains(tag, looped, "(__cl_loopcond_");
+    assert_contains(tag, looped, " ? __cl_tmp0 : a).call)(5)");
+    assert_absent(tag, looped, "(__cl_tmp0 = ");
     assert_absent(tag, looped, "(__cl_tmp1 = ");
     let eager = function_body(
         tag,
@@ -5126,7 +5145,7 @@ fn should_re_emit_the_settled_receiver_and_raw_store_programs_byte_identically()
         (
             "implrecvsettle",
             SETTLED_RECEIVER_SOURCE,
-            "(__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH())",
+            "__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH();",
         ),
         ("implrawstore", RAW_STORE_SOURCE, "*(&(*(q))) = 9;"),
     ] {

@@ -970,12 +970,13 @@ func main(): i32 {
     assert_exit("hoistbag-run", &output, 2);
 }
 
-/// A guarded element that needs no drop keeps its expression-form drop.
+/// A guarded element releases its previous buffer before the re-store.
 ///
-/// `Array<i32>` has an expression-form drop, so the guarded store still carries
-/// it and no statement hoist is emitted.
+/// The loop condition splits its `&&` operands, so the growable element's
+/// previous value is released by a statement before the right test. The
+/// element's count needs no separate reset.
 #[test]
-fn should_keep_the_expression_drop_when_a_guarded_element_needs_no_drop() {
+fn should_release_a_guarded_element_before_its_restore() {
     let source = r#"module impl.rdc.noopdrop;
 
 import { Array, arrayNew } from std.mem;
@@ -1000,11 +1001,15 @@ func main(): i32 {
     assert_contains(
         "noopdrop",
         &emitted,
-        "(__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0)",
+        "if (__cl_tmp0[0].data) { FreeBuffer(__cl_tmp0[0].data); }",
+    );
+    assert!(
+        !emitted.contains("(__cl_tmp0[0].data ? (FreeBuffer("),
+        "noopdrop: the inline expression drop is replaced by the statement fill"
     );
     assert!(
         !emitted.contains("__cl_tmp0[0].count = 0;"),
-        "noopdrop: an expression-form drop must not be hoisted"
+        "noopdrop: the element count needs no separate reset"
     );
     let output = run_memory("noopdrop-run", source);
     assert_exit("noopdrop-run", &output, 2);

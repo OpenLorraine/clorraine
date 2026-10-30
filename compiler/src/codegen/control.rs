@@ -24,7 +24,9 @@
 
 use std::collections::BTreeSet;
 
-use crate::ir::{self, BlockId, BranchShape, LoopKind, Statement, Terminator, Value};
+use crate::ir::{
+    self, BlockId, BranchShape, LoopKind, Statement, Terminator, Value, ValueKind,
+};
 
 use super::Emitter;
 
@@ -80,6 +82,8 @@ impl<'a> Emitter<'a> {
         has_cleanup: bool,
     ) {
         self.prepare_regions(function);
+        self.prefilled_materializations.clear();
+        self.value_aliases.clear();
         self.pending_labels.clear();
         self.suppress_output = true;
         self.emitted.clear();
@@ -128,6 +132,50 @@ impl<'a> Emitter<'a> {
                 };
                 self.loop_entry.insert(entry, block.id);
             }
+        }
+    }
+
+    /// Emits a `while` header and its per-iteration test.
+    ///
+    /// A condition whose right `&&` operand contains a materialization cannot
+    /// ride one C test: the fill is a statement, and the deferred comma form
+    /// triggers GCC's sequence-point warning on a callable receiver. The two
+    /// operands become two tests in the unconditional loop body, which keeps
+    /// the left-to-right short-circuit order and gives the right side a
+    /// statement position before its own test.
+    fn emit_while_header(&mut self, condition: &Value) {
+        self.prefilled_materializations.clear();
+        self.value_aliases.clear();
+        self.prefill_branch_depth = 0;
+        if let ValueKind::Binary {
+            op: crate::ast::BinaryOp::LogicalAnd,
+            left,
+            right,
+        } = &condition.kind
+        {
+            if ir::value_has_materialize(right) {
+                self.push("    while (1) {");
+                self.emit_guards(left);
+                let left_c = self.value(left);
+                self.push(&format!("    if (!({left_c})) break;"));
+                self.prefill_loop_condition_materializations(right);
+                self.emit_guards(right);
+                let right_c = self.value(right);
+                self.push(&format!("    if (!({right_c})) break;"));
+                return;
+            }
+        }
+        if ir::value_needs_guards(condition) {
+            // The guard has to run before every test, so the test moves into
+            // the body and the header becomes unconditional.
+            self.push("    while (1) {");
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("    if (!({condition_c})) break;"));
+        } else {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("    while ({condition_c}) {{"));
         }
     }
 
@@ -426,18 +474,7 @@ impl<'a> Emitter<'a> {
         match kind {
             LoopKind::While => {
                 self.emit_line_directive(span);
-                if ir::value_needs_guards(condition) {
-                    // The guard has to run before every test, so the test moves
-                    // into the body and the header becomes unconditional.
-                    self.push("    while (1) {");
-                    self.emit_guards(condition);
-                    let condition_c = self.value(condition);
-                    self.push(&format!("    if (!({condition_c})) break;"));
-                } else {
-                    self.emit_guards(condition);
-                    let condition_c = self.value(condition);
-                    self.push(&format!("    while ({condition_c}) {{"));
-                }
+                self.emit_while_header(condition);
                 let inner = ctx.in_loop(branch, exit);
                 self.emit_flow(function, body, &body_stop, inner);
                 self.push("    }");
