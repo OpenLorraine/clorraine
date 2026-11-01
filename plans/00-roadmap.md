@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: Done
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-30
+> **Last Updated**: 2026-11-01
 > **Progress**: 546/546 rows done; 0 open (0 Executing; 0 Backlog: 0 critical + 0 major + 0 minor); 0 Deferred
 > **CodeOps Artifact Schema**: 1
 
@@ -575,6 +575,7 @@
 | ↳ DEF-537 | Func-typed global/field initializer calls skip the borrow rule | — | [global-borrow-conformance](global-borrow-conformance/00-index.md) | Done | ✅ | 2026-10-21 | 🟠 major, pre-existing: a module initializer `let g = f(s)` through a `func(...)` global, or `let g = h.cb(s)` through a func-typed field, is accepted while the function-body twin reports `E10038` for a non-`const` global passed to an unmarked parameter; the walk resolves a free function of the same name or skips the field signature. Fix direction: resolve the global/field signature and judge every argument as an unmarked lend. **Fixed in batch U (`167ebe6`)**: the initializer walk resolves a func-typed global's or field's own signature and judges every written argument; a non-`const` global to an unmarked parameter reports `E10038`, a `const` global stays accepted. `should_apply_the_borrow_rule_to_a_func_typed_initializer_callee`. Found by the batch-T phase-3 correctness and semantics reviews (T7/N4) |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 | PLAN-14 | Generated-C optimization | — | — | Backlog | ⬜ | 2026-10-03 22:17 | Trigger: only after the open DEF backlog closes and the semantics freeze (no remaining plan changes the emitted ABI/semantics); optimize only against a measured need (a visibly slow or oversized Amiga program), never on feel. First build the benchmark harness — host timing, FS-UAE instruction/cycle counts, `.text`/struct sizes — then plan from those numbers. Guard every optimization with the emission-integrity auditor (behavior preservation, base-vs-head emission diff), the memory-safety auditor (copy/move elision), and a deterministic benchmark script; dispatch the global performance-auditor per phase for `spec/17-codegen` ABI and over-optimization judgment. Expected cost: the shape-pinning implementation suites migrate with every emission optimization. Separate axis: compiler compile-time speed, evaluated only if it becomes a workflow bottleneck |
+| PLAN-15 | v1.0 production readiness | — | [v1-production-readiness](v1-production-readiness/00-index.md) | Plan Preflighted | 🔬 | 2026-11-01 | Preflight passed with notes: 40 findings resolved across 3 iterations; 45 main tasks plus a 2-task conditional publish sub-plan; AR-12 resolved to v1.0.0/x86_64; AR-13 gate before Phase 5. Deferred language features and PLAN-14 stay out |
 
 ## Batch N accounting (2026-10-19)
 
