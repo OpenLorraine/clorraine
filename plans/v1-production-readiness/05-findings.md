@@ -366,10 +366,11 @@ directly.
 | CI | no push and no run URL claimed; local host-only workflow validation |
 | Security | no secrets, NDK, ROM, or new network/credential surface |
 
-**Conditional publish:** 0/2, explicitly blocked. No tag, binary artifact,
-checksum file, or release note was created; publication requires explicit user
-authorization. The main 45-task plan closes production-ready, as the success
-criteria allow.
+**Conditional publish:** 2/2 complete. The v1.0.0 tag, source tarball, Linux
+x86_64 tarball, `SHA256SUMS`, release notes, and changelog are published at
+<https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0>. The release
+binary reports `clc 1.0.0` and runs the hello-world program. The main 45-task
+plan and the conditional publish sub-plan are both closed.
 
 **Close-out notes applied:** the roadmap PLAN-15 row and header are current;
 `RELEASE.md` records 92 passing groups; the parent index records all 15 AR

@@ -4,7 +4,7 @@
 > stabilise the specification, add the simplified verification infrastructure, execute the
 > already-planned DX slice, complete the bounded PLAN-13 acceptance slice, and prepare the
 > MIT-licensed release.
-> **Status**: Done (45/45; conditional publish blocked)
+> **Status**: Done (45/45; v1.0.0 published)
 > **Created**: 2026-10-31
 > **Implements**: PLAN-15 (standalone programme; no upstream RD)
 > **CodeOps Artifact Schema**: 1
@@ -155,9 +155,9 @@ file exists.
 
 | Step | Owner | Notes |
 |---|---|---|
-| Authorize a commit of the completed work | User | Everything is uncommitted; no commit mode was selected |
-| Authorize publication (tag, x86_64 tarball, `SHA256SUMS`, notes) | User | Conditional tasks C.1.1 and C.1.2 are marked blocked for this reason |
-| Refresh the specialist-coverage snapshot (`analyze-agents`) | Executor, optional | `AGENTS.md` records a 51-folder snapshot; the tree has 53 |
+| Commit the completed work | Done | Main commit `f76b6ac`; this follow-up records the publication |
+| Publish the release | Done | [v1.0.0](https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0), with source and Linux x86_64 tarballs and `SHA256SUMS` |
+| Refresh the specialist-coverage snapshot (`analyze-agents`) | Done | Checked 2026-11-04; 53 plan folders recorded; no new specialist proposed |
 
 **Accepted residuals:** fetched `Message` reply-port lifetime is a documented contract; the
 inline owned-call-result leak and imported-handle cast emission are pre-existing and base-identical;

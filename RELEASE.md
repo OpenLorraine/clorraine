@@ -20,10 +20,10 @@ close with this checklist complete even when no artifact has been published.
 The version of record is set in `compiler/Cargo.toml` and mirrored in `Cargo.lock`. The release is
 manual; automation is out of scope for the first tag.
 
-**Publication status (2026-11-04):** not published. No tag, binary artifact, checksum file, or
-release note has been created, and the conditional publish steps below remain unchecked. The
-production-readiness plan closes with the main 45 tasks; publication needs explicit user
-authorization.
+**Publication status (2026-11-04):** **published** as
+[v1.0.0](https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0). The tag, source tarball,
+Linux x86_64 tarball, `SHA256SUMS`, release notes, and changelog are attached. The conditional
+publish steps below are complete.
 
 ## Pre-release gates
 
@@ -69,16 +69,16 @@ Current evidence (2026-11-03):
 These steps run only after the user authorizes publication or after the final production gate
 passes. They are not part of the 45-task main plan.
 
-- [ ] Confirm the version of record is `1.0.0` in `compiler/Cargo.toml` and `Cargo.lock`
-- [ ] Build the release binaries for Linux x86_64 and smoke-test them
-- [ ] Assert the exact output of `clc --version` is `clc 1.0.0`
-- [ ] Compile and run a hello-world program with the release binary
-- [ ] Create the `v1.0.0` source tag
-- [ ] Package the source and the Linux x86_64 binary tarball
-- [ ] Write `SHA256SUMS` for every published artifact
-- [ ] Add `RELEASE-NOTES.md` and one `CHANGELOG.md` entry
-- [ ] Confirm no NDK content, ROM, or other restrictively licensed third-party file is redistributed
-- [ ] Attach the notes, changelog, and checksums to the release page
+- [x] Confirm the version of record is `1.0.0` in `compiler/Cargo.toml` and `Cargo.lock`
+- [x] Build the release binaries for Linux x86_64 and smoke-test them
+- [x] Assert the exact output of `clc --version` is `clc 1.0.0`
+- [x] Compile and run a hello-world program with the release binary
+- [x] Create the `v1.0.0` source tag
+- [x] Package the source and the Linux x86_64 binary tarball
+- [x] Write `SHA256SUMS` for every published artifact
+- [x] Add `RELEASE-NOTES.md` and one `CHANGELOG.md` entry
+- [x] Confirm no NDK content, ROM, or other restrictively licensed third-party file is redistributed
+- [x] Attach the notes, changelog, and checksums to the release page
 
 If publication cannot run, record the reason in the plan and release notes. The main plan still
 closes production-ready; only publication remains blocked.

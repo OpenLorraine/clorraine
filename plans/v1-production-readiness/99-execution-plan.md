@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-04 01:10
-> **Progress**: 45/45 tasks (100%); 0/2 conditional publish tasks (blocked: no user authorization)
+> **Last Updated**: 2026-11-04 08:20
+> **Progress**: 45/45 tasks (100%); 2/2 conditional publish tasks complete
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -257,8 +257,8 @@ production-ready even if the artifact cannot be published.
 > explicitly authorizes publication. If it cannot run, the main plan still closes
 > production-ready; the release remains blocked with the reason recorded.
 
-- [!] C.1.1 Confirm the AR-12 decision (v1.0.0; source tag + Linux x86_64 tarball + `SHA256SUMS`) and the Cargo `version` of record set in 6.1.2 — `compiler/Cargo.toml`, `RELEASE.md` — Blocked: no user authorization
-- [!] C.1.2 Build and smoke-test the x86_64 artifact; assert the exact `--version` output is `clc 1.0.0`; create the source tag, record checksums, and attach `RELEASE-NOTES.md` and the `CHANGELOG.md` entry — `RELEASE-NOTES.md`, `CHANGELOG.md` — Blocked: no user authorization
+- [x] C.1.1 Confirm the AR-12 decision (v1.0.0; source tag + Linux x86_64 tarball + `SHA256SUMS`) and the Cargo `version` of record set in 6.1.2 — `compiler/Cargo.toml`, `RELEASE.md` ✅ (completed: 2026-11-04 08:20)
+- [x] C.1.2 Build and smoke-test the x86_64 artifact; assert the exact `--version` output is `clc 1.0.0`; create the source tag, record checksums, and attach `RELEASE-NOTES.md` and the `CHANGELOG.md` entry — `RELEASE-NOTES.md`, `CHANGELOG.md` ✅ (completed: 2026-11-04 08:20)
 
 **Deliverables**:
 - v1.0.0 source tag and Linux x86_64 binary tarball
