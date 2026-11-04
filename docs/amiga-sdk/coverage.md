@@ -6,7 +6,7 @@
 | Bundle | Tier | Min OS | Done | Total | Must open | Tracking |
 |---|---|---|---|---|---|---|
 | 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
-| 1-native-video | core | 1.3 | 0 | 11 | 8 | #2 |
+| 1-native-video | core | 1.3 | 11 | 11 | 0 | #2 |
 | 2-sprites | core | 1.3 | 0 | 6 | 3 | #3 |
 | 3-audio-input | core | 1.3 | 0 | 8 | 5 | #4 |
 | 4-text-layers | core | 1.3 | 0 | 6 | 4 | #5 |
@@ -38,17 +38,17 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-BASE-010 | A500 memory and frame budget baseline | should | missing | memory_budget |
-| SDK-VID-001 | Chip RAM allocator (MEMF_CHIP) | must | missing | chip_mem |
-| SDK-VID-002 | Bitmap create/free and plane access | must | missing | bitmap |
-| SDK-VID-003 | Bitmap fill/plot/line | must | missing | bitmap_draw |
-| SDK-VID-004 | Blitter copy and masked copy | must | missing | blitter |
-| SDK-VID-005 | Copper list builder/install/restore | must | missing | copper |
-| SDK-VID-006 | VBlank, double buffer, screen flip | must | missing | display |
-| SDK-VID-007 | 4-bit palette (AGA 24-bit optional) | should | missing | palette |
-| SDK-VID-008 | sin/cos/sqrt helpers | should | missing | math |
-| SDK-VID-009 | Frame checksum oracle | must | missing | frame_checksum |
-| SDK-VID-010 | Boing acceptance | must | missing | boing |
+| SDK-BASE-010 | A500 memory and frame budget baseline | should | done | boing |
+| SDK-VID-001 | Chip RAM allocator (MEMF_CHIP) | must | done | chip_mem |
+| SDK-VID-002 | Bitmap create/free and plane access | must | done | bitmap |
+| SDK-VID-003 | Bitmap fill/plot/line | must | done | bitmap_draw |
+| SDK-VID-004 | Blitter copy and masked copy | must | done | blitter |
+| SDK-VID-005 | Copper list builder/install/restore | must | done | copper |
+| SDK-VID-006 | VBlank, double buffer, screen flip | must | done | display |
+| SDK-VID-007 | 4-bit palette (AGA 24-bit optional) | should | done | palette |
+| SDK-VID-008 | sin/cos/sqrt helpers | should | done | math |
+| SDK-VID-009 | Frame checksum oracle | must | done | frame_checksum |
+| SDK-VID-010 | Boing acceptance | must | done | boing |
 
 ## 2-sprites — Sprites and collision
 

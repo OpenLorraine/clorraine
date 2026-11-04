@@ -1,4 +1,4 @@
-//! Amiga DOS primitives: scheduler delays measured in display ticks.
+//! Amiga DOS primitives: scheduler delays and the tick counter.
 //!
 //! This module belongs to the hosted-amiga profile; the host profile has no
 //! AmigaOS scheduler, so the module is not available there. The wrapper reaches
@@ -13,6 +13,7 @@ module std.amiga.dos;
 
 ffi stddos {
     func cl_delay_ticks(ticks: u32): void;
+    func cl_dos_ticks(): u32;
 }
 
 /// Suspends the calling task for `ticks` vertical-blank intervals.
@@ -20,4 +21,12 @@ ffi stddos {
 /// A delay of zero yields the scheduler without waiting a measurable amount.
 export func delayTicks(ticks: u32): void {
     cl_delay_ticks(ticks);
+}
+
+/// Returns the DOS tick counter, in 1/50 s units on PAL.
+///
+/// The counter wraps after about 994 days; subtract two readings to measure an
+/// interval. One vertical blank is one tick.
+export func ticks(): u32 {
+    return cl_dos_ticks();
 }

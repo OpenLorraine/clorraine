@@ -29,6 +29,10 @@
 #include <proto/intuition.h>
 #include <intuition/screens.h>
 #include <graphics/rastport.h>
+#include <graphics/gfx.h>
+#include <graphics/gfxbase.h>
+#include <graphics/gfxmacros.h>
+#include <graphics/view.h>
 /* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
@@ -45,11 +49,22 @@
  * of including `proto/dos.h`, which would also declare the file functions with
  * signatures the generated ABI prototypes cannot match. */
 extern void __stdargs Delay(LONG timeout);
+extern void __stdargs DateStamp(struct DateStamp *stamp);
 
 /* Suspends the calling task for `ticks` vertical-blank intervals. */
 void cl_delay_ticks(ULONG ticks)
 {
     Delay((LONG)ticks);
+}
+
+/* Returns the DOS tick counter (1/50 s on PAL) as one 32-bit value. */
+ULONG cl_dos_ticks(void)
+{
+    struct DateStamp stamp;
+    DateStamp(&stamp);
+    return (ULONG)stamp.ds_Days * 24UL * 60UL * 3000UL +
+           (ULONG)stamp.ds_Minute * 3000UL +
+           (ULONG)stamp.ds_Tick;
 }
 
 /* Zero one object through its address. A macro so a call site writes the
@@ -776,4 +791,1006 @@ void cl_free_message(void *message_handle)
 void cl_release_message(void *message_handle)
 {
     cl_free_message(message_handle);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Native video: chip memory, bitmaps, blitter, copper, and custom displays.  */
+/*                                                                           */
+/* The public handles are opaque pointers to these private records. The      */
+/* application never sees a `BitMap`, `ViewPort`, `UCopList`, or `ColorMap`.  */
+/* A `Display` borrows two caller-owned bitmaps; it never frees them.         */
+/* ------------------------------------------------------------------------- */
+
+/* The custom-chip register block. Copper moves take the address of the       */
+/* destination register, exactly like the `CMOVE(c, custom.color[n], value)`  */
+/* macro does.                                                                */
+#define CL_VIDEO_CUSTOM_BASE 0x00DFF000UL
+#define CL_VIDEO_COLOR_BASE 0x00000180UL
+#define CL_VIDEO_COPPER_MAX 256
+
+/* One chip-memory allocation and the size needed by FreeMem. */
+typedef struct cl_video_chip_buffer {
+    void *memory;
+    ULONG size;
+} cl_video_chip_buffer;
+
+/* One displayable bitmap. The `BitMap` is the first member so a handle can   */
+/* be used directly where `struct BitMap *` is expected.                     */
+typedef struct cl_video_bitmap {
+    struct BitMap bitmap;
+    LONG width;
+    LONG height;
+} cl_video_bitmap;
+
+/* One copper builder with one instruction stream per display view. */
+typedef struct cl_video_copper {
+    struct UCopList *lists[2];
+    int count;
+    int finished;
+} cl_video_copper;
+
+/* One double-buffered custom display. */
+typedef struct cl_video_display {
+    struct View views[2];
+    struct ViewPort view_ports[2];
+    struct RasInfo ras_infos[2];
+    struct BitMap *bitmaps[2];
+    struct ColorMap *color_map;
+    struct View *old_view;
+    struct UCopList *user_copper[2];
+    int width;
+    int height;
+    int depth;
+    int front;
+    int built;
+    int failed;
+} cl_video_display;
+
+/* Open graphics.library once; the screen helpers share the same base. */
+static int cl_video_ensure_graphics(void)
+{
+    if (GfxBase == NULL) {
+        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
+    }
+    return GfxBase != NULL;
+}
+
+/* Allocate a chip buffer, or NULL. The record itself lives in fast memory. */
+void *cl_video_chip_alloc(ULONG size)
+{
+    cl_video_chip_buffer *buffer;
+
+    if (size == 0) {
+        return NULL;
+    }
+    buffer = (cl_video_chip_buffer *)AllocMem(
+        (ULONG)sizeof *buffer, MEMF_ANY | MEMF_CLEAR);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    buffer->memory = AllocMem(size, MEMF_CHIP | MEMF_CLEAR);
+    if (buffer->memory == NULL) {
+        FreeMem(buffer, (ULONG)sizeof *buffer);
+        return NULL;
+    }
+    buffer->size = size;
+    return buffer;
+}
+
+/* Release a chip buffer. Null-safe. */
+void cl_video_chip_free(void *handle)
+{
+    cl_video_chip_buffer *buffer = (cl_video_chip_buffer *)handle;
+
+    if (buffer == NULL) {
+        return;
+    }
+    if (buffer->memory != NULL) {
+        FreeMem(buffer->memory, buffer->size);
+    }
+    FreeMem(buffer, (ULONG)sizeof *buffer);
+}
+
+/* Return the payload size, or zero for a null handle. */
+ULONG cl_video_chip_size(void *handle)
+{
+    const cl_video_chip_buffer *buffer =
+        (const cl_video_chip_buffer *)handle;
+
+    return buffer == NULL ? 0 : buffer->size;
+}
+
+/* Bounds-checked byte reads and writes. */
+UBYTE cl_video_chip_read8(void *handle, ULONG offset)
+{
+    const cl_video_chip_buffer *buffer =
+        (const cl_video_chip_buffer *)handle;
+
+    if (buffer == NULL || offset >= buffer->size) {
+        return 0;
+    }
+    return ((const UBYTE *)buffer->memory)[offset];
+}
+
+void cl_video_chip_write8(void *handle, ULONG offset, UBYTE value)
+{
+    cl_video_chip_buffer *buffer = (cl_video_chip_buffer *)handle;
+
+    if (buffer == NULL || offset >= buffer->size) {
+        return;
+    }
+    ((UBYTE *)buffer->memory)[offset] = value;
+}
+
+/* The 16- and 32-bit helpers require alignment so the 68000 never sees an
+ * address trap. `memcpy` keeps the value independent of the compiler's
+ * alignment assumptions. */
+UWORD cl_video_chip_read16(void *handle, ULONG offset)
+{
+    const cl_video_chip_buffer *buffer =
+        (const cl_video_chip_buffer *)handle;
+    UWORD value = 0;
+
+    if (buffer == NULL || (offset & 1UL) != 0 ||
+        offset > buffer->size || buffer->size - offset < 2UL) {
+        return 0;
+    }
+    memcpy(&value, (const UBYTE *)buffer->memory + offset, sizeof value);
+    return value;
+}
+
+void cl_video_chip_write16(void *handle, ULONG offset, UWORD value)
+{
+    cl_video_chip_buffer *buffer = (cl_video_chip_buffer *)handle;
+
+    if (buffer == NULL || (offset & 1UL) != 0 ||
+        offset > buffer->size || buffer->size - offset < 2UL) {
+        return;
+    }
+    memcpy((UBYTE *)buffer->memory + offset, &value, sizeof value);
+}
+
+ULONG cl_video_chip_read32(void *handle, ULONG offset)
+{
+    const cl_video_chip_buffer *buffer =
+        (const cl_video_chip_buffer *)handle;
+    ULONG value = 0;
+
+    if (buffer == NULL || (offset & 3UL) != 0 ||
+        offset > buffer->size || buffer->size - offset < 4UL) {
+        return 0;
+    }
+    memcpy(&value, (const UBYTE *)buffer->memory + offset, sizeof value);
+    return value;
+}
+
+void cl_video_chip_write32(void *handle, ULONG offset, ULONG value)
+{
+    cl_video_chip_buffer *buffer = (cl_video_chip_buffer *)handle;
+
+    if (buffer == NULL || (offset & 3UL) != 0 ||
+        offset > buffer->size || buffer->size - offset < 4UL) {
+        return;
+    }
+    memcpy((UBYTE *)buffer->memory + offset, &value, sizeof value);
+}
+
+/* Create a bitmap with one AllocRaster plane per bit. */
+void *cl_video_bitmap_new(LONG width, LONG height, UBYTE depth)
+{
+    cl_video_bitmap *bitmap;
+    int plane;
+
+    if (width < 1 || width > 1024 || height < 1 || height > 1024 ||
+        depth < 1 || depth > 8) {
+        return NULL;
+    }
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    bitmap = (cl_video_bitmap *)AllocMem(
+        (ULONG)sizeof *bitmap, MEMF_ANY | MEMF_CLEAR);
+    if (bitmap == NULL) {
+        return NULL;
+    }
+    InitBitMap(&bitmap->bitmap, (LONG)depth, width, height);
+    bitmap->width = width;
+    bitmap->height = height;
+    for (plane = 0; plane < (int)depth; plane++) {
+        bitmap->bitmap.Planes[plane] =
+            AllocRaster((ULONG)width, (ULONG)height);
+        if (bitmap->bitmap.Planes[plane] == NULL) {
+            int free_plane;
+            for (free_plane = 0; free_plane < plane; free_plane++) {
+                FreeRaster(bitmap->bitmap.Planes[free_plane],
+                           (ULONG)width, (ULONG)height);
+            }
+            FreeMem(bitmap, (ULONG)sizeof *bitmap);
+            return NULL;
+        }
+        memset(bitmap->bitmap.Planes[plane], 0,
+               (size_t)bitmap->bitmap.BytesPerRow * (size_t)bitmap->bitmap.Rows);
+    }
+    return bitmap;
+}
+
+/* Release every plane and the bitmap record. Null-safe. */
+void cl_video_bitmap_free(void *handle)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    int plane;
+
+    if (bitmap == NULL) {
+        return;
+    }
+    for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+        if (bitmap->bitmap.Planes[plane] != NULL) {
+            FreeRaster(bitmap->bitmap.Planes[plane],
+                       (ULONG)bitmap->width, (ULONG)bitmap->height);
+        }
+    }
+    FreeMem(bitmap, (ULONG)sizeof *bitmap);
+}
+
+/* Geometry accessors. Null handles return zero. */
+LONG cl_video_bitmap_width(void *handle)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+
+    return bitmap == NULL ? 0 : bitmap->width;
+}
+
+LONG cl_video_bitmap_height(void *handle)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+
+    return bitmap == NULL ? 0 : bitmap->height;
+}
+
+UBYTE cl_video_bitmap_depth(void *handle)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+
+    return bitmap == NULL ? 0 : bitmap->bitmap.Depth;
+}
+
+ULONG cl_video_bitmap_bytes_per_row(void *handle)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+
+    return bitmap == NULL ? 0 : (ULONG)bitmap->bitmap.BytesPerRow;
+}
+
+/* True when (`x`,`y`) is inside the bitmap and `plane` exists. */
+static int cl_video_bitmap_has_pixel(const cl_video_bitmap *bitmap,
+                                     int plane, int x, int y)
+{
+    if (bitmap == NULL || x < 0 || y < 0) {
+        return 0;
+    }
+    if (plane < 0 || plane >= (int)bitmap->bitmap.Depth) {
+        return 0;
+    }
+    if (x >= (int)bitmap->width) {
+        return 0;
+    }
+    return y < (int)bitmap->height;
+}
+
+/* Plot one pixel into one plane. */
+static void cl_video_plot_plane(cl_video_bitmap *bitmap, int plane,
+                                int x, int y, int on)
+{
+    UBYTE *row;
+    UBYTE mask;
+
+    if (!cl_video_bitmap_has_pixel(bitmap, plane, x, y)) {
+        return;
+    }
+    row = bitmap->bitmap.Planes[plane] +
+          (size_t)y * bitmap->bitmap.BytesPerRow;
+    mask = (UBYTE)(0x80U >> (unsigned)(x & 7));
+    if (on) {
+        row[x >> 3] |= mask;
+    } else {
+        row[x >> 3] &= (UBYTE)~mask;
+    }
+}
+
+/* Fill a horizontal span of one plane, inclusive. */
+static void cl_video_fill_plane(cl_video_bitmap *bitmap, int plane,
+                                int x1, int x2, int y, int on)
+{
+    UBYTE *row;
+    int first;
+    int last;
+    int bit_first;
+    int bit_last;
+    UBYTE first_mask;
+    UBYTE last_mask;
+    int index;
+
+    if (!cl_video_bitmap_has_pixel(bitmap, plane, x1, y) ||
+        !cl_video_bitmap_has_pixel(bitmap, plane, x2, y)) {
+        return;
+    }
+    row = bitmap->bitmap.Planes[plane] +
+          (size_t)y * bitmap->bitmap.BytesPerRow;
+    first = x1 >> 3;
+    last = x2 >> 3;
+    bit_first = x1 & 7;
+    bit_last = x2 & 7;
+    first_mask = (UBYTE)(0xFFU >> (unsigned)bit_first);
+    last_mask = (UBYTE)(0xFFU << (unsigned)(7 - bit_last));
+    if (first == last) {
+        UBYTE mask = (UBYTE)(first_mask & last_mask);
+        if (on) {
+            row[first] |= mask;
+        } else {
+            row[first] &= (UBYTE)~mask;
+        }
+        return;
+    }
+    if (on) {
+        row[first] |= first_mask;
+    } else {
+        row[first] &= (UBYTE)~first_mask;
+    }
+    for (index = first + 1; index < last; index++) {
+        row[index] = on ? 0xFFU : 0x00U;
+    }
+    if (on) {
+        row[last] |= last_mask;
+    } else {
+        row[last] &= (UBYTE)~last_mask;
+    }
+}
+
+/* Clear the bitmap to `pen`. */
+void cl_video_bitmap_clear(void *handle, UBYTE pen)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    int plane;
+
+    if (bitmap == NULL) {
+        return;
+    }
+    for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+        memset(bitmap->bitmap.Planes[plane],
+               (pen & (UBYTE)(1U << (unsigned)plane)) != 0 ? 0xFF : 0x00,
+               (size_t)bitmap->bitmap.BytesPerRow * (size_t)bitmap->bitmap.Rows);
+    }
+}
+
+/* Plot one pixel with the full pen value. */
+void cl_video_bitmap_plot(void *handle, LONG x, LONG y, UBYTE pen)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    int plane;
+
+    if (bitmap == NULL) {
+        return;
+    }
+    for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+        cl_video_plot_plane(bitmap, plane, (int)x, (int)y,
+                            (pen & (UBYTE)(1U << (unsigned)plane)) != 0);
+    }
+}
+
+/* Clip a line endpoint pair to the bitmap before the Bresenham loop. */
+static int cl_video_clip_line(cl_video_bitmap *bitmap, int *x1, int *y1,
+                              int *x2, int *y2)
+{
+    int width;
+    int height;
+
+    if (bitmap == NULL) {
+        return 0;
+    }
+    width = (int)bitmap->width;
+    height = (int)bitmap->height;
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    if (*x1 < -32768) {
+        *x1 = -32768;
+    }
+    if (*x1 > 32767) {
+        *x1 = 32767;
+    }
+    if (*x2 < -32768) {
+        *x2 = -32768;
+    }
+    if (*x2 > 32767) {
+        *x2 = 32767;
+    }
+    if (*y1 < -32768) {
+        *y1 = -32768;
+    }
+    if (*y1 > 32767) {
+        *y1 = 32767;
+    }
+    if (*y2 < -32768) {
+        *y2 = -32768;
+    }
+    if (*y2 > 32767) {
+        *y2 = 32767;
+    }
+    return 1;
+}
+
+/* Draw a line with integer Bresenham stepping. */
+void cl_video_bitmap_line(void *handle, LONG x1, LONG y1, LONG x2, LONG y2,
+                          UBYTE pen)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    int ix1 = (int)x1;
+    int iy1 = (int)y1;
+    int ix2 = (int)x2;
+    int iy2 = (int)y2;
+    int dx;
+    int dy;
+    int sx;
+    int sy;
+    int error;
+
+    if (!cl_video_clip_line(bitmap, &ix1, &iy1, &ix2, &iy2)) {
+        return;
+    }
+    dx = ix2 > ix1 ? ix2 - ix1 : ix1 - ix2;
+    dy = iy2 > iy1 ? iy2 - iy1 : iy1 - iy2;
+    sx = ix1 < ix2 ? 1 : -1;
+    sy = iy1 < iy2 ? 1 : -1;
+    error = dx - dy;
+    for (;;) {
+        cl_video_bitmap_plot(bitmap, ix1, iy1, pen);
+        if (ix1 == ix2 && iy1 == iy2) {
+            break;
+        }
+        if (error * 2 > -dy) {
+            error -= dy;
+            ix1 += sx;
+        }
+        if (error * 2 < dx) {
+            error += dx;
+            iy1 += sy;
+        }
+    }
+}
+
+/* Fill an inclusive rectangle, clipping to the bitmap. */
+void cl_video_bitmap_fill(void *handle, LONG x1, LONG y1, LONG x2, LONG y2,
+                          UBYTE pen)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    int ix1 = (int)x1;
+    int iy1 = (int)y1;
+    int ix2 = (int)x2;
+    int iy2 = (int)y2;
+    int swap;
+    int width;
+    int height;
+    int y;
+    int plane;
+
+    if (bitmap == NULL) {
+        return;
+    }
+    if (ix1 > ix2) {
+        swap = ix1;
+        ix1 = ix2;
+        ix2 = swap;
+    }
+    if (iy1 > iy2) {
+        swap = iy1;
+        iy1 = iy2;
+        iy2 = swap;
+    }
+    width = (int)bitmap->width;
+    height = (int)bitmap->height;
+    if (ix2 < 0 || iy2 < 0 || ix1 >= width || iy1 >= height) {
+        return;
+    }
+    if (ix1 < 0) {
+        ix1 = 0;
+    }
+    if (iy1 < 0) {
+        iy1 = 0;
+    }
+    if (ix2 >= width) {
+        ix2 = width - 1;
+    }
+    if (iy2 >= height) {
+        iy2 = height - 1;
+    }
+    for (y = iy1; y <= iy2; y++) {
+        for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+            cl_video_fill_plane(bitmap, plane, ix1, ix2, y,
+                                (pen & (UBYTE)(1U << (unsigned)plane)) != 0);
+        }
+    }
+}
+
+/* Read one plane bit. */
+BOOL cl_video_bitmap_plane_bit(void *handle, UBYTE plane, LONG x, LONG y)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+    const UBYTE *row;
+    UBYTE mask;
+
+    if (!cl_video_bitmap_has_pixel(bitmap, (int)plane, (int)x, (int)y)) {
+        return FALSE;
+    }
+    row = bitmap->bitmap.Planes[plane] +
+          (size_t)y * bitmap->bitmap.BytesPerRow;
+    mask = (UBYTE)(0x80U >> (unsigned)(x & 7));
+    return (row[x >> 3] & mask) != 0 ? TRUE : FALSE;
+}
+
+/* Write one plane bit. */
+void cl_video_bitmap_set_plane_bit(void *handle, UBYTE plane, LONG x, LONG y,
+                                   BOOL on)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+
+    cl_video_plot_plane(bitmap, (int)plane, (int)x, (int)y, on ? 1 : 0);
+}
+
+/* A rectangle is valid when it lies completely inside the bitmap. */
+static int cl_video_rect_inside(const cl_video_bitmap *bitmap,
+                                int x, int y, int width, int height)
+{
+    int limit_x;
+    int limit_y;
+
+    if (bitmap == NULL || width <= 0 || height <= 0 || x < 0 || y < 0) {
+        return 0;
+    }
+    limit_x = (int)bitmap->width;
+    limit_y = (int)bitmap->height;
+    if (x > limit_x || y > limit_y) {
+        return 0;
+    }
+    return width <= limit_x - x && height <= limit_y - y;
+}
+
+/* Plain blitter copy (minterm C0). */
+void cl_video_bitmap_blit(void *dest_handle, void *src_handle,
+                          LONG sx, LONG sy, LONG dx, LONG dy,
+                          LONG width, LONG height)
+{
+    cl_video_bitmap *dest = (cl_video_bitmap *)dest_handle;
+    const cl_video_bitmap *src = (const cl_video_bitmap *)src_handle;
+
+    if (width > 992 || height > 1024) {
+        return;
+    }
+    if (!cl_video_rect_inside(src, (int)sx, (int)sy, (int)width, (int)height) ||
+        !cl_video_rect_inside(dest, (int)dx, (int)dy, (int)width, (int)height)) {
+        return;
+    }
+    (void)BltBitMap(&src->bitmap, sx, sy, &dest->bitmap, dx, dy,
+                    width, height, 0xC0, 0xFF, NULL);
+    WaitBlit();
+}
+
+/* Masked blitter copy (minterm E0, single-plane mask). */
+void cl_video_bitmap_blit_masked(void *dest_handle, void *src_handle,
+                                 void *mask_handle,
+                                 LONG sx, LONG sy, LONG dx, LONG dy,
+                                 LONG width, LONG height)
+{
+    cl_video_bitmap *dest = (cl_video_bitmap *)dest_handle;
+    const cl_video_bitmap *src = (const cl_video_bitmap *)src_handle;
+    const cl_video_bitmap *mask = (const cl_video_bitmap *)mask_handle;
+    struct RastPort rast_port;
+
+    if (dest == NULL || src == NULL || mask == NULL ||
+        mask->bitmap.Depth != 1 ||
+        mask->width != src->width || mask->height != src->height ||
+        mask->bitmap.BytesPerRow != src->bitmap.BytesPerRow) {
+        return;
+    }
+    if (width > 992 || height > 1024) {
+        return;
+    }
+    if (!cl_video_rect_inside(src, (int)sx, (int)sy, (int)width, (int)height) ||
+        !cl_video_rect_inside(dest, (int)dx, (int)dy, (int)width, (int)height)) {
+        return;
+    }
+    InitRastPort(&rast_port);
+    rast_port.BitMap = &dest->bitmap;
+    rast_port.Mask = 0xFF;
+    BltMaskBitMapRastPort(&src->bitmap, sx, sy, &rast_port, dx, dy,
+                          width, height, 0xE0, mask->bitmap.Planes[0]);
+    WaitBlit();
+}
+
+/* FNV-1a 32-bit over the geometry and every plane byte. */
+ULONG cl_video_bitmap_checksum(void *handle)
+{
+    const cl_video_bitmap *bitmap = (const cl_video_bitmap *)handle;
+    uint32_t hash = UINT32_C(2166136261);
+    int plane;
+
+    if (bitmap == NULL) {
+        return 0;
+    }
+    hash = (hash ^ (uint32_t)bitmap->bitmap.Depth) * UINT32_C(16777619);
+    hash = (hash ^ (uint32_t)bitmap->width) * UINT32_C(16777619);
+    hash = (hash ^ (uint32_t)bitmap->height) * UINT32_C(16777619);
+    hash = (hash ^ (uint32_t)bitmap->bitmap.BytesPerRow) * UINT32_C(16777619);
+    hash = (hash ^ (uint32_t)bitmap->bitmap.Rows) * UINT32_C(16777619);
+    for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+        const uint8_t *bytes = (const uint8_t *)bitmap->bitmap.Planes[plane];
+        size_t length =
+            (size_t)bitmap->bitmap.BytesPerRow * (size_t)bitmap->bitmap.Rows;
+        size_t index;
+        for (index = 0; index < length; index++) {
+            hash = (hash ^ (uint32_t)bytes[index]) * UINT32_C(16777619);
+        }
+    }
+    return (ULONG)hash;
+}
+
+/* Free one user copper list through a temporary viewport. */
+static void cl_video_free_user_copper(struct UCopList *list)
+{
+    struct ViewPort view_port;
+
+    if (list == NULL) {
+        return;
+    }
+    InitVPort(&view_port);
+    view_port.UCopIns = list;
+    FreeVPortCopLists(&view_port);
+}
+
+/* Free the two instruction streams of a copper that never reached a display. */
+static void cl_video_copper_destroy(cl_video_copper *copper)
+{
+    int index;
+
+    if (copper == NULL) {
+        return;
+    }
+    for (index = 0; index < 2; index++) {
+        cl_video_free_user_copper(copper->lists[index]);
+        copper->lists[index] = NULL;
+    }
+    FreeMem(copper, (ULONG)sizeof *copper);
+}
+
+/* Create a copper builder, or NULL. */
+void *cl_video_copper_new(void)
+{
+    cl_video_copper *copper;
+    int index;
+
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    copper = (cl_video_copper *)AllocMem(
+        (ULONG)sizeof *copper, MEMF_ANY | MEMF_CLEAR);
+    if (copper == NULL) {
+        return NULL;
+    }
+    for (index = 0; index < 2; index++) {
+        copper->lists[index] = (struct UCopList *)AllocMem(
+            (ULONG)sizeof(struct UCopList), MEMF_PUBLIC | MEMF_CLEAR);
+        if (copper->lists[index] == NULL ||
+            UCopperListInit(copper->lists[index], CL_VIDEO_COPPER_MAX) == NULL) {
+            cl_video_copper_destroy(copper);
+            return NULL;
+        }
+    }
+    return copper;
+}
+
+/* Release a copper that was not moved into a display. */
+void cl_video_copper_free(void *handle)
+{
+    cl_video_copper_destroy((cl_video_copper *)handle);
+}
+
+/* Append the same wait to both streams. */
+void cl_video_copper_wait(void *handle, LONG line)
+{
+    cl_video_copper *copper = (cl_video_copper *)handle;
+    int index;
+
+    if (copper == NULL || copper->finished ||
+        copper->count >= CL_VIDEO_COPPER_MAX) {
+        return;
+    }
+    for (index = 0; index < 2; index++) {
+        (void)CWait(copper->lists[index], line, 0);
+        CBump(copper->lists[index]);
+    }
+    copper->count++;
+}
+
+/* Append the same register move to both streams. */
+void cl_video_copper_move(void *handle, UWORD reg, UWORD value)
+{
+    cl_video_copper *copper = (cl_video_copper *)handle;
+    APTR destination;
+    int index;
+
+    if (copper == NULL || copper->finished ||
+        copper->count >= CL_VIDEO_COPPER_MAX) {
+        return;
+    }
+    destination = (APTR)(CL_VIDEO_CUSTOM_BASE + (ULONG)reg);
+    for (index = 0; index < 2; index++) {
+        (void)CMove(copper->lists[index], destination, (LONG)value);
+        CBump(copper->lists[index]);
+    }
+    copper->count++;
+}
+
+/* Append a 12-bit color write to both streams. */
+void cl_video_copper_color(void *handle, UBYTE index, UBYTE r, UBYTE g,
+                           UBYTE b)
+{
+    UWORD value;
+
+    if (index > 31) {
+        return;
+    }
+    value = (UWORD)((((UWORD)r >> 4) << 8) |
+                    (((UWORD)g >> 4) << 4) |
+                    ((UWORD)b >> 4));
+    cl_video_copper_move(handle,
+                         (UWORD)(CL_VIDEO_COLOR_BASE + (ULONG)index * 2UL),
+                         value);
+}
+
+/* Append the documented wait-forever instruction. */
+void cl_video_copper_end(void *handle)
+{
+    cl_video_copper *copper = (cl_video_copper *)handle;
+    int index;
+
+    if (copper == NULL || copper->finished) {
+        return;
+    }
+    for (index = 0; index < 2; index++) {
+        (void)CWait(copper->lists[index], 10000, 255);
+        CBump(copper->lists[index]);
+    }
+    copper->finished = 1;
+}
+
+/* Set one palette entry from 8-bit components. */
+void cl_video_display_set_color(void *handle, UBYTE index, UBYTE r, UBYTE g,
+                                UBYTE b)
+{
+    cl_video_display *display = (cl_video_display *)handle;
+
+    if (display == NULL || (int)index >= (1 << display->depth)) {
+        return;
+    }
+    SetRGB4CM(display->color_map, (LONG)index,
+              (ULONG)(r >> 4), (ULONG)(g >> 4), (ULONG)(b >> 4));
+}
+
+/* Default palette: black, white, RGB, CMY, then a gray ramp. */
+static void cl_video_display_default_palette(cl_video_display *display)
+{
+    int count = 1 << display->depth;
+    int index;
+
+    for (index = 0; index < count; index++) {
+        ULONG r = 0;
+        ULONG g = 0;
+        ULONG b = 0;
+        switch (index) {
+        case 0:
+            break;
+        case 1:
+            r = 15;
+            g = 15;
+            b = 15;
+            break;
+        case 2:
+            r = 15;
+            break;
+        case 3:
+            g = 15;
+            break;
+        case 4:
+            b = 15;
+            break;
+        case 5:
+            r = 15;
+            g = 15;
+            break;
+        case 6:
+            g = 15;
+            b = 15;
+            break;
+        case 7:
+            r = 15;
+            b = 15;
+            break;
+        default:
+            r = (ULONG)((index - 8) * 2);
+            if (r > 15) {
+                r = 15;
+            }
+            g = r;
+            b = r;
+            break;
+        }
+        SetRGB4CM(display->color_map, (LONG)index, r, g, b);
+    }
+}
+
+/* Open a display over two caller-owned bitmaps, or NULL. */
+void *cl_video_display_open(void *front_handle, void *back_handle)
+{
+    cl_video_bitmap *front = (cl_video_bitmap *)front_handle;
+    cl_video_bitmap *back = (cl_video_bitmap *)back_handle;
+    cl_video_display *display;
+
+    if (front == NULL || back == NULL) {
+        return NULL;
+    }
+    if (front->bitmap.Depth != back->bitmap.Depth ||
+        front->width != back->width || front->height != back->height ||
+        front->bitmap.BytesPerRow != back->bitmap.BytesPerRow ||
+        front->width < 1 || front->width > 320 ||
+        front->height < 1 || front->height > 256 ||
+        front->bitmap.Depth < 1 || front->bitmap.Depth > 5) {
+        return NULL;
+    }
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    display = (cl_video_display *)AllocMem(
+        (ULONG)sizeof *display, MEMF_ANY | MEMF_CLEAR);
+    if (display == NULL) {
+        return NULL;
+    }
+    display->bitmaps[0] = &front->bitmap;
+    display->bitmaps[1] = &back->bitmap;
+    display->width = (int)front->width;
+    display->height = (int)front->height;
+    display->depth = (int)front->bitmap.Depth;
+    display->color_map = GetColorMap(1L << display->depth);
+    if (display->color_map == NULL) {
+        FreeMem(display, (ULONG)sizeof *display);
+        return NULL;
+    }
+    cl_video_display_default_palette(display);
+    return display;
+}
+
+/* Queue a copper for both viewports before the first flip. */
+BOOL cl_video_display_set_copper(void *handle, void *copper_handle)
+{
+    cl_video_display *display = (cl_video_display *)handle;
+    cl_video_copper *copper = (cl_video_copper *)copper_handle;
+    int index;
+
+    if (display == NULL || copper == NULL) {
+        cl_video_copper_destroy(copper);
+        return FALSE;
+    }
+    if (display->built) {
+        cl_video_copper_destroy(copper);
+        return FALSE;
+    }
+    for (index = 0; index < 2; index++) {
+        cl_video_free_user_copper(display->user_copper[index]);
+        display->user_copper[index] = copper->lists[index];
+        copper->lists[index] = NULL;
+    }
+    FreeMem(copper, (ULONG)sizeof *copper);
+    return TRUE;
+}
+
+/* Build the views, or switch to the other one. */
+void cl_video_display_flip(void *handle)
+{
+    cl_video_display *display = (cl_video_display *)handle;
+    int index;
+
+    if (display == NULL || display->failed) {
+        return;
+    }
+    if (!display->built) {
+        display->old_view = GfxBase->ActiView;
+        for (index = 0; index < 2; index++) {
+            InitView(&display->views[index]);
+            InitVPort(&display->view_ports[index]);
+            /* InitVPort clears UCopIns, so attach the queued user list
+             * after the reset and before MakeVPort merges it. */
+            display->view_ports[index].UCopIns = display->user_copper[index];
+            display->user_copper[index] = NULL;
+            display->views[index].ViewPort = &display->view_ports[index];
+            display->view_ports[index].DWidth = (WORD)display->width;
+            display->view_ports[index].DHeight = (WORD)display->height;
+            display->view_ports[index].DxOffset = 0x81;
+            display->view_ports[index].DyOffset = 0x2c;
+            display->view_ports[index].Modes = 0;
+            display->view_ports[index].RasInfo = &display->ras_infos[index];
+            display->view_ports[index].ColorMap = display->color_map;
+            display->ras_infos[index].BitMap = display->bitmaps[index];
+            display->ras_infos[index].RxOffset = 0;
+            display->ras_infos[index].RyOffset = 0;
+            display->ras_infos[index].Next = NULL;
+            (void)MakeVPort(&display->views[index],
+                            &display->view_ports[index]);
+            (void)MrgCop(&display->views[index]);
+            if (display->views[index].LOFCprList == NULL) {
+                display->failed = 1;
+                display->built = 1;
+                return;
+            }
+        }
+        LoadView(&display->views[0]);
+        WaitTOF();
+        display->front = 0;
+        display->built = 1;
+        return;
+    }
+    LoadView(&display->views[1 - display->front]);
+    WaitTOF();
+    display->front = 1 - display->front;
+}
+
+/* True when the display could not build its views. */
+BOOL cl_video_display_failed(void *handle)
+{
+    const cl_video_display *display = (const cl_video_display *)handle;
+
+    return display == NULL || display->failed ? TRUE : FALSE;
+}
+
+/* Return 0 for the front bitmap, 1 for the back bitmap. */
+UBYTE cl_video_display_index(void *handle)
+{
+    const cl_video_display *display = (const cl_video_display *)handle;
+
+    return display == NULL ? 0 : (UBYTE)display->front;
+}
+
+/* Restore the system view and release the display. */
+void cl_video_display_free(void *handle)
+{
+    cl_video_display *display = (cl_video_display *)handle;
+    int index;
+
+    if (display == NULL) {
+        return;
+    }
+    if (display->built) {
+        LoadView(display->old_view);
+        WaitTOF();
+        WaitTOF();
+        for (index = 0; index < 2; index++) {
+            if (display->views[index].LOFCprList != NULL) {
+                FreeCprList(display->views[index].LOFCprList);
+            }
+        }
+    }
+    for (index = 0; index < 2; index++) {
+        cl_video_free_user_copper(display->user_copper[index]);
+        display->user_copper[index] = NULL;
+        FreeVPortCopLists(&display->view_ports[index]);
+    }
+    if (display->color_map != NULL) {
+        FreeColorMap(display->color_map);
+    }
+    FreeMem(display, (ULONG)sizeof *display);
+}
+
+/* Wait for the next vertical blank. */
+void cl_video_wait_vblank(void)
+{
+    if (cl_video_ensure_graphics()) {
+        WaitTOF();
+    }
 }

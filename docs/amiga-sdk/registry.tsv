@@ -8,17 +8,17 @@ SDK-BASE-006	0-baseline	registry	Generated coverage view	must	core	any	any	done	
 SDK-BASE-007	0-baseline	tracking	Per-bundle tracking issues	should	core	any	any	done	SDK-BASE-005	registry_issues	gh issue list	-	Bundle 0
 SDK-BASE-008	0-baseline	programme	Programme map and bundle order	must	core	any	any	done	-	programme_map	plans/amiga-sdk/00-index.md	-	Bundle 0
 SDK-BASE-009	0-baseline	docs	Two-tier baseline documentation	should	core	any	any	done	SDK-BASE-001	docs	make check	spec/15-profiles.md	Bundle 0
-SDK-BASE-010	1-native-video	performance	A500 memory and frame budget baseline	should	core	1.3	OCS/68000/512K	missing	-	memory_budget	-	-	Bundle 1
-SDK-VID-001	1-native-video	graphics/memory	Chip RAM allocator (MEMF_CHIP)	must	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	chip_mem	-	-	AllocMem
-SDK-VID-002	1-native-video	graphics/bitmap	Bitmap create/free and plane access	must	core	1.3	OCS/68000/512K	missing	SDK-VID-001	bitmap	-	-	AllocRaster/InitBitMap
-SDK-VID-003	1-native-video	graphics/bitmap	Bitmap fill/plot/line	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002	bitmap_draw	-	-	-
-SDK-VID-004	1-native-video	graphics/blitter	Blitter copy and masked copy	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002,SDK-VID-003	blitter	-	-	BltBitMap mask
-SDK-VID-005	1-native-video	graphics/copper	Copper list builder/install/restore	must	core	1.3	OCS/68000/512K	missing	SDK-VID-001	copper	-	-	COP1LC
-SDK-VID-006	1-native-video	graphics/display	VBlank, double buffer, screen flip	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002,SDK-VID-005	display	-	-	-
-SDK-VID-007	1-native-video	graphics/palette	4-bit palette (AGA 24-bit optional)	should	core	1.3	OCS/68000/512K	missing	SDK-VID-001	palette	-	-	SetRGB4
-SDK-VID-008	1-native-video	math	sin/cos/sqrt helpers	should	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	math	-	-	libm
-SDK-VID-009	1-native-video	graphics/verify	Frame checksum oracle	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002	frame_checksum	-	-	-
-SDK-VID-010	1-native-video	graphics/demo	Boing acceptance	must	core	1.3	OCS/68000/512K	missing	SDK-VID-004,SDK-VID-005,SDK-VID-006,SDK-VID-007,SDK-VID-009	boing	-	-	A500 50Hz
+SDK-BASE-010	1-native-video	performance	A500 memory and frame budget baseline	should	core	1.3	OCS/68000/512K	done	-	boing	docs/amiga-sdk/a500-boing-frame.png; boing: frames 400 ticks 400; make sdk-a500-boing	spec/appendix-amiga.md	A500 50 Hz (400 frames / 400 ticks)
+SDK-VID-001	1-native-video	graphics/memory	Chip RAM allocator (MEMF_CHIP)	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001	chip_mem	stdlib/std.amiga.video.clo; compiler/tests/amiga_video_spec_test.rs	spec/appendix-stdlib.md	AllocMem MEMF_CHIP
+SDK-VID-002	1-native-video	graphics/bitmap	Bitmap create/free and plane access	must	core	1.3	OCS/68000/512K	done	SDK-VID-001	bitmap	amiga_video_spec_test; examples/amiga/boing.clo	spec/appendix-stdlib.md	AllocRaster/InitBitMap
+SDK-VID-003	1-native-video	graphics/bitmap	Bitmap fill/plot/line	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	bitmap_draw	amiga_video_spec_test; Boing background	spec/appendix-stdlib.md	software plot/line/fill
+SDK-VID-004	1-native-video	graphics/blitter	Blitter copy and masked copy	must	core	1.3	OCS/68000/512K	done	SDK-VID-002,SDK-VID-003	blitter	amiga_video_spec_test; Boing ball	spec/appendix-stdlib.md	BltBitMap/BltMaskBitMapRastPort
+SDK-VID-005	1-native-video	graphics/copper	Copper list builder/install/restore	must	core	1.3	OCS/68000/512K	done	SDK-VID-001	copper	amiga_video_spec_test; Boing 54-color gradient held frame	spec/appendix-stdlib.md	UCopperListInit after InitVPort
+SDK-VID-006	1-native-video	graphics/display	VBlank, double buffer, screen flip	must	core	1.3	OCS/68000/512K	done	SDK-VID-002,SDK-VID-005	display	docs/amiga-sdk/a500-boing-frame.png; make sdk-a500-boing	spec/appendix-stdlib.md	LoadView double buffer
+SDK-VID-007	1-native-video	graphics/palette	4-bit palette (AGA 24-bit optional)	should	core	1.3	OCS/68000/512K	done	SDK-VID-001	palette	Boing 54-color gradient; amiga_video_spec_test	spec/appendix-stdlib.md	SetRGB4CM + copper
+SDK-VID-008	1-native-video	math	sin/cos/sqrt helpers	should	core	1.3	OCS/68000/512K	done	SDK-BASE-001	math	amiga_video_spec_test host math	spec/appendix-stdlib.md	fixed point
+SDK-VID-009	1-native-video	graphics/verify	Frame checksum oracle	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	frame_checksum	boing: checksum 0xF58C7129; a500-boing-smoke	spec/appendix-stdlib.md	FNV-1a
+SDK-VID-010	1-native-video	graphics/demo	Boing acceptance	must	core	1.3	OCS/68000/512K	done	SDK-VID-004,SDK-VID-005,SDK-VID-006,SDK-VID-007,SDK-VID-009	boing	docs/amiga-sdk/a500-boing-frame.png; docs/amiga-sdk/a500-boing-line.png; make sdk-a500-boing	spec/appendix-amiga.md	A500 real KS1.3; 50 Hz measured
 SDK-SPR-001	2-sprites	graphics/sprites	8 hardware sprite channels	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002	sprite_channels	-	-	-
 SDK-SPR-002	2-sprites	graphics/sprites	Sprite pixels, move, show/hide	must	core	1.3	OCS/68000/512K	missing	SDK-SPR-001	sprite_control	-	-	-
 SDK-SPR-003	2-sprites	graphics/sprites	Attach pairs for 16 colors	should	core	1.3	OCS/68000/512K	missing	SDK-SPR-002	sprite_attach	-	-	-

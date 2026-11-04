@@ -173,7 +173,8 @@ export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Scre
 
 `title` names the screen and must stay alive for as long as the screen is open:
 Intuition keeps the pointer and does not copy the string. `Screen` is move-only;
-windows, text, bitmaps, sprites, and palettes beyond four bits are outside v1.
+windows, text, sprites, and runtime palettes beyond four bits are outside v1.
+The native-video path in §15 is the bitmap/blitter/copper alternative.
 
 ## 9. Drawing (`std.amiga.graphics`)
 
@@ -307,7 +308,87 @@ export func drain(borrow port: MsgPort): void {
 }
 ```
 
-## 14. Diagnostics
+## 15. Native video (`std.amiga.video`)
+
+The module owns chip memory, displayable bitmaps, a copper builder, and a
+double-buffered custom display. It is available on `hosted-amiga` and
+`hosted-amiga-13`; the host and freestanding profiles reject it with `E11200`.
+The display uses the 1.3 `LoadView` pipeline from
+[appendix-amiga.md](appendix-amiga.md) §1.1, not the Intuition screen path.
+
+```clorraine
+module std.amiga.video;
+
+export handle ChipBuffer freedBy cl_video_chip_free;
+export handle Bitmap     freedBy cl_video_bitmap_free;
+export handle Copper     freedBy cl_video_copper_free;
+export handle Display    freedBy cl_video_display_free;
+
+export func newBitmap(width: i32, height: i32, depth: u8): Bitmap? {
+    return cl_video_bitmap_new(width, height, depth);
+}
+
+export func bitmapFill(borrow bitmap: Bitmap, x1: i32, y1: i32,
+                       x2: i32, y2: i32, pen: u8): void {
+    cl_video_bitmap_fill(bitmap, x1, y1, x2, y2, pen);
+}
+
+export func bitmapBlit(borrow dest: Bitmap, const src: Bitmap,
+                       sx: i32, sy: i32, dx: i32, dy: i32,
+                       w: i32, h: i32): void {
+    cl_video_bitmap_blit(dest, src, sx, sy, dx, dy, w, h);
+}
+
+export func openDisplay(borrow front: Bitmap, borrow back: Bitmap): Display? {
+    return cl_video_display_open(front, back);
+}
+
+export func displayFlip(borrow display: Display): void {
+    cl_video_display_flip(display);
+}
+```
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `allocChip(size: u32)` | `ChipBuffer?` | zeroed `MEMF_CHIP` memory; `null` on failure |
+| `freeChip(take buffer)` | `void` | releases the buffer; the generated drop is null-safe |
+| `chipSize`, `chipRead8/16/32`, `chipWrite8/16/32` | `u32`/`u8`/`u16`/`u32`/`void` | bounds-checked access; an out-of-range offset is a no-op or zero |
+| `newBitmap(width: i32, height: i32, depth: u8)` | `Bitmap?` | `AllocRaster` planes in chip memory; `width`/`height` 1..=1024, `depth` 1..=8 |
+| `freeBitmap(take bitmap)` | `void` | frees every plane |
+| `bitmapWidth/Height/Depth/BytesPerRow` | `i32`/`u8`/`u32` | geometry accessors |
+| `bitmapClear`, `bitmapPlot`, `bitmapLine`, `bitmapFill` | `void` | software drawing; coordinates are clipped, pen bits above the depth are ignored |
+| `bitmapPlaneBit`, `bitmapSetPlaneBit` | `bool`/`void` | direct plane-bit access |
+| `bitmapBlit(borrow dest, const src, ...)` | `void` | `BltBitMap`, minterm `0xC0` |
+| `bitmapBlitMasked(borrow dest, const src, const mask, ...)` | `void` | `BltMaskBitMapRastPort`, minterm `0xE0`; `mask` is depth 1 and matches the source dimensions |
+| `bitmapChecksum(const bitmap)` | `u32` | FNV-1a over the geometry and every plane byte |
+| `newCopper()` | `Copper?` | two `UCopList` streams, one per view |
+| `copperWait`, `copperMove`, `copperColor`, `copperEnd` | `void` | append to both streams; 256-instruction limit |
+| `displaySetCopper(borrow display, take copper)` | `bool` | attaches before the first flip; `false` after the display is built |
+| `openDisplay(borrow front, borrow back)` | `Display?` | both bitmaps must match; the display borrows them and must drop first |
+| `displaySetColor(borrow display, index, r, g, b)` | `void` | `SetRGB4CM`; call before the first flip |
+| `displayFlip(borrow display)` | `void` | first call builds both views; later calls alternate and wait for VBlank |
+| `displayFailed(const display)` | `bool` | true when the views could not be built; later flips are no-ops |
+| `displayIndex(const display)` | `u8` | 0 for the front bitmap, 1 for the back |
+| `waitVBlank()` | `void` | `WaitTOF` |
+
+The `Display` borrows its two bitmaps; declare them before the display and do
+not free them until the display is closed. A copper passed to
+`displaySetCopper` moves into the display, which releases it through
+`FreeVPortCopLists`.
+
+## 16. Fixed-point math (`std.math`)
+
+`std.math` is pure Clorraine and is available on `host`, `hosted-amiga`, and
+`hosted-amiga-13`. Angles use 256 steps per turn; sine and cosine results are
+scaled by 256.
+
+| API | Returns | Rule |
+|---|---|---|
+| `sin(angle: i32)` | `i32` | `-256..=256`; angles wrap every 256 |
+| `cos(angle: i32)` | `i32` | `sin(angle + 64)` |
+| `sqrt(value: i32)` | `i32` | integer floor; negative input returns 0 |
+
+## 17. Diagnostics
 
 | Code | Trigger |
 |---|---|

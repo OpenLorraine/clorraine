@@ -34,6 +34,7 @@ holds the FFI declaration.
 | `dos.library` | locks | lock and unlock a path (planned; not yet wrapped) | `handle Lock` (planned) |
 | `dos.library` | output | write to standard output (planned; print helpers not yet wrapped) | `println` (planned) |
 | `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
+| `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
 
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).
@@ -59,8 +60,51 @@ func draw(): i32 {
 }
 ```
 
-Windows and their event loop, text and fonts, bitmaps and blit, sprites and
-copper, `SetRGB32`, and palettes beyond four bits are out of scope for v1.
+### 1.1 Native video
+
+`std.amiga.video` is the low-level path for demos that need the whole display.
+It exposes four opaque handles: `ChipBuffer` (chip memory), `Bitmap`
+(displayable planes), `Copper` (a 1.3 user copper list builder), and `Display`
+(two compiled views over two caller-owned bitmaps). The display uses the
+`InitView` → `InitVPort` → `MakeVPort` → `MrgCop` → `LoadView` pipeline. The
+first flip compiles both views and saves `GfxBase->ActiView`; the close restores
+that view, waits two frames, and frees the copper lists. Intuition is not
+involved, so the demo owns the whole screen while it runs.
+
+The two frame bitmaps are caller-owned and must outlive the display. Declare
+them before the display so the generated drops release the display first, and
+do not return a `Display` from a function whose locals own the bitmaps. A
+bitmap is created with `AllocRaster` planes, and its palette is a `GetColorMap`
+table set before the first flip. Animated colors use the copper, not runtime
+palette changes.
+
+```clorraine
+import { Bitmap, Display, newBitmap, freeBitmap, openDisplay, displayFlip,
+         freeDisplay } from std.amiga.video;
+
+func demo(): i32 {
+    let front: Bitmap? = newBitmap(320, 256, 4);
+    if (front == null) { return 1; }
+    let back: Bitmap? = newBitmap(320, 256, 4);
+    if (back == null) { return 1; }
+    let display: Display? = openDisplay(front, back);
+    if (display == null) { return 1; }
+    displayFlip(display);       // builds both views and shows `front`
+    displayFlip(display);       // shows `back`
+    freeDisplay(display);       // restores the system view
+    freeBitmap(back);
+    freeBitmap(front);
+    return 0;
+}
+```
+
+The blitter wrappers use `BltBitMap` for a plain copy and
+`BltMaskBitMapRastPort` for a cookie-cut image. The frame checksum is FNV-1a
+over the plane bytes, so a deterministic drawing sequence has a stable value.
+
+Windows and their event loop, text and fonts, sprites, `SetRGB32`, runtime
+palette animation after the first flip, and palettes beyond four bits are out
+of scope for v1.
 
 ## 2. Amiga boundary types
 

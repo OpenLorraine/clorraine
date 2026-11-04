@@ -1,0 +1,332 @@
+//! Amiga native video: chip memory, bitmaps, blitter, copper, and a
+//! double-buffered custom display.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga custom chips, so the module is not available there. The wrappers reach
+//! the profile C shim through `ffi`, so application code never writes `ffi`,
+//! never touches `unsafe`, and never sees a raw OS struct. The four resources
+//! are opaque handles:
+//!
+//! * `ChipBuffer` is chip memory for DMA-visible data.
+//! * `Bitmap` is a displayable set of bitplanes.
+//! * `Copper` is a 1.3 user copper list builder.
+//! * `Display` is a pair of compiled views over two caller-owned bitmaps.
+//!
+//! The display borrows its two bitmaps. Declare the bitmaps before the display
+//! so the generated drops release the display first, and never free a bitmap
+//! while its display is alive. Do not return a `Display` from a function whose
+//! locals own the bitmaps: the display would outlive them.
+
+module std.amiga.video;
+
+/// Chip memory for a DMA-visible buffer. The caller owns it and releases it
+/// through the generated drop, which calls `cl_video_chip_free` once.
+export handle ChipBuffer freedBy cl_video_chip_free;
+
+/// A displayable bitmap made of `depth` bitplanes in chip memory.
+///
+/// The caller owns it and releases it through the generated drop. A bitmap used
+/// by a `Display` must outlive that display.
+export handle Bitmap freedBy cl_video_bitmap_free;
+
+/// A 1.3 user copper list builder.
+///
+/// A copper is either freed directly (when it was never given to a display) or
+/// moved into `displaySetCopper`, after which the display owns it. The `take`
+/// parameter on `displaySetCopper` enforces that choice.
+export handle Copper freedBy cl_video_copper_free;
+
+/// A double-buffered custom display over two caller-owned bitmaps.
+///
+/// Opening a display does not touch the hardware until the first `displayFlip`.
+/// The close restores the system view that was active at that first flip.
+export handle Display freedBy cl_video_display_free;
+
+ffi videocore {
+    func cl_video_chip_alloc(size: u32): ChipBuffer?;
+    func cl_video_chip_free(take buffer: ChipBuffer): void;
+    func cl_video_chip_size(const buffer: ChipBuffer): u32;
+    func cl_video_chip_read8(const buffer: ChipBuffer, offset: u32): u8;
+    func cl_video_chip_write8(borrow buffer: ChipBuffer, offset: u32, value: u8): void;
+    func cl_video_chip_read16(const buffer: ChipBuffer, offset: u32): u16;
+    func cl_video_chip_write16(borrow buffer: ChipBuffer, offset: u32, value: u16): void;
+    func cl_video_chip_read32(const buffer: ChipBuffer, offset: u32): u32;
+    func cl_video_chip_write32(borrow buffer: ChipBuffer, offset: u32, value: u32): void;
+
+    func cl_video_bitmap_new(width: i32, height: i32, depth: u8): Bitmap?;
+    func cl_video_bitmap_free(take bitmap: Bitmap): void;
+    func cl_video_bitmap_width(const bitmap: Bitmap): i32;
+    func cl_video_bitmap_height(const bitmap: Bitmap): i32;
+    func cl_video_bitmap_depth(const bitmap: Bitmap): u8;
+    func cl_video_bitmap_bytes_per_row(const bitmap: Bitmap): u32;
+    func cl_video_bitmap_clear(borrow bitmap: Bitmap, pen: u8): void;
+    func cl_video_bitmap_plot(borrow bitmap: Bitmap, x: i32, y: i32, pen: u8): void;
+    func cl_video_bitmap_line(borrow bitmap: Bitmap, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_video_bitmap_fill(borrow bitmap: Bitmap, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_video_bitmap_plane_bit(const bitmap: Bitmap, plane: u8, x: i32, y: i32): bool;
+    func cl_video_bitmap_set_plane_bit(borrow bitmap: Bitmap, plane: u8, x: i32, y: i32, on: bool): void;
+    func cl_video_bitmap_blit(borrow dest: Bitmap, const src: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void;
+    func cl_video_bitmap_blit_masked(borrow dest: Bitmap, const src: Bitmap, const mask: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void;
+    func cl_video_bitmap_checksum(const bitmap: Bitmap): u32;
+
+    func cl_video_copper_new(): Copper?;
+    func cl_video_copper_free(take copper: Copper): void;
+    func cl_video_copper_wait(borrow copper: Copper, line: i32): void;
+    func cl_video_copper_move(borrow copper: Copper, reg: u16, value: u16): void;
+    func cl_video_copper_color(borrow copper: Copper, index: u8, r: u8, g: u8, b: u8): void;
+    func cl_video_copper_end(borrow copper: Copper): void;
+
+    func cl_video_display_open(borrow front: Bitmap, borrow back: Bitmap): Display?;
+    func cl_video_display_free(take display: Display): void;
+    func cl_video_display_set_color(borrow display: Display, index: u8, r: u8, g: u8, b: u8): void;
+    func cl_video_display_set_copper(borrow display: Display, take copper: Copper): bool;
+    func cl_video_display_flip(borrow display: Display): void;
+    func cl_video_display_failed(const display: Display): bool;
+    func cl_video_display_index(const display: Display): u8;
+    func cl_video_wait_vblank(): void;
+}
+
+/// Allocates `size` bytes of chip memory, zeroed, or returns `null`.
+///
+/// Chip memory is the only memory the Amiga custom chips can DMA from, so every
+/// bitmap plane and every DMA-visible buffer must come from here.
+export func allocChip(size: u32): ChipBuffer? {
+    return cl_video_chip_alloc(size);
+}
+
+/// Releases a chip buffer. The generated drop also calls this exactly once.
+export func freeChip(take buffer: ChipBuffer): void {
+    cl_video_chip_free(buffer);
+}
+
+/// Returns the byte size of a chip buffer.
+export func chipSize(const buffer: ChipBuffer): u32 {
+    return cl_video_chip_size(buffer);
+}
+
+/// Reads one byte at `offset`; an out-of-range offset returns zero.
+export func chipRead8(const buffer: ChipBuffer, offset: u32): u8 {
+    return cl_video_chip_read8(buffer, offset);
+}
+
+/// Writes one byte at `offset`; an out-of-range offset is ignored.
+export func chipWrite8(borrow buffer: ChipBuffer, offset: u32, value: u8): void {
+    cl_video_chip_write8(buffer, offset, value);
+}
+
+/// Reads one big-endian 16-bit word at an aligned `offset`.
+export func chipRead16(const buffer: ChipBuffer, offset: u32): u16 {
+    return cl_video_chip_read16(buffer, offset);
+}
+
+/// Writes one big-endian 16-bit word at an aligned `offset`.
+export func chipWrite16(borrow buffer: ChipBuffer, offset: u32, value: u16): void {
+    cl_video_chip_write16(buffer, offset, value);
+}
+
+/// Reads one big-endian 32-bit long at an aligned `offset`.
+export func chipRead32(const buffer: ChipBuffer, offset: u32): u32 {
+    return cl_video_chip_read32(buffer, offset);
+}
+
+/// Writes one big-endian 32-bit long at an aligned `offset`.
+export func chipWrite32(borrow buffer: ChipBuffer, offset: u32, value: u32): void {
+    cl_video_chip_write32(buffer, offset, value);
+}
+
+/// Creates a `width` x `height` bitmap with `depth` planes, or returns `null`.
+///
+/// `width` and `height` must be 1..=1024 and `depth` 1..=8. Every plane is
+/// allocated in chip memory and zeroed; a partial allocation failure frees the
+/// planes that were already created.
+export func newBitmap(width: i32, height: i32, depth: u8): Bitmap? {
+    return cl_video_bitmap_new(width, height, depth);
+}
+
+/// Releases a bitmap and all of its planes.
+export func freeBitmap(take bitmap: Bitmap): void {
+    cl_video_bitmap_free(bitmap);
+}
+
+/// Returns the bitmap width in pixels.
+export func bitmapWidth(const bitmap: Bitmap): i32 {
+    return cl_video_bitmap_width(bitmap);
+}
+
+/// Returns the bitmap height in pixels.
+export func bitmapHeight(const bitmap: Bitmap): i32 {
+    return cl_video_bitmap_height(bitmap);
+}
+
+/// Returns the bitmap depth in bitplanes.
+export func bitmapDepth(const bitmap: Bitmap): u8 {
+    return cl_video_bitmap_depth(bitmap);
+}
+
+/// Returns the byte distance between two rows of one plane.
+export func bitmapBytesPerRow(const bitmap: Bitmap): u32 {
+    return cl_video_bitmap_bytes_per_row(bitmap);
+}
+
+/// Clears the whole bitmap to `pen`.
+export func bitmapClear(borrow bitmap: Bitmap, pen: u8): void {
+    cl_video_bitmap_clear(bitmap, pen);
+}
+
+/// Plots one pixel. Coordinates outside the bitmap are ignored.
+export func bitmapPlot(borrow bitmap: Bitmap, x: i32, y: i32, pen: u8): void {
+    cl_video_bitmap_plot(bitmap, x, y, pen);
+}
+
+/// Draws a line between two pixels. Coordinates are clipped to the bitmap.
+export func bitmapLine(borrow bitmap: Bitmap, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_video_bitmap_line(bitmap, x1, y1, x2, y2, pen);
+}
+
+/// Fills an inclusive rectangle. Coordinates are clipped to the bitmap.
+export func bitmapFill(borrow bitmap: Bitmap, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_video_bitmap_fill(bitmap, x1, y1, x2, y2, pen);
+}
+
+/// Reads one bit from `plane` at (`x`,`y`).
+///
+/// An out-of-range plane or coordinate returns `false`. This is the direct
+/// plane-access primitive the frame checks and tests use.
+export func bitmapPlaneBit(const bitmap: Bitmap, plane: u8, x: i32, y: i32): bool {
+    return cl_video_bitmap_plane_bit(bitmap, plane, x, y);
+}
+
+/// Writes one bit in `plane` at (`x`,`y`).
+///
+/// An out-of-range plane or coordinate is ignored. The bit is the plane's
+/// contribution to the pixel, not the full pen value.
+export func bitmapSetPlaneBit(borrow bitmap: Bitmap, plane: u8, x: i32, y: i32, on: bool): void {
+    cl_video_bitmap_set_plane_bit(bitmap, plane, x, y, on);
+}
+
+/// Copies a rectangle from `src` to `dest` with the blitter.
+///
+/// The copy is a plain source-to-destination move (minterm `0xC0`); it does not
+/// preserve the destination under transparent source pixels. Use
+/// `bitmapBlitMasked` for a cookie-cut image. The OCS blitter limit is 992
+/// pixels wide and 1024 rows; a larger request is ignored.
+export func bitmapBlit(borrow dest: Bitmap, const src: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void {
+    cl_video_bitmap_blit(dest, src, sx, sy, dx, dy, w, h);
+}
+
+/// Copies a rectangle through a single-plane mask with the blitter.
+///
+/// Only pixels whose mask bit is set are written. `mask` must have depth 1 and
+/// the same width and height as `src`; a mismatch is ignored.
+export func bitmapBlitMasked(borrow dest: Bitmap, const src: Bitmap, const mask: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void {
+    cl_video_bitmap_blit_masked(dest, src, mask, sx, sy, dx, dy, w, h);
+}
+
+/// Returns a deterministic FNV-1a 32-bit checksum of the bitmap planes.
+///
+/// The geometry is folded in first, then every plane byte in plane order. A
+/// fixed drawing sequence therefore has a stable checksum across runs.
+export func bitmapChecksum(const bitmap: Bitmap): u32 {
+    return cl_video_bitmap_checksum(bitmap);
+}
+
+/// Creates an empty user copper list, or returns `null`.
+///
+/// The builder holds two identical instruction streams, one per display view,
+/// so a double-buffered flip keeps the same copper effect on both frames.
+export func newCopper(): Copper? {
+    return cl_video_copper_new();
+}
+
+/// Releases a copper that was never given to a display.
+export func freeCopper(take copper: Copper): void {
+    cl_video_copper_free(copper);
+}
+
+/// Waits for scanline `line` before the following moves take effect.
+export func copperWait(borrow copper: Copper, line: i32): void {
+    cl_video_copper_wait(copper, line);
+}
+
+/// Writes `value` to the custom register at offset `reg`.
+export func copperMove(borrow copper: Copper, reg: u16, value: u16): void {
+    cl_video_copper_move(copper, reg, value);
+}
+
+/// Appends a write of a 4-bit color to `COLOR00 + index*2`.
+export func copperColor(borrow copper: Copper, index: u8, r: u8, g: u8, b: u8): void {
+    cl_video_copper_color(copper, index, r, g, b);
+}
+
+/// Ends the list with the documented wait-forever instruction.
+export func copperEnd(borrow copper: Copper): void {
+    cl_video_copper_end(copper);
+}
+
+/// Opens a double-buffered display over two caller-owned bitmaps.
+///
+/// Both bitmaps must have the same width, height, and depth. Bundle 1 is a
+/// low-resolution PAL view: width 1..=320, height 1..=256, depth 1..=5. The
+/// display borrows them; it must be dropped before either bitmap. Opening does
+/// not touch the hardware until the first `displayFlip`.
+export func openDisplay(borrow front: Bitmap, borrow back: Bitmap): Display? {
+    return cl_video_display_open(front, back);
+}
+
+/// Closes the display and restores the system view.
+///
+/// The close waits two frames, frees both compiled copper lists, and releases a
+/// copper list that was attached with `displaySetCopper`. The bitmaps are not
+/// freed here.
+export func freeDisplay(take display: Display): void {
+    cl_video_display_free(display);
+}
+
+/// Sets color `index` from 8-bit RGB components.
+///
+/// The components are reduced to the Amiga 4-bit palette. Call this before the
+/// first `displayFlip`; the first flip bakes the colors into the compiled
+/// copper lists, so a later call has no visible effect. Per-scanline animation
+/// uses `copperColor` instead.
+export func displaySetColor(borrow display: Display, index: u8, r: u8, g: u8, b: u8): void {
+    cl_video_display_set_color(display, index, r, g, b);
+}
+
+/// Queues a copper list for both display views before the first flip.
+///
+/// The first `displayFlip` attaches the list after it initializes the view
+/// ports and before it compiles them. The display takes ownership of the list.
+/// The call returns `false` when the display has already been built; in that
+/// case the list is released and has no effect.
+export func displaySetCopper(borrow display: Display, take copper: Copper): bool {
+    return cl_video_display_set_copper(display, copper);
+}
+
+/// Shows the other bitmap and waits for the next vertical blank.
+///
+/// The first call builds both views and loads the front bitmap. Later calls
+/// alternate the view and return after the new view is being displayed. Draw
+/// into the bitmap that is not currently visible: `1 - displayIndex(display)`.
+/// If the views cannot be built, `displayFailed` reports it and later flips
+/// are no-ops.
+export func displayFlip(borrow display: Display): void {
+    cl_video_display_flip(display);
+}
+
+/// Returns true when the display could not build its views.
+///
+/// A failed build leaves the display inactive; `displayFlip` becomes a no-op.
+/// Check this after the first flip if the caller needs to report the failure.
+export func displayFailed(const display: Display): bool {
+    return cl_video_display_failed(display);
+}
+
+/// Returns 0 when the front bitmap is visible, 1 when the back bitmap is.
+export func displayIndex(const display: Display): u8 {
+    return cl_video_display_index(display);
+}
+
+/// Waits for the next vertical blank.
+export func waitVBlank(): void {
+    cl_video_wait_vblank();
+}

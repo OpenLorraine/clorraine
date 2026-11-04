@@ -91,6 +91,8 @@ impl Profile {
                     | "std.mem"
                     | "std.text"
                     | "std.fmt"
+                    | "std.math"
+                    | "std.amiga.video"
                     | "std.amiga.custom"
                     | "std.amiga.dos"
                     | "std.amiga.graphics"

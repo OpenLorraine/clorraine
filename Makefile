@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -117,6 +117,7 @@ run-fault-amiga:
 verify:
 	$(MAKE) check
 	$(MAKE) sdk-a500-smoke
+	$(MAKE) sdk-a500-boing
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -140,6 +141,13 @@ sdk-issues:
 sdk-a500-smoke:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/hello/hello.clo"
 	docker/scripts/a500-smoke.sh build/clorraine/hello/hosted-amiga-13/hello
+
+# A500/Kickstart 1.3 native-video smoke: build Boing under the 1.3 profile,
+# boot it on the real Kickstart 1.3 ROM, see the live custom display, and match
+# the final frame checksum line to the committed golden crop.
+sdk-a500-boing:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/boing.clo"
+	docker/scripts/a500-boing-smoke.sh build/clorraine/boing/hosted-amiga-13/boing
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

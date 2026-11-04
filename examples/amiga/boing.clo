@@ -1,0 +1,298 @@
+// Boing: the Bundle 1 native-video acceptance program.
+//
+// The demo owns a 320x256x4 custom display built from two chip-memory
+// bitmaps. A checkerboard background is drawn once into a master bitmap and
+// both frame buffers, a shaded 64x64 ball is blitted through a single-plane
+// mask, and a user copper list changes the three background colors every
+// sixteen scanlines. The display flips one view per frame.
+//
+// The ball position is deterministic 8.8 fixed point, so the final frame has a
+// stable checksum. The program prints that checksum after restoring the system
+// view; the A500 smoke compares it to the committed golden line.
+
+module example.Boing;
+
+import {
+    ChipBuffer, Bitmap, Copper, Display,
+    allocChip, freeChip, chipRead8, chipWrite8,
+    chipRead16, chipWrite16, chipRead32, chipWrite32,
+    newBitmap, freeBitmap, bitmapClear, bitmapFill, bitmapPlot,
+    bitmapPlaneBit, bitmapSetPlaneBit, bitmapBlit, bitmapBlitMasked,
+    bitmapChecksum, newCopper, copperWait, copperColor, copperEnd,
+    openDisplay, freeDisplay, displaySetColor, displaySetCopper,
+    displayFlip, displayFailed, displayIndex
+} from std.amiga.video;
+import { sin } from std.math;
+import { print, println } from std.io;
+import { toHex } from std.fmt;
+import { delayTicks, ticks } from std.amiga.dos;
+
+/// Frame width in pixels.
+const WIDTH: i32 = 320;
+/// Frame height in pixels.
+const HEIGHT: i32 = 256;
+/// Ball size in pixels (the ball and its mask are both this square).
+const BALL: i32 = 64;
+/// Checkerboard square size in pixels.
+const TILE: i32 = 32;
+/// Rendered animation frames. At 50 Hz this is eight seconds.
+const FRAMES: i32 = 400;
+/// Extra ticks the final frame is held so the screen capture can find it.
+const HOLD: i32 = 500;
+
+/// Draws the checkerboard background with pens 1, 2, and 3.
+func drawBackground(borrow bitmap: Bitmap): void {
+    bitmapClear(bitmap, 0);
+    let y: i32 = 0;
+    while (y < HEIGHT) {
+        let x: i32 = 0;
+        while (x < WIDTH) {
+            let pen: u8 = u8(((x / TILE) + (y / TILE)) % 3 + 1);
+            bitmapFill(bitmap, x, y, x + TILE - 1, y + TILE - 1, pen);
+            x = x + TILE;
+        }
+        y = y + TILE;
+    }
+}
+
+/// Draws a shaded sphere into `ball` and its circular alpha into `mask`.
+func drawBall(borrow ball: Bitmap, borrow mask: Bitmap): void {
+    bitmapClear(ball, 0);
+    bitmapClear(mask, 0);
+    let radius: i32 = BALL / 2;
+    let y: i32 = 0;
+    while (y < BALL) {
+        let x: i32 = 0;
+        while (x < BALL) {
+            let dx: i32 = x - radius;
+            let dy: i32 = y - radius;
+            let distance: i32 = dx * dx + dy * dy;
+            if (distance <= radius * radius) {
+                // A light source above and left of centre, written as a pen
+                // 4..15 ramp. The mask carries the circle, so the corners are
+                // transparent even though the ball bitmap is square.
+                let light: i32 = (dx + 10) * (dx + 10) + (dy + 10) * (dy + 10);
+                let shade: i32 = 15 - light / 96;
+                if (shade < 4) {
+                    shade = 4;
+                }
+                bitmapPlot(ball, x, y, u8(shade));
+                bitmapSetPlaneBit(mask, 0, x, y, true);
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+/// Builds the copper list that animates the three background colors.
+///
+/// The list waits every sixteen scanlines and writes colors 1, 2, and 3 from
+/// three phase-shifted sine waves. It is attached to the display before the
+/// first flip, so both views carry the same gradient.
+func buildCopper(): Copper? {
+    let copper: Copper? = newCopper();
+    if (copper == null) {
+        return null;
+    }
+    let line: i32 = 0;
+    while (line < HEIGHT) {
+        copperWait(copper, line);
+        let phase: i32 = (line + 32) % 256;
+        let r1: i32 = 8 + (sin(phase) * 7) / 256;
+        let g1: i32 = 8 + (sin(phase + 85) * 7) / 256;
+        let b1: i32 = 8 + (sin(phase + 170) * 7) / 256;
+        let r2: i32 = 8 + (sin(phase + 85) * 7) / 256;
+        let g2: i32 = 8 + (sin(phase + 170) * 7) / 256;
+        let b2: i32 = 8 + (sin(phase) * 7) / 256;
+        let r3: i32 = 8 + (sin(phase + 170) * 7) / 256;
+        let g3: i32 = 8 + (sin(phase) * 7) / 256;
+        let b3: i32 = 8 + (sin(phase + 85) * 7) / 256;
+        copperColor(copper, 1, u8(r1 * 16), u8(g1 * 16), u8(b1 * 16));
+        copperColor(copper, 2, u8(r2 * 16), u8(g2 * 16), u8(b2 * 16));
+        copperColor(copper, 3, u8(r3 * 16), u8(g3 * 16), u8(b3 * 16));
+        line = line + 16;
+    }
+    copperEnd(copper);
+    return copper;
+}
+
+/// Sets the 4-bit palette: black, three background colors, and a ball ramp.
+func setPalette(borrow display: Display): void {
+    displaySetColor(display, 0, 0, 0, 0);
+    displaySetColor(display, 1, 0, 32, 96);
+    displaySetColor(display, 2, 0, 96, 160);
+    displaySetColor(display, 3, 32, 160, 224);
+    displaySetColor(display, 4, 0, 0, 64);
+    displaySetColor(display, 5, 0, 0, 128);
+    displaySetColor(display, 6, 0, 32, 192);
+    displaySetColor(display, 7, 0, 96, 224);
+    displaySetColor(display, 8, 32, 160, 240);
+    displaySetColor(display, 9, 96, 208, 255);
+    displaySetColor(display, 10, 160, 232, 255);
+    displaySetColor(display, 11, 208, 244, 255);
+    displaySetColor(display, 12, 240, 248, 255);
+    displaySetColor(display, 13, 255, 255, 255);
+    displaySetColor(display, 14, 255, 240, 192);
+    displaySetColor(display, 15, 255, 220, 128);
+}
+
+/// Restores the previous ball rectangle and blits the ball at (`x`,`y`).
+func drawFrame(borrow target: Bitmap, borrow master: Bitmap, borrow ball: Bitmap,
+               borrow mask: Bitmap, lastX: i32, lastY: i32, x: i32, y: i32): void {
+    if (lastX >= 0) {
+        bitmapBlit(target, master, lastX, lastY, lastX, lastY, BALL, BALL);
+    }
+    bitmapBlitMasked(target, ball, mask, 0, 0, x, y, BALL, BALL);
+}
+
+func main(): i32 {
+    // Chip-memory access is part of the acceptance: allocate, write, read, free.
+    let scratch: ChipBuffer? = allocChip(64);
+    if (scratch == null) {
+        println("boing: chip failed");
+        return 1;
+    }
+    chipWrite8(scratch, 0, 0xA5);
+    // Near-4 GiB offsets must be rejected without wrapping the bounds check.
+    chipWrite16(scratch, 0xFFFFFFFE, 0xBEEF);
+    chipWrite32(scratch, 0xFFFFFFFC, 0xDEADBEEF);
+    if (chipRead8(scratch, 0) != 0xA5 ||
+        chipRead16(scratch, 0xFFFFFFFE) != 0 ||
+        chipRead32(scratch, 0xFFFFFFFC) != 0) {
+        freeChip(scratch);
+        println("boing: chip failed");
+        return 1;
+    }
+    freeChip(scratch);
+
+    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (master == null) {
+        println("boing: allocation failed");
+        return 2;
+    }
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (front == null) {
+        println("boing: allocation failed");
+        return 2;
+    }
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (back == null) {
+        println("boing: allocation failed");
+        return 2;
+    }
+    let ball: Bitmap? = newBitmap(BALL, BALL, 4);
+    if (ball == null) {
+        println("boing: allocation failed");
+        return 2;
+    }
+    let mask: Bitmap? = newBitmap(BALL, BALL, 1);
+    if (mask == null) {
+        println("boing: allocation failed");
+        return 2;
+    }
+
+    drawBackground(master);
+    drawBackground(front);
+    drawBackground(back);
+    drawBall(ball, mask);
+    if (!bitmapPlaneBit(mask, 0, BALL / 2, BALL / 2)) {
+        println("boing: bitmap failed");
+        return 3;
+    }
+
+    let copper: Copper? = buildCopper();
+    if (copper == null) {
+        println("boing: copper failed");
+        return 4;
+    }
+
+    let display: Display? = openDisplay(front, back);
+    if (display == null) {
+        println("boing: display failed");
+        return 5;
+    }
+    setPalette(display);
+    if (!displaySetCopper(display, copper)) {
+        println("boing: copper failed");
+        return 4;
+    }
+    displayFlip(display);
+    if (displayFailed(display)) {
+        println("boing: display failed");
+        return 5;
+    }
+
+    // 8.8 fixed-point position and velocity. The ball bounces off all four
+    // edges; each buffer remembers its own previous ball rectangle so the
+    // background restore never depends on the other buffer's state.
+    let posX: i32 = 32 << 8;
+    let posY: i32 = 48 << 8;
+    let velX: i32 = 576;
+    let velY: i32 = 448;
+    let lastX: i32[2] = [-1, -1];
+    let lastY: i32[2] = [-1, -1];
+    let startTicks: u32 = ticks();
+    let frame: i32 = 0;
+    while (frame < FRAMES) {
+        posX = posX + velX;
+        posY = posY + velY;
+        let maxX: i32 = (WIDTH - BALL) << 8;
+        let maxY: i32 = (HEIGHT - BALL) << 8;
+        if (posX < 0) {
+            posX = 0;
+            velX = -velX;
+        }
+        if (posX > maxX) {
+            posX = maxX;
+            velX = -velX;
+        }
+        if (posY < 0) {
+            posY = 0;
+            velY = -velY;
+        }
+        if (posY > maxY) {
+            posY = maxY;
+            velY = -velY;
+        }
+        let bx: i32 = posX >> 8;
+        let by: i32 = posY >> 8;
+        let backIndex: i32 = 1 - i32(displayIndex(display));
+        if (backIndex == 0) {
+            drawFrame(front, master, ball, mask, lastX[0], lastY[0], bx, by);
+            lastX[0] = bx;
+            lastY[0] = by;
+        } else {
+            drawFrame(back, master, ball, mask, lastX[1], lastY[1], bx, by);
+            lastX[1] = bx;
+            lastY[1] = by;
+        }
+        displayFlip(display);
+        frame = frame + 1;
+    }
+    let elapsedTicks: u32 = ticks() - startTicks;
+
+    // Deterministic acceptance frame: park the ball at (128, 96) in both
+    // buffers, make the front buffer visible, and hold it. The held frame is
+    // what the smoke compares to the committed display crop; the checksum is
+    // taken from the same front buffer.
+    drawFrame(front, master, ball, mask, lastX[0], lastY[0], 128, 96);
+    drawFrame(back, master, ball, mask, lastX[1], lastY[1], 128, 96);
+    if (displayIndex(display) != 0) {
+        displayFlip(display);
+    }
+    delayTicks(u32(HOLD));
+    let visible: u32 = bitmapChecksum(front);
+    freeDisplay(display);
+    delayTicks(u32(25));
+    print("boing: checksum ");
+    println(toHex(visible));
+    println($"boing: frames 400 ticks {i32(elapsedTicks)}");
+
+    freeBitmap(mask);
+    freeBitmap(ball);
+    freeBitmap(back);
+    freeBitmap(front);
+    freeBitmap(master);
+    return 0;
+}
