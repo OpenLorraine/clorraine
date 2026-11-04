@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundle 0 done; Bundle 1 next
+> **Status**: Blocked — Bundle 0 A500/KS1.3 runtime acceptance
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)

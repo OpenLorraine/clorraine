@@ -5,7 +5,7 @@
 
 | Bundle | Tier | Min OS | Done | Total | Must open | Tracking |
 |---|---|---|---|---|---|---|
-| 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
+| 0-baseline | core | 1.3 | 8 | 9 | 1 | #1 |
 | 1-native-video | core | 1.3 | 0 | 11 | 8 | #2 |
 | 2-sprites | core | 1.3 | 0 | 6 | 3 | #3 |
 | 3-audio-input | core | 1.3 | 0 | 8 | 5 | #4 |
@@ -25,7 +25,7 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-BASE-001 | hosted-amiga-13 profile (A500/OCS/68000/512K/KS1.3) | must | done | a500_profile |
 | SDK-BASE-002 | nix13 runtime and libc audit | must | done | a500_build |
 | SDK-BASE-003 | 1.3 module gate and E11200 for unsupported modules | must | done | a500_gate |
-| SDK-BASE-004 | A500/1.3 load/run smoke (vamos; FS-UAE manual) | must | done | a500_smoke |
+| SDK-BASE-004 | A500/1.3 runtime smoke (FS-UAE KS1.3 acceptance; vamos pre-check) | must | blocked | a500_smoke |
 | SDK-BASE-005 | TSV registry and schema validator | must | done | registry_test |
 | SDK-BASE-006 | Generated coverage view | must | done | registry_coverage |
 | SDK-BASE-007 | Per-bundle tracking issues | should | done | registry_issues |

@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [00-index.md](00-index.md)
-> **Status**: Done (9/9; issue #1 closed)
+> **Status**: Blocked — AR-17 acceptance decision
 
 ## Red phases
 
@@ -52,11 +52,19 @@ is the intended shim replacement; the 1.3 units build with `-mcrt=nix13` and
 strict flags; declarations agree. Two documentation nits (EI-001/EI-002) were
 fixed.
 
+## Blocking decision
+
+AR-17 is a reserved acceptance-criteria change: it would accept `nix13` build +
+`vamos` load/run as the automated proof and leave the FS-UAE A500/KS1.3 visible
+run manual. The independent review (RV-001) flagged that this was not approved.
+Bundle 0 stays blocked until the user either (a) approves AR-17 explicitly, or
+(b) supplies a captured FS-UAE A500/KS1.3 run.
+
 ## Accepted residuals
 
 | Residual | Reason |
 |---|---|
-| FS-UAE A500/KS1.3 runtime/display is a manual leg; automated capture is deferred. `vamos` is V47 API emulation, not a 1.3 kernel. | The A500 has no bootable hard-drive filesystem in ROM; the ADF serial capture needs a TCP/PTY harness and a verified boot path. The compiler profile, `nix13` build, 1.3 API surface, and `vamos` load/run cover the binary; the manual FS-UAE check covers the 1.3 kernel/display. |
+| FS-UAE A500/KS1.3 runtime/display is **not yet captured**. `vamos` is V47 API emulation, not a 1.3 kernel. | The A500 has no bootable hard-drive filesystem in ROM; the ADF serial/TCP and screenshot capture paths produced no readable output. This is the blocking AR-17 decision, not an accepted residual. |
 | PRE-001: `examples/amiga/message-drop.clo` failure paths delete a port while a sent/replied message is still queued (56-byte leak). | Pre-existing in both base and head; outside Bundle 0. The normal and allocation-failure paths are clean. |
 | PRE-002: a fetched `Message` must outlive its reply port; deleting the port first is a use-after-free. | Pre-existing, already recorded as the PLAN-13 accepted residual; the compiler has no reply-port lifetime carrier. |
 
@@ -67,4 +75,4 @@ fixed.
 - `cargo test --test amiga_a500_spec_test` 4/4; `amiga_exec_spec_test` 6/6.
 - `make sdk-registry` OK (79 capabilities, 10 bundles); `registry_test.sh` OK.
 - `make sdk-a500-smoke` OK: nix13 build + `vamos` load/run.
-- Ten tracking issues created (#1–#10); Bundle 0 issue closed.
+- Ten tracking issues created (#1–#10); Bundle 0 issue #1 is reopened and blocked.

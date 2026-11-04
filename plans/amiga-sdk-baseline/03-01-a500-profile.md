@@ -72,12 +72,12 @@ The driver builds `build/clorraine/<stem>/hosted-amiga-13/<stem>`. The smoke scr
 2. Runs the built binary under `vamos` in the SDK container and checks the
    `Hello, Amiga, from Clorraine!` line.
 
-`vamos` is the automated load/run smoke (`nix13` build + V47 API emulation), not a
-Kickstart 1.3 kernel. The FS-UAE A500/KS1.3 visual run is the
-manual hardware leg: the stock A500 has no bootable hard-drive filesystem, and the
-ADF serial/directory capture harness is deferred (AR-17, findings). `run.sh` still
-carries the explicit `AMIGA_MODEL`/`KICKSTART` overrides and the ADF path for a
-manual visual run.
+The `nix13` build + `vamos` load/run is only a pre-check (V47 API emulation, not a
+Kickstart 1.3 kernel). The acceptance is the FS-UAE A500/KS1.3 visible run. That
+leg is not yet captured: the stock A500 has no bootable hard-drive filesystem, and
+the ADF serial/TCP and screenshot capture paths produced no readable output
+(AR-17, findings). `run.sh` still carries the explicit
+`AMIGA_MODEL`/`KICKSTART` overrides and the ADF path for a manual visual run.
 
 ## Compatibility
 

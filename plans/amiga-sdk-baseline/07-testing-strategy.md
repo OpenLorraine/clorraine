@@ -13,8 +13,8 @@
 | ST-4 | 1.3 program importing `std.amiga.exec` | exit 1; `E11200`; no C | R2 |
 | ST-5 | 3.1 program importing `std.amiga.exec` | exit 0; unchanged behavior | R3 |
 | ST-6 | `clc --profile hosted-amiga-13` hello, then cross-build with `-mcrt=nix13` | C compiles and links under strict flags | R3, R4 |
-| ST-7 | A500 hello under `vamos` | captured line is `Hello, Amiga, from Clorraine!`, exit 0 | R4 |
-| ST-7b | FS-UAE A500/KS1.3 visual run | manual hardware check; automated capture deferred (AR-17) | R4 |
+| ST-7 | A500 hello under `vamos` | pre-check only: captured line is `Hello, Amiga, from Clorraine!`, exit 0 | R4 |
+| ST-7b | A500 hello under FS-UAE A500/KS1.3 | captured visible line is `Hello, Amiga, from Clorraine!`, exit 0; currently blocked (AR-17) | R4 |
 | ST-8 | Registry validator with a duplicate ID / bad status / missing dependency / done without evidence | each is rejected with a named error | R5 |
 | ST-9 | `registry.sh coverage` on the seed | deterministic `coverage.md`; every bundle appears | R5 |
 | ST-10 | `registry.sh issues` on the seed | one body per bundle, each with its capability checklist | R6 |
@@ -49,6 +49,7 @@ test script fails with a missing-command error.
 - `make sdk-registry` — validate + regenerate coverage.
 - `make check` — spec/workspace gate.
 - `make verify` — full Amiga/FS-UAE gate; the 3.1 legs must stay green.
-- `docker/scripts/a500-smoke.sh` — A500/1.3 build + `vamos` load/run (V47 API emulation); FS-UAE A500/KS1.3 is manual.
+- `docker/scripts/a500-smoke.sh` — A500/1.3 build + `vamos` pre-check (V47 API emulation).
+- The acceptance is the FS-UAE A500/KS1.3 visible run; it is blocked pending AR-17.
 - The FS-UAE A500/KS1.3 visual run is a manual check; the automated capture is
   deferred and recorded in `05-findings.md`.

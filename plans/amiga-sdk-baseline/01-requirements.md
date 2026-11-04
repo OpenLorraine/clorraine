@@ -21,10 +21,10 @@ graphics/audio API; it makes the foundation trustworthy and the backlog visible.
 - **R3 — Shared shim compatibility.** The hosted-amiga shim must compile with
   `-mcrt=nix13`: use `CreatePort`/`DeletePort`, `AllocMem`/`FreeMem`, and open
   graphics/intuition at version 33. The 3.1 profile must keep working.
-- **R4 — A500 build and load/run proof.** Build `examples/hello/hello.clo` with
-  `--profile hosted-amiga-13` and run it under `vamos`; it must print the hello line
-  and exit 0. The FS-UAE A500/KS1.3 visual run is a manual hardware leg; the
-  automated ADF/directory capture is deferred (AR-17).
+- **R4 — A500/KS1.3 runtime proof.** Build `examples/hello/hello.clo` with
+  `--profile hosted-amiga-13` and run it under FS-UAE A500 with the Kickstart 1.3
+  ROM; capture the visible `Hello, Amiga, from Clorraine!` line. The `nix13` build
+  plus `vamos` load/run is a pre-check, not the acceptance.
 - **R5 — Registry.** Add a TSV registry with stable capability IDs, schema validation,
   a generated `coverage.md`, and a programme map covering Bundles 0–9.
 - **R6 — Tracking issues.** Generate and create one GitHub tracking issue per bundle,
@@ -82,8 +82,8 @@ graphics/audio API; it makes the foundation trustworthy and the backlog visible.
 
 1. `clc --profile hosted-amiga-13` emits C; a 1.3-only module import is accepted.
 2. `std.amiga.exec` on 1.3 reports `E11200`; the 3.1 profile still accepts it.
-3. The A500 hello builds with `-mcrt=nix13` and runs under `vamos`; the FS-UAE
-   A500/KS1.3 visual check is recorded as a manual leg.
+3. The A500 hello builds with `-mcrt=nix13`, passes the `vamos` pre-check, and
+   prints the hello line under FS-UAE A500/KS1.3 with captured output.
 4. The registry validator passes; `coverage.md` is generated; ten tracking issues exist.
 5. `make check`, `make verify`, `./spec/check.sh`, and the A500 smoke leg pass.
 6. No language, grammar, diagnostic, or ABI change.
