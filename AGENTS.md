@@ -36,10 +36,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 
 | Command | Purpose |
 |---------|---------|
-| `make check` | Fast gate: `./spec/check.sh`, then `cargo test --workspace` in the container |
+| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, then `cargo test --workspace` in the container |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
-| `make verify` | Full acceptance: `check` plus `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE leg needs the SDK X display |
+| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE leg needs the SDK X display |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
