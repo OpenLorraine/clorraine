@@ -151,6 +151,9 @@ pub(super) struct Scope {
     pub(super) id: ir::ScopeId,
     /// The source range of the point that closes the scope.
     pub(super) close_span: Span,
+    /// True when this scope opens inside a loop body and its cleanup belongs
+    /// to each iteration.
+    pub(super) in_loop: bool,
     /// Names bound here, innermost wins.
     pub(super) names: BTreeMap<String, usize>,
     /// Binding indices in declaration order, for reverse drop emission.

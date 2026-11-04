@@ -8,8 +8,8 @@
 //!
 //! Exit codes are part of the contract: 0 on success (or a printed help,
 //! version, or FS-UAE handoff), 1 for a Clorraine diagnostic, a missing tool,
-//! or a C compiler failure, and 2 for a malformed command line or a process
-//! running outside the SDK container.
+//! or a C compiler failure, and 2 for a malformed command line or a command
+//! that needs the SDK container but runs outside it.
 
 mod artifacts;
 mod build;
@@ -21,6 +21,7 @@ mod toolchain;
 
 use std::ffi::OsStr;
 
+use crate::diag::{format_error, format_from_args, registry, DiagnosticFormat};
 use crate::profile::Profile;
 
 use cli::{Action, Command, Options};
@@ -40,9 +41,13 @@ pub fn run(args: Vec<String>) -> i32 {
 /// The marker is a parameter so tests can exercise the outside-the-container
 /// exit path without changing the filesystem layout.
 fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
+    let requested = format_from_args(&args);
     match cli::parse(&args) {
         Err(message) => {
-            eprintln!("usage error: {}", display::sanitize(&message));
+            report_error(
+                requested,
+                &format!("usage error: {}", display::sanitize(&message)),
+            );
             EXIT_USAGE
         }
         Ok(Action::Help) => {
@@ -53,6 +58,22 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
             println!("{}", cli::version_text());
             0
         }
+        Ok(Action::Explain(code)) => match registry::explain(&code) {
+            Some(text) => {
+                print!("{text}");
+                0
+            }
+            None => {
+                report_error(
+                    requested,
+                    &format!(
+                        "usage error: unknown diagnostic code '{}'",
+                        display::sanitize(&code)
+                    ),
+                );
+                EXIT_USAGE
+            }
+        },
         Ok(Action::Invoke(options)) => {
             let search_path = std::env::var_os("PATH").unwrap_or_default();
             invoke(options, marker, &search_path)
@@ -66,7 +87,7 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
 /// gates can be exercised with synthetic inputs.
 fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
     if let Some((code, message)) = environment_exit(&options, marker, search_path) {
-        eprintln!("{message}");
+        report_error(options.diagnostics, &message);
         return code;
     }
     match options.command {
@@ -78,16 +99,29 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
 
 /// The environment gate: `Some((code, message))` when the driver must stop.
 ///
-/// A missing SDK marker is a usage/environment error (exit 2); a required tool
-/// that is missing or not executable on `PATH` is reported by name (exit 1).
-/// Both inputs are parameters so unit tests need not touch the process
-/// environment.
+/// A missing SDK marker stops a command that needs the cross toolchain (exit
+/// 2); the host profile and `emit` work on a bare host, so they continue to
+/// the tool check. A required tool that is missing or not executable on `PATH`
+/// is reported by name (exit 1). Both inputs are parameters so unit tests need
+/// not touch the process environment.
 fn environment_exit(options: &Options, marker: &str, search_path: &OsStr) -> Option<(i32, String)> {
-    if !environment::sdk_present(marker) {
+    if sdk_required(options) && !environment::sdk_present(marker) {
         return Some((EXIT_USAGE, environment::sdk_guidance()));
     }
     environment::missing_tool_in(&required_tools(options), search_path)
         .map(|tool| (1, environment::missing_tool_message(&tool)))
+}
+
+/// True when the selected command needs the pinned SDK image.
+///
+/// `emit` only runs the in-process compiler, and the host profile builds with
+/// the host `cc`, so both work on a bare host. The Amiga and freestanding
+/// profiles need the SDK cross toolchain and emulator.
+fn sdk_required(options: &Options) -> bool {
+    match options.command {
+        Command::Emit => false,
+        Command::Build | Command::Run => options.profile != Profile::Host,
+    }
 }
 
 /// The external tools a command needs before it can run.
@@ -124,9 +158,12 @@ fn emit(options: &Options) -> i32 {
     let (scratch_dir, temp) = match artifacts::create_scratch_c() {
         Ok(scratch) => scratch,
         Err(error) => {
-            eprintln!(
-                "clorraine: cannot create a scratch file: {}",
-                display::sanitize(&error.to_string())
+            report_error(
+                options.diagnostics,
+                &format!(
+                    "clorraine: cannot create a scratch file: {}",
+                    display::sanitize(&error.to_string())
+                ),
             );
             return 1;
         }
@@ -138,7 +175,7 @@ fn emit(options: &Options) -> i32 {
 
 /// Emits the C into `temp`, then prints it or copies it to the output path.
 fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
-    let code = build::emit_c(options.profile, &options.files, temp);
+    let code = build::emit_c(options.profile, &options.files, temp, options.diagnostics);
     if code != 0 {
         // The compiler already reported its diagnostics to stderr.
         return code;
@@ -146,9 +183,12 @@ fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
     let c = match std::fs::read_to_string(temp) {
         Ok(c) => c,
         Err(error) => {
-            eprintln!(
-                "clorraine: cannot read the emitted C: {}",
-                display::sanitize(&error.to_string())
+            report_error(
+                options.diagnostics,
+                &format!(
+                    "clorraine: cannot read the emitted C: {}",
+                    display::sanitize(&error.to_string())
+                ),
             );
             return 1;
         }
@@ -156,9 +196,12 @@ fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
     match &options.output {
         Some(path) => {
             if let Err(error) = std::fs::write(path, &c) {
-                eprintln!(
-                    "clorraine: cannot write '{}': {error}",
-                    display::sanitize(path)
+                report_error(
+                    options.diagnostics,
+                    &format!(
+                        "clorraine: cannot write '{}': {error}",
+                        display::sanitize(path)
+                    ),
                 );
                 return 1;
             }
@@ -173,11 +216,16 @@ fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
 
 /// Builds the program and reports the artifact path.
 fn build_command(options: &Options) -> i32 {
-    let built = match build::build(options.profile, options.release, &options.files) {
+    let built = match build::build(
+        options.profile,
+        options.release,
+        &options.files,
+        options.diagnostics,
+    ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
         Err(build::BuildFailure::Error(message)) => {
-            eprint!("{message}");
+            report_error(options.diagnostics, &message);
             return 1;
         }
     };
@@ -196,11 +244,16 @@ fn run_command(options: Options) -> i32 {
     if options.profile == Profile::Freestanding {
         return run_freestanding(options);
     }
-    let built = match build::build(options.profile, options.release, &options.files) {
+    let built = match build::build(
+        options.profile,
+        options.release,
+        &options.files,
+        options.diagnostics,
+    ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
         Err(build::BuildFailure::Error(message)) => {
-            eprint!("{message}");
+            report_error(options.diagnostics, &message);
             return 1;
         }
     };
@@ -218,7 +271,12 @@ fn run_command(options: Options) -> i32 {
     } else {
         None
     };
-    let result = run::run_program(&runner, &built.bin, capture.as_deref());
+    let result = run::run_program(
+        &runner,
+        &built.bin,
+        capture.as_deref(),
+        options.diagnostics,
+    );
     if result.captured {
         if let Some(path) = &capture {
             println!("captured {}", display::sanitize(&path.display().to_string()));
@@ -234,11 +292,16 @@ fn run_command(options: Options) -> i32 {
 /// built for the host. The m68k build still runs first, so a `run` also proves
 /// the target link. `--capture` writes the host run's output as usual.
 fn run_freestanding(options: Options) -> i32 {
-    let built = match build::build(options.profile, options.release, &options.files) {
+    let built = match build::build(
+        options.profile,
+        options.release,
+        &options.files,
+        options.diagnostics,
+    ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
         Err(build::BuildFailure::Error(message)) => {
-            eprint!("{message}");
+            report_error(options.diagnostics, &message);
             return 1;
         }
     };
@@ -248,17 +311,23 @@ fn run_freestanding(options: Options) -> i32 {
     let stem = match artifacts::program_stem(&options.files) {
         Some(stem) => stem,
         None => {
-            eprintln!("clorraine: an input file name has no file stem");
+            report_error(
+                options.diagnostics,
+                "clorraine: an input file name has no file stem",
+            );
             return 1;
         }
     };
     let Some(tool) = toolchain::run_tool(options.profile, toolchain::native_syscalls()) else {
-        eprintln!("clorraine: the freestanding profile has no host run tool");
+        report_error(
+            options.diagnostics,
+            "clorraine: the freestanding profile has no host run tool",
+        );
         return 1;
     };
     let host_bin = artifacts::host_bin_path(options.profile, &stem);
     if let Err(ice) = build::compile(&tool, options.release, &built.c, &host_bin) {
-        eprint!("{ice}");
+        report_error(options.diagnostics, &ice.to_string());
         return 1;
     }
     let capture = if options.capture {
@@ -266,13 +335,28 @@ fn run_freestanding(options: Options) -> i32 {
     } else {
         None
     };
-    let result = run::run_program(&toolchain::Runner::Native, &host_bin, capture.as_deref());
+    let result = run::run_program(
+        &toolchain::Runner::Native,
+        &host_bin,
+        capture.as_deref(),
+        options.diagnostics,
+    );
     if result.captured {
         if let Some(path) = &capture {
             println!("captured {}", display::sanitize(&path.display().to_string()));
         }
     }
     result.code
+}
+
+/// Writes one driver-level error in the selected format.
+///
+/// Human mode preserves the exact existing bytes; JSON mode emits one object
+/// line with a null code. Every user-facing error in this module goes through
+/// here, so no path can silently keep the human shape under
+/// `--diagnostics=json`.
+fn report_error(format: DiagnosticFormat, message: &str) {
+    eprint!("{}", format_error(format, message));
 }
 
 /// Prints an emitted translation unit to stdout, ignoring a read failure.
@@ -306,9 +390,9 @@ mod tests {
 
     #[test]
     fn an_absent_sdk_marker_exits_two_and_prints_guidance() {
-        let options = invoke_options(&["run", "hello.clo"]);
+        let options = invoke_options(&["run", "--profile", "hosted-amiga", "hello.clo"]);
         let (code, message) = environment_exit(&options, "/no/such/sdk-marker", &OsString::new())
-            .expect("an absent marker must stop the driver");
+            .expect("an absent marker must stop an Amiga command");
         assert_eq!(code, EXIT_USAGE);
         assert!(
             message.contains("SDK container"),
@@ -316,9 +400,27 @@ mod tests {
         );
         // The whole run entry point returns the same code.
         assert_eq!(
-            run_with_marker(args(&["run", "hello.clo"]), "/no/such/sdk-marker"),
+            run_with_marker(
+                args(&["run", "--profile", "hosted-amiga", "hello.clo"]),
+                "/no/such/sdk-marker"
+            ),
             EXIT_USAGE
         );
+    }
+
+    #[test]
+    fn a_bare_host_runs_emit_and_the_host_profile_without_the_marker() {
+        let emit = invoke_options(&["emit", "hello.clo"]);
+        assert!(
+            environment_exit(&emit, "/no/such/sdk-marker", &OsString::new()).is_none(),
+            "emit only needs the in-process compiler"
+        );
+
+        let host = invoke_options(&["run", "hello.clo"]);
+        let (code, message) = environment_exit(&host, "/no/such/sdk-marker", &OsString::new())
+            .expect("the host profile still needs cc");
+        assert_eq!(code, 1, "a missing host tool is not an SDK-marker error");
+        assert!(message.contains("'cc'"), "the report names cc, got:\n{message}");
     }
 
     #[test]

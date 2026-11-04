@@ -41,6 +41,9 @@ outside the slice.
    hosted-amiga against an independent expected-output oracle. An exposed implementation,
    porting, or FFI gap is fixed in the same plan or a bounded follow-up. A gap that requires a
    language-surface change stops the phase for a user ruling; it does not silently expand v1.0.
+   After `std.amiga.exec` lands, re-review `spec/appendix-amiga.md` and
+   `spec/appendix-stdlib.md` against the delivered API, rerun `./spec/check.sh`, and re-record
+   their `stable (v1.0)` status.
 4. **Production gate.** The final phase checks both plans' progress and the reproduced outputs.
    Phase 5 starts only after the user records the two programme names and the licence audit under
    AR-13.
@@ -62,6 +65,7 @@ outside the slice.
 | Item | Owner |
 | ---- | ----- |
 | `std.amiga.exec` wrapper surface | New `plans/amiga-library-surface/` |
+| Amiga and stdlib appendices | Phase 5 re-review and stable-status re-record after the module lands |
 | Two allowlisted console programs | User selects at the Phase 5 gate; the new plan records the names |
 | Porting and FFI gaps | New plan; new DEF rows; fix in the plan or a bounded follow-up |
 | Accepted-program compiler gaps | New plan; they block PLAN-13 Done |
@@ -88,6 +92,9 @@ None in this programme. The DX and PLAN-13 plans own their code.
   the Phase 4 review also re-reviews `spec/14-diagnostics.md` after its help-cell edit.
 - The PLAN-13 plan's final verification includes `make verify`, the two program runs, and an
   independent expected-output oracle.
+- The Phase 5 review re-reviews `spec/appendix-amiga.md` and `spec/appendix-stdlib.md` against
+  the delivered `std.amiga.exec` API, reruns `./spec/check.sh`, and re-records their stable
+  status.
 - Before any `make verify` in Phases 4, 5, or 7, check the FS-UAE environment: the SDK X display,
   `docker/.env`, and the local Kickstart ROM path. A missing dependency is a named blocker, not a
   code failure.

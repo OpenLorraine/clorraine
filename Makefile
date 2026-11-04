@@ -16,9 +16,11 @@
 # `make run-fault-amiga` runs the six runtime-fault programs under `vamos` and
 # asserts the exact fault line and a nonzero exit.
 #
-# `make verify` is the full acceptance run: the fast check plus every
-# hosted-amiga cross-toolchain leg. It requires the SDK X display for the
-# FS-UAE leg.
+# `make verify` is the full acceptance run: the fast check plus the
+# host/hosted-amiga differential, every hosted-amiga cross-toolchain leg, and
+# the runtime faults. It requires the SDK X display for the FS-UAE leg.
+#
+# `make asan` runs the memory-safety suites under AddressSanitizer.
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
@@ -38,11 +40,33 @@ STEM = $(basename $(notdir $(FILE)))
 # Prefix for the host FS-UAE wrapper when capturing.
 CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check channel-assets demo-youtube
+# Differential and sanitizer overrides reach the container through the
+# environment, so a path with spaces stays one value and never becomes shell
+# text. `make differential OUTDIR=...` and `make asan ASAN_SUITE_TIMEOUT=...`
+# export these automatically.
+export DIFF_ONLY
+export OUTDIR
+export ASAN_SUITE_TIMEOUT
+
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
+
+# Run every suite that references RDC_ASAN under AddressSanitizer. The runner
+# installs a temporary `cc` wrapper that links ASan children with `-no-pie`,
+# because the SDK image's GCC 12 ASan runtime is unstable for PIE executables.
+# Each suite runs serially in its own bounded process.
+asan:
+	$(DOCKER_MAKE) exec PASSTHROUGH="ASAN_SUITE_TIMEOUT" CMD="docker/scripts/asan-suite.sh"
+
+# Compare host and hosted-amiga stdout for three portable programs. This is a
+# convenience gate over the same outputs the corpus pins, not an independent
+# signal. `DIFF_ONLY=1` re-diffs an existing OUTDIR without rebuilding, which
+# is the negative-control path.
+differential:
+	$(DOCKER_MAKE) exec PASSTHROUGH="DIFF_ONLY OUTDIR" CMD="docker/scripts/differential-seed.sh"
 
 # Developer convenience: build the driver, then run one program.
 #   make run FILE=hello.clo                                  host, streamed
@@ -86,6 +110,7 @@ run-fault-amiga:
 
 verify:
 	$(MAKE) check
+	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
 	@echo "verify: all legs passed"

@@ -1,6 +1,6 @@
 # Chapter 03 - Ownership, Moves, and Destructors
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 02 (types), Ch 12 (FFI and contracts), Ch 16 (borrow rules), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (params), 3.4 (handles), 3.5 (module values), 4 (types), 5 (statements), 6.3-6.4 (unsafe and postfix expressions)
 > **Ledger:** [decisions.md](decisions.md) sections 1, 4, 5; plus 6 (T6, T8), 11 (X1, X2), 15 (P2-P5)
@@ -193,7 +193,8 @@ func process(): void {
 `T?` applies to handles, `raw`, `cstring`, and views (T8). On any other type it
 is E10011. `T` widens into `T?`, and narrowing requires an `== null` or
 `!= null` check; using the value before the check is E10010. Using `null` where
-a non-nullable type is required is E10012.
+a non-nullable type is required is E10012, except where an explicit cast's own
+rule applies (Ch 04 §14).
 
 A nullable owned value drops null-safely (O7): when it is `null` there is
 nothing to release, so the drop is skipped. The **out-parameter pattern**

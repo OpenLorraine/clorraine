@@ -159,6 +159,18 @@ pub(super) struct Emitter<'a> {
     /// released; every other destination copies its bytes and releases its
     /// temporaries.
     pub(super) init_retain_owners: bool,
+    /// The call-result init locals of the current global initializer.
+    ///
+    /// The materializing walk may bind a fixed-array call result before the
+    /// projection chain sees it. Marking the local lets the chain register that
+    /// local for release and empty the selected position.
+    pub(in crate::codegen) init_call_locals: BTreeSet<String>,
+    /// The stored position of the current global initializer's view value.
+    ///
+    /// A view destination can store one constant position of a literal while
+    /// its sibling fill rows release; the selection travels with the
+    /// initializer walk so only unselected backing is registered for release.
+    pub(in crate::codegen) init_select: program::ViewSelect,
     /// True while an argument a `take` parameter consumes is prepared.
     ///
     /// The callee frees a consumed value, so nothing in the argument's own
@@ -366,6 +378,8 @@ impl<'a> Emitter<'a> {
             init_literal_locals: BTreeSet::new(),
             init_global_literals: Vec::new(),
             init_retain_owners: false,
+            init_call_locals: BTreeSet::new(),
+            init_select: program::ViewSelect::Whole,
             init_skip_owner_binding: false,
             init_walked_guards: false,
             prefilled_materializations: BTreeSet::new(),

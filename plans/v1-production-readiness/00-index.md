@@ -4,7 +4,7 @@
 > stabilise the specification, add the simplified verification infrastructure, execute the
 > already-planned DX slice, complete the bounded PLAN-13 acceptance slice, and prepare the
 > MIT-licensed release.
-> **Status**: Planning Complete
+> **Status**: Done (45/45; conditional publish blocked)
 > **Created**: 2026-10-31
 > **Implements**: PLAN-15 (standalone programme; no upstream RD)
 > **CodeOps Artifact Schema**: 1
@@ -51,7 +51,7 @@ challenger returned `Simplify`, and the user chose the simplified scope.
 
 | #   | Document | Description |
 | --- | -------- | ----------- |
-| AR  | [Ambiguity Register](00-ambiguity-register.md) | Zero-Ambiguity Gate decisions (15 entries: 14 resolved, 1 deferred) |
+| AR  | [Ambiguity Register](00-ambiguity-register.md) | Zero-Ambiguity Gate decisions (15 entries: 15 resolved, 0 deferred) |
 | 00  | [Index](00-index.md) | This document — overview and navigation |
 | 01  | [Requirements](01-requirements.md) | Programme requirements, scope, and acceptance criteria |
 | 02  | [Current State](02-current-state.md) | Evidence about the compiler, spec, tests, and release gaps |
@@ -71,7 +71,8 @@ challenger returned `Simplify`, and the user chose the simplified scope.
 # Fast host and container gate
 make check
 
-# All suites that honour RDC_ASAN, one bounded process per suite, serial tests
+# All suites that honour RDC_ASAN, one bounded process per suite, serial tests,
+# with a -no-pie ASan cc wrapper
 make asan
 
 # Host-vs-m68k output convenience diff over the three portable corpus programs
@@ -99,7 +100,7 @@ acceptance gate (AR-9).
 | PLAN-13 slice | `std.amiga.exec` plus two allowlisted console programs | AR-8, AR-13 |
 | CI | Host-only GitHub Actions; no self-hosted runner | AR-9 |
 | Differential seed | `buffer-container`, `file-copier`, `string-parser` (convenience gate, not a new signal) | AR-10 |
-| `make asan` set | Every test file that references `RDC_ASAN` (21 today) | AR-11 |
+| `make asan` set | Every test file that references `RDC_ASAN` (21 at base; 22+ after Phase 1) | AR-11 |
 | Accepted residuals | `docs/known-limitations.md` | AR-14 |
 
 ## Specialist Agents
@@ -128,5 +129,38 @@ invariant; the catalog roles plus a dynamic packet cover them. No new specialist
 - `.github/workflows/check.yml` — host-only CI.
 - `LICENSE`, `compiler/Cargo.toml`, `README.md`, `RELEASE.md`, `docs/known-limitations.md` —
   release readiness.
-- `plans/clorraine-dx/` — existing DX plan to execute.
-- `plans/amiga-library-surface/` — PLAN-13 plan to create and execute.
+- `plans/clorraine-dx/` — delivered DX plan (28/28).
+- `plans/amiga-library-surface/` — delivered PLAN-13 slice (16/16).
+
+## Handoff (post-completion)
+
+**Status:** PLAN-15 is **Done at 45/45 main tasks**. PLAN-13 is Done at 16/16; the DX plan is Done
+at 28/28. The conditional publish sub-plan is **0/2 and blocked on user authorization**.
+
+**Working tree:** every change is uncommitted. No commit, push, tag, release artifact, or checksum
+file exists.
+
+**Final evidence:**
+
+| Gate | Result |
+|---|---|
+| `make check` | exit 0; `./spec/check.sh` OK (27 files, 111 compile-fail tests); 92 passing test groups |
+| `make verify` | exit 0; `verify: all legs passed` (differential, FS-UAE corpus, six runtime faults) |
+| `make asan` | exit 0; 24 suites |
+| `make differential` | exit 0; 3/3 programs match |
+| `make demo-check` | exit 0; 78 passed, 1 skipped |
+| PLAN-13 programs | `exec-self-test`, `message-drop`, and Hamurabi match their transcripts under `vamos` |
+
+**Next steps:**
+
+| Step | Owner | Notes |
+|---|---|---|
+| Authorize a commit of the completed work | User | Everything is uncommitted; no commit mode was selected |
+| Authorize publication (tag, x86_64 tarball, `SHA256SUMS`, notes) | User | Conditional tasks C.1.1 and C.1.2 are marked blocked for this reason |
+| Refresh the specialist-coverage snapshot (`analyze-agents`) | Executor, optional | `AGENTS.md` records a 51-folder snapshot; the tree has 53 |
+
+**Accepted residuals:** fetched `Message` reply-port lifetime is a documented contract; the
+inline owned-call-result leak and imported-handle cast emission are pre-existing and base-identical;
+they are recorded in `05-findings.md` and `plans/amiga-library-surface/05-findings.md`.
+
+This section is the durable handoff for a compacted session.

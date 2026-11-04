@@ -5,11 +5,17 @@ import { tokenize } from "../src/util/shiki.ts";
 const fixture = [
   "// a comment",
   "module demo.Hello;",
-  "import { Screen } from std.amiga.intuition;",
+  "import { Screen as S } from std.amiga.intuition;",
+  "handle File freedBy closeFile;",
   "func main(): i32 {",
   '    let who: str = "Amiga";',
   "    let n: u8 = 0x2a;",
   "    let c: u8 = 'x';",
+  "    let size: usize = sizeof(i32);",
+  "    do { n = n - 1; } while (n > 0);",
+  "    for (x in xs) { }",
+  "    let f: func(i32): i32 = (x) => x;",
+  '    let e: [u8; 4] = embed("x");',
   '    println($"Hi, {who}!");',
   "    return n;",
   "}",
@@ -29,6 +35,8 @@ test("every grammar category is scoped", async () => {
   assert.ok(has("constant.character.clorraine"), "char literal");
   assert.ok(has("constant.numeric"), "number literal");
   assert.ok(has("entity.name.function"), "call name");
+  assert.ok(has("support.function.builtin"), "sizeof / embed");
+  assert.ok(has("keyword.operator.arrow"), "arrow operator");
 });
 
 test("only template strings mark interpolation", async () => {

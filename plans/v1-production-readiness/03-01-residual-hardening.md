@@ -89,7 +89,9 @@ new helper must be private to its module and documented with the existing module
 
 ### Integration Points
 
-- The spec suite uses the existing test helpers for emit, strict C build, and `RDC_ASAN` runs.
+- The spec suite uses the existing test helpers for emit, strict C build, and `RDC_ASAN` runs; its
+  ASan helper adds `-no-pie` to the child link because the SDK image's GCC 12 ASan runtime
+  otherwise intermittently fails at startup for PIE executables.
 - The implementation suite uses the existing byte-identity and emitted-C pin style.
 - The phase review dispatches `correctness-reviewer`, `memory-safety-auditor`,
   `emission-integrity-auditor`, and `semantics-reviewer`; the change touches ownership,
@@ -213,8 +215,10 @@ func main(): i32 {
 - Specification tests: ST-1 – ST-6 in `07-testing-strategy.md`. ST-1 compiles the control and each
   explicit spelling independently; a combined program would suppress the later nullability
   reports.
-- ASan probes: every new memory case runs with `RDC_ASAN=1` and a bounded timeout; the Phase 1
-  Verify command also sets `RDC_ASAN=1` and runs the suite serially.
+- ASan probes: every new memory case runs with `RDC_ASAN=1` and a bounded timeout; the new
+  suite's ASan helper links with `-no-pie`; the Phase 1 Verify command also sets `RDC_ASAN=1` and
+  runs the suite serially. The existing ASan suites receive the same flag from `make asan`'s `cc`
+  wrapper.
 - Implementation tests: emitted release counts, root binding, index carry-through, and byte
   identity where pinned.
 - Regression: the full `make check` suite; `make asan` after the target lands.

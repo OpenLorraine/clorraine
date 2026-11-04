@@ -9,19 +9,20 @@
 
 Both CLIs already render diagnostics as the frozen human format (`error CODE: message`, an
 indented `--> path:line:col`, and an optional `help:` line) from the same `Diagnostic` values.
-The normative registry — 112 code rows with a trigger, a message template, and (for all but
+The normative registry — 114 code rows with a trigger, a message template, and (for all but
 twelve) a help text — lives in `spec/14-diagnostics.md`. The demo toolkit owns a 134-line TextMate
 grammar that covers a subset of the language; the frozen EBNF declares exactly 50 keywords, one
-contextual keyword, and eleven reserved built-in names.
+contextual keyword, and twelve reserved built-in names.
 
 ### Relevant Files
 
 | File | Purpose | Changes Needed |
 | ---- | ------- | -------------- |
-| `compiler/src/diag.rs` | Diagnostic values, collection, human rendering (`Diagnostic` at `:23`, `Diagnostics` at `:80`, `render` at `:188`) | Add the JSON renderer, the format enum, escaping, and the null-code driver-error line |
-| `compiler/src/driver.rs` | `clc` options (`Options::parse` at `:40`, `run` at `:236`) and every error print (`:240`, `:250`, `:254`, `:263`, `:283`, `:307`, `:321`, `:327`) | Add `--explain` (early exit) and `--diagnostics=json`; route error prints through the format |
-| `compiler/src/clorraine/cli.rs` | `clorraine` help text (`HELP` at `:65`), parse (`:100`), option parse (`:140`) | Add `--explain` (anywhere, like `-h`), `--diagnostics=json`, and the help lines |
-| `compiler/src/clorraine/mod.rs` | Driver flow: `run_with_marker` (`:42`), `invoke` (`:67`), environment gate (`:85`), `emit` (`:123`), error prints at `:45`, `:69`, `:127`, `:141` | Add the Explain action; route error prints through the format; forward the flag |
+| `compiler/src/diag.rs` | Diagnostic values, collection, human rendering (`Diagnostic` at `:23`, `Diagnostics` at `:79`, `render` at `:199`) | Add the JSON renderer, the format enum, escaping, and the null-code driver-error line |
+| `compiler/src/driver.rs` | `clc` options (`Options::parse` at `:46`, `run` at `:245`) and every error print (`:249`, `:259`, `:263`, `:272`, `:292`, `:299`, `:323`, `:337`, `:343`) | Add `--explain` (early exit) and `--diagnostics=json`; route error prints through the format |
+| `compiler/src/clorraine/cli.rs` | `clorraine` help text (`HELP` at `:59`), parse (`:104`), option parse (`:136`) | Add `--explain` (anywhere, like `-h`), `--diagnostics=json`, and the help lines |
+| `compiler/src/clorraine/mod.rs` | Driver flow: `run_with_marker` (`:42`), `invoke` (`:67`), environment gate (`:86`), `emit` (`:136`), and eleven user-facing error prints from `:45` through `:274` | Add the Explain action; route every error print through the format; forward the flag |
+| `compiler/src/clorraine/run.rs` | `run_program` spawn/wait/capture errors (`:52`, `:65`, `:82`) | Thread the format so these three errors are JSON too |
 | `compiler/src/clorraine/build.rs` | In-process compiler call (`crate::driver::run(args)` at `:72`); ICE display (`:28`) | Append `--diagnostics=json` to the compiler args; route the ICE text |
 | `spec/14-diagnostics.md` | Normative registry: `\| Code \| Trigger \| First line \| Help \|` tables | Add the 12 approved help cells (AR-10) |
 | `spec/grammar.ebnf.md` | Normative grammar: `keyword` (`:551`), `contextual_keyword` (`:567`), `reserved_builtin` (`:576`) | No change — it is the completeness oracle |
@@ -36,10 +37,10 @@ contextual keyword, and eleven reserved built-in names.
 - `Diagnostic.code` is `&'static str` and `span` is `Option<Span>`; `Span` carries `start`/`end`
   byte offsets (`span.rs:14-20`), and `SourceMap::location(id, offset)` (`span.rs:121`) yields
   1-based line/column — so the JSON end position is `location(file, span.end)`.
-- `Diagnostics::render` (`diag.rs:188`) returns a `String` that the drivers `eprint!`; the JSON
+- `Diagnostics::render` (`diag.rs:199`) returns a `String` that the drivers `eprint!`; the JSON
   renderer mirrors that shape, so no stream handling changes.
-- `clc` renders diagnostics in four places (`driver.rs:254`, `:283`, `:307`, `:321`); the other
-  prints are plain `usage error:` / `clc: cannot ...` lines.
+- `clc` renders diagnostics in five places (`driver.rs:263`, `:292`, `:299`, `:323`, `:337`); the
+  other prints are plain `usage error:` / `clc: cannot ...` lines.
 - `clorraine` calls the compiler in process with a constructed argument vector
   (`build.rs:72`), so JSON mode is a matter of appending `--diagnostics=json` and routing the
   driver's own prints.

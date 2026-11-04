@@ -1,6 +1,6 @@
 # Clorraine — Decision Ledger
 
-> **Status:** accepted (Phase A complete; amended by the pre-Phase-B ergonomics review and the Phase B grammar freezes) — supersedes any conflicting text in the draft chapters
+> **Status:** accepted (Phase A complete; amended by the pre-Phase-B ergonomics review and the Phase B grammar freezes) — supersedes any conflicting text in the specification chapters
 > **Scope:** every language-surface and semantics decision made before the grammar freeze
 
 This file is the source of truth for Phase A decisions. Chapters are rewritten

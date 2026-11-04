@@ -1,7 +1,7 @@
 # Clorraine DX Tooling Implementation Plan
 
 > **Feature**: The DX slice of PLAN-05 — `--explain` on both CLIs, `--diagnostics=json` machine-readable diagnostics, and a canonical, complete TextMate grammar under `editors/`.
-> **Status**: Planning Complete
+> **Status**: Done (28/28)
 > **Created**: 2026-10-10 19:09
 > **Implements**: PLAN-05 (DX tooling slice)
 > **CodeOps Artifact Schema**: 1
@@ -25,7 +25,7 @@ else is tooling: two leaf modules (a registry parser and a JSON renderer), flag 
 two CLIs, and grammar data.
 
 `02-current-state.md` carries the `file:line` mapping per gap; `03-01` – `03-03` own the designs;
-`07-testing-strategy.md` owns the 19 ST-cases; the `00-ambiguity-register.md` entries own the
+`07-testing-strategy.md` owns the 21 ST-cases; the `00-ambiguity-register.md` entries own the
 decisions cited as `AR-##`.
 
 ## Minimum-Sufficient Baseline
@@ -52,6 +52,7 @@ AR-1 and stay backlog.
 | 03-01 | [Explain Mode](03-01-explain-mode.md)                        | Registry parse, render, and flag plumbing   |
 | 03-02 | [Machine-Readable Diagnostics](03-02-machine-readable-diagnostics.md) | JSON stream, schema, and error paths |
 | 03-03 | [TextMate Grammar](03-03-textmate-grammar.md)                | Canonical home, completion, and consumers   |
+| 05  | [Findings](05-findings.md)                                     | Plan refresh, red phases, and phase reviews |
 | 07  | [Testing Strategy](07-testing-strategy.md)                     | Test cases and verification                 |
 | 99  | [Execution Plan](99-execution-plan.md)                         | Phases, sessions, and task checklist        |
 

@@ -1,6 +1,6 @@
 # Chapter 00 - Introduction and Axioms
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** nothing; this chapter is the front door
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md)
 > **Ledger:** [decisions.md](decisions.md)
@@ -96,7 +96,7 @@ such target (for example ARM64) is planned for v1.
 | Not adopted | Why |
 |---|---|
 | Traits, `impl` blocks, inheritance | Module functions plus exact-signature function values cover v1 needs |
-| Closures with heap environments | Lambdas are staged (L1-L5): syntax is frozen, capture semantics arrive in stages, environments are never heap-allocated |
+| Closures with heap environments | Lambdas are implemented (L1-L4); a capturing lambda uses a stack environment, never a heap allocation. C-hook trampolines remain staged (L5). |
 | `Result`/`Maybe` and `?` propagation | Three error tiers instead: `panic`, `T?`, and status structs (E1-E6) |
 | Exceptions and unwinding | Deterministic release on m68k; `panic` aborts (D4, E2) |
 | Macros and a preprocessor | Modules replace includes; `comptime` is the compile-time path and is staged |

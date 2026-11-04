@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 19:09
-> **Progress**: 0/28 tasks (0%)
+> **Last Updated**: 2026-11-03 22:22
+> **Progress**: 28/28 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -13,9 +13,15 @@ registry help texts, machine-readable diagnostics, the canonical TextMate gramma
 close-out. Each phase follows the specification-first ordering and cites its owning
 [03-XX](00-index.md) document and the ST-cases in [07-testing-strategy.md](07-testing-strategy.md).
 
-Execution commit mode: **auto-commit + auto-design** (user instruction) — commit and push each
-verified task via the git-commit skill in push mode; eligible technical mechanism decisions are
+Execution commit mode: **none selected for this run** — each verified task is recorded here, but
+no commit or push is made; eligible technical mechanism decisions within the resolved design are
 delegated under the shared auto-design policy, rulings stay reserved.
+
+**Plan refresh (2026-11-03):** re-grounded against the current tree before execution. The live
+registry has 114 rows (not 112); `clc` has five diagnostic render sites; `clorraine` has fourteen
+user-facing error prints across `mod.rs` and `run.rs`; the EBNF declares twelve reserved built-ins; the E10034 help text and
+the `clorraine` JSON invocation in ST-10 were stale; and two R5 cases were added (ST-20
+environment error, ST-21 internal compiler error). See `05-findings.md`.
 
 **🚨 Update this document after EACH completed task!**
 
@@ -67,8 +73,8 @@ AR-14](00-ambiguity-register.md)
 **Objective**: Pin the seven explain cases — both spellings, both binaries, the exact render, and
 the two failure shapes — before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/dx_tooling_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: every case fails — the flag is unknown)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/dx_tooling_spec_test.rs` ✅ (completed: 2026-11-03 20:55)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: every case fails — the flag is unknown) ✅ (completed: 2026-11-03 21:00)
 
 ### Step 1.2: Implementation
 
@@ -76,22 +82,22 @@ the two failure shapes — before any implementation.
 **Objective**: Land the registry parse/render module, wire the flag into both CLIs, and author
 the twelve help texts.
 
-- [ ] 1.2.1 Add the twelve approved help cells — `spec/14-diagnostics.md`
-- [ ] 1.2.2 Implement the registry parse, lookup, and render — `compiler/src/diag/registry.rs`, `compiler/src/diag.rs`
-- [ ] 1.2.3 Implement `clc --explain` (both spellings, early exit) — `compiler/src/driver.rs`
-- [ ] 1.2.4 Implement `clorraine --explain` and the help line — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs`
-- [ ] 1.2.5 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 Add the twelve approved help cells — `spec/14-diagnostics.md` ✅ (completed: 2026-11-03 21:02)
+- [x] 1.2.2 Implement the registry parse, lookup, and render — `compiler/src/diag/registry.rs`, `compiler/src/diag.rs` ✅ (completed: 2026-11-03 21:08)
+- [x] 1.2.3 Implement `clc --explain` (both spellings, early exit) — `compiler/src/driver.rs` ✅ (completed: 2026-11-03 21:10)
+- [x] 1.2.4 Implement `clorraine --explain` and the help line — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs` ✅ (completed: 2026-11-03 21:12)
+- [x] 1.2.5 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-11-03 21:14)
 
 **Verify**: `make -C docker exec CMD="cargo test --test dx_tooling_spec_test"`; `./spec/check.sh`
 
 ### Step 1.3: Implementation Tests & Hardening
 
 **Reference**: [03-01](03-01-explain-mode.md) §Testing Requirements
-**Objective**: Pin the parse internals, the 112-code coverage, and the render shape; record the
+**Objective**: Pin the parse internals, the 114-code coverage, and the render shape; record the
 phase review evidence.
 
-- [ ] 1.3.1 Write the Phase 1 implementation tests (synthetic-table parse, 112-code coverage with help on every row, exact render, trailing newline) — `compiler/tests/dx_tooling_impl_test.rs`, `compiler/src/diag/registry.rs`
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 1.3.1 Write the Phase 1 implementation tests (synthetic-table parse, 114-code coverage with help on every row, exact render, trailing newline) — `compiler/tests/dx_tooling_impl_test.rs`, `compiler/src/diag/registry.rs` ✅ (completed: 2026-11-03 21:18)
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — no commit in this run ✅ (completed: 2026-11-03 21:25)
 
 **Deliverables**:
 - Explain mode on both CLIs with the shared registry parse
@@ -112,11 +118,12 @@ phase review evidence.
 
 **Reference**: [03-02](03-02-machine-readable-diagnostics.md) §JSON schema · [AR-5, AR-6, AR-7,
 AR-15](00-ambiguity-register.md)
-**Objective**: Pin the eight JSON cases — error, warning, driver errors, escaping, deny-warnings,
-the unchanged human render, the unknown value, and the driver forwarding.
+**Objective**: Pin the ten JSON cases — error, warning, driver errors, environment and ICE
+errors, escaping, deny-warnings, the unchanged human render, the unknown value, and the driver
+forwarding.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-15 — `compiler/tests/dx_tooling_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: every JSON case fails with `unknown option`; ST-12 passes as the deliberate control)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-15 and ST-20 – ST-21 — `compiler/tests/dx_tooling_spec_test.rs` ✅ (completed: 2026-11-03 21:28)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: every JSON case fails with `unknown option`; ST-12 passes as the deliberate control) ✅ (completed: 2026-11-03 21:29)
 
 ### Step 2.2: Implementation
 
@@ -124,10 +131,10 @@ the unchanged human render, the unknown value, and the driver forwarding.
 **Objective**: Land the format enum, the JSON renderer with escaping, the pre-scan, and the
 error-path routing in both binaries.
 
-- [ ] 2.2.1 Implement the JSON renderer, escaping, driver-error line, and format pre-scan — `compiler/src/diag.rs`
-- [ ] 2.2.2 Implement `clc --diagnostics=json` and route its error prints — `compiler/src/driver.rs`
-- [ ] 2.2.3 Implement `clorraine --diagnostics=json`: flag, help line, error routing, and compiler forwarding — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/build.rs`
-- [ ] 2.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Implement the JSON renderer, escaping, driver-error line, and format pre-scan — `compiler/src/diag.rs` ✅ (completed: 2026-11-03 21:31)
+- [x] 2.2.2 Implement `clc --diagnostics=json` and route its error prints — `compiler/src/driver.rs` ✅ (completed: 2026-11-03 21:32)
+- [x] 2.2.3 Implement `clorraine --diagnostics=json`: flag, help line, error routing, and compiler forwarding — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/build.rs` ✅ (completed: 2026-11-03 21:32)
+- [x] 2.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-11-03 21:33)
 
 **Verify**: `make -C docker exec CMD="cargo test --test dx_tooling_spec_test"`; `make check`
 
@@ -137,8 +144,8 @@ error-path routing in both binaries.
 **Objective**: Pin the exact line shapes, key order, escaping, and span-less diagnostics; record
 the phase review evidence.
 
-- [ ] 2.3.1 Write the Phase 2 implementation tests (key order, multi-byte span end, escapes, empty set, pre-scan) — `compiler/tests/dx_tooling_impl_test.rs`, `compiler/src/diag.rs`
-- [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 2.3.1 Write the Phase 2 implementation tests (key order, multi-byte span end, escapes, empty set, pre-scan) — `compiler/tests/dx_tooling_impl_test.rs`, `compiler/src/diag.rs` ✅ (completed: 2026-11-03 21:34)
+- [x] 2.3.2 Phase review evidence in the findings ledger and plan progress update — no commit in this run ✅ (completed: 2026-11-03 21:52)
 
 **Deliverables**:
 - `--diagnostics=json` on both CLIs with the frozen schema
@@ -162,18 +169,18 @@ the phase review evidence.
 **Objective**: Pin the EBNF completeness scan, the path move, the grammar metadata, and the v1
 surface tokens.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-16 – ST-19 — `compiler/tests/dx_tooling_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: every case fails against the demo-owned grammar)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-16 – ST-19 — `compiler/tests/dx_tooling_spec_test.rs` ✅ (completed: 2026-11-03 21:55)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: every case fails against the demo-owned grammar) ✅ (completed: 2026-11-03 21:55)
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-textmate-grammar.md) §Scope map
 **Objective**: Move the grammar, complete it against the EBNF, and update the toolkit.
 
-- [ ] 3.2.1 Move the grammar to the canonical path and point the demo toolkit at it — `editors/clorraine.tmLanguage.json`, `tools/demo/src/util/shiki.ts`
-- [ ] 3.2.2 Complete the grammar (missing keywords, `as`, the reserved built-ins, `=>`, `freedBy` replacing `deleter`) — `editors/clorraine.tmLanguage.json`
-- [ ] 3.2.3 Extend the demo fixture with the newly covered tokens and their scope assertions — `tools/demo/test/grammar.spec.test.ts`
-- [ ] 3.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Move the grammar to the canonical path and point the demo toolkit at it — `editors/clorraine.tmLanguage.json`, `tools/demo/src/util/shiki.ts` ✅ (completed: 2026-11-03 21:56)
+- [x] 3.2.2 Complete the grammar (missing keywords, `as`, the reserved built-ins, `=>`, `freedBy` replacing `deleter`) — `editors/clorraine.tmLanguage.json` ✅ (completed: 2026-11-03 21:57)
+- [x] 3.2.3 Extend the demo fixture with the newly covered tokens and their scope assertions — `tools/demo/test/grammar.spec.test.ts` ✅ (completed: 2026-11-03 21:57)
+- [x] 3.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-11-03 21:58)
 
 **Verify**: `make -C docker exec CMD="cargo test --test dx_tooling_spec_test"`; `make demo-check`
 
@@ -183,8 +190,8 @@ surface tokens.
 **Objective**: Pin the pattern-extraction scanner's edge cases and the scope spot-checks; record
 the phase review evidence.
 
-- [ ] 3.3.1 Write the Phase 3 implementation tests (escaped backslashes in patterns, alternation boundaries, scope spot-checks) — `compiler/tests/dx_tooling_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 3.3.1 Write the Phase 3 implementation tests (escaped backslashes in patterns, alternation boundaries, scope spot-checks) — `compiler/tests/dx_tooling_impl_test.rs` ✅ (completed: 2026-11-03 21:59)
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — no commit in this run ✅ (completed: 2026-11-03 22:08)
 
 **Deliverables**:
 - Canonical grammar under `editors/` with EBNF completeness
@@ -206,9 +213,9 @@ the phase review evidence.
 **Reference**: [AR-11](00-ambiguity-register.md) · [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Run the full acceptance, sync the docs and the roadmap, and close the plan.
 
-- [ ] 4.1.1 Run the full verification: `make check`, `make verify`, and `make demo-check`; record the evidence
-- [ ] 4.1.2 Update `AGENTS.md` (the commands table with `--explain` and `--diagnostics=json`; the layout table with `editors/`)
-- [ ] 4.1.3 Sync the roadmap (`PLAN-05` → Plan Created, linked, with the installer/LSP note) and close the plan
+- [x] 4.1.1 Run the full verification: `make check`, `make verify`, and `make demo-check`; record the evidence ✅ (completed: 2026-11-03 22:20)
+- [x] 4.1.2 Update `AGENTS.md` (the commands table with `--explain` and `--diagnostics=json`; the layout table with `editors/`) ✅ (completed: 2026-11-03 22:21)
+- [x] 4.1.3 Sync the roadmap (`PLAN-05` → Done, linked, with the installer/LSP note) and close the plan ✅ (completed: 2026-11-03 22:22)
 
 **Deliverables**:
 - Full verification green

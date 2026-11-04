@@ -1,0 +1,91 @@
+//! First-party acceptance program for `std.amiga.exec`.
+//!
+//! Sends one message to a private port, waits for its signal, receives and
+//! replies it, receives the reply, releases the message, and deletes both
+//! ports. The transcript is fixed so the hosted-amiga runner can compare it.
+
+module examples.amiga.exec_self_test;
+
+import { MsgPort, NewMessage, Message, createMsgPort, deleteMsgPort, createMessage, messagePayload, putMsg, signals, waitSignals, getMsg, replyMsg, releaseMsg } from std.amiga.exec;
+import { println } from std.io;
+
+// Releases the one message that may still be queued on a port before a failure
+// return deletes the port.
+func drainPort(borrow port: MsgPort): void {
+    let pending_opt: Message? = getMsg(port);
+    if (pending_opt != null) {
+        let pending: Message = pending_opt;
+        releaseMsg(pending);
+    }
+}
+
+export func main(): i32 {
+    println("exec-self-test: start");
+
+    let inbox_opt: MsgPort? = createMsgPort();
+    if (inbox_opt == null) {
+        println("exec-self-test: inbox port failed");
+        return 1;
+    }
+    let inbox: MsgPort = inbox_opt;
+
+    let reply_opt: MsgPort? = createMsgPort();
+    if (reply_opt == null) {
+        println("exec-self-test: reply port failed");
+        return 1;
+    }
+    let reply: MsgPort = reply_opt;
+
+    let message_opt: NewMessage? = createMessage(reply, 42);
+    if (message_opt == null) {
+        println("exec-self-test: message allocation failed");
+        return 1;
+    }
+    let message: NewMessage = message_opt;
+
+    putMsg(inbox, message);
+
+    let inbox_mask: u32 = signals(inbox);
+    let inbox_signal: u32 = waitSignals(inbox_mask);
+    if ((inbox_signal & inbox_mask) == 0) {
+        println("exec-self-test: inbox signal missing");
+        drainPort(inbox);
+        return 1;
+    }
+    println("exec-self-test: signal received");
+
+    let fetched_opt: Message? = getMsg(inbox);
+    if (fetched_opt == null) {
+        println("exec-self-test: inbox empty");
+        drainPort(inbox);
+        return 1;
+    }
+    let fetched: Message = fetched_opt;
+    println($"exec-self-test: payload {messagePayload(fetched)}");
+
+    replyMsg(fetched);
+
+    let reply_mask: u32 = signals(reply);
+    let reply_signal: u32 = waitSignals(reply_mask);
+    if ((reply_signal & reply_mask) == 0) {
+        println("exec-self-test: reply signal missing");
+        drainPort(reply);
+        return 1;
+    }
+
+    let replied_opt: Message? = getMsg(reply);
+    if (replied_opt == null) {
+        println("exec-self-test: reply port empty");
+        drainPort(reply);
+        return 1;
+    }
+    let replied: Message = replied_opt;
+    println("exec-self-test: reply received");
+
+    releaseMsg(replied);
+    deleteMsgPort(inbox);
+    deleteMsgPort(reply);
+
+    println("exec-self-test: done");
+    return 0;
+}

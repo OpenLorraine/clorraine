@@ -16,8 +16,9 @@
 
 - Test names state behavior: `should [expected behavior] when [condition]`.
 - The compiler suites use the existing emit → strict C build → run pattern.
-- ASan cases run only under `RDC_ASAN=1`; `make asan` supplies it and serialises the tests inside
-  each suite so the known parallel child-run flake cannot abort the batch.
+- ASan cases run only under `RDC_ASAN=1`; `make asan` supplies it, serialises the tests inside each
+  suite, and installs a `-no-pie` `cc` wrapper for the ASan child builds so the container's PIE
+  startup failure cannot abort the batch.
 - The DX and PLAN-13 plans own their own ST cases; this plan gates on their completion.
 
 ## 🚨 Specification Test Cases (MANDATORY — NON-NEGOTIABLE)
@@ -41,9 +42,9 @@
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|------------------|----------------------------|--------|
-| ST-7 | `make asan` on a clean tree | Discovers every `compiler/tests/*.rs` file that references `RDC_ASAN`; runs each suite in its own bounded process and with `--test-threads=1`; reports the discovered count (21 today); exits 0 | AR-11; 03-03 |
+| ST-7 | `make asan` on a clean tree | Discovers every `compiler/tests/*.rs` file that references `RDC_ASAN`, including the new `v1_production_readiness_spec_test.rs`; runs each suite in its own bounded process, with `--test-threads=1`, and with the `-no-pie` `cc` wrapper for ASan child builds; the reported count equals the number of matching files (21 at base; 22+ after Phase 1); exits 0 (the 50-test backlog suite passes 50/50) | AR-11; 03-03 |
 | ST-8 | `make differential` on a clean tree | Host and hosted-amiga stdout match for `buffer-container`, `file-copier`, and `string-parser`; exits 0. This is a convenience gate over the same recorded outputs, not an independent signal. | AR-10; 03-03 |
-| ST-9 | `DIFF_ONLY=1` with a deliberately changed throwaway host output | The diff reports the difference and exits nonzero; no tracked golden is modified. The script must not regenerate the output when `DIFF_ONLY=1`. | AR-10; 03-03 |
+| ST-9 | `DIFF_ONLY=1 make differential` with a deliberately changed throwaway host output | The `make` recipe forwards `DIFF_ONLY` and `OUTDIR` into the container; the diff reports the difference and exits nonzero; no tracked golden is modified. The script must not regenerate the output when `DIFF_ONLY=1`. | AR-10; 03-03 |
 | ST-10 | `./spec/check.sh` and `cargo test --workspace` on the host, matching the CI workflow | Both exit 0; m68k-only tests skip with their existing note. The CI workflow is separately recorded by its run URL when an external push is authorized. | AR-9; 03-03 |
 
 ### Specification, documentation, and release
@@ -52,10 +53,10 @@
 |---|------------------|----------------------------|--------|
 | ST-11 | Read every v1.0 chapter and appendix header, the anchor statuses, and run `./spec/check.sh` | Chapters `00`–`17` and appendices A/B read `stable (v1.0)`; the staged `E90xxx`/`W10005` markers remain; `grammar.ebnf.md`, `grammar-deltas.md`, `lineage.md`, `decisions.md`, and `preflight-report.md` keep their anchor/report statuses and are explicitly excluded from the chapter freeze; `spec/README.md` reflects the same table; the check is OK | AR-6; 03-02 |
 | ST-12 | Read the root `README.md` status table | NLL is described as implemented; there is no "next step" claim; the production-readiness status is current | AR-6; 03-02 |
-| ST-13 | Open `docs/known-limitations.md` | It lists exactly: the ASan child-run flake (mitigated by serial `make asan`; still an environment residual), the top-level-`while`-only loop split, and the host-only CI limitation. There is no open-ended catch-all; a new accepted residual must be added to the list and AR-14 before release. The multi-element view-array leak is in the AR-4 fix list, not the accepted list. | AR-14; 03-05 |
-| ST-14 | Inspect `LICENSE`, `compiler/Cargo.toml`, `tools/demo/package.json`, and `README.md` | The MIT text is present; the compiler package metadata says `license = "MIT"` and `version = "1.0.0"`; `tools/demo/package.json` says `license = "MIT"`; the README licence section names MIT | AR-5; 03-05 |
+| ST-13 | Open `docs/known-limitations.md` and the links from `README.md` and `spec/README.md` | It lists exactly: the SDK image's ASan `-no-pie` build requirement (applied automatically by `make asan`; the GCC 12 runtime otherwise intermittently fails at startup for PIE executables), the top-level-`while`-only loop split, and the host-only CI limitation. There is no open-ended catch-all; a new accepted residual must be added to the list and AR-14 before release. The multi-element view-array leak is in the AR-4 fix list, not the accepted list. Both links resolve. | AR-14; 03-05 |
+| ST-14 | Inspect `LICENSE`, `compiler/Cargo.toml`, `Cargo.lock`, `tools/demo/package.json`, `tools/demo/package-lock.json`, and `README.md` | The MIT text is present; the compiler package metadata says `license = "MIT"` and `version = "1.0.0"`; `Cargo.lock` records the matching version; `tools/demo/package.json` says `license = "MIT"`; the demo lockfile root records MIT; the README licence section names MIT | AR-5; 03-05 |
 | ST-15 | Execute `plans/clorraine-dx/` to completion | Its progress reads 28/28; `make check`, `make verify`, and `make demo-check` are green; `spec/14-diagnostics.md` is re-reviewed after its help-cell edit | AR-1; 03-04 |
-| ST-16 | Execute the PLAN-13 slice | `std.amiga.exec` exists; both allowlisted console programs build and run on hosted-amiga against an independent, hand-checked expected-output file; `make verify` is green | AR-8, AR-13; 03-04 |
+| ST-16 | Execute the PLAN-13 slice | `std.amiga.exec` exists; both allowlisted console programs build and run on hosted-amiga against an independent, hand-checked expected-output file; `spec/appendix-amiga.md` and `spec/appendix-stdlib.md` are re-reviewed against the delivered API and re-recorded `stable (v1.0)`; `make verify` is green | AR-8, AR-13; 03-04 |
 
 > **⚠️ AUTHORING RULE:** Derive expectations from the frozen specification and the requirements
 > above. Do not infer them from the implementation. If an expected output cannot be determined,
@@ -239,7 +240,7 @@ func main(): i32 {
 | Scenario | Steps | Expected Result |
 | -------- | ----- | --------------- |
 | Host CI | Push a branch or open a PR when authorized | The `check` workflow runs `spec/check.sh` and `cargo test --workspace`; host tests pass; m68k tests skip with the note; the run URL and conclusion are recorded. If no push is authorized, record the local command evidence and mark acceptance 9 as locally validated. |
-| Release smoke (conditional publish sub-plan) | Build the Linux x86_64 binary; run `--version` and compile a hello-world program | The binary reports `v1.0.0` and produces a runnable host program; the exact `--version` string is asserted. aarch64 release artifacts are deferred to PLAN-07. |
+| Release smoke (conditional publish sub-plan) | Build the Linux x86_64 binary; run `--version` and compile a hello-world program | The binary reports the exact string `clc 1.0.0` and produces a runnable host program; the exact `--version` string is asserted. aarch64 release artifacts are deferred to PLAN-07. |
 | DX usage | `clorraine --explain E10034`; `--diagnostics=json` on a compile error | The DX plan's ST cases pass. |
 
 ## Test Data

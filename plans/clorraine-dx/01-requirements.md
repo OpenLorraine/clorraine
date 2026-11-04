@@ -105,6 +105,6 @@ and a canonical, complete TextMate grammar for editor highlighting. PLAN-05's re
    errors; default output is byte-identical.
 4. [ ] Every `keyword`/`reserved_builtin` term appears in `editors/clorraine.tmLanguage.json`;
    the demo toolkit loads it from that path.
-5. [ ] All 112 registry rows carry a help text.
+5. [ ] All 114 registry rows carry a help text.
 6. [ ] Documentation updated (AGENTS.md commands and layout).
 7. [ ] Phase reviews recorded; roadmap synced.

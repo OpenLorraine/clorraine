@@ -1,6 +1,6 @@
 # Chapter 14 - Diagnostics Registry
 
-> **Status:** draft (Phase C - normative for diagnostic codes and message templates)
+> **Status:** stable (v1.0)
 > **Depends on:** every chapter; chapters reference codes defined here and do not define message text
 > **Code blocks:** [decisions.md](decisions.md) section 14 (N1-N8)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) section 10 (lexical errors)
@@ -47,7 +47,7 @@
 |---|---|---|---|
 | E10010 | Possibly-null value used without a narrowing check | `value '{name}' may be null here` | check `!= null` before the use |
 | E10011 | `T?` applied to a type that cannot be empty | `nullable type is not allowed on '{type}'` | `?` applies to handles, `raw`, `cstring`, and views |
-| E10012 | `null` used where a non-nullable type is required | `'null' is not allowed here` | declare the type `T?` or avoid the empty state |
+| E10012 | `null` used where a non-nullable type is required, except where an explicit cast's own rule applies (Ch 04 §14) | `'null' is not allowed here` | declare the type `T?` or avoid the empty state |
 | E10020 | Read, move, borrow, or drop of a moved value | `'{name}' was moved and cannot be used` | re-initialize the binding or use a view |
 | E10021 | Read before the binding is assigned on every path | `'{name}' may be used before it is initialized` | initialize the binding on every path; out-parameter slots are not exempt |
 | E10022 | Move of an owner while a loan of it is live | `cannot move '{name}' while it is borrowed` | end the borrow first |
@@ -84,7 +84,7 @@
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
 | E10200 | Implicit conversion the language does not allow (including a nullable module initializer) | `cannot convert '{from}' to '{to}' implicitly` | use an explicit cast `T(expr)` |
-| E10201 | Cast that is not allowed (view, pointer, or aggregate mismatch) | `cannot cast '{from}' to '{to}'` | convert through a supported value or `raw` in `unsafe` |
+| E10201 | Cast that is not allowed (non-bool scalar null, view, pointer, or aggregate mismatch) | `cannot cast '{from}' to '{to}'` | convert through a supported value or `raw` in `unsafe` |
 | E10202 | Literal does not fit the context type | `literal does not fit '{type}'` | use a wider type or a hex/binary form |
 | E10203 | Struct literal field problems (missing, unknown, or duplicate) | `struct literal for '{type}' does not match its fields` | list every field exactly once, by name |
 | E10204 | `union` declaration | `tagged unions are not part of Clorraine` | model the data as a C-style tagged struct and use `switch` |
@@ -101,7 +101,7 @@
 | E10215 | Array fill literal without a fixed extent in context, or a fill value whose element type is not duplicable | `array fill requires a fixed extent` | annotate the array type; construct each element for a move-only fill |
 | E10216 | Constant index into a fixed array is out of range | `index {index} is out of range for '{type}[{extent}]'` | fix the index or the extent |
 | E10217 | Assignment result used as a value | `assignment result is 'void' and cannot be used as a value` | split the statement; do not chain assignments |
-| E10218 | Condition expression that is not `bool` | `condition must be 'bool'` | compare explicitly, for example `x != 0` |
+| E10218 | Condition expression that is not `bool`, except a null-shaped `!` operand (E10012) | `condition must be 'bool'` | compare explicitly, for example `x != 0` |
 | E10219 | Name that is not declared | `'{name}' is not declared` | check the spelling, the import, or the module |
 | E10220 | Inner extent omitted in a multi-dimensional type | `only the outermost extent may be omitted` | write every inner extent |
 | E10221 | Assignment to something that is not a place | `left side of an assignment must be a place` | assign to a variable, field, or element |
@@ -205,25 +205,25 @@ Staged diagnostics mark frozen syntax whose semantics arrive in a later phase
 (R1). They are not syntax errors: the parser accepts the feature and the
 semantic stage reports the code.
 
-| Code | Feature | First line (after the code) |
-|---|---|---|
-| E90000 | Generic staged feature has no dedicated code | `'{feature}' is not yet supported` |
-| E90001 | `comptime` bodies | `'comptime' semantics are not yet implemented` |
-| E90003 | `stores` and `transfers` contracts | `'stores' and 'transfers' contracts are deferred to v2` |
-| E90004 | Pools and arenas | `pools and arenas are deferred to v2` |
-| E90005 | Nested templates and extended formatting | `nested templates are not yet supported` |
+| Code | Feature | First line (after the code) | Help |
+|---|---|---|---|
+| E90000 | Generic staged feature has no dedicated code | `'{feature}' is not yet supported` | keep the program inside the v1 surface; a staged feature names its own code when it has one |
+| E90001 | `comptime` bodies | `'comptime' semantics are not yet implemented` | compute the value at run time; `comptime` is staged for a later release |
+| E90003 | `stores` and `transfers` contracts | `'stores' and 'transfers' contracts are deferred to v2` | model the hand-off with explicit moves and `freedBy` deleters in v1 |
+| E90004 | Pools and arenas | `pools and arenas are deferred to v2` | allocate each value separately and hand ownership off explicitly in v1 |
+| E90005 | Nested templates and extended formatting | `nested templates are not yet supported` | build the value in steps with intermediate `let` bindings |
 
 ## 14. Warnings (`W100xx`)
 
-| Code | Trigger | First line (after the code) |
-|---|---|---|
-| W10000 | Local declared and never used | `unused local '{name}'` |
-| W10001 | Writable lend of a duplicable value; writes affect only the copy | `unnecessary lend of duplicable '{name}'` |
-| W10002 | `switch` case body falls through | `case falls through to the next label` |
-| W10003 | Statement is unreachable | `unreachable code` |
-| W10004 | Stack frame exceeds the profile threshold | `stack frame of '{fn}' is {size} bytes` |
-| W10005 | User-provided contract table is in use | `user-provided contract '{name}' is in use` |
-| W10006 | Imported name is never used | `unused import '{name}'` |
+| Code | Trigger | First line (after the code) | Help |
+|---|---|---|---|
+| W10000 | Local declared and never used | `unused local '{name}'` | remove the binding or use it |
+| W10001 | Writable lend of a duplicable value; writes affect only the copy | `unnecessary lend of duplicable '{name}'` | declare the parameter without `borrow`; a duplicable value copies |
+| W10002 | `switch` case body falls through | `case falls through to the next label` | end the case with `break` or `return` |
+| W10003 | Statement is unreachable | `unreachable code` | remove the statement or restructure the control flow |
+| W10004 | Stack frame exceeds the profile threshold | `stack frame of '{fn}' is {size} bytes` | move large locals off the stack or split the function |
+| W10005 | User-provided contract table is in use | `user-provided contract '{name}' is in use` | remove the table once the generated contract surface covers the target |
+| W10006 | Imported name is never used | `unused import '{name}'` | remove the import or use the name |
 
 ## 15. Stability and verification
 

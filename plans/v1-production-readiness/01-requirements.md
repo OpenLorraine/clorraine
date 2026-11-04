@@ -29,8 +29,8 @@ remain out of scope.
   record the E10012 null-cast exception, and mark the v1.0 chapters `stable (v1.0)`.
   `./spec/check.sh` stays green; no semantic change beyond the AR-4 conformance fix (AR-6).
 - [ ] **R3 — `make asan`.** A target runs every test file that honours `RDC_ASAN`, one bounded
-  process per suite with serial tests, so the known child-run flake cannot abort the batch
-  (AR-11).
+  process per suite with serial tests and a `-no-pie` ASan `cc` wrapper, so the container's PIE
+  startup failure cannot abort the batch (AR-11).
 - [ ] **R4 — `make differential`.** A fixed runner emits the three host-portable corpus programs
   for host and hosted-amiga, runs both, and diffs their stdout. The target joins `make verify` as
   a convenience gate over the same recorded outputs the corpus already pins; it is not an
@@ -63,8 +63,9 @@ remain out of scope.
 - [ ] **R12 — Release notes.** In the conditional publish sub-plan, add concise v1.0 release
   notes and a changelog entry.
 - [ ] **R13 — Host-binary smoke test.** In the conditional publish sub-plan, build the Linux
-  x86_64 binary and run `clc --version` (asserting v1.0.0) and a hello-world compile. aarch64
-  release artifacts are deferred to PLAN-07; aarch64 developer-machine builds remain supported.
+  x86_64 binary and run `clc --version` (asserting the exact output `clc 1.0.0`) and a
+  hello-world compile. aarch64 release artifacts are deferred to PLAN-07; aarch64
+  developer-machine builds remain supported.
 
 ### Won't Have (Out of Scope)
 

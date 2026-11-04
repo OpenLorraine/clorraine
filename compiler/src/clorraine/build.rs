@@ -17,6 +17,7 @@ use std::process::Command;
 use super::artifacts;
 use super::display;
 use super::toolchain::{self, Tool};
+use crate::diag::DiagnosticFormat;
 use crate::profile::Profile;
 
 /// A failure whose cause is a defect in the compiler, not in the program.
@@ -61,13 +62,21 @@ pub enum BuildFailure {
 ///
 /// Returns the compiler's exit code: zero on success, or the diagnostic exit
 /// code, in which case no C is written. Diagnostics already went to stderr.
-pub fn emit_c(profile: Profile, files: &[String], c_path: &Path) -> i32 {
+pub fn emit_c(
+    profile: Profile,
+    files: &[String],
+    c_path: &Path,
+    format: DiagnosticFormat,
+) -> i32 {
     let mut args = vec![
         "--profile".to_owned(),
         profile.name().to_owned(),
         "-o".to_owned(),
         c_path.display().to_string(),
     ];
+    if format == DiagnosticFormat::Json {
+        args.push("--diagnostics=json".to_owned());
+    }
     args.extend(files.iter().cloned());
     crate::driver::run(args)
 }
@@ -105,6 +114,7 @@ pub fn build(
     profile: Profile,
     release: bool,
     files: &[String],
+    format: DiagnosticFormat,
 ) -> Result<BuildOutput, BuildFailure> {
     let stem = artifacts::program_stem(files).ok_or_else(|| {
         BuildFailure::Error("clorraine: an input file name has no file stem\n".to_owned())
@@ -115,7 +125,7 @@ pub fn build(
         ))
     })?;
     let c_path = artifacts::c_path(profile, &stem);
-    let code = emit_c(profile, files, &c_path);
+    let code = emit_c(profile, files, &c_path, format);
     if code != 0 {
         return Err(BuildFailure::Diagnostics(code));
     }

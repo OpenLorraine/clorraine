@@ -102,9 +102,9 @@ recorded; each rooted element released exactly once under ASan; no accepted-prog
 ### Gap 3: Opt-in sanitizers and no differential signal
 **Current Behavior:** 21 suites honour `RDC_ASAN`, but no target runs them; the corpus script
 checks m68k against recorded output only.
-**Required Behavior:** `make asan` runs every ASan suite in a bounded process with serial tests;
-`make differential` compares host and m68k output for the three portable programs as a convenience
-gate over the recorded outputs.
+**Required Behavior:** `make asan` runs every ASan suite in a bounded process with serial tests and
+a `-no-pie` ASan `cc` wrapper; `make differential` compares host and m68k output for the three
+portable programs as a convenience gate over the recorded outputs.
 **Fix Required:** 03-03.
 
 ### Gap 4: No CI
@@ -159,6 +159,6 @@ gap stops for a user ruling.
 | Spec stabilisation becomes a semantic rewrite | Medium | High | Review for stale text and status only; semantic changes need a separate ruling |
 | Host-only CI gives false confidence for m68k | High | Medium | Document the skip in the workflow and keep `make verify` as the local gate |
 | Differential script duplicates corpus logic | Medium | Low | Reuse the existing compile flags and `vamos` invocation; keep the seed list explicit |
-| ASan child-run flake | Medium | Medium | Run one suite per bounded process; record the environment residual |
+| ASan PIE startup failure | Medium | Low | Run one suite per bounded process with a `-no-pie` `cc` wrapper; verify the backlog suite 50/50 |
 | PLAN-13 scope grows | High | High | Bound the gate to `std.amiga.exec` plus two programs; the PLAN-13 plan owns the wider surface |
 | Conditional publish cannot run | Medium | Low | Close the 45-task main plan as production-ready; keep the publish sub-plan blocked with the reason recorded |

@@ -1,0 +1,131 @@
+//! Amiga Exec: private message ports, messages, and signals.
+//!
+//! This module belongs to the hosted-amiga profile; the host and freestanding
+//! profiles have no AmigaOS scheduler, so the module is not available there.
+//! The wrappers reach the profile C shim through `ffi`, so application code
+//! never writes `ffi` and never touches `unsafe`.
+//!
+//! The surface is deliberately small: one private message port, one message
+//! with a reply port and an integer payload, and the four operations an event
+//! loop needs. A message is move-only. `putMsg` consumes the sent message,
+//! `getMsg` returns an owned message, and `replyMsg` consumes it. A fetched
+//! message that will not be replied is released with `releaseMsg`; an unsent
+//! `NewMessage` is released by its generated drop or with `freeMessage`.
+//!
+//! `signals(port)` returns the port's signal mask. `waitSignals(mask)` sleeps
+//! until any bit in the mask arrives and returns the bits that did. The caller
+//! must loop when several sources share one wait.
+
+module std.amiga.exec;
+
+/// A private message port. The generated drop deletes it.
+///
+/// The caller must drain the port before the drop runs; a queued message would
+/// otherwise be lost.
+export handle MsgPort freedBy cl_delete_msg_port;
+
+/// A message created by this module that has not been sent yet.
+///
+/// The generated drop releases it, so an unsent message cannot leak or be
+/// queued by accident. Once `putMsg` accepts it, the port owns it.
+export handle NewMessage freedBy cl_free_message;
+
+/// A message fetched from a port.
+///
+/// The generated drop replies it, matching the exec ownership rule. A message
+/// that has returned through its reply port is released with `releaseMsg`
+/// instead of being replied a second time.
+export handle Message freedBy cl_reply_msg;
+
+ffi stdexec {
+    func cl_create_msg_port(): MsgPort?;
+    func cl_delete_msg_port(take port: MsgPort): void;
+    func cl_create_message(borrow reply: MsgPort, payload: i32): NewMessage?;
+    func cl_message_payload(borrow msg: Message): i32;
+    func cl_put_msg(borrow port: MsgPort, take msg: NewMessage): void;
+    func cl_signals(borrow port: MsgPort): u32;
+    func cl_wait_signals(mask: u32): u32;
+    func cl_get_msg(borrow port: MsgPort): Message?;
+    func cl_reply_msg(take msg: Message): void;
+    func cl_free_message(take msg: NewMessage): void;
+    func cl_release_message(take msg: Message): void;
+}
+
+/// Creates a private message port, or returns `null` when the system is out of
+/// signals or memory.
+export func createMsgPort(): MsgPort? {
+    return cl_create_msg_port();
+}
+
+/// Deletes a private port.
+///
+/// The port must be empty; the acceptance programs drain it before deleting.
+export func deleteMsgPort(take port: MsgPort): void {
+    cl_delete_msg_port(port);
+}
+
+/// Allocates a message with `reply` as its reply port and `payload` as its
+/// integer body. Returns `null` on allocation failure.
+///
+/// The reply port is borrowed, not moved: the caller keeps it for the reply
+/// wait and deletes it after the message is released.
+export func createMessage(borrow reply: MsgPort, payload: i32): NewMessage? {
+    return cl_create_message(reply, payload);
+}
+
+/// Reads the integer payload of a fetched message.
+export func messagePayload(borrow msg: Message): i32 {
+    return cl_message_payload(msg);
+}
+
+/// Queues `msg` on `port` and wakes the port owner.
+///
+/// The message is moved into the queue; the caller's binding is no longer
+/// valid. The message becomes owned by the receiver, then by the reply path.
+export func putMsg(borrow port: MsgPort, take msg: NewMessage): void {
+    cl_put_msg(port, msg);
+}
+
+/// Returns the signal mask that wakes the owner of `port`.
+export func signals(borrow port: MsgPort): u32 {
+    return cl_signals(port);
+}
+
+/// Waits until any signal in `mask` arrives and returns the received bits.
+///
+/// A caller that waits on more than one source checks the returned mask before
+/// draining a port; an unrelated signal can wake the wait.
+export func waitSignals(mask: u32): u32 {
+    return cl_wait_signals(mask);
+}
+
+/// Takes the next message from `port`, or returns `null` when the queue is
+/// empty.
+export func getMsg(borrow port: MsgPort): Message? {
+    return cl_get_msg(port);
+}
+
+/// Replies `msg` to its reply port.
+///
+/// The message is moved; the caller's binding is no longer valid. The reply
+/// port is required: a message created without one is not replyable.
+export func replyMsg(take msg: Message): void {
+    cl_reply_msg(msg);
+}
+
+/// Releases an unsent message explicitly.
+///
+/// The generated drop already does this; the explicit call is useful when the
+/// caller wants the release to happen before the end of the scope.
+export func freeMessage(take msg: NewMessage): void {
+    cl_free_message(msg);
+}
+
+/// Releases a fetched message that this program created and will not reply.
+///
+/// Use this for a reply copy that has returned, or for a fetched message on a
+/// failure path. Do not call it on a message another task still owns, and do
+/// not reply the message afterwards.
+export func releaseMsg(take msg: Message): void {
+    cl_release_message(msg);
+}

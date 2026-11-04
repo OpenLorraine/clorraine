@@ -23,6 +23,95 @@ use super::types::{
 };
 use super::{Emitter, FuncInfo};
 
+/// One constant step from a global initializer's literal root to the stored
+/// view. A run-time index or a non-literal root produces no path at all.
+#[derive(Clone, Debug)]
+pub(super) enum InitStep {
+    Field(String),
+    Index(usize),
+}
+
+/// How much of a literal's view backing the current initializer stores.
+///
+/// `Whole` preserves the previous retention behavior: every backing stays
+/// inline and is reachable through the destination. `Path` names the one
+/// constant position the destination stores, so sibling positions can release
+/// their backing. `Unselected` means nothing in the subtree is stored, so every
+/// fresh fill root may be registered for release.
+#[derive(Clone, Debug)]
+pub(super) enum ViewSelect {
+    Whole,
+    Path(Vec<InitStep>),
+    Unselected,
+}
+
+impl ViewSelect {
+    /// The selection for a named field below the current position.
+    fn field(&self, name: &str) -> Self {
+        match self {
+            Self::Whole => Self::Whole,
+            Self::Unselected => Self::Unselected,
+            Self::Path(steps) => match steps.split_first() {
+                Some((InitStep::Field(field), rest)) if field.as_str() == name => {
+                    Self::from_rest(rest)
+                }
+                _ => Self::Unselected,
+            },
+        }
+    }
+
+    /// The selection for one constant index below the current position.
+    fn index(&self, index: usize) -> Self {
+        match self {
+            Self::Whole => Self::Whole,
+            Self::Unselected => Self::Unselected,
+            Self::Path(steps) => match steps.split_first() {
+                Some((InitStep::Index(position), rest)) if *position == index => {
+                    Self::from_rest(rest)
+                }
+                _ => Self::Unselected,
+            },
+        }
+    }
+
+    /// The selection for a fill value that covers every index at or above
+    /// `prefix`.
+    ///
+    /// A fill repeats one value across the omitted tail, so a path that points
+    /// into that tail stores the fill's backing; any other path does not.
+    fn fill(&self, prefix: usize) -> Self {
+        match self {
+            Self::Whole => Self::Whole,
+            Self::Unselected => Self::Unselected,
+            Self::Path(steps) => match steps.first() {
+                None => Self::Whole,
+                Some(InitStep::Index(position)) if *position >= prefix => Self::Whole,
+                _ => Self::Unselected,
+            },
+        }
+    }
+
+    /// The selection represented by the remaining path.
+    fn from_rest(steps: &[InitStep]) -> Self {
+        if steps.is_empty() {
+            Self::Whole
+        } else {
+            Self::Path(steps.to_vec())
+        }
+    }
+}
+
+/// One step in a fresh projection chain.
+///
+/// A member read keeps its field name. An index keeps the exact IR value the
+/// source evaluated, so a run-time index is shared by the read and the
+/// post-store move-out instead of being evaluated twice.
+#[derive(Clone, Debug)]
+enum ProjectionAccessor {
+    Member(String),
+    Index(Value),
+}
+
 impl<'a> Emitter<'a> {
     // -- top-level sections --------------------------------------------------
 
@@ -1004,6 +1093,48 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The constant projection steps from a literal root to a stored value.
+    ///
+    /// A run-time index or a root that is already a call or a bound local has
+    /// no constant path; the caller then keeps the previous whole-retention
+    /// behavior. The steps are outermost-first, matching the source spelling.
+    fn init_projection_steps(value: &Value) -> Option<Vec<InitStep>> {
+        let mut steps = Vec::new();
+        let mut cursor = value;
+        loop {
+            match &cursor.kind {
+                ValueKind::Member { base, name } => {
+                    steps.push(InitStep::Field(name.clone()));
+                    cursor = base;
+                }
+                ValueKind::Index { base, index } => {
+                    let ValueKind::Int(position) = index.kind else {
+                        return None;
+                    };
+                    steps.push(InitStep::Index(usize::try_from(position).ok()?));
+                    cursor = base;
+                }
+                _ => break,
+            }
+        }
+        if !matches!(cursor.kind, ValueKind::StructLit { .. }) {
+            return None;
+        }
+        steps.reverse();
+        Some(steps)
+    }
+
+    /// The selection for a global view initializer.
+    ///
+    /// Only a literal root with at least one constant step can identify which
+    /// backing is stored; anything else retains every backing.
+    fn view_select(value: &Value) -> ViewSelect {
+        match Self::init_projection_steps(value) {
+            Some(steps) if !steps.is_empty() => ViewSelect::Path(steps),
+            _ => ViewSelect::Whole,
+        }
+    }
+
     /// Writes one global's initializer assignment.
     ///
     /// A fixed array has no C assignment form, so its covered initializer
@@ -1026,6 +1157,8 @@ impl<'a> Emitter<'a> {
             .as_ref()
             .is_some_and(|declared| self.stores_view_storage(declared));
         self.init_global_literals.clear();
+        self.init_call_locals.clear();
+        self.init_select = ViewSelect::Whole;
         let mut lowered = match self.loaded.module(module_name) {
             Some(module) => self.lower_global(module, value),
             None => Value {
@@ -1060,14 +1193,16 @@ impl<'a> Emitter<'a> {
         // impure operand at its position, and emits each guard where the
         // operand it checks is evaluated, so evaluation order and per-branch
         // laziness match the function path.
+        self.init_select = Self::view_select(&lowered);
         let lowered = self.materialize_init_value(&lowered, None);
+        self.init_select = ViewSelect::Whole;
         // A view destination retains the storage its view points into, but a
         // member projection of a fresh owned root reads only one position: the
         // root binds into an init local the release pass empties, so its other
         // fields free at the initializer's end, and the read member is emptied
         // right after the store — the view keeps the member's storage for the
         // program's lifetime while nothing frees it.
-        let (lowered, member_move_out) = self.retain_view_member_root(&lowered);
+        let (lowered, member_move_out) = self.retain_view_member_root(&lowered, true, None);
         // A view destination takes an owned `String` value through the view
         // constructor, exactly as the function path's store does; without the
         // wrapper the handle cannot assign to the view.
@@ -1141,20 +1276,25 @@ impl<'a> Emitter<'a> {
     /// conditional reads one arm, so each arm's root binds under its own
     /// branch guard. Returns the rebound value and the move-out statements to
     /// emit after the store.
-    fn retain_view_member_root(&mut self, value: &Value) -> (Value, Vec<String>) {
+    fn retain_view_member_root(
+        &mut self,
+        value: &Value,
+        move_out: bool,
+        guard: Option<&str>,
+    ) -> (Value, Vec<String>) {
         if !self.init_retain_owners || self.init_skip_owner_binding {
             return (value.clone(), Vec::new());
         }
         if matches!(value.kind, ValueKind::Conditional { .. }) {
-            return self.retain_conditional_projection_roots(value);
+            return self.retain_conditional_projection_roots(value, guard, move_out);
         }
         // A containing literal whose field is a store-needing inner literal
         // must keep its other field initializers. Materialize the literal with
         // the store form first, so every field evaluates in source order, then
         // resolve the read member through the resulting init local.
-        let prepared = self.materialize_containing_literal(value);
+        let prepared = self.materialize_containing_literal(value, guard);
         let value = prepared.as_ref().unwrap_or(value);
-        let (value, move_out) = self.retain_fresh_projection_root(value);
+        let (value, move_out) = self.retain_fresh_projection_root(value, move_out, guard);
         (value, move_out.into_iter().collect())
     }
 
@@ -1165,7 +1305,11 @@ impl<'a> Emitter<'a> {
     /// containing literal's other field initializers, including their effects;
     /// the store form evaluates every field at its own position and leaves the
     /// read member reachable through the resulting local.
-    fn materialize_containing_literal(&mut self, value: &Value) -> Option<Value> {
+    fn materialize_containing_literal(
+        &mut self,
+        value: &Value,
+        guard: Option<&str>,
+    ) -> Option<Value> {
         let mut cursor = value;
         loop {
             match &cursor.kind {
@@ -1188,7 +1332,7 @@ impl<'a> Emitter<'a> {
         if !has_inner_literal {
             return None;
         }
-        let stored = self.materialize_init_literal(cursor, None);
+        let stored = self.materialize_init_literal(cursor, guard, Self::view_select(value));
         Some(Self::rebind_projection_root(value, stored))
     }
 
@@ -1199,20 +1343,30 @@ impl<'a> Emitter<'a> {
     /// spell the read position over the root's place. `None` when the chain
     /// has no step, names no fresh call root, owns nothing to release, or ends
     /// in a fixed array the C cannot assign through.
-    fn fresh_projection_chain<'v>(&self, value: &'v Value) -> Option<(&'v Value, Vec<String>)> {
-        let mut accessors: Vec<String> = Vec::new();
+    fn fresh_projection_chain<'v>(
+        &self,
+        value: &'v Value,
+    ) -> Option<(&'v Value, Vec<ProjectionAccessor>)> {
+        let mut accessors: Vec<ProjectionAccessor> = Vec::new();
         let mut cursor = value;
         loop {
             match &cursor.kind {
                 ValueKind::Member { base, name } => {
-                    accessors.push(format!(".{name}"));
+                    accessors.push(ProjectionAccessor::Member(name.clone()));
                     cursor = base;
                 }
                 ValueKind::Index { base, index } => {
-                    let ValueKind::Int(position) = index.kind else {
-                        return None;
+                    // A constant index keeps the source spelling `[0]`; a
+                    // `usize` literal would render its `u` suffix. A run-time
+                    // index keeps the exact IR value the source evaluated, so
+                    // the read and the move-out share one evaluation.
+                    let index_value = match &index.kind {
+                        ValueKind::Int(position) => {
+                            Value::new(Ty::i32_ty(), ValueKind::Int(*position))
+                        }
+                        _ => (**index).clone(),
                     };
-                    accessors.push(format!("[{position}]"));
+                    accessors.push(ProjectionAccessor::Index(index_value));
                     cursor = base;
                 }
                 _ => break,
@@ -1223,18 +1377,16 @@ impl<'a> Emitter<'a> {
         // field as an init-local place. Resolve the first accessor through the
         // literal's fields so a nested projection roots at the inner local.
         if let ValueKind::StructLit { fields, .. } = &cursor.kind {
-            if let Some(first) = accessors.last() {
-                if let Some(field) = first.strip_prefix('.') {
-                    if let Some((_, field_value)) = fields.iter().find(|(name, _)| name == field) {
-                        if let ValueKind::Place(Place {
-                            base: PlaceBase::Local(name),
-                            ..
-                        }) = &field_value.kind
-                        {
-                            if self.init_literal_locals.contains(name) {
-                                cursor = field_value;
-                                accessors.pop();
-                            }
+            if let Some(ProjectionAccessor::Member(field)) = accessors.last() {
+                if let Some((_, field_value)) = fields.iter().find(|(name, _)| name == field) {
+                    if let ValueKind::Place(Place {
+                        base: PlaceBase::Local(name),
+                        ..
+                    }) = &field_value.kind
+                    {
+                        if self.init_literal_locals.contains(name) {
+                            cursor = field_value;
+                            accessors.pop();
                         }
                     }
                 }
@@ -1247,13 +1399,21 @@ impl<'a> Emitter<'a> {
                 ..
             }) if self.init_literal_locals.contains(name)
         );
+        let call_root = matches!(
+            &cursor.kind,
+            ValueKind::Place(Place {
+                base: PlaceBase::Local(name),
+                ..
+            }) if self.init_call_locals.contains(name)
+        );
         if accessors.is_empty()
             || !(matches!(
                 cursor.kind,
                 ValueKind::Call { .. }
                     | ValueKind::ClosureCall { .. }
                     | ValueKind::StructLit { .. }
-            ) || literal_root)
+            ) || literal_root
+                || call_root)
             || !self.needs_drop(&cursor.ty)
             // The read position itself need not own storage: a view position
             // reads storage the root never owned, so the root still binds for
@@ -1267,6 +1427,20 @@ impl<'a> Emitter<'a> {
         Some((cursor, accessors))
     }
 
+    /// Renders a projection chain over a bound root.
+    ///
+    /// A run-time index renders the same IR value the read uses, so the
+    /// move-out cannot evaluate the index a second time.
+    fn accessors_text(&self, accessors: &[ProjectionAccessor]) -> String {
+        accessors
+            .iter()
+            .map(|accessor| match accessor {
+                ProjectionAccessor::Member(name) => format!(".{name}"),
+                ProjectionAccessor::Index(index) => format!("[{}]", self.value(index)),
+            })
+            .collect()
+    }
+
     /// Binds a fresh owning root under a projection chain and empties the read
     /// position after the store.
     ///
@@ -1274,18 +1448,25 @@ impl<'a> Emitter<'a> {
     /// position keep their inline form: the first is the destination's own
     /// value, and the second has no position the move-out could empty ahead of
     /// the release.
-    fn retain_fresh_projection_root(&mut self, value: &Value) -> (Value, Option<String>) {
+    fn retain_fresh_projection_root(
+        &mut self,
+        value: &Value,
+        move_out: bool,
+        guard: Option<&str>,
+    ) -> (Value, Option<String>) {
         let Some((root, accessors)) = self.fresh_projection_chain(value) else {
             return (value.clone(), None);
         };
-        let literal_root = match &root.kind {
+        let local_root = match &root.kind {
             ValueKind::Place(Place {
                 base: PlaceBase::Local(name),
                 ..
-            }) if self.init_literal_locals.contains(name) => Some(name.clone()),
+            }) if self.init_literal_locals.contains(name) || self.init_call_locals.contains(name) => {
+                Some(name.clone())
+            }
             _ => None,
         };
-        let (local, root_read) = if let Some(name) = literal_root {
+        let (local, root_read) = if let Some(name) = local_root {
             // The literal already fills an init local of its own. Register
             // only the resolved root: a containing literal materialized by the
             // walk has already moved its inner fields into this root, while a
@@ -1301,7 +1482,7 @@ impl<'a> Emitter<'a> {
             // registration must see the local even under a retaining
             // destination.
             let retaining = std::mem::replace(&mut self.init_retain_owners, false);
-            let (local, root_read) = self.materialize_init_local(root, None, &zero);
+            let (local, root_read) = self.materialize_init_local(root, guard, &zero);
             self.init_retain_owners = retaining;
             (local, root_read)
         };
@@ -1314,7 +1495,7 @@ impl<'a> Emitter<'a> {
         };
         (
             read,
-            Some(format!("{local}{} = {empty}", accessors.concat())),
+            move_out.then(|| format!("{local}{} = {empty}", self.accessors_text(&accessors))),
         )
     }
 
@@ -1326,7 +1507,12 @@ impl<'a> Emitter<'a> {
     /// after the store so the retained view keeps the storage while the root's
     /// other fields free. The condition stores once, so both guards read the
     /// same decision, and an arm with no fresh projection keeps its form.
-    fn retain_conditional_projection_roots(&mut self, value: &Value) -> (Value, Vec<String>) {
+    fn retain_conditional_projection_roots(
+        &mut self,
+        value: &Value,
+        outer_guard: Option<&str>,
+        move_out: bool,
+    ) -> (Value, Vec<String>) {
         let ValueKind::Conditional {
             condition,
             then_value,
@@ -1340,20 +1526,38 @@ impl<'a> Emitter<'a> {
         {
             return (value.clone(), Vec::new());
         }
-        // A stable condition (a place read) spells the guards directly; a
-        // fresh one stores once, so both binds read the same decision.
-        let (condition, then_guard, else_guard) = if self.reads_stable_storage(condition) {
-            let text = self.value(condition);
-            ((**condition).clone(), text.clone(), format!("!({text})"))
-        } else {
-            let (name, read) = self.materialize_init_local(condition, None, "false");
-            (read, name.clone(), format!("!{name}"))
+        // The arm roots bind before the store and the store re-reads the
+        // condition. A condition that is a place or a fresh expression can be
+        // changed by an arm's call, so store it once and let the guards and the
+        // store all read the same local. A condition the walk already stored is
+        // reused as is.
+        let (condition, then_guard, else_guard) = match stored_init_read_name(condition) {
+            Some(name) => ((**condition).clone(), name.clone(), format!("!{name}")),
+            None => {
+                let (name, read) = self.materialize_init_local(condition, outer_guard, "false");
+                (read, name.clone(), format!("!{name}"))
+            }
+        };
+        let (then_guard, else_guard) = match outer_guard {
+            Some(enclosing) => (
+                format!("{enclosing} && {then_guard}"),
+                format!("{enclosing} && {else_guard}"),
+            ),
+            None => (then_guard, else_guard),
         };
         let mut move_outs = Vec::new();
-        let then_value =
-            self.retain_guarded_projection_root(then_value, &then_guard, &mut move_outs);
-        let else_value =
-            self.retain_guarded_projection_root(else_value, &else_guard, &mut move_outs);
+        let then_value = self.retain_guarded_projection_root(
+            then_value,
+            &then_guard,
+            &mut move_outs,
+            move_out,
+        );
+        let else_value = self.retain_guarded_projection_root(
+            else_value,
+            &else_guard,
+            &mut move_outs,
+            move_out,
+        );
         (
             Value::new(
                 value.ty.clone(),
@@ -1377,7 +1581,16 @@ impl<'a> Emitter<'a> {
         arm: &Value,
         guard: &str,
         move_outs: &mut Vec<String>,
+        move_out: bool,
     ) -> Value {
+        // A nested conditional has no single projection chain of its own. Its
+        // arms still need retention under the composed outer guard.
+        if matches!(arm.kind, ValueKind::Conditional { .. }) {
+            let (value, mut nested) =
+                self.retain_conditional_projection_roots(arm, Some(guard), move_out);
+            move_outs.append(&mut nested);
+            return value;
+        }
         let Some((root, accessors)) = self.fresh_projection_chain(arm) else {
             return arm.clone();
         };
@@ -1392,7 +1605,17 @@ impl<'a> Emitter<'a> {
             Some(helper) => format!("{helper}()"),
             None => self.empty_state(&arm.ty),
         };
-        move_outs.push(format!("{local}{} = {empty}", accessors.concat()));
+        if move_out {
+            // The arm's root call and its read ran only under this guard, so
+            // the move-out must run there too: an untaken arm still holds the
+            // zero state, and indexing that zero array with the source's
+            // run-time index would write out of bounds. An unselected element
+            // keeps every root whole so the release pass frees it.
+            move_outs.push(format!(
+                "if ({guard}) {{ {local}{} = {empty}; }}",
+                self.accessors_text(&accessors)
+            ));
+        }
         read
     }
 
@@ -1414,13 +1637,13 @@ impl<'a> Emitter<'a> {
         let elements = elements
             .iter()
             .map(|element| {
-                let (element, move_out) = self.retain_fresh_projection_root(element);
+                let (element, move_out) = self.retain_fresh_projection_root(element, true, None);
                 move_outs.extend(move_out);
                 element
             })
             .collect();
         let fill = fill.as_ref().map(|fill| {
-            let (fill, move_out) = self.retain_fresh_projection_root(fill);
+            let (fill, move_out) = self.retain_fresh_projection_root(fill, true, None);
             move_outs.extend(move_out);
             Box::new(fill)
         });
@@ -1464,50 +1687,46 @@ impl<'a> Emitter<'a> {
     fn rebuild_read_path(
         &self,
         mut read: Value,
-        accessors: &[String],
+        accessors: &[ProjectionAccessor],
         final_ty: &Ty,
     ) -> Value {
         for (index, accessor) in accessors.iter().enumerate() {
             let last = index + 1 == accessors.len();
-            if let Some(field) = accessor.strip_prefix('.') {
-                let ty = if last {
-                    final_ty.clone()
-                } else {
-                    self.sema
-                        .table
-                        .instance_field(&read.ty, field)
-                        .unwrap_or_else(Ty::unknown)
-                };
-                read = Value::new(
-                    ty,
-                    ValueKind::Member {
-                        base: Box::new(read),
-                        name: field.to_owned(),
-                    },
-                );
-                continue;
+            match accessor {
+                ProjectionAccessor::Member(field) => {
+                    let ty = if last {
+                        final_ty.clone()
+                    } else {
+                        self.sema
+                            .table
+                            .instance_field(&read.ty, field)
+                            .unwrap_or_else(Ty::unknown)
+                    };
+                    read = Value::new(
+                        ty,
+                        ValueKind::Member {
+                            base: Box::new(read),
+                            name: field.clone(),
+                        },
+                    );
+                }
+                ProjectionAccessor::Index(index_value) => {
+                    let ty = if last {
+                        final_ty.clone()
+                    } else {
+                        read.ty.iterated_element()
+                    };
+                    read = Value::new(
+                        ty,
+                        ValueKind::Index {
+                            base: Box::new(read),
+                            // The index value is shared with the move-out, so
+                            // a run-time index is evaluated exactly once.
+                            index: Box::new(index_value.clone()),
+                        },
+                    );
+                }
             }
-            let Some(position) = accessor
-                .strip_prefix('[')
-                .and_then(|inner| inner.strip_suffix(']'))
-                .and_then(|inner| inner.parse::<i128>().ok())
-            else {
-                continue;
-            };
-            let ty = if last {
-                final_ty.clone()
-            } else {
-                read.ty.iterated_element()
-            };
-            read = Value::new(
-                ty,
-                ValueKind::Index {
-                    base: Box::new(read),
-                    // A constant index keeps the source spelling `[0]`; a
-                    // `usize` literal would render its `u` suffix here.
-                    index: Box::new(Value::new(Ty::i32_ty(), ValueKind::Int(position))),
-                },
-            );
         }
         read
     }
@@ -1526,12 +1745,13 @@ impl<'a> Emitter<'a> {
         // remaining fields release: a projection over a fresh owning root
         // binds that root first, and every element's root binds into an init
         // local, with the read positions emptied after the fills.
-        let value = self.retain_view_array_fill_root(value);
-        let (value, move_outs) = self.retain_view_array_roots(&value);
-        // The value is prepared once, before any element store, so every
-        // condition and run-time index is evaluated exactly once even though
-        // the stores read the value once per element.
-        let prepared = self.prepare_fill_value(&value, None);
+        // Prepare the value first: every condition and run-time index becomes
+        // an init local before retention records a move-out. Retaining first
+        // would copy the raw index expression into the move-out and evaluate it
+        // a second time there.
+        let prepared = self.prepare_fill_value(value, None);
+        let prepared = self.retain_view_array_fill_root(&prepared);
+        let (prepared, move_outs) = self.retain_view_array_roots(&prepared);
         self.emit_filled_array(target, ty, &prepared);
         for move_out in move_outs {
             self.push(&format!("    {move_out};"));
@@ -1565,9 +1785,29 @@ impl<'a> Emitter<'a> {
                 _ => break,
             }
         }
-        if !matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
-            || !self.needs_drop(&cursor.ty)
+        // The preparation pass may already have bound the root call into an
+        // init local. The retention must register that local; reading it as a
+        // place and binding it again is impossible (C cannot assign an array),
+        // and skipping it would free no residual owning fields.
+        let prepared_root = match &cursor.kind {
+            ValueKind::Place(Place {
+                base: PlaceBase::Local(name),
+                ..
+            }) if self.init_call_locals.contains(name) => Some(name.clone()),
+            _ => None,
+        };
+        if prepared_root.is_none()
+            && !matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
         {
+            return value.clone();
+        }
+        if !self.needs_drop(&cursor.ty) {
+            return value.clone();
+        }
+        if let Some(name) = prepared_root {
+            if !self.init_owners.iter().any(|(owner, _)| owner == &name) {
+                self.init_owners.push((name, cursor.ty.clone()));
+            }
             return value.clone();
         }
         let zero = self.empty_state(&cursor.ty);
@@ -1847,6 +2087,12 @@ impl<'a> Emitter<'a> {
         zero: &str,
     ) -> (String, Value) {
         let name = self.next_init_local();
+        if matches!(
+            &value.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        ) {
+            self.init_call_locals.insert(name.clone());
+        }
         if self.substitute(&value.ty).is_fixed_array()
             && matches!(
                 value.kind,
@@ -1943,7 +2189,12 @@ impl<'a> Emitter<'a> {
     /// operand is evaluated, so this store only reads them — the body's field
     /// emitter would place the guards a second time. Under a branch guard the
     /// stores run only on the path that reaches the literal.
-    fn materialize_init_literal(&mut self, value: &Value, guard: Option<&str>) -> Value {
+    fn materialize_init_literal(
+        &mut self,
+        value: &Value,
+        guard: Option<&str>,
+        select: ViewSelect,
+    ) -> Value {
         let ty = value.ty.clone();
         let fields = match &value.kind {
             ValueKind::StructLit { fields, .. } => fields.clone(),
@@ -1970,13 +2221,40 @@ impl<'a> Emitter<'a> {
         // core, which runs them inside the arm. Only the unguarded path has
         // already emitted them.
         self.init_walked_guards = guard.is_none();
+        let mut stored_fields = fields;
+        let mut guarded_move_outs = Vec::new();
+        if let Some(enclosing) = guard {
+            // Retain the field roots before the store block opens. The local
+            // declarations then live in the enclosing scope while the call and
+            // the move-out stay under the arm guard; declaring them inside the
+            // block would make the function-scope release name an undeclared
+            // local.
+            let (retained, mut move_outs) = self.retain_guarded_literal_fields(
+                &stored_fields,
+                select.clone(),
+                enclosing,
+            );
+            stored_fields = retained;
+            guarded_move_outs.append(&mut move_outs);
+        }
         match guard {
             Some(enclosing) => {
                 self.push(&format!("    if ({enclosing}) {{"));
-                self.emit_init_literal_fields(&target_c, &fields);
+                self.emit_init_literal_fields(
+                    &target_c,
+                    &stored_fields,
+                    select,
+                    guard,
+                    guard.is_some(),
+                );
+                for move_out in guarded_move_outs {
+                    self.push(&format!("    {move_out};"));
+                }
                 self.push("    }");
             }
-            None => self.emit_init_literal_fields(&target_c, &fields),
+            None => {
+                self.emit_init_literal_fields(&target_c, &stored_fields, select, guard, false)
+            }
         }
         self.init_walked_guards = saved_walked_guards;
         if !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(&ty) {
@@ -1986,6 +2264,75 @@ impl<'a> Emitter<'a> {
             self.init_owners.push((name, ty.clone()));
         }
         Value::new(ty, ValueKind::Place(target))
+    }
+
+    /// Retains the fresh roots of a literal's fields before a guarded store
+    /// block opens.
+    ///
+    /// The guarded store path declares its root locals before the `if` and
+    /// assigns them inside it. A nested literal recurses with the same field
+    /// selection; a non-literal field keeps its value and is stored normally.
+    fn retain_guarded_literal_fields(
+        &mut self,
+        fields: &[(String, Value)],
+        select: ViewSelect,
+        guard: &str,
+    ) -> (Vec<(String, Value)>, Vec<String>) {
+        let mut stored_fields = Vec::with_capacity(fields.len());
+        let mut move_outs = Vec::new();
+        for (field_name, field) in fields {
+            let field_select = select.field(field_name);
+            let field_ty = self.substitute(&field.ty);
+            if field_ty.is_fixed_array() {
+                let (stored, mut moves) = self.retain_view_array_field_elements(
+                    field,
+                    &field_ty,
+                    field_select,
+                    Some(guard),
+                );
+                stored_fields.push((field_name.clone(), stored));
+                move_outs.append(&mut moves);
+                continue;
+            }
+            if matches!(
+                &field.kind,
+                ValueKind::Call { .. }
+                    | ValueKind::ClosureCall { .. }
+                    | ValueKind::Conditional { .. }
+            ) {
+                // A field call or conditional before a fixed-array field must
+                // run at its own position. Bind it here, before the array
+                // retention below, so a later fill cannot hoist above it.
+                let zero = self.empty_state(&field.ty);
+                let (_, read) = self.materialize_init_local(field, Some(guard), &zero);
+                stored_fields.push((field_name.clone(), read));
+                continue;
+            }
+            if let ValueKind::StructLit {
+                name: inner_name,
+                fields: inner,
+            } = &field.kind
+            {
+                if self.struct_literal_needs_stores(inner_name, inner) {
+                    let (stored_inner, mut moves) =
+                        self.retain_guarded_literal_fields(inner, field_select, guard);
+                    stored_fields.push((
+                        field_name.clone(),
+                        Value::new(
+                            field.ty.clone(),
+                            ValueKind::StructLit {
+                                name: inner_name.clone(),
+                                fields: stored_inner,
+                            },
+                        ),
+                    ));
+                    move_outs.append(&mut moves);
+                    continue;
+                }
+            }
+            stored_fields.push((field_name.clone(), field.clone()));
+        }
+        (stored_fields, move_outs)
     }
 
     /// Retains the fresh roots a view-array field's elements read.
@@ -1999,33 +2346,173 @@ impl<'a> Emitter<'a> {
         &mut self,
         field: &Value,
         field_ty: &Ty,
+        select: ViewSelect,
+        guard: Option<&str>,
     ) -> (Value, Vec<String>) {
-        let TyKind::Array { element, .. } = &field_ty.kind else {
+        if !self.init_retain_owners || self.init_skip_owner_binding {
+            return (field.clone(), Vec::new());
+        }
+        let TyKind::Array { element, extents } = &field_ty.kind else {
             return (field.clone(), Vec::new());
         };
-        if !crate::borrow::is_view_like(element) {
+        let nested_ty = (extents.len() > 1)
+            .then(|| Ty::array((**element).clone(), extents[1..].to_vec()));
+        if nested_ty.is_none() && !crate::borrow::is_view_like(element) {
             return (field.clone(), Vec::new());
         }
         let ValueKind::ArrayLit { elements, fill } = &field.kind else {
             return (field.clone(), Vec::new());
         };
+        let bind_fills = !matches!(&select, ViewSelect::Whole);
         let mut stored_elements = Vec::with_capacity(elements.len());
         let mut move_outs = Vec::new();
-        for element in elements {
-            let (stored, mut moves) = self.retain_view_member_root(element);
+        for (index, element_value) in elements.iter().enumerate() {
+            let element_select = select.index(index);
+            let (stored, mut moves) =
+                if let (Some(row_ty), ValueKind::ArrayLit { .. }) = (&nested_ty, &element_value.kind)
+                {
+                    self.retain_view_array_field_elements(
+                        element_value,
+                        row_ty,
+                        element_select,
+                        guard,
+                    )
+                } else if bind_fills
+                    && matches!(
+                        &element_value.kind,
+                        ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+                    )
+                {
+                    // A bare call element has no projection to bind later. It
+                    // must still run before a fill that follows it, so bind it
+                    // here in the element loop instead of leaving the call for
+                    // the store that runs after the fill.
+                    let stored = self.bind_fill_root(
+                        element_value,
+                        matches!(element_select, ViewSelect::Unselected),
+                        guard,
+                    );
+                    (stored, Vec::new())
+                } else if bind_fills
+                    && !self.needs_drop(&element_value.ty)
+                    && !self.has_fresh_projection_root(element_value)
+                    && !matches!(
+                        &element_value.kind,
+                        ValueKind::Int(_)
+                            | ValueKind::Float(_)
+                            | ValueKind::Char(_)
+                            | ValueKind::Str(_)
+                            | ValueKind::Bool(_)
+                            | ValueKind::Null
+                            | ValueKind::Aggregate
+                    )
+                {
+                    // A place, member, or conditional view element with no
+                    // owner still has to be read at its source position: a
+                    // later fill can mutate the place or the condition, and
+                    // the store runs after the fill. Bind the view copy here.
+                    let zero = self.empty_state(&element_value.ty);
+                    let (_, read) = self.materialize_init_local(element_value, guard, &zero);
+                    (read, Vec::new())
+                } else {
+                    self.retain_view_member_root(
+                        element_value,
+                        !matches!(element_select, ViewSelect::Unselected),
+                        guard,
+                    )
+                };
             stored_elements.push(stored);
             move_outs.append(&mut moves);
         }
+        let fill = fill.as_deref().map(|fill| {
+            let fill_select = select.fill(elements.len());
+            if let (Some(row_ty), ValueKind::ArrayLit { .. }) = (&nested_ty, &fill.kind) {
+                let (stored, mut moves) =
+                    self.retain_view_array_field_elements(fill, row_ty, fill_select, guard);
+                move_outs.append(&mut moves);
+                Box::new(stored)
+            } else if bind_fills {
+                if matches!(fill.kind, ValueKind::Member { .. } | ValueKind::Index { .. }) {
+                    // A fill that projects one member out of a fresh root has
+                    // to bind that root; a bare call binder would leave the
+                    // projection inline and leak the root's siblings.
+                    let (stored, mut moves) = self.retain_view_member_root(
+                        fill,
+                        !matches!(fill_select, ViewSelect::Unselected),
+                        guard,
+                    );
+                    move_outs.append(&mut moves);
+                    Box::new(stored)
+                } else {
+                    Box::new(self.bind_fill_root(
+                        fill,
+                        matches!(fill_select, ViewSelect::Unselected),
+                        guard,
+                    ))
+                }
+            } else {
+                Box::new(fill.clone())
+            }
+        });
         (
             Value::new(
                 field.ty.clone(),
                 ValueKind::ArrayLit {
                     elements: stored_elements,
-                    fill: fill.clone(),
+                    fill,
                 },
             ),
             move_outs,
         )
+    }
+
+    /// True when a view element roots at a fresh projection, either directly
+    /// or through a conditional arm.
+    ///
+    /// Such an element must go through `retain_view_member_root` so the fresh
+    /// root binds and its residual owning fields release; a plain view copy
+    /// would strand the root.
+    fn has_fresh_projection_root(&self, value: &Value) -> bool {
+        if self.fresh_projection_chain(value).is_some() {
+            return true;
+        }
+        if let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        {
+            return self.has_fresh_projection_root(then_value)
+                || self.has_fresh_projection_root(else_value);
+        }
+        false
+    }
+
+    /// Binds a fill row's fresh owning root at its source position.
+    ///
+    /// A fill row under a constant selection binds both the selected and
+    /// unselected roots so the calls keep source order. The selected root is
+    /// not registered: the stored global view still reads its backing. The
+    /// unselected root is registered in `init_owners`, so the init release pass
+    /// frees it. A place or a conditional keeps its current form.
+    fn bind_fill_root(&mut self, fill: &Value, register: bool, guard: Option<&str>) -> Value {
+        // Bind every call, not only an owning one: a view-returning call has
+        // no release of its own, but its effects still have to run at this
+        // source position instead of being hoisted below a later fill.
+        let fresh = matches!(
+            &fill.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        ) && !self.reads_stable_storage(fill);
+        if !fresh {
+            return fill.clone();
+        }
+        let zero = self.empty_state(&fill.ty);
+        // A selected root stays retained; an unselected root is not stored
+        // anywhere, so let `materialize_init_local` record it for release.
+        let retaining = std::mem::replace(&mut self.init_retain_owners, !register);
+        let (_, read) = self.materialize_init_local(fill, guard, &zero);
+        self.init_retain_owners = retaining;
+        read
     }
 
     /// Stores a walked literal's fields into a rendered C lvalue.
@@ -2037,17 +2524,35 @@ impl<'a> Emitter<'a> {
     /// every other field stores as one assignment with the view wrap its
     /// destination drives. The guards are not emitted here: the walk already
     /// placed each operand's guard where the operand was evaluated.
-    fn emit_init_literal_fields(&mut self, target_c: &str, fields: &[(String, Value)]) {
+    fn emit_init_literal_fields(
+        &mut self,
+        target_c: &str,
+        fields: &[(String, Value)],
+        select: ViewSelect,
+        guard: Option<&str>,
+        already_retained: bool,
+    ) {
         for (field_name, field) in fields {
             let field_ty = self.substitute(&field.ty);
             let field_c = format!("{target_c}.{field_name}");
+            let field_select = select.field(field_name);
             if field_ty.is_fixed_array() {
                 // A view-array field in a module initializer reads fresh
                 // members (`names: [mk().v]`). Retain each element's root and
                 // empty the read member after the store, so the root's other
-                // owning fields release while the view keeps its backing.
-                let (stored_field, move_outs) =
-                    self.retain_view_array_field_elements(field, &field_ty);
+                // owning fields release while the view keeps its backing. A
+                // guarded literal already ran this retention before its store
+                // block; the field is then a rewritten value.
+                let (stored_field, move_outs) = if already_retained {
+                    (field.clone(), Vec::new())
+                } else {
+                    self.retain_view_array_field_elements(
+                        field,
+                        &field_ty,
+                        field_select.clone(),
+                        guard,
+                    )
+                };
                 let field_target = ArrayTarget::object(&field_c);
                 self.emit_fixed_array_assign_to(
                     &field_target,
@@ -2067,7 +2572,13 @@ impl<'a> Emitter<'a> {
             } = &field.kind
             {
                 if self.struct_literal_needs_stores(inner_name, inner) {
-                    self.emit_init_literal_fields(&field_c, inner);
+                    self.emit_init_literal_fields(
+                        &field_c,
+                        inner,
+                        field_select,
+                        guard,
+                        already_retained,
+                    );
                     continue;
                 }
             }
@@ -2488,6 +2999,12 @@ impl<'a> Emitter<'a> {
                 then_value,
                 else_value,
             } => {
+                // A conditional has no single constant path, but each arm is
+                // read independently and may name its own stored position.
+                // Carry the arm's selection into the arm walk; otherwise a
+                // selected arm's unselected sibling fields are treated as if
+                // they were stored too, and their move-outs leak the backing.
+                let outer_select = std::mem::replace(&mut self.init_select, ViewSelect::Whole);
                 let condition = self.materialize_init_value(condition, guard);
                 let arms_need = self.init_value_needs_materialization(then_value)
                     || self.init_value_needs_materialization(else_value);
@@ -2512,8 +3029,19 @@ impl<'a> Emitter<'a> {
                     ),
                     None => (local_name.clone(), format!("!{local_name}")),
                 };
+                let then_select = match &outer_select {
+                    ViewSelect::Whole => Self::view_select(then_value),
+                    _ => outer_select.clone(),
+                };
+                let else_select = match &outer_select {
+                    ViewSelect::Whole => Self::view_select(else_value),
+                    _ => outer_select.clone(),
+                };
+                self.init_select = then_select;
                 let then_value = self.materialize_init_value(then_value, Some(&then_guard));
+                self.init_select = else_select;
                 let else_value = self.materialize_init_value(else_value, Some(&else_guard));
+                self.init_select = ViewSelect::Whole;
                 Value::new(
                     value.ty.clone(),
                     ValueKind::Conditional {
@@ -2536,9 +3064,28 @@ impl<'a> Emitter<'a> {
                 },
             ),
             ValueKind::StructLit { name, fields } => {
+                // The first literal on the constant projection chain consumes
+                // the global initializer's selection. A nested field literal
+                // receives its own field selection just below; every other
+                // literal sees Whole and keeps the previous retention rule.
+                let select = std::mem::replace(&mut self.init_select, ViewSelect::Whole);
                 let mut walked_fields: Vec<(String, Value)> = Vec::with_capacity(fields.len());
                 for (index, (field_name, field_value)) in fields.iter().enumerate() {
+                    let field_select = select.field(field_name);
+                    // A conditional field's arms are the field's value, so the
+                    // field path applies to each arm exactly as a nested
+                    // literal's path does. Without it the arms walk as Whole
+                    // and an unselected element is moved out and leaked.
+                    self.init_select = if matches!(
+                        &field_value.kind,
+                        ValueKind::StructLit { .. } | ValueKind::Conditional { .. }
+                    ) {
+                        field_select.clone()
+                    } else {
+                        ViewSelect::Whole
+                    };
                     let walked = self.materialize_init_value(field_value, guard);
+                    self.init_select = ViewSelect::Whole;
                     // An impure field evaluates at its own source position. A
                     // later field's statement fill must not hoist above that
                     // effect, so an earlier effectful field stores once into
@@ -2575,7 +3122,12 @@ impl<'a> Emitter<'a> {
                         // array local is filled, so the root's other owning
                         // fields release while the view keeps its backing.
                         let (walked, move_outs) = if self.init_retain_owners {
-                            self.retain_view_array_field_elements(&walked, &walked.ty)
+                            self.retain_view_array_field_elements(
+                                &walked,
+                                &walked.ty,
+                                field_select.clone(),
+                                guard,
+                            )
                         } else {
                             (walked, Vec::new())
                         };
@@ -2606,7 +3158,7 @@ impl<'a> Emitter<'a> {
                     ValueKind::StructLit { name, fields }
                         if self.struct_literal_needs_stores(name, fields) =>
                     {
-                        self.materialize_init_literal(&walked, guard)
+                        self.materialize_init_literal(&walked, guard, select)
                     }
                     _ => walked,
                 }

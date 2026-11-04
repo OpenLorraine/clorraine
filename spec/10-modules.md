@@ -1,6 +1,6 @@
 # Chapter 10 - Modules
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 06 (functions), Ch 12 (FFI and contracts), Ch 14 (diagnostics), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 2.1-2.3 (source structure, module declaration, imports), 3.5 (module-level values), 3.6 (FFI blocks)
 > **Ledger:** [decisions.md](decisions.md) section 12 (M1-M10); plus 3 (E6), 4 (V2), 5 (O10), 11 (X6), 15 (P9)

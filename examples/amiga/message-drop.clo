@@ -1,0 +1,121 @@
+//! Drop-routing acceptance program for `std.amiga.exec`.
+//!
+//! Proves that an unsent `NewMessage` is freed rather than queued, that an
+//! explicit `freeMessage` releases it, that a fetched `Message` drop replies
+//! it, and that `releaseMsg` releases a fetched reply. The transcript is
+//! fixed for the hosted-amiga runner.
+
+module examples.amiga.message_drop;
+
+import { MsgPort, NewMessage, Message, createMsgPort, deleteMsgPort, createMessage, putMsg, signals, waitSignals, getMsg, freeMessage, releaseMsg } from std.amiga.exec;
+import { println } from std.io;
+
+// Lets an unsent NewMessage fall out of scope.
+func dropUnsent(borrow port: MsgPort): bool {
+    let message_opt: NewMessage? = createMessage(port, 7);
+    if (message_opt == null) {
+        return false;
+    }
+    println("message-drop: created");
+    return true;
+}
+
+// Releases an unsent NewMessage explicitly.
+func freeUnsent(borrow port: MsgPort): bool {
+    let message_opt: NewMessage? = createMessage(port, 8);
+    if (message_opt == null) {
+        return false;
+    }
+    let message: NewMessage = message_opt;
+    println("message-drop: free explicit");
+    freeMessage(message);
+    return true;
+}
+
+// Lets a fetched Message fall out of scope; its drop replies it.
+func dropFetched(borrow port: MsgPort): bool {
+    let message_opt: Message? = getMsg(port);
+    if (message_opt == null) {
+        return false;
+    }
+    println("message-drop: fetched");
+    return true;
+}
+
+// Releases a fetched Message explicitly.
+func releaseFetched(borrow port: MsgPort): bool {
+    let message_opt: Message? = getMsg(port);
+    if (message_opt == null) {
+        return false;
+    }
+    let message: Message = message_opt;
+    println("message-drop: release explicit");
+    releaseMsg(message);
+    return true;
+}
+
+export func main(): i32 {
+    let port_opt: MsgPort? = createMsgPort();
+    if (port_opt == null) {
+        println("message-drop: port failed");
+        return 1;
+    }
+    let port: MsgPort = port_opt;
+
+    if (!dropUnsent(port)) {
+        println("message-drop: unsent allocation failed");
+        deleteMsgPort(port);
+        return 1;
+    }
+    println("message-drop: unsent drop returned");
+    let pending_opt: Message? = getMsg(port);
+    if (pending_opt != null) {
+        println("message-drop: unsent message was queued");
+        let pending: Message = pending_opt;
+        releaseMsg(pending);
+        deleteMsgPort(port);
+        return 1;
+    }
+    println("message-drop: queue empty");
+
+    if (!freeUnsent(port)) {
+        println("message-drop: free allocation failed");
+        deleteMsgPort(port);
+        return 1;
+    }
+    let freed_opt: Message? = getMsg(port);
+    if (freed_opt != null) {
+        println("message-drop: freed message was queued");
+        let freed: Message = freed_opt;
+        releaseMsg(freed);
+        deleteMsgPort(port);
+        return 1;
+    }
+    println("message-drop: explicit free clean");
+
+    let sent_opt: NewMessage? = createMessage(port, 9);
+    if (sent_opt == null) {
+        println("message-drop: sent allocation failed");
+        deleteMsgPort(port);
+        return 1;
+    }
+    let sent: NewMessage = sent_opt;
+    putMsg(port, sent);
+    let inbox_signal: u32 = waitSignals(signals(port));
+    if ((inbox_signal & signals(port)) == 0 || !dropFetched(port)) {
+        println("message-drop: fetched message missing");
+        deleteMsgPort(port);
+        return 1;
+    }
+
+    let reply_signal: u32 = waitSignals(signals(port));
+    if ((reply_signal & signals(port)) == 0 || !releaseFetched(port)) {
+        println("message-drop: reply missing");
+        deleteMsgPort(port);
+        return 1;
+    }
+
+    deleteMsgPort(port);
+    println("message-drop: done");
+    return 0;
+}

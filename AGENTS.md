@@ -28,19 +28,22 @@ separate npm package and is not part of the Rust workspace.
 
 Run from the repository root. The Docker SDK image is the pinned toolchain. Use
 `make -C docker exec CMD="..."` for one command inside it; do not nest quotes in
-`CMD`. No CI workflow is committed — `make check` and `make verify` are the
-authoritative gates.
+`CMD`. A host-only GitHub Actions workflow (`.github/workflows/check.yml`) runs
+the spec check and workspace tests on push and pull request; it is not the
+acceptance gate. `make check` and `make verify` remain authoritative.
 
 | Command | Purpose |
 |---------|---------|
 | `make check` | Fast gate: `./spec/check.sh`, then `cargo test --workspace` in the container |
-| `make verify` | Full acceptance: `check` plus `corpus-fs-uae` and `run-fault-amiga`; the FS-UAE leg needs the SDK X display |
+| `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
+| `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
+| `make verify` | Full acceptance: `check` plus `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE leg needs the SDK X display |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` and `clorraine` at `target/debug/` |
-| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
+| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--diagnostics=json`) |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
@@ -50,16 +53,18 @@ authoritative gates.
 | Path | Contents |
 |------|----------|
 | `spec/` | Frozen specification: chapters, grammar, diagnostics registry, and golden data (`spec/tests/{compile-fail,run,staged,corpus}`) |
-| `stdlib/` | Embedded standard library (`std.*.clo`), including the Amiga modules (`std.amiga.*`) |
+| `stdlib/` | Embedded standard library (`std.*.clo`), including `std.amiga.exec` and the other Amiga modules (`std.amiga.*`) |
 | `compiler/src/` | Compiler stages (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph`, and the `clorraine` driver |
 | `compiler/runtime/` | C runtime shims: `shim_host.c`, `shim_hosted_amiga.c`, `shim_freestanding.c` |
 | `compiler/tests/` | Rust integration test drivers |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
+| `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
-| `examples/` | Small example programs and a compile-fail ownership sample |
+| `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
+| `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, and a compile-fail ownership sample |
 | `plans/` | CodeOps plans (one directory per feature) and `plans/00-roadmap.md`; flat layout |
-| `docs/`, `spikes/` | Findings/ergonomics notes and toolchain spike records |
+| `docs/`, `spikes/` | Findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
 
 ## Testing
 
@@ -77,6 +82,13 @@ authoritative gates.
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
 - Golden inputs live under `spec/tests/{compile-fail,run,staged,corpus}`; run the
   whole suite with `cargo test --workspace` via `make check`.
+- `make asan` discovers the suites that reference `RDC_ASAN`, runs each in its
+  own bounded process with `--test-threads=1`, and installs a temporary `cc`
+  wrapper that appends `-no-pie` to ASan links. The wrapper is required: the
+  SDK image's GCC 12 ASan runtime is unstable for PIE executables.
+- `make differential` is a convenience gate over the same host and hosted-amiga
+  outputs the corpus pins; it is not an independent signal. The CI workflow is
+  host-only, so m68k-only tests skip themselves without the SDK toolchain.
 
 ## Generated files and the frozen spec
 
@@ -99,7 +111,7 @@ authoritative gates.
   tree; `codeops/` holds only `specialist-check.json`.
 - Branch: `main` is the integration branch (`origin`:
   `git@github.com:OpenLorraine/clorraine.git`).
-- Specialist coverage: **up to date (2026-10-31)** — 51 plan folders recorded in
+- Specialist coverage: **up to date (2026-11-04)** — 53 plan folders recorded in
   `codeops/specialist-check.json`.
 - Do not run the CodeOps installer from inside this repository: it replaces the
   two customized reviewer briefs (`correctness-reviewer`, `semantics-reviewer`)

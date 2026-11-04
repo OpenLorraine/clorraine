@@ -6,11 +6,10 @@
 //! fixtures are written into that scratch directory at test time, so the
 //! repository tree is never touched.
 //!
-//! The host and `hosted-amiga` cases need the SDK toolchain (`cc`,
-//! `m68k-amigaos-gcc`, and `vamos`), so the suite is meant to run inside the
-//! pinned SDK container. The one case that really invokes `vamos` skips itself
-//! with a note when the Amiga tools are absent, so a bare-host run reports no
-//! false failure.
+//! The host cases need a C compiler and run on a bare host. The hosted-amiga
+//! cases need the SDK toolchain (`m68k-amigaos-gcc` and `vamos`); they skip
+//! themselves with a note when those tools are absent, so a bare-host run
+//! reports no false failure.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -305,8 +304,16 @@ fn run_propagates_the_program_exit_code() {
 
 /// `--emulator` prints the exact FS-UAE host handoff and exits zero; with
 /// `--capture` the printed command carries the `RUN_CAPTURE=1` prefix.
+///
+/// The driver builds the hosted-amiga program before it prints the handoff, so
+/// a host without the Amiga toolchain prints a note and returns instead of
+/// reporting a false failure.
 #[test]
 fn hosted_amiga_emulator_prints_the_fs_uae_handoff() {
+    if !tool_available("m68k-amigaos-gcc") {
+        eprintln!("emulator-handoff: skipped (m68k-amigaos-gcc is not installed)");
+        return;
+    }
     let scratch = ScratchDir::new("emulator-handoff");
     write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
 

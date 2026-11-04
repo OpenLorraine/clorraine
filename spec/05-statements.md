@@ -1,6 +1,6 @@
 # Chapter 05 - Statements and Control Flow
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 04 (expressions), Ch 06 (functions), Ch 14 (diagnostics), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) section 5
 > **Ledger:** B1-B7, F1, F2, F5, F9, GF4, GF9, T12
@@ -79,9 +79,10 @@ mismatch is E10039 [03-ownership.md](03-ownership.md).
 ## 5. Conditions
 
 Every condition — `if`, `while`, `do`/`while`, the middle `for` clause, and the
-`?:` operator — must have type `bool`, otherwise E10218. There is no truthiness
-and no implicit conversion from integers or pointers, so write the comparison
-explicitly [04-expressions.md](04-expressions.md).
+`?:` operator — must have type `bool`, otherwise E10218. A null-shaped unary
+`!` operand is E10012 before this rule. There is no truthiness and no implicit
+conversion from integers or pointers, so write the comparison explicitly
+[04-expressions.md](04-expressions.md).
 
 ## 6. `if` and `else`
 

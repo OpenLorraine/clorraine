@@ -34,8 +34,10 @@ plan can close production-ready without publishing an artifact.
    `description = "The Clorraine compiler and build/run driver"` and
    `repository = "https://github.com/OpenLorraine/clorraine"`. Update the README licence section
    from "To be determined" to MIT.
-2. **Known limitations.** Add `docs/known-limitations.md` with the accepted residuals:
-   - the ASan child-run flake (mitigated by serial `make asan`; still an environment residual);
+2. **Known limitations.** Add `docs/known-limitations.md` with the accepted residuals and the ASan
+   build-environment requirement:
+   - the SDK image's GCC 12 ASan runtime needs a non-PIE (`-no-pie`) link for its child programs;
+     `make asan` applies the flag through a `cc` wrapper, so no open product residual remains;
    - the top-level-`while`-only loop split;
    - the host-only CI limitation (m68k tests skip without the cross toolchain).
    The multi-element view-array leak is in the AR-4 fix list and is not an accepted residual
@@ -46,8 +48,9 @@ plan can close production-ready without publishing an artifact.
 3. **Release checklist.** Add `RELEASE.md` with:
    - the AR-12 decision: v1.0.0, source tag + Linux x86_64 binary tarball, `SHA256SUMS`;
    - the `make check`, `make verify`, `make asan`, and `make differential` evidence;
-   - the MIT licence and metadata check, including a manifest audit of `compiler/Cargo.toml` and
-     `tools/demo/package.json` (both MIT);
+   - the MIT licence and metadata check, including a manifest audit of `compiler/Cargo.toml`,
+     `Cargo.lock`, `tools/demo/package.json`, and `tools/demo/package-lock.json` (both manifests
+     MIT; `Cargo.lock` records version 1.0.0 and the demo lockfile root records MIT);
    - the source tag, x86_64 build, and smoke-test steps in the conditional publish sub-plan;
    - checksums, release notes, a `CHANGELOG.md` entry, and the no-NDK-redistribution rule.
 4. **Release notes and changelog.** In the conditional publish sub-plan, add a concise v1.0
@@ -73,8 +76,8 @@ None.
   to v1.0.0 in Phase 6 task 6.1.2 and verified in conditional task C.1.1.
 - `RELEASE.md` records the AR-12 decision; the artifact steps are the conditional publish
   sub-plan.
-- `docs/known-limitations.md` is linked from the root `README.md` and the spec here in Phase 6
-  after the document exists, then `./spec/check.sh` is rerun.
+- `docs/known-limitations.md` is linked from the root `README.md` and `spec/README.md` here in
+  Phase 6 after the document exists, then `./spec/check.sh` is rerun.
 - The final production gate checks the licence, metadata, checklist, release notes, changelog, and
   the AR-12 decision; the conditional publish sub-plan is complete or recorded as blocked.
 
@@ -103,10 +106,10 @@ repository = "https://github.com/OpenLorraine/clorraine"
 - [ ] `make verify` all legs passed
 - [ ] `make asan` green (serial suites)
 - [ ] `make differential` green
-- [ ] MIT LICENSE, Cargo metadata, and demo manifest MIT present
-- [ ] `docs/known-limitations.md` current and linked
+- [ ] MIT LICENSE, Cargo metadata, and demo manifest/lockfile MIT present
+- [ ] `docs/known-limitations.md` current and linked from `README.md` and `spec/README.md`
 - [ ] source tag created
-- [ ] Linux x86_64 binary built and smoke-tested; aarch64 deferred to PLAN-07
+- [ ] Linux x86_64 binary built and smoke-tested; exact `clc 1.0.0`; aarch64 deferred to PLAN-07
 - [ ] SHA256SUMS, release notes, and `CHANGELOG.md` entry attached
 ```
 
@@ -116,7 +119,7 @@ repository = "https://github.com/OpenLorraine/clorraine"
 | ---------- | ----------------- | ------ |
 | Conditional publish sub-plan cannot run | Do not publish; record the blocker; the 45-task main plan still closes production-ready | AR-12 |
 | Missing licence metadata | Fail the release checklist, including the manifest audit | AR-5 |
-| `--version` does not report v1.0.0 | Fail the smoke test; set the Cargo version before building | AR-12 |
+| `--version` does not report `clc 1.0.0` | Fail the smoke test; set the Cargo version before building | AR-12 |
 | A host binary fails its smoke test | Do not publish; file the defect and rerun the gate | AR-3 |
 | An aarch64 artifact is requested | Record the PLAN-07 deferral; do not add an unapproved cross-build surface | AR-3 |
 | A known limitation changes | Update `docs/known-limitations.md` before publishing | AR-14 |
@@ -129,10 +132,12 @@ repository = "https://github.com/OpenLorraine/clorraine"
 ## Testing Requirements
 
 - ST-11 – ST-14 in `07-testing-strategy.md`.
-- `LICENSE` exists and contains the MIT text; `compiler/Cargo.toml` and
-  `tools/demo/package.json` carry `license = "MIT"`.
+- `LICENSE` exists and contains the MIT text; `compiler/Cargo.toml`, `Cargo.lock`,
+  `tools/demo/package.json`, and `tools/demo/package-lock.json` carry or record the MIT metadata.
 - `RELEASE.md` contains the AR-12 decision (v1.0.0, x86_64) and the four verification commands.
-- `docs/known-limitations.md` lists the accepted residuals and the host-only CI limitation.
+- `docs/known-limitations.md` lists the accepted residuals, the ASan `-no-pie` build-environment
+  requirement, and the host-only CI limitation, and both the `README.md` and `spec/README.md` links
+  resolve.
 - `RELEASE-NOTES.md` and a `CHANGELOG.md` entry exist in the conditional publish sub-plan.
 - In the conditional publish sub-plan: build the x86_64 binary, run `--version` and assert
-  `v1.0.0`, run a hello-world compile, and attach checksums.
+  the exact output `clc 1.0.0`, run a hello-world compile, and attach checksums.

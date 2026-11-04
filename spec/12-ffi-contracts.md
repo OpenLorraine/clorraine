@@ -1,6 +1,6 @@
 # Chapter 12 - FFI and Ownership Contracts
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 06 (functions and parameters), Ch 08 (arrays and strings), Ch 14 (diagnostics), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.4 (handles), 3.6 (FFI declarations), 4 (types), 5 (statements)
 > **Ledger:** [decisions.md](decisions.md) section 11 (X1-X6); plus 5 (O10), 6 (T2, T8), 7 (F9), 15 (P5)

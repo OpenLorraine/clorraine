@@ -1518,17 +1518,22 @@ func main(): i32 {
     assert_contains(
         "nullguardmemberarm",
         &emitted,
-        "if (cl_spec_miiimpl_nullguardmemberarm_c) { __cl_itmp0 = cl_spec_miiimpl_nullguardmemberarm_mkBox(1); }",
+        "bool __cl_itmp0 = cl_spec_miiimpl_nullguardmemberarm_c;",
     );
     assert_contains(
         "nullguardmemberarm",
         &emitted,
-        "cl_spec_miiimpl_nullguardmemberarm_s = (cl_spec_miiimpl_nullguardmemberarm_c ? (__cl_itmp0.name ? cl_string_view(__cl_itmp0.name) : cl_zero_ClStr()) : cl_string_view(cl_std_text_stringOf(cl_str(\"xy\"))));",
+        "if (__cl_itmp0) { __cl_itmp1 = cl_spec_miiimpl_nullguardmemberarm_mkBox(1); }",
     );
     assert_contains(
         "nullguardmemberarm",
         &emitted,
-        "__cl_itmp0.name = NULL;",
+        "cl_spec_miiimpl_nullguardmemberarm_s = (__cl_itmp0 ? (__cl_itmp1.name ? cl_string_view(__cl_itmp1.name) : cl_zero_ClStr()) : cl_string_view(cl_std_text_stringOf(cl_str(\"xy\"))));",
+    );
+    assert_contains(
+        "nullguardmemberarm",
+        &emitted,
+        "__cl_itmp1.name = NULL;",
     );
     assert!(
         !emitted.contains("cl_string_view(cl_spec_miiimpl_nullguardmemberarm_mkBox(1).name)"),

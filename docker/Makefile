@@ -66,9 +66,12 @@ down:
 shell: ensure-env check-image
 	$(COMPOSE_RUN) shell
 
+# `PASSTHROUGH` is a space-separated list of environment variable names to
+# forward with `docker compose run -e NAME`. The values stay in the environment
+# and never become part of the shell command, so spaces and quotes are safe.
 exec: ensure-env check-image
 	@test -n "$(CMD)" || { echo 'usage: make exec CMD="command"'; exit 2; }
-	$(COMPOSE_RUN) -T dev bash -lc '$(CMD)'
+	$(COMPOSE_RUN) $(addprefix -e ,$(PASSTHROUGH)) -T dev bash -lc '$(CMD)'
 
 gui: ensure-env check-image
 	$(COMPOSE_RUN) gui

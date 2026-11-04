@@ -1,6 +1,6 @@
 # Chapter 08 - Arrays, Slices, and Strings
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 02 (types), Ch 03 (ownership), Ch 07 (structs), Ch 11 (memory), Ch 14 (diagnostics), Ch 16 (borrow rules) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 4, 6.7, 7
 > **Ledger:** T2-T5, T9, T12, O2, F1, GF9, GF16, S1-S5, F8, section 18

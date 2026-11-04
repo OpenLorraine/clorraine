@@ -1,6 +1,6 @@
 # Chapter 07 - Structs
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 06 (functions), Ch 12 (FFI), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.2 and 6.6
 > **Ledger:** F4, V8, O2, O4-O6, T4, T7, T10, T11, F8, G1-G8

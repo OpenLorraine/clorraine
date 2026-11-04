@@ -8,6 +8,7 @@
     { "include": "#moduleName" },
     { "include": "#keywords" },
     { "include": "#types" },
+    { "include": "#builtins" },
     { "include": "#handles" },
     { "include": "#chars" },
     { "include": "#templateString" },
@@ -42,11 +43,11 @@
       "patterns": [
         {
           "name": "storage.modifier.clorraine",
-          "match": "\\b(module|import|export|func|let|take|borrow|handle|deleter|ffi|intrinsic|unsafe|raw|volatile|enum|struct|union|const|static|comptime|defer)\\b"
+          "match": "\\b(module|import|export|from|func|let|take|borrow|handle|freedBy|ffi|intrinsic|unsafe|volatile|raw|enum|struct|union|const|static|comptime|defer)\\b"
         },
         {
           "name": "keyword.control.clorraine",
-          "match": "\\b(if|else|while|for|switch|case|default|break|continue|return|true|false|null)\\b"
+          "match": "\\b(if|else|while|do|for|in|as|switch|case|default|break|continue|return|true|false|null)\\b"
         }
       ]
     },
@@ -54,7 +55,15 @@
       "patterns": [
         {
           "name": "storage.type.clorraine",
-          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|usize|isize|f32|f64|bool|void|str|cstring)\\b"
+          "match": "\\b(i8|i16|i32|u8|u16|u32|usize|isize|f32|f64|bool|void|str|cstring)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.clorraine",
+          "match": "\\b(sizeof|offsetof|len|embed|panic|assert|readVolatile8|readVolatile16|readVolatile32|writeVolatile8|writeVolatile16|writeVolatile32)\\b"
         }
       ]
     },
@@ -124,6 +133,10 @@
     },
     "operators": {
       "patterns": [
+        {
+          "name": "keyword.operator.arrow.clorraine",
+          "match": "=>"
+        },
         {
           "name": "keyword.operator.clorraine",
           "match": "[-+*/%=!<>&|^~?]+"

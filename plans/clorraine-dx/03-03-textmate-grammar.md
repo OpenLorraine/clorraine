@@ -38,7 +38,7 @@ silently fall behind the language.
 ### Completeness contract (test-enforced)
 
 `spec/grammar.ebnf.md` is the oracle: every term of the `keyword` production (`§10.2`, 50 terms),
-the `contextual_keyword` (`§10.3`, `as`), and every `reserved_builtin` (`§10.4`, 11 terms) must
+the `contextual_keyword` (`§10.3`, `as`), and every `reserved_builtin` (`§10.4`, 12 terms) must
 appear word-bounded inside one of the grammar's pattern strings (`match`, `begin`, `end`). Scope
 naming and grouping for the new terms are implementation choices; the existing ones stay.
 

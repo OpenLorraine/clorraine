@@ -1,6 +1,6 @@
 # Chapter 04 - Expressions and Operators
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 02 (types), Ch 03 (ownership), Ch 06 (functions), Ch 07 (structs), Ch 08 (arrays and strings), Ch 09 (enums), Ch 12 (FFI contracts), Ch 13 (data inclusion)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 6 and 7
 > **Ledger:** B7, B8, GF2-GF5, GF11, GF13, GF14, F3, F8, F9, T1, T6, T8, T12, S1-S5, E4, E5
@@ -129,8 +129,10 @@ Unary `+` is not adopted; write the operand directly (`x`, not `+x`).
 `bool` holds `true` or `false`. It is not an integer and has no truthiness.
 Wherever a condition is required — `if`, `while`, `do`/`while`, the `for`
 condition, `?:`, `&&`, `||`, `!`, and `assert` — the operand must have type
-`bool`, otherwise E10218. Integers and pointers are not converted, and `bool`
-has no arithmetic or bitwise operators.
+`bool`, otherwise E10218. A null-shaped operand of unary `!` is reported as
+E10012 before the condition rule; every other non-`bool` condition is E10218.
+Integers and pointers are not converted, and `bool` has no arithmetic or
+bitwise operators.
 
 ```clorraine
 if (count) { tick(); }        // E10218: count is not bool
@@ -327,6 +329,15 @@ on the platform math library's comparison behavior ([Ch 17](17-codegen.md) §10,
 An implicit conversion the language does not allow is E10200. A cast it does
 not allow is E10201.
 
+The null shape is the cast-table exception (TY-7, TY-14): `bool(null)` reports
+E10012, and a null cast to a non-bool scalar type such as `i32(null)` remains
+E10201.
+`!null` reports E10012 because the null rule is checked on the unary operand
+before the condition rule; other non-`bool` conditions, including `if (null)`,
+`null && true`, and `assert(null)`, remain E10218. An annotated
+`let b: bool = null;` reports E10012 at the declaration. Handle, enum, and
+`raw` null casts keep their own cast rules and are accepted.
+
 ## 15. Aggregate literals
 
 Struct literals use named fields and are order-independent; `Point {}` is the
@@ -377,8 +388,8 @@ initializer must be constant. The syntax is in
 | EX-4 | Integer arithmetic wraps; shifts mask the count | - |
 | EX-5 | Integer `/` or `%` by zero, or the minimum signed value over `-1`, faults | E11210 |
 | EX-6 | A float-to-integer conversion out of range or of NaN faults | E11212 |
-| EX-7 | `bool` is not an integer and has no truthiness; a non-`bool` condition is E10218 | E10218 |
-| EX-8 | Casts are only `T(expr)` | E10200/E10201 |
+| EX-7 | `bool` is not an integer and has no truthiness; a non-`bool` condition is E10218, except a null-shaped `!` operand (E10012) | E10218/E10012 |
+| EX-8 | Casts are only `T(expr)`; a bool null cast is the TY-7 exception | E10200/E10201/E10012 |
 | EX-9 | Raw operations require `unsafe` | E10600-E10603 |
 | EX-10 | Indexing is always checked | E10209/E10216/E11211 |
 | EX-11 | Function values are bare identifiers | E10210 |

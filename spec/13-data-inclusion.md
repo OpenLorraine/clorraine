@@ -1,6 +1,6 @@
 # Chapter 13 - Data Inclusion
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 08 (arrays and strings), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) section 7 (intrinsic calls)
 > **Ledger:** GF22 (staged `comptime`), P13 (determinism); [grammar-deltas.md](grammar-deltas.md) sections 3 and 5

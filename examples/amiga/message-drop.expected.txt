@@ -1,0 +1,8 @@
+message-drop: created
+message-drop: unsent drop returned
+message-drop: queue empty
+message-drop: free explicit
+message-drop: explicit free clean
+message-drop: fetched
+message-drop: release explicit
+message-drop: done

@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const toolDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const grammarPath = join(toolDir, "grammars", "clorraine.tmLanguage.json");
+const grammarPath = join(toolDir, "..", "..", "editors", "clorraine.tmLanguage.json");
 const themePath = join(toolDir, "assets", "theme.json");
 
 const LANG = "clorraine";

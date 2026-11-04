@@ -1,6 +1,6 @@
 # The Clorraine Language Specification
 
-> **Status:** working draft (v0.4 — Phase C: chapters rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Scope:** hosted AmigaOS profile first; freestanding (LorraineOS) implemented provisionally (m68k, no libc)
 > **Decision ledger:** [decisions.md](decisions.md) — accepted decisions; the ledger wins on any conflict
 > **Grammar freeze:** [grammar.ebnf.md](grammar.ebnf.md) — the master EBNF; every delta from Blend65 is in [grammar-deltas.md](grammar-deltas.md); the Rust semantics pin is [lineage.md](lineage.md)
@@ -64,26 +64,26 @@ guarantees lost with their substitutes.
 | — | [Semantic lineage (Rust pin)](lineage.md) | draft |
 | — | [Master EBNF grammar (freeze)](grammar.ebnf.md) | draft |
 | — | [Grammar deltas from Blend65](grammar-deltas.md) | draft |
-| 00 | [Introduction and axioms](00-introduction.md) | draft (Phase C) |
-| 01 | [Lexical structure](01-lexical.md) | draft (Phase C) |
-| 02 | [Type system](02-types.md) | draft (Phase C) |
-| 03 | [Ownership, moves, and destructors](03-ownership.md) | draft (Phase C) |
-| 04 | [Expressions and operators](04-expressions.md) | draft (Phase C) |
-| 05 | [Statements and control flow](05-statements.md) | draft (Phase C) |
-| 06 | [Functions and parameters](06-functions.md) | draft (Phase C) |
-| 07 | [Structs](07-structs.md) | draft (Phase C) |
-| 08 | [Arrays, slices, and strings](08-arrays-strings.md) | draft (Phase C) |
-| 09 | [Enums and tagged data](09-enums-unions.md) | draft (Phase C) |
-| 10 | [Modules](10-modules.md) | draft (Phase C) |
-| 11 | [Memory and resources](11-memory.md) | draft (Phase C) |
-| 12 | [FFI and ownership contracts](12-ffi-contracts.md) | draft (Phase C) |
-| 13 | [Data inclusion](13-data-inclusion.md) | draft (Phase C) |
-| 14 | [Diagnostics registry](14-diagnostics.md) | draft (Phase C) |
-| 15 | [Platform profiles](15-profiles.md) | draft (Phase C) |
-| 16 | [Borrow-checker rules](16-borrow-rules.md) | draft (Phase C) |
-| 17 | [C codegen contract](17-codegen.md) | draft (Phase C) |
-| A | [Amiga appendix](appendix-amiga.md) | draft (Phase C) |
-| B | [Standard library (v1)](appendix-stdlib.md) | draft (Phase C) |
+| 00 | [Introduction and axioms](00-introduction.md) | stable (v1.0) |
+| 01 | [Lexical structure](01-lexical.md) | stable (v1.0) |
+| 02 | [Type system](02-types.md) | stable (v1.0) |
+| 03 | [Ownership, moves, and destructors](03-ownership.md) | stable (v1.0) |
+| 04 | [Expressions and operators](04-expressions.md) | stable (v1.0) |
+| 05 | [Statements and control flow](05-statements.md) | stable (v1.0) |
+| 06 | [Functions and parameters](06-functions.md) | stable (v1.0) |
+| 07 | [Structs](07-structs.md) | stable (v1.0) |
+| 08 | [Arrays, slices, and strings](08-arrays-strings.md) | stable (v1.0) |
+| 09 | [Enums and tagged data](09-enums-unions.md) | stable (v1.0) |
+| 10 | [Modules](10-modules.md) | stable (v1.0) |
+| 11 | [Memory and resources](11-memory.md) | stable (v1.0) |
+| 12 | [FFI and ownership contracts](12-ffi-contracts.md) | stable (v1.0) |
+| 13 | [Data inclusion](13-data-inclusion.md) | stable (v1.0) |
+| 14 | [Diagnostics registry](14-diagnostics.md) | stable (v1.0) |
+| 15 | [Platform profiles](15-profiles.md) | stable (v1.0) |
+| 16 | [Borrow-checker rules](16-borrow-rules.md) | stable (v1.0) |
+| 17 | [C codegen contract](17-codegen.md) | stable (v1.0) |
+| A | [Amiga appendix](appendix-amiga.md) | stable (v1.0) |
+| B | [Standard library (v1)](appendix-stdlib.md) | stable (v1.0) |
 
 ## Validation
 
@@ -97,3 +97,8 @@ every diagnostic code used in a chapter or test against the registry (N7) and
 enforces compile-fail coverage for every registered compile-time code. The
 Phase E preflight gate runs the `preflight` workflow before the first compiler
 milestone.
+
+## Known limitations
+
+The accepted limitations of the v1.0 release are recorded in
+[docs/known-limitations.md](../docs/known-limitations.md).

@@ -21,9 +21,13 @@ automation.
 - `docker/scripts/corpus-amiga.sh` builds the portable corpus for hosted-amiga, runs it under
   `vamos`, and diffs the captured stdout against the recorded output. It does not run the host
   profile or compare host and m68k output.
-- 21 files under `compiler/tests/` reference `RDC_ASAN`; their memory cases run under
-  AddressSanitizer only when the variable is set. The accepted environment flake is a parallel
-  child-run hang inside a suite, so one suite per process is not enough by itself.
+- 21 files under `compiler/tests/` reference `RDC_ASAN` at base; their memory cases run under
+  AddressSanitizer only when the variable is set. Phase 1 adds
+  `v1_production_readiness_spec_test.rs`, which also references `RDC_ASAN`, so the discovered
+  count becomes 22+. Their ASan children are built with `cc -fsanitize=address`. The SDK image's
+  GCC 12 ASan runtime intermittently fails at startup with a `DEADLYSIGNAL` loop when it links a
+  PIE executable under the container's ASLR; a non-PIE (`-no-pie`) link is stable. The target
+  must apply that flag to the ASan child builds, not just serialise suites.
 - There is no `.github/workflows/` directory.
 
 ### Proposed Changes
@@ -31,8 +35,11 @@ automation.
 1. **`make asan`.** Add `docker/scripts/asan-suite.sh` and a Makefile target. The script discovers
    every `compiler/tests/*.rs` file that references `RDC_ASAN`, derives the test target name, and
    runs `RDC_ASAN=1 cargo test --test <name> -- --test-threads=1` with a bounded per-suite timeout.
-   One suite per process limits blast radius; `--test-threads=1` removes the intra-suite parallel
-   child runs that cause the accepted LSan flake. The target runs in the SDK container.
+   It installs a temporary `cc` wrapper first on `PATH` that appends `-no-pie` when the
+   command contains `-fsanitize=address`; the SDK image's GCC 12 ASan runtime otherwise
+   intermittently enters a `DEADLYSIGNAL` loop at startup for PIE executables under the container's
+   ASLR. One suite per process limits blast radius; `--test-threads=1` keeps each suite serial.
+   The target runs in the SDK container, and the wrapper is removed when the script exits.
 2. **`make differential`.** Add `docker/scripts/differential-seed.sh` and a Makefile target. For
    each of `buffer-container`, `file-copier`, and `string-parser`:
    - emit the host profile, build with the host `cc`, run with a private working directory, and
@@ -42,9 +49,9 @@ automation.
    - diff the two outputs and fail on any difference.
    The script reuses the compile flags and `vamos` invocation from `corpus-amiga.sh`, builds
    `clc` first, guards a missing compiler, cleans its work directory, and supports `DIFF_ONLY=1`
-   for a negative control. The target runs in the SDK container and joins `make verify` after
-   `check` and before `corpus-fs-uae`. It is a convenience gate over the same recorded outputs,
-   not a new independent signal.
+   for a negative control. The target runs in the SDK container, forwards `DIFF_ONLY` and
+   `OUTDIR`, and joins `make verify` after `check` and before `corpus-fs-uae`. It is a
+   convenience gate over the same recorded outputs, not a new independent signal.
 3. **Host-only CI.** Add `.github/workflows/check.yml`:
    - trigger on `push` and `pull_request`;
    - `runs-on: ubuntu-latest`, `timeout-minutes: 30`;
@@ -64,6 +71,26 @@ automation.
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+
+# The SDK image's GCC 12 ASan runtime intermittently enters a DEADLYSIGNAL loop
+# before main when it links a PIE executable under the container's ASLR. A
+# non-PIE link is stable. The test suites build their ASan children by calling
+# `cc`, so a temporary PATH wrapper adds `-no-pie` only to ASan commands. The
+# test sources stay unchanged, and non-ASan host builds pass through.
+real_cc="$(command -v cc)"
+wrapper="$(mktemp -d)"
+trap 'rm -rf "${wrapper}"' EXIT
+cat > "${wrapper}/cc" <<WRAPPER
+#!/bin/sh
+case " \$* " in
+    *" -fsanitize=address "*)
+        exec "${real_cc}" "\$@" -no-pie
+        ;;
+esac
+exec "${real_cc}" "\$@"
+WRAPPER
+chmod +x "${wrapper}/cc"
+export PATH="${wrapper}:${PATH}"
 
 files="$(grep -l 'RDC_ASAN' compiler/tests/*.rs | sort || true)"
 if [ -z "${files}" ]; then
@@ -88,8 +115,10 @@ exit "${status}"
 ```
 
 The script runs from the repository root inside the SDK container. The 900-second bound is a
-starting point; the executor raises it only with a recorded reason. `--test-threads=1` is required:
-the accepted flake is inside a suite, not only across suites.
+starting point; the executor raises it only with a recorded reason. `--test-threads=1` keeps each
+suite serial. The `-no-pie` wrapper is required: with PIE, a trivial ASan program hung 32/100 times
+and the real backlog suite hung 57/200; with `-no-pie`, the trivial program hung 0/100, the real
+program hung 0/200, and the backlog suite passed 50/50 in 6.91 s.
 
 ### `docker/scripts/differential-seed.sh`
 
@@ -106,7 +135,7 @@ if [ "${DIFF_ONLY:-0}" != "1" ]; then
     cargo build --workspace --quiet
 fi
 
-if [ ! -x "${CLC}" ]; then
+if [ "${DIFF_ONLY:-0}" != "1" ] && [ ! -x "${CLC}" ]; then
     echo "differential: compiler not found: ${CLC}" >&2
     exit 2
 fi
@@ -145,6 +174,21 @@ The executor keeps the exact compile flags aligned with `docker/scripts/corpus-a
 the existing `vamos` invocation. The program list is fixed at AR-10; a future portable program
 joins only with a new decision. `DIFF_ONLY=1` exists for ST-9: it must not regenerate the outputs,
 or the corruption would be overwritten.
+
+The Makefile targets run inside the SDK container and forward the differential overrides:
+
+```make
+asan:
+	$(DOCKER_MAKE) exec CMD="docker/scripts/asan-suite.sh"
+
+differential:
+	$(DOCKER_MAKE) exec CMD="DIFF_ONLY=$(DIFF_ONLY) OUTDIR=$(OUTDIR) docker/scripts/differential-seed.sh"
+```
+
+`RDC_ASAN=1` is set by `asan-suite.sh`, so the `asan` target needs no environment forwarding. The
+script also installs the `-no-pie` `cc` wrapper; the target needs no extra flag. The `differential`
+recipe passes `DIFF_ONLY` and `OUTDIR` into the container; without this, the host variables would
+not reach the script and the ST-9 corruption would be overwritten.
 
 ### `.github/workflows/check.yml`
 
@@ -208,7 +252,7 @@ gh workflow run check.yml        # or push a branch and open a pull request
 | ---------- | ----------------- | ------ |
 | No `RDC_ASAN` files found | Fail with a clear "no suites discovered" message | AR-11 |
 | One ASan suite times out | Report the suite name and keep the remaining suites running | AR-11 |
-| ASan child-run flake | Serialise tests inside each suite; record the environment residual | AR-11 |
+| ASan PIE startup failure | The script installs a `-no-pie` `cc` wrapper for ASan child builds; a suite failure still reports and continues | AR-11 |
 | `vamos` or `m68k-amigaos-gcc` missing | Fail the differential target with the missing tool named; never silently skip | AR-10 |
 | Host and m68k output differ | Print the unified diff and exit nonzero | AR-10 |
 | `clc` missing or stale | Guard `-x`; the target builds `cargo build --workspace --quiet` first | AR-10 |
@@ -224,8 +268,9 @@ gh workflow run check.yml        # or push a branch and open a pull request
 
 - ST-7 – ST-10 in `07-testing-strategy.md`.
 - Run `make asan` and `make differential` on the clean tree; both exit zero.
-- Run one negative differential probe with `DIFF_ONLY=1` after copying and corrupting a host
-  output in a throwaway directory; the diff must fail. Do not modify tracked goldens.
+- Run one negative differential probe with `DIFF_ONLY=1 make differential` after copying and
+  corrupting a host output in a throwaway directory; confirm the recipe forwards `DIFF_ONLY` into
+  the container and the diff must fail. Do not modify tracked goldens.
 - Run one negative `asan-suite.sh` probe with a deliberately failing suite or a missing discovery;
   it must report the failure and exit nonzero.
 - Run the CI workflow commands locally on the host: `./spec/check.sh` and

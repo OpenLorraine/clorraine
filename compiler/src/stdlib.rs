@@ -69,6 +69,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.custom",
         source: include_str!("../../stdlib/std.amiga.custom.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.exec",
+        source: include_str!("../../stdlib/std.amiga.exec.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -167,6 +171,25 @@ pub const MODULES: &[StdlibModule] = &[
     StdlibModule {
         name: "std.amiga.custom",
         exports: &["setDma", "setColor"],
+    },
+    StdlibModule {
+        name: "std.amiga.exec",
+        exports: &[
+            "MsgPort",
+            "NewMessage",
+            "Message",
+            "createMsgPort",
+            "deleteMsgPort",
+            "createMessage",
+            "messagePayload",
+            "putMsg",
+            "signals",
+            "waitSignals",
+            "getMsg",
+            "replyMsg",
+            "freeMessage",
+            "releaseMsg",
+        ],
     },
 ];
 
@@ -302,6 +325,30 @@ mod tests {
         assert!(source("std.amiga.custom").is_some());
         assert!(exports("std.amiga.custom", "setDma"));
         assert!(exports("std.amiga.custom", "setColor"));
+    }
+
+    #[test]
+    fn the_exec_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.amiga.exec").is_some());
+        assert!(source("std.amiga.exec").is_some());
+        for name in [
+            "MsgPort",
+            "NewMessage",
+            "Message",
+            "createMsgPort",
+            "deleteMsgPort",
+            "createMessage",
+            "messagePayload",
+            "putMsg",
+            "signals",
+            "waitSignals",
+            "getMsg",
+            "replyMsg",
+            "freeMessage",
+            "releaseMsg",
+        ] {
+            assert!(exports("std.amiga.exec", name), "missing export {name}");
+        }
     }
 
     #[test]

@@ -1,12 +1,13 @@
 //! Environment checks for the `clorraine` developer driver.
 //!
-//! The driver is a tool of the pinned SDK container: it needs the cross C
-//! compiler and the `vamos` runner that the container image installs. Two
-//! checks keep the failure mode clear:
+//! The driver is a tool of the pinned SDK container: Amiga and freestanding
+//! commands need the cross C compiler and the `vamos` runner that the
+//! container image installs. Two checks keep the failure mode clear:
 //!
 //! - [`sdk_present`] proves the process is inside the SDK image by looking for
-//!   a marker file the image always ships. Outside the image the driver can
-//!   only advise the developer how to get back in.
+//!   a marker file the image always ships. Outside the image, an Amiga or
+//!   freestanding command stops with guidance; the host profile and `emit`
+//!   continue because they use only the host compiler.
 //! - [`missing_tool_in`] names the first required tool absent from `PATH`, so
 //!   a broken image reports the exact tool instead of a generic spawn failure.
 //!
@@ -64,9 +65,10 @@ fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
-/// The guidance printed when the driver runs outside the SDK container.
+/// The guidance printed when an Amiga or freestanding command runs outside the
+/// SDK container.
 pub fn sdk_guidance() -> String {
-    "clorraine: this driver must run inside the pinned SDK container.\n\
+    "clorraine: this command needs the pinned SDK container.\n\
      From the repository root, run: make run FILE=FILE.clo\n\
      or open a shell (make -C docker shell), then: ./target/debug/clorraine run FILE.clo"
         .to_owned()

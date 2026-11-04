@@ -1,0 +1,162 @@
+                                HAMURABI
+               Creative Computing  Morristown, New Jersey
+
+
+
+
+Try your hand at governing ancient Sumeria
+for a ten-year term of office.
+
+
+
+
+Hamurabi: I beg to report to you,
+in year 1, 0 people starved, 5 came to the city
+Population is now 100
+The city now owns 1000 acres.
+You harvested 3 bushels per acre.
+Rats ate 200 bushels.
+You now have 2800 bushels in store.
+Land is trading at 24 bushels per acre.
+Hamurabi buys 10 acres and sells 0 acres.
+Hamurabi feeds 2000 bushels.
+Hamurabi plants 1000 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 2, 0 people starved, 13 came to the city
+Population is now 113
+The city now owns 1010 acres.
+You harvested 5 bushels per acre.
+Rats ate 30 bushels.
+You now have 5030 bushels in store.
+Land is trading at 17 bushels per acre.
+Hamurabi buys 0 acres and sells 10 acres.
+Hamurabi feeds 2260 bushels.
+Hamurabi plants 1000 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 3, 0 people starved, 5 came to the city
+Population is now 118
+The city now owns 1000 acres.
+You harvested 4 bushels per acre.
+Rats ate 1220 bushels.
+You now have 5220 bushels in store.
+Land is trading at 18 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 2360 bushels.
+Hamurabi plants 1000 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 4, 0 people starved, 6 came to the city
+Population is now 124
+The city now owns 1000 acres.
+You harvested 1 bushels per acre.
+Rats ate 0 bushels.
+You now have 3360 bushels in store.
+Land is trading at 22 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 2480 bushels.
+Hamurabi plants 1000 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 5, 0 people starved, 2 came to the city
+A horrible plague struck!  Half the people died.
+Population is now 63
+The city now owns 1000 acres.
+You harvested 4 bushels per acre.
+Rats ate 95 bushels.
+You now have 4285 bushels in store.
+Land is trading at 18 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 1260 bushels.
+Hamurabi plants 630 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 6, 0 people starved, 16 came to the city
+Population is now 79
+The city now owns 1000 acres.
+You harvested 2 bushels per acre.
+Rats ate 0 bushels.
+You now have 3970 bushels in store.
+Land is trading at 18 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 1580 bushels.
+Hamurabi plants 790 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 7, 0 people starved, 10 came to the city
+A horrible plague struck!  Half the people died.
+Population is now 44
+The city now owns 1000 acres.
+You harvested 3 bushels per acre.
+Rats ate 0 bushels.
+You now have 4365 bushels in store.
+Land is trading at 25 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 880 bushels.
+Hamurabi plants 440 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 8, 0 people starved, 6 came to the city
+Population is now 50
+The city now owns 1000 acres.
+You harvested 4 bushels per acre.
+Rats ate 1632 bushels.
+You now have 3393 bushels in store.
+Land is trading at 20 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 1000 bushels.
+Hamurabi plants 500 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 9, 0 people starved, 20 came to the city
+Population is now 70
+The city now owns 1000 acres.
+You harvested 4 bushels per acre.
+Rats ate 0 bushels.
+You now have 4143 bushels in store.
+Land is trading at 23 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 1400 bushels.
+Hamurabi plants 700 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 10, 0 people starved, 17 came to the city
+Population is now 87
+The city now owns 1000 acres.
+You harvested 2 bushels per acre.
+Rats ate 0 bushels.
+You now have 3793 bushels in store.
+Land is trading at 24 bushels per acre.
+Hamurabi buys 0 acres and sells 0 acres.
+Hamurabi feeds 1740 bushels.
+Hamurabi plants 870 acres.
+
+
+Hamurabi: I beg to report to you,
+in year 11, 0 people starved, 14 came to the city
+Population is now 101
+The city now owns 1000 acres.
+You harvested 3 bushels per acre.
+Rats ate 404 bushels.
+You now have 3824 bushels in store.
+In your 10-year term of office, 0 percent of the
+population starved per year on the average, i.e. a total of
+0 people died!!
+You started with 10 acres per person and ended with
+9.90099 acres per person.
+Your performance could have been somewhat better, but
+really wasn't bad at all.  63 people
+would have dearly liked to have seen you assassinated but
+we all have our trivial problems.
+
+So long for now.

@@ -1,6 +1,6 @@
 # Chapter 17 - C Codegen Contract
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 05 (statements), Ch 06 (functions), Ch 12 (FFI), Ch 14 (diagnostics), Ch 15 (profiles), Ch 16 (borrow rules)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (params), 3.4 (handles), 3.5 (module values), 4 (types), 5 (statements), 6.4 (member access), 7 (intrinsics and templates), 8 (lambdas)
 > **Ledger:** [decisions.md](decisions.md) sections 1 (D4, D5), 5 (O1-O7), 6 (T2-T8, T12), 7 (F5, F8), 8 (G3), 9 (L1-L5), 10 (S1-S5), 11 (X1), 12 (M5, M8), 15 (P1-P15)

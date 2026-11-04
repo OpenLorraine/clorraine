@@ -10,6 +10,7 @@
 //! correctly and still be inapplicable to the chosen command (for example `-o`
 //! with `run`), so the rules are applied only once the whole line is read.
 
+use crate::diag::DiagnosticFormat;
 use crate::profile::Profile;
 
 /// The command the developer asked for.
@@ -38,6 +39,8 @@ pub struct Options {
     pub emulator: bool,
     /// Write the program stdout to `out.txt` and print that path.
     pub capture: bool,
+    /// Diagnostic output format.
+    pub diagnostics: DiagnosticFormat,
     /// Output file for `emit -o`; without it the C goes to stdout.
     pub output: Option<String>,
     /// Input source files, in command-line order.
@@ -51,6 +54,8 @@ pub enum Action {
     Help,
     /// Print the version line and exit zero.
     Version,
+    /// Print the registry entry for a diagnostic code and exit zero.
+    Explain(String),
     /// Perform a command.
     Invoke(Options),
 }
@@ -74,6 +79,8 @@ Options:
       --emulator                      hosted-amiga run: use FS-UAE (host handoff)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
+      --explain CODE                  Print the registry entry for a diagnostic code
+      --diagnostics=json              Print diagnostics as JSON objects on stderr
   -h, --help                          Print this help
   -V, --version                       Print the version
 
@@ -116,6 +123,9 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
     {
         return Ok(Action::Version);
     }
+    if let Some(explain) = explain_argument(args) {
+        return explain.map(Action::Explain);
+    }
     let Some(first) = args.first() else {
         // No command at all is the same as asking for help.
         return Ok(Action::Help);
@@ -132,6 +142,31 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
     Ok(Action::Invoke(options))
 }
 
+/// Reads `--explain` wherever it appears, like `-h` and `-V`.
+///
+/// The flag is an early-exit mode: a valid argument vector returns the code and
+/// the caller ignores the rest, while an incomplete flag is still a usage
+/// error. Help and version keep their precedence because their scans run first.
+fn explain_argument(args: &[String]) -> Option<Result<String, String>> {
+    for (index, arg) in args.iter().enumerate() {
+        if arg == "--explain" {
+            return Some(
+                args.get(index + 1)
+                    .cloned()
+                    .ok_or_else(|| "--explain needs a value".to_owned()),
+            );
+        }
+        if let Some(code) = arg.strip_prefix("--explain=") {
+            return Some(if code.is_empty() {
+                Err("--explain needs a value".to_owned())
+            } else {
+                Ok(code.to_owned())
+            });
+        }
+    }
+    None
+}
+
 /// Reads the options and files after the command word.
 fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
     let mut options = Options {
@@ -141,6 +176,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
         emit_c: false,
         emulator: false,
         capture: false,
+        diagnostics: DiagnosticFormat::Human,
         output: None,
         files: Vec::new(),
     };
@@ -157,12 +193,20 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
                 index += 1;
                 options.output = Some(value(rest, index, arg)?);
             }
+            "--diagnostics" => {
+                index += 1;
+                let raw = value(rest, index, arg)?;
+                options.diagnostics = DiagnosticFormat::parse(&raw)?;
+            }
             "--release" => options.release = true,
             "--emit-c" => options.emit_c = true,
             "--emulator" => options.emulator = true,
             "--capture" => options.capture = true,
             _ if arg.starts_with("--profile=") => {
                 profile = Some(arg["--profile=".len()..].to_owned());
+            }
+            _ if arg.starts_with("--diagnostics=") => {
+                options.diagnostics = DiagnosticFormat::parse(&arg["--diagnostics=".len()..])?;
             }
             _ if arg.starts_with('-') => return Err(format!("unknown option '{arg}'")),
             _ => options.files.push(arg.to_owned()),

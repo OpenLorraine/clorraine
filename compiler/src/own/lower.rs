@@ -4866,6 +4866,19 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
     /// that already roots in storage, or a root that owns nothing, is returned
     /// unchanged.
     pub(super) fn bind_view_projection_root(&mut self, value: Value) -> Value {
+        self.bind_view_projection_root_mode(value, false)
+    }
+
+    /// Binds a view projection root for a loop condition.
+    ///
+    /// A loop condition re-evaluates its operands every iteration, so the root
+    /// owner must be a per-evaluation materialization with a pending release,
+    /// not a block-local owner that lives until the enclosing block ends.
+    pub(super) fn bind_loop_condition_projection_root(&mut self, value: Value) -> Value {
+        self.bind_view_projection_root_mode(value, true)
+    }
+
+    fn bind_view_projection_root_mode(&mut self, value: Value, loop_condition: bool) -> Value {
         match value.kind {
             // A fixed array's `.len` is its structural extent: the member
             // reads no storage, so the chain needs no owner.
@@ -4875,7 +4888,7 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
                 value
             }
             ValueKind::Member { base, name } => {
-                let base = self.bind_view_projection_root(*base);
+                let base = self.bind_view_projection_root_mode(*base, loop_condition);
                 Value::new(
                     value.ty,
                     ValueKind::Member {
@@ -4885,7 +4898,7 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
                 )
             }
             ValueKind::Index { base, index } => {
-                let base = self.bind_view_projection_root(*base);
+                let base = self.bind_view_projection_root_mode(*base, loop_condition);
                 Value::new(
                     value.ty,
                     ValueKind::Index {
@@ -4897,7 +4910,11 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::StructLit { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
                 if owning && !is_view(&value.ty) {
-                    self.materialize_scoped_owner(value)
+                    if loop_condition {
+                        self.materialize_loop_condition_operand(value)
+                    } else {
+                        self.materialize_scoped_owner(value)
+                    }
                 } else {
                     value
                 }
@@ -4932,7 +4949,11 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
                     if value.selects_null() {
                         value.ty.nullable = true;
                     }
-                    self.materialize_scoped_owner(value)
+                    if loop_condition {
+                        self.materialize_loop_condition_operand(value)
+                    } else {
+                        self.materialize_scoped_owner(value)
+                    }
                 } else if arm_fill {
                     self.hoist_view_conditional_arms(value)
                 } else {
@@ -4946,9 +4967,10 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
             ValueKind::ArrayLit { elements, fill } => {
                 let elements = elements
                     .into_iter()
-                    .map(|element| self.bind_view_projection_root(element))
+                    .map(|element| self.bind_view_projection_root_mode(element, loop_condition))
                     .collect();
-                let fill = fill.map(|fill| Box::new(self.bind_view_projection_root(*fill)));
+                let fill = fill
+                    .map(|fill| Box::new(self.bind_view_projection_root_mode(*fill, loop_condition)));
                 Value::new(value.ty, ValueKind::ArrayLit { elements, fill })
             }
             _ => value,
@@ -6577,6 +6599,32 @@ fn pointer_capture_needed(&self, value: &Value) -> bool {
             || value.ty.is_unknown()
         {
             return value;
+        }
+        // A lend argument that projects one member out of a fresh owning root
+        // binds the root, not the selected member: the member stays in the root
+        // while the call reads it, and the root's cleanup releases the sibling
+        // fields after the call. A `take` argument keeps its root-and-move-out
+        // path above.
+        if !take
+            && !self.projects_from_place(&value)
+            && matches!(&value.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+            && self.conditional_projection_root_owns_residual(&value)
+            && self.materialize_owned_temporaries
+        {
+            if self.in_loop_condition {
+                // A loop condition re-evaluates every iteration. Its root is a
+                // per-evaluation materialization with a pending release, not a
+                // block owner that would only release after the loop.
+                return self.bind_loop_condition_projection_root(value);
+            }
+            if self.defer_move_outs == 0 {
+                // A lend argument's backing only has to outlive the call. The
+                // scoped binder declares the root in the current block, so a
+                // loop body releases each iteration's root instead of
+                // overwriting one function-body local and leaking every earlier
+                // value.
+                return self.bind_view_projection_root(value);
+            }
         }
         // A projection over a fresh root inside a conditionally evaluated
         // operand binds its root through the deferred materialization: the

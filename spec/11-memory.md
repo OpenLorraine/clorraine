@@ -1,6 +1,6 @@
 # Chapter 11 - Memory and Resources
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 00 (axioms), Ch 03 (ownership), Ch 07 (structs), Ch 08 (arrays and strings), Ch 12 (FFI and contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.4 (handles), 3.5 (module-level values), 4 (types), 7 (intrinsics)
 > **Ledger:** [decisions.md](decisions.md) section 18 (standard-library scope); Ch 00 axioms A2 and A7; X1, T2, T8, F7, F9; P2-P6, P14

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-01 00:45
-> **Progress**: 0/45 tasks (0%); 0/2 conditional publish tasks
+> **Last Updated**: 2026-11-04 01:10
+> **Progress**: 45/45 tasks (100%); 0/2 conditional publish tasks (blocked: no user authorization)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,35 +70,35 @@ report their own progress.
 independent compilations; the other cases use the exact ST-2 – ST-6 fixtures in
 `07-testing-strategy.md`.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-6 using the exact fixtures — `compiler/tests/v1_production_readiness_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite with `RDC_ASAN=1` and `--test-threads=1`, and record the red phase (expected: ST-1 control reports E10012, cast reports E10201, condition reports E10218; ST-2 – ST-4 each leak 11 B at base; ST-5 leaks 11 B at base; ST-6 passes as the control)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-6 using the exact fixtures — `compiler/tests/v1_production_readiness_spec_test.rs`; its ASan helper links child programs with `-no-pie` ✅ (completed: 2026-11-02 10:39)
+- [x] 1.1.2 Run the spec suite with `RDC_ASAN=1`, `--test-threads=1`, and the `-no-pie` ASan helper, and record the red phase (expected: ST-1 control reports E10012, cast reports E10201, condition reports E10218; ST-2 – ST-4 each leak 11 B at base; ST-5 leaks 11 B at base; ST-6 passes as the control) ✅ (completed: 2026-11-02 10:39; red: five 11 B leaks, E10201/E10218; controls green)
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-01](03-01-residual-hardening.md) §Proposed Changes
 **Objective**: Apply the null rule, extend the initializer retention walk, and carry the run-time index through the projection rebind.
 
-- [ ] 1.2.1 Report E10012 for `bool(null)`/`!null`; keep `let b: bool = null;` as the accepted control — `compiler/src/sema/expr.rs`
-- [ ] 1.2.2 Recurse into nested fill rows and retain every nested fill root — `compiler/src/codegen/program.rs`
-- [ ] 1.2.3 Retain every multi-element view-array root and bind the whole initializer call root for field/element projections — `compiler/src/codegen/program.rs`
-- [ ] 1.2.4 Carry the run-time index through the module-initializer view-root binding — `compiler/src/codegen/program.rs`, `compiler/src/own/lower.rs`
-- [ ] 1.2.5 Run the spec suite with `RDC_ASAN=1` and `--test-threads=1` to green; on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 Report E10012 for `bool(null)`/`!null`; keep `let b: bool = null;` as the accepted control — `compiler/src/sema/expr.rs`, `compiler/src/sema/ops.rs` ✅ (completed: 2026-11-02 10:41; spec suite 9/9 without ASan, lib 380/380)
+- [x] 1.2.2 Recurse into nested fill rows and retain every nested fill root — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs` ✅ (completed: 2026-11-02 11:00; ST-2 green; ASan spec suite 5 passed, 4 expected red)
+- [x] 1.2.3 Retain every multi-element view-array root and bind the whole initializer call root for field/element projections — `compiler/src/codegen/program.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-11-02 11:03; ST-3, ST-4, and ST-4b green; ST-5 remains red)
+- [x] 1.2.4 Carry the run-time index through the module-initializer view-root binding — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs` ✅ (completed: 2026-11-02 11:07; ST-5 green; ASan spec suite 9/9)
+- [x] 1.2.5 Run the spec suite with `RDC_ASAN=1`, `--test-threads=1`, and the `-no-pie` ASan helper to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-11-03 15:56; spec 9/9; review regressions 15/15 + 11/11)
 
 ### Step 1.3: Implementation Tests & Hardening
 
 **Reference**: [03-01](03-01-residual-hardening.md) §Testing Requirements · [07](07-testing-strategy.md) ST-1 – ST-6
 **Objective**: Pin the release counts and emitted shapes, probe the fixed memory paths, and record the phase review.
 
-- [ ] 1.3.1 Write the implementation tests (root binding, release counts, index carry-through, nested-array recursion, byte-identity where pinned) — `compiler/tests/v1_production_readiness_impl_test.rs`
-- [ ] 1.3.2 Run every new memory case under `RDC_ASAN=1` with `--test-threads=1` and a bounded timeout; record the evidence
-- [ ] 1.3.3 Phase review (correctness, memory-safety, emission-integrity, semantics), record findings in `plans/v1-production-readiness/05-findings.md`, and run `make check`; the emission lens includes the base/head corpus diff and strict C build
+- [x] 1.3.1 Write the implementation tests (root binding, release counts, index carry-through, nested-array recursion, byte-identity where pinned) — `compiler/tests/v1_production_readiness_impl_test.rs` ✅ (completed: 2026-11-02 11:08; 6/6)
+- [x] 1.3.2 Run every new memory case under `RDC_ASAN=1` with `--test-threads=1`, the `-no-pie` ASan helper, and a bounded timeout; record the evidence ✅ (completed: 2026-11-02 11:08; spec 9/9, first-pass regression 15/15, second-pass review 19/19; 120 s child bound)
+- [x] 1.3.3 Phase review (correctness, memory-safety, emission-integrity, semantics), record findings in `plans/v1-production-readiness/05-findings.md`, and run `make check`; the emission lens includes the base/head corpus diff and strict C build ✅ (completed: 2026-11-03 17:07; RR-1–RR-9 fixed; pre-existing residuals accepted with documented magnitude; `make check` green; new ASan 43/43; existing ASan 769/769; final independent re-review no new critical/major)
 
 **Deliverables**:
 - ST-1 – ST-6 and their implementation pins
 - E10012 for the explicit `bool(null)`/`!null` spellings
 - Nested fill, multi-element view-array, initializer field call-root, and indexed module-view roots released once
 
-**Verify**: `make -C docker exec CMD="RDC_ASAN=1 cargo test --test v1_production_readiness_spec_test -- --test-threads=1"`; `make -C docker exec CMD="RDC_ASAN=1 cargo test --test v1_production_readiness_impl_test -- --test-threads=1"`; `make check`
+**Verify**: `make -C docker exec CMD="RDC_ASAN=1 cargo test --test v1_production_readiness_spec_test -- --test-threads=1"`; `make -C docker exec CMD="RDC_ASAN=1 cargo test --test v1_production_readiness_impl_test -- --test-threads=1"`; `make check`. The new suite's ASan helper links with `-no-pie`; `make asan` later applies the same flag to the existing suites through `docker/scripts/asan-suite.sh`.
 
 ---
 
@@ -113,15 +113,15 @@ independent compilations; the other cases use the exact ST-2 – ST-6 fixtures i
 **Reference**: [03-02](03-02-spec-stabilization.md) §Proposed Changes · [AR-6](00-ambiguity-register.md)
 **Objective**: Review every v1.0 chapter, correct stale text, and mark the v1.0 rule set stable.
 
-- [ ] 2.1.1 Review chapters `00`–`02`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/00-introduction.md`, `spec/01-lexical.md`, `spec/02-types.md`
-- [ ] 2.1.2 Review chapters `03`–`05`, correct stale text, record the E10012 null-cast exception, and mark the chapter status `stable (v1.0)` — `spec/03-ownership.md`, `spec/04-expressions.md`, `spec/05-statements.md`
-- [ ] 2.1.3 Review chapters `06`–`10`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/06-functions.md`, `spec/07-structs.md`, `spec/08-arrays-strings.md`, `spec/09-enums-unions.md`, `spec/10-modules.md`
-- [ ] 2.1.4 Review chapters `11`–`13`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/11-memory.md`, `spec/12-ffi-contracts.md`, `spec/13-data-inclusion.md`
-- [ ] 2.1.5 Review chapters `14`–`15` and appendices A/B; keep the staged markers and mark the v1.0 chapters stable — `spec/14-diagnostics.md`, `spec/15-profiles.md`, `spec/appendix-amiga.md`, `spec/appendix-stdlib.md`
-- [ ] 2.1.6 Review chapters `16`–`17` plus the grammar, grammar deltas, lineage, ledger, and specification README; update the README table and keep the anchor statuses — `spec/16-borrow-rules.md`, `spec/17-codegen.md`, `spec/grammar.ebnf.md`, `spec/grammar-deltas.md`, `spec/lineage.md`, `spec/decisions.md`, `spec/README.md`
-- [ ] 2.1.7 Update the root README status table so NLL is described as implemented and the production-readiness status is current — `README.md`
-- [ ] 2.1.8 Run `./spec/check.sh` and fix every status, link, or diagnostic-coverage failure; confirm the anchor/report statuses match the target table
-- [ ] 2.1.9 Phase review (correctness, semantics) and record the findings
+- [x] 2.1.1 Review chapters `00`–`02`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/00-introduction.md`, `spec/01-lexical.md`, `spec/02-types.md` ✅ (completed: 2026-11-03 17:08; lambda status corrected; spec check green)
+- [x] 2.1.2 Review chapters `03`–`05`, correct stale text, record the E10012 null-cast exception, and mark the chapter status `stable (v1.0)` — `spec/03-ownership.md`, `spec/04-expressions.md`, `spec/05-statements.md` ✅ (completed: 2026-11-03 17:09; E10012 exception recorded; spec check green)
+- [x] 2.1.3 Review chapters `06`–`10`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/06-functions.md`, `spec/07-structs.md`, `spec/08-arrays-strings.md`, `spec/09-enums-unions.md`, `spec/10-modules.md` ✅ (completed: 2026-11-03 17:09; spec check green)
+- [x] 2.1.4 Review chapters `11`–`13`, correct stale text, and mark the chapter status `stable (v1.0)` — `spec/11-memory.md`, `spec/12-ffi-contracts.md`, `spec/13-data-inclusion.md` ✅ (completed: 2026-11-03 17:10; staged pools/comptime/stores kept; spec check green)
+- [x] 2.1.5 Review chapters `14`–`15` and appendices A/B; keep the staged markers and mark the v1.0 chapters stable — `spec/14-diagnostics.md`, `spec/15-profiles.md`, `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` ✅ (completed: 2026-11-03 17:11; staged markers kept; spec check green)
+- [x] 2.1.6 Review chapters `16`–`17` plus the grammar, grammar deltas, lineage, ledger, and specification README; update the README table and keep the anchor statuses — `spec/16-borrow-rules.md`, `spec/17-codegen.md`, `spec/grammar.ebnf.md`, `spec/grammar-deltas.md`, `spec/lineage.md`, `spec/decisions.md`, `spec/README.md` ✅ (completed: 2026-11-03 17:12; README table stable; anchors unchanged; spec check green)
+- [x] 2.1.7 Update the root README status table so NLL is described as implemented and the production-readiness status is current — `README.md` ✅ (completed: 2026-11-03 17:12; v1.0 stable; NLL/v2 implemented)
+- [x] 2.1.8 Run `./spec/check.sh` and fix every status, link, or diagnostic-coverage failure; confirm the anchor/report statuses match the target table ✅ (completed: 2026-11-03 17:13; 27 files, 111 compile-fail tests; all v1.0 chapters/appendices stable; anchors/report preserved)
+- [x] 2.1.9 Phase review (correctness, semantics) and record the findings ✅ (completed: 2026-11-03 17:23; independent spec review found and cleared three E10012 wording defects; `./spec/check.sh` green)
 
 **Deliverables**:
 - All v1.0 chapters and appendices `stable (v1.0)`
@@ -145,13 +145,13 @@ independent compilations; the other cases use the exact ST-2 – ST-6 fixtures i
 **Reference**: [03-03](03-03-verification-infrastructure.md) §Proposed Changes · [AR-2, AR-9, AR-10, AR-11](00-ambiguity-register.md)
 **Objective**: Add the simplified verification surface approved by the complexity gate.
 
-- [ ] 3.1.1 Record the pre-target red state (`make asan` is an unknown target), then add the `make asan` target and the per-suite runner with `--test-threads=1` — `Makefile`, `docker/scripts/asan-suite.sh`
-- [ ] 3.1.2 Run `make asan`; confirm the discovered count is 21, fix the discovery/timeout handling, and record the clean serial result (ST-7)
-- [ ] 3.1.3 Record the pre-target red state (`make differential` is an unknown target), then add the `make differential` target and the three-program host/m68k runner with build/guard/clean and `DIFF_ONLY=1`; include it in `make verify` after `check` and before `corpus-fs-uae` — `Makefile`, `docker/scripts/differential-seed.sh`
-- [ ] 3.1.4 Run `make differential` on the clean tree and the `DIFF_ONLY=1` negative control (ST-8, ST-9)
-- [ ] 3.1.5 Add the host-only GitHub Actions workflow with least privilege, a pinned checkout, no persisted credentials, a timeout, and concurrency; validate its two commands locally (ST-10) — `.github/workflows/check.yml`
-- [ ] 3.1.6 Update `AGENTS.md` with the new targets, the workflow, and the host-only CI limitation — `AGENTS.md`
-- [ ] 3.1.7 Phase review (correctness) and run `make check`; record the CI run URL if an authorized push triggers it, otherwise record the local evidence
+- [x] 3.1.1 Record the pre-target red state (`make asan` is an unknown target), then add the `make asan` target and the per-suite runner with `--test-threads=1` and the `-no-pie` `cc` wrapper — `Makefile`, `docker/scripts/asan-suite.sh` ✅ (completed: 2026-11-03 18:17; red: `No rule to make target 'asan'`; runner discovers suites and wraps ASan links)
+- [x] 3.1.2 Run `make asan`; confirm the reported count equals the number of files matching `RDC_ASAN` and includes the new production-readiness suite (21 at base; 22+ after Phase 1), confirm the `-no-pie` wrapper is applied (the former 50-test backlog PIE hang is gone; expect 50/50), fix the discovery/timeout handling, and record the clean serial result (ST-7) ✅ (completed: 2026-11-03 18:17; 24 discovered = 24 matching files, includes all three production-readiness suites; all 24 green, including `def_backlog_closeout_spec_test` 50/50)
+- [x] 3.1.3 Record the pre-target red state (`make differential` is an unknown target), then add the `make differential` target and the three-program host/m68k runner with build/guard/clean and `DIFF_ONLY`/`OUTDIR` forwarding into the container; include it in `make verify` after `check` and before `corpus-fs-uae` — `Makefile`, `docker/scripts/differential-seed.sh` ✅ (completed: 2026-11-03 18:17; red confirmed against the base Makefile: `No rule to make target 'differential'`; overrides are forwarded through `docker compose -e`, never interpolated into `CMD`; verify order is check → differential → corpus-fs-uae → run-fault-amiga)
+- [x] 3.1.4 Run `make differential` on the clean tree and the `DIFF_ONLY=1` negative control through the target; confirm the recipe forwards the variable and the corrupted output is not regenerated (ST-8, ST-9) ✅ (completed: 2026-11-03 18:17; clean run: all three match; negative control: diff reported `DIFF-CONTROL`, exit 2, host output hash unchanged)
+- [x] 3.1.5 Add the host-only GitHub Actions workflow with least privilege, a pinned checkout, no persisted credentials, a timeout, and concurrency; validate its two commands locally (ST-10) — `.github/workflows/check.yml` ✅ (completed: 2026-11-03 18:17; SHA pinned and verified; YAML parsed; `./spec/check.sh` green; host-profile `emit`/`run` now pass on a bare host while Amiga commands keep the SDK marker gate; a marker-masked, tools-stripped `cargo test --workspace` is green)
+- [x] 3.1.6 Update `AGENTS.md` with the new targets, the workflow, and the host-only CI limitation — `AGENTS.md` ✅ (completed: 2026-11-03 18:17; commands, layout, and testing updated)
+- [x] 3.1.7 Phase review (correctness) and run `make check`; record the CI run URL if an authorized push triggers it, otherwise record the local evidence ✅ (completed: 2026-11-03 18:48; independent review found one critical host-CI marker blocker and one major `OUTDIR` quoting defect; both fixed and re-reviewed clean; `make check` green, `make asan` 24/24, `make differential` 3/3 with the negative control; no authorized push, so local evidence is recorded in `05-findings.md`)
 
 **Deliverables**:
 - `make asan` and `make differential`
@@ -175,9 +175,9 @@ independent compilations; the other cases use the exact ST-2 – ST-6 fixtures i
 **Reference**: [03-04](03-04-dx-and-acceptance.md) §DX Plan Boundary · [AR-1](00-ambiguity-register.md)
 **Objective**: Bring `plans/clorraine-dx/` to 28/28 and verify its outputs.
 
-- [ ] 4.1.1 Execute `plans/clorraine-dx/` through its own exec-plan flow to 28/28, preserving its specification-first ordering and review dispatch
-- [ ] 4.1.2 Preflight the FS-UAE environment (SDK X display, `docker/.env`, ROM path), then run the DX verification: `make check`, `make verify`, and `make demo-check`; record the evidence (ST-15)
-- [ ] 4.1.3 Phase review, re-review `spec/14-diagnostics.md` after its DX help-cell edit, run `./spec/check.sh`, re-record `stable (v1.0)`, and close the DX gate
+- [x] 4.1.1 Refresh the DX plan's stale counts, site map, and R5 test coverage against the current tree (recorded in its `05-findings.md`), then execute `plans/clorraine-dx/` through its own exec-plan flow to 28/28, preserving its specification-first ordering and review dispatch ✅ (completed: 2026-11-03 22:22)
+- [x] 4.1.2 Preflight the FS-UAE environment (SDK X display, `docker/.env`, ROM path), then run the DX verification: `make check`, `make verify`, and `make demo-check`; record the evidence (ST-15) ✅ (completed: 2026-11-03 22:20)
+- [x] 4.1.3 Phase review, re-review `spec/14-diagnostics.md` after its DX help-cell edit, run `./spec/check.sh`, re-record `stable (v1.0)`, set PLAN-05 to Done, and close the DX gate ✅ (completed: 2026-11-03 22:22)
 
 **Deliverables**:
 - DX plan 28/28
@@ -203,15 +203,17 @@ implementation, porting, and FFI gap they expose.
 
 > **Gate (user input):** Phase 5 may start only after the user records the two programme names
 > and licence audit in AR-13. The gate is not a plan task. If it is deferred, Phase 5 is
-> `Blocked`, the plan is not Done, and the roadmap stays at `Plan Created`.
+> `Blocked`, the plan is not Done, and the roadmap moves to `⛔ Blocked` with the AR-13 reason
+> recorded.
 
-- [ ] 5.1.1 Confirm the user has recorded the two programme names and the licence audit (AR-13); then create the PLAN-13 plan for `std.amiga.exec` plus those two allowlisted console programs — `plans/amiga-library-surface/`
-- [ ] 5.1.2 Execute the PLAN-13 plan to Done; fix every implementation, porting, and FFI gap the programs expose. An accepted-program gap blocks PLAN-13 Done; a gap that needs a language-surface change stops for a user ruling and is outside the slice.
-- [ ] 5.1.3 Verify both programs on hosted-amiga against an independent expected-output oracle and run `make verify` (ST-16)
-- [ ] 5.1.4 Phase review (the four project reviewers) and record the findings
+- [x] 5.1.1 Confirm the user has recorded the two programme names and the licence audit (AR-13); then create the PLAN-13 plan for `std.amiga.exec` plus those two allowlisted console programs — `plans/amiga-library-surface/`
+- [x] 5.1.2 Execute the PLAN-13 plan to Done; fix every implementation, porting, and FFI gap the programs expose. An accepted-program gap blocks PLAN-13 Done; a gap that needs a language-surface change stops for a user ruling and is outside the slice.
+- [x] 5.1.3 Verify both programs on hosted-amiga against an independent expected-output oracle, re-review `spec/appendix-amiga.md` and `spec/appendix-stdlib.md` against the delivered `std.amiga.exec` API, rerun `./spec/check.sh`, re-record their `stable (v1.0)` status, and run `make verify` (ST-16)
+- [x] 5.1.4 Phase review (the four project reviewers) and record the findings
 
 **Deliverables**:
 - `std.amiga.exec` wrapper surface
+- Amiga and stdlib appendices re-reviewed and re-recorded `stable (v1.0)` after `std.amiga.exec` lands
 - Two allowlisted console programs with an independent expected-output oracle
 - Every implementation/porting/FFI gap fixed; accepted-program gaps block Done; language gaps stopped for a ruling
 - PLAN-13 Done
@@ -234,15 +236,15 @@ implementation, porting, and FFI gap they expose.
 Publication is the separate conditional sub-plan, so the 45-task main plan can close
 production-ready even if the artifact cannot be published.
 
-- [ ] 6.1.1 Add the MIT `LICENSE` with the OpenLorraine copyright line — `LICENSE`
-- [ ] 6.1.2 Add the Cargo licence/description/repository metadata, set `version = "1.0.0"`, and update the README licence section; set `license = "MIT"` in `tools/demo/package.json` — `compiler/Cargo.toml`, `README.md`, `tools/demo/package.json`
-- [ ] 6.1.3 Add the accepted-residual document, link it from the README and the spec's limitations section, and rerun `./spec/check.sh` — `docs/known-limitations.md`, `README.md`, `spec/` (ST-13)
-- [ ] 6.1.4 Write the release checklist with the AR-12 decision (v1.0.0, source + x86_64 tarball), the four verification commands, the manifest licence audit, and the conditional publish steps — `RELEASE.md`
-- [ ] 6.1.5 Phase review (correctness, security) and verify the licence/metadata/checklist (ST-14)
+- [x] 6.1.1 Add the MIT `LICENSE` with the OpenLorraine copyright line — `LICENSE` ✅ (completed: 2026-11-03 22:45)
+- [x] 6.1.2 Add the Cargo licence/description/repository metadata, set `version = "1.0.0"`, and update the README licence section; set `license = "MIT"` in `tools/demo/package.json`; update `Cargo.lock` and the demo lockfile root metadata — `compiler/Cargo.toml`, `Cargo.lock`, `README.md`, `tools/demo/package.json`, `tools/demo/package-lock.json` ✅ (completed: 2026-11-03 22:46)
+- [x] 6.1.3 Add the accepted-residual document, link it from `README.md` and `spec/README.md`, and rerun `./spec/check.sh` — `docs/known-limitations.md`, `README.md`, `spec/README.md` (ST-13) ✅ (completed: 2026-11-03 22:47)
+- [x] 6.1.4 Write the release checklist with the AR-12 decision (v1.0.0, source + x86_64 tarball), the four verification commands, the manifest and lockfile licence audit, and the conditional publish steps — `RELEASE.md` ✅ (completed: 2026-11-03 22:48)
+- [x] 6.1.5 Phase review (correctness, security) and verify the licence/metadata/checklist (ST-14) ✅ (completed: 2026-11-03 22:50)
 
 **Deliverables**:
 - MIT LICENSE and Cargo metadata; demo manifest MIT
-- `docs/known-limitations.md` linked from README and spec
+- `docs/known-limitations.md` linked from `README.md` and `spec/README.md`
 - `RELEASE.md` with the AR-12 decision and the conditional publish checklist
 
 **Verify**: `./spec/check.sh`; `make check`
@@ -255,15 +257,15 @@ production-ready even if the artifact cannot be published.
 > explicitly authorizes publication. If it cannot run, the main plan still closes
 > production-ready; the release remains blocked with the reason recorded.
 
-- [ ] C.1.1 Confirm the AR-12 decision (v1.0.0; source tag + Linux x86_64 tarball + `SHA256SUMS`) and the Cargo `version` of record set in 6.1.2 — `compiler/Cargo.toml`, `RELEASE.md`
-- [ ] C.1.2 Build and smoke-test the x86_64 artifact; assert `--version` = v1.0.0; create the source tag, record checksums, and attach `RELEASE-NOTES.md` and the `CHANGELOG.md` entry — `RELEASE-NOTES.md`, `CHANGELOG.md`
+- [!] C.1.1 Confirm the AR-12 decision (v1.0.0; source tag + Linux x86_64 tarball + `SHA256SUMS`) and the Cargo `version` of record set in 6.1.2 — `compiler/Cargo.toml`, `RELEASE.md` — Blocked: no user authorization
+- [!] C.1.2 Build and smoke-test the x86_64 artifact; assert the exact `--version` output is `clc 1.0.0`; create the source tag, record checksums, and attach `RELEASE-NOTES.md` and the `CHANGELOG.md` entry — `RELEASE-NOTES.md`, `CHANGELOG.md` — Blocked: no user authorization
 
 **Deliverables**:
 - v1.0.0 source tag and Linux x86_64 binary tarball
 - `SHA256SUMS`, release notes, and changelog entry
 - Smoke-test evidence for the x86_64 binary; aarch64 release deferred to PLAN-07
 
-**Verify**: `clc --version` reports v1.0.0; a hello-world compile and run on x86_64; checksums match
+**Verify**: `clc --version` reports `clc 1.0.0`; a hello-world compile and run on x86_64; checksums match
 
 ---
 
@@ -278,13 +280,13 @@ production-ready even if the artifact cannot be published.
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · [07](07-testing-strategy.md) §Verification Checklist
 **Objective**: Prove every production gate and close the programme.
 
-- [ ] 7.1.1 Run `make check`
-- [ ] 7.1.2 Preflight the FS-UAE environment, run `make verify`, and record every leg
-- [ ] 7.1.3 Run `make asan` and record the discovered suite count and serial result
-- [ ] 7.1.4 Run `make differential`
-- [ ] 7.1.5 Verify the DX plan is 28/28, `spec/14-diagnostics.md` was re-reviewed after the DX edit, and PLAN-13 is Done with both program outputs against an independent oracle
-- [ ] 7.1.6 Verify the spec is stable (chapters/appendices plus the anchor table), the MIT licence and metadata are present (including the demo package), `docs/known-limitations.md` is current, and `RELEASE.md` records the AR-12 decision; record the CI run URL or the local evidence. The conditional publish sub-plan is complete or explicitly blocked.
-- [ ] 7.1.7 Update `AGENTS.md` and the roadmap (PLAN-15 Done), record the final review evidence, and close the plan
+- [x] 7.1.1 Run `make check`
+- [x] 7.1.2 Preflight the FS-UAE environment, run `make verify`, and record every leg
+- [x] 7.1.3 Run `make asan` and record the discovered suite count, the serial result, and that the `-no-pie` wrapper was used
+- [x] 7.1.4 Run `make differential`
+- [x] 7.1.5 Verify the DX plan is 28/28, `spec/14-diagnostics.md` was re-reviewed after the DX edit, and PLAN-13 is Done with both program outputs against an independent oracle
+- [x] 7.1.6 Verify the spec is stable (chapters/appendices plus the anchor table, including the Phase 5 appendix re-review against `std.amiga.exec`), the MIT licence and metadata are present (including the demo package and its lockfile), `docs/known-limitations.md` is current and linked from both `README.md` and `spec/README.md`, and `RELEASE.md` records the AR-12 decision; record the CI run URL or the local evidence. The conditional publish sub-plan is complete or explicitly blocked.
+- [x] 7.1.7 Update `AGENTS.md` and the roadmap (PLAN-15 Done), record the final review evidence, and close the plan ✅ (completed: 2026-11-04 01:10)
 
 **Deliverables**:
 - All 45 main-plan tasks complete
@@ -326,9 +328,10 @@ checks the FS-UAE/X/ROM environment.
 ## Success Criteria
 
 **Blocked-release branch:** if AR-13 (PLAN-13 programmes) remains deferred at the Phase 5 gate,
-the plan is **Blocked**, not Done: it does not claim 45/45, the roadmap stays at `Plan Created`,
-and the gate is recorded. If the conditional publish sub-plan cannot run, the 45-task main plan
-may still close production-ready; the release sub-plan remains blocked with the reason recorded.
+the plan is **Blocked**, not Done: it does not claim 45/45, the roadmap moves to `⛔ Blocked`
+with the AR-13 reason recorded, and the gate is recorded. If the conditional publish sub-plan
+cannot run, the 45-task main plan may still close production-ready; the release sub-plan remains
+blocked with the reason recorded.
 A separate user ruling is required to descope or defer either item.
 
 **The programme is complete when:**
@@ -340,7 +343,8 @@ A separate user ruling is required to descope or defer either item.
 5. ✅ PLAN-13 is Done and both programs match an independent expected-output oracle.
 6. ✅ The host-only CI workflow is green, or locally validated with the deferred run recorded.
 7. ✅ MIT `LICENSE`, Cargo metadata, README licence text, and demo-package MIT metadata are present.
-8. ✅ `docs/known-limitations.md` records the accepted residuals.
+8. ✅ `docs/known-limitations.md` records the accepted residuals and is linked from `README.md`
+   and `spec/README.md`.
 9. ✅ `RELEASE.md` records the AR-12 decision (v1.0.0, source + Linux x86_64 tarball); the
    conditional publish sub-plan is complete or explicitly blocked with the reason recorded.
 10. ✅ `AGENTS.md` and the roadmap are current; the final review evidence is recorded.

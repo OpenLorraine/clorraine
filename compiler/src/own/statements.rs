@@ -402,6 +402,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .unwrap_or_default();
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let Some(value) = &decl.value {
+            if is_view_like(&target)
+                && self.call_result_view_with_fresh_argument(value)
+            {
+                self.call_view_locals.insert(id);
+            }
             self.bindings[id].static_view_carrier = self.static_initializer(value, &target);
         }
         if let Some(source) = copy_provenance {
@@ -880,6 +885,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let copy_provenance = self.store_source_provenance(&decl.value);
         let initial_sources = self.source_atoms(&copy_provenance);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
+        if is_view_like(&target)
+            && self.call_result_view_with_fresh_argument(&decl.value)
+        {
+            self.call_view_locals.insert(id);
+        }
         self.bindings[id].static_view_carrier =
             self.static_initializer(&decl.value, &target);
         if !matches!(copy_provenance, Provenance::None) {

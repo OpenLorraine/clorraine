@@ -142,6 +142,14 @@ mod tests {
         assert!(shim.contains("cl_add_handler"));
         assert!(shim.contains("cl_remove_handler"));
         assert!(shim.contains("INTB_VERTB"));
+        assert!(shim.contains("cl_create_msg_port"));
+        assert!(shim.contains("cl_put_msg"));
+        assert!(shim.contains("cl_signals"));
+        assert!(shim.contains("cl_wait_signals"));
+        assert!(shim.contains("cl_get_msg"));
+        assert!(shim.contains("cl_reply_msg"));
+        assert!(shim.contains("cl_free_message"));
+        assert!(shim.contains("cl_release_message"));
     }
 
     #[test]

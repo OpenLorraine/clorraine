@@ -1,6 +1,6 @@
 # Chapter 01 - Lexical Structure
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 02 (types), Ch 04 (expressions), Ch 10 (modules), Ch 12 (FFI contracts), Ch 14 (diagnostics)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 10.1-10.8
 > **Ledger:** B9, GF3, F14, T3, S1 ([decisions.md](decisions.md))

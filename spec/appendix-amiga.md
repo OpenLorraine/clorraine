@@ -1,6 +1,6 @@
 # Appendix A - Amiga Platform Notes
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 12 (contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; the surface is the frozen [grammar.ebnf.md](grammar.ebnf.md)
 > **Ledger:** [decisions.md](decisions.md): C1-C4, F7, T6, T7, X1-X6, L5, P14, P15; validated by [findings](../docs/findings-phase0.md)
@@ -75,7 +75,8 @@ Inside the library, the wrappers declare the handles and the raw calls once:
 ```clorraine
 // Inside the standard library (application code never writes this).
 handle File    freedBy Close;
-handle Message freedBy ReplyMsg;   // a fetched message is owned until replied
+handle MsgPort freedBy cl_delete_msg_port;
+handle Message freedBy cl_reply_msg;   // a fetched message is owned until replied
 
 ffi dos {
     func Open(name: cstring, mode: i32): File?;   // a BPTR of 0 becomes null
@@ -85,15 +86,19 @@ ffi dos {
 }
 
 ffi exec {
-    func GetMsg(port: MsgPort): Message?;
-    func ReplyMsg(take msg: Message): void;
+    func cl_get_msg(borrow port: MsgPort): Message?;
+    func cl_reply_msg(take msg: Message): void;
 }
 ```
+
+The sketch is illustrative; the delivered wrapper surface, including message creation and
+`NewMessage`/`Message` ownership, is in
+[appendix-stdlib.md](appendix-stdlib.md) §13.
 
 `take File` transfers ownership to `Close`; the caller's binding is
 invalidated. `File?` says the open may fail, and the caller must check for
 `null` before use (E10010). `take Message` returns a fetched message to its
-sender; the handle's `freedBy` deleter is `ReplyMsg`. There are no contract
+sender; the handle's `freedBy` deleter is `cl_reply_msg`. There are no contract
 clause words; the mode and the `?` carry the meaning (X3).
 
 ## 3. Error reporting

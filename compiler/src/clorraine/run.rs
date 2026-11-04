@@ -15,6 +15,7 @@ use std::process::{Command, Stdio};
 
 use super::display;
 use super::toolchain::{self, Runner};
+use crate::diag::{format_error, DiagnosticFormat};
 
 /// The observable result of one program run.
 pub struct RunResult {
@@ -31,8 +32,14 @@ pub struct RunResult {
 ///
 /// When `capture` is set, the CR-stripped stdout is written to that path and
 /// nothing is streamed. The reported code is the program's exit code, or 1
-/// when it was killed by a signal or the driver could not spawn it.
-pub fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> RunResult {
+/// when it was killed by a signal or the driver could not spawn it. A driver
+/// failure is reported in `format`, so JSON mode never receives a human line.
+pub fn run_program(
+    runner: &Runner,
+    bin: &Path,
+    capture: Option<&Path>,
+    format: DiagnosticFormat,
+) -> RunResult {
     let argv = toolchain::runner_command(runner, bin);
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
@@ -49,9 +56,15 @@ pub fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> RunRe
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            eprintln!(
-                "clorraine: cannot run '{}': {error}",
-                display::sanitize(&argv[0])
+            eprint!(
+                "{}",
+                format_error(
+                    format,
+                    &format!(
+                        "clorraine: cannot run '{}': {error}",
+                        display::sanitize(&argv[0])
+                    )
+                )
             );
             return RunResult {
                 code: 1,
@@ -62,9 +75,15 @@ pub fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> RunRe
     let output = match child.wait_with_output() {
         Ok(output) => output,
         Err(error) => {
-            eprintln!(
-                "clorraine: cannot wait for '{}': {error}",
-                display::sanitize(&argv[0])
+            eprint!(
+                "{}",
+                format_error(
+                    format,
+                    &format!(
+                        "clorraine: cannot wait for '{}': {error}",
+                        display::sanitize(&argv[0])
+                    )
+                )
             );
             return RunResult {
                 code: 1,
@@ -79,9 +98,15 @@ pub fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> RunRe
         match capture {
             Some(path) => {
                 if let Err(error) = std::fs::write(path, text.as_bytes()) {
-                    eprintln!(
-                        "clorraine: cannot write '{}': {error}",
-                        display::sanitize(&path.display().to_string())
+                    eprint!(
+                        "{}",
+                        format_error(
+                            format,
+                            &format!(
+                                "clorraine: cannot write '{}': {error}",
+                                display::sanitize(&path.display().to_string())
+                            )
+                        )
                     );
                     return RunResult {
                         code: 1,
@@ -116,6 +141,7 @@ mod tests {
             &Runner::Native,
             Path::new("/bin/true"),
             Some(Path::new("/no/such/clorraine/dir/out.txt")),
+            DiagnosticFormat::Human,
         );
         assert!(
             !result.captured,

@@ -1,6 +1,6 @@
 # Chapter 09 - Enums and Tagged Data
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 02 (types), Ch 03 (ownership), Ch 04 (expressions), Ch 05 (statements), Ch 12 (FFI contracts), Ch 14 (diagnostics) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.3, 5.3, 6.6
 > **Ledger:** T10, E6, T8, B5, F8, G1-G8

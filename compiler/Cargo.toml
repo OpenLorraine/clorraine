@@ -2,9 +2,12 @@
 # two thin command-line binaries.
 [package]
 name = "clc"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 publish = false
+license = "MIT"
+description = "The Clorraine compiler and build/run driver"
+repository = "https://github.com/OpenLorraine/clorraine"
 
 [lib]
 name = "clc"

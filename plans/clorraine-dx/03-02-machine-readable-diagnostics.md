@@ -14,12 +14,13 @@ The default output, stream choice, and exit codes stay byte-identical when the f
 
 ### Current Architecture
 
-- `Diagnostics::render` (`compiler/src/diag.rs:188`) returns the human text as a `String`; the
+- `Diagnostics::render` (`compiler/src/diag.rs:199`) returns the human text as a `String`; the
   drivers `eprint!` it.
-- `clc` renders diagnostics at four sites (`driver.rs:254`, `:283`, `:307`, `:321`) and prints
-  plain errors at `:240`, `:250`, `:263`, `:327`.
-- `clorraine` prints its own errors at `clorraine/mod.rs:45`, `:69`, `:127`, `:141` and the ICE
-  text from `build.rs`; it calls the compiler in process (`build.rs:72`).
+- `clc` renders diagnostics at five sites (`driver.rs:263`, `:292`, `:299`, `:323`, `:337`) and
+  prints plain errors at `:249`, `:259`, `:272`, `:343`.
+- `clorraine` prints its own errors at eleven sites from `clorraine/mod.rs:45` through `:274`,
+  three more in `clorraine/run.rs`, and the ICE text from `build.rs`; it calls the compiler in
+  process (`build.rs:72`).
 
 ### Proposed Changes
 
@@ -96,8 +97,10 @@ existing prefix (`usage error: …`, `clc: …`, `clorraine: …`, or the ICE te
   (`unknown diagnostics format '<value>' (expected json)`).
 - `run` pre-scans the raw arguments with `format_from_args` before parsing, so a usage error from
   the parser still prints in the requested stream.
-- The four diagnostic renders choose `render` or `render_json`; the four plain error prints route
-  to `eprintln!("{message}")` or `eprint!("{}", json_error_line(&message))`.
+- Every diagnostic render goes through one dispatcher (`Diagnostics::render_with`), so the
+  parse-only, profile, front-end, and final-render paths all honour the format and a later render
+  site cannot silently bypass it. Every plain error print goes through one formatter
+  (`format_error`): human text keeps its exact bytes, and JSON mode emits `json_error_line`.
 
 **`clorraine` (`compiler/src/clorraine/`)**
 
@@ -111,7 +114,8 @@ existing prefix (`usage error: …`, `clc: …`, `clorraine: …`, or the ICE te
 - `mod.rs`: `run_with_marker` pre-scans for the format so parse errors honour it; `invoke` and the
   `emit` / `build` / `run` error prints route through one small helper
   (`report_error(format, message)` → human `eprintln!` or `json_error_line`). The SDK/missing-tool
-  messages and the ICE text use the same helper.
+  messages and the ICE text use the same helper. `run.rs` takes the format as a parameter for its
+  spawn, wait, and capture-write errors, so the run path has no bypass.
 - `build.rs`: the compiler argument vector gains `--diagnostics=json` when the format is JSON, so
   the in-process compiler renders NDJSON directly to stderr (the driver prints nothing extra).
 
@@ -134,8 +138,9 @@ introduces a new `--diagnostics` value rather than reshaping an object. No versi
 
 ## Testing Requirements
 
-- Specification tests: ST-8 – ST-15 (`07-testing-strategy.md`) in
-  `compiler/tests/dx_tooling_spec_test.rs`.
+- Specification tests: ST-8 – ST-15 and ST-20 – ST-21 (`07-testing-strategy.md`) in
+  `compiler/tests/dx_tooling_spec_test.rs`. ST-20 pins an environment error (missing tool) and
+  ST-21 pins an internal compiler error, so both R5 categories have an end-to-end case.
 - Implementation tests: exact line shapes (including key order), the end-position computation on
   a multi-character token, escaping of quotes/backslashes/newlines/control characters, the empty
   diagnostic set (no stderr), and the pre-scan helper — in

@@ -1,6 +1,6 @@
 # Chapter 02 - Type System
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on (informational):** Ch 01 (lexical), Ch 03 (ownership), Ch 04 (expressions), Ch 05 (statements), Ch 06 (functions), Ch 07 (structs), Ch 08 (arrays and strings), Ch 09 (enums), Ch 12 (FFI contracts), Ch 14 (diagnostics), Ch 16 (borrow rules)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) section 4
 > **Ledger:** T1-T12, V5, V8, B7, B8, GF3 ([decisions.md](decisions.md))
@@ -124,7 +124,7 @@ cannot be nullable.
 | TY-4 | `T?` is allowed only on handles, `raw`, `cstring`, and views | E10011 |
 | TY-5 | `T` widens implicitly to `T?` | - |
 | TY-6 | Using a nullable value without a narrowing check is an error | E10010 |
-| TY-7 | `null` used where a non-nullable type is required is an error | E10012 |
+| TY-7 | `null` used where a non-nullable type is required is an error, except where an explicit cast's own rule applies (Ch 04 §14) | E10012/E10201 |
 
 Narrowing is written as an explicit comparison. After `x != null` succeeds, the
 value is known to be non-null inside the guarded block; after `x == null`, the
@@ -353,7 +353,7 @@ also fault with E11210 when the minimum signed value is divided or taken modulo
 |---|---|
 | E10010 | a possibly-null value used without a narrowing check |
 | E10011 | `T?` on a type that cannot be empty |
-| E10012 | `null` where a non-nullable type is required |
+| E10012 | `null` where a non-nullable type is required, except where an explicit cast's own rule applies (Ch 04 §14) |
 | E10200 | an implicit conversion the language does not allow |
 | E10201 | a cast the language does not allow |
 | E10202 | a literal that does not fit the context type |

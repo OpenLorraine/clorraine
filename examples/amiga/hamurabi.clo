@@ -1,0 +1,222 @@
+//! Hamurabi: a Clorraine port of Michael C. Martin's C99 port of the
+//! Creative Computing game.
+//!
+//! Ported from `full/hamurabi.c` in
+//! <https://github.com/michaelcmartin/bumbershoot> (MIT License,
+//! Copyright (c) 2015 Michael C. Martin). The upstream notice is preserved in
+//! `THIRD_PARTY_NOTICES.md` at the repository root.
+//!
+//! The port keeps the ten-year game loop, land buying and selling, grain
+//! feeding, planting, harvest, rats, births, plague, and rating. C stdio is
+//! replaced by the Clorraine console helpers, and a deterministic built-in
+//! steward makes the acceptance transcript stable. The random generator is a
+//! fixed 32-bit LCG; the C original uses a 64-bit xorshift, so the transcripts
+//! are intentionally not byte-identical.
+
+module examples.amiga.hamurabi;
+
+import { println } from std.io;
+
+// Game state, mirroring the C original's file-static variables.
+let rng: u32 = 1;
+let p1: f32 = 0.0;
+let d1: i32 = 0;
+let z: i32 = 0;
+let p: i32 = 0;
+let s: i32 = 0;
+let h: i32 = 0;
+let e: i32 = 0;
+let y: i32 = 0;
+let a: i32 = 0;
+let i: i32 = 0;
+let q: i32 = 0;
+let d: i32 = 0;
+let c: i32 = 0;
+
+// Seeds the deterministic generator.
+func seed(value: u32): void {
+    rng = value | 1;
+}
+
+// Returns a number in 0..range-1. The caller supplies a positive range.
+func rnd(range: i32): i32 {
+    rng = rng * 1664525 + 1013904223;
+    let value: u32 = (rng >> 16) % u32(range);
+    return i32(value);
+}
+
+func d5(): void {
+    c = rnd(5) + 1;
+}
+
+// Prints the final rating. `autofink` skips the statistics after an
+// impeachment and goes straight to the fink verdict.
+func rating(autofink: bool): void {
+    let l: f32 = 0.0;
+    if (!autofink) {
+        l = f32(a) / f32(p);
+        println($"In your 10-year term of office, {p1} percent of the");
+        println("population starved per year on the average, i.e. a total of");
+        println($"{d1} people died!!");
+        println("You started with 10 acres per person and ended with");
+        println($"{l} acres per person.");
+    }
+    if (autofink || p1 > f32(33.0) || l < f32(7.0)) {
+        println("Due to this extreme mismanagement you have not only been");
+        println("impeached and thrown out of office but you have");
+        println("also been declared national fink!!!!");
+    } else if (p1 > f32(10.0) || l < f32(9.0)) {
+        println("Your heavy-handed performance smacks of Nero and Ivan IV.");
+        println("The people (remaining) find you an unpleasant ruler, and,");
+        println("frankly, hate your guts!!");
+    } else if (p1 > f32(3.0) || l < f32(10.0)) {
+        let unhappy: i32 = 0;
+        if (p > 0) {
+            unhappy = rnd(i32(f32(p) * f32(0.8)));
+        }
+        println("Your performance could have been somewhat better, but");
+        println($"really wasn't bad at all.  {unhappy} people");
+        println("would have dearly liked to have seen you assassinated but");
+        println("we all have our trivial problems.");
+    } else {
+        println("A fantastic performance!!!  Charlemagne, Disraeli, and");
+        println("Jefferson combined could not have done better!");
+    }
+}
+
+func game(): void {
+    d1 = 0;
+    p1 = 0.0;
+    z = 0;
+    p = 95;
+    s = 2800;
+    h = 3000;
+    e = h - s;
+    y = 3;
+    a = h / y;
+    i = 5;
+    q = 1;
+    d = 0;
+
+    while (true) {
+        z = z + 1;
+        println("");
+        println("");
+        println("Hamurabi: I beg to report to you,");
+        println($"in year {z}, {d} people starved, {i} came to the city");
+        p = p + i;
+        if (q <= 0) {
+            p = p / 2;
+            println("A horrible plague struck!  Half the people died.");
+        }
+        println($"Population is now {p}");
+        println($"The city now owns {a} acres.");
+        println($"You harvested {y} bushels per acre.");
+        println($"Rats ate {e} bushels.");
+        println($"You now have {s} bushels in store.");
+        if (z == 11) {
+            break;
+        }
+
+        c = rnd(10);
+        y = c + 17;
+
+        // Deterministic steward: make one small purchase and one small sale so
+        // both land-trading paths run, feed everyone when the store allows it,
+        // and plant what the remaining grain, land, and people can support.
+        let buy: i32 = 0;
+        let sell: i32 = 0;
+        if (z == 1 && s >= y * 10) {
+            buy = 10;
+        }
+        if (z == 2 && a > 10) {
+            sell = 10;
+        }
+        if (buy > 0) {
+            a = a + buy;
+            s = s - y * buy;
+        }
+        if (sell > 0) {
+            a = a - sell;
+            s = s + y * sell;
+        }
+        let need: i32 = p * 20;
+        q = s;
+        if (need < s) {
+            q = need;
+        }
+        if (q < 0) {
+            q = 0;
+        }
+        let remaining: i32 = s - q;
+        let by_grain: i32 = remaining * 2;
+        let by_people: i32 = p * 10;
+        d = a;
+        if (by_grain < d) {
+            d = by_grain;
+        }
+        if (by_people < d) {
+            d = by_people;
+        }
+        if (d < 0) {
+            d = 0;
+        }
+
+        println($"Land is trading at {y} bushels per acre.");
+        println($"Hamurabi buys {buy} acres and sells {sell} acres.");
+        println($"Hamurabi feeds {q} bushels.");
+        println($"Hamurabi plants {d} acres.");
+
+        s = s - q;
+        c = 1;
+        s = s - d / 2;
+        d5();
+        y = c;
+        h = d * y;
+        e = 0;
+        d5();
+        if (c % 2 == 0) {
+            e = s / c;
+        }
+        s = s - e + h;
+        d5();
+        i = i32(f32(c) * f32(20 * a + s) / f32(p) / f32(100.0)) + 1;
+        c = q / 20;
+        q = rnd(20) - 3;
+        if (p < c) {
+            d = 0;
+            continue;
+        }
+        d = p - c;
+        if (f32(d) > f32(0.45) * f32(p)) {
+            println($"You starved {d} people in one year!!!");
+            rating(true);
+            return;
+        }
+        p1 = (f32(z - 1) * p1 + f32(d) * f32(100.0) / f32(p)) / f32(z);
+        p = c;
+        d1 = d1 + d;
+    }
+
+    rating(false);
+}
+
+export func main(): i32 {
+    seed(12345);
+    println("                                HAMURABI");
+    println("               Creative Computing  Morristown, New Jersey");
+    println("");
+    println("");
+    println("");
+    println("");
+    println("Try your hand at governing ancient Sumeria");
+    println("for a ten-year term of office.");
+    println("");
+    println("");
+
+    game();
+
+    println("");
+    println("So long for now.");
+    return 0;
+}

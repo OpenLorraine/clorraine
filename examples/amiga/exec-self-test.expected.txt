@@ -1,0 +1,5 @@
+exec-self-test: start
+exec-self-test: signal received
+exec-self-test: payload 42
+exec-self-test: reply received
+exec-self-test: done

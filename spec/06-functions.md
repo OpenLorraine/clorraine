@@ -1,6 +1,6 @@
 # Chapter 06 - Functions and Parameters
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 04 (expressions), Ch 12 (FFI), Ch 16 (borrow rules), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1, 8, 9
 > **Ledger:** F2, F3, F7, F8, V5-V7, V9, G1-G8, L1-L5, M8, T8, F9, GF22

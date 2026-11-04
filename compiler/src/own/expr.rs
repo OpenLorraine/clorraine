@@ -2032,6 +2032,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                         _ => {}
                     }
+                    if !caller_slot {
+                        if let Some(PlaceTarget::Local(target_id, _)) = self.place_target(target) {
+                            self.check_generated_loop_owner_escape(
+                                value,
+                                target_id,
+                                target.span,
+                            );
+                        }
+                    }
                 }
                 let target_binding_ty = &self.bindings[id].ty;
                 let generic_maybe_nullable = target_binding_ty.is_unknown()
@@ -3368,6 +3377,169 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so each component is judged on its own; the first component the
     /// destination cannot keep supplies the report, so one store keeps one
     /// diagnostic.
+    /// True when a view-returning call takes an argument rooted at a fresh call.
+    ///
+    /// The call result is a view of that fresh argument's storage, so storing
+    /// the result outside the loop would expose the generated owner on the
+    /// loop's back edge.
+    pub(super) fn call_result_view_with_fresh_argument(&self, value: &Expr) -> bool {
+        match &value.kind {
+            ExprKind::Call { callee, args, .. } if is_view_like(&self.ty(value)) => {
+                // Only the single lend parameter the return source elides can
+                // carry the returned view. A fresh scalar or owning argument
+                // that is not that source is unrelated (for example
+                // `staticView(next(), "zz")`), so it must not trigger the
+                // loop-escape rejection.
+                let Some(name) = self.callee_name(callee) else {
+                    return false;
+                };
+                let Some(Callee::User(decl)) = self.resolved_callee(&name) else {
+                    return false;
+                };
+                let declared: Vec<String> = decl
+                    .type_params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect();
+                let candidates: Vec<usize> = decl
+                    .params
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, param)| {
+                        param.mode != Mode::Take
+                            && is_lend_candidate(&self.resolve_with(&param.ty, &declared))
+                    })
+                    .map(|(index, _)| index)
+                    .collect();
+                let [index] = candidates.as_slice() else {
+                    return false;
+                };
+                args.get(*index)
+                    .is_some_and(|arg| self.contains_fresh_call(&arg.value))
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.call_result_view_with_fresh_argument(then_value)
+                    || self.call_result_view_with_fresh_argument(else_value)
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.call_result_view_with_fresh_argument(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.call_result_view_with_fresh_argument(fill))
+            }
+            ExprKind::StructLiteral { fields, .. } => fields
+                .iter()
+                .any(|field| self.call_result_view_with_fresh_argument(&field.value)),
+            _ => false,
+        }
+    }
+
+    /// True when the expression contains a call that can create fresh storage.
+    fn contains_fresh_call(&self, value: &Expr) -> bool {
+        match &value.kind {
+            ExprKind::Call { .. } | ExprKind::IntrinsicCall { .. } => true,
+            ExprKind::Member { base, .. }
+            | ExprKind::Index { base, .. }
+            | ExprKind::Cast { value: base, .. }
+            | ExprKind::RawCast { value: base, .. }
+            | ExprKind::Unsafe(base) => self.contains_fresh_call(base),
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.contains_fresh_call(then_value) || self.contains_fresh_call(else_value)
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements.iter().any(|element| self.contains_fresh_call(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.contains_fresh_call(fill))
+            }
+            _ => false,
+        }
+    }
+
+    /// Rejects a view of a compiler-generated owner escaping a loop body.
+    ///
+    /// A loop body's generated owner is released on the back edge, but the
+    /// ordinary liveness pass lets a view stored into an outer binding outlive
+    /// it. The equivalent block form is rejected, so a view store whose source
+    /// names a generated owner from an enclosing loop scope reports `E10030`.
+    /// A target inside the same or a deeper scope keeps the view legal.
+    fn check_generated_loop_owner_escape(
+        &mut self,
+        value: &Expr,
+        target_id: usize,
+        span: Span,
+    ) -> bool {
+        let target_scope = self.bindings[target_id].scope;
+        // A view-returning call whose argument reads a fresh call root can
+        // expose that root's generated owner on the loop back-edge. The loan
+        // graph does not carry this shape across the loop join, so reject the
+        // direct store when the target lives outside the loop body.
+        if self
+            .scopes
+            .last()
+            .is_some_and(|scope| scope.in_loop && target_scope < self.scopes.len())
+            && self.call_result_view_with_fresh_argument(value)
+        {
+            self.error(
+                "E10030",
+                "borrow of a compiler-generated owner does not live long enough",
+                "finish the use before the owner's scope ends",
+                span,
+            );
+            return true;
+        }
+        // A plain local view is the ordinary loan graph's job: the declaration
+        // report already covers it. Only the call-returned local needs this
+        // extra check, or the same escape would report twice.
+        if let ExprKind::Name(name) = &value.kind {
+            if let Some(source_id) = self.lookup(name) {
+                if !self.call_view_locals.contains(&source_id) {
+                    return false;
+                }
+            }
+        }
+        let mut owners: BTreeSet<LoanOwner> = self.view_loan_destination_owners(value, false);
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if let Provenance::Local(owner) | Provenance::Param(owner) = atom {
+                owners.insert(LoanOwner::Binding(owner));
+            }
+        }
+        for owner in owners {
+            let LoanOwner::Binding(owner_id) = owner else {
+                continue;
+            };
+            let binding = &self.bindings[owner_id];
+            if !binding.generated || binding.scope <= target_scope {
+                continue;
+            }
+            let Some(scope) = self.scopes.get(binding.scope.saturating_sub(1)) else {
+                continue;
+            };
+            if !scope.in_loop {
+                continue;
+            }
+            let subject = super::liveness::owner_subject(&binding.name, binding.generated);
+            self.error(
+                "E10030",
+                format!("borrow of {subject} does not live long enough"),
+                "finish the use before the owner's scope ends",
+                span,
+            );
+            return true;
+        }
+        false
+    }
+
     fn check_escaping_view_store(
         &mut self,
         value: &Expr,

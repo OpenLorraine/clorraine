@@ -10,7 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::Program;
 use crate::codegen;
-use crate::diag::{Diagnostic, Diagnostics};
+use crate::diag::{
+    format_error, format_from_args, registry, Diagnostic, DiagnosticFormat, Diagnostics,
+};
 use crate::load;
 use crate::own;
 use crate::parse::Parser;
@@ -25,6 +27,10 @@ const EXIT_USAGE: i32 = 2;
 
 /// The parsed command line.
 struct Options {
+    /// Diagnostic code to explain; an early-exit mode.
+    explain: Option<String>,
+    /// Diagnostic output format.
+    diagnostics: DiagnosticFormat,
     /// `--version` was requested.
     version: bool,
     /// Selected profile.
@@ -45,6 +51,8 @@ impl Options {
     /// Parses the command line, rejecting malformed invocations.
     fn parse(args: &[String]) -> Result<Self, String> {
         let mut options = Self {
+            explain: None,
+            diagnostics: DiagnosticFormat::Human,
             version: false,
             profile: None,
             parse_only: false,
@@ -57,6 +65,15 @@ impl Options {
         while index < args.len() {
             let arg = args[index].as_str();
             match arg {
+                "--explain" => {
+                    index += 1;
+                    options.explain = Some(argument(args, index, "--explain")?);
+                }
+                "--diagnostics" => {
+                    index += 1;
+                    let raw = argument(args, index, "--diagnostics")?;
+                    options.diagnostics = DiagnosticFormat::parse(&raw)?;
+                }
                 "--version" => options.version = true,
                 "--deny-warnings" => options.deny_warnings = true,
                 "--parse-only" => options.parse_only = true,
@@ -80,12 +97,26 @@ impl Options {
                     let raw = &arg["--max-errors=".len()..];
                     options.max_errors = Some(error_limit(raw)?);
                 }
+                _ if arg.starts_with("--explain=") => {
+                    let code = &arg["--explain=".len()..];
+                    if code.is_empty() {
+                        return Err("--explain needs a value".to_owned());
+                    }
+                    options.explain = Some(code.to_owned());
+                }
+                _ if arg.starts_with("--diagnostics=") => {
+                    options.diagnostics =
+                        DiagnosticFormat::parse(&arg["--diagnostics=".len()..])?;
+                }
                 _ if arg.starts_with('-') => {
                     return Err(format!("unknown option '{arg}'"));
                 }
                 _ => options.files.push(arg.to_owned()),
             }
             index += 1;
+        }
+        if options.explain.is_some() {
+            return Ok(options);
         }
         if options.version {
             return Ok(options);
@@ -243,24 +274,53 @@ fn is_unavailable_stdlib(profile: Profile, module: &str, provided: &BTreeSet<Str
 
 /// Runs the compiler and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
+    let requested = format_from_args(&args);
     let options = match Options::parse(&args) {
         Ok(options) => options,
         Err(message) => {
-            eprintln!("usage error: {message}");
+            eprint!(
+                "{}",
+                format_error(requested, &format!("usage error: {message}"))
+            );
             return EXIT_USAGE;
         }
     };
+    let format = options.diagnostics;
+    if let Some(code) = &options.explain {
+        return match registry::explain(code) {
+            Some(text) => {
+                print!("{text}");
+                0
+            }
+            None => {
+                eprint!(
+                    "{}",
+                    format_error(
+                        format,
+                        &format!("usage error: unknown diagnostic code '{code}'")
+                    )
+                );
+                EXIT_USAGE
+            }
+        };
+    }
     if options.version {
         println!("clc {}", env!("CARGO_PKG_VERSION"));
         return 0;
     }
     let mut diagnostics = Diagnostics::new(options.deny_warnings, options.max_errors);
     let Some(profile) = options.profile.as_deref() else {
-        eprintln!("usage error: --profile <host|hosted-amiga|freestanding> is required");
+        eprint!(
+            "{}",
+            format_error(
+                format,
+                "usage error: --profile <host|hosted-amiga|freestanding> is required"
+            )
+        );
         return EXIT_USAGE;
     };
     if !profile_available(profile, &mut diagnostics) {
-        eprint!("{}", diagnostics.render(&SourceMap::new()));
+        emit_diagnostics(&diagnostics, &SourceMap::new(), format);
         return diagnostics.exit_code();
     }
     let mut sources = SourceMap::new();
@@ -269,7 +329,10 @@ pub fn run(args: Vec<String>) -> i32 {
         match std::fs::read_to_string(path) {
             Ok(text) => files.push(sources.add_file(path.clone(), text)),
             Err(error) => {
-                eprintln!("clc: cannot read '{path}': {error}");
+                eprint!(
+                    "{}",
+                    format_error(format, &format!("clc: cannot read '{path}': {error}"))
+                );
                 return EXIT_USAGE;
             }
         }
@@ -289,14 +352,14 @@ pub fn run(args: Vec<String>) -> i32 {
     // test exercises may be rejected by a later stage, while the parse is the
     // stage under test. Syntax errors still report and fail the run.
     if options.parse_only {
-        eprint!("{}", diagnostics.render(&sources));
+        emit_diagnostics(&diagnostics, &sources, format);
         return diagnostics.exit_code();
     }
     let Some(kind) = Profile::parse(profile) else {
         return EXIT_USAGE;
     };
     if !report_unavailable_profile_imports(kind, &programs, &mut diagnostics) {
-        eprint!("{}", diagnostics.render(&sources));
+        emit_diagnostics(&diagnostics, &sources, format);
         return diagnostics.exit_code();
     }
     inject_stdlib(&mut programs, &mut sources, &mut diagnostics);
@@ -320,7 +383,7 @@ pub fn run(args: Vec<String>) -> i32 {
     // A front-end error rules out code generation; rendered here so the
     // command-line contract still reports the diagnostics before exiting.
     if diagnostics.exit_code() != 0 {
-        eprint!("{}", diagnostics.render(&sources));
+        emit_diagnostics(&diagnostics, &sources, format);
         return diagnostics.exit_code();
     }
     // A successful compile emits the translation unit; an absent `-o` keeps the
@@ -334,17 +397,25 @@ pub fn run(args: Vec<String>) -> i32 {
         }
         None => String::new(),
     };
-    eprint!("{}", diagnostics.render(&sources));
+    emit_diagnostics(&diagnostics, &sources, format);
     if diagnostics.exit_code() != 0 {
         return diagnostics.exit_code();
     }
     if let Some(path) = &options.output {
         if let Err(error) = std::fs::write(path, emitted) {
-            eprintln!("clc: cannot write '{path}': {error}");
+            eprint!(
+                "{}",
+                format_error(format, &format!("clc: cannot write '{path}': {error}"))
+            );
             return EXIT_USAGE;
         }
     }
     0
+}
+
+/// Writes the collected diagnostics in the selected format.
+fn emit_diagnostics(diagnostics: &Diagnostics, sources: &SourceMap, format: DiagnosticFormat) {
+    eprint!("{}", diagnostics.render_with(sources, format));
 }
 
 /// Checks the selected profile name.

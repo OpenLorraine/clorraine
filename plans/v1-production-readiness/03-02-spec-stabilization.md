@@ -34,9 +34,9 @@ diagnostic registration, and compile-fail coverage.
    `spec/README.md` to "stable (v1.0)" and keep the staged-feature table.
 3. **Stale project status.** Update the root `README.md` status table: NLL is implemented, not
    "the next step"; the compiler is production-readiness-track, not merely early development.
-4. **Known limitations.** The README link and the spec's limitations-section link are both added in
-   Phase 6, after `03-05` creates the document; `./spec/check.sh` is rerun then. `03-05` is the
-   sole owner of the document.
+4. **Known limitations.** The README link and the `spec/README.md` "Known limitations" section
+   link are both added in Phase 6, after `03-05` creates the document; `./spec/check.sh` is rerun
+   then. `03-05` is the sole owner of the document.
 5. **Validation.** Run `./spec/check.sh` after every chapter group; it must stay green.
 
 ## Implementation Details
@@ -60,7 +60,7 @@ explicitly outside the chapter freeze.
 | File group | Target status | Notes |
 | ---------- | ------------- | ----- |
 | `00-introduction.md` – `17-codegen.md` | `stable (v1.0)` | v1.0 chapter set |
-| `appendix-amiga.md`, `appendix-stdlib.md` | `stable (v1.0)` | v1.0 appendices |
+| `appendix-amiga.md`, `appendix-stdlib.md` | `stable (v1.0)` | v1.0 appendices; Phase 5 re-reviews them after `std.amiga.exec` lands |
 | `README.md` | `stable (v1.0)` | Chapter index and status table |
 | `grammar.ebnf.md` | keep `draft (Phase B anchor - the grammar freeze)` | Grammar anchor; reviewed, not relabelled |
 | `grammar-deltas.md` | keep `draft (Phase B anchor)` | Anchor; reviewed, not relabelled |
@@ -71,7 +71,8 @@ explicitly outside the chapter freeze.
 ### New Types/Interfaces
 
 None. The only code-facing artifact is the documentation status text; the known-limitations links
-are added in Phase 6, after `03-05` creates the document.
+(in the root `README.md` and `spec/README.md`) are added in Phase 6, after `03-05` creates the
+document.
 
 ### New Functions/Methods
 
@@ -116,7 +117,8 @@ None.
 - `./spec/check.sh` after each chapter group.
 - A final status scan: every v1.0 chapter and appendix header reads `stable (v1.0)`; the staged
   markers remain; the anchor/report statuses match the target table above; the README table
-  reflects the same statuses.
-- The README and spec links to `docs/known-limitations.md` are added in Phase 6 after the document
-  exists; `./spec/check.sh` is rerun there.
+  reflects the same statuses. The Amiga and stdlib appendices are re-reviewed in Phase 5 after
+  `std.amiga.exec` lands, and their stable status is re-recorded.
+- The README and `spec/README.md` links to `docs/known-limitations.md` are added in Phase 6 after
+  the document exists; `./spec/check.sh` is rerun there.
 - `make check` after the documentation change.

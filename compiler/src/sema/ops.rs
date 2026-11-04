@@ -65,7 +65,11 @@ impl Checker<'_, '_> {
         let ty = self.check_value(operand, None);
         match op {
             UnaryOp::Not => {
-                self.require_bool(&ty, operand.span);
+                if crate::types::is_null_shaped(&ty) {
+                    self.report_null_literal(operand.span);
+                } else {
+                    self.require_bool(&ty, operand.span);
+                }
                 Ty::boolean()
             }
             UnaryOp::BitNot => {
@@ -532,6 +536,20 @@ impl Checker<'_, '_> {
             else_value.span,
         );
         then_ty
+    }
+
+    /// Reports the null rule at a null literal used where no null value is legal.
+    ///
+    /// The annotated `bool` control, the explicit cast, and the unary `!`
+    /// spelling all reject the empty state with `E10012`; the help names the
+    /// two ways to give the value a legal type or avoid it.
+    pub(super) fn report_null_literal(&mut self, span: Span) {
+        self.error(
+            "E10012",
+            "'null' is not allowed here",
+            "declare the type `T?` or avoid the empty state",
+            span,
+        );
     }
 
     /// Reports the null rule for one conditional arm at a known destination.

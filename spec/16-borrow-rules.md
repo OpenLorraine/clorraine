@@ -1,6 +1,6 @@
 # Chapter 16 - Borrow-Checker Rules
 
-> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 03 (ownership), Ch 06 (functions and parameters), Ch 07 (structs), Ch 14 (diagnostics), Ch 17 (codegen) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (parameter modes), 4 (types), 6.4 (call-site markers)
 > **Ledger:** O2, O8-O12, F2, F9, T6, T9, T12; [lineage.md](lineage.md) sections 4 (lifetime elision) and 6 (borrow checking)

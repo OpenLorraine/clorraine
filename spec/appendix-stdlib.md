@@ -1,6 +1,6 @@
 # Appendix B - Standard Library (v1)
 
-> **Status:** draft (Phase C - written against the ledger and the grammar)
+> **Status:** stable (v1.0)
 > **Depends on:** Ch 08 (arrays and strings), Ch 11 (memory and resources), Ch 12 (FFI and contracts), Ch 14 (diagnostics), Ch 16 (borrow-checker rules), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (parameter modes), 4 (types), 6.4 (member and call suffixes), 7 (intrinsics)
 > **Ledger:** [decisions.md](decisions.md) section 18 (standard-library scope); T2, T5, T7, T8, F7, F8, X1, X6, L5, P5, P6, P8a
@@ -266,7 +266,48 @@ and `bufferBytes` — for the result's origin
 | `Box<T>` with generated drop glue | v1.1 | needs the X1 amendment allowing ordinary Clorraine `freedBy` functions (X1) |
 | C-hook trampolines for capturing lambdas | v1.1 | capturing closures cross synchronous C hooks only, via generated trampolines (L5) |
 
-## 13. Diagnostics
+## 13. Message ports (`std.amiga.exec`)
+
+The module owns private `MsgPort` handles and two move-only message handles. It is available only
+on `hosted-amiga`; the host and freestanding profiles reject it with `E11200`. The event-loop
+shape is in [appendix-amiga.md](appendix-amiga.md) §6.
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `createMsgPort()` | `MsgPort?` | private port; `null` on failure; delete it after draining |
+| `deleteMsgPort(take port)` | `void` | deletes a drained port |
+| `createMessage(borrow reply: MsgPort, payload: i32)` | `NewMessage?` | allocates an unsent message with a reply port and an integer payload |
+| `messagePayload(borrow msg: Message)` | `i32` | reads the payload of a fetched message |
+| `putMsg(borrow port: MsgPort, take msg: NewMessage)` | `void` | moves the message into the port |
+| `signals(borrow port: MsgPort)` | `u32` | the port's signal mask, `1 << mp_SigBit` |
+| `waitSignals(mask: u32)` | `u32` | waits for any bit in `mask` and returns the bits received |
+| `getMsg(borrow port: MsgPort)` | `Message?` | the next message, or `null` |
+| `replyMsg(take msg: Message)` | `void` | replies the message and moves it to the reply path |
+| `freeMessage(take msg: NewMessage)` | `void` | releases an unsent message explicitly |
+| `releaseMsg(take msg: Message)` | `void` | releases a fetched message this program created that will not be replied |
+
+`NewMessage` is a message this module created and has not sent; its generated drop releases it.
+`Message` is a message fetched from a port; its generated drop replies it. `putMsg` consumes the
+sent message; `getMsg` returns an owned `Message`; `replyMsg` consumes it. A message that has
+returned through its reply port is released with `releaseMsg`, not replied a second time. The
+caller must drain a port before deleting it.
+
+```clorraine
+import { MsgPort, signals, waitSignals, getMsg, replyMsg } from std.amiga.exec;
+
+export func drain(borrow port: MsgPort): void {
+    let sig = waitSignals(signals(port));
+    if ((sig & signals(port)) != 0) {
+        let msg = getMsg(port);
+        while (msg != null) {
+            replyMsg(msg);
+            msg = getMsg(port);
+        }
+    }
+}
+```
+
+## 14. Diagnostics
 
 | Code | Trigger |
 |---|---|

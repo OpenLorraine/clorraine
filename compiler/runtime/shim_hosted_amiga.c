@@ -17,6 +17,8 @@
 
 #include <exec/types.h>
 #include <exec/interrupts.h>
+#include <exec/memory.h>
+#include <exec/ports.h>
 #include <hardware/intbits.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
@@ -670,4 +672,102 @@ void cl_close_screen(void *screen_handle)
     if (screen != NULL) {
         CloseScreen(screen);
     }
+}
+
+/* One message with a small integer payload the acceptance programs can read.
+ * The embedded `struct Message` must stay first so exec's list nodes and the
+ * reply path see an ordinary message. */
+typedef struct cl_message {
+    struct Message msg;
+    LONG payload;
+} cl_message;
+
+/* Create a private message port, or NULL when the system is out of signals or
+ * memory. A private port is enough for the v1 acceptance programs; public
+ * named ports stay outside the wrapper surface. */
+void *cl_create_msg_port(void)
+{
+    return (void *)CreateMsgPort();
+}
+
+/* Delete a private message port. Null-safe; the caller has already drained it. */
+void cl_delete_msg_port(void *port_handle)
+{
+    struct MsgPort *port = (struct MsgPort *)port_handle;
+    if (port != NULL) {
+        DeleteMsgPort(port);
+    }
+}
+
+/* Allocate a message whose reply port is `reply_handle`, with `payload` carried
+ * alongside the exec message header. Returns NULL on allocation failure. */
+void *cl_create_message(void *reply_handle, LONG payload)
+{
+    cl_message *message =
+        (cl_message *)AllocVec(sizeof *message, MEMF_PUBLIC | MEMF_CLEAR);
+    if (message == NULL) {
+        return NULL;
+    }
+    message->msg.mn_Node.ln_Type = NT_MESSAGE;
+    message->msg.mn_Length = sizeof *message;
+    message->msg.mn_ReplyPort = (struct MsgPort *)reply_handle;
+    message->payload = payload;
+    return message;
+}
+
+/* Read the payload of a message created by `cl_create_message`. */
+LONG cl_message_payload(void *message_handle)
+{
+    return ((const cl_message *)message_handle)->payload;
+}
+
+/* Queue `message_handle` on `port_handle` and wake the port owner. */
+void cl_put_msg(void *port_handle, void *message_handle)
+{
+    PutMsg((struct MsgPort *)port_handle, (struct Message *)message_handle);
+}
+
+/* The signal mask that wakes the owner of `port_handle`. */
+ULONG cl_signals(void *port_handle)
+{
+    const struct MsgPort *port = (const struct MsgPort *)port_handle;
+    return 1UL << port->mp_SigBit;
+}
+
+/* Wait for any signal in `mask`, returning the bits that arrived. */
+ULONG cl_wait_signals(ULONG mask)
+{
+    return Wait(mask);
+}
+
+/* Take the next message from `port_handle`, or NULL when the queue is empty. */
+void *cl_get_msg(void *port_handle)
+{
+    return (void *)GetMsg((struct MsgPort *)port_handle);
+}
+
+/* Reply a fetched message to its reply port. A message without a reply port is
+ * left untouched; the wrapper's contract requires one. */
+void cl_reply_msg(void *message_handle)
+{
+    struct Message *message = (struct Message *)message_handle;
+    if (message != NULL && message->mn_ReplyPort != NULL) {
+        ReplyMsg(message);
+    }
+}
+
+/* Release a message that has returned through its reply port. Do not call this
+ * on a message still owned by another task. */
+void cl_free_message(void *message_handle)
+{
+    if (message_handle != NULL) {
+        FreeVec(message_handle);
+    }
+}
+
+/* Release a fetched message that has returned through its reply port. The
+ * typed wrapper uses this only for a message this program created. */
+void cl_release_message(void *message_handle)
+{
+    cl_free_message(message_handle);
 }

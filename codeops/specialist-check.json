@@ -1,6 +1,7 @@
 {
-  "checkedAt": "2026-10-31T12:22:53+01:00",
+  "checkedAt": "2026-11-04T08:13:31+01:00",
   "plans": [
+    "amiga-library-surface",
     "array-value-integrity",
     "borrow-generic-integrity",
     "borrow-store-integrity",
@@ -24,9 +25,9 @@
     "def-backlog-closeout",
     "def-backlog-completion",
     "def-critical-major-closeout",
+    "def-zero-closeout",
     "defer-integrity",
     "deferred-evaluation-completion",
-    "def-zero-closeout",
     "element-loop-integrity",
     "eval-emission-integrity",
     "evaluation-residue",
@@ -51,6 +52,7 @@
     "residual-major-completion",
     "runtime-value-integrity",
     "slice-temporary-integrity",
-    "store-emission-integrity"
+    "store-emission-integrity",
+    "v1-production-readiness"
   ]
 }

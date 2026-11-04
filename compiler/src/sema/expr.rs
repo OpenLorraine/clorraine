@@ -1110,7 +1110,9 @@ impl Checker<'_, '_> {
         // The open-type allowance in `scalar_cast_allowed` must not let it
         // reach an integer destination: the emitted cast would convert a
         // `void *` to an integer and fail `-Werror=pointer-to-int-cast`.
-        if crate::types::is_null_shaped(&source) {
+        if crate::types::is_null_shaped(&source) && target.is_bool() {
+            self.report_null_literal(value.span);
+        } else if crate::types::is_null_shaped(&source) {
             self.error(
                 "E10201",
                 format!("cannot cast 'null' to '{}'", target.display()),

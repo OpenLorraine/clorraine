@@ -16,9 +16,9 @@ never drift from the registry (AR-4). This document also owns the twelve registr
 
 - `compiler/src/diag.rs` owns `Diagnostic` / `Diagnostics` but has no registry awareness.
 - `clc` (`compiler/src/driver.rs`) parses `--version`, `--profile`, `--max-errors`,
-  `--deny-warnings`, `-o`, and files; `--version` short-circuits after parsing (`:245`).
-- `clorraine` (`compiler/src/clorraine/cli.rs`) honours `-h`/`-V` anywhere (`:105-116`) and then
-  requires a command word; the help text is the `HELP` const (`:65`).
+  `--deny-warnings`, `-o`, and files; `--version` short-circuits after parsing (`:253`).
+- `clorraine` (`compiler/src/clorraine/cli.rs`) honours `-h`/`-V` anywhere (`:107-118`) and then
+  requires a command word; the help text is the `HELP` const (`:59`).
 
 ### Proposed Changes
 
@@ -105,12 +105,21 @@ renders `warning W10000: ...`. Trailing newline after the last line, matching `D
                 0
             }
             None => {
-                eprintln!("usage error: unknown diagnostic code '{code}'");
+                eprint!(
+                    "{}",
+                    format_error(
+                        options.diagnostics,
+                        &format!("usage error: unknown diagnostic code '{code}'")
+                    )
+                );
                 EXIT_USAGE
             }
         };
     }
 ```
+
+The success text is always the human registry entry; only a failure follows the selected
+diagnostic stream, so a machine consumer that asked for JSON never receives a human error line.
 
 **`clorraine` (`compiler/src/clorraine/cli.rs`, `mod.rs`)**
 
@@ -136,7 +145,7 @@ other byte of `spec/14-diagnostics.md` changes.
 
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
-| Unknown code | `usage error: unknown diagnostic code '<code>'` on stderr, exit 2, no stdout | AR-3 |
+| Unknown code | `usage error: unknown diagnostic code '<code>'` on stderr, or the null-code JSON object when JSON was requested; exit 2, no stdout | AR-3, R5 |
 | Missing value after `--explain` | `usage error: --explain needs a value`, exit 2 | AR-3 |
 | Code with no help cell (defensive) | Entry renders without the `help:` line | AR-14 |
 | Malformed registry table | Parse skips non-matching lines; the count/row guard tests fail `make check` | AR-14 |
@@ -147,7 +156,7 @@ other byte of `spec/14-diagnostics.md` changes.
 - Specification tests: ST-1 – ST-7 (`07-testing-strategy.md`) in
   `compiler/tests/dx_tooling_spec_test.rs` (spawns both binaries like
   `clorraine_driver_spec_test.rs` does).
-- Implementation tests: ST-7's registry coverage (112 codes, every row has help, representative
+- Implementation tests: ST-7's registry coverage (114 codes, every row has help, representative
   fields), synthetic-table parse robustness, and the exact render shape in
   `compiler/tests/dx_tooling_impl_test.rs`; unit tests inside `diag/registry.rs` for
   `parse_registry`.

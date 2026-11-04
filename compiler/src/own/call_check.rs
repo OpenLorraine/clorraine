@@ -141,7 +141,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.callee_name(callee).is_none() {
             if let Some(params) = self.value_callee_signature(&self.ty(callee)) {
                 self.eval(callee);
-                self.mark_written_captures(callee);
+                let unsafe_capture_write = self.mark_written_captures(callee);
+                let captures_call_view = self.closure_captures_call_view(callee);
+                let writes_capture =
+                    unsafe_capture_write || self.closure_has_write_capture(callee);
+                if writes_capture {
+                    let fresh_argument = args.iter().any(|arg| {
+                        (matches!(
+                            arg.value.kind,
+                            ExprKind::Member { .. } | ExprKind::Index { .. }
+                        ) && Self::mentions_call(&arg.value))
+                            || self.call_result_view_with_fresh_argument(&arg.value)
+                    });
+                    if fresh_argument || captures_call_view {
+                        self.error(
+                            "E10030",
+                            "borrow of a compiler-generated owner does not live long enough",
+                            "finish the use before the owner's scope ends",
+                            span,
+                        );
+                    }
+                }
                 self.check_marker_matches("the callable value", args, &params);
                 // A closure's parameters are unmarked read-only lends. The
                 // closure-call lowering materializes an owned argument itself,
@@ -486,13 +506,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// and miss a later escape. Conservatively marking the local's own frame as
     /// its backing rejects that escape; a later read inside the frame is
     /// unaffected.
-    fn mark_written_captures(&mut self, callee: &Expr) {
+    fn mark_written_captures(&mut self, callee: &Expr) -> bool {
         let callee = super::expr::structural_wrapper_inner(callee);
         let ExprKind::Lambda { body, .. } = &callee.kind else {
-            return;
+            return false;
         };
         let TyKind::Closure(closure) = &self.ty(callee).kind else {
-            return;
+            return false;
         };
         let captures = self
             .sema
@@ -500,6 +520,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .get(&closure.id)
             .map(|site| site.captures.clone())
             .unwrap_or_default();
+        let mut unsafe_write = false;
         for capture in &captures {
             if capture.mode != CaptureMode::WriteBorrow {
                 continue;
@@ -524,9 +545,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // A recorded static position from the initializer no longer
                     // describes the value the closure wrote.
                     self.state.element_loans.remove(&id);
+                    unsafe_write = true;
                 }
             }
         }
+        unsafe_write
+    }
+
+    /// True when a lambda captures any call-returned local view by value.
+    ///
+    /// A copied view of a generated owner keeps pointing at the owner after
+    /// the loop body releases it; a write capture can then store that dangling
+    /// view into an outer binding.
+    fn closure_captures_call_view(&self, callee: &Expr) -> bool {
+        let callee = super::expr::structural_wrapper_inner(callee);
+        let ExprKind::Lambda { .. } = &callee.kind else {
+            return false;
+        };
+        let TyKind::Closure(closure) = &self.ty(callee).kind else {
+            return false;
+        };
+        self.sema
+            .closures
+            .get(&closure.id)
+            .map(|site| {
+                site.captures.iter().any(|capture| {
+                    self.lookup(&capture.name)
+                        .is_some_and(|id| self.call_view_locals.contains(&id))
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// True when a lambda has any write-borrow capture.
+    fn closure_has_write_capture(&self, callee: &Expr) -> bool {
+        let callee = super::expr::structural_wrapper_inner(callee);
+        let ExprKind::Lambda { .. } = &callee.kind else {
+            return false;
+        };
+        let TyKind::Closure(closure) = &self.ty(callee).kind else {
+            return false;
+        };
+        self.sema
+            .closures
+            .get(&closure.id)
+            .map(|site| {
+                site.captures
+                    .iter()
+                    .any(|capture| capture.mode == CaptureMode::WriteBorrow)
+            })
+            .unwrap_or(false)
     }
 
     /// Summarizes the whole-name writes to one write-borrow capture.

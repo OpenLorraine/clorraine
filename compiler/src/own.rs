@@ -622,6 +622,14 @@ struct FunctionChecker<'a, 'd> {
     /// borrowed parameter slot, or a projected target — keeps the derived
     /// element in place instead.
     view_destination_adopts: bool,
+    /// Locals initialized by a view-returning call whose argument roots at a
+    /// fresh call.
+    ///
+    /// The generated owner is released on the loop back-edge; a later store of
+    /// this local into an outer binding needs the explicit loop-escape check
+    /// because the ordinary loan graph does not carry the call-returned view
+    /// across the loop join.
+    call_view_locals: BTreeSet<usize>,
     /// Where the struct literal currently being evaluated lands, which
     /// decides whether a caller-backed view field may remain: a frame
     /// destination and a return keep it, every other destination keeps
@@ -964,6 +972,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
+            call_view_locals: BTreeSet::new(),
             literal_views: LiteralViews::Escaping,
             discarded_conditional: false,
             discarded_literal_field: false,
@@ -1155,6 +1164,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.push(Scope {
             id,
             close_span,
+            in_loop,
             ..Scope::default()
         });
         id
