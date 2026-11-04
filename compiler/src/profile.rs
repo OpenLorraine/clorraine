@@ -97,6 +97,8 @@ impl Profile {
                     | "std.amiga.audio"
                     | "std.amiga.input"
                     | "std.amiga.timer"
+                    | "std.amiga.text"
+                    | "std.amiga.layers"
                     | "std.amiga.custom"
                     | "std.amiga.dos"
                     | "std.amiga.graphics"

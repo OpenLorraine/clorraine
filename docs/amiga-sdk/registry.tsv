@@ -33,12 +33,12 @@ SDK-AUD-005	3-audio-input	input	timer.device delays	should	core	1.3	OCS/68000/51
 SDK-AUD-008	3-audio-input	input	EClock (2.0+)	could	advanced	2.0	ECS/68000/1M	deferred	SDK-AUD-005	eclock	-	-	2.0+ advanced; Bundle 9
 SDK-AUD-006	3-audio-input	input	lowlevel ReadJoyPort (3.1+)	could	advanced	3.1	ECS/68000/1M	deferred	SDK-AUD-004	lowlevel	-	-	3.1+ advanced; Bundle 9
 SDK-AUD-007	3-audio-input	demo	Paddle game with sound	must	core	1.3	OCS/68000/512K	done	SDK-AUD-002,SDK-AUD-004	game_demo	docs/amiga-sdk/a500-paddle.png; docs/amiga-sdk/a500-paddle-line.png; make sdk-a500-paddle	spec/appendix-amiga.md	hits 2, audio 15, test 15, decode 127
-SDK-TXT-001	4-text-layers	graphics/text	Font open/close	must	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	font	-	-	-
-SDK-TXT-002	4-text-layers	graphics/text	Text draw and measure	must	core	1.3	OCS/68000/512K	missing	SDK-TXT-001	text_draw	-	-	-
-SDK-TXT-003	4-text-layers	graphics/fonts	diskfont.library	should	core	1.3	OCS/68000/512K	missing	SDK-TXT-001	diskfont	-	-	-
-SDK-TXT-004	4-text-layers	graphics/layers	Layers and clipping	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002	layers	-	-	-
-SDK-TXT-005	4-text-layers	graphics/layers	Regions and damage (2.0+)	should	advanced	2.0	ECS/68000/1M	missing	SDK-TXT-004	regions	-	-	-
-SDK-TXT-006	4-text-layers	demo	Scrolling text/layers demo	must	core	1.3	OCS/68000/512K	missing	SDK-TXT-002,SDK-TXT-004	text_layers_demo	-	-	-
+SDK-TXT-001	4-text-layers	graphics/text	Font open/close	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001	font	stdlib/std.amiga.text.clo; openFont topaz on A500; demo checks 126	spec/appendix-stdlib.md	OpenFont/CloseFont; default borrowed
+SDK-TXT-002	4-text-layers	graphics/text	Text draw and measure	must	core	1.3	OCS/68000/512K	done	SDK-TXT-001	text_draw	text: ok width 128 height 8 checks 510; layer title/scroll; amiga_text_spec_test	spec/appendix-stdlib.md	TextLength/Text
+SDK-TXT-003	4-text-layers	graphics/fonts	diskfont.library	should	core	1.3	OCS/68000/512K	deferred	SDK-TXT-001	diskfont	demo checks 126 (disk 0); ADF lacks LIBS:diskfont.library/FONTS:	spec/appendix-stdlib.md	Bundle 9 disk asset
+SDK-TXT-004	4-text-layers	graphics/layers	Layers and clipping	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	layers	docs/amiga-sdk/a500-text.png; clipped title + scroll layers; checks 510	spec/appendix-stdlib.md	NewLayerInfo/CreateUpfrontLayer local coords
+SDK-TXT-005	4-text-layers	graphics/layers	Regions and damage (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-TXT-004	regions	-	-	2.0+ advanced; Bundle 9
+SDK-TXT-006	4-text-layers	demo	Scrolling text/layers demo	must	core	1.3	OCS/68000/512K	done	SDK-TXT-002,SDK-TXT-004	text_layers_demo	docs/amiga-sdk/a500-text.png; docs/amiga-sdk/a500-text-line.png; checks 510; make sdk-a500-text	spec/appendix-amiga.md	A500 real KS1.3; 128x8
 SDK-DOS-001	5-dos-assets	dos/files	Seek/read/write	must	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	dos_seek	-	-	-
 SDK-DOS-002	5-dos-assets	dos/dirs	Locks, directories, delete/rename	must	core	1.3	OCS/68000/512K	missing	SDK-DOS-001	dos_dirs	-	-	-
 SDK-DOS-003	5-dos-assets	dos/info	Path/assign/volume info	should	core	1.3	OCS/68000/512K	missing	SDK-DOS-002	dos_info	-	-	-

@@ -9,7 +9,7 @@
 | 1-native-video | core | 1.3 | 11 | 11 | 0 | #2 |
 | 2-sprites | core | 1.3 | 6 | 6 | 0 | #3 |
 | 3-audio-input | core | 1.3 | 6 | 8 | 0 | #4 |
-| 4-text-layers | core | 1.3 | 0 | 6 | 4 | #5 |
+| 4-text-layers | core | 1.3 | 4 | 6 | 0 | #5 |
 | 5-dos-assets | core | 1.3 | 0 | 7 | 4 | #6 |
 | 6-intuition | core | 1.3 | 0 | 9 | 4 | #7 |
 | 7-exec-devices | core | 1.3 | 0 | 11 | 5 | #8 |
@@ -84,12 +84,12 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-TXT-001 | Font open/close | must | missing | font |
-| SDK-TXT-002 | Text draw and measure | must | missing | text_draw |
-| SDK-TXT-003 | diskfont.library | should | missing | diskfont |
-| SDK-TXT-004 | Layers and clipping | must | missing | layers |
-| SDK-TXT-005 | Regions and damage (2.0+) | should | missing | regions |
-| SDK-TXT-006 | Scrolling text/layers demo | must | missing | text_layers_demo |
+| SDK-TXT-001 | Font open/close | must | done | font |
+| SDK-TXT-002 | Text draw and measure | must | done | text_draw |
+| SDK-TXT-003 | diskfont.library | should | deferred | diskfont |
+| SDK-TXT-004 | Layers and clipping | must | done | layers |
+| SDK-TXT-005 | Regions and damage (2.0+) | should | deferred | regions |
+| SDK-TXT-006 | Scrolling text/layers demo | must | done | text_layers_demo |
 
 ## 5-dos-assets — DOS and assets
 

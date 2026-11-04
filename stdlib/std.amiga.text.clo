@@ -1,0 +1,78 @@
+//! Amiga text: fonts, measurement, and drawing.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga font system, so the module is not available there. The wrappers reach
+//! `graphics.library` and `diskfont.library` through `ffi`, so application code
+//! never writes a `TextAttr` or touches `unsafe`.
+//!
+//! `openFont` opens a font from `graphics.library` (including the ROM Topaz
+//! font); `openDiskFont` opens a disk font through `diskfont.library`.
+//! `defaultFont` wraps the ROM default as a non-owned fallback.
+
+module std.amiga.text;
+
+import { Screen } from std.amiga.intuition;
+
+/// A text font. Owned fonts are closed on drop; the default font is borrowed.
+export handle Font freedBy cl_font_free;
+
+ffi stdtext {
+    func cl_font_open(name: cstring, size: u16, style: u8): Font?;
+    func cl_font_open_disk(name: cstring, size: u16, style: u8): Font?;
+    func cl_font_default(): Font?;
+    func cl_font_free(take font: Font): void;
+    func cl_text_width(borrow font: Font, text: raw u8, count: u32): i32;
+    func cl_text_height(const font: Font): i32;
+    func cl_text_draw(borrow screen: Screen, borrow font: Font, x: i32, y: i32, pen: u8, text: raw u8, count: u32): void;
+}
+
+/// Opens `name` at `size`/`style` with graphics.library, or returns null.
+///
+/// `size` is the font's Y size (8 for the ROM Topaz font); `style` uses the
+/// Amiga `FS_*` bits (0 for normal). The name must stay valid for the call.
+export func openFont(name: cstring, size: u16, style: u8): Font? {
+    return cl_font_open(name, size, style);
+}
+
+/// Opens a disk font through diskfont.library, or returns null.
+///
+/// A bare ADF without a `FONTS:` disk may return null; callers can fall back
+/// to `openFont` or `defaultFont`.
+export func openDiskFont(name: cstring, size: u16, style: u8): Font? {
+    return cl_font_open_disk(name, size, style);
+}
+
+/// Returns the ROM default font as a borrowed `Font`, or null.
+///
+/// The handle must not outlive `graphics.library`; the default font is never
+/// closed.
+export func defaultFont(): Font? {
+    return cl_font_default();
+}
+
+/// Closes an owned font; the default font is left untouched.
+export func freeFont(take font: Font): void {
+    cl_font_free(font);
+}
+
+/// Measures `text` with `font` and returns its pixel width.
+export func textWidth(borrow font: Font, const text: u8[]): i32 {
+    unsafe {
+        return cl_text_width(font, raw u8(text.ptr), u32(len(text)));
+    }
+}
+
+/// Returns the font's pixel height.
+export func textHeight(const font: Font): i32 {
+    return cl_text_height(font);
+}
+
+/// Draws `text` at (`x`,`y`) on `screen` with color `pen`.
+///
+/// The screen's color map bounds `pen`; the font and screen must stay alive
+/// while drawing.
+export func drawText(borrow screen: Screen, borrow font: Font, x: i32, y: i32, pen: u8, const text: u8[]): void {
+    unsafe {
+        cl_text_draw(screen, font, x, y, pen, raw u8(text.ptr), u32(len(text)));
+    }
+}

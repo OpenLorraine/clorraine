@@ -456,7 +456,59 @@ sends `TR_ADDREQUEST` and waits. The request converts PAL 50 Hz ticks to
 seconds/microseconds (`tv_secs = ticks / 50`, `tv_micro = (ticks % 50) *
 20000`). The close releases the device.
 
-## 21. Diagnostics
+## 21. Text and fonts (`std.amiga.text`)
+
+The module wraps the 1.3 `graphics.library` font and text calls and the
+optional `diskfont.library`. A `Font` owns a `TextFont` when it came from
+`openFont`/`openDiskFont`; `defaultFont` borrows `GfxBase->DefaultFont` and is
+never closed. The ROM `topaz.font` opens with `openFont` and measures
+`Clorraine layers` at 128x8 on the A500. A bare ADF has no `FONTS:` volume, so
+`openDiskFont` returns `null`; a caller should fall back.
+
+| API | Returns | Rule |
+|---|---|---|
+| `openFont(name: cstring, size: u16, style: u8)` | `Font?` | `graphics.library/OpenFont`; ROM fonts work without a `FONTS:` disk |
+| `openDiskFont(name, size, style)` | `Font?` | `diskfont.library/OpenDiskFont`; `null` when no disk font is available |
+| `defaultFont()` | `Font?` | borrowed `GfxBase->DefaultFont`; never closed |
+| `freeFont(take font)` | `void` | closes owned fonts; the default font is left open |
+| `textWidth(borrow font, const text: u8[])` | `i32` | `TextLength` on a temporary RastPort |
+| `textHeight(const font)` | `i32` | the font's `tf_YSize` |
+| `drawText(borrow screen, borrow font, x, y, pen, const text)` | `void` | sets the screen RastPort font and pen, then `Move`/`Text`, and restores the previous font |
+
+The text bytes are the Amiga 8-bit glyph codes; there is no Unicode translation
+in v1. `drawText` and `layerText` restore the RastPort's previous font after
+the draw, so the font handle may be freed before the screen or layer is
+released. The acceptance ADF has no `LIBS:diskfont.library` or `FONTS:`
+volume; the demo's `openDiskFont` call returns `null` and the disk-font row is
+deferred.
+
+## 22. Layers (`std.amiga.layers`)
+
+The module wraps `layers.library` on a caller-owned custom display bitmap.
+Layers are not created on Intuition screens; windows are the supported
+Intuition path. `newLayer` owns a `Layer_Info` created by `NewLayerInfo` and
+calls `CreateUpfrontLayer(..., LAYERSIMPLE, NULL)`. It does not write
+`Layer_Info.bounds`; doing so corrupts the 1.3 structure.
+
+| API | Returns | Rule |
+|---|---|---|
+| `newLayer(borrow bitmap, x0, y0, x1, y1)` | `Layer?` | inclusive rectangle inside the bitmap (`0 <= x0 <= x1 < width`, `0 <= y0 <= y1 < height`); free before the bitmap |
+| `freeLayer(take layer)` | `void` | `DeleteLayer` + `DisposeLayerInfo` |
+| `layerMove(borrow layer, dx, dy)` / `layerSize(borrow layer, dw, dh)` | `bool` | `MoveLayer` / `SizeLayer`; false when the new bounds leave the bitmap |
+| `layerClear(borrow layer, pen)` | `void` | `SetRast` on the layer RastPort |
+| `layerFill(borrow layer, x1, y1, x2, y2, pen)` | `void` | `RectFill`; coordinates are layer-local |
+| `layerText(borrow layer, borrow font, x, y, pen, const text)` | `void` | `SetFont`/`SetAPen`/`Move`/`Text`; coordinates are layer-local |
+| `layerBeginUpdate` / `layerEndUpdate` | `bool` / `void` | `BeginUpdate` reports whether drawing may proceed; `EndUpdate(... TRUE)` completes the redraw |
+
+The layer RastPort uses layer-local coordinates: (0,0) is the layer's
+upper-left, and the layers library adds the layer origin and clips every draw
+to the layer bounds. A simple layer is observed to clear its area to pen 0 when
+it is created, so draw its background explicitly. Each layer owns a separate
+`Layer_Info`: layers do not stack, occlude, or restore one another, and a
+simple-refresh layer leaves stale pixels when moved or resized; repaint the
+background after such an operation.
+
+## 23. Diagnostics
 
 | Code | Trigger |
 |---|---|

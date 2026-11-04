@@ -36,6 +36,8 @@ holds the FFI declaration.
 | `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
 | `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
 | `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
+| `graphics/text` | fonts and text | ROM and disk fonts, measurement, screen drawing | `Font` |
+| `layers` | clipped layers | front layers, clipping, move/size, damage updates | `Layer` |
 
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).
@@ -143,9 +145,30 @@ the Hardware Reference XOR table; port 0 is the left controller pair.
 always seconds/microseconds, even for the VBlank unit, so one PAL tick is
 20,000 microseconds.
 
-Windows and their event loop, text and fonts, `SetRGB32`, runtime palette
-animation after the first flip, and palettes beyond four bits are out of scope
-for v1.
+### 1.4 Text, fonts, and layers
+
+`std.amiga.text` wraps the 1.3 font and text calls. `openFont` opens the ROM
+`topaz.font` without a `FONTS:` disk; `openDiskFont` needs a disk font and
+returns `null` on the bare A500 acceptance image. `defaultFont` borrows
+`GfxBase->DefaultFont` and is never closed. `textWidth` measures with a
+temporary `RastPort`, `textHeight` returns `tf_YSize`, and `drawText` draws on
+an Intuition screen's `RastPort`.
+
+`std.amiga.layers` creates front layers on a **custom display bitmap**, not on
+an Intuition screen. `newLayer(bitmap, x0, y0, x1, y1)` owns a `Layer_Info` and
+uses `CreateUpfrontLayer` with `LAYERSIMPLE`; the rectangle must lie inside the
+bitmap. Do not write `Layer_Info.bounds`; the 1.3 structure is initialized by
+`NewLayerInfo`, and the extra write crashes `CreateUpfrontLayer`. A layer's
+`RastPort` uses layer-local coordinates, and the layers library adds the layer
+origin and clips every draw. `layerMove`/`layerSize` reject bounds outside the
+bitmap. Each layer has its own `Layer_Info`, so layers do not stack or occlude
+one another; a simple layer leaves stale pixels when moved or resized. Free the
+layer before its bitmap. `drawText`/`layerText` restore the RastPort font after
+the draw, so a font may be freed before the screen or layer.
+
+The 2.0+ regions/damage API is not part of this surface. Windows and their
+event loop, `SetRGB32`, runtime palette animation after the first flip, and
+palettes beyond four bits are out of scope for v1.
 
 ## 2. Amiga boundary types
 

@@ -32,11 +32,15 @@
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
 #include <graphics/gfxmacros.h>
+#include <graphics/layers.h>
 #include <graphics/sprite.h>
+#include <graphics/text.h>
 #include <graphics/view.h>
 #include <hardware/custom.h>
 #include <devices/audio.h>
 #include <devices/timer.h>
+#include <proto/diskfont.h>
+#include <proto/layers.h>
 /* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
@@ -611,6 +615,8 @@ void cl_write_line(APTR buffer, ULONG n)
 
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
+struct Library *DiskfontBase = NULL;
+struct Library *LayersBase = NULL;
 
 /* The sprite module clears attached channels when their screen closes. */
 static void cl_sprite_screen_closing(struct Screen *screen);
@@ -2815,4 +2821,355 @@ void cl_timer_free(void *handle)
         DeletePort(timer->port);
     }
     FreeMem(timer, (ULONG)sizeof *timer);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Text/fonts and layers.                                                     */
+/*                                                                           */
+/* A Font owns a TextFont from OpenFont/OpenDiskFont, or borrows             */
+/* GfxBase->DefaultFont. A Layer borrows the screen's LayerInfo and the       */
+/* caller's Bitmap; its RastPort provides the layers-library clip.            */
+/* ------------------------------------------------------------------------- */
+
+typedef struct cl_font {
+    struct TextFont *font;
+    int owns;
+} cl_font;
+
+typedef struct cl_layer {
+    struct Layer *layer;
+    struct Layer_Info *info;
+    int bitmap_width;
+    int bitmap_height;
+    int width;
+    int height;
+} cl_layer;
+
+/* Build the TextAttr used by both font openers. */
+static void cl_font_attr(struct TextAttr *attr, char *name, UWORD size,
+                         UBYTE style)
+{
+    attr->ta_Name = (STRPTR)name;
+    attr->ta_YSize = size;
+    attr->ta_Style = style;
+    attr->ta_Flags = 0;
+}
+
+/* Wrap an owned TextFont, or NULL. */
+static void *cl_font_wrap(struct TextFont *font, int owns)
+{
+    cl_font *handle;
+
+    if (font == NULL) {
+        return NULL;
+    }
+    handle = (cl_font *)AllocMem(
+        (ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
+    if (handle == NULL) {
+        if (owns) {
+            CloseFont(font);
+        }
+        return NULL;
+    }
+    handle->font = font;
+    handle->owns = owns;
+    return handle;
+}
+
+/* Open a font through graphics.library. */
+void *cl_font_open(char *name, UWORD size, UBYTE style)
+{
+    struct TextAttr attr;
+    struct TextFont *font;
+
+    if (name == NULL || size == 0) {
+        return NULL;
+    }
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    cl_font_attr(&attr, name, size, style);
+    font = OpenFont(&attr);
+    return cl_font_wrap(font, 1);
+}
+
+/* Open a disk font through diskfont.library. */
+void *cl_font_open_disk(char *name, UWORD size, UBYTE style)
+{
+    struct TextAttr attr;
+    struct TextFont *font;
+
+    if (name == NULL || size == 0) {
+        return NULL;
+    }
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    if (DiskfontBase == NULL) {
+        DiskfontBase = OpenLibrary((STRPTR) "diskfont.library", 33);
+    }
+    if (DiskfontBase == NULL) {
+        return NULL;
+    }
+    cl_font_attr(&attr, name, size, style);
+    font = OpenDiskFont(&attr);
+    return cl_font_wrap(font, 1);
+}
+
+/* Borrow the ROM default font. */
+void *cl_font_default(void)
+{
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    return cl_font_wrap(GfxBase->DefaultFont, 0);
+}
+
+/* Close an owned font; the default font is left untouched. */
+void cl_font_free(void *handle)
+{
+    cl_font *font = (cl_font *)handle;
+
+    if (font == NULL) {
+        return;
+    }
+    if (font->owns && font->font != NULL) {
+        CloseFont(font->font);
+    }
+    FreeMem(font, (ULONG)sizeof *font);
+}
+
+/* Measure text with the font on a temporary RastPort. */
+LONG cl_text_width(void *handle, APTR text, ULONG count)
+{
+    cl_font *font = (cl_font *)handle;
+    struct RastPort rast_port;
+
+    if (font == NULL || font->font == NULL || text == NULL) {
+        return 0;
+    }
+    InitRastPort(&rast_port);
+    (void)SetFont(&rast_port, font->font);
+    return (LONG)TextLength(&rast_port, (STRPTR)text, count);
+}
+
+/* Return the font's Y size. */
+LONG cl_text_height(void *handle)
+{
+    const cl_font *font = (const cl_font *)handle;
+
+    return font == NULL || font->font == NULL ? 0 : (LONG)font->font->tf_YSize;
+}
+
+/* Draw text on an Intuition screen. */
+void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,
+                  UBYTE pen, APTR text, ULONG count)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    cl_font *font = (cl_font *)font_handle;
+    struct RastPort *rast_port;
+    struct TextFont *old_font;
+
+    if (screen == NULL || font == NULL || font->font == NULL || text == NULL) {
+        return;
+    }
+    rast_port = &screen->RastPort;
+    old_font = rast_port->Font;
+    (void)SetFont(rast_port, font->font);
+    SetAPen(rast_port, (ULONG)pen);
+    Move(rast_port, x, y);
+    (void)Text(rast_port, (STRPTR)text, count);
+    (void)SetFont(rast_port, old_font);
+}
+
+/* Create a front layer over a caller-owned bitmap. */
+void *cl_layer_new(void *bitmap_handle, LONG x0, LONG y0, LONG x1, LONG y1)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)bitmap_handle;
+    cl_layer *handle;
+    struct Layer *layer;
+    struct Layer_Info *info;
+    int width;
+    int height;
+
+    if (bitmap == NULL || x0 < 0 || y0 < 0 || x1 < x0 || y1 < y0) {
+        return NULL;
+    }
+    if (x1 >= bitmap->width || y1 >= bitmap->height) {
+        return NULL;
+    }
+    width = (int)(x1 - x0 + 1);
+    height = (int)(y1 - y0 + 1);
+    if (LayersBase == NULL) {
+        LayersBase = OpenLibrary((STRPTR) "layers.library", 33);
+    }
+    if (LayersBase == NULL) {
+        return NULL;
+    }
+    info = NewLayerInfo();
+    if (info == NULL) {
+        return NULL;
+    }
+    layer = CreateUpfrontLayer(info, &bitmap->bitmap,
+                               x0, y0, x1, y1, LAYERSIMPLE, NULL);
+    if (layer == NULL) {
+        DisposeLayerInfo(info);
+        return NULL;
+    }
+    handle = (cl_layer *)AllocMem(
+        (ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
+    if (handle == NULL) {
+        (void)DeleteLayer(0, layer);
+        DisposeLayerInfo(info);
+        return NULL;
+    }
+    handle->layer = layer;
+    handle->info = info;
+    handle->bitmap_width = (int)bitmap->width;
+    handle->bitmap_height = (int)bitmap->height;
+    handle->width = width;
+    handle->height = height;
+    return handle;
+}
+
+/* Delete the layer; the screen and bitmap stay caller-owned. */
+void cl_layer_free(void *handle)
+{
+    cl_layer *layer = (cl_layer *)handle;
+
+    if (layer == NULL) {
+        return;
+    }
+    if (layer->layer != NULL) {
+        LONG deleted = DeleteLayer(0, layer->layer);
+        if (!deleted) {
+            /* The layer is still live; leak the Layer_Info rather than dispose
+             * it under the library. */
+            layer->layer = NULL;
+            FreeMem(layer, (ULONG)sizeof *layer);
+            return;
+        }
+        layer->layer = NULL;
+    }
+    if (layer->info != NULL) {
+        DisposeLayerInfo(layer->info);
+        layer->info = NULL;
+    }
+    FreeMem(layer, (ULONG)sizeof *layer);
+}
+
+/* Move the layer by a delta. */
+BOOL cl_layer_move(void *handle, LONG dx, LONG dy)
+{
+    cl_layer *layer = (cl_layer *)handle;
+    LONG min_x;
+    LONG min_y;
+    LONG max_x;
+    LONG max_y;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return FALSE;
+    }
+    min_x = (LONG)layer->layer->bounds.MinX + dx;
+    min_y = (LONG)layer->layer->bounds.MinY + dy;
+    max_x = (LONG)layer->layer->bounds.MaxX + dx;
+    max_y = (LONG)layer->layer->bounds.MaxY + dy;
+    if (min_x < 0 || min_y < 0 ||
+        max_x >= layer->bitmap_width || max_y >= layer->bitmap_height) {
+        return FALSE;
+    }
+    return MoveLayer(0, layer->layer, dx, dy) ? TRUE : FALSE;
+}
+
+/* Resize the layer by a delta. */
+BOOL cl_layer_size(void *handle, LONG dw, LONG dh)
+{
+    cl_layer *layer = (cl_layer *)handle;
+    LONG max_x;
+    LONG max_y;
+    LONG result;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return FALSE;
+    }
+    max_x = (LONG)layer->layer->bounds.MaxX + dw;
+    max_y = (LONG)layer->layer->bounds.MaxY + dh;
+    if (max_x < (LONG)layer->layer->bounds.MinX ||
+        max_y < (LONG)layer->layer->bounds.MinY ||
+        max_x >= layer->bitmap_width || max_y >= layer->bitmap_height) {
+        return FALSE;
+    }
+    result = SizeLayer(0, layer->layer, dw, dh);
+    if (result) {
+        layer->width += (int)dw;
+        layer->height += (int)dh;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* Fill an inclusive rectangle through the layer's clipped RastPort. */
+void cl_layer_fill(void *handle, LONG x1, LONG y1, LONG x2, LONG y2, UBYTE pen)
+{
+    cl_layer *layer = (cl_layer *)handle;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return;
+    }
+    SetAPen(layer->layer->rp, (ULONG)pen);
+    RectFill(layer->layer->rp, x1, y1, x2, y2);
+}
+
+/* Clear the whole layer. */
+void cl_layer_clear(void *handle, UBYTE pen)
+{
+    cl_layer *layer = (cl_layer *)handle;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return;
+    }
+    SetRast(layer->layer->rp, (ULONG)pen);
+}
+
+/* Draw text through the layer's clipped RastPort. */
+void cl_layer_text(void *handle, void *font_handle, LONG x, LONG y, UBYTE pen,
+                   APTR text, ULONG count)
+{
+    cl_layer *layer = (cl_layer *)handle;
+    cl_font *font = (cl_font *)font_handle;
+    struct RastPort *rast_port;
+    struct TextFont *old_font;
+
+    if (layer == NULL || layer->layer == NULL || font == NULL ||
+        font->font == NULL || text == NULL) {
+        return;
+    }
+    rast_port = layer->layer->rp;
+    old_font = rast_port->Font;
+    (void)SetFont(rast_port, font->font);
+    SetAPen(rast_port, (ULONG)pen);
+    Move(rast_port, x, y);
+    (void)Text(rast_port, (STRPTR)text, count);
+    (void)SetFont(rast_port, old_font);
+}
+
+/* Begin the layer damage protocol; false means the caller must not draw. */
+BOOL cl_layer_begin_update(void *handle)
+{
+    cl_layer *layer = (cl_layer *)handle;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return FALSE;
+    }
+    return BeginUpdate(layer->layer) ? TRUE : FALSE;
+}
+
+/* End the layer damage protocol; TRUE means the redraw is complete. */
+void cl_layer_end_update(void *handle)
+{
+    cl_layer *layer = (cl_layer *)handle;
+
+    if (layer != NULL && layer->layer != NULL) {
+        EndUpdate(layer->layer, TRUE);
+    }
 }

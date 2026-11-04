@@ -74,6 +74,14 @@ pub const SOURCES: &[StdlibSource] = &[
         source: include_str!("../../stdlib/std.amiga.timer.clo"),
     },
     StdlibSource {
+        name: "std.amiga.text",
+        source: include_str!("../../stdlib/std.amiga.text.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.layers",
+        source: include_str!("../../stdlib/std.amiga.layers.clo"),
+    },
+    StdlibSource {
         name: "std.amiga.dos",
         source: include_str!("../../stdlib/std.amiga.dos.clo"),
     },
@@ -295,6 +303,34 @@ pub const MODULES: &[StdlibModule] = &[
     StdlibModule {
         name: "std.amiga.timer",
         exports: &["Timer", "openTimer", "freeTimer", "timerWait"],
+    },
+    StdlibModule {
+        name: "std.amiga.text",
+        exports: &[
+            "Font",
+            "openFont",
+            "openDiskFont",
+            "defaultFont",
+            "freeFont",
+            "textWidth",
+            "textHeight",
+            "drawText",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.layers",
+        exports: &[
+            "Layer",
+            "newLayer",
+            "freeLayer",
+            "layerMove",
+            "layerSize",
+            "layerFill",
+            "layerClear",
+            "layerText",
+            "layerBeginUpdate",
+            "layerEndUpdate",
+        ],
     },
     StdlibModule {
         name: "std.amiga.dos",

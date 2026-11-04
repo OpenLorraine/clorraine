@@ -1,0 +1,90 @@
+//! Amiga layers: clipped drawing areas over a custom display bitmap.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! layers.library, so the module is not available there. A `Layer` owns its own
+//! `Layer_Info` and borrows a caller-owned `Bitmap`; free the layer before the
+//! bitmap. Layers must be built on a custom display bitmap, not an Intuition
+//! screen.
+
+module std.amiga.layers;
+
+import { Bitmap } from std.amiga.video;
+import { Font } from std.amiga.text;
+
+/// A front layer with a clipped RastPort.
+export handle Layer freedBy cl_layer_free;
+
+ffi stdlayers {
+    func cl_layer_new(borrow bitmap: Bitmap, x0: i32, y0: i32, x1: i32, y1: i32): Layer?;
+    func cl_layer_free(take layer: Layer): void;
+    func cl_layer_move(borrow layer: Layer, dx: i32, dy: i32): bool;
+    func cl_layer_size(borrow layer: Layer, dw: i32, dh: i32): bool;
+    func cl_layer_fill(borrow layer: Layer, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_layer_clear(borrow layer: Layer, pen: u8): void;
+    func cl_layer_text(borrow layer: Layer, borrow font: Font, x: i32, y: i32, pen: u8, text: raw u8, count: u32): void;
+    func cl_layer_begin_update(borrow layer: Layer): bool;
+    func cl_layer_end_update(borrow layer: Layer): void;
+}
+
+/// Creates a front layer over `bitmap`, or returns null.
+///
+/// The layer covers the inclusive bitmap rectangle (`x0`,`y0`)-(`x1`,`y1`),
+/// which must lie inside the bitmap: `0 <= x0 <= x1 < width` and
+/// `0 <= y0 <= y1 < height`. The layer owns its own `Layer_Info` and borrows
+/// the bitmap; free the layer before the bitmap. Layers must be built on a
+/// custom display bitmap, not an Intuition screen. Each layer has its own
+/// `Layer_Info`, so separate layers do not stack or occlude each other; a
+/// simple-refresh layer leaves stale pixels when it is moved or resized.
+export func newLayer(borrow bitmap: Bitmap, x0: i32, y0: i32, x1: i32, y1: i32): Layer? {
+    return cl_layer_new(bitmap, x0, y0, x1, y1);
+}
+
+/// Deletes the layer. Free it before its bitmap.
+export func freeLayer(take layer: Layer): void {
+    cl_layer_free(layer);
+}
+
+/// Moves the layer by (`dx`,`dy`) pixels.
+///
+/// The move is rejected with `false` when the new bounds would leave the
+/// bitmap.
+export func layerMove(borrow layer: Layer, dx: i32, dy: i32): bool {
+    return cl_layer_move(layer, dx, dy);
+}
+
+/// Resizes the layer by (`dw`,`dh`) pixels.
+///
+/// The resize is rejected with `false` when the new bounds would leave the
+/// bitmap or become empty.
+export func layerSize(borrow layer: Layer, dw: i32, dh: i32): bool {
+    return cl_layer_size(layer, dw, dh);
+}
+
+/// Fills an inclusive rectangle in the layer; the layer clip applies.
+export func layerFill(borrow layer: Layer, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_layer_fill(layer, x1, y1, x2, y2, pen);
+}
+
+/// Clears the whole layer to `pen`.
+export func layerClear(borrow layer: Layer, pen: u8): void {
+    cl_layer_clear(layer, pen);
+}
+
+/// Draws text into the layer; the layer clip applies.
+export func layerText(borrow layer: Layer, borrow font: Font, x: i32, y: i32, pen: u8, const text: u8[]): void {
+    unsafe {
+        cl_layer_text(layer, font, x, y, pen, raw u8(text.ptr), u32(len(text)));
+    }
+}
+
+/// Begins the layer damage/update protocol.
+///
+/// Draw only when this returns `true`; call `layerEndUpdate` after the redraw.
+export func layerBeginUpdate(borrow layer: Layer): bool {
+    return cl_layer_begin_update(layer);
+}
+
+/// Ends the layer damage/update protocol, marking the redraw complete.
+export func layerEndUpdate(borrow layer: Layer): void {
+    cl_layer_end_update(layer);
+}

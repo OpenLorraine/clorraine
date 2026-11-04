@@ -1,0 +1,191 @@
+// Scroller: the Bundle 4 text/fonts/layers acceptance program.
+//
+// The demo owns a 320x256x4 custom display and two front layers over its
+// visible bitmap. The top layer is a static title wider than the layer, so the
+// right edge is clipped by the layers library. The lower layer scrolls a text
+// string through a 160x64 clip rectangle.
+//
+// The ROM Topaz font is opened with graphics.library, measured with
+// TextLength, and used for both layers; the default font is the fallback. The
+// final frame parks the scrolled text and holds it for the A500 screen capture;
+// the program then prints the measured size and the layer size.
+
+module example.Scroller;
+
+import {
+    Display, Bitmap, newBitmap, freeBitmap, bitmapFill,
+    openDisplay, freeDisplay, displaySetColor, displayFlip
+} from std.amiga.video;
+import { Font, openFont, openDiskFont, defaultFont, freeFont, textWidth, textHeight } from std.amiga.text;
+import {
+    Layer, newLayer, freeLayer, layerClear, layerFill, layerText,
+    layerMove, layerSize, layerBeginUpdate, layerEndUpdate
+} from std.amiga.layers;
+import { stringOf, toCString } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+import { delayTicks } from std.amiga.dos;
+
+/// Display and layer geometry.
+const WIDTH: i32 = 320;
+const HEIGHT: i32 = 256;
+const LAYER_W: i32 = 160;
+const LAYER_H: i32 = 64;
+const TITLE_H: i32 = 32;
+/// Scrolling frames and the hold for the acceptance capture.
+const FRAMES: i32 = 160;
+const HOLD: u32 = 1200;
+
+/// Fills the visible frame with the background bands.
+func drawBackground(borrow front: Bitmap): void {
+    bitmapFill(front, 0, 0, WIDTH - 1, HEIGHT - 1, 1);
+    bitmapFill(front, 0, 0, WIDTH - 1, 31, 2);
+    bitmapFill(front, 0, 0, 7, HEIGHT - 1, 3);
+    bitmapFill(front, WIDTH - 8, 0, WIDTH - 1, HEIGHT - 1, 3);
+}
+
+func main(): i32 {
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (front == null) {
+        println("text: bitmap failed");
+        return 1;
+    }
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (back == null) {
+        println("text: bitmap failed");
+        return 1;
+    }
+    drawBackground(front);
+    let display: Display? = openDisplay(front, back);
+    if (display == null) {
+        println("text: display failed");
+        return 2;
+    }
+    displaySetColor(display, 0, 0, 0, 0);
+    displaySetColor(display, 1, 0, 0, 96);
+    displaySetColor(display, 2, 255, 255, 255);
+    displaySetColor(display, 3, 255, 128, 0);
+    displayFlip(display);
+
+    let font: Font? = openFont(toCString(stringOf("topaz.font")), 8, 0);
+    if (font == null) {
+        font = defaultFont();
+    }
+    if (font == null) {
+        println("text: font failed");
+        return 3;
+    }
+    // The bare acceptance ADF has no diskfont library or FONTS: volume; this
+    // call is still made and reported so the deferred row has evidence.
+    let disk: Font? = openDiskFont(toCString(stringOf("topaz.font")), 8, 0);
+    let diskOpen: bool = disk != null;
+    if (disk != null) {
+        freeFont(disk);
+    }
+    // "Clorraine layers" as raw Topaz bytes.
+    let text: u8[16] = [67, 108, 111, 114, 114, 97, 105, 110, 101, 32, 108, 97, 121, 101, 114, 115];
+    // A title longer than the 160-pixel layer, so the right edge is clipped.
+    let title: u8[22] = [84, 101, 120, 116, 44, 32, 102, 111, 110, 116, 115, 44, 32, 97, 110, 100, 32, 108, 97, 121, 101, 114];
+    let width: i32 = textWidth(font, slice(text, 0, 16));
+    let height: i32 = textHeight(font);
+
+    // An out-of-bitmap rectangle must be rejected, not created.
+    let invalid: Layer? = newLayer(front, 300, 200, 400, 300);
+    let invalidRejected: bool = invalid == null;
+    if (invalid != null) {
+        freeLayer(invalid);
+    }
+
+    let titleLayer: Layer? = newLayer(front, 40, 24, 40 + LAYER_W - 1, 24 + TITLE_H - 1);
+    if (titleLayer == null) {
+        println("text: layer failed");
+        return 4;
+    }
+    let began: bool = layerBeginUpdate(titleLayer);
+    if (began) {
+        layerFill(titleLayer, 0, 0, LAYER_W - 1, TITLE_H - 1, 2);
+        layerText(titleLayer, font, 4, 12, 0, slice(title, 0, 22));
+    }
+    layerEndUpdate(titleLayer);
+    // Exercise the movement/size path (and its bitmap bounds checks), then
+    // restore the original bounds and repaint the background so a simple layer
+    // leaves no stale pixels.
+    let moved: bool = layerMove(titleLayer, 4, 2);
+    let resized: bool = layerSize(titleLayer, -4, -2);
+    let movedBack: bool = layerMove(titleLayer, -4, -2);
+    let resizedBack: bool = layerSize(titleLayer, 4, 2);
+    // A move that would leave the bitmap must be rejected.
+    let outOfBounds: bool = layerMove(titleLayer, 1000, 0);
+    drawBackground(front);
+    let redrawBegun: bool = layerBeginUpdate(titleLayer);
+    if (redrawBegun) {
+        layerFill(titleLayer, 0, 0, LAYER_W - 1, TITLE_H - 1, 2);
+        layerText(titleLayer, font, 4, 12, 0, slice(title, 0, 22));
+    }
+    layerEndUpdate(titleLayer);
+
+    let scroll: Layer? = newLayer(front, 40, 96, 40 + LAYER_W - 1, 96 + LAYER_H - 1);
+    if (scroll == null) {
+        println("text: layer failed");
+        return 4;
+    }
+    layerClear(scroll, 0);
+
+    // Scroll the text from the right edge past the left edge; the layer clip
+    // hides the parts that are outside its bounds.
+    let x: i32 = LAYER_W;
+    let frame: i32 = 0;
+    while (frame < FRAMES) {
+        layerClear(scroll, 0);
+        layerText(scroll, font, x, 24, 2, slice(text, 0, 16));
+        x = x - 3;
+        if (x < -width) {
+            x = LAYER_W;
+        }
+        delayTicks(u32(1));
+        frame = frame + 1;
+    }
+
+    // Deterministic acceptance frame: the text is fully visible and the title
+    // is clipped at the layer's right edge.
+    layerClear(scroll, 0);
+    layerText(scroll, font, 0, 24, 2, slice(text, 0, 16));
+    delayTicks(HOLD);
+
+    freeLayer(scroll);
+    freeLayer(titleLayer);
+    freeDisplay(display);
+    freeFont(font);
+    freeBitmap(back);
+    freeBitmap(front);
+    let checks: i32 = 0;
+    if (diskOpen) {
+        checks = checks | 1;
+    }
+    if (began) {
+        checks = checks | 2;
+    }
+    if (moved) {
+        checks = checks | 4;
+    }
+    if (resized) {
+        checks = checks | 8;
+    }
+    if (movedBack) {
+        checks = checks | 16;
+    }
+    if (resizedBack) {
+        checks = checks | 32;
+    }
+    if (redrawBegun) {
+        checks = checks | 64;
+    }
+    if (!outOfBounds) {
+        checks = checks | 128;
+    }
+    if (invalidRejected) {
+        checks = checks | 256;
+    }
+    println($"text: ok width {width} height {height} layer 160x64 checks {checks}");
+    return 0;
+}
