@@ -82,8 +82,8 @@ graphics/audio API; it makes the foundation trustworthy and the backlog visible.
 
 1. `clc --profile hosted-amiga-13` emits C; a 1.3-only module import is accepted.
 2. `std.amiga.exec` on 1.3 reports `E11200`; the 3.1 profile still accepts it.
-3. The A500 hello builds with `-mcrt=nix13`, passes the `vamos` pre-check, and
-   prints the hello line under FS-UAE A500/KS1.3 with captured output.
+3. The A500 hello builds with `-mcrt=nix13` and prints the hello line under
+   FS-UAE A500/KS1.3; the captured line matches `docs/amiga-sdk/a500-hello.png`.
 4. The registry validator passes; `coverage.md` is generated; ten tracking issues exist.
 5. `make check`, `make verify`, `./spec/check.sh`, and the A500 smoke leg pass.
 6. No language, grammar, diagnostic, or ABI change.

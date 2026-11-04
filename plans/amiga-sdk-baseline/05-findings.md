@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [00-index.md](00-index.md)
-> **Status**: Blocked — AR-17 acceptance decision
+> **Status**: Done (9/9; issue #1 closed)
 
 ## Red phases
 
@@ -27,7 +27,7 @@ The fixed test passes.
 
 | ID | Severity | Finding | Resolution |
 |---|---|---|---|
-| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | **Blocked:** no FS-UAE A500/KS1.3 output has been captured. The runtime claims were reworded to a `vamos` pre-check; AR-17 acceptance needs explicit user approval or a manual 1.3 run. |
+| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | **Fixed:** `make sdk-a500-smoke` decrypts the real KS1.3 ROM, boots the ADF in FS-UAE as an A500, and compares the captured `Hello, Amiga, from Clorraine!` line to `docs/amiga-sdk/a500-hello.png`. |
 | RV-002 | 🟠 Major | `--emulator` for `hosted-amiga-13` booted the default A1200/3.1 model. | `fs_uae_handoff` now prints `AMIGA_MODEL=A500`, the KS1.3 ROM, and `RUNNER=adf`; the Makefile `EMULATOR=1` branch uses `$(PROFILE)` and guards non-Amiga profiles. |
 | RV-003 | 🟠 Major | Docs said `std.amiga.exec` was 2.0+ with a missing fallback, but the shared shim is already 1.3-safe. | Reworded: the module stays gated on 1.3 until Bundle 7 validates it; the shim already uses 1.3-safe calls. |
 | RV-004 | 🟠 Major | Core/1.3 registry rows named 2.0+ APIs (`ReadArgs`, hooks, EClock, regions, ReadJoyPort, semaphores). | Split into 1.3 rows and 2.0+/3.1 rows; corrected `min_os`/`min_hw`; validator passes. |
@@ -52,32 +52,27 @@ is the intended shim replacement; the 1.3 units build with `-mcrt=nix13` and
 strict flags; declarations agree. Two documentation nits (EI-001/EI-002) were
 fixed.
 
-## Blocking decision
+## Runtime resolution
 
-AR-17 is a reserved acceptance-criteria change: it would accept `nix13` build +
-`vamos` load/run as the automated proof and leave the FS-UAE A500/KS1.3 visible
-run manual. The independent review (RV-001) flagged that this was not approved.
-Bundle 0 stays blocked until the user either (a) approves AR-17 explicitly, or
-(b) supplies a captured FS-UAE A500/KS1.3 run.
+The earlier attempts failed because the configured `.rom` files are Cloanto
+`AMIROMTYPE1` images; FS-UAE silently fell back to AROS (V47), and the ADF
+startup command also needed the real 1.3 shell. The working path:
 
-Capture attempts tried and failed:
-- ADF with the default bootblock, then `boot install boot1x` (`xxd` shows
-  `DOS\x00 c0200f19`), plus uppercase `S/startup-sequence` and a root
-  `startup-sequence` copy.
-- Startup output to `DF0:out.txt`, `Shared:out.txt`, and `SER:`; serial TCP
-  (`nc 127.0.0.1 1234`) returned 0 bytes; the directory hard drive produced no
-  file.
-- `docker stop -t 8` (SIGTERM) to let FS-UAE flush the ADF, not SIGKILL.
-- `floppy_drive_0`, `floppy_image_0`, and the CLI `--floppy-drive-0` form.
-- FS-UAE screenshot action (`action_screenshot`, `keyboard_key_s`, `grab_input`)
-  and X11 `import`; no screenshot file; the imported window is black with the
-  Amiga cursor.
+1. Decrypt the licensed `amiga-os-130.rom` with `amitools` and `rom.key` to
+   gitignored `build/`; verify SHA-1 `891e9a547772fe0c6c19b610baf8bc4ea7fcb785`.
+2. Build a clean ADF with the root `startup-sequence` `DF0:hello` and the
+   `boot1x` bootblock.
+3. Boot FS-UAE as an A500 with the decrypted ROM.
+4. Capture the inner window with X11 `import` after 35 seconds and compare the
+   hello-line crop to `docs/amiga-sdk/a500-hello.png`.
+
+The captured screen shows AmigaDOS Release 1.3 and
+`Hello, Amiga, from Clorraine!`. `vamos` is no longer the acceptance proof.
 
 ## Accepted residuals
 
 | Residual | Reason |
 |---|---|
-| FS-UAE A500/KS1.3 runtime/display is **not yet captured**. `vamos` is V47 API emulation, not a 1.3 kernel. | The A500 has no bootable hard-drive filesystem in ROM; the ADF serial/TCP and screenshot capture paths produced no readable output. This is the blocking AR-17 decision, not an accepted residual. |
 | PRE-001: `examples/amiga/message-drop.clo` failure paths delete a port while a sent/replied message is still queued (56-byte leak). | Pre-existing in both base and head; outside Bundle 0. The normal and allocation-failure paths are clean. |
 | PRE-002: a fetched `Message` must outlive its reply port; deleting the port first is a use-after-free. | Pre-existing, already recorded as the PLAN-13 accepted residual; the compiler has no reply-port lifetime carrier. |
 
@@ -88,4 +83,5 @@ Capture attempts tried and failed:
 - `cargo test --test amiga_a500_spec_test` 4/4; `amiga_exec_spec_test` 6/6.
 - `make sdk-registry` OK (79 capabilities, 10 bundles); `registry_test.sh` OK.
 - `make sdk-a500-smoke` OK: nix13 build + `vamos` load/run.
-- Ten tracking issues created (#1–#10); Bundle 0 issue #1 is reopened and blocked.
+- Ten tracking issues created (#1–#10); Bundle 0 issue #1 closed.
+- `make sdk-a500-smoke` passes with the real KS1.3 screenshot comparison.

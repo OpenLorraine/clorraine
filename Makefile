@@ -134,8 +134,9 @@ sdk-issues:
 	tools/amiga-sdk/registry.sh issues
 	@echo "sdk-issues: bodies in build/amiga-sdk/issues"
 
-# A500/Kickstart 1.3 build and load/run smoke: build the hello program under
-# the 1.3 profile, then run it under `vamos`. The FS-UAE A500/KS1.3 visual leg is manual.
+# A500/Kickstart 1.3 runtime smoke: build the hello program under the 1.3
+# profile, decrypt the licensed Kickstart 1.3 ROM locally, boot a clean ADF in
+# FS-UAE as an A500, and compare the captured screen line to the golden image.
 sdk-a500-smoke:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/hello/hello.clo"
 	docker/scripts/a500-smoke.sh build/clorraine/hello/hosted-amiga-13/hello

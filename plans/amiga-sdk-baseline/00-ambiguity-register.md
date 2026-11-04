@@ -27,7 +27,7 @@ from the conversation. No row is silently deferred.
 | AR-14 | Behavioral | What happens when a 1.3 program imports `std.amiga.exec`? | Reject with `E11200` naming the profile and the module; no translation unit. | AI — delegated | ✅ Resolved |
 | AR-15 | Behavioral | Default runner for `hosted-amiga-13` | `vamos` for quick tests; `--emulator` selects FS-UAE and is allowed for both Amiga profiles. `required_tools` adds `vamos` only when `--emulator` is absent. | AI — delegated | ✅ Resolved |
 | AR-16 | Edge case | Does a missing `std.amiga.exec` shim symbol break the 1.3 build? | No: the shared shim still defines every symbol; the module is gated out of the 1.3 profile, so the program cannot call it. The shared shim is compiled and linked on 1.3. | AI — delegated | ✅ Resolved |
-| AR-17 | Technical (reserved acceptance) | What proves the A500/1.3 runtime? | **Blocked:** the proposed amendment would accept the `nix13` build + `vamos` load/run as the automated proof and leave the FS-UAE A500/KS1.3 visible run manual. The review flagged this as a reserved acceptance change (RV-001); explicit user approval is required. | User (reserved) | ⏸ Blocked |
+| AR-17 | Technical | What proves the A500/1.3 runtime? | **Resolved by the real run:** `make sdk-a500-smoke` decrypts the licensed KS1.3 ROM locally, boots an ADF in FS-UAE as an A500, and compares the captured hello line to `docs/amiga-sdk/a500-hello.png`. The amended `vamos`-only acceptance is not needed. | User (real run), AI — delegated (capture mechanism) | ✅ Resolved |
 
 ## Delegated provenance
 

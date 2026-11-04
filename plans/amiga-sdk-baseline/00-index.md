@@ -1,7 +1,7 @@
 # Amiga SDK Baseline (Bundle 0)
 
 > **Feature**: A500/Kickstart 1.3 profile, SDK coverage registry, and bundle tracking issues
-> **Status**: Blocked — A500/KS1.3 runtime acceptance (AR-17)
+> **Status**: Done (9/9)
 > **Created**: 2026-11-04 14:33
 > **CodeOps Artifact Schema**: 1
 
@@ -10,8 +10,8 @@
 Bundle 0 establishes the lowest supported Amiga baseline and the long-term backlog
 for the Amiga SDK programme. It adds a `hosted-amiga-13` compiler profile for a
 stock A500 (68000, OCS, 512 KB chip, Kickstart 1.3), keeps the existing
-`hosted-amiga` profile as the advanced 2.0+/A1200/AGA target, and pre-checks the 1.3 build and load/run path with a
-hello-world under `vamos`; the FS-UAE A500/KS1.3 visible acceptance is blocked.
+`hosted-amiga` profile as the advanced 2.0+/A1200/AGA target, and proves the real A500/Kickstart 1.3 runtime with an FS-UAE
+screenshot of the hello line.
 
 It also creates the durable registry of missing Amiga capabilities. The registry
 is the source of truth; a generated Markdown coverage view and one GitHub tracking
@@ -65,7 +65,7 @@ make sdk-registry
 | 1.3 module surface | Text/IO/mem + DOS/graphics/intuition/interrupt/custom; no `std.amiga.exec` yet |
 | Shim strategy | Shared hosted-amiga shim with 1.3-safe exec/library calls |
 | Registry | TSV source, generated Markdown coverage, shell/awk validator |
-| Runtime proof | FS-UAE A500/KS1.3 acceptance pending; `nix13` build + `vamos` load/run is the pre-check |
+| Runtime proof | FS-UAE A500/KS1.3 real-ROM screenshot; `docs/amiga-sdk/a500-hello.png` |
 | Issues | One generated tracking issue per bundle |
 
 ## Specialist Agents

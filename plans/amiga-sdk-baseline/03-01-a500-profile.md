@@ -72,12 +72,12 @@ The driver builds `build/clorraine/<stem>/hosted-amiga-13/<stem>`. The smoke scr
 2. Runs the built binary under `vamos` in the SDK container and checks the
    `Hello, Amiga, from Clorraine!` line.
 
-The `nix13` build + `vamos` load/run is only a pre-check (V47 API emulation, not a
-Kickstart 1.3 kernel). The acceptance is the FS-UAE A500/KS1.3 visible run. That
-leg is not yet captured: the stock A500 has no bootable hard-drive filesystem, and
-the ADF serial/TCP and screenshot capture paths produced no readable output
-(AR-17, findings). `run.sh` still carries the explicit
-`AMIGA_MODEL`/`KICKSTART` overrides and the ADF path for a manual visual run.
+The acceptance is the FS-UAE A500/KS1.3 visible run. `make sdk-a500-smoke`
+decrypts the licensed `amiga-os-130.rom` with `amitools` and `rom.key`, verifies
+the official A500 SHA-1, builds a clean `boot1x` ADF whose root startup runs
+`DF0:hello`, captures the inner FS-UAE window with X11 `import`, and compares the
+hello-line crop to `docs/amiga-sdk/a500-hello.png`. `vamos` is no longer the
+acceptance proof.
 
 ## Compatibility
 
