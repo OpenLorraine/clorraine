@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–2 done; Bundle 3 next
+> **Status**: Executing — Bundles 0–3 done; Bundle 4 next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -55,5 +55,8 @@ software drawing, the blitter, a copper builder, a double-buffered custom
 display, fixed-point math, the frame checksum, and the Boing acceptance on the
 real A500/KS1.3 machine. Bundle 2 is `plans/amiga-sdk-sprites/`: the eight OCS
 sprite channels, attached 16-color pairs, hardware collision, animation
-objects, and the sprite demo on the real A500/KS1.3 machine. Bundle 3 (audio
-and input) is next.
+objects, and the sprite demo on the real A500/KS1.3 machine. Bundle 3 is
+`plans/amiga-sdk-audio-input/`: audio.device samples, gameport joystick,
+timer.device delays, and the paddle game on the real A500/KS1.3 machine. The
+two advanced `could` rows are deferred. Bundle 4 (text, fonts, layers) is
+next.

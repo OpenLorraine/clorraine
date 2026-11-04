@@ -1,0 +1,105 @@
+//! Amiga audio: audio.device, four channels, samples, and playback control.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga audio device, so the module is not available there. The wrappers
+//! reach `audio.device` through `ffi`, so application code never writes an I/O
+//! request or touches `unsafe`.
+//!
+//! A `Sample` owns a chip-memory copy of the caller's signed 8-bit samples.
+//! The sample must stay alive while it is playing. `Audio` owns one
+//! `IOAudio` block per allocated channel and a private reply port.
+
+module std.amiga.audio;
+
+/// An open audio.device with one or more allocated channels.
+export handle Audio freedBy cl_audio_free;
+
+/// A chip-memory sample buffer and its playback parameters.
+export handle Sample freedBy cl_sample_free;
+
+ffi stdaudio {
+    func cl_audio_open(channels: u8): Audio?;
+    func cl_audio_free(take audio: Audio): void;
+    func cl_audio_channels(const audio: Audio): u8;
+    func cl_audio_play(borrow audio: Audio, channel: u8, borrow sample: Sample): bool;
+    func cl_audio_stop(borrow audio: Audio, channel: u8): void;
+    func cl_audio_control(borrow audio: Audio, channel: u8, period: u16, volume: u8): bool;
+    func cl_sample_new(data: raw u8, count: u32, period: u16, volume: u8, cycles: u16): Sample?;
+    func cl_sample_free(take sample: Sample): void;
+    func cl_sample_length(const sample: Sample): u32;
+    func cl_sample_period(const sample: Sample): u16;
+    func cl_sample_volume(const sample: Sample): u8;
+    func cl_sample_cycles(const sample: Sample): u16;
+}
+
+/// Opens audio.device and allocates `channels` (1..4) channels, or returns null.
+///
+/// The device may allocate a subset; use `audioChannels` to read the mask.
+/// A device or allocation failure returns `null`.
+export func openAudio(channels: u8): Audio? {
+    return cl_audio_open(channels);
+}
+
+/// Stops any playing channels and closes the device.
+export func freeAudio(take audio: Audio): void {
+    cl_audio_free(audio);
+}
+
+/// Returns the allocated channel mask (bits 0..3).
+export func audioChannels(const audio: Audio): u8 {
+    return cl_audio_channels(audio);
+}
+
+/// Starts `sample` on an allocated `channel`, or returns false if busy.
+///
+/// The playback is asynchronous; the sample must stay alive until the channel
+/// finishes or `audioStop` is called.
+export func audioPlay(borrow audio: Audio, channel: u8, borrow sample: Sample): bool {
+    return cl_audio_play(audio, channel, sample);
+}
+
+/// Aborts the sound on `channel`.
+export func audioStop(borrow audio: Audio, channel: u8): void {
+    cl_audio_stop(audio, channel);
+}
+
+/// Changes the period and volume of a playing channel.
+export func audioControl(borrow audio: Audio, channel: u8, period: u16, volume: u8): bool {
+    return cl_audio_control(audio, channel, period, volume);
+}
+
+/// Copies `data` into a chip-memory sample, or returns null.
+///
+/// `data` is signed 8-bit audio; the length is rounded up to an even byte
+/// count and capped at 128 KB. `period` is the Amiga audio period
+/// (`3579545 / rate`). `cycles = 0` loops forever, `1` plays once.
+export func newSample(const data: u8[], period: u16, volume: u8, cycles: u16): Sample? {
+    unsafe {
+        return cl_sample_new(raw u8(data.ptr), u32(len(data)), period, volume, cycles);
+    }
+}
+
+/// Frees the sample buffer. The sample must not be playing.
+export func freeSample(take sample: Sample): void {
+    cl_sample_free(sample);
+}
+
+/// Returns the sample length in bytes (even).
+export func sampleLength(const sample: Sample): u32 {
+    return cl_sample_length(sample);
+}
+
+/// Returns the sample period.
+export func samplePeriod(const sample: Sample): u16 {
+    return cl_sample_period(sample);
+}
+
+/// Returns the sample volume (0..64).
+export func sampleVolume(const sample: Sample): u8 {
+    return cl_sample_volume(sample);
+}
+
+/// Returns the sample cycle count (0 = loop forever).
+export func sampleCycles(const sample: Sample): u16 {
+    return cl_sample_cycles(sample);
+}

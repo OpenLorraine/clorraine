@@ -35,6 +35,8 @@
 #include <graphics/sprite.h>
 #include <graphics/view.h>
 #include <hardware/custom.h>
+#include <devices/audio.h>
+#include <devices/timer.h>
 /* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
@@ -2340,4 +2342,477 @@ UBYTE cl_sprite_animation_frame(void *handle)
         (const cl_sprite_animation *)handle;
 
     return animation == NULL ? 0 : (UBYTE)animation->frame;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Audio, gameport input, and timer.device.                                   */
+/*                                                                           */
+/* `Audio` owns one IOAudio block per allocated channel plus a control block. */
+/* A `Sample` is a chip-memory copy of signed 8-bit samples. The joystick     */
+/* path uses the 1.3 JOY0DAT/JOY1DAT registers and the CIAAPRA fire bits.     */
+/* ------------------------------------------------------------------------- */
+
+typedef struct cl_sample {
+    UBYTE *data;
+    ULONG length;
+    UWORD period;
+    UWORD volume;
+    UWORD cycles;
+} cl_sample;
+
+typedef struct cl_audio {
+    struct MsgPort *port;
+    struct IOAudio *open_block;
+    struct IOAudio *control;
+    struct IOAudio *channels[4];
+    UBYTE masks[4];
+    UBYTE mask;
+    WORD alloc_key;
+    int write_pending[4];
+} cl_audio;
+
+typedef struct cl_timer {
+    struct MsgPort *port;
+    struct TimeRequest *request;
+} cl_timer;
+
+/* Forward declaration for the partial-open cleanup path. */
+void cl_audio_free(void *handle);
+
+/* Create a private reply port for a device request. */
+static struct MsgPort *cl_device_port(void)
+{
+    return CreatePort(NULL, 0);
+}
+
+/* Allocate one IOAudio block for an already-open audio device. */
+static struct IOAudio *cl_audio_block(cl_audio *audio, UBYTE unit)
+{
+    struct IOAudio *block;
+
+    block = (struct IOAudio *)AllocMem(
+        (ULONG)sizeof *block, MEMF_PUBLIC | MEMF_CLEAR);
+    if (block == NULL) {
+        return NULL;
+    }
+    block->ioa_Request.io_Message.mn_ReplyPort = audio->port;
+    block->ioa_Request.io_Message.mn_Node.ln_Pri = 0;
+    block->ioa_Request.io_Device = audio->open_block->ioa_Request.io_Device;
+    block->ioa_AllocKey = audio->alloc_key;
+    block->ioa_Request.io_Unit = (struct Unit *)(ULONG)unit;
+    return block;
+}
+
+/* Open audio.device and allocate `channels` (1..4). */
+void *cl_audio_open(UBYTE channels)
+{
+    cl_audio *audio;
+    struct IOAudio *block;
+    UBYTE masks[4];
+    int count;
+    int index;
+    int first = -1;
+    BYTE error;
+
+    if (channels < 1 || channels > 4) {
+        return NULL;
+    }
+    audio = (cl_audio *)AllocMem(
+        (ULONG)sizeof *audio, MEMF_ANY | MEMF_CLEAR);
+    if (audio == NULL) {
+        return NULL;
+    }
+    audio->port = cl_device_port();
+    if (audio->port == NULL) {
+        FreeMem(audio, (ULONG)sizeof *audio);
+        return NULL;
+    }
+    audio->open_block = (struct IOAudio *)AllocMem(
+        (ULONG)sizeof(struct IOAudio), MEMF_PUBLIC | MEMF_CLEAR);
+    if (audio->open_block == NULL) {
+        DeletePort(audio->port);
+        FreeMem(audio, (ULONG)sizeof *audio);
+        return NULL;
+    }
+    block = audio->open_block;
+    block->ioa_Request.io_Message.mn_ReplyPort = audio->port;
+    block->ioa_Request.io_Message.mn_Node.ln_Pri = 0;
+    block->ioa_AllocKey = 0;
+    /* The mask array is stored in the audio record so the device keeps a
+     * valid pointer for the allocation. */
+    count = 0;
+    if (channels == 1) {
+        masks[0] = 0x01;
+        masks[1] = 0x02;
+        masks[2] = 0x04;
+        masks[3] = 0x08;
+        count = 4;
+    } else if (channels == 2) {
+        masks[0] = 0x03;
+        masks[1] = 0x0C;
+        count = 2;
+    } else if (channels == 3) {
+        masks[0] = 0x07;
+        masks[1] = 0x0E;
+        count = 2;
+    } else {
+        masks[0] = 0x0F;
+        count = 1;
+    }
+    for (index = 0; index < count; index++) {
+        audio->masks[index] = masks[index];
+    }
+    block->ioa_Data = audio->masks;
+    block->ioa_Length = (ULONG)count;
+    error = OpenDevice((STRPTR) "audio.device", 0,
+                       &block->ioa_Request, 0);
+    if (error != 0) {
+        FreeMem(block, (ULONG)sizeof(struct IOAudio));
+        DeletePort(audio->port);
+        FreeMem(audio, (ULONG)sizeof *audio);
+        return NULL;
+    }
+    audio->alloc_key = block->ioa_AllocKey;
+    audio->mask = (UBYTE)((ULONG)block->ioa_Request.io_Unit & 0x0F);
+    if (audio->mask == 0) {
+        CloseDevice(&block->ioa_Request);
+        FreeMem(block, (ULONG)sizeof(struct IOAudio));
+        DeletePort(audio->port);
+        FreeMem(audio, (ULONG)sizeof *audio);
+        return NULL;
+    }
+    for (index = 0; index < 4; index++) {
+        UBYTE bit = (UBYTE)(1U << (unsigned)index);
+        if ((audio->mask & bit) == 0) {
+            continue;
+        }
+        if (first < 0) {
+            block->ioa_Request.io_Unit = (struct Unit *)(ULONG)bit;
+            block->ioa_AllocKey = audio->alloc_key;
+            audio->channels[index] = block;
+            first = index;
+        } else {
+            audio->channels[index] = cl_audio_block(audio, bit);
+            if (audio->channels[index] == NULL) {
+                cl_audio_free(audio);
+                return NULL;
+            }
+        }
+    }
+    audio->control = cl_audio_block(audio, 0);
+    if (audio->control == NULL) {
+        cl_audio_free(audio);
+        return NULL;
+    }
+    return audio;
+}
+
+/* Abort a pending write and stop a channel. */
+static void cl_audio_finish_channel(cl_audio *audio, int channel)
+{
+    struct IOAudio *write;
+    struct IOAudio *control;
+
+    if (audio == NULL || channel < 0 || channel >= 4) {
+        return;
+    }
+    write = audio->channels[channel];
+    control = audio->control;
+    if (write == NULL || control == NULL) {
+        return;
+    }
+    control->ioa_Request.io_Unit =
+        (struct Unit *)(ULONG)(1U << (unsigned)channel);
+    control->ioa_AllocKey = audio->alloc_key;
+    control->ioa_Request.io_Command = ADCMD_FINISH;
+    control->ioa_Request.io_Flags = 0;
+    if (!audio->write_pending[channel]) {
+        return;
+    }
+    (void)DoIO(&control->ioa_Request);
+    (void)WaitIO(&write->ioa_Request);
+    audio->write_pending[channel] = 0;
+}
+
+/* Stop playing channels, free the allocation, and close the device. */
+void cl_audio_free(void *handle)
+{
+    cl_audio *audio = (cl_audio *)handle;
+    int index;
+
+    if (audio == NULL) {
+        return;
+    }
+    if (audio->open_block != NULL &&
+        audio->open_block->ioa_Request.io_Device != NULL) {
+        for (index = 0; index < 4; index++) {
+            if (audio->channels[index] != NULL) {
+                cl_audio_finish_channel(audio, index);
+            }
+        }
+        audio->open_block->ioa_Request.io_Unit =
+            (struct Unit *)(ULONG)audio->mask;
+        audio->open_block->ioa_AllocKey = audio->alloc_key;
+        audio->open_block->ioa_Request.io_Command = ADCMD_FREE;
+        audio->open_block->ioa_Request.io_Flags = 0;
+        (void)DoIO(&audio->open_block->ioa_Request);
+        CloseDevice(&audio->open_block->ioa_Request);
+    }
+    for (index = 0; index < 4; index++) {
+        if (audio->channels[index] != NULL &&
+            audio->channels[index] != audio->open_block) {
+            FreeMem(audio->channels[index],
+                    (ULONG)sizeof(struct IOAudio));
+        }
+    }
+    if (audio->control != NULL) {
+        FreeMem(audio->control, (ULONG)sizeof(struct IOAudio));
+    }
+    if (audio->open_block != NULL) {
+        FreeMem(audio->open_block, (ULONG)sizeof(struct IOAudio));
+    }
+    if (audio->port != NULL) {
+        DeletePort(audio->port);
+    }
+    FreeMem(audio, (ULONG)sizeof *audio);
+}
+
+/* Return the allocated channel mask. */
+UBYTE cl_audio_channels(void *handle)
+{
+    const cl_audio *audio = (const cl_audio *)handle;
+
+    return audio == NULL ? 0 : audio->mask;
+}
+
+/* Start a sample on one allocated channel, or return false when busy. */
+BOOL cl_audio_play(void *handle, UBYTE channel, void *sample_handle)
+{
+    cl_audio *audio = (cl_audio *)handle;
+    cl_sample *sample = (cl_sample *)sample_handle;
+    struct IOAudio *block;
+
+    if (audio == NULL || sample == NULL || channel >= 4 ||
+        (audio->mask & (UBYTE)(1U << (unsigned)channel)) == 0) {
+        return FALSE;
+    }
+    block = audio->channels[channel];
+    if (block == NULL) {
+        return FALSE;
+    }
+    if (audio->write_pending[channel]) {
+        if (CheckIO(&block->ioa_Request) == NULL) {
+            return FALSE;
+        }
+        (void)WaitIO(&block->ioa_Request);
+        audio->write_pending[channel] = 0;
+    }
+    block->ioa_Request.io_Command = CMD_WRITE;
+    block->ioa_Request.io_Flags = ADIOF_PERVOL;
+    block->ioa_Data = sample->data;
+    block->ioa_Length = sample->length;
+    block->ioa_Period = sample->period;
+    block->ioa_Volume = sample->volume;
+    block->ioa_Cycles = sample->cycles;
+    /* SendIO keeps ADIOF_PERVOL (0x02); DoIO clears audio flags. The
+     * command does not use ADIOF_NOWAIT (0x01), so it cannot alias IOF_QUICK. */
+    SendIO(&block->ioa_Request);
+    audio->write_pending[channel] = 1;
+    return TRUE;
+}
+
+/* Stop the sound on one channel. */
+void cl_audio_stop(void *handle, UBYTE channel)
+{
+    cl_audio *audio = (cl_audio *)handle;
+
+    if (audio == NULL || channel >= 4 ||
+        (audio->mask & (UBYTE)(1U << (unsigned)channel)) == 0) {
+        return;
+    }
+    cl_audio_finish_channel(audio, (int)channel);
+}
+
+/* Change the period and volume of a playing channel. */
+BOOL cl_audio_control(void *handle, UBYTE channel, UWORD period, UBYTE volume)
+{
+    cl_audio *audio = (cl_audio *)handle;
+    struct IOAudio *control;
+    BYTE error;
+
+    if (audio == NULL || channel >= 4 ||
+        (audio->mask & (UBYTE)(1U << (unsigned)channel)) == 0 ||
+        audio->control == NULL) {
+        return FALSE;
+    }
+    control = audio->control;
+    control->ioa_Request.io_Unit =
+        (struct Unit *)(ULONG)(1U << (unsigned)channel);
+    control->ioa_AllocKey = audio->alloc_key;
+    control->ioa_Request.io_Command = ADCMD_PERVOL;
+    control->ioa_Request.io_Flags = 0;
+    control->ioa_Period = period;
+    control->ioa_Volume = (UWORD)volume;
+    error = DoIO(&control->ioa_Request);
+    return error == 0 ? TRUE : FALSE;
+}
+
+/* Copy signed 8-bit samples into chip memory. */
+void *cl_sample_new(APTR data, ULONG count, UWORD period, UBYTE volume,
+                    UWORD cycles)
+{
+    cl_sample *sample;
+    UBYTE *buffer;
+    ULONG length;
+
+    if (data == NULL || count == 0 || count > 131072UL) {
+        return NULL;
+    }
+    length = (count + 1UL) & ~1UL;
+    buffer = (UBYTE *)AllocMem(length, MEMF_CHIP | MEMF_CLEAR);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    memcpy(buffer, data, (size_t)count);
+    sample = (cl_sample *)AllocMem(
+        (ULONG)sizeof *sample, MEMF_ANY | MEMF_CLEAR);
+    if (sample == NULL) {
+        FreeMem(buffer, length);
+        return NULL;
+    }
+    sample->data = buffer;
+    sample->length = length;
+    sample->period = period;
+    sample->volume = (UWORD)volume;
+    sample->cycles = cycles;
+    return sample;
+}
+
+/* Free a sample. The caller must have stopped its channel. */
+void cl_sample_free(void *handle)
+{
+    cl_sample *sample = (cl_sample *)handle;
+
+    if (sample == NULL) {
+        return;
+    }
+    if (sample->data != NULL) {
+        FreeMem(sample->data, sample->length);
+    }
+    FreeMem(sample, (ULONG)sizeof *sample);
+}
+
+ULONG cl_sample_length(void *handle)
+{
+    const cl_sample *sample = (const cl_sample *)handle;
+
+    return sample == NULL ? 0 : sample->length;
+}
+
+UWORD cl_sample_period(void *handle)
+{
+    const cl_sample *sample = (const cl_sample *)handle;
+
+    return sample == NULL ? 0 : sample->period;
+}
+
+UBYTE cl_sample_volume(void *handle)
+{
+    const cl_sample *sample = (const cl_sample *)handle;
+
+    return sample == NULL ? 0 : (UBYTE)sample->volume;
+}
+
+UWORD cl_sample_cycles(void *handle)
+{
+    const cl_sample *sample = (const cl_sample *)handle;
+
+    return sample == NULL ? 0 : sample->cycles;
+}
+
+/* Return the raw joystick word and the fire bit (bit 16), or 0. */
+ULONG cl_input_state(UBYTE port)
+{
+    volatile struct Custom *custom = (volatile struct Custom *)0x00DFF000UL;
+    volatile UBYTE *ciaapra = (volatile UBYTE *)0x00BFE001UL;
+    ULONG state;
+
+    if (port > 1) {
+        return 0;
+    }
+    state = (ULONG)(port == 0 ? custom->joy0dat : custom->joy1dat);
+    if ((*ciaapra & (port == 0 ? 0x40U : 0x80U)) == 0) {
+        state |= 0x10000UL;
+    }
+    return state;
+}
+
+/* Open timer.device UNIT_VBLANK. */
+void *cl_timer_open(void)
+{
+    cl_timer *timer;
+
+    timer = (cl_timer *)AllocMem(
+        (ULONG)sizeof *timer, MEMF_ANY | MEMF_CLEAR);
+    if (timer == NULL) {
+        return NULL;
+    }
+    timer->port = cl_device_port();
+    if (timer->port == NULL) {
+        FreeMem(timer, (ULONG)sizeof *timer);
+        return NULL;
+    }
+    timer->request = (struct TimeRequest *)AllocMem(
+        (ULONG)sizeof(struct TimeRequest), MEMF_PUBLIC | MEMF_CLEAR);
+    if (timer->request == NULL) {
+        DeletePort(timer->port);
+        FreeMem(timer, (ULONG)sizeof *timer);
+        return NULL;
+    }
+    timer->request->tr_node.io_Message.mn_ReplyPort = timer->port;
+    if (OpenDevice((STRPTR) "timer.device", UNIT_VBLANK,
+                   &timer->request->tr_node, 0) != 0) {
+        FreeMem(timer->request, (ULONG)sizeof(struct TimeRequest));
+        DeletePort(timer->port);
+        FreeMem(timer, (ULONG)sizeof *timer);
+        return NULL;
+    }
+    return timer;
+}
+
+/* Wait `ticks` vertical blanks. */
+BOOL cl_timer_wait(void *handle, ULONG ticks)
+{
+    cl_timer *timer = (cl_timer *)handle;
+    BYTE error;
+
+    if (timer == NULL) {
+        return FALSE;
+    }
+    timer->request->tr_node.io_Command = TR_ADDREQUEST;
+    timer->request->tr_node.io_Flags = 0;
+    /* timer.device takes seconds and microseconds even for UNIT_VBLANK;
+     * convert PAL 50 Hz ticks to a relative delay. */
+    timer->request->tr_time.tv_secs = ticks / 50UL;
+    timer->request->tr_time.tv_micro = (ticks % 50UL) * 20000UL;
+    error = DoIO(&timer->request->tr_node);
+    return error == 0 ? TRUE : FALSE;
+}
+
+/* Close timer.device. */
+void cl_timer_free(void *handle)
+{
+    cl_timer *timer = (cl_timer *)handle;
+
+    if (timer == NULL) {
+        return;
+    }
+    if (timer->request != NULL) {
+        CloseDevice(&timer->request->tr_node);
+        FreeMem(timer->request, (ULONG)sizeof(struct TimeRequest));
+    }
+    if (timer->port != NULL) {
+        DeletePort(timer->port);
+    }
+    FreeMem(timer, (ULONG)sizeof *timer);
 }

@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -119,6 +119,7 @@ verify:
 	$(MAKE) sdk-a500-smoke
 	$(MAKE) sdk-a500-boing
 	$(MAKE) sdk-a500-sprites
+	$(MAKE) sdk-a500-paddle
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -156,6 +157,13 @@ sdk-a500-boing:
 sdk-a500-sprites:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/sprite-demo.clo"
 	docker/scripts/a500-sprite-smoke.sh build/clorraine/sprite-demo/hosted-amiga-13/sprite-demo
+
+# A500/Kickstart 1.3 paddle game smoke: build the audio/input/timer demo under
+# the 1.3 profile, boot it on the real Kickstart 1.3 ROM, compare the held court,
+# and match the hit/audio/input line.
+sdk-a500-paddle:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/paddle.clo"
+	docker/scripts/a500-paddle-smoke.sh build/clorraine/paddle/hosted-amiga-13/paddle
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

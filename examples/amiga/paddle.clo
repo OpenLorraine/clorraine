@@ -1,0 +1,249 @@
+// Paddle: the Bundle 3 audio/input acceptance program.
+//
+// A small Pong-style court on an Intuition screen. The paddle follows joystick
+// port 0 when the stick is moved; when it is idle, a deterministic auto-play
+// fallback tracks the ball so the acceptance run has a stable hit count. Every
+// paddle hit plays a short square-wave beep through audio.device, and the frame
+// loop is paced by timer.device UNIT_VBLANK.
+//
+// The final court is parked and held, then the program prints the hit count,
+// the allocated audio channel mask, and the idle joystick mask.
+
+module example.Paddle;
+
+import { Screen, openScreen } from std.amiga.intuition;
+import { clear, fill, setColor } from std.amiga.graphics;
+import {
+    Audio, Sample, openAudio, freeAudio, audioChannels, audioPlay,
+    audioStop, newSample, freeSample
+} from std.amiga.audio;
+import {
+    readJoystick, decodeJoystick, JOY_UP, JOY_DOWN, JOY_LEFT, JOY_RIGHT,
+    JOY_FIRE
+} from std.amiga.input;
+import { Timer, openTimer, freeTimer, timerWait } from std.amiga.timer;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+
+/// Court geometry.
+const WIDTH: i32 = 320;
+const HEIGHT: i32 = 256;
+const WALL: i32 = 8;
+const TOP: i32 = 40;
+const PADDLE_Y: i32 = 220;
+const PADDLE_W: i32 = 48;
+const BALL: i32 = 8;
+const FRAMES: i32 = 300;
+const HOLD: u32 = 800;
+
+/// Draws the court, paddle, and ball.
+func drawCourt(borrow screen: Screen, paddleX: i32, ballX: i32, ballY: i32): void {
+    clear(screen, 0);
+    fill(screen, 0, TOP - 8, WIDTH - 1, TOP - 1, 1);
+    fill(screen, 0, TOP, WALL - 1, HEIGHT - 1, 1);
+    fill(screen, WIDTH - WALL, TOP, WIDTH - 1, HEIGHT - 1, 1);
+    fill(screen, paddleX, PADDLE_Y, paddleX + PADDLE_W - 1, PADDLE_Y + 7, 2);
+    fill(screen, ballX, ballY, ballX + BALL - 1, ballY + BALL - 1, 3);
+}
+
+/// Exercises the four channels, a one-shot replay, and loop/stop.
+func audioSelfTest(borrow audio: Audio, borrow oneShot: Sample,
+                   borrow loop: Sample, borrow timer: Timer): u8 {
+    let bits: u8 = 0;
+    let allPlayed: bool = true;
+    let channel: u8 = 0;
+    while (channel < 4) {
+        if (!audioPlay(audio, channel, oneShot)) {
+            allPlayed = false;
+        }
+        channel = channel + 1;
+    }
+    if (allPlayed) {
+        bits = bits | 1;
+    }
+    timerWait(timer, 10);
+
+    let allReplayed: bool = true;
+    channel = 0;
+    while (channel < 4) {
+        if (!audioPlay(audio, channel, oneShot)) {
+            allReplayed = false;
+        }
+        channel = channel + 1;
+    }
+    if (allReplayed) {
+        bits = bits | 2;
+    }
+    timerWait(timer, 10);
+
+    if (audioPlay(audio, 0, loop)) {
+        bits = bits | 4;
+    }
+    timerWait(timer, 10);
+    audioStop(audio, 0);
+
+    if (audioPlay(audio, 0, oneShot)) {
+        bits = bits | 8;
+    }
+    timerWait(timer, 10);
+    audioStop(audio, 0);
+    return bits;
+}
+
+/// Exercises the joystick decode with synthetic raw words.
+func decodeSelfTest(): u8 {
+    let bits: u8 = 0;
+    if (decodeJoystick(0x0003, false) == JOY_RIGHT) {
+        bits = bits | 1;
+    }
+    if (decodeJoystick(0x0300, false) == JOY_LEFT) {
+        bits = bits | 2;
+    }
+    if (decodeJoystick(0x0001, false) == JOY_DOWN) {
+        bits = bits | 4;
+    }
+    if (decodeJoystick(0x0100, false) == JOY_UP) {
+        bits = bits | 8;
+    }
+    if (decodeJoystick(0x0000, true) == JOY_FIRE) {
+        bits = bits | 16;
+    }
+    if (decodeJoystick(0x0002, false) == (JOY_RIGHT | JOY_DOWN)) {
+        bits = bits | 32;
+    }
+    if (decodeJoystick(0x0200, false) == (JOY_LEFT | JOY_UP)) {
+        bits = bits | 64;
+    }
+    return bits;
+}
+
+/// Runs the game and returns the paddle-hit count, or -1 on failure.
+///
+/// The screen is owned here and released when the function returns.
+func play(borrow audio: Audio, borrow sample: Sample, borrow timer: Timer): i32 {
+    let title: String = stringOf("Clorraine paddle");
+    let screen: Screen? = openScreen(WIDTH, HEIGHT, 4, toCString(title));
+    if (screen == null) {
+        return -1;
+    }
+    setColor(screen, 0, 0, 0, 0);
+    setColor(screen, 1, 0, 64, 192);
+    setColor(screen, 2, 255, 255, 255);
+    setColor(screen, 3, 255, 64, 0);
+
+    let ballX: i32 = 160;
+    let ballY: i32 = 100;
+    let velX: i32 = 2;
+    let velY: i32 = 2;
+    let paddleX: i32 = 136;
+    let hits: i32 = 0;
+    let frame: i32 = 0;
+    while (frame < FRAMES) {
+        let input: u8 = readJoystick(0);
+        if ((input & JOY_LEFT) != 0) {
+            paddleX = paddleX - 4;
+        }
+        if ((input & JOY_RIGHT) != 0) {
+            paddleX = paddleX + 4;
+        }
+        if ((input & (JOY_LEFT | JOY_RIGHT)) == 0) {
+            paddleX = ballX - PADDLE_W / 2;
+        }
+        if (paddleX < WALL) {
+            paddleX = WALL;
+        }
+        if (paddleX > WIDTH - WALL - PADDLE_W) {
+            paddleX = WIDTH - WALL - PADDLE_W;
+        }
+
+        ballX = ballX + velX;
+        ballY = ballY + velY;
+        if (ballX < WALL) {
+            ballX = WALL;
+            velX = -velX;
+        }
+        if (ballX > WIDTH - WALL - BALL) {
+            ballX = WIDTH - WALL - BALL;
+            velX = -velX;
+        }
+        if (ballY < TOP) {
+            ballY = TOP;
+            velY = -velY;
+        }
+        if (ballY > PADDLE_Y - BALL) {
+            if (ballX + BALL >= paddleX && ballX <= paddleX + PADDLE_W) {
+                ballY = PADDLE_Y - BALL;
+                velY = -velY;
+                hits = hits + 1;
+                audioPlay(audio, 0, sample);
+            } else {
+                ballX = 160;
+                ballY = 100;
+                velX = 2;
+                velY = 2;
+            }
+        }
+
+        drawCourt(screen, paddleX, ballX, ballY);
+        timerWait(timer, 1);
+        frame = frame + 1;
+    }
+
+    // Deterministic acceptance frame.
+    drawCourt(screen, 136, 160, 100);
+    timerWait(timer, HOLD);
+    return hits;
+}
+
+func main(): i32 {
+    let data: u8[256] = [; 0];
+    let i: i32 = 0;
+    while (i < 256) {
+        data[usize(i)] = u8((i % 2) * 128 + 64);
+        i = i + 1;
+    }
+    let sample: Sample? = newSample(slice(data, 0, 256), 428, 64, 1);
+    if (sample == null) {
+        println("paddle: sample failed");
+        return 1;
+    }
+    let loopSample: Sample? = newSample(slice(data, 0, 256), 428, 64, 0);
+    if (loopSample == null) {
+        println("paddle: sample failed");
+        freeSample(sample);
+        return 1;
+    }
+    let audio: Audio? = openAudio(4);
+    if (audio == null) {
+        println("paddle: audio failed");
+        freeSample(sample);
+        return 1;
+    }
+    let timer: Timer? = openTimer();
+    if (timer == null) {
+        println("paddle: timer failed");
+        freeAudio(audio);
+        freeSample(loopSample);
+        freeSample(sample);
+        return 1;
+    }
+
+    let audioTest: u8 = audioSelfTest(audio, sample, loopSample, timer);
+    let decodeBits: u8 = decodeSelfTest();
+    let hits: i32 = play(audio, sample, timer);
+    audioStop(audio, 0);
+    let mask: u8 = audioChannels(audio);
+    let joy: u8 = readJoystick(0);
+
+    freeTimer(timer);
+    freeAudio(audio);
+    freeSample(loopSample);
+    freeSample(sample);
+    if (hits < 0) {
+        println("paddle: screen failed");
+        return 1;
+    }
+    println($"paddle: ok hits {hits} audio {i32(mask)} test {i32(audioTest)} decode {i32(decodeBits)} input {i32(joy)}");
+    return 0;
+}

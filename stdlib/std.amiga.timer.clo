@@ -1,0 +1,34 @@
+//! Amiga timer.device: vertical-blank waits.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga timer device, so the module is not available there. `Timer` owns an
+//! open `timer.device` unit and its request block.
+
+module std.amiga.timer;
+
+/// An open timer.device VBlank unit.
+export handle Timer freedBy cl_timer_free;
+
+ffi stdtimer {
+    func cl_timer_open(): Timer?;
+    func cl_timer_free(take timer: Timer): void;
+    func cl_timer_wait(borrow timer: Timer, ticks: u32): bool;
+}
+
+/// Opens timer.device UNIT_VBLANK, or returns null.
+export func openTimer(): Timer? {
+    return cl_timer_open();
+}
+
+/// Closes the timer device.
+export func freeTimer(take timer: Timer): void {
+    cl_timer_free(timer);
+}
+
+/// Waits `ticks` vertical blanks and returns true on success.
+///
+/// One tick is one PAL 50 Hz vertical blank (20 ms). NTSC waits are
+/// approximate because the conversion is fixed at 50 Hz.
+export func timerWait(borrow timer: Timer, ticks: u32): bool {
+    return cl_timer_wait(timer, ticks);
+}

@@ -62,6 +62,18 @@ pub const SOURCES: &[StdlibSource] = &[
         source: include_str!("../../stdlib/std.amiga.sprite.clo"),
     },
     StdlibSource {
+        name: "std.amiga.audio",
+        source: include_str!("../../stdlib/std.amiga.audio.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.input",
+        source: include_str!("../../stdlib/std.amiga.input.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.timer",
+        source: include_str!("../../stdlib/std.amiga.timer.clo"),
+    },
+    StdlibSource {
         name: "std.amiga.dos",
         source: include_str!("../../stdlib/std.amiga.dos.clo"),
     },
@@ -248,6 +260,41 @@ pub const MODULES: &[StdlibModule] = &[
             "animationAttachScreen",
             "animationDetach",
         ],
+    },
+    StdlibModule {
+        name: "std.amiga.audio",
+        exports: &[
+            "Audio",
+            "Sample",
+            "openAudio",
+            "freeAudio",
+            "audioChannels",
+            "audioPlay",
+            "audioStop",
+            "audioControl",
+            "newSample",
+            "freeSample",
+            "sampleLength",
+            "samplePeriod",
+            "sampleVolume",
+            "sampleCycles",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.input",
+        exports: &[
+            "JOY_UP",
+            "JOY_DOWN",
+            "JOY_LEFT",
+            "JOY_RIGHT",
+            "JOY_FIRE",
+            "readJoystick",
+            "decodeJoystick",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.timer",
+        exports: &["Timer", "openTimer", "freeTimer", "timerWait"],
     },
     StdlibModule {
         name: "std.amiga.dos",

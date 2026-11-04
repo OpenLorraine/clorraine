@@ -8,7 +8,7 @@
 | 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
 | 1-native-video | core | 1.3 | 11 | 11 | 0 | #2 |
 | 2-sprites | core | 1.3 | 6 | 6 | 0 | #3 |
-| 3-audio-input | core | 1.3 | 0 | 8 | 5 | #4 |
+| 3-audio-input | core | 1.3 | 6 | 8 | 0 | #4 |
 | 4-text-layers | core | 1.3 | 0 | 6 | 4 | #5 |
 | 5-dos-assets | core | 1.3 | 0 | 7 | 4 | #6 |
 | 6-intuition | core | 1.3 | 0 | 9 | 4 | #7 |
@@ -69,14 +69,14 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-AUD-001 | audio.device open/close | must | missing | audio_device |
-| SDK-AUD-002 | 4-channel sample playback | must | missing | audio_play |
-| SDK-AUD-003 | Period/volume/loop and stop | must | missing | audio_control |
-| SDK-AUD-004 | gameport joystick | must | missing | joystick |
-| SDK-AUD-005 | timer.device delays | should | missing | timer |
-| SDK-AUD-008 | EClock (2.0+) | could | missing | eclock |
-| SDK-AUD-006 | lowlevel ReadJoyPort (3.1+) | could | missing | lowlevel |
-| SDK-AUD-007 | Paddle game with sound | must | missing | game_demo |
+| SDK-AUD-001 | audio.device open/close | must | done | audio_device |
+| SDK-AUD-002 | 4-channel sample playback | must | done | audio_play |
+| SDK-AUD-003 | Period/volume/loop and stop | must | done | audio_control |
+| SDK-AUD-004 | gameport joystick | must | done | joystick |
+| SDK-AUD-005 | timer.device delays | should | done | timer |
+| SDK-AUD-008 | EClock (2.0+) | could | deferred | eclock |
+| SDK-AUD-006 | lowlevel ReadJoyPort (3.1+) | could | deferred | lowlevel |
+| SDK-AUD-007 | Paddle game with sound | must | done | game_demo |
 
 ## 4-text-layers — Text, fonts, layers
 

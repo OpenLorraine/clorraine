@@ -421,7 +421,42 @@ lifetime is hide, detach, close the screen, then free the sprite. The shim also
 clears a channel when its screen closes, so freeing after a close is safe even
 if the explicit detach was omitted.
 
-## 18. Diagnostics
+## 18. Audio (`std.amiga.audio`)
+
+The module wraps `audio.device` with a private reply port, one `IOAudio`
+block per allocated channel, and a chip-memory `Sample`.
+
+| API | Returns | Rule |
+|---|---|---|
+| `openAudio(channels: u8)` | `Audio?` | 1..4; requests a channel mask and returns `null` on device/allocation failure |
+| `freeAudio(take audio)` | `void` | stops pending writes, sends `ADCMD_FREE`, closes the device |
+| `audioChannels(const audio)` | `u8` | allocated mask (bits 0..3) |
+| `audioPlay(borrow audio, channel, borrow sample)` | `bool` | `CMD_WRITE` + `ADIOF_PERVOL`; false when the channel is busy |
+| `audioStop(borrow audio, channel)` | `void` | aborts the playing write |
+| `audioControl(borrow audio, channel, period, volume)` | `bool` | `ADCMD_PERVOL` |
+| `newSample(const data: u8[], period, volume, cycles)` | `Sample?` | copies signed 8-bit samples to chip memory; even length; `cycles=0` loops |
+| `freeSample(take sample)` | `void` | frees the chip buffer |
+| `sampleLength/Period/Volume/Cycles` | values | read-only |
+
+The sample must stay alive while playing. The period is
+`3579545 / sample_rate`; volume is 0..64.
+
+## 19. Joystick (`std.amiga.input`)
+
+`readJoystick(port)` reads `JOY0DAT` (port 0) or `JOY1DAT` (port 1) and the
+CIAAPRA fire bit. The result is `JOY_UP=1`, `JOY_DOWN=2`, `JOY_LEFT=4`,
+`JOY_RIGHT=8`, `JOY_FIRE=16`. The decode is the 1.3 Hardware Reference table:
+right bit 1, left bit 9, down bit 1 XOR bit 0, up bit 9 XOR bit 8; fire is
+active low on CIAAPRA bit 6 (port 0) or 7 (port 1).
+
+## 20. Timer (`std.amiga.timer`)
+
+`openTimer()` opens `timer.device` `UNIT_VBLANK`; `timerWait(timer, ticks)`
+sends `TR_ADDREQUEST` and waits. The request converts PAL 50 Hz ticks to
+seconds/microseconds (`tv_secs = ticks / 50`, `tv_micro = (ticks % 50) *
+20000`). The close releases the device.
+
+## 21. Diagnostics
 
 | Code | Trigger |
 |---|---|

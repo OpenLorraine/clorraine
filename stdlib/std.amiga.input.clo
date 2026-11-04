@@ -1,0 +1,62 @@
+//! Amiga gameport input: the two digital joystick ports.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga gameport, so the module is not available there. The 1.3 path reads
+//! `JOY0DAT`/`JOY1DAT` and the CIAAPRA fire bits directly; the wrapper keeps
+//! the volatile access and the bit decode out of application code.
+
+module std.amiga.input;
+
+/// The joystick is pushed up.
+export const JOY_UP: u8 = 1;
+/// The joystick is pushed down.
+export const JOY_DOWN: u8 = 2;
+/// The joystick is pushed left.
+export const JOY_LEFT: u8 = 4;
+/// The joystick is pushed right.
+export const JOY_RIGHT: u8 = 8;
+/// The fire button is pressed.
+export const JOY_FIRE: u8 = 16;
+
+ffi stdinput {
+    func cl_input_state(port: u8): u32;
+}
+
+/// Decodes a raw `JOY0DAT`/`JOY1DAT` word and fire state into a bitmask.
+///
+/// Bits: `JOY_UP`, `JOY_DOWN`, `JOY_LEFT`, `JOY_RIGHT`, `JOY_FIRE`. The
+/// decode follows the 1.3 Hardware Reference: right is bit 1, left bit 9,
+/// down is bit 1 XOR bit 0, up is bit 9 XOR bit 8; `fire` is true when the
+/// active-low CIAAPRA button bit reads pressed. This pure helper is also used
+/// by the game's self-test with synthetic words.
+export func decodeJoystick(word: u16, fire: bool): u8 {
+    let result: u8 = 0;
+    let x: i32 = i32((word >> 1) & 1) ^ i32(word & 1);
+    let y: i32 = i32((word >> 9) & 1) ^ i32((word >> 8) & 1);
+    if (((word >> 1) & 1) != 0) {
+        result = result | JOY_RIGHT;
+    }
+    if (((word >> 9) & 1) != 0) {
+        result = result | JOY_LEFT;
+    }
+    if (x != 0) {
+        result = result | JOY_DOWN;
+    }
+    if (y != 0) {
+        result = result | JOY_UP;
+    }
+    if (fire) {
+        result = result | JOY_FIRE;
+    }
+    return result;
+}
+
+/// Reads digital joystick `port` (0 or 1) and returns a direction bitmask.
+///
+/// Bits: `JOY_UP`, `JOY_DOWN`, `JOY_LEFT`, `JOY_RIGHT`, `JOY_FIRE`. An
+/// invalid port returns 0. The raw `JOY0DAT`/`JOY1DAT` word and the CIAAPRA
+/// fire bit are decoded by `decodeJoystick`.
+export func readJoystick(port: u8): u8 {
+    let state: u32 = cl_input_state(port);
+    return decodeJoystick(u16(state & 0xFFFF), (state & 0x10000) != 0);
+}

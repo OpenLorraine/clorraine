@@ -127,6 +127,22 @@ each pair. `collisions` reads and clears `CLXDAT`; sprite-sprite groups are bits
 9..14 and the playfield bits are 1..8. Hardware collision is edge-triggered, so
 clear the register after moving the sprites if only the final overlap matters.
 
+### 1.3 Audio and input
+
+`std.amiga.audio` wraps `audio.device` with a private reply port and one
+`IOAudio` block per allocated channel. A `Sample` is a chip-memory copy of
+signed 8-bit data with a period, volume, and cycle count; `CMD_WRITE` with
+`ADIOF_PERVOL` starts it, `ADCMD_PERVOL` changes it, and `ADCMD_FINISH` aborts
+it. The four OCS channels are allocated by the device, not hardcoded.
+
+`std.amiga.input` reads the 1.3 gameport registers: `JOY0DAT`/`JOY1DAT` for the
+directions and CIAAPRA bits 6/7 for the active-low fire buttons. The decode is
+the Hardware Reference XOR table; port 0 is the left controller pair.
+
+`std.amiga.timer` opens `timer.device` `UNIT_VBLANK`. The device's `TimeVal` is
+always seconds/microseconds, even for the VBlank unit, so one PAL tick is
+20,000 microseconds.
+
 Windows and their event loop, text and fonts, `SetRGB32`, runtime palette
 animation after the first flip, and palettes beyond four bits are out of scope
 for v1.
