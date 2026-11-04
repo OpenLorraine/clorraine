@@ -48,7 +48,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -114,6 +114,24 @@ verify:
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
 	@echo "verify: all legs passed"
+
+# Amiga SDK registry: validate the capability map and regenerate the coverage
+# view. The registry is the source of truth; the generated view is committed.
+sdk-registry:
+	tools/amiga-sdk/registry.sh check
+	tools/amiga-sdk/registry.sh coverage > docs/amiga-sdk/coverage.md
+	@echo "sdk-registry: coverage written"
+
+# Generate one tracking-issue body per bundle under build/amiga-sdk/issues/.
+sdk-issues:
+	tools/amiga-sdk/registry.sh issues
+	@echo "sdk-issues: bodies in build/amiga-sdk/issues"
+
+# A500/Kickstart 1.3 runtime proof: build the hello program under the 1.3
+# profile, then boot it in FS-UAE with the real Kickstart 1.3 ROM.
+sdk-a500-smoke:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/hello/hello.clo"
+	docker/scripts/a500-smoke.sh build/clorraine/hello/hosted-amiga-13/hello
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;
