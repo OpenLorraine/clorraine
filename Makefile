@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -118,6 +118,7 @@ verify:
 	$(MAKE) check
 	$(MAKE) sdk-a500-smoke
 	$(MAKE) sdk-a500-boing
+	$(MAKE) sdk-a500-sprites
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -148,6 +149,13 @@ sdk-a500-smoke:
 sdk-a500-boing:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/boing.clo"
 	docker/scripts/a500-boing-smoke.sh build/clorraine/boing/hosted-amiga-13/boing
+
+# A500/Kickstart 1.3 sprite smoke: build the sprite demo under the 1.3 profile,
+# boot it on the real Kickstart 1.3 ROM, compare the held sprite screen, and
+# match the hardware-collision line.
+sdk-a500-sprites:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/sprite-demo.clo"
+	docker/scripts/a500-sprite-smoke.sh build/clorraine/sprite-demo/hosted-amiga-13/sprite-demo
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

@@ -1,0 +1,234 @@
+//! Amiga OCS hardware sprites: eight DMA channels, attached pairs, collision,
+//! and simple animation objects.
+//!
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! Amiga custom chips, so the module is not available there. Sprites are
+//! global custom-chip DMA channels attached to an Intuition screen viewport.
+//! The supported lifetime is: hide, detach, close the screen, then free the
+//! sprite. The shim also clears a channel when its screen closes, so freeing
+//! after a close is safe even if `spriteDetach` was omitted.
+//!
+//! Each sprite image is 16 pixels wide and `height` lines tall. `setPixels`
+//! takes `16 * height` bytes, each 0..3, and packs the two OCS bitplanes. An
+//! attached pair uses two adjacent channels and the second half of the palette
+//! (registers 16..31).
+
+module std.amiga.sprite;
+
+import { Screen } from std.amiga.intuition;
+
+/// One owned hardware sprite channel.
+///
+/// The caller owns it and releases it through the generated drop, which hides
+/// the channel and frees its chip-memory image.
+export handle Sprite freedBy cl_sprite_free;
+
+/// One owned animation over a fixed set of frame images.
+///
+/// The animation owns its sprite channel and every frame; the generated drop
+/// releases all of them.
+export handle SpriteAnimation freedBy cl_sprite_animation_free;
+
+ffi stdsprite {
+    func cl_sprite_new(channel: u8, height: u8): Sprite?;
+    func cl_sprite_free(take sprite: Sprite): void;
+    func cl_sprite_set_pixels(borrow sprite: Sprite, pixels: raw u8, count: u32): void;
+    func cl_sprite_move(borrow sprite: Sprite, x: i32, y: i32): void;
+    func cl_sprite_show(borrow sprite: Sprite): void;
+    func cl_sprite_hide(borrow sprite: Sprite): void;
+    func cl_sprite_attach(borrow even: Sprite, borrow odd: Sprite): bool;
+    func cl_sprite_attach_screen(borrow sprite: Sprite, borrow screen: Screen): bool;
+    func cl_sprite_detach(borrow sprite: Sprite): void;
+    func cl_sprite_channel(const sprite: Sprite): u8;
+    func cl_sprite_height(const sprite: Sprite): u8;
+    func cl_sprite_x(const sprite: Sprite): i32;
+    func cl_sprite_y(const sprite: Sprite): i32;
+    func cl_sprite_visible(const sprite: Sprite): bool;
+    func cl_sprite_enable_collisions(): void;
+    func cl_sprite_collisions(): u32;
+
+    func cl_sprite_animation_new(channel: u8, height: u8, frames: u8): SpriteAnimation?;
+    func cl_sprite_animation_free(take animation: SpriteAnimation): void;
+    func cl_sprite_animation_set_frame(borrow animation: SpriteAnimation, frame: u8, pixels: raw u8, count: u32): void;
+    func cl_sprite_animation_show_frame(borrow animation: SpriteAnimation, frame: u8): void;
+    func cl_sprite_animation_next(borrow animation: SpriteAnimation): void;
+    func cl_sprite_animation_move(borrow animation: SpriteAnimation, x: i32, y: i32): void;
+    func cl_sprite_animation_show(borrow animation: SpriteAnimation): void;
+    func cl_sprite_animation_hide(borrow animation: SpriteAnimation): void;
+    func cl_sprite_animation_frame(const animation: SpriteAnimation): u8;
+    func cl_sprite_animation_attach_screen(borrow animation: SpriteAnimation, borrow screen: Screen): bool;
+    func cl_sprite_animation_detach(borrow animation: SpriteAnimation): void;
+}
+
+/// Allocates hardware channel `channel` (0..7) with `height` lines, or `null`.
+///
+/// A channel that is already owned returns `null`. The image starts empty and
+/// hidden; call `spriteSetPixels` and `spriteShow` to make it visible.
+export func newSprite(channel: u8, height: u8): Sprite? {
+    return cl_sprite_new(channel, height);
+}
+
+/// Hides the channel and releases its image.
+export func freeSprite(take sprite: Sprite): void {
+    cl_sprite_free(sprite);
+}
+
+/// Packs `16 * height` pixels (values 0..3) into the sprite image.
+///
+/// A wrong pixel count or a null view is ignored. The image is not shown until
+/// `spriteShow` is called.
+export func spriteSetPixels(borrow sprite: Sprite, const pixels: u8[]): void {
+    unsafe {
+        cl_sprite_set_pixels(sprite, raw u8(pixels.ptr), u32(len(pixels)));
+    }
+}
+
+/// Moves the sprite to (`x`,`y`).
+///
+/// `x` is 0..511 and `y` 0..255. The sprite is `height` lines tall, so keep
+/// `y + height` inside the visible screen. Out-of-range coordinates are
+/// ignored. The chip latches the position at the start of the frame; call this
+/// after `displayFlip` or `waitVBlank` to avoid a one-frame tear.
+export func spriteMove(borrow sprite: Sprite, x: i32, y: i32): void {
+    cl_sprite_move(sprite, x, y);
+}
+
+/// Shows the channel and enables sprite DMA.
+export func spriteShow(borrow sprite: Sprite): void {
+    cl_sprite_show(sprite);
+}
+
+/// Hides the channel without releasing it.
+export func spriteHide(borrow sprite: Sprite): void {
+    cl_sprite_hide(sprite);
+}
+
+/// Attaches the sprite to an Intuition screen's viewport.
+///
+/// Call this after `openScreen`, `newSprite`, and `setPixels`, and before the
+/// screen is released. The call rebuilds the screen's display list so the
+/// sprite appears. Call `spriteDetach` before freeing the screen; the sprite
+/// handle may outlive the screen afterwards.
+export func spriteAttachScreen(borrow sprite: Sprite, borrow screen: Screen): bool {
+    return cl_sprite_attach_screen(sprite, screen);
+}
+
+/// Detaches the sprite from its screen or display without freeing it.
+///
+/// Call this after hiding the sprite and before releasing the screen/display;
+/// the sprite's own drop then has no dangling viewport pointer.
+export func spriteDetach(borrow sprite: Sprite): void {
+    cl_sprite_detach(sprite);
+}
+
+/// Attaches `odd` to `even` for a 16-color pair.
+///
+/// `even` must be an even channel `n` and `odd` must be `n + 1`. The caller
+/// sets the low two bits on `even`, the high two bits on `odd`, moves both to
+/// the same position, and uses sprite palette registers 16..31.
+export func spriteAttach(borrow even: Sprite, borrow odd: Sprite): bool {
+    return cl_sprite_attach(even, odd);
+}
+
+/// Returns the hardware channel number.
+export func spriteChannel(const sprite: Sprite): u8 {
+    return cl_sprite_channel(sprite);
+}
+
+/// Returns the sprite height in lines.
+export func spriteHeight(const sprite: Sprite): u8 {
+    return cl_sprite_height(sprite);
+}
+
+/// Returns the current x position.
+export func spriteX(const sprite: Sprite): i32 {
+    return cl_sprite_x(sprite);
+}
+
+/// Returns the current y position.
+export func spriteY(const sprite: Sprite): i32 {
+    return cl_sprite_y(sprite);
+}
+
+/// Returns true when the channel is shown.
+export func spriteVisible(const sprite: Sprite): bool {
+    return cl_sprite_visible(sprite);
+}
+
+/// Enables the four sprite-pair collision groups.
+///
+/// The even channel of each pair is always included; the odd channels are
+/// ORed in. The bitplane collision controls stay at zero, so `collisions`
+/// also reports playfield bits; mask the result when only sprite-sprite
+/// collisions matter.
+export func enableCollisions(): void {
+    cl_sprite_enable_collisions();
+}
+
+/// Reads and clears the hardware collision data register.
+///
+/// Sprite-sprite groups are bits 9..14; playfield collisions are bits 1..8.
+export func collisions(): u32 {
+    return cl_sprite_collisions();
+}
+
+/// Creates an animation over one sprite channel and `frames` images (1..8).
+export func newAnimation(channel: u8, height: u8, frames: u8): SpriteAnimation? {
+    return cl_sprite_animation_new(channel, height, frames);
+}
+
+/// Releases the animation, its frames, and its channel.
+export func freeAnimation(take animation: SpriteAnimation): void {
+    cl_sprite_animation_free(animation);
+}
+
+/// Packs one animation frame with `16 * height` pixels (0..3).
+export func animationSetFrame(borrow animation: SpriteAnimation, frame: u8, const pixels: u8[]): void {
+    unsafe {
+        cl_sprite_animation_set_frame(animation, frame, raw u8(pixels.ptr), u32(len(pixels)));
+    }
+}
+
+/// Shows one animation frame.
+export func animationShowFrame(borrow animation: SpriteAnimation, frame: u8): void {
+    cl_sprite_animation_show_frame(animation, frame);
+}
+
+/// Advances to the next frame and shows it.
+export func animationNext(borrow animation: SpriteAnimation): void {
+    cl_sprite_animation_next(animation);
+}
+
+/// Moves the animation's sprite.
+export func animationMove(borrow animation: SpriteAnimation, x: i32, y: i32): void {
+    cl_sprite_animation_move(animation, x, y);
+}
+
+/// Shows the animation's sprite.
+export func animationShow(borrow animation: SpriteAnimation): void {
+    cl_sprite_animation_show(animation);
+}
+
+/// Hides the animation's sprite.
+export func animationHide(borrow animation: SpriteAnimation): void {
+    cl_sprite_animation_hide(animation);
+}
+
+/// Attaches the animation's sprite to an Intuition screen.
+///
+/// Call after `openScreen` and `animationShowFrame`; the screen must outlive
+/// the animation's visible frame. Call `animationDetach` before releasing the
+/// screen.
+export func animationAttachScreen(borrow animation: SpriteAnimation, borrow screen: Screen): bool {
+    return cl_sprite_animation_attach_screen(animation, screen);
+}
+
+/// Detaches the animation's sprite from its screen without freeing it.
+export func animationDetach(borrow animation: SpriteAnimation): void {
+    cl_sprite_animation_detach(animation);
+}
+
+/// Returns the current frame index.
+export func animationFrame(const animation: SpriteAnimation): u8 {
+    return cl_sprite_animation_frame(animation);
+}

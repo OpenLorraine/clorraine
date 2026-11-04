@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–1 done; Bundle 2 next
+> **Status**: Executing — Bundles 0–2 done; Bundle 3 next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -53,4 +53,7 @@ Bundle 0 is `plans/amiga-sdk-baseline/`: it adds the A500/1.3 profile and the
 registry. Bundle 1 is `plans/amiga-sdk-native-video/`: chip memory, bitmaps,
 software drawing, the blitter, a copper builder, a double-buffered custom
 display, fixed-point math, the frame checksum, and the Boing acceptance on the
-real A500/KS1.3 machine. Bundle 2 (sprites and collision) is next.
+real A500/KS1.3 machine. Bundle 2 is `plans/amiga-sdk-sprites/`: the eight OCS
+sprite channels, attached 16-color pairs, hardware collision, animation
+objects, and the sprite demo on the real A500/KS1.3 machine. Bundle 3 (audio
+and input) is next.

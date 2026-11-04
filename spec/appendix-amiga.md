@@ -35,6 +35,7 @@ holds the FFI declaration.
 | `dos.library` | output | write to standard output (planned; print helpers not yet wrapped) | `println` (planned) |
 | `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
 | `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
+| `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
 
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).
@@ -102,9 +103,33 @@ The blitter wrappers use `BltBitMap` for a plain copy and
 `BltMaskBitMapRastPort` for a cookie-cut image. The frame checksum is FNV-1a
 over the plane bytes, so a deterministic drawing sequence has a stable value.
 
-Windows and their event loop, text and fonts, sprites, `SetRGB32`, runtime
-palette animation after the first flip, and palettes beyond four bits are out
-of scope for v1.
+### 1.2 Hardware sprites
+
+`std.amiga.sprite` uses the `graphics.library` simple-sprite machine
+(`GetSprite`, `ChangeSprite`, `MoveSprite`, `FreeSprite`). The 1.3 API attaches
+sprites to a `ViewPort`; the supported path is an Intuition `Screen`, whose
+viewport already has a compiled display list. `spriteAttachScreen` sets the
+`SPRITES` view flag, adds the sprite list, and calls `RethinkDisplay`.
+`spriteDetach` clears the back-pointer; the supported lifetime is hide,
+detach, close the screen, then free the sprite. The shim also clears a channel
+when its screen closes, so freeing after a close is safe even without the
+explicit detach.
+
+The eight channels are global. Channel 0 is normally the system pointer, so a
+program should use another channel. Two adjacent channels form an attached
+pair: the even channel carries the low two color bits, the odd channel carries
+the high two, and the odd control word has the ATTACH bit. The pair uses sprite
+palette registers 16..31; a single channel uses the three registers starting at
+`16 + ((channel & 6) << 1) + 1`.
+
+`enableCollisions` writes `CLXCON = 0xF000`, which includes the odd channel of
+each pair. `collisions` reads and clears `CLXDAT`; sprite-sprite groups are bits
+9..14 and the playfield bits are 1..8. Hardware collision is edge-triggered, so
+clear the register after moving the sprites if only the final overlap matters.
+
+Windows and their event loop, text and fonts, `SetRGB32`, runtime palette
+animation after the first flip, and palettes beyond four bits are out of scope
+for v1.
 
 ## 2. Amiga boundary types
 

@@ -93,6 +93,7 @@ impl Profile {
                     | "std.fmt"
                     | "std.math"
                     | "std.amiga.video"
+                    | "std.amiga.sprite"
                     | "std.amiga.custom"
                     | "std.amiga.dos"
                     | "std.amiga.graphics"

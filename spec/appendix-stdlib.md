@@ -388,7 +388,40 @@ scaled by 256.
 | `cos(angle: i32)` | `i32` | `sin(angle + 64)` |
 | `sqrt(value: i32)` | `i32` | integer floor; negative input returns 0 |
 
-## 17. Diagnostics
+## 17. Hardware sprites (`std.amiga.sprite`)
+
+The module owns the eight OCS hardware sprite channels through the 1.3
+`graphics.library` simple-sprite machine. It is available on `hosted-amiga` and
+`hosted-amiga-13`; the host and freestanding profiles reject it with `E11200`.
+Sprites are global DMA channels; the demo attaches them to an Intuition
+`Screen` viewport, which already has a compiled display list.
+
+| API | Returns | Rule |
+|---|---|---|
+| `newSprite(channel: u8, height: u8)` | `Sprite?` | channel 0..7, height 1..255; `null` if the channel or chip memory is unavailable |
+| `freeSprite(take sprite)` | `void` | hides the channel, waits a frame, and releases the image and channel |
+| `spriteSetPixels(borrow sprite, const pixels: u8[])` | `void` | `16 * height` values 0..3; packs the two sprite bitplanes |
+| `spriteMove(borrow sprite, x, y)` | `void` | x 0..511, y 0..255; the sprite is 16 pixels wide |
+| `spriteShow` / `spriteHide` | `void` | show restores the image; hide uses a zero image |
+| `spriteAttach(borrow even, borrow odd)` | `bool` | adjacent channels; sets the odd ATTACH bit for 16 colors |
+| `spriteAttachScreen(borrow sprite, borrow screen)` | `bool` | adds the sprite to the screen viewport and rebuilds its display list |
+| `spriteDetach(borrow sprite)` | `void` | clears the screen/display pointer; call before releasing the screen |
+| `enableCollisions()` | `void` | `CLXCON = 0xF000` for all sprite-pair groups |
+| `collisions()` | `u32` | reads and clears `CLXDAT`; sprite-sprite bits are 9..14 |
+| `newAnimation(channel, height, frames)` | `SpriteAnimation?` | 1..8 frames in chip memory |
+| `animationSetFrame` / `animationShowFrame` / `animationNext` | `void` | pack, show, or advance one frame |
+| `animationMove` / `animationShow` / `animationHide` | `void` | delegate to the animation's sprite |
+| `animationAttachScreen` / `animationDetach` | `bool` / `void` | attach/detach the animation's sprite |
+| `animationFrame` | `u8` | current frame index |
+
+A sprite image is the documented `posctl[2] + data[height][2] + reserved[2]`
+block in chip memory. The attached pair uses sprite palette registers 16..31;
+a single channel `n` uses `16 + ((n & 6) << 1) + 1 .. +3`. The supported
+lifetime is hide, detach, close the screen, then free the sprite. The shim also
+clears a channel when its screen closes, so freeing after a close is safe even
+if the explicit detach was omitted.
+
+## 18. Diagnostics
 
 | Code | Trigger |
 |---|---|

@@ -1,0 +1,248 @@
+// Sprite-demo: the Bundle 2 acceptance program.
+//
+// The scene uses an Intuition custom screen for the static background and the
+// OCS hardware sprite channels for the moving objects. Channels 2 and 3 form
+// the 16-color attached pair; channel 4 is the single sprite used for the
+// hardware collision check; channel 6 carries a four-frame animation.
+//
+// The final held frame is deterministic: the pair and single are parked at
+// (100, 80), the animation at (200, 150), and the sprite-sprite collision bit
+// is read after clearing the accumulated collision register. The program
+// prints that bit after the screen is released.
+
+module example.SpriteDemo;
+
+import { Screen, openScreen } from std.amiga.intuition;
+import { clear, fill, setColor } from std.amiga.graphics;
+import {
+    Sprite, SpriteAnimation,
+    newSprite, freeSprite, spriteSetPixels, spriteMove, spriteShow,
+    spriteHide, spriteAttach, spriteAttachScreen, spriteDetach,
+    enableCollisions, collisions,
+    newAnimation, freeAnimation, animationSetFrame, animationShowFrame,
+    animationNext, animationMove, animationHide,
+    animationAttachScreen
+} from std.amiga.sprite;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+import { print, println } from std.io;
+import { toHex } from std.fmt;
+import { delayTicks } from std.amiga.dos;
+
+/// Animation frames.
+const FRAMES: i32 = 200;
+/// Ticks the final acceptance frame is held for the screen capture.
+const HOLD: u32 = 800;
+
+/// Fills the even half of the attached pair (low two color bits).
+func setPairLow(borrow sprite: Sprite): void {
+    let pixels: u8[512] = [; 0];
+    let y: i32 = 0;
+    while (y < 32) {
+        let x: i32 = 0;
+        while (x < 16) {
+            pixels[usize(y * 16 + x)] = u8((x / 4 + y / 8) % 2 + 1);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    spriteSetPixels(sprite, slice(pixels, 0, 512));
+}
+
+/// Fills the odd half of the attached pair (high two color bits).
+func setPairHigh(borrow sprite: Sprite): void {
+    let pixels: u8[512] = [; 0];
+    let y: i32 = 0;
+    while (y < 32) {
+        let x: i32 = 0;
+        while (x < 16) {
+            pixels[usize(y * 16 + x)] = u8((y / 8) % 2 + 1);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    spriteSetPixels(sprite, slice(pixels, 0, 512));
+}
+
+/// Fills the single channel with a three-color pattern.
+func setSingle(borrow sprite: Sprite): void {
+    let pixels: u8[512] = [; 0];
+    let y: i32 = 0;
+    while (y < 32) {
+        let x: i32 = 0;
+        while (x < 16) {
+            pixels[usize(y * 16 + x)] = u8((x / 4 + y / 8) % 3 + 1);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    spriteSetPixels(sprite, slice(pixels, 0, 512));
+}
+
+/// Fills one animation frame.
+func setAnimationFrame(borrow animation: SpriteAnimation, frame: u8, phase: i32): void {
+    let pixels: u8[256] = [; 0];
+    let y: i32 = 0;
+    while (y < 16) {
+        let x: i32 = 0;
+        while (x < 16) {
+            pixels[usize(y * 16 + x)] = u8((x / 2 + y / 2 + phase) % 3 + 1);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    animationSetFrame(animation, frame, slice(pixels, 0, 256));
+}
+
+/// Draws the background, runs the animation, and returns the final collision bits.
+///
+/// The screen is owned by this helper, so it is released when the function
+/// returns. Every sprite is detached before that return; the caller owns the
+/// sprite handles and frees them afterwards.
+func show(borrow pairEven: Sprite, borrow pairOdd: Sprite, borrow single: Sprite,
+          borrow animation: SpriteAnimation): u32 {
+    let title: String = stringOf("Clorraine sprites");
+    let screen: Screen? = openScreen(320, 256, 4, toCString(title));
+    if (screen == null) {
+        println("sprite-demo: screen failed");
+        return 0;
+    }
+    setColor(screen, 0, 0, 0, 0);
+    setColor(screen, 1, 0, 0, 255);
+    setColor(screen, 2, 0, 255, 0);
+    setColor(screen, 3, 255, 0, 0);
+    clear(screen, 0);
+    fill(screen, 0, 0, 319, 31, 1);
+    fill(screen, 0, 32, 159, 255, 2);
+    fill(screen, 160, 32, 319, 255, 3);
+
+    let ok: bool = true;
+    if (!spriteAttach(pairEven, pairOdd)) {
+        println("sprite-demo: pair failed");
+        ok = false;
+    }
+    if (ok && !spriteAttachScreen(pairEven, screen)) {
+        println("sprite-demo: attach failed");
+        ok = false;
+    }
+    if (ok && !spriteAttachScreen(pairOdd, screen)) {
+        println("sprite-demo: attach failed");
+        ok = false;
+    }
+    if (ok && !spriteAttachScreen(single, screen)) {
+        println("sprite-demo: attach failed");
+        ok = false;
+    }
+    if (ok && !animationAttachScreen(animation, screen)) {
+        println("sprite-demo: attach failed");
+        ok = false;
+    }
+
+    let bits: u32 = 0;
+    if (ok) {
+        // The attached pair uses the 16-color sprite palette (registers 16..31).
+        let i: i32 = 0;
+        while (i < 16) {
+            let r: u8 = u8((i * 17) % 256);
+            let g: u8 = u8(((i * 7) * 17) % 256);
+            let b: u8 = u8(((i * 13) * 17) % 256);
+            setColor(screen, u8(16 + i), r, g, b);
+            i = i + 1;
+        }
+        // Channel 4 uses registers 25..27; channel 6 uses 29..31.
+        setColor(screen, 25, 255, 0, 0);
+        setColor(screen, 26, 0, 255, 0);
+        setColor(screen, 27, 0, 0, 255);
+        setColor(screen, 29, 255, 255, 255);
+        setColor(screen, 30, 255, 255, 0);
+        setColor(screen, 31, 0, 255, 255);
+
+        enableCollisions();
+        let frame: i32 = 0;
+        while (frame < FRAMES) {
+            let x: i32 = 60 + (frame % 100);
+            spriteMove(pairEven, x, 80);
+            spriteMove(pairOdd, x, 80);
+            spriteMove(single, x, 80);
+            animationMove(animation, 180 + (frame % 40), 150);
+            animationNext(animation);
+            delayTicks(u32(1));
+            frame = frame + 1;
+        }
+
+        // Park the deterministic acceptance frame and clear the accumulated
+        // collision bits before reading the final overlap.
+        spriteMove(pairEven, 100, 80);
+        spriteMove(pairOdd, 100, 80);
+        spriteMove(single, 100, 80);
+        animationMove(animation, 200, 150);
+        animationShowFrame(animation, 2);
+        delayTicks(u32(2));
+        if (collisions() != 0) {
+        }
+        delayTicks(u32(2));
+        bits = collisions() & 0x7E00;
+        delayTicks(HOLD);
+    }
+
+    spriteHide(pairEven);
+    spriteHide(pairOdd);
+    spriteHide(single);
+    animationHide(animation);
+    spriteDetach(pairEven);
+    spriteDetach(pairOdd);
+    spriteDetach(single);
+    // Leave the animation attached: the screen close detaches it through the
+    // channel registry, exercising that lifetime path.
+    return bits;
+}
+
+func main(): i32 {
+    let pairEven: Sprite? = newSprite(2, 32);
+    if (pairEven == null) {
+        println("sprite-demo: allocation failed");
+        return 1;
+    }
+    let pairOdd: Sprite? = newSprite(3, 32);
+    if (pairOdd == null) {
+        println("sprite-demo: allocation failed");
+        return 1;
+    }
+    let single: Sprite? = newSprite(4, 32);
+    if (single == null) {
+        println("sprite-demo: allocation failed");
+        return 1;
+    }
+    let animation: SpriteAnimation? = newAnimation(6, 16, 4);
+    if (animation == null) {
+        println("sprite-demo: allocation failed");
+        return 1;
+    }
+
+    setPairLow(pairEven);
+    setPairHigh(pairOdd);
+    setSingle(single);
+    setAnimationFrame(animation, 0, 0);
+    setAnimationFrame(animation, 1, 1);
+    setAnimationFrame(animation, 2, 2);
+    setAnimationFrame(animation, 3, 0);
+
+    spriteMove(pairEven, 100, 80);
+    spriteMove(pairOdd, 100, 80);
+    spriteMove(single, 100, 80);
+    spriteShow(pairEven);
+    spriteShow(pairOdd);
+    spriteShow(single);
+    animationShowFrame(animation, 0);
+    animationMove(animation, 200, 150);
+
+    let bits: u32 = show(pairEven, pairOdd, single, animation);
+
+    freeAnimation(animation);
+    freeSprite(single);
+    freeSprite(pairOdd);
+    freeSprite(pairEven);
+    print("sprite-demo: collision ");
+    println(toHex(bits));
+    return 0;
+}

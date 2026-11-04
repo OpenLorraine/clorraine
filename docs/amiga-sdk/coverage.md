@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
 | 1-native-video | core | 1.3 | 11 | 11 | 0 | #2 |
-| 2-sprites | core | 1.3 | 0 | 6 | 3 | #3 |
+| 2-sprites | core | 1.3 | 6 | 6 | 0 | #3 |
 | 3-audio-input | core | 1.3 | 0 | 8 | 5 | #4 |
 | 4-text-layers | core | 1.3 | 0 | 6 | 4 | #5 |
 | 5-dos-assets | core | 1.3 | 0 | 7 | 4 | #6 |
@@ -56,12 +56,12 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-SPR-001 | 8 hardware sprite channels | must | missing | sprite_channels |
-| SDK-SPR-002 | Sprite pixels, move, show/hide | must | missing | sprite_control |
-| SDK-SPR-003 | Attach pairs for 16 colors | should | missing | sprite_attach |
-| SDK-SPR-004 | Hardware collision detection | should | missing | sprite_collision |
-| SDK-SPR-005 | Animation objects | could | missing | sprite_animation |
-| SDK-SPR-006 | Sprite demo | must | missing | sprite_demo |
+| SDK-SPR-001 | 8 hardware sprite channels | must | done | sprite_channels |
+| SDK-SPR-002 | Sprite pixels, move, show/hide | must | done | sprite_control |
+| SDK-SPR-003 | Attach pairs for 16 colors | should | done | sprite_attach |
+| SDK-SPR-004 | Hardware collision detection | should | done | sprite_collision |
+| SDK-SPR-005 | Animation objects | could | done | sprite_animation |
+| SDK-SPR-006 | Sprite demo | must | done | sprite_demo |
 
 ## 3-audio-input — Audio and input
 

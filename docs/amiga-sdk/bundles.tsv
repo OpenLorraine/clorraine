@@ -1,7 +1,7 @@
 id	title	tier	min_os	min_hw	status	tracking_issue	plan
 0-baseline	Baseline and registry	core	1.3	OCS/68000/512K	done	#1	plans/amiga-sdk-baseline
 1-native-video	Native Video	core	1.3	OCS/68000/512K	done	#2	plans/amiga-sdk-native-video
-2-sprites	Sprites and collision	core	1.3	OCS/68000/512K	missing	#3	-
+2-sprites	Sprites and collision	core	1.3	OCS/68000/512K	done	#3	plans/amiga-sdk-sprites
 3-audio-input	Audio and input	core	1.3	OCS/68000/512K	missing	#4	-
 4-text-layers	Text, fonts, layers	core	1.3	OCS/68000/512K	missing	#5	-
 5-dos-assets	DOS and assets	core	1.3	OCS/68000/512K	missing	#6	-

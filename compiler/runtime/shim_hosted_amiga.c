@@ -32,7 +32,9 @@
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
 #include <graphics/gfxmacros.h>
+#include <graphics/sprite.h>
 #include <graphics/view.h>
+#include <hardware/custom.h>
 /* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
@@ -608,6 +610,9 @@ void cl_write_line(APTR buffer, ULONG n)
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
 
+/* The sprite module clears attached channels when their screen closes. */
+static void cl_sprite_screen_closing(struct Screen *screen);
+
 /* Open a custom screen; NULL on failure. */
 void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
 {
@@ -684,11 +689,12 @@ void cl_clear(void *screen_handle, UBYTE pen)
     }
 }
 
-/* Close a screen. Null-safe. */
+/* Close a screen. Null-safe. Detaches any sprite channels first. */
 void cl_close_screen(void *screen_handle)
 {
     struct Screen *screen = (struct Screen *)screen_handle;
     if (screen != NULL) {
+        cl_sprite_screen_closing(screen);
         CloseScreen(screen);
     }
 }
@@ -1633,6 +1639,7 @@ void *cl_video_display_open(void *front_handle, void *back_handle)
     cl_video_bitmap *front = (cl_video_bitmap *)front_handle;
     cl_video_bitmap *back = (cl_video_bitmap *)back_handle;
     cl_video_display *display;
+    int index;
 
     if (front == NULL || back == NULL) {
         return NULL;
@@ -1664,6 +1671,25 @@ void *cl_video_display_open(void *front_handle, void *back_handle)
         return NULL;
     }
     cl_video_display_default_palette(display);
+    /* Initialize both viewports once. Sprite and copper attachments land in
+     * their lists after this point; the first flip only compiles them. */
+    for (index = 0; index < 2; index++) {
+        InitView(&display->views[index]);
+        InitVPort(&display->view_ports[index]);
+        display->views[index].ViewPort = &display->view_ports[index];
+        display->view_ports[index].DWidth = (WORD)display->width;
+        display->view_ports[index].DHeight = (WORD)display->height;
+        display->view_ports[index].DxOffset = 0x81;
+        display->view_ports[index].DyOffset = 0x2c;
+        display->view_ports[index].Modes = 0;
+        display->views[index].Modes = 0;
+        display->view_ports[index].RasInfo = &display->ras_infos[index];
+        display->view_ports[index].ColorMap = display->color_map;
+        display->ras_infos[index].BitMap = display->bitmaps[index];
+        display->ras_infos[index].RxOffset = 0;
+        display->ras_infos[index].RyOffset = 0;
+        display->ras_infos[index].Next = NULL;
+    }
     return display;
 }
 
@@ -1703,24 +1729,10 @@ void cl_video_display_flip(void *handle)
     if (!display->built) {
         display->old_view = GfxBase->ActiView;
         for (index = 0; index < 2; index++) {
-            InitView(&display->views[index]);
-            InitVPort(&display->view_ports[index]);
-            /* InitVPort clears UCopIns, so attach the queued user list
-             * after the reset and before MakeVPort merges it. */
             display->view_ports[index].UCopIns = display->user_copper[index];
             display->user_copper[index] = NULL;
-            display->views[index].ViewPort = &display->view_ports[index];
-            display->view_ports[index].DWidth = (WORD)display->width;
-            display->view_ports[index].DHeight = (WORD)display->height;
-            display->view_ports[index].DxOffset = 0x81;
-            display->view_ports[index].DyOffset = 0x2c;
             display->view_ports[index].Modes = 0;
-            display->view_ports[index].RasInfo = &display->ras_infos[index];
-            display->view_ports[index].ColorMap = display->color_map;
-            display->ras_infos[index].BitMap = display->bitmaps[index];
-            display->ras_infos[index].RxOffset = 0;
-            display->ras_infos[index].RyOffset = 0;
-            display->ras_infos[index].Next = NULL;
+            display->views[index].Modes = 0;
             (void)MakeVPort(&display->views[index],
                             &display->view_ports[index]);
             (void)MrgCop(&display->views[index]);
@@ -1793,4 +1805,539 @@ void cl_video_wait_vblank(void)
     if (cl_video_ensure_graphics()) {
         WaitTOF();
     }
+}
+
+/* ------------------------------------------------------------------------- */
+/* OCS hardware sprites: eight DMA channels, pairs, collision, animation.     */
+/*                                                                           */
+/* The graphics.library simple-sprite machine owns the sprite copper          */
+/* instructions. Sprites attach to an Intuition screen's viewport; the image  */
+/* is the documented posctl[2] + data[height][2] + reserved[2] block in chip  */
+/* memory. The module tracks channels so a closing screen can detach them.    */
+/* ------------------------------------------------------------------------- */
+
+#define CL_SPRITE_COUNT 8
+#define CL_SPRITE_ATTACHED 0x80
+#define CL_SPRITE_CUSTOM ((volatile struct Custom *)0x00DFF000UL)
+
+/* One hardware sprite channel. */
+typedef struct cl_sprite {
+    struct SimpleSprite simple;
+    int channel;
+    int height;
+    int x;
+    int y;
+    int visible;
+    int attach;
+    UWORD *image;
+    UWORD *blank;
+    struct Screen *screen;
+} cl_sprite;
+
+/* One animation over a fixed set of frame images. */
+typedef struct cl_sprite_animation {
+    cl_sprite *sprite;
+    int frame_count;
+    int frame;
+    UWORD **frames;
+} cl_sprite_animation;
+
+/* Channel ownership is process-wide because the hardware channels are. */
+static cl_sprite *cl_sprite_channels[CL_SPRITE_COUNT];
+
+/* Bytes in one sprite image: posctl[2] + data[height][2] + reserved[2]. */
+static ULONG cl_sprite_image_bytes(int height)
+{
+    return (ULONG)(height * 2 + 4) * (ULONG)sizeof(UWORD);
+}
+
+/* Pack a 16-pixel-per-line image after the two-word posctl header. */
+static void cl_sprite_pack(UWORD *image, int height, const UBYTE *pixels)
+{
+    int y;
+
+    image[0] = 0;
+    image[1] = 0;
+    for (y = 0; y < height; y++) {
+        UWORD plane_a = 0;
+        UWORD plane_b = 0;
+        int x;
+        for (x = 0; x < 16; x++) {
+            UBYTE value = (UBYTE)(pixels[y * 16 + x] & 0x03U);
+            UWORD bit = (UWORD)(0x8000U >> (unsigned)x);
+            if ((value & 0x01U) != 0) {
+                plane_a |= bit;
+            }
+            if ((value & 0x02U) != 0) {
+                plane_b |= bit;
+            }
+        }
+        image[2 + y * 2] = plane_a;
+        image[3 + y * 2] = plane_b;
+    }
+    image[2 + height * 2] = 0;
+    image[3 + height * 2] = 0;
+}
+
+/* Change the sprite image and rebuild the screen's display list. */
+static void cl_sprite_change_image(cl_sprite *sprite, UWORD *image)
+{
+    if (sprite == NULL || sprite->screen == NULL) {
+        return;
+    }
+    ChangeSprite(&sprite->screen->ViewPort, &sprite->simple, image);
+    if (sprite->attach && sprite->simple.posctldata != NULL) {
+        sprite->simple.posctldata[1] |= CL_SPRITE_ATTACHED;
+    }
+    RethinkDisplay();
+}
+
+/* Move the live position; the 1.3 MoveSprite preserves the ATTACH bit. */
+static void cl_sprite_move_apply(cl_sprite *sprite)
+{
+    if (sprite == NULL || sprite->screen == NULL) {
+        return;
+    }
+    MoveSprite(&sprite->screen->ViewPort, &sprite->simple,
+               (WORD)sprite->x, (WORD)sprite->y);
+    if (sprite->attach && sprite->simple.posctldata != NULL) {
+        sprite->simple.posctldata[1] |= CL_SPRITE_ATTACHED;
+    }
+}
+
+/* Detach the channel and free the image, blank, and record. */
+static void cl_sprite_destroy(cl_sprite *sprite, int free_images)
+{
+    if (sprite == NULL) {
+        return;
+    }
+    if (sprite->screen != NULL) {
+        sprite->visible = 0;
+        cl_sprite_change_image(sprite, sprite->blank);
+        if (cl_video_ensure_graphics()) {
+            WaitTOF();
+        }
+    }
+    (void)FreeSprite((WORD)sprite->simple.num);
+    if (sprite->screen != NULL) {
+        RethinkDisplay();
+        sprite->screen = NULL;
+    }
+    if (free_images) {
+        if (sprite->image != NULL) {
+            FreeMem(sprite->image, cl_sprite_image_bytes(sprite->height));
+        }
+        if (sprite->blank != NULL) {
+            FreeMem(sprite->blank, cl_sprite_image_bytes(sprite->height));
+        }
+    }
+    if (sprite->channel >= 0 && sprite->channel < CL_SPRITE_COUNT) {
+        cl_sprite_channels[sprite->channel] = NULL;
+    }
+    FreeMem(sprite, (ULONG)sizeof *sprite);
+}
+
+/* Allocate a channel and its image/blank buffers, or NULL. */
+void *cl_sprite_new(UBYTE channel, UBYTE height)
+{
+    cl_sprite *sprite;
+    UWORD *image;
+    UWORD *blank;
+
+    if (channel >= CL_SPRITE_COUNT || height < 1) {
+        return NULL;
+    }
+    if (!cl_video_ensure_graphics()) {
+        return NULL;
+    }
+    sprite = (cl_sprite *)AllocMem(
+        (ULONG)sizeof *sprite, MEMF_ANY | MEMF_CLEAR);
+    if (sprite == NULL) {
+        return NULL;
+    }
+    sprite->simple.num = (UWORD)-1;
+    if (GetSprite(&sprite->simple, (LONG)channel) < 0) {
+        FreeMem(sprite, (ULONG)sizeof *sprite);
+        return NULL;
+    }
+    sprite->simple.height = (UWORD)height;
+    image = (UWORD *)AllocMem(
+        cl_sprite_image_bytes((int)height), MEMF_CHIP | MEMF_CLEAR);
+    blank = (UWORD *)AllocMem(
+        cl_sprite_image_bytes((int)height), MEMF_CHIP | MEMF_CLEAR);
+    if (image == NULL || blank == NULL) {
+        if (image != NULL) {
+            FreeMem(image, cl_sprite_image_bytes((int)height));
+        }
+        if (blank != NULL) {
+            FreeMem(blank, cl_sprite_image_bytes((int)height));
+        }
+        (void)FreeSprite((WORD)sprite->simple.num);
+        FreeMem(sprite, (ULONG)sizeof *sprite);
+        return NULL;
+    }
+    sprite->channel = (int)channel;
+    sprite->height = (int)height;
+    sprite->x = 0;
+    sprite->y = 0;
+    sprite->visible = 0;
+    sprite->attach = 0;
+    sprite->image = image;
+    sprite->blank = blank;
+    sprite->screen = NULL;
+    cl_sprite_channels[channel] = sprite;
+    return sprite;
+}
+
+/* Hide the channel, wait one frame, and release the images and channel. */
+void cl_sprite_free(void *handle)
+{
+    cl_sprite_destroy((cl_sprite *)handle, 1);
+}
+
+/* Attach a sprite to an Intuition screen's viewport. */
+BOOL cl_sprite_attach_screen(void *sprite_handle, void *screen_handle)
+{
+    cl_sprite *sprite = (cl_sprite *)sprite_handle;
+    struct Screen *screen = (struct Screen *)screen_handle;
+
+    if (sprite == NULL || screen == NULL || sprite->screen != NULL) {
+        return FALSE;
+    }
+    sprite->screen = screen;
+    screen->ViewPort.Modes |= SPRITES;
+    ChangeSprite(&screen->ViewPort, &sprite->simple,
+                 sprite->visible ? sprite->image : sprite->blank);
+    if (sprite->attach && sprite->simple.posctldata != NULL) {
+        sprite->simple.posctldata[1] |= CL_SPRITE_ATTACHED;
+    }
+    MoveSprite(&screen->ViewPort, &sprite->simple,
+               (WORD)sprite->x, (WORD)sprite->y);
+    RethinkDisplay();
+    return TRUE;
+}
+
+/* Detach a sprite from its screen before the screen is released. */
+void cl_sprite_detach(void *handle)
+{
+    cl_sprite *sprite = (cl_sprite *)handle;
+
+    if (sprite != NULL) {
+        sprite->screen = NULL;
+    }
+}
+
+/* Detach every channel that belongs to the closing screen. */
+static void cl_sprite_screen_closing(struct Screen *screen)
+{
+    int index;
+
+    for (index = 0; index < CL_SPRITE_COUNT; index++) {
+        cl_sprite *sprite = cl_sprite_channels[index];
+        if (sprite != NULL && sprite->screen == screen) {
+            sprite->screen = NULL;
+        }
+    }
+}
+
+/* Pack `16 * height` pixels into the image; a wrong count is ignored. */
+void cl_sprite_set_pixels(void *handle, APTR pixels, ULONG count)
+{
+    cl_sprite *sprite = (cl_sprite *)handle;
+
+    if (sprite == NULL || pixels == NULL ||
+        count != (ULONG)(sprite->height * 16)) {
+        return;
+    }
+    cl_sprite_pack(sprite->image, sprite->height, (const UBYTE *)pixels);
+    if (sprite->visible) {
+        cl_sprite_change_image(sprite, sprite->image);
+    }
+}
+
+/* Move the channel; the caller keeps the sprite inside the visible screen. */
+void cl_sprite_move(void *handle, LONG x, LONG y)
+{
+    cl_sprite *sprite = (cl_sprite *)handle;
+
+    if (sprite == NULL || x < 0 || x > 511 || y < 0 || y > 255) {
+        return;
+    }
+    sprite->x = (int)x;
+    sprite->y = (int)y;
+    cl_sprite_move_apply(sprite);
+}
+
+/* Show the channel. */
+void cl_sprite_show(void *handle)
+{
+    cl_sprite *sprite = (cl_sprite *)handle;
+
+    if (sprite == NULL) {
+        return;
+    }
+    sprite->visible = 1;
+    cl_sprite_change_image(sprite, sprite->image);
+}
+
+/* Hide the channel with the zero image. */
+void cl_sprite_hide(void *handle)
+{
+    cl_sprite *sprite = (cl_sprite *)handle;
+
+    if (sprite == NULL) {
+        return;
+    }
+    sprite->visible = 0;
+    cl_sprite_change_image(sprite, sprite->blank);
+}
+
+/* Attach `odd` to `even`, making the 16-color pair. */
+BOOL cl_sprite_attach(void *even_handle, void *odd_handle)
+{
+    cl_sprite *even = (cl_sprite *)even_handle;
+    cl_sprite *odd = (cl_sprite *)odd_handle;
+
+    if (even == NULL || odd == NULL || even->height != odd->height ||
+        even->screen != odd->screen ||
+        (even->channel & 1) != 0 || odd->channel != even->channel + 1) {
+        return FALSE;
+    }
+    odd->attach = 1;
+    if (odd->screen != NULL) {
+        cl_sprite_change_image(odd, odd->visible ? odd->image : odd->blank);
+    }
+    return TRUE;
+}
+
+/* Geometry and state accessors. */
+UBYTE cl_sprite_channel(void *handle)
+{
+    const cl_sprite *sprite = (const cl_sprite *)handle;
+
+    return sprite == NULL ? (UBYTE)0xFF : (UBYTE)sprite->channel;
+}
+
+UBYTE cl_sprite_height(void *handle)
+{
+    const cl_sprite *sprite = (const cl_sprite *)handle;
+
+    return sprite == NULL ? 0 : (UBYTE)sprite->height;
+}
+
+LONG cl_sprite_x(void *handle)
+{
+    const cl_sprite *sprite = (const cl_sprite *)handle;
+
+    return sprite == NULL ? 0 : (LONG)sprite->x;
+}
+
+LONG cl_sprite_y(void *handle)
+{
+    const cl_sprite *sprite = (const cl_sprite *)handle;
+
+    return sprite == NULL ? 0 : (LONG)sprite->y;
+}
+
+BOOL cl_sprite_visible(void *handle)
+{
+    const cl_sprite *sprite = (const cl_sprite *)handle;
+
+    return sprite != NULL && sprite->visible ? TRUE : FALSE;
+}
+
+/* Enable the four sprite-pair collision groups. */
+void cl_sprite_enable_collisions(void)
+{
+    CL_SPRITE_CUSTOM->clxcon = 0xF000;
+}
+
+/* Read and clear the collision data register. */
+ULONG cl_sprite_collisions(void)
+{
+    return (ULONG)CL_SPRITE_CUSTOM->clxdat;
+}
+
+/* Create an animation over a fresh sprite channel and `frames` images. */
+void *cl_sprite_animation_new(UBYTE channel, UBYTE height, UBYTE frames)
+{
+    cl_sprite_animation *animation;
+    cl_sprite *sprite;
+    int index;
+
+    if (frames < 1 || frames > 8) {
+        return NULL;
+    }
+    sprite = (cl_sprite *)cl_sprite_new(channel, height);
+    if (sprite == NULL) {
+        return NULL;
+    }
+    animation = (cl_sprite_animation *)AllocMem(
+        (ULONG)sizeof *animation, MEMF_ANY | MEMF_CLEAR);
+    if (animation == NULL) {
+        cl_sprite_destroy(sprite, 1);
+        return NULL;
+    }
+    animation->frames = (UWORD **)AllocMem(
+        (ULONG)frames * (ULONG)sizeof(UWORD *), MEMF_ANY | MEMF_CLEAR);
+    if (animation->frames == NULL) {
+        FreeMem(animation, (ULONG)sizeof *animation);
+        cl_sprite_destroy(sprite, 1);
+        return NULL;
+    }
+    animation->sprite = sprite;
+    animation->frame_count = (int)frames;
+    animation->frame = 0;
+    animation->frames[0] = sprite->image;
+    for (index = 1; index < (int)frames; index++) {
+        animation->frames[index] = (UWORD *)AllocMem(
+            cl_sprite_image_bytes((int)height), MEMF_CHIP | MEMF_CLEAR);
+        if (animation->frames[index] == NULL) {
+            int free_index;
+            for (free_index = 0; free_index < index; free_index++) {
+                FreeMem(animation->frames[free_index],
+                        cl_sprite_image_bytes((int)height));
+            }
+            FreeMem(animation->frames, (ULONG)frames * (ULONG)sizeof(UWORD *));
+            FreeMem(animation, (ULONG)sizeof *animation);
+            sprite->image = NULL;
+            cl_sprite_destroy(sprite, 1);
+            return NULL;
+        }
+    }
+    return animation;
+}
+
+/* Release every frame, the frame table, the sprite, and the animation. */
+void cl_sprite_animation_free(void *handle)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+    cl_sprite *sprite;
+    int height;
+    int index;
+
+    if (animation == NULL) {
+        return;
+    }
+    sprite = animation->sprite;
+    if (sprite != NULL) {
+        height = sprite->height;
+        /* The sprite record owns the channel and the blank image; the
+         * animation owns frame 0 and the other frames. */
+        sprite->image = NULL;
+        cl_sprite_destroy(sprite, 1);
+        for (index = 0; index < animation->frame_count; index++) {
+            if (animation->frames[index] != NULL) {
+                FreeMem(animation->frames[index],
+                        cl_sprite_image_bytes(height));
+            }
+        }
+    }
+    if (animation->frames != NULL) {
+        FreeMem(animation->frames,
+                (ULONG)animation->frame_count * (ULONG)sizeof(UWORD *));
+    }
+    FreeMem(animation, (ULONG)sizeof *animation);
+}
+
+/* Pack one animation frame. */
+void cl_sprite_animation_set_frame(void *handle, UBYTE frame, APTR pixels,
+                                   ULONG count)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation == NULL || pixels == NULL ||
+        frame >= (UBYTE)animation->frame_count ||
+        count != (ULONG)(animation->sprite->height * 16)) {
+        return;
+    }
+    cl_sprite_pack(animation->frames[frame], animation->sprite->height,
+                   (const UBYTE *)pixels);
+    if (animation->frame == (int)frame && animation->sprite->visible) {
+        cl_sprite_change_image(animation->sprite, animation->frames[frame]);
+    }
+}
+
+/* Show one animation frame. */
+void cl_sprite_animation_show_frame(void *handle, UBYTE frame)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation == NULL || frame >= (UBYTE)animation->frame_count) {
+        return;
+    }
+    animation->frame = (int)frame;
+    animation->sprite->image = animation->frames[frame];
+    animation->sprite->visible = 1;
+    cl_sprite_change_image(animation->sprite, animation->frames[frame]);
+}
+
+/* Advance to the next frame and show it. */
+void cl_sprite_animation_next(void *handle)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation == NULL) {
+        return;
+    }
+    animation->frame = (animation->frame + 1) % animation->frame_count;
+    cl_sprite_animation_show_frame(handle, (UBYTE)animation->frame);
+}
+
+/* Move, show, or hide the animation's sprite. */
+void cl_sprite_animation_move(void *handle, LONG x, LONG y)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation != NULL) {
+        cl_sprite_move(animation->sprite, x, y);
+    }
+}
+
+void cl_sprite_animation_show(void *handle)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation != NULL) {
+        cl_sprite_show(animation->sprite);
+    }
+}
+
+void cl_sprite_animation_hide(void *handle)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation != NULL) {
+        cl_sprite_hide(animation->sprite);
+    }
+}
+
+/* Attach the animation's sprite to an Intuition screen. */
+BOOL cl_sprite_animation_attach_screen(void *handle, void *screen)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation == NULL) {
+        return FALSE;
+    }
+    return cl_sprite_attach_screen(animation->sprite, screen);
+}
+
+/* Detach the animation's sprite from its screen. */
+void cl_sprite_animation_detach(void *handle)
+{
+    cl_sprite_animation *animation = (cl_sprite_animation *)handle;
+
+    if (animation != NULL) {
+        cl_sprite_detach(animation->sprite);
+    }
+}
+
+/* Return the current frame index. */
+UBYTE cl_sprite_animation_frame(void *handle)
+{
+    const cl_sprite_animation *animation =
+        (const cl_sprite_animation *)handle;
+
+    return animation == NULL ? 0 : (UBYTE)animation->frame;
 }
