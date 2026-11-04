@@ -65,7 +65,7 @@ make sdk-registry
 | 1.3 module surface | Text/IO/mem + DOS/graphics/intuition/interrupt/custom; no `std.amiga.exec` yet |
 | Shim strategy | Shared hosted-amiga shim with 1.3-safe exec/library calls |
 | Registry | TSV source, generated Markdown coverage, shell/awk validator |
-| Runtime proof | FS-UAE A500/KS1.3 real-ROM screenshot; `docs/amiga-sdk/a500-hello.png` |
+| Runtime proof | FS-UAE A500/KS1.3 real-ROM screenshot; `docs/amiga-sdk/a500-screen.png` and `a500-hello.png` |
 | Issues | One generated tracking issue per bundle |
 
 ## Specialist Agents

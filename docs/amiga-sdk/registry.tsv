@@ -2,7 +2,7 @@ id	bundle	area	capability	priority	tier	min_os	min_hw	status	depends	acceptance	
 SDK-BASE-001	0-baseline	profile	hosted-amiga-13 profile (A500/OCS/68000/512K/KS1.3)	must	core	1.3	OCS/68000/512K	done	-	a500_profile	make check; a500 smoke	spec/15-profiles.md	Bundle 0
 SDK-BASE-002	0-baseline	runtime	nix13 runtime and libc audit	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001	a500_build	make check; nix13 build	-	Bundle 0
 SDK-BASE-003	0-baseline	profile	1.3 module gate and E11200 for unsupported modules	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001	a500_gate	amiga_a500_spec_test	-	Bundle 0
-SDK-BASE-004	0-baseline	runtime	A500/KS1.3 runtime smoke (FS-UAE real ROM; screenshot)	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001,SDK-BASE-002	a500_smoke	docs/amiga-sdk/a500-hello.png; make sdk-a500-smoke	-	Decrypted locally; no ROM committed
+SDK-BASE-004	0-baseline	runtime	A500/KS1.3 runtime smoke (FS-UAE real ROM; screenshot)	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001,SDK-BASE-002	a500_smoke	docs/amiga-sdk/a500-screen.png; docs/amiga-sdk/a500-hello.png; make sdk-a500-smoke	-	Decrypted locally; no ROM committed
 SDK-BASE-005	0-baseline	registry	TSV registry and schema validator	must	core	any	any	done	-	registry_test	tools/amiga-sdk/registry_test.sh	docs/amiga-sdk/README.md	Bundle 0
 SDK-BASE-006	0-baseline	registry	Generated coverage view	must	core	any	any	done	SDK-BASE-005	registry_coverage	make sdk-registry	docs/amiga-sdk/coverage.md	Bundle 0
 SDK-BASE-007	0-baseline	tracking	Per-bundle tracking issues	should	core	any	any	done	SDK-BASE-005	registry_issues	gh issue list	-	Bundle 0

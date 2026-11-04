@@ -27,7 +27,7 @@ The fixed test passes.
 
 | ID | Severity | Finding | Resolution |
 |---|---|---|---|
-| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | **Fixed:** `make sdk-a500-smoke` decrypts the real KS1.3 ROM, boots the ADF in FS-UAE as an A500, and compares the captured `Hello, Amiga, from Clorraine!` line to `docs/amiga-sdk/a500-hello.png`. |
+| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | **Fixed:** `make sdk-a500-smoke` decrypts the real KS1.3 ROM, boots the ADF in FS-UAE as an A500, and compares the captured `Hello, Amiga, from Clorraine!` line to `docs/amiga-sdk/a500-hello.png`; the full screen is `docs/amiga-sdk/a500-screen.png`. |
 | RV-002 | 🟠 Major | `--emulator` for `hosted-amiga-13` booted the default A1200/3.1 model. | `fs_uae_handoff` now prints `AMIGA_MODEL=A500`, the KS1.3 ROM, and `RUNNER=adf`; the Makefile `EMULATOR=1` branch uses `$(PROFILE)` and guards non-Amiga profiles. |
 | RV-003 | 🟠 Major | Docs said `std.amiga.exec` was 2.0+ with a missing fallback, but the shared shim is already 1.3-safe. | Reworded: the module stays gated on 1.3 until Bundle 7 validates it; the shim already uses 1.3-safe calls. |
 | RV-004 | 🟠 Major | Core/1.3 registry rows named 2.0+ APIs (`ReadArgs`, hooks, EClock, regions, ReadJoyPort, semaphores). | Split into 1.3 rows and 2.0+/3.1 rows; corrected `min_os`/`min_hw`; validator passes. |
@@ -67,7 +67,7 @@ startup command also needed the real 1.3 shell. The working path:
    hello-line crop to `docs/amiga-sdk/a500-hello.png`.
 
 The captured screen shows AmigaDOS Release 1.3 and
-`Hello, Amiga, from Clorraine!`. `vamos` is no longer the acceptance proof.
+`Hello, Amiga, from Clorraine!` (see `docs/amiga-sdk/a500-screen.png`). `vamos` is no longer the acceptance proof.
 
 ## Accepted residuals
 
