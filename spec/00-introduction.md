@@ -125,6 +125,7 @@ checks are the design. The full rules are in [Ch 03](03-ownership.md) and
 | Profile | Purpose | Runtime | Status |
 |---|---|---|---|
 | `hosted-amiga` | AmigaOS 2.0+/3.x programs, v1 flagship | libnix `-mcrt=nix20`, `-m68000` default | v1 |
+| `hosted-amiga-13` | A500/Kickstart 1.3 baseline | libnix `-mcrt=nix13`, 68000, OCS, 512 KB | v1.1 |
 | `host` | Fast tests of emitted C on the development machine | small shim | v1 |
 | `freestanding` | LorraineOS kernel and native programs | self-contained no-libc shim with `_start` | implemented (provisional, m68k) |
 

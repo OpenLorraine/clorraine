@@ -221,7 +221,10 @@ write_issues() {
                 NF == 0 || $1 ~ /^#/ { next }
                 $2 == bundle {
                     mark = ($9 == "done") ? "x" : " "
-                    printf "- [%s] `%s` %s (%s, min OS %s)\n", mark, $1, $4, $5, $7
+                    suffix = ""
+                    if ($9 == "deferred") suffix = " (deferred)"
+                    else if ($9 == "out-of-scope") suffix = " (out-of-scope)"
+                    printf "- [%s] `%s` %s (%s, min OS %s)%s\n", mark, $1, $4, $5, $7, suffix
                 }
             ' "${registry}"
         } > "${body}"

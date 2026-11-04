@@ -172,7 +172,7 @@
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
 | E11200 | Construct not lowerable on the selected profile | `'{feature}' is not available on profile '{profile}'` | switch profiles or avoid the feature |
-| E11201 | Unknown or unsupported profile name | `unknown profile '{profile}'` | use `hosted-amiga`, `host`, or `freestanding` |
+| E11201 | Unknown or unsupported profile name | `unknown profile '{profile}'` | use `hosted-amiga`, `hosted-amiga-13`, `host`, or `freestanding` |
 | E11210 | Runtime fault: integer division or modulo by zero, or by `-1` at the minimum signed value | `integer division by zero` | check the divisor before dividing |
 | E11211 | Runtime fault: index out of range | `index out of range` | check the index against `len` |
 | E11212 | Runtime fault: float-to-integer conversion out of range (including NaN) | `float-to-integer conversion out of range` | range-check the float before the cast |

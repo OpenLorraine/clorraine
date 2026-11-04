@@ -5,16 +5,16 @@
 
 | Bundle | Tier | Min OS | Done | Total | Must open | Tracking |
 |---|---|---|---|---|---|---|
-| 0-baseline | core | 1.3 | 0 | 10 | 7 | #1 |
-| 1-native-video | core | 1.3 | 0 | 10 | 8 | #2 |
+| 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
+| 1-native-video | core | 1.3 | 0 | 11 | 8 | #2 |
 | 2-sprites | core | 1.3 | 0 | 6 | 3 | #3 |
-| 3-audio-input | core | 1.3 | 0 | 7 | 5 | #4 |
+| 3-audio-input | core | 1.3 | 0 | 8 | 5 | #4 |
 | 4-text-layers | core | 1.3 | 0 | 6 | 4 | #5 |
-| 5-dos-assets | core | 1.3 | 0 | 8 | 4 | #6 |
+| 5-dos-assets | core | 1.3 | 0 | 7 | 4 | #6 |
 | 6-intuition | core | 1.3 | 0 | 9 | 4 | #7 |
-| 7-exec-devices | core | 1.3 | 0 | 9 | 5 | #8 |
+| 7-exec-devices | core | 1.3 | 0 | 11 | 5 | #8 |
 | 8-workbench | advanced | 2.0 | 0 | 9 | 0 | #9 |
-| 9-optional | optional | 3.1 | 0 | 4 | 0 | #10 |
+| 9-optional | optional | 3.1 | 0 | 3 | 0 | #10 |
 
 ## 0-baseline — Baseline and registry
 
@@ -22,16 +22,15 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-BASE-001 | hosted-amiga-13 profile (A500/OCS/68000/512K/KS1.3) | must | in-progress | a500_profile |
-| SDK-BASE-002 | nix13 runtime and libc audit | must | in-progress | a500_build |
-| SDK-BASE-003 | 1.3 module gate and E11200 for unsupported modules | must | in-progress | a500_gate |
-| SDK-BASE-004 | A500 FS-UAE Kickstart 1.3 smoke | must | in-progress | a500_smoke |
-| SDK-BASE-005 | TSV registry and schema validator | must | in-progress | registry_test |
-| SDK-BASE-006 | Generated coverage view | must | in-progress | registry_coverage |
-| SDK-BASE-007 | Per-bundle tracking issues | should | in-progress | registry_issues |
-| SDK-BASE-008 | Programme map and bundle order | must | in-progress | programme_map |
-| SDK-BASE-009 | Two-tier baseline documentation | should | in-progress | docs |
-| SDK-BASE-010 | A500 memory and frame budget baseline | should | missing | memory_budget |
+| SDK-BASE-001 | hosted-amiga-13 profile (A500/OCS/68000/512K/KS1.3) | must | done | a500_profile |
+| SDK-BASE-002 | nix13 runtime and libc audit | must | done | a500_build |
+| SDK-BASE-003 | 1.3 module gate and E11200 for unsupported modules | must | done | a500_gate |
+| SDK-BASE-004 | A500/1.3 load/run smoke (vamos; FS-UAE manual) | must | done | a500_smoke |
+| SDK-BASE-005 | TSV registry and schema validator | must | done | registry_test |
+| SDK-BASE-006 | Generated coverage view | must | done | registry_coverage |
+| SDK-BASE-007 | Per-bundle tracking issues | should | done | registry_issues |
+| SDK-BASE-008 | Programme map and bundle order | must | done | programme_map |
+| SDK-BASE-009 | Two-tier baseline documentation | should | done | docs |
 
 ## 1-native-video — Native Video
 
@@ -39,6 +38,7 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
+| SDK-BASE-010 | A500 memory and frame budget baseline | should | missing | memory_budget |
 | SDK-VID-001 | Chip RAM allocator (MEMF_CHIP) | must | missing | chip_mem |
 | SDK-VID-002 | Bitmap create/free and plane access | must | missing | bitmap |
 | SDK-VID-003 | Bitmap fill/plot/line | must | missing | bitmap_draw |
@@ -73,8 +73,9 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-AUD-002 | 4-channel sample playback | must | missing | audio_play |
 | SDK-AUD-003 | Period/volume/loop and stop | must | missing | audio_control |
 | SDK-AUD-004 | gameport joystick | must | missing | joystick |
-| SDK-AUD-005 | timer.device delays and EClock | should | missing | timer |
-| SDK-AUD-006 | lowlevel ReadJoyPort (2.0+) | could | missing | lowlevel |
+| SDK-AUD-005 | timer.device delays | should | missing | timer |
+| SDK-AUD-008 | EClock (2.0+) | could | missing | eclock |
+| SDK-AUD-006 | lowlevel ReadJoyPort (3.1+) | could | missing | lowlevel |
 | SDK-AUD-007 | Paddle game with sound | must | missing | game_demo |
 
 ## 4-text-layers — Text, fonts, layers
@@ -87,7 +88,7 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-TXT-002 | Text draw and measure | must | missing | text_draw |
 | SDK-TXT-003 | diskfont.library | should | missing | diskfont |
 | SDK-TXT-004 | Layers and clipping | must | missing | layers |
-| SDK-TXT-005 | Regions and damage | should | missing | regions |
+| SDK-TXT-005 | Regions and damage (2.0+) | should | missing | regions |
 | SDK-TXT-006 | Scrolling text/layers demo | must | missing | text_layers_demo |
 
 ## 5-dos-assets — DOS and assets
@@ -99,10 +100,9 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-DOS-001 | Seek/read/write | must | missing | dos_seek |
 | SDK-DOS-002 | Locks, directories, delete/rename | must | missing | dos_dirs |
 | SDK-DOS-003 | Path/assign/volume info | should | missing | dos_info |
-| SDK-DOS-004 | CLI args and ReadArgs | should | missing | dos_args |
+| SDK-DOS-004 | CLI args via ReadArgs (2.0+) | should | missing | dos_args |
 | SDK-DOS-005 | IFF/ILBM parser | must | missing | ilbm |
 | SDK-DOS-006 | datatypes.library (3.0+) | could | missing | datatypes |
-| SDK-DOS-007 | Icon library | should | missing | icon |
 | SDK-DOS-008 | Image viewer demo | must | missing | image_viewer |
 
 ## 6-intuition — Intuition UI
@@ -128,11 +128,13 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
 | SDK-EXE-001 | Worker task creation and join | should | missing | task |
-| SDK-EXE-002 | Signals and semaphores | must | missing | semaphore |
+| SDK-EXE-002 | Signals | must | missing | signals |
+| SDK-EXE-011 | Signal semaphores (2.0+) | should | missing | semaphores |
 | SDK-EXE-003 | Message ports (extend exec module) | must | missing | messages |
 | SDK-EXE-004 | Library open/close and version | must | missing | library |
 | SDK-EXE-005 | Device IORequest/DoIO/SendIO | must | missing | device_io |
-| SDK-EXE-006 | Hooks and interrupt servers | should | missing | hooks |
+| SDK-EXE-006 | Interrupt servers (VBlank, ports) | should | missing | interrupts |
+| SDK-EXE-010 | Hooks (2.0+) | should | missing | hooks_20 |
 | SDK-EXE-007 | Tags/hooks/date/memory pools (2.0+) | should | missing | utility |
 | SDK-EXE-008 | input/keyboard/console devices | should | missing | input_devices |
 | SDK-EXE-009 | Worker task + async IO demo | must | missing | task_io_demo |
@@ -159,7 +161,6 @@ Tier: optional; min OS: 3.1; min hardware: AGA/68020/2M.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-OPT-001 | BOOPSI object model | could | missing | boopsi_optional |
 | SDK-OPT-002 | bsdsocket.library | could | missing | bsdsocket |
 | SDK-OPT-003 | AmigaGuide library | could | missing | amigaguide |
 | SDK-OPT-004 | RTG/Picasso96/CyberGraphix | wont | out-of-scope | rtg |

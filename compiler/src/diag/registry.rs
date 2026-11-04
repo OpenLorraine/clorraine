@@ -189,6 +189,15 @@ mod tests {
     }
 
     #[test]
+    fn the_e11201_help_lists_the_a500_profile() {
+        let text = explain("E11201").expect("the profile diagnostic is registered");
+        assert!(
+            text.contains("hosted-amiga-13"),
+            "the E11201 help must match the driver's profile list, got:\n{text}"
+        );
+    }
+
+    #[test]
     fn skips_retired_rows_and_non_code_tables() {
         let entries = parse_registry(SYNTHETIC);
         assert!(entries.iter().all(|entry| entry.code != "E10037"));

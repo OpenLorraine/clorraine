@@ -52,7 +52,7 @@ id  bundle  area  capability  priority  tier  min_os  min_hw  status  depends  a
 | `capability` | one capability, not one C function |
 | `priority` | `must`, `should`, `could`, `wont` |
 | `tier` | `core`, `advanced`, `optional` |
-| `min_os` | `1.3`, `2.0`, `3.0`, `3.1`, `any` |
+| `min_os` | `1.3`, `2.0`, `2.1`, `3.0`, `3.1`, `any` |
 | `min_hw` | `OCS/68000/512K`, `ECS/68000/1M`, `AGA/68020/2M`, `any` |
 | `status` | `missing`, `planned`, `in-progress`, `blocked`, `done`, `deferred`, `out-of-scope` |
 | `depends` | comma-separated IDs, or `-` |
@@ -77,7 +77,7 @@ id  bundle  area  capability  priority  tier  min_os  min_hw  status  depends  a
 count table. `registry.sh issues` writes one issue body per bundle to
 `build/amiga-sdk/issues/` with a checklist of the bundle's capabilities. The
 `tracking_issue` column in `bundles.tsv` is filled after creation; the generator
-skips a bundle that already has one.
+rewrites every body, so the registry remains the source of truth.
 
 ## Issue workflow
 

@@ -2,7 +2,7 @@
 //!
 //! The 1.3 profile is the lowest supported Amiga baseline. These cases pin the
 //! profile surface, the module gate, and the `-mcrt=nix13` build before the
-//! implementation exists. The host cases always run; the cross-build case skips
+//! profile exists. The host cases always run; the cross-build case skips
 //! when the Amiga toolchain is absent.
 
 use std::path::{Path, PathBuf};

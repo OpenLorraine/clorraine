@@ -269,7 +269,7 @@ and `bufferBytes` — for the result's origin
 ## 13. Message ports (`std.amiga.exec`)
 
 The module owns private `MsgPort` handles and two move-only message handles. It is available only
-on `hosted-amiga`; the host and freestanding profiles reject it with `E11200`. The event-loop
+on `hosted-amiga`; the host, `hosted-amiga-13`, and freestanding profiles reject it with `E11200`. The event-loop
 shape is in [appendix-amiga.md](appendix-amiga.md) §6.
 
 | API | Returns | Ownership and rules |

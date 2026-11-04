@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundle 0
+> **Status**: Executing — Bundle 0 done; Bundle 1 next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -16,8 +16,8 @@ tests, and acceptance vehicle.
 | Tier | Hardware | OS | Profile |
 |---|---|---|---|
 | Core | A500: 68000, OCS, 512 KB chip | Kickstart 1.3 | `hosted-amiga-13` |
-| Advanced | A1200: 68020, AGA, 2 MB chip | Kickstart 3.1 | `hosted-amiga` |
-| Optional | A1200/3.1 or later | Optional add-ons | `hosted-amiga` |
+| Advanced | ECS/68000/1 MB and up (A1200/AGA included) | Kickstart 2.0–3.1 | `hosted-amiga` |
+| Optional | 3.0+/AGA add-ons | Optional extras | `hosted-amiga` |
 
 The core tier is the default for Bundles 0–6 and the core Exec work. Advanced
 rows declare `min_os`/`min_hw` in the registry.

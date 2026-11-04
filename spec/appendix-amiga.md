@@ -13,9 +13,10 @@ the `unsafe` code and the raw addresses.
 
 The `hosted-amiga-13` profile targets a stock A500 (68000, OCS, 512 KB chip,
 Kickstart 1.3). It provides the pre-2.0 subset documented here: screens,
-drawing, DOS delay, VBlank interrupts, and custom registers. `std.amiga.exec`
-and the later Intuition/utility libraries are 2.0+ and are rejected on 1.3 with
-`E11200`.
+drawing, DOS delay, VBlank interrupts, and custom registers. The later
+Intuition/utility libraries are 2.0+ and are rejected on 1.3 with `E11200`.
+`std.amiga.exec` stays gated on 1.3 until the Exec bundle validates it, although
+its shared shim already uses the 1.3-safe port and message calls.
 
 ## 1. API surface for v1
 

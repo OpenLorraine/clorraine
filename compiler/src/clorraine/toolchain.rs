@@ -184,12 +184,18 @@ pub fn runner_command(runner: &Runner, bin: &Path) -> Vec<String> {
 /// single-quoted: a developer who pastes the line cannot have a byte in the
 /// name interpreted by the shell. Control bytes are stripped first, so a name
 /// cannot drive terminal escapes either.
-pub fn fs_uae_handoff(bin: &Path, capture: bool) -> String {
+pub fn fs_uae_handoff(bin: &Path, capture: bool, profile: Profile) -> String {
     let prefix = if capture { "RUN_CAPTURE=1 " } else { "" };
+    let target = match profile {
+        Profile::HostedAmiga13 => {
+            "AMIGA_MODEL=A500 KICKSTART=/amiga/roms/amiga-os-130.rom RUNNER=adf "
+        }
+        _ => "",
+    };
     let raw = bin.display().to_string();
     let path = display::sanitize(&raw);
     format!(
-        "FS-UAE must run on the host. From the repository root:\n  {prefix}make -C docker run PROG={}\n",
+        "FS-UAE must run on the host. From the repository root:\n  {target}{prefix}make -C docker run PROG={}\n",
         shell_single_quote(&path)
     )
 }
@@ -274,13 +280,23 @@ mod tests {
     fn the_handoff_prints_the_host_command_and_capture_prefix() {
         let bin = Path::new("build/clorraine/hello/hosted-amiga/hello");
         assert_eq!(
-            fs_uae_handoff(bin, false),
+            fs_uae_handoff(bin, false, Profile::HostedAmiga),
             "FS-UAE must run on the host. From the repository root:\n  \
              make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n"
         );
-        assert!(fs_uae_handoff(bin, true).contains(
+        assert!(fs_uae_handoff(bin, true, Profile::HostedAmiga).contains(
             "  RUN_CAPTURE=1 make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n"
         ));
+    }
+
+    #[test]
+    fn the_a500_handoff_selects_the_a500_rom_and_adf() {
+        let bin = Path::new("build/clorraine/hello/hosted-amiga-13/hello");
+        let text = fs_uae_handoff(bin, true, Profile::HostedAmiga13);
+        assert!(text.contains("AMIGA_MODEL=A500"));
+        assert!(text.contains("KICKSTART=/amiga/roms/amiga-os-130.rom"));
+        assert!(text.contains("RUNNER=adf"));
+        assert!(text.contains("RUN_CAPTURE=1"));
     }
 
     #[test]
@@ -288,7 +304,7 @@ mod tests {
         // A stem with a quote, a substitution, and a control byte must be one
         // inert shell word: the quote is escaped and the control byte removed.
         let bin = Path::new("build/clorraine/a$(touch PWNED)'b\x1b/hosted-amiga/x");
-        let text = fs_uae_handoff(bin, false);
+        let text = fs_uae_handoff(bin, false, Profile::HostedAmiga);
         assert!(
             text.contains("PROG='build/clorraine/a$(touch PWNED)'\\''b\u{FFFD}/hosted-amiga/x'"),
             "the path must be one single-quoted word, got:\n{text}"

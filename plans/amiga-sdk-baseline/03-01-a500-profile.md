@@ -9,7 +9,7 @@ Add one variant, `Profile::HostedAmiga13`, for the A500 core tier.
 
 | Fact | `hosted-amiga-13` | `hosted-amiga` (unchanged) |
 |---|---|---|
-| Hardware | A500: 68000, OCS, 512 KB chip | A1200: 68020, AGA, 2 MB chip |
+| Hardware | A500: 68000, OCS, 512 KB chip | 2.0/ECS/68000/1 MB minimum; A1200/AGA high end |
 | OS | Kickstart 1.3 | Kickstart 3.1 |
 | C runtime | `-mcrt=nix13` | `-mcrt=nix20` |
 | CPU | `-m68000` | `-m68000` (opt-in `-m68020`) |
@@ -44,8 +44,9 @@ is written. The 3.1 profile keeps every module.
 
 The 1.3 graphics/intuition modules are allowed because the calls they lower to
 (`OpenScreen`, `SetRGB4`, `RectFill`, `Draw`, `Delay`, `AddIntServer`) exist in
-Kickstart 1.3. `std.amiga.exec` is excluded because its current `CreateMsgPort`/
-`AllocVec` path is 2.0+ even though the shim fallback in this bundle is 1.3-safe.
+Kickstart 1.3. `std.amiga.exec` is excluded until the Exec bundle validates it on the A500,
+even though the shared shim already uses the 1.3-safe `CreatePort`/`AllocMem`
+calls.
 
 ## Shared shim changes
 
@@ -68,17 +69,15 @@ constant. The 3.1 `std.amiga.exec` tests must stay green.
 The driver builds `build/clorraine/<stem>/hosted-amiga-13/<stem>`. The smoke script:
 
 1. Builds `examples/hello/hello.clo` with `--profile hosted-amiga-13`.
-2. Runs `docker/scripts/run.sh` with `AMIGA_MODEL=A500`,
-   `KICKSTART=/amiga/roms/amiga-os-130.rom`, `RUN_CAPTURE=1`, and a bounded timeout.
-3. Polls `build/run/out.txt` for the hello line; stops the emulator; diffs the
-   normalized capture against the expected line.
+2. Runs the built binary under `vamos` in the SDK container and checks the
+   `Hello, Amiga, from Clorraine!` line.
 
-`run.sh` gains explicit environment overrides: it captures `AMIGA_MODEL` and
-`KICKSTART` before sourcing `docker/.env`, then reapplies them, so a caller can
-select A500/1.3 without editing the local `.env`.
-
-If the directory drive does not mount on KS1.3, the smoke uses the existing
-`RUNNER=adf` path; the script records which path was used.
+`vamos` is the automated load/run smoke (`nix13` build + V47 API emulation), not a
+Kickstart 1.3 kernel. The FS-UAE A500/KS1.3 visual run is the
+manual hardware leg: the stock A500 has no bootable hard-drive filesystem, and the
+ADF serial/directory capture harness is deferred (AR-17, findings). `run.sh` still
+carries the explicit `AMIGA_MODEL`/`KICKSTART` overrides and the ADF path for a
+manual visual run.
 
 ## Compatibility
 

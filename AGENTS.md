@@ -47,7 +47,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` and `clorraine` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
-| `make sdk-a500-smoke` | Build the hello program for `hosted-amiga-13` and boot it in FS-UAE with the Kickstart 1.3 ROM |
+| `make sdk-a500-smoke` | Build the hello program for `hosted-amiga-13` and run it under `vamos`; FS-UAE A500/KS1.3 is the manual visual leg |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |

@@ -1,7 +1,7 @@
 # Amiga SDK Baseline (Bundle 0)
 
 > **Feature**: A500/Kickstart 1.3 profile, SDK coverage registry, and bundle tracking issues
-> **Status**: Planning Complete
+> **Status**: Done (9/9)
 > **Created**: 2026-11-04 14:33
 > **CodeOps Artifact Schema**: 1
 
@@ -10,8 +10,8 @@
 Bundle 0 establishes the lowest supported Amiga baseline and the long-term backlog
 for the Amiga SDK programme. It adds a `hosted-amiga-13` compiler profile for a
 stock A500 (68000, OCS, 512 KB chip, Kickstart 1.3), keeps the existing
-`hosted-amiga` profile as the A1200/AGA/3.1 target, and proves the 1.3 path with a
-hello-world run under FS-UAE.
+`hosted-amiga` profile as the advanced 2.0+/A1200/AGA target, and proves the 1.3 build and load/run path with a
+hello-world under `vamos`; the FS-UAE A500/KS1.3 visual leg is a manual check.
 
 It also creates the durable registry of missing Amiga capabilities. The registry
 is the source of truth; a generated Markdown coverage view and one GitHub tracking
@@ -60,11 +60,12 @@ make sdk-registry
 | Decision | Outcome |
 |---|---|
 | Lowest baseline | A500, OCS, 68000, 512 KB chip, Kickstart 1.3 |
-| Advanced baseline | A1200, AGA, 68020, 2 MB chip, Kickstart 3.1 |
+| Advanced baseline | 2.0/ECS/68000/1 MB minimum; A1200/AGA/3.1 is the high end |
 | Profile split | `hosted-amiga-13` (1.3) and `hosted-amiga` (3.1) |
 | 1.3 module surface | Text/IO/mem + DOS/graphics/intuition/interrupt/custom; no `std.amiga.exec` yet |
 | Shim strategy | Shared hosted-amiga shim with 1.3-safe exec/library calls |
 | Registry | TSV source, generated Markdown coverage, shell/awk validator |
+| Runtime proof | `nix13` build + `vamos` load/run (V47 API emulation); FS-UAE A500/KS1.3 visual leg manual |
 | Issues | One generated tracking issue per bundle |
 
 ## Specialist Agents

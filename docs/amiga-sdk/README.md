@@ -18,8 +18,8 @@ needs. GitHub issues are a generated view, not the database.
 | Tier | Hardware | OS |
 |---|---|---|
 | `core` | A500: 68000, OCS, 512 KB chip | Kickstart 1.3 |
-| `advanced` | A1200: 68020, AGA, 2 MB chip | Kickstart 3.1 |
-| `optional` | A1200/3.1 or later | Optional add-ons |
+| `advanced` | ECS/68000/1 MB and up (A1200/AGA included) | Kickstart 2.0–3.1 |
+| `optional` | 3.0+/AGA add-ons | Optional extras |
 
 Every capability row records `min_os` and `min_hw`. A capability is not claimed
 for a weaker machine unless its row says so.

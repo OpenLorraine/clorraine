@@ -58,13 +58,36 @@ if REGISTRY_FILE="${scratch}/dependency.tsv" BUNDLES_FILE="${bundles}" \
     fail "a missing dependency was accepted"
 fi
 
-# A done row without acceptance or evidence is rejected.
-awk -F '\t' 'NR == 1 { print; next } NR == 2 { $9 = "done"; $11 = "-"; $12 = "-"; print; next } { print }' \
-    "${registry}" > "${scratch}/done.tsv"
-if REGISTRY_FILE="${scratch}/done.tsv" BUNDLES_FILE="${bundles}" \
+# An unknown bundle is rejected.
+awk -F '\t' 'NR == 1 { print; next } NR == 2 { $2 = "not-a-bundle"; print; next } { print }' \
+    "${registry}" > "${scratch}/bundle.tsv"
+if REGISTRY_FILE="${scratch}/bundle.tsv" BUNDLES_FILE="${bundles}" \
     "${tool}" check >/dev/null 2>&1; then
-    fail "a done row without acceptance/evidence was accepted"
+    fail "an unknown bundle was accepted"
 fi
+
+# A must row cannot be out-of-scope.
+awk -F '\t' 'NR == 1 { print; next } NR == 2 { $5 = "must"; $9 = "out-of-scope"; print; next } { print }' \
+    "${registry}" > "${scratch}/must-scope.tsv"
+if REGISTRY_FILE="${scratch}/must-scope.tsv" BUNDLES_FILE="${bundles}" \
+    "${tool}" check >/dev/null 2>&1; then
+    fail "a must/out-of-scope row was accepted"
+fi
+
+# A done row without acceptance or evidence is rejected (both missing, and one missing).
+for variant in both one; do
+    if [ "${variant}" = "both" ]; then
+        awk -F '\t' 'NR == 1 { print; next } NR == 2 { $9 = "done"; $11 = "-"; $12 = "-"; print; next } { print }' \
+            "${registry}" > "${scratch}/done-${variant}.tsv"
+    else
+        awk -F '\t' 'NR == 1 { print; next } NR == 2 { $9 = "done"; $11 = "-"; $12 = "evidence"; print; next } { print }' \
+            "${registry}" > "${scratch}/done-${variant}.tsv"
+    fi
+    if REGISTRY_FILE="${scratch}/done-${variant}.tsv" BUNDLES_FILE="${bundles}" \
+        "${tool}" check >/dev/null 2>&1; then
+        fail "a done row without ${variant} acceptance/evidence was accepted"
+    fi
+done
 
 # Every bundle gets an issue body with at least one checklist row.
 "${tool}" issues "${scratch}/issues"

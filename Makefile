@@ -25,7 +25,7 @@
 DOCKER_MAKE ?= $(MAKE) -C docker
 
 # Driver passthrough options.
-#   PROFILE   host (default), hosted-amiga, or freestanding
+#   PROFILE   host (default), hosted-amiga, hosted-amiga-13, or freestanding
 #   EMULATOR  1 to boot the built program in FS-UAE on the host
 #   CAPTURE   1 to write the program output to build/run/out.txt instead of streaming
 PROFILE ?= host
@@ -39,6 +39,9 @@ CAPTURE_ARG = $(if $(filter 1,$(CAPTURE)),--capture,)
 STEM = $(basename $(notdir $(FILE)))
 # Prefix for the host FS-UAE wrapper when capturing.
 CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
+# The A500 profile must boot the KS1.3 ROM through the ADF path; the assignments
+# are expanded at make time so the shell sees real NAME=value words.
+FS_UAE_ENV = $(if $(filter hosted-amiga-13,$(PROFILE)),AMIGA_MODEL=A500 KICKSTART=/amiga/roms/amiga-os-130.rom RUNNER=adf ,)
 
 # Differential and sanitizer overrides reach the container through the
 # environment, so a path with spaces stays one value and never becomes shell
@@ -52,6 +55,7 @@ export ASAN_SUITE_TIMEOUT
 
 check:
 	./spec/check.sh
+	tools/amiga-sdk/registry_test.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 
 # Run every suite that references RDC_ASAN under AddressSanitizer. The runner
@@ -71,8 +75,9 @@ differential:
 # Developer convenience: build the driver, then run one program.
 #   make run FILE=hello.clo                                  host, streamed
 #   make run FILE=hello.clo PROFILE=hosted-amiga             Amiga, under vamos
-#   make run FILE=hello.clo EMULATOR=1                       Amiga, boot FS-UAE
-#   make run FILE=hello.clo EMULATOR=1 CAPTURE=1             Amiga, capture FS-UAE output
+#   make run FILE=hello.clo PROFILE=hosted-amiga-13          A500/1.3, under vamos
+#   make run FILE=hello.clo PROFILE=hosted-amiga EMULATOR=1   Amiga, boot FS-UAE
+#   make run FILE=hello.clo PROFILE=hosted-amiga EMULATOR=1 CAPTURE=1  Amiga, capture FS-UAE output
 #
 # FS-UAE runs on the host (the SDK container cannot launch it), so EMULATOR=1
 # builds the program in the container and then boots the emulator here.
@@ -83,12 +88,13 @@ differential:
 # passthrough is the one place where the value reaches one.)
 ifeq ($(EMULATOR),1)
 run:
-	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga] [EMULATOR=1] [CAPTURE=1]'; exit 2; }
-	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga $(FILE)"
-	$(CAPTURE_ENV)$(DOCKER_MAKE) run PROG=build/clorraine/$(STEM)/hosted-amiga/$(STEM)
+	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga|hosted-amiga-13] [EMULATOR=1] [CAPTURE=1]'; exit 2; }
+	@case "$(PROFILE)" in hosted-amiga|hosted-amiga-13) ;; *) echo 'EMULATOR=1 requires PROFILE=hosted-amiga or hosted-amiga-13'; exit 2;; esac
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile $(PROFILE) $(FILE)"
+	$(FS_UAE_ENV)$(CAPTURE_ENV)$(DOCKER_MAKE) run PROG=build/clorraine/$(STEM)/$(PROFILE)/$(STEM)
 else
 run:
-	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga] [CAPTURE=1]'; exit 2; }
+	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga|hosted-amiga-13] [CAPTURE=1]'; exit 2; }
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine run $(PROFILE_ARG) $(CAPTURE_ARG) $(FILE)"
 endif
 
@@ -110,6 +116,7 @@ run-fault-amiga:
 
 verify:
 	$(MAKE) check
+	$(MAKE) sdk-a500-smoke
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -127,8 +134,8 @@ sdk-issues:
 	tools/amiga-sdk/registry.sh issues
 	@echo "sdk-issues: bodies in build/amiga-sdk/issues"
 
-# A500/Kickstart 1.3 runtime proof: build the hello program under the 1.3
-# profile, then boot it in FS-UAE with the real Kickstart 1.3 ROM.
+# A500/Kickstart 1.3 build and load/run smoke: build the hello program under
+# the 1.3 profile, then run it under `vamos`. The FS-UAE A500/KS1.3 visual leg is manual.
 sdk-a500-smoke:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/hello/hello.clo"
 	docker/scripts/a500-smoke.sh build/clorraine/hello/hosted-amiga-13/hello

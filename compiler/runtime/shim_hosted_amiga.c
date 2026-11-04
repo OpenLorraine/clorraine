@@ -6,13 +6,14 @@
  * the helpers the emitted translation unit calls and the C-side VBlank server
  * the standard-library interrupt dispatcher installs.
  *
- * The IO, memory, and text helpers use the libc the toolchain's nix20 runtime
- * already supplies, matching the platform norm. The `dos.library` delay and the
- * `exec.library` interrupt server are the only native AmigaOS calls; the DOS
- * `Delay` primitive is declared here with the standard-argument attribute the
- * library requires rather than including `proto/dos.h`, whose prototypes for
- * `Open`, `Close`, `Read`, and `Write` would conflict with the ABI prototypes
- * the standard library declares and the shim defines.
+ * The IO, memory, and text helpers use the libc the toolchain's libnix runtime
+ * supplies (`nix20` for `hosted-amiga`, `nix13` for `hosted-amiga-13`), matching
+ * the platform norm. The shim also calls `dos.library` (delay), `exec.library`
+ * (ports, messages, interrupts), `graphics.library`, and `intuition.library`.
+ * The DOS `Delay` primitive is declared here with the standard-argument
+ * attribute the library requires rather than including `proto/dos.h`, whose
+ * prototypes for `Open`, `Close`, `Read`, and `Write` would conflict with the
+ * ABI prototypes the standard library declares and the shim defines.
  */
 
 #include <exec/types.h>

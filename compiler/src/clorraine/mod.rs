@@ -266,7 +266,10 @@ fn run_command(options: Options) -> i32 {
     }
     if options.emulator {
         // The run is handed to the host; printing the command is success.
-        print!("{}", toolchain::fs_uae_handoff(&built.bin, options.capture));
+        print!(
+            "{}",
+            toolchain::fs_uae_handoff(&built.bin, options.capture, options.profile)
+        );
         return 0;
     }
     let runner = toolchain::runner(options.profile);

@@ -35,7 +35,7 @@ pub struct Options {
     pub release: bool,
     /// Print the generated C after a build or before a run.
     pub emit_c: bool,
-    /// Hand the hosted-amiga run to the host FS-UAE wrapper.
+    /// Hand the Amiga run to the host FS-UAE wrapper.
     pub emulator: bool,
     /// Write the program stdout to `out.txt` and print that path.
     pub capture: bool,
@@ -76,7 +76,7 @@ Options:
   -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
       --release                       Optimize (-O2) instead of debug (-O0 -g)
       --emit-c                        Print the generated C after building
-      --emulator                      hosted-amiga run: use FS-UAE (host handoff)
+      --emulator                      Amiga run: use FS-UAE (host handoff)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
       --explain CODE                  Print the registry entry for a diagnostic code

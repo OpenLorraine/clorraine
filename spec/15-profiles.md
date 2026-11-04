@@ -86,15 +86,16 @@ Kickstart 1.3.
 | Endianness | big |
 | Pointer size | 32-bit |
 | Entry | `main(): i32` exported to C |
-| Package | hunk executable (dir drive/ADF) |
+| Package | hunk executable (ADF/manual) |
 | Float ABI | soft-float |
 | Stack-frame warning | 1024 bytes |
 
 The profile provides the Kickstart 1.3-safe standard-library subset:
 `std.io`, `std.mem`, `std.text`, `std.fmt`, `std.amiga.custom`,
 `std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`, and
-`std.amiga.interrupt`. `std.amiga.exec` is a 2.0+ surface and reports
-`E11200` on this profile until the Exec bundle adds the fallback.
+`std.amiga.interrupt`. `std.amiga.exec` stays gated on 1.3 with `E11200` until
+the Exec bundle validates the module on the A500; the shared shim already uses
+the 1.3-safe port and message calls.
 
 ## 3. Build matrix
 
@@ -120,7 +121,7 @@ exercised, so the float ABI legs remain planned and unverified (P15).
 |---|---|---|
 | `host` | every commit | the emitted C compiles and the semantics are correct |
 | `hosted-amiga` | emulator CI (`vamos`, FS-UAE) | the real target and runtime behave the same |
-| `hosted-amiga-13` | A500 emulator (`vamos`, FS-UAE with Kickstart 1.3) | the pre-2.0 runtime and the A500 baseline behave the same |
+| `hosted-amiga-13` | `nix13` build + `vamos` load/run; FS-UAE A500 with Kickstart 1.3 is the hardware visual check | the 1.3 build and module surface load/run; the real 1.3 kernel/display is the manual FS-UAE leg |
 | `freestanding` | the build and host-run legs of the check suite | the artifact links with no C runtime; the same unit runs through the host no-libc layer |
 
 The `host` profile is the fast gate. The emulator legs catch target-only

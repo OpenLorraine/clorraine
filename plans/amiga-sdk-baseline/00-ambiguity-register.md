@@ -12,12 +12,12 @@ from the conversation. No row is silently deferred.
 | ID | Category | Question | Resolution | Authority | Status |
 |----|----------|----------|------------|-----------|--------|
 | AR-1 | Scope | What is Bundle 0? | Only the A500 baseline, the SDK registry, the tracking issues, and their verification. No graphics/audio/Intuition implementation. | User | ✅ Resolved |
-| AR-2 | Scope | Which hardware/OS baseline? | Core tier: A500, OCS, 68000, 512 KB chip, Kickstart 1.3. Advanced tier stays A1200/AGA/68020/2 MB/Kickstart 3.1. | User | ✅ Resolved |
+| AR-2 | Scope | Which hardware/OS baseline? | Core tier: A500, OCS, 68000, 512 KB chip, Kickstart 1.3. Advanced tier minimum is 2.0/ECS/68000/1 MB; A1200/AGA/68020/2 MB/Kickstart 3.1 is the high end. | User | ✅ Resolved |
 | AR-3 | Naming | What is the new profile called? | `hosted-amiga-13`. The existing `hosted-amiga` remains the 3.1 profile. | AI — delegated | ✅ Resolved |
-| AR-4 | Technical | Which modules may the 1.3 profile import? | `std.io`, `std.mem`, `std.text`, `std.fmt`, `std.amiga.custom`, `std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`, `std.amiga.interrupt`. `std.amiga.exec` stays 2.0+ until Bundle 7a. | AI — delegated | ✅ Resolved |
+| AR-4 | Technical | Which modules may the 1.3 profile import? | `std.io`, `std.mem`, `std.text`, `std.fmt`, `std.amiga.custom`, `std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`, `std.amiga.interrupt`. `std.amiga.exec` stays gated on 1.3 until Bundle 7 validates it; the shared shim already uses 1.3-safe calls. | AI — delegated | ✅ Resolved |
 | AR-5 | Technical | Separate 1.3 shim or shared shim? | One shared hosted-amiga shim. Replace `CreateMsgPort`/`DeleteMsgPort` with `CreatePort`/`DeletePort`, `AllocVec`/`FreeVec` with `AllocMem`/`FreeMem`, and open graphics/intuition at version 33. This keeps one source of truth and works on 1.3+. | AI — delegated | ✅ Resolved |
 | AR-6 | Technical | Registry format and tooling | `docs/amiga-sdk/registry.tsv` is canonical; `coverage.md` is generated; a POSIX shell/awk validator and generator (`tools/amiga-sdk/registry.sh`) checks schema and emits the coverage view. No new runtime dependency. | AI — delegated | ✅ Resolved |
-| AR-7 | Scope | GitHub issue granularity | One generated tracking issue per bundle (0–8), with a checklist from the registry; individual issues only for blocked/high-value items. The user asked for issues; the granularity is an implementation choice. | User (issues), AI — delegated (granularity) | ✅ Resolved |
+| AR-7 | Scope | GitHub issue granularity | One generated tracking issue per bundle (0–9), with a checklist from the registry; individual issues only for blocked/high-value items. The user asked for issues; the granularity is an implementation choice. | User (issues), AI — delegated (granularity) | ✅ Resolved |
 | AR-8 | Naming | Registry fields and status vocabulary | Fields: id, bundle, area, capability, priority, tier, min_os, min_hw, status, depends, acceptance, evidence, spec, notes. Status: missing/planned/in-progress/blocked/done/deferred/out-of-scope. Priority: must/should/could/wont. Tier: core/advanced/optional. | AI — delegated | ✅ Resolved |
 | AR-9 | Technical | How is the A500 runtime proven? | FS-UAE with `AMIGA_MODEL=A500` and the real Kickstart 1.3 ROM; directory drive first, bootable ADF fallback. The run must print the hello line; skip with a recorded note only when the ROM/display is unavailable. | AI — delegated | ✅ Resolved |
 | AR-10 | Technical | Build/verify command | A500 cross build uses `-mcrt=nix13 -m68000 -fwrapv -lamiga -lm`; the project gates remain `make check` and `make verify`, with `./spec/check.sh` inside `make check`. | Project fact (AGENTS.md) | ✅ Resolved |
@@ -27,6 +27,7 @@ from the conversation. No row is silently deferred.
 | AR-14 | Behavioral | What happens when a 1.3 program imports `std.amiga.exec`? | Reject with `E11200` naming the profile and the module; no translation unit. | AI — delegated | ✅ Resolved |
 | AR-15 | Behavioral | Default runner for `hosted-amiga-13` | `vamos` for quick tests; `--emulator` selects FS-UAE and is allowed for both Amiga profiles. `required_tools` adds `vamos` only when `--emulator` is absent. | AI — delegated | ✅ Resolved |
 | AR-16 | Edge case | Does a missing `std.amiga.exec` shim symbol break the 1.3 build? | No: the shared shim still defines every symbol; the module is gated out of the 1.3 profile, so the program cannot call it. The shared shim is compiled and linked on 1.3. | AI — delegated | ✅ Resolved |
+| AR-17 | Technical | What proves the A500/1.3 runtime? | Automated proof is the `nix13` build plus `vamos` load/run (V47 API emulation); the FS-UAE A500/KS1.3 visual run is a manual leg. The directory drive is not bootable on 1.3 and the ADF serial/directory capture produced no readable output in this environment. The compiler profile and 1.3 API surface are unchanged; the residual is the automated FS-UAE capture. | AI — delegated | ✅ Resolved |
 
 ## Delegated provenance
 
@@ -68,6 +69,6 @@ Reopen triggers: A500 smoke fails on KS 1.3; `nix13` lacks a required libc funct
 
 ## Deferred
 
-- `std.amiga.exec` on 1.3 is deferred to Bundle 7a (AR-4).
+- `std.amiga.exec` on 1.3 is deferred to Bundle 7 (AR-4).
 - Native video, sprites, audio/input, text/layers, DOS/assets, Intuition, Exec, and
   Workbench bundles are deferred to their own plans.
