@@ -27,7 +27,7 @@ The fixed test passes.
 
 | ID | Severity | Finding | Resolution |
 |---|---|---|---|
-| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | Reworded every runtime claim: `nix13` build + `vamos` load/run is the automated proof; the FS-UAE A500/KS1.3 visual leg is manual (AR-17). |
+| RV-001 | 🟠 Major | The automated 1.3 "runtime proof" was a V47 API-emulation smoke, not a Kickstart 1.3 kernel. | **Blocked:** no FS-UAE A500/KS1.3 output has been captured. The runtime claims were reworded to a `vamos` pre-check; AR-17 acceptance needs explicit user approval or a manual 1.3 run. |
 | RV-002 | 🟠 Major | `--emulator` for `hosted-amiga-13` booted the default A1200/3.1 model. | `fs_uae_handoff` now prints `AMIGA_MODEL=A500`, the KS1.3 ROM, and `RUNNER=adf`; the Makefile `EMULATOR=1` branch uses `$(PROFILE)` and guards non-Amiga profiles. |
 | RV-003 | 🟠 Major | Docs said `std.amiga.exec` was 2.0+ with a missing fallback, but the shared shim is already 1.3-safe. | Reworded: the module stays gated on 1.3 until Bundle 7 validates it; the shim already uses 1.3-safe calls. |
 | RV-004 | 🟠 Major | Core/1.3 registry rows named 2.0+ APIs (`ReadArgs`, hooks, EClock, regions, ReadJoyPort, semaphores). | Split into 1.3 rows and 2.0+/3.1 rows; corrected `min_os`/`min_hw`; validator passes. |
@@ -59,6 +59,19 @@ AR-17 is a reserved acceptance-criteria change: it would accept `nix13` build +
 run manual. The independent review (RV-001) flagged that this was not approved.
 Bundle 0 stays blocked until the user either (a) approves AR-17 explicitly, or
 (b) supplies a captured FS-UAE A500/KS1.3 run.
+
+Capture attempts tried and failed:
+- ADF with the default bootblock, then `boot install boot1x` (`xxd` shows
+  `DOS\x00 c0200f19`), plus uppercase `S/startup-sequence` and a root
+  `startup-sequence` copy.
+- Startup output to `DF0:out.txt`, `Shared:out.txt`, and `SER:`; serial TCP
+  (`nc 127.0.0.1 1234`) returned 0 bytes; the directory hard drive produced no
+  file.
+- `docker stop -t 8` (SIGTERM) to let FS-UAE flush the ADF, not SIGKILL.
+- `floppy_drive_0`, `floppy_image_0`, and the CLI `--floppy-drive-0` form.
+- FS-UAE screenshot action (`action_screenshot`, `keyboard_key_s`, `grab_input`)
+  and X11 `import`; no screenshot file; the imported window is black with the
+  Amiga cursor.
 
 ## Accepted residuals
 
