@@ -1,6 +1,6 @@
 # Chapter 15 - Platform Profiles
 
-> **Status:** stable (v1.0)
+> **Status:** stable (v1.0; v1.1 adds the A500/Kickstart 1.3 profile)
 > **Depends on:** Ch 00 (axioms), Ch 12 (contracts), Ch 14 (diagnostics), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; profiles carry target facts, not surface syntax (see [grammar.ebnf.md](grammar.ebnf.md))
 > **Ledger:** [decisions.md](decisions.md): A5, X3, P14, P15, R2 (C3 is an appendix topic); diagnostics N1-N3, W10004
@@ -43,10 +43,11 @@ one profile, and that selection is recorded.
 
 ## 2. The v1 profiles
 
-v1 ships `hosted-amiga`. The `host` profile exists for fast tests.
-`freestanding` is implemented provisionally: because LorraineOS does not exist
-yet, this project defines a thin ABI (m68k, 32-bit, big-endian, no libc) that
-LorraineOS can adopt or replace later.
+v1 ships `hosted-amiga`. v1.1 adds `hosted-amiga-13`, the A500/Kickstart 1.3
+baseline. The `host` profile exists for fast tests. `freestanding` is implemented
+provisionally: because LorraineOS does not exist yet, this project defines a thin
+ABI (m68k, 32-bit, big-endian, no libc) that LorraineOS can adopt or replace
+later.
 
 | Profile fact | `hosted-amiga` (v1) | `host` (tests) | `freestanding` (provisional) |
 |---|---|---|---|
@@ -72,6 +73,29 @@ needs no FPU. The `-m68881` leg trades that portability for speed and is
 opt-in. The stack-frame thresholds are v1 defaults; a frame above the
 threshold is a warning, not an error, so a large frame is a deliberate choice.
 
+### 2.1 A500 baseline (`hosted-amiga-13`, v1.1)
+
+The lowest supported baseline is a stock A500: 68000, OCS, 512 KB chip, and
+Kickstart 1.3.
+
+| Profile fact | `hosted-amiga-13` |
+|---|---|
+| Compiler | `m68k-amigaos-gcc` |
+| Runtime | libnix `-mcrt=nix13` |
+| Default CPU | `-m68000` |
+| Endianness | big |
+| Pointer size | 32-bit |
+| Entry | `main(): i32` exported to C |
+| Package | hunk executable (dir drive/ADF) |
+| Float ABI | soft-float |
+| Stack-frame warning | 1024 bytes |
+
+The profile provides the Kickstart 1.3-safe standard-library subset:
+`std.io`, `std.mem`, `std.text`, `std.fmt`, `std.amiga.custom`,
+`std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`, and
+`std.amiga.interrupt`. `std.amiga.exec` is a 2.0+ surface and reports
+`E11200` on this profile until the Exec bundle adds the fallback.
+
 ## 3. Build matrix
 
 P14 fixes the build matrix. The exact commands are normative in
@@ -79,8 +103,8 @@ P14 fixes the build matrix. The exact commands are normative in
 
 | Element | Value |
 |---|---|
-| Libraries | `-lamiga` |
-| C runtime | `-mcrt=nix20` (libnix) |
+| Libraries | `-lamiga`, `-lm` |
+| C runtime | `-mcrt=nix20` (hosted-amiga); `-mcrt=nix13` (hosted-amiga-13) |
 | CPU | `-m68000` default; opt-in `-m68020` |
 | FPU | opt-in `-m68881` (P15) |
 | Runners | `vamos` with GCC and vbcc; FS-UAE directory drive and ADF |
@@ -96,6 +120,7 @@ exercised, so the float ABI legs remain planned and unverified (P15).
 |---|---|---|
 | `host` | every commit | the emitted C compiles and the semantics are correct |
 | `hosted-amiga` | emulator CI (`vamos`, FS-UAE) | the real target and runtime behave the same |
+| `hosted-amiga-13` | A500 emulator (`vamos`, FS-UAE with Kickstart 1.3) | the pre-2.0 runtime and the A500 baseline behave the same |
 | `freestanding` | the build and host-run legs of the check suite | the artifact links with no C runtime; the same unit runs through the host no-libc layer |
 
 The `host` profile is the fast gate. The emulator legs catch target-only

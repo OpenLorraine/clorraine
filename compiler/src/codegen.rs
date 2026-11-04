@@ -608,7 +608,7 @@ impl<'a> Emitter<'a> {
     /// provisional ABI; every other type keeps its fixed empty state.
     pub(super) fn empty_state(&self, ty: &Ty) -> String {
         let base = types::empty_state(ty);
-        if matches!(self.profile, Profile::HostedAmiga | Profile::Freestanding)
+        if matches!(self.profile, Profile::HostedAmiga | Profile::HostedAmiga13 | Profile::Freestanding)
             && base == "NULL"
         {
             "0".to_owned()
@@ -623,7 +623,7 @@ impl<'a> Emitter<'a> {
     /// integer constant `0` as the null spelling. The host profile keeps
     /// `NULL`, which the emitted C and its tests pin.
     pub(super) fn null_literal(&self) -> &'static str {
-        if matches!(self.profile, Profile::HostedAmiga | Profile::Freestanding) {
+        if matches!(self.profile, Profile::HostedAmiga | Profile::HostedAmiga13 | Profile::Freestanding) {
             "0"
         } else {
             "NULL"

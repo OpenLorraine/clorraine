@@ -21,6 +21,9 @@
 #include <exec/ports.h>
 #include <hardware/intbits.h>
 #include <proto/exec.h>
+/* `CreatePort`/`DeletePort` are amiga.lib helpers, not exec.library vectors;
+ * the NDK declares them here rather than in proto/exec.h. */
+#include <clib/alib_protos.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <intuition/screens.h>
@@ -593,11 +596,11 @@ struct IntuitionBase *IntuitionBase = NULL;
 void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
 {
     if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 37);
+        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
     }
     if (IntuitionBase == NULL) {
         IntuitionBase =
-            (struct IntuitionBase *)OpenLibrary((STRPTR) "intuition.library", 37);
+            (struct IntuitionBase *)OpenLibrary((STRPTR) "intuition.library", 33);
     }
     if (GfxBase == NULL || IntuitionBase == NULL) {
         return NULL;
@@ -687,7 +690,9 @@ typedef struct cl_message {
  * named ports stay outside the wrapper surface. */
 void *cl_create_msg_port(void)
 {
-    return (void *)CreateMsgPort();
+    /* CreatePort is the 1.3-compatible private-port constructor. Passing a
+     * null name keeps the port private, matching CreateMsgPort's semantics. */
+    return (void *)CreatePort(NULL, 0);
 }
 
 /* Delete a private message port. Null-safe; the caller has already drained it. */
@@ -695,7 +700,7 @@ void cl_delete_msg_port(void *port_handle)
 {
     struct MsgPort *port = (struct MsgPort *)port_handle;
     if (port != NULL) {
-        DeleteMsgPort(port);
+        DeletePort(port);
     }
 }
 
@@ -704,7 +709,7 @@ void cl_delete_msg_port(void *port_handle)
 void *cl_create_message(void *reply_handle, LONG payload)
 {
     cl_message *message =
-        (cl_message *)AllocVec(sizeof *message, MEMF_PUBLIC | MEMF_CLEAR);
+        (cl_message *)AllocMem(sizeof *message, MEMF_PUBLIC | MEMF_CLEAR);
     if (message == NULL) {
         return NULL;
     }
@@ -761,7 +766,7 @@ void cl_reply_msg(void *message_handle)
 void cl_free_message(void *message_handle)
 {
     if (message_handle != NULL) {
-        FreeVec(message_handle);
+        FreeMem(message_handle, sizeof(cl_message));
     }
 }
 

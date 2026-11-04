@@ -123,7 +123,7 @@ impl Options {
         }
         if options.profile.is_none() {
             return Err(
-                "--profile <host|hosted-amiga|freestanding> is required".to_owned(),
+                "--profile <host|hosted-amiga|hosted-amiga-13|freestanding> is required".to_owned(),
             );
         }
         if options.files.is_empty() {
@@ -314,7 +314,7 @@ pub fn run(args: Vec<String>) -> i32 {
             "{}",
             format_error(
                 format,
-                "usage error: --profile <host|hosted-amiga|freestanding> is required"
+                "usage error: --profile <host|hosted-amiga|hosted-amiga-13|freestanding> is required"
             )
         );
         return EXIT_USAGE;
@@ -429,7 +429,7 @@ fn profile_available(name: &str, diagnostics: &mut Diagnostics) -> bool {
         None => {
             diagnostics.push(
                 Diagnostic::cli_error("E11201", format!("unknown profile '{name}'"))
-                    .with_help("use `hosted-amiga`, `host`, or `freestanding`"),
+                    .with_help("use `hosted-amiga`, `hosted-amiga-13`, `host`, or `freestanding`"),
             );
             false
         }
@@ -482,6 +482,7 @@ mod tests {
         let mut diagnostics = Diagnostics::new(false, None);
         assert!(profile_available("host", &mut diagnostics));
         assert!(profile_available("hosted-amiga", &mut diagnostics));
+        assert!(profile_available("hosted-amiga-13", &mut diagnostics));
         assert!(profile_available("freestanding", &mut diagnostics));
         assert!(!profile_available("nope", &mut diagnostics));
         let codes: Vec<&str> = diagnostics

@@ -38,9 +38,10 @@ committed; `demo/poster.png` is the one checked-in still.
 
 Production-readiness track. The reproducible Docker toolchain, the stable v1.0
 specification, and the compiler implementation are in place: `clc` compiles the
-corpus subset of the specification to one C99 translation unit for the `host`
-and `hosted-amiga` profiles, and the host and target acceptance suites are
-green.
+corpus subset of the specification to one C99 translation unit for the `host`,
+`hosted-amiga`, and `hosted-amiga-13` profiles, and the host and target
+acceptance suites are green. The `hosted-amiga-13` profile targets a stock A500
+with Kickstart 1.3; the Amiga SDK registry tracks the remaining native surface.
 
 | Component | State |
 |---|---|

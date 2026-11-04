@@ -60,7 +60,7 @@ impl AbiLayout {
     pub fn for_profile(profile: Profile) -> Self {
         match profile {
             Profile::Host => Self::host(),
-            Profile::HostedAmiga | Profile::Freestanding => Self::m68k(),
+            Profile::HostedAmiga | Profile::HostedAmiga13 | Profile::Freestanding => Self::m68k(),
         }
     }
 

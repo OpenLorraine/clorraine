@@ -14,6 +14,8 @@ Profiles:
 - `host` — development and host test runs.
 - `hosted-amiga` — m68k AmigaOS-compatible output (`m68k-amigaos-gcc`, `vamos`,
   FS-UAE).
+- `hosted-amiga-13` — A500/Kickstart 1.3 baseline: 68000, OCS, 512 KB chip,
+  `-mcrt=nix13`.
 - `freestanding` — provisional m68k LorraineOS ABI: 32-bit, big-endian, no libc,
   console-only standard library.
 
@@ -41,9 +43,11 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
-| `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
+| `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` and `clorraine` at `target/debug/` |
-| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--diagnostics=json`) |
+| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--diagnostics=json`) |
+| `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
+| `make sdk-a500-smoke` | Build the hello program for `hosted-amiga-13` and boot it in FS-UAE with the Kickstart 1.3 ROM |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |

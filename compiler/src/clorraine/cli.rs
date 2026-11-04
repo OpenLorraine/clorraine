@@ -73,7 +73,7 @@ Commands:
   emit    Print the generated C (or write it with -o)
 
 Options:
-  -p, --profile <host|hosted-amiga|freestanding>   Target profile (default: host)
+  -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
       --release                       Optimize (-O2) instead of debug (-O0 -g)
       --emit-c                        Print the generated C after building
       --emulator                      hosted-amiga run: use FS-UAE (host handoff)
@@ -215,7 +215,9 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
     }
     if let Some(name) = profile {
         options.profile = Profile::parse(&name).ok_or_else(|| {
-            format!("unknown profile '{name}' (expected host, hosted-amiga, or freestanding)")
+            format!(
+                "unknown profile '{name}' (expected host, hosted-amiga, hosted-amiga-13, or freestanding)"
+            )
         })?;
     }
     Ok(options)
@@ -262,8 +264,10 @@ fn validate(options: &Options) -> Result<(), String> {
         }
     }
     // `--emulator` selects the FS-UAE runner, which only exists on Amiga runs.
-    if options.emulator && options.profile != Profile::HostedAmiga {
-        return Err("--emulator requires --profile hosted-amiga".to_owned());
+    if options.emulator
+        && !matches!(options.profile, Profile::HostedAmiga | Profile::HostedAmiga13)
+    {
+        return Err("--emulator requires an Amiga profile".to_owned());
     }
     Ok(())
 }
@@ -316,6 +320,10 @@ mod tests {
             Profile::HostedAmiga
         );
         assert_eq!(invoke(&["run", "--profile=hosted-amiga", "a.clo"]).profile, Profile::HostedAmiga);
+        assert_eq!(
+            invoke(&["run", "--profile", "hosted-amiga-13", "a.clo"]).profile,
+            Profile::HostedAmiga13
+        );
     }
 
     #[test]
@@ -330,9 +338,22 @@ mod tests {
             Profile::Freestanding
         );
         assert!(
-            help_text().contains("host|hosted-amiga|freestanding"),
-            "the help text lists the freestanding profile"
+            help_text().contains("host|hosted-amiga|hosted-amiga-13|freestanding"),
+            "the help text lists the freestanding and A500 profiles"
         );
+    }
+
+    #[test]
+    fn the_a500_profile_accepts_the_emulator_flag() {
+        let options = invoke(&[
+            "run",
+            "--profile",
+            "hosted-amiga-13",
+            "--emulator",
+            "a.clo",
+        ]);
+        assert_eq!(options.profile, Profile::HostedAmiga13);
+        assert!(options.emulator);
     }
 
     #[test]

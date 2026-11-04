@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-04 14:42
-> **Progress**: 3/9 tasks (33%)
+> **Last Updated**: 2026-11-04 15:05
+> **Progress**: 7/9 tasks (78%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -30,10 +30,10 @@ tests are written before implementation in each phase.
 
 **Tasks**: 4
 
-- [ ] 2.1.1 Write `compiler/tests/amiga_a500_spec_test.rs` for ST-3–ST-6 and extend the `profile.rs`/`toolchain.rs` unit tests; run red
-- [ ] 2.1.2 Add `Profile::HostedAmiga13` and the toolchain/runner/ABI/CLI/driver mappings; implement the 1.3 module whitelist and `E11200` gating; run the profile tests green
-- [ ] 2.1.3 Make the shared hosted-amiga shim 1.3-safe (`CreatePort`/`DeletePort`, `AllocMem`/`FreeMem`, `OpenLibrary(...,33)`); cross-build `examples/hello/hello.clo` with `-mcrt=nix13`; run green
-- [ ] 2.1.4 Update `spec/15-profiles.md`, `spec/appendix-amiga.md`, `AGENTS.md`, and `README.md`; run `make check`
+- [x] 2.1.1 Write `compiler/tests/amiga_a500_spec_test.rs` for ST-3–ST-6 and extend the `profile.rs`/`toolchain.rs` unit tests; run red
+- [x] 2.1.2 Add `Profile::HostedAmiga13` and the toolchain/runner/ABI/CLI/driver mappings; implement the 1.3 module whitelist and `E11200` gating; run the profile tests green
+- [x] 2.1.3 Make the shared hosted-amiga shim 1.3-safe (`CreatePort`/`DeletePort`, `AllocMem`/`FreeMem`, `OpenLibrary(...,33)`); cross-build `examples/hello/hello.clo` with `-mcrt=nix13`; run green
+- [x] 2.1.4 Update `spec/15-profiles.md`, `spec/appendix-amiga.md`, `AGENTS.md`, and `README.md`; run `make check`
 
 **Verify**: `make check`; `cargo test --test amiga_a500_spec_test`; `cargo test --lib profile::tests toolchain::tests`
 

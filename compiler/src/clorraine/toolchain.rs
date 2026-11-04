@@ -38,6 +38,9 @@ const HOST_BASE: &[&str] = &["-std=c99"];
 /// Amiga compiler base flags from the compile matrix.
 const AMIGA_BASE: &[&str] = &["-std=c99", "-mcrt=nix20", "-m68000", "-fwrapv"];
 
+/// A500/Kickstart 1.3 base flags: the same CPU and ABI, with the 1.3 libnix.
+const AMIGA_13_BASE: &[&str] = &["-std=c99", "-mcrt=nix13", "-m68000", "-fwrapv"];
+
 /// Debug optimization flags.
 const DEBUG_FLAGS: &[&str] = &["-O0", "-g"];
 
@@ -87,6 +90,11 @@ pub fn tool(profile: Profile) -> Tool {
             base: AMIGA_BASE,
             libs: AMIGA_LIBS,
         },
+        Profile::HostedAmiga13 => Tool {
+            program: "m68k-amigaos-gcc",
+            base: AMIGA_13_BASE,
+            libs: AMIGA_LIBS,
+        },
         Profile::Freestanding => Tool {
             program: "m68k-amigaos-gcc",
             base: FREESTANDING_BUILD_BASE,
@@ -114,7 +122,7 @@ pub fn native_syscalls() -> bool {
 pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
     match profile {
         Profile::Host => Some(tool(Profile::Host)),
-        Profile::HostedAmiga => None,
+        Profile::HostedAmiga | Profile::HostedAmiga13 => None,
         Profile::Freestanding => Some(Tool {
             program: "cc",
             base: if native_syscalls {
@@ -152,7 +160,7 @@ pub fn command(tool: &Tool, release: bool, c_path: &Path, bin_path: &Path) -> Ve
 pub fn runner(profile: Profile) -> Runner {
     match profile {
         Profile::Host => Runner::Native,
-        Profile::HostedAmiga => Runner::Vamos,
+        Profile::HostedAmiga | Profile::HostedAmiga13 => Runner::Vamos,
         Profile::Freestanding => Runner::Native,
     }
 }
@@ -241,9 +249,23 @@ mod tests {
     }
 
     #[test]
+    fn the_a500_command_is_the_nix13_matrix_line() {
+        let tool = tool(Profile::HostedAmiga13);
+        assert_eq!(
+            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lamiga -lm"
+        );
+        assert_eq!(
+            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -o prog out.c -lamiga -lm"
+        );
+    }
+
+    #[test]
     fn each_profile_has_its_runner() {
         assert!(matches!(runner(Profile::Host), Runner::Native));
         assert!(matches!(runner(Profile::HostedAmiga), Runner::Vamos));
+        assert!(matches!(runner(Profile::HostedAmiga13), Runner::Vamos));
         assert_eq!(runner_command(&Runner::Native, Path::new("p")).join(" "), "p");
         assert_eq!(runner_command(&Runner::Vamos, Path::new("p")).join(" "), "vamos p");
     }
@@ -304,6 +326,7 @@ mod tests {
     #[test]
     fn only_profiles_with_a_host_run_have_a_run_tool() {
         assert!(run_tool(Profile::HostedAmiga, true).is_none());
+        assert!(run_tool(Profile::HostedAmiga13, true).is_none());
         assert!(run_tool(Profile::Host, true).is_some());
         assert!(matches!(runner(Profile::Freestanding), Runner::Native));
     }

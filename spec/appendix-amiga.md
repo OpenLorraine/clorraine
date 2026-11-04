@@ -1,15 +1,21 @@
 # Appendix A - Amiga Platform Notes
 
-> **Status:** stable (v1.0)
+> **Status:** stable (v1.0; v1.1 adds the A500/Kickstart 1.3 note)
 > **Depends on:** Ch 12 (contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; the surface is the frozen [grammar.ebnf.md](grammar.ebnf.md)
 > **Ledger:** [decisions.md](decisions.md): C1-C4, F7, T6, T7, X1-X6, L5, P14, P15; validated by [findings](../docs/findings-phase0.md)
 
-This appendix is the practical companion to the `hosted-amiga` profile
+This appendix is the practical companion to the `hosted-amiga` profiles
 ([Ch 15](15-profiles.md)). It names the AmigaOS API the v1 standard library
 wraps, the boundary types, and the rules for hardware, interrupts, and
 asynchronous work. Application code stays above this layer: the library holds
 the `unsafe` code and the raw addresses.
+
+The `hosted-amiga-13` profile targets a stock A500 (68000, OCS, 512 KB chip,
+Kickstart 1.3). It provides the pre-2.0 subset documented here: screens,
+drawing, DOS delay, VBlank interrupts, and custom registers. `std.amiga.exec`
+and the later Intuition/utility libraries are 2.0+ and are rejected on 1.3 with
+`E11200`.
 
 ## 1. API surface for v1
 

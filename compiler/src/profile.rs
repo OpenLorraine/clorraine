@@ -23,6 +23,8 @@ pub enum Profile {
     /// The v1 target profile. It shares the host emitter surface for now; the
     /// exec/dos shim is added with the hosted-amiga runtime.
     HostedAmiga,
+    /// The A500/Kickstart 1.3 target: 68000, OCS, 512 KB chip, `nix13`.
+    HostedAmiga13,
     /// A platform with no operating system: no libc, its own start-up.
     Freestanding,
 }
@@ -36,6 +38,7 @@ impl Profile {
         match name {
             "host" => Some(Profile::Host),
             "hosted-amiga" => Some(Profile::HostedAmiga),
+            "hosted-amiga-13" => Some(Profile::HostedAmiga13),
             "freestanding" => Some(Profile::Freestanding),
             _ => None,
         }
@@ -46,6 +49,7 @@ impl Profile {
         match self {
             Profile::Host => "host",
             Profile::HostedAmiga => "hosted-amiga",
+            Profile::HostedAmiga13 => "hosted-amiga-13",
             Profile::Freestanding => "freestanding",
         }
     }
@@ -59,7 +63,10 @@ impl Profile {
     /// not-implemented branch is dormant but preserved for a future profile.
     pub fn implemented(self) -> bool {
         match self {
-            Profile::Host | Profile::HostedAmiga | Profile::Freestanding => true,
+            Profile::Host
+            | Profile::HostedAmiga
+            | Profile::HostedAmiga13
+            | Profile::Freestanding => true,
         }
     }
 
@@ -74,6 +81,22 @@ impl Profile {
         match self {
             Profile::Host => !module.starts_with("std.amiga."),
             Profile::HostedAmiga => true,
+            // Kickstart 1.3 predates the message-port allocation calls and the
+            // later Intuition/utility APIs. The 1.3 surface is the smallest
+            // set whose wrappers work on the stock A500; `std.amiga.exec`
+            // arrives with the Exec bundle.
+            Profile::HostedAmiga13 => matches!(
+                module,
+                "std.io"
+                    | "std.mem"
+                    | "std.text"
+                    | "std.fmt"
+                    | "std.amiga.custom"
+                    | "std.amiga.dos"
+                    | "std.amiga.graphics"
+                    | "std.amiga.intuition"
+                    | "std.amiga.interrupt"
+            ),
             Profile::Freestanding => module == "std.io",
         }
     }
@@ -82,7 +105,7 @@ impl Profile {
     pub fn shim(self) -> &'static str {
         match self {
             Profile::Host => HOST_SHIM,
-            Profile::HostedAmiga => HOSTED_AMIGA_SHIM,
+            Profile::HostedAmiga | Profile::HostedAmiga13 => HOSTED_AMIGA_SHIM,
             Profile::Freestanding => FREESTANDING_SHIM,
         }
     }
@@ -91,7 +114,7 @@ impl Profile {
     pub fn stack_frame_limit(self) -> usize {
         match self {
             Profile::Host => 16_384,
-            Profile::HostedAmiga => 1_024,
+            Profile::HostedAmiga | Profile::HostedAmiga13 => 1_024,
             Profile::Freestanding => 1_024,
         }
     }
@@ -106,18 +129,23 @@ mod tests {
         assert_eq!(Profile::parse("host"), Some(Profile::Host));
         assert_eq!(Profile::parse("hosted-amiga"), Some(Profile::HostedAmiga));
         assert_eq!(
+            Profile::parse("hosted-amiga-13"),
+            Some(Profile::HostedAmiga13)
+        );
+        assert_eq!(
             Profile::parse("freestanding"),
             Some(Profile::Freestanding)
         );
         assert_eq!(Profile::parse("nope"), None);
         assert_eq!(Profile::Host.name(), "host");
         assert_eq!(Profile::HostedAmiga.name(), "hosted-amiga");
+        assert_eq!(Profile::HostedAmiga13.name(), "hosted-amiga-13");
         assert_eq!(Profile::Freestanding.name(), "freestanding");
     }
 
     #[test]
     fn every_named_profile_is_implemented() {
-        for name in ["host", "hosted-amiga", "freestanding"] {
+        for name in ["host", "hosted-amiga", "hosted-amiga-13", "freestanding"] {
             let profile = Profile::parse(name).expect("a known name parses");
             assert!(profile.implemented(), "{name} must be implemented");
         }
@@ -182,6 +210,7 @@ mod tests {
     fn stack_frame_thresholds_match_the_profiles() {
         assert_eq!(Profile::Host.stack_frame_limit(), 16_384);
         assert_eq!(Profile::HostedAmiga.stack_frame_limit(), 1_024);
+        assert_eq!(Profile::HostedAmiga13.stack_frame_limit(), 1_024);
         assert_eq!(Profile::Freestanding.stack_frame_limit(), 1_024);
     }
 
@@ -192,6 +221,17 @@ mod tests {
         assert!(Profile::HostedAmiga.supports_module("std.amiga.dos"));
         assert!(Profile::HostedAmiga.supports_module("std.amiga.interrupt"));
         assert!(Profile::HostedAmiga.supports_module("std.mem"));
+        assert!(Profile::HostedAmiga13.supports_module("std.io"));
+        assert!(Profile::HostedAmiga13.supports_module("std.mem"));
+        assert!(Profile::HostedAmiga13.supports_module("std.amiga.graphics"));
+        assert!(Profile::HostedAmiga13.supports_module("std.amiga.intuition"));
+        assert!(!Profile::HostedAmiga13.supports_module("std.amiga.exec"));
+        assert!(Profile::HostedAmiga.supports_module("std.amiga.exec"));
+    }
+
+    #[test]
+    fn the_a500_profile_uses_the_shared_hosted_amiga_shim() {
+        assert_eq!(Profile::HostedAmiga13.shim(), Profile::HostedAmiga.shim());
     }
 
     #[test]

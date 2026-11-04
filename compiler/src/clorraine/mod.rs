@@ -141,7 +141,11 @@ fn required_tools(options: &Options) -> Vec<&'static str> {
                 // with `cc`, on top of the m68k build the run also performs.
                 tools.push("cc");
             }
-            if options.profile == Profile::HostedAmiga && !options.emulator {
+            if matches!(
+                options.profile,
+                Profile::HostedAmiga | Profile::HostedAmiga13
+            ) && !options.emulator
+            {
                 tools.push("vamos");
             }
         }
