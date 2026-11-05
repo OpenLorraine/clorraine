@@ -244,6 +244,9 @@ mod tests {
         assert!(Profile::HostedAmiga.supports_module("std.amiga.icon"));
         assert!(!Profile::HostedAmiga13.supports_module("std.amiga.icon"));
         assert!(!Profile::Host.supports_module("std.amiga.icon"));
+        assert!(Profile::HostedAmiga.supports_module("std.amiga.workbench"));
+        assert!(!Profile::HostedAmiga13.supports_module("std.amiga.workbench"));
+        assert!(!Profile::Host.supports_module("std.amiga.workbench"));
     }
 
     #[test]

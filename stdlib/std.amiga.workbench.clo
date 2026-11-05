@@ -1,0 +1,156 @@
+//! Amiga Workbench application objects: AppIcon, AppWindow, AppMenuItem, and
+//! AppMessage.
+//!
+//! This module belongs to the hosted-Amiga profiles that provide
+//! `workbench.library` (Kickstart 2.0+). The host and `hosted-amiga-13`
+//! profiles reject it with `E11200`. The wrappers reach the profile C shim
+//! through `ffi`, so application code never writes `ffi` and never touches
+//! `unsafe`.
+//!
+//! An `AppIcon`, `AppWindow`, or `AppMenuItem` registers an application object
+//! with Workbench and returns an owned handle. Workbench sends an `AppMessage`
+//! to the port the object was created with; the receiver replies it with
+//! `replyAppMessage` or the generated drop. An `AppWindow` borrows its
+//! `Window`: remove the AppWindow before the window closes.
+//!
+//! The module does not start Workbench. The acceptance harness starts the
+//! ROM-resident Workbench task with a test-only fixture, mirroring `C:LoadWB`.
+
+module std.amiga.workbench;
+
+import { MsgPort } from std.amiga.exec;
+import { Window } from std.amiga.intuition;
+
+/// An AppIcon registered with Workbench. The generated drop removes it.
+export handle AppIcon freedBy cl_remove_app_icon;
+
+/// An AppWindow registered with Workbench. The generated drop removes it.
+///
+/// The AppWindow borrows the `Window`; the window must stay open until the
+/// AppWindow is removed.
+export handle AppWindow freedBy cl_remove_app_window;
+
+/// An AppMenuItem registered with Workbench. The generated drop removes it.
+export handle AppMenuItem freedBy cl_remove_app_menu_item;
+
+/// An AppMessage received from Workbench or a test fixture. The generated drop
+/// replies it.
+export handle AppMessage freedBy cl_reply_app_message;
+
+/// `am_Type` for an AppWindow message.
+export const APPMSG_APPWINDOW: i32 = 7;
+/// `am_Type` for an AppIcon message.
+export const APPMSG_APPICON: i32 = 8;
+/// `am_Type` for an AppMenuItem message.
+export const APPMSG_APPMENUITEM: i32 = 9;
+/// `am_Class` for an AppIcon Open action.
+export const APPMSG_OPEN: i32 = 0;
+
+ffi stdworkbench {
+    func cl_add_app_icon(borrow port: MsgPort, title: cstring,
+                         id: u32, user_data: u32): AppIcon?;
+    func cl_remove_app_icon(take icon: AppIcon): void;
+    func cl_add_app_window(borrow window: Window, borrow port: MsgPort,
+                           id: u32, user_data: u32): AppWindow?;
+    func cl_remove_app_window(take window: AppWindow): void;
+    func cl_add_app_menu_item(borrow port: MsgPort, title: cstring,
+                              id: u32, user_data: u32): AppMenuItem?;
+    func cl_remove_app_menu_item(take item: AppMenuItem): void;
+    func cl_wait_app_message(borrow port: MsgPort): AppMessage?;
+    func cl_app_message_type(borrow message: AppMessage): i32;
+    func cl_app_message_id(borrow message: AppMessage): u32;
+    func cl_app_message_user_data(borrow message: AppMessage): u32;
+    func cl_app_message_class(borrow message: AppMessage): i32;
+    func cl_app_message_arg_count(borrow message: AppMessage): i32;
+    func cl_reply_app_message(take message: AppMessage): void;
+    func cl_save_public_screen(name: cstring, path: cstring): bool;
+}
+
+/// Registers an AppIcon on `port` and returns an owned handle, or `null`.
+///
+/// The icon uses a default Workbench image, is positioned at `(400, 140)`, and
+/// copies `title`. `id` and `userData` are returned in the AppMessage. The
+/// caller keeps the `port` alive until the icon is removed. The result is
+/// removed with `removeAppIcon` or the generated drop.
+export func addAppIcon(borrow port: MsgPort, title: cstring,
+                       id: u32, userData: u32): AppIcon? {
+    return cl_add_app_icon(port, title, id, userData);
+}
+
+/// Removes an AppIcon from Workbench.
+export func removeAppIcon(take icon: AppIcon): void {
+    cl_remove_app_icon(icon);
+}
+
+/// Registers `window` as an AppWindow on `port`, or returns `null`.
+///
+/// The window must stay open until the AppWindow is removed. The generated
+/// drop removes an unremoved AppWindow.
+export func addAppWindow(borrow window: Window, borrow port: MsgPort,
+                         id: u32, userData: u32): AppWindow? {
+    return cl_add_app_window(window, port, id, userData);
+}
+
+/// Removes an AppWindow from Workbench.
+export func removeAppWindow(take window: AppWindow): void {
+    cl_remove_app_window(window);
+}
+
+/// Adds `title` to the Workbench Tools menu on `port`, or returns `null`.
+///
+/// The shim copies the title. The generated drop removes an unremoved item.
+export func addAppMenuItem(borrow port: MsgPort, title: cstring,
+                           id: u32, userData: u32): AppMenuItem? {
+    return cl_add_app_menu_item(port, title, id, userData);
+}
+
+/// Removes an AppMenuItem from Workbench.
+export func removeAppMenuItem(take item: AppMenuItem): void {
+    cl_remove_app_menu_item(item);
+}
+
+/// Waits for the next AppMessage on `port`, or returns `null` for a null port.
+///
+/// The message owns its reply; call `replyAppMessage` or let the generated drop
+/// reply it. The caller owns the port and keeps it alive while waiting.
+export func waitAppMessage(borrow port: MsgPort): AppMessage? {
+    return cl_wait_app_message(port);
+}
+
+/// Returns the AppMessage type (`APPMSG_*`), or 0 for a null message.
+export func appMessageType(borrow message: AppMessage): i32 {
+    return cl_app_message_type(message);
+}
+
+/// Returns the application id supplied when the object was created.
+export func appMessageId(borrow message: AppMessage): u32 {
+    return cl_app_message_id(message);
+}
+
+/// Returns the application user data supplied when the object was created.
+export func appMessageUserData(borrow message: AppMessage): u32 {
+    return cl_app_message_user_data(message);
+}
+
+/// Returns the AppMessage class (for an AppIcon, `APPMSG_OPEN` is 0).
+export func appMessageClass(borrow message: AppMessage): i32 {
+    return cl_app_message_class(message);
+}
+
+/// Returns the number of dropped or selected icons, or 0 for a double-click.
+export func appMessageArgCount(borrow message: AppMessage): i32 {
+    return cl_app_message_arg_count(message);
+}
+
+/// Replies an AppMessage exactly once.
+export func replyAppMessage(take message: AppMessage): void {
+    cl_reply_app_message(message);
+}
+
+/// Captures a public screen by name to a native `CSCR` file.
+///
+/// The capture is the Amiga screen bitmap, independent of the host window.
+/// Returns false for a null/unknown screen or an unwritable path.
+export func savePublicScreen(name: cstring, path: cstring): bool {
+    return cl_save_public_screen(name, path);
+}

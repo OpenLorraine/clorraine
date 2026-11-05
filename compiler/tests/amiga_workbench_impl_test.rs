@@ -228,3 +228,177 @@ fn the_icon_shim_pins_the_calls_and_guards() {
         assert_contains("icon-shim", &shim, needle);
     }
 }
+
+const WORKBENCH_SOURCE: &str = r#"module tests.wb.workbenchimpl;
+
+import { MsgPort, createPublicPort, deleteMsgPort } from std.amiga.exec;
+import { Screen, Window, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+import { AppIcon, AppWindow, AppMenuItem, AppMessage, APPMSG_APPICON,
+         addAppIcon, removeAppIcon, addAppWindow, removeAppWindow,
+         addAppMenuItem, removeAppMenuItem, waitAppMessage,
+         appMessageType, appMessageId, appMessageUserData, appMessageClass,
+         appMessageArgCount, replyAppMessage, savePublicScreen }
+    from std.amiga.workbench;
+
+func main(): i32 {
+    let title: String = stringOf("Clorraine WB");
+    let screen: Screen? = openScreen(320, 80, 3, toCString(title));
+    if (screen == null) { return 1; }
+    let window: Window? = openWindow(screen, 8, 8, 300, 64, toCString(title));
+    if (window == null) { return 2; }
+    let portName: String = stringOf("ClorraineWbTest");
+    let port: MsgPort? = createPublicPort(toCString(portName));
+    if (port == null) { return 3; }
+    let icon: AppIcon? = addAppIcon(port, toCString(title), 7, 42);
+    if (icon == null) { return 4; }
+    let appWindow: AppWindow? = addAppWindow(window, port, 1, 0);
+    if (appWindow == null) { return 5; }
+    let item: AppMenuItem? = addAppMenuItem(port, toCString(title), 2, 0);
+    if (item == null) { return 6; }
+    let saved: bool = savePublicScreen(toCString(stringOf("Workbench")),
+                                       toCString(stringOf("CNEXT:workbench.cscr")));
+    let message: AppMessage? = waitAppMessage(port);
+    if (message == null) { return 8; }
+    let kind: i32 = appMessageType(message);
+    let id: u32 = appMessageId(message);
+    let user: u32 = appMessageUserData(message);
+    let class: i32 = appMessageClass(message);
+    let args: i32 = appMessageArgCount(message);
+    replyAppMessage(message);
+    removeAppMenuItem(item);
+    removeAppWindow(appWindow);
+    removeAppIcon(icon);
+    closeWindow(window);
+    deleteMsgPort(port);
+    return kind + i32(id) + i32(user) + class + args + (saved ? 0 : 1);
+}
+"#;
+
+const APP_ICON_DROP_SOURCE: &str = r#"module tests.wb.appicondrop;
+
+import { MsgPort, createPublicPort } from std.amiga.exec;
+import { AppIcon, addAppIcon } from std.amiga.workbench;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("ClorraineWbTest");
+    let port: MsgPort? = createPublicPort(toCString(name));
+    if (port == null) { return 1; }
+    let icon: AppIcon? = addAppIcon(port, toCString(stringOf("Clorraine")), 7, 0);
+    if (icon == null) { return 2; }
+    return 0;
+}
+"#;
+
+/// The Workbench wrappers lower to the shim.
+#[test]
+fn the_workbench_wrappers_lower_to_the_shim() {
+    let c = emit("workbench-routing", "hosted-amiga", WORKBENCH_SOURCE);
+    for call in [
+        "cl_add_app_icon",
+        "cl_remove_app_icon",
+        "cl_add_app_window",
+        "cl_remove_app_window",
+        "cl_add_app_menu_item",
+        "cl_remove_app_menu_item",
+        "cl_wait_app_message",
+        "cl_app_message_type",
+        "cl_app_message_id",
+        "cl_app_message_user_data",
+        "cl_app_message_class",
+        "cl_app_message_arg_count",
+        "cl_reply_app_message",
+        "cl_save_public_screen",
+    ] {
+        assert_contains("workbench-routing", &c, call);
+    }
+}
+
+/// An unremoved AppIcon goes through the generated caller cleanup.
+#[test]
+fn the_app_icon_drop_routes_an_unremoved_handle() {
+    let c = emit("appicon-drop", "hosted-amiga", APP_ICON_DROP_SOURCE);
+    assert_contains(
+        "appicon-drop",
+        &c,
+        "__cl_c1:\n    if (icon) { cl_remove_app_icon(icon); }",
+    );
+}
+
+/// The AppIcon record owns the title copy and the default DiskObject and pins
+/// the visible position.
+#[test]
+fn the_app_icon_record_owns_the_title_and_object() {
+    let shim = shim();
+    for needle in [
+        "typedef struct cl_app_icon",
+        "struct AppIcon *icon;",
+        "struct DiskObject *object;",
+        "char *title;",
+        "ULONG title_size;",
+        "cl_workbench_copy_title",
+        "GetDefDiskObject(WBTOOL)",
+        "object->do_Type = 0;",
+        "object->do_CurrentX = 400;",
+        "object->do_CurrentY = 140;",
+        "WBAPPICONA_PropagatePosition",
+        "AddAppIconA(id, user_data, (STRPTR)title_copy, port, 0,",
+        "FreeDiskObject(record->object);",
+        "FreeMem(record->title, record->title_size);",
+    ] {
+        assert_contains("appicon-record", &shim, needle);
+    }
+}
+
+/// The AppWindow borrows the wrapper's raw window and the AppMenuItem owns a
+/// copied title.
+#[test]
+fn the_app_window_and_menu_item_are_pinned() {
+    let shim = shim();
+    for needle in [
+        "const cl_window *window = (const cl_window *)window_handle;",
+        "window == NULL || window->window == NULL || port == NULL",
+        "AddAppWindowA(id, user_data, window->window, port, NULL)",
+        "RemoveAppWindow((struct AppWindow *)handle)",
+        "typedef struct cl_app_menu_item",
+        "AddAppMenuItemA(id, user_data, (STRPTR)title_copy, port,",
+        "RemoveAppMenuItem(record->item);",
+    ] {
+        assert_contains("appwindow-shim", &shim, needle);
+    }
+}
+
+/// The AppMessage path waits, reads every published field, and replies once.
+#[test]
+fn the_app_message_path_is_pinned() {
+    let shim = shim();
+    for needle in [
+        "void *cl_wait_app_message(void *port_handle)",
+        "(void)WaitPort(port);",
+        "return (void *)GetMsg(port);",
+        "message->am_Type",
+        "message->am_ID",
+        "message->am_UserData",
+        "message->am_Class",
+        "message->am_NumArgs",
+        "ReplyMsg((struct Message *)handle);",
+    ] {
+        assert_contains("appmessage-shim", &shim, needle);
+    }
+}
+
+/// The public-screen capture locks, saves, and unlocks.
+#[test]
+fn the_public_screen_capture_is_pinned() {
+    let shim = shim();
+    for needle in [
+        "BOOL cl_save_public_screen(char *name, char *path)",
+        "screen = LockPubScreen((STRPTR)name);",
+        "cl_screen_save_native((void *)screen, path)",
+        "UnlockPubScreen(NULL, screen);",
+    ] {
+        assert_contains("public-screen-shim", &shim, needle);
+    }
+}

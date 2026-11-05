@@ -344,3 +344,157 @@ fn mentions(text: &str, name: &str) -> bool {
     text.split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
         .any(|token| token == name)
 }
+
+/// The Workbench surface: a screen/window, a public port, all three
+/// application objects, a public-screen capture, and one AppMessage.
+const WORKBENCH_SOURCE: &str = "\
+module tests.wb.workbench;
+
+import { MsgPort, createPublicPort, deleteMsgPort } from std.amiga.exec;
+import { Screen, Window, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+import { AppIcon, AppWindow, AppMenuItem, AppMessage, APPMSG_APPICON,
+         addAppIcon, removeAppIcon, addAppWindow, removeAppWindow,
+         addAppMenuItem, removeAppMenuItem, waitAppMessage,
+         appMessageType, appMessageId, appMessageUserData, appMessageClass,
+         appMessageArgCount, replyAppMessage, savePublicScreen }
+    from std.amiga.workbench;
+
+func main(): i32 {
+    let title: String = stringOf(\"Clorraine WB\");
+    let screen: Screen? = openScreen(320, 80, 3, toCString(title));
+    if (screen == null) {
+        return 1;
+    }
+    let window: Window? = openWindow(screen, 8, 8, 300, 64, toCString(title));
+    if (window == null) {
+        return 2;
+    }
+    let portName: String = stringOf(\"ClorraineWbTest\");
+    let port: MsgPort? = createPublicPort(toCString(portName));
+    if (port == null) {
+        return 3;
+    }
+    let icon: AppIcon? = addAppIcon(port, toCString(title), 7, 42);
+    if (icon == null) {
+        return 4;
+    }
+    let appWindow: AppWindow? = addAppWindow(window, port, 1, 0);
+    if (appWindow == null) {
+        return 5;
+    }
+    let item: AppMenuItem? = addAppMenuItem(port, toCString(title), 2, 0);
+    if (item == null) {
+        return 6;
+    }
+    let shotName: String = stringOf(\"Workbench\");
+    let shotPath: String = stringOf(\"CNEXT:workbench.cscr\");
+    let saved: bool = savePublicScreen(toCString(shotName), toCString(shotPath));
+    let message: AppMessage? = waitAppMessage(port);
+    if (message == null) {
+        return 8;
+    }
+    let kind: i32 = appMessageType(message);
+    let id: u32 = appMessageId(message);
+    let user: u32 = appMessageUserData(message);
+    let class: i32 = appMessageClass(message);
+    let args: i32 = appMessageArgCount(message);
+    let expected: i32 = APPMSG_APPICON;
+    replyAppMessage(message);
+    removeAppMenuItem(item);
+    removeAppWindow(appWindow);
+    removeAppIcon(icon);
+    closeWindow(window);
+    deleteMsgPort(port);
+    return kind + i32(id) + i32(user) + class + args - expected + (saved ? 0 : 1);
+}
+";
+
+// The Workbench surface compiles on hosted-amiga with zero diagnostics.
+#[test]
+fn the_workbench_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("workbench-surface");
+    let source_path = write_fixture(&scratch, "main.clo", WORKBENCH_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("workbench-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the Workbench surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in [
+        "cl_add_app_icon",
+        "cl_add_app_window",
+        "cl_add_app_menu_item",
+        "cl_wait_app_message",
+        "cl_app_message_type",
+        "cl_reply_app_message",
+        "cl_save_public_screen",
+    ] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+// The Workbench module is 2.0+ only; the A500 profile rejects it.
+#[test]
+fn the_a500_profile_rejects_the_workbench_surface() {
+    let scratch = ScratchDir::new("workbench-a500");
+    let source_path = write_fixture(&scratch, "main.clo", WORKBENCH_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("workbench-a500", &output, 1);
+    assert!(
+        stderr(&output).contains("E11200"),
+        "expected E11200, got:\n{}",
+        stderr(&output)
+    );
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+// The Workbench surface cross-builds with the 2.0 runtime.
+#[test]
+fn the_workbench_surface_cross_builds_with_nix20() {
+    cross_build("workbench-build20", "hosted-amiga", "nix20", WORKBENCH_SOURCE);
+}
+
+// The stdlib appendix §14.2 documents every Workbench export.
+#[test]
+fn the_workbench_exports_match_the_stdlib_appendix() {
+    let appendix = std::fs::read_to_string(repo_root().join("spec/appendix-stdlib.md"))
+        .expect("the stdlib appendix is readable");
+    let start = appendix
+        .find("### 14.2 Workbench")
+        .expect("the appendix has the section 14.2 heading");
+    let section = &appendix[start..];
+    let end = section.find("## 15.").unwrap_or(section.len());
+    let section = &section[..end];
+    let module =
+        clc::stdlib::lookup("std.amiga.workbench").expect("the Workbench module is registered");
+    for name in module.exports {
+        assert!(
+            mentions(section, name),
+            "the appendix is missing the export '{name}'"
+        );
+    }
+}

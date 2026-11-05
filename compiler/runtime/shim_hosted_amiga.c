@@ -129,6 +129,228 @@ BOOL cl_set_disk_object_type(void *icon, LONG kind)
     object->do_Type = (UBYTE)kind;
     return TRUE;
 }
+
+#include <clib/wb_protos.h>
+#include <utility/tagitem.h>
+
+/* The Workbench library base used by the clib stubs. */
+struct Library *WorkbenchBase;
+
+/* Open workbench.library 37 and icon.library 37 once. */
+static int cl_workbench_open(void)
+{
+    if (WorkbenchBase == NULL) {
+        WorkbenchBase = OpenLibrary((STRPTR)"workbench.library", 37);
+    }
+    return WorkbenchBase != NULL && cl_icon_open();
+}
+
+/* Copy a title for a Workbench record. The caller frees it with the same
+ * length. */
+static char *cl_workbench_copy_title(const char *title, ULONG *size)
+{
+    ULONG length = (ULONG)strlen(title) + 1;
+    char *copy = (char *)AllocMem(length, MEMF_PUBLIC);
+
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, title, length);
+    *size = length;
+    return copy;
+}
+
+typedef struct cl_app_icon {
+    struct AppIcon *icon;
+    struct DiskObject *object;
+    char *title;
+    ULONG title_size;
+} cl_app_icon;
+
+typedef struct cl_app_menu_item {
+    struct AppMenuItem *item;
+    char *title;
+    ULONG title_size;
+} cl_app_menu_item;
+
+/* Register an AppIcon with a default image at a pinned position. The record
+ * owns the title copy and the DiskObject until removal. */
+void *cl_add_app_icon(void *port_handle, char *title, ULONG id,
+                      ULONG user_data)
+{
+    struct MsgPort *port = (struct MsgPort *)port_handle;
+    struct TagItem tags[2];
+    struct DiskObject *object;
+    cl_app_icon *record;
+    char *title_copy;
+    ULONG title_size = 0;
+
+    if (port == NULL || title == NULL || !cl_workbench_open()) {
+        return NULL;
+    }
+    title_copy = cl_workbench_copy_title(title, &title_size);
+    if (title_copy == NULL) {
+        return NULL;
+    }
+    object = GetDefDiskObject(WBTOOL);
+    if (object == NULL) {
+        FreeMem(title_copy, title_size);
+        return NULL;
+    }
+    object->do_Type = 0;
+    object->do_CurrentX = 400;
+    object->do_CurrentY = 140;
+    record = (cl_app_icon *)AllocMem((ULONG)sizeof *record,
+                                     MEMF_PUBLIC | MEMF_CLEAR);
+    if (record == NULL) {
+        FreeDiskObject(object);
+        FreeMem(title_copy, title_size);
+        return NULL;
+    }
+    tags[0].ti_Tag = WBAPPICONA_PropagatePosition;
+    tags[0].ti_Data = TRUE;
+    tags[1].ti_Tag = TAG_DONE;
+    tags[1].ti_Data = 0;
+    record->icon = AddAppIconA(id, user_data, (STRPTR)title_copy, port, 0,
+                               object, tags);
+    if (record->icon == NULL) {
+        FreeDiskObject(object);
+        FreeMem(title_copy, title_size);
+        FreeMem(record, (ULONG)sizeof *record);
+        return NULL;
+    }
+    record->object = object;
+    record->title = title_copy;
+    record->title_size = title_size;
+    return record;
+}
+
+/* Remove an AppIcon and release its DiskObject and title copy. */
+void cl_remove_app_icon(void *handle)
+{
+    cl_app_icon *record = (cl_app_icon *)handle;
+
+    if (record == NULL) {
+        return;
+    }
+    if (record->icon != NULL) {
+        (void)RemoveAppIcon(record->icon);
+    }
+    if (record->object != NULL) {
+        FreeDiskObject(record->object);
+    }
+    if (record->title != NULL) {
+        FreeMem(record->title, record->title_size);
+    }
+    FreeMem(record, (ULONG)sizeof *record);
+}
+
+/* Register an AppMenuItem with a copied title. */
+void *cl_add_app_menu_item(void *port_handle, char *title, ULONG id,
+                           ULONG user_data)
+{
+    struct MsgPort *port = (struct MsgPort *)port_handle;
+    cl_app_menu_item *record;
+    char *title_copy;
+    ULONG title_size = 0;
+
+    if (port == NULL || title == NULL || !cl_workbench_open()) {
+        return NULL;
+    }
+    title_copy = cl_workbench_copy_title(title, &title_size);
+    if (title_copy == NULL) {
+        return NULL;
+    }
+    record = (cl_app_menu_item *)AllocMem((ULONG)sizeof *record,
+                                          MEMF_PUBLIC | MEMF_CLEAR);
+    if (record == NULL) {
+        FreeMem(title_copy, title_size);
+        return NULL;
+    }
+    record->item = AddAppMenuItemA(id, user_data, (STRPTR)title_copy, port,
+                                   NULL);
+    if (record->item == NULL) {
+        FreeMem(title_copy, title_size);
+        FreeMem(record, (ULONG)sizeof *record);
+        return NULL;
+    }
+    record->title = title_copy;
+    record->title_size = title_size;
+    return record;
+}
+
+/* Remove an AppMenuItem and release its title copy. */
+void cl_remove_app_menu_item(void *handle)
+{
+    cl_app_menu_item *record = (cl_app_menu_item *)handle;
+
+    if (record == NULL) {
+        return;
+    }
+    if (record->item != NULL) {
+        (void)RemoveAppMenuItem(record->item);
+    }
+    if (record->title != NULL) {
+        FreeMem(record->title, record->title_size);
+    }
+    FreeMem(record, (ULONG)sizeof *record);
+}
+
+/* Wait for the next AppMessage on a port. */
+void *cl_wait_app_message(void *port_handle)
+{
+    struct MsgPort *port = (struct MsgPort *)port_handle;
+
+    if (port == NULL) {
+        return NULL;
+    }
+    (void)WaitPort(port);
+    return (void *)GetMsg(port);
+}
+
+/* AppMessage field accessors; a null message reads as zero. */
+LONG cl_app_message_type(void *handle)
+{
+    const struct AppMessage *message = (const struct AppMessage *)handle;
+
+    return message == NULL ? 0 : (LONG)message->am_Type;
+}
+
+ULONG cl_app_message_id(void *handle)
+{
+    const struct AppMessage *message = (const struct AppMessage *)handle;
+
+    return message == NULL ? 0 : message->am_ID;
+}
+
+ULONG cl_app_message_user_data(void *handle)
+{
+    const struct AppMessage *message = (const struct AppMessage *)handle;
+
+    return message == NULL ? 0 : message->am_UserData;
+}
+
+LONG cl_app_message_class(void *handle)
+{
+    const struct AppMessage *message = (const struct AppMessage *)handle;
+
+    return message == NULL ? 0 : (LONG)message->am_Class;
+}
+
+LONG cl_app_message_arg_count(void *handle)
+{
+    const struct AppMessage *message = (const struct AppMessage *)handle;
+
+    return message == NULL ? 0 : message->am_NumArgs;
+}
+
+/* Reply an AppMessage exactly once. */
+void cl_reply_app_message(void *handle)
+{
+    if (handle != NULL) {
+        ReplyMsg((struct Message *)handle);
+    }
+}
 #endif
 
 /* The DOS timer primitive. The library calling convention needs the
@@ -2538,6 +2760,49 @@ BOOL cl_screen_save_native(void *screen_handle, char *path)
     }
     return ok;
 }
+
+#if defined(CL_HOSTED_AMIGA_20)
+/* Register an AppWindow on the caller's window. The window must outlive the
+ * AppWindow; the wrapper does not close it. */
+void *cl_add_app_window(void *window_handle, void *port_handle, ULONG id,
+                        ULONG user_data)
+{
+    const cl_window *window = (const cl_window *)window_handle;
+    struct MsgPort *port = (struct MsgPort *)port_handle;
+
+    if (window == NULL || window->window == NULL || port == NULL
+        || !cl_workbench_open()) {
+        return NULL;
+    }
+    return (void *)AddAppWindowA(id, user_data, window->window, port, NULL);
+}
+
+/* Remove an AppWindow; null-safe. */
+void cl_remove_app_window(void *handle)
+{
+    if (handle != NULL) {
+        (void)RemoveAppWindow((struct AppWindow *)handle);
+    }
+}
+
+/* Capture a public screen by name to a native CSCR file. */
+BOOL cl_save_public_screen(char *name, char *path)
+{
+    struct Screen *screen;
+    BOOL ok;
+
+    if (name == NULL || path == NULL) {
+        return FALSE;
+    }
+    screen = LockPubScreen((STRPTR)name);
+    if (screen == NULL) {
+        return FALSE;
+    }
+    ok = cl_screen_save_native((void *)screen, path);
+    UnlockPubScreen(NULL, screen);
+    return ok;
+}
+#endif
 
 /* EVENT_* values shared with std.amiga.intuition. */
 #define CL_EVENT_NONE 0

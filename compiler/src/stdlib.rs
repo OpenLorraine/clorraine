@@ -117,6 +117,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.icon",
         source: include_str!("../../stdlib/std.amiga.icon.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.workbench",
+        source: include_str!("../../stdlib/std.amiga.workbench.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -518,6 +522,33 @@ pub const MODULES: &[StdlibModule] = &[
             "setDiskObjectType",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.workbench",
+        exports: &[
+            "AppIcon",
+            "AppWindow",
+            "AppMenuItem",
+            "AppMessage",
+            "APPMSG_APPWINDOW",
+            "APPMSG_APPICON",
+            "APPMSG_APPMENUITEM",
+            "APPMSG_OPEN",
+            "addAppIcon",
+            "removeAppIcon",
+            "addAppWindow",
+            "removeAppWindow",
+            "addAppMenuItem",
+            "removeAppMenuItem",
+            "waitAppMessage",
+            "appMessageType",
+            "appMessageId",
+            "appMessageUserData",
+            "appMessageClass",
+            "appMessageArgCount",
+            "replyAppMessage",
+            "savePublicScreen",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -698,6 +729,38 @@ mod tests {
             "setDiskObjectType",
         ] {
             assert!(exports("std.amiga.icon", name), "missing export {name}");
+        }
+    }
+
+    #[test]
+    fn the_workbench_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.amiga.workbench").is_some());
+        assert!(source("std.amiga.workbench").is_some());
+        for name in [
+            "AppIcon",
+            "AppWindow",
+            "AppMenuItem",
+            "AppMessage",
+            "APPMSG_APPWINDOW",
+            "APPMSG_APPICON",
+            "APPMSG_APPMENUITEM",
+            "APPMSG_OPEN",
+            "addAppIcon",
+            "removeAppIcon",
+            "addAppWindow",
+            "removeAppWindow",
+            "addAppMenuItem",
+            "removeAppMenuItem",
+            "waitAppMessage",
+            "appMessageType",
+            "appMessageId",
+            "appMessageUserData",
+            "appMessageClass",
+            "appMessageArgCount",
+            "replyAppMessage",
+            "savePublicScreen",
+        ] {
+            assert!(exports("std.amiga.workbench", name), "missing export {name}");
         }
     }
 

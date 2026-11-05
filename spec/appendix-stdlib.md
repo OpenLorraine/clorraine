@@ -610,6 +610,60 @@ func roundTrip(name: cstring): i32 {
 }
 ```
 
+### 14.2 Workbench application objects (`std.amiga.workbench`)
+
+`AppIcon`, `AppWindow`, and `AppMenuItem` register application objects with
+Workbench and return owned handles. `AppWindow` borrows the `Window`: remove it
+before the window closes. `waitAppMessage` blocks on the port and returns an
+owned `AppMessage`; `replyAppMessage` or the generated drop replies it exactly
+once. `am_Type` is one of `APPMSG_APPWINDOW` (7), `APPMSG_APPICON` (8), or
+`APPMSG_APPMENUITEM` (9); `am_Class` 0 is `APPMSG_OPEN`. The module does not
+start Workbench; the acceptance harness starts the ROM-resident task with a
+test-only fixture.
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `addAppIcon(borrow port: MsgPort, title: cstring, id: u32, userData: u32)` | `AppIcon?` | default image, pinned position, copied title; `null` on failure |
+| `removeAppIcon(take icon: AppIcon)` | `void` | removes the icon and frees its image/title |
+| `addAppWindow(borrow window: Window, borrow port: MsgPort, id: u32, userData: u32)` | `AppWindow?` | the window must outlive the AppWindow |
+| `removeAppWindow(take window: AppWindow)` | `void` | removes the AppWindow |
+| `addAppMenuItem(borrow port: MsgPort, title: cstring, id: u32, userData: u32)` | `AppMenuItem?` | copied title; appears in the Tools menu |
+| `removeAppMenuItem(take item: AppMenuItem)` | `void` | removes the menu item and its title |
+| `waitAppMessage(borrow port: MsgPort)` | `AppMessage?` | blocks; `null` only for a null port |
+| `appMessageType(borrow message)` | `i32` | `am_Type`, or 0 for null |
+| `appMessageId(borrow message)` | `u32` | `am_ID`, or 0 for null |
+| `appMessageUserData(borrow message)` | `u32` | `am_UserData`, or 0 for null |
+| `appMessageClass(borrow message)` | `i32` | `am_Class`, or 0 for null |
+| `appMessageArgCount(borrow message)` | `i32` | `am_NumArgs`, or 0 for null |
+| `replyAppMessage(take message: AppMessage)` | `void` | replies exactly once |
+| `savePublicScreen(name: cstring, path: cstring)` | `bool` | native `CSCR` capture of a public screen |
+| drop (generated) | `void` | removes an unremoved object or replies an unhandled message |
+
+```clorraine
+import { MsgPort, createPublicPort } from std.amiga.exec;
+import { AppIcon, AppMessage, addAppIcon, removeAppIcon,
+         waitAppMessage, appMessageType, appMessageId, appMessageUserData,
+         appMessageClass, appMessageArgCount, replyAppMessage }
+    from std.amiga.workbench;
+
+func announce(name: cstring): i32 {
+    let port: MsgPort? = createPublicPort(name);
+    if (port == null) { return 1; }
+    let icon: AppIcon? = addAppIcon(port, name, 7, 42);
+    if (icon == null) { return 2; }
+    let message: AppMessage? = waitAppMessage(port);
+    if (message == null) { return 3; }
+    let kind: i32 = appMessageType(message);
+    let id: u32 = appMessageId(message);
+    let user: u32 = appMessageUserData(message);
+    let class: i32 = appMessageClass(message);
+    let args: i32 = appMessageArgCount(message);
+    replyAppMessage(message);
+    removeAppIcon(icon);
+    return kind + i32(id) + i32(user) + class + args;
+}
+```
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a
