@@ -664,6 +664,46 @@ func announce(name: cstring): i32 {
 }
 ```
 
+### 14.3 Expansion, card, and keymap (`std.amiga.expansion`)
+
+`expansionBoardCount` walks the read-only `ConfigDev` list. The per-board
+accessors return the `ExpansionRom` fields; an out-of-range index returns 0.
+`cardPresent`/`cardStatus` treat the optional `card.resource` as absent without
+failing. `mapRawKey` maps a raw key and qualifier to text, or `null` when the
+keymap library is absent or the key is unmapped. The bare ROM has a default
+keymap object but no loaded `DEVS:keymaps` layout, so an acceptance machine
+without Workbench media reports no mapped text.
+
+| API | Returns | Rules |
+|---|---|---|
+| `expansionBoardCount()` | `i32` | number of `ConfigDev` boards; 0 when the library is absent |
+| `expansionBoardManufacturer(index)` | `u16` | `cd_Rom.er_Manufacturer`; 0 out of range |
+| `expansionBoardProduct(index)` | `u8` | `cd_Rom.er_Product`; 0 out of range |
+| `expansionBoardSerial(index)` | `u32` | `cd_Rom.er_SerialNumber`; 0 out of range |
+| `expansionBoardKind(index)` | `u8` | `cd_Rom.er_Type`; 0 out of range |
+| `cardPresent()` | `bool` | true when `card.resource` opens |
+| `cardStatus()` | `u32` | `ReadCardStatus`, or 0 when the resource is absent |
+| `mapRawKey(code: u16, qualifier: u16)` | `String?` | owned text, or `null` when absent/unmapped |
+
+```clorraine
+import { expansionBoardCount, expansionBoardManufacturer,
+         expansionBoardProduct, cardPresent, cardStatus, mapRawKey }
+    from std.amiga.expansion;
+import { String } from std.text;
+
+func probe(): i32 {
+    let boards: i32 = expansionBoardCount();
+    let manufacturer: u16 = expansionBoardManufacturer(0);
+    let product: u8 = expansionBoardProduct(0);
+    let present: bool = cardPresent();
+    let status: u32 = cardStatus();
+    let text: String? = mapRawKey(0x20, 0);
+    let mapped: i32 = text == null ? 0 : 1;
+    return boards + i32(manufacturer) + i32(product) + i32(status) + mapped +
+           (present ? 1 : 0);
+}
+```
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

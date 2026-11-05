@@ -247,6 +247,9 @@ mod tests {
         assert!(Profile::HostedAmiga.supports_module("std.amiga.workbench"));
         assert!(!Profile::HostedAmiga13.supports_module("std.amiga.workbench"));
         assert!(!Profile::Host.supports_module("std.amiga.workbench"));
+        assert!(Profile::HostedAmiga.supports_module("std.amiga.expansion"));
+        assert!(!Profile::HostedAmiga13.supports_module("std.amiga.expansion"));
+        assert!(!Profile::Host.supports_module("std.amiga.expansion"));
     }
 
     #[test]

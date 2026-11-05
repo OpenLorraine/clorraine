@@ -351,6 +351,157 @@ void cl_reply_app_message(void *handle)
         ReplyMsg((struct Message *)handle);
     }
 }
+
+#include <clib/expansion_protos.h>
+#include <clib/keymap_protos.h>
+#include <clib/cardres_protos.h>
+#include <resources/card.h>
+#include <devices/inputevent.h>
+#include <devices/keymap.h>
+
+/* The base globals the clib stubs use. */
+struct Library *ExpansionBase;
+struct Library *KeymapBase;
+struct Library *CardResource;
+
+/* The text builders are defined later in the shim; declare them here so the
+ * keymap call can build its owned result. */
+void *cl_string_new(ULONG cap);
+void cl_string_append(void *handle, APTR src, ULONG n);
+
+/* Open expansion.library 37 once. */
+static int cl_expansion_open(void)
+{
+    if (ExpansionBase == NULL) {
+        ExpansionBase = OpenLibrary((STRPTR)"expansion.library", 37);
+    }
+    return ExpansionBase != NULL;
+}
+
+/* Walk FindConfigDev to the requested index; the nodes are library-owned. */
+static struct ConfigDev *cl_expansion_board(LONG index)
+{
+    struct ConfigDev *board;
+    LONG current = 0;
+
+    if (index < 0 || !cl_expansion_open()) {
+        return NULL;
+    }
+    board = FindConfigDev(NULL, -1, -1);
+    while (board != NULL && current < index) {
+        board = FindConfigDev(board, -1, -1);
+        current++;
+    }
+    return board;
+}
+
+LONG cl_expansion_board_count(void)
+{
+    struct ConfigDev *board;
+    LONG count = 0;
+
+    if (!cl_expansion_open()) {
+        return 0;
+    }
+    board = FindConfigDev(NULL, -1, -1);
+    while (board != NULL) {
+        count++;
+        board = FindConfigDev(board, -1, -1);
+    }
+    return count;
+}
+
+UWORD cl_expansion_board_manufacturer(LONG index)
+{
+    const struct ConfigDev *board = cl_expansion_board(index);
+
+    return board == NULL ? 0 : board->cd_Rom.er_Manufacturer;
+}
+
+UBYTE cl_expansion_board_product(LONG index)
+{
+    const struct ConfigDev *board = cl_expansion_board(index);
+
+    return board == NULL ? 0 : board->cd_Rom.er_Product;
+}
+
+ULONG cl_expansion_board_serial(LONG index)
+{
+    const struct ConfigDev *board = cl_expansion_board(index);
+
+    return board == NULL ? 0 : board->cd_Rom.er_SerialNumber;
+}
+
+UBYTE cl_expansion_board_kind(LONG index)
+{
+    const struct ConfigDev *board = cl_expansion_board(index);
+
+    return board == NULL ? 0 : board->cd_Rom.er_Type;
+}
+
+/* The optional PCMCIA resource. */
+BOOL cl_card_present(void)
+{
+    APTR card = OpenResource((STRPTR)"card.resource");
+
+    if (card == NULL) {
+        return FALSE;
+    }
+    RemResource(card);
+    return TRUE;
+}
+
+ULONG cl_card_status(void)
+{
+    APTR card = OpenResource((STRPTR)"card.resource");
+    UBYTE status;
+
+    if (card == NULL) {
+        return 0;
+    }
+    CardResource = (struct Library *)card;
+    status = ReadCardStatus();
+    RemResource(card);
+    CardResource = NULL;
+    return (ULONG)status;
+}
+
+/* Open keymap.library 37 once. */
+static int cl_keymap_open(void)
+{
+    if (KeymapBase == NULL) {
+        KeymapBase = OpenLibrary((STRPTR)"keymap.library", 37);
+    }
+    return KeymapBase != NULL;
+}
+
+/* Map one raw key through the current keymap into an owned String, or NULL. */
+void *cl_map_raw_key(UWORD code, UWORD qualifier)
+{
+    struct InputEvent event;
+    struct KeyMap *keymap;
+    char buffer[8];
+    WORD length;
+    void *text;
+
+    if (!cl_keymap_open()) {
+        return NULL;
+    }
+    keymap = AskKeyMapDefault();
+    event.ie_Code = code;
+    event.ie_Qualifier = qualifier;
+    event.ie_NextEvent = NULL;
+    length = MapRawKey(&event, (STRPTR)buffer, (LONG)sizeof buffer, keymap);
+    if (length <= 0) {
+        return NULL;
+    }
+    text = cl_string_new((ULONG)length);
+    if (text == NULL) {
+        return NULL;
+    }
+    cl_string_append(text, buffer, (ULONG)length);
+    return text;
+}
 #endif
 
 /* The DOS timer primitive. The library calling convention needs the

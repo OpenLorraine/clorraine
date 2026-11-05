@@ -498,3 +498,117 @@ fn the_workbench_exports_match_the_stdlib_appendix() {
         );
     }
 }
+
+/// The expansion surface: board fields, the card resource, and a raw-key
+/// mapping.
+const EXPANSION_SOURCE: &str = "\
+module tests.wb.expansion;
+
+import { String } from std.text;
+import { expansionBoardCount, expansionBoardManufacturer,
+         expansionBoardProduct, expansionBoardSerial, expansionBoardKind,
+         cardPresent, cardStatus, mapRawKey } from std.amiga.expansion;
+
+func main(): i32 {
+    let boards: i32 = expansionBoardCount();
+    let manufacturer: u16 = expansionBoardManufacturer(0);
+    let product: u8 = expansionBoardProduct(0);
+    let serial: u32 = expansionBoardSerial(0);
+    let kind: u8 = expansionBoardKind(0);
+    let present: bool = cardPresent();
+    let status: u32 = cardStatus();
+    let text: String? = mapRawKey(0x20, 0);
+    let mapped: i32 = text == null ? 0 : 1;
+    return boards + i32(manufacturer) + i32(product) + i32(serial) +
+           i32(kind) + i32(status) + mapped + (present ? 1 : 0);
+}
+";
+
+// The expansion surface compiles on hosted-amiga with zero diagnostics.
+#[test]
+fn the_expansion_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("expansion-surface");
+    let source_path = write_fixture(&scratch, "main.clo", EXPANSION_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("expansion-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the expansion surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in [
+        "cl_expansion_board_count",
+        "cl_expansion_board_manufacturer",
+        "cl_expansion_board_product",
+        "cl_expansion_board_serial",
+        "cl_expansion_board_kind",
+        "cl_card_present",
+        "cl_card_status",
+        "cl_map_raw_key",
+    ] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+// The expansion module is 2.0+ only; the A500 profile rejects it.
+#[test]
+fn the_a500_profile_rejects_the_expansion_surface() {
+    let scratch = ScratchDir::new("expansion-a500");
+    let source_path = write_fixture(&scratch, "main.clo", EXPANSION_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("expansion-a500", &output, 1);
+    assert!(
+        stderr(&output).contains("E11200"),
+        "expected E11200, got:\n{}",
+        stderr(&output)
+    );
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+// The expansion surface cross-builds with the 2.0 runtime.
+#[test]
+fn the_expansion_surface_cross_builds_with_nix20() {
+    cross_build("expansion-build20", "hosted-amiga", "nix20", EXPANSION_SOURCE);
+}
+
+// The stdlib appendix §14.3 documents every expansion export.
+#[test]
+fn the_expansion_exports_match_the_stdlib_appendix() {
+    let appendix = std::fs::read_to_string(repo_root().join("spec/appendix-stdlib.md"))
+        .expect("the stdlib appendix is readable");
+    let start = appendix
+        .find("### 14.3 Expansion")
+        .expect("the appendix has the section 14.3 heading");
+    let section = &appendix[start..];
+    let end = section.find("## 15.").unwrap_or(section.len());
+    let section = &section[..end];
+    let module = clc::stdlib::lookup("std.amiga.expansion")
+        .expect("the expansion module is registered");
+    for name in module.exports {
+        assert!(
+            mentions(section, name),
+            "the appendix is missing the export '{name}'"
+        );
+    }
+}

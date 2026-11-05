@@ -121,6 +121,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.workbench",
         source: include_str!("../../stdlib/std.amiga.workbench.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.expansion",
+        source: include_str!("../../stdlib/std.amiga.expansion.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -549,6 +553,19 @@ pub const MODULES: &[StdlibModule] = &[
             "savePublicScreen",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.expansion",
+        exports: &[
+            "expansionBoardCount",
+            "expansionBoardManufacturer",
+            "expansionBoardProduct",
+            "expansionBoardSerial",
+            "expansionBoardKind",
+            "cardPresent",
+            "cardStatus",
+            "mapRawKey",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -761,6 +778,24 @@ mod tests {
             "savePublicScreen",
         ] {
             assert!(exports("std.amiga.workbench", name), "missing export {name}");
+        }
+    }
+
+    #[test]
+    fn the_expansion_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.amiga.expansion").is_some());
+        assert!(source("std.amiga.expansion").is_some());
+        for name in [
+            "expansionBoardCount",
+            "expansionBoardManufacturer",
+            "expansionBoardProduct",
+            "expansionBoardSerial",
+            "expansionBoardKind",
+            "cardPresent",
+            "cardStatus",
+            "mapRawKey",
+        ] {
+            assert!(exports("std.amiga.expansion", name), "missing export {name}");
         }
     }
 

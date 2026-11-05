@@ -402,3 +402,97 @@ fn the_public_screen_capture_is_pinned() {
         assert_contains("public-screen-shim", &shim, needle);
     }
 }
+
+const EXPANSION_SOURCE: &str = r#"module tests.wb.expansionimpl;
+
+import { String } from std.text;
+import { expansionBoardCount, expansionBoardManufacturer,
+         expansionBoardProduct, expansionBoardSerial, expansionBoardKind,
+         cardPresent, cardStatus, mapRawKey } from std.amiga.expansion;
+
+func main(): i32 {
+    let boards: i32 = expansionBoardCount();
+    let manufacturer: u16 = expansionBoardManufacturer(0);
+    let product: u8 = expansionBoardProduct(0);
+    let serial: u32 = expansionBoardSerial(0);
+    let kind: u8 = expansionBoardKind(0);
+    let present: bool = cardPresent();
+    let status: u32 = cardStatus();
+    let text: String? = mapRawKey(0x20, 0);
+    let mapped: i32 = text == null ? 0 : 1;
+    return boards + i32(manufacturer) + i32(product) + i32(serial) +
+           i32(kind) + i32(status) + mapped + (present ? 1 : 0);
+}
+"#;
+
+/// The expansion wrappers lower to the shim.
+#[test]
+fn the_expansion_wrappers_lower_to_the_shim() {
+    let c = emit("expansion-routing", "hosted-amiga", EXPANSION_SOURCE);
+    for call in [
+        "cl_expansion_board_count",
+        "cl_expansion_board_manufacturer",
+        "cl_expansion_board_product",
+        "cl_expansion_board_serial",
+        "cl_expansion_board_kind",
+        "cl_card_present",
+        "cl_card_status",
+        "cl_map_raw_key",
+    ] {
+        assert_contains("expansion-routing", &c, call);
+    }
+}
+
+/// The expansion shim walks the read-only ConfigDev list and bounds-checks the
+/// index.
+#[test]
+fn the_expansion_shim_walks_the_board_list() {
+    let shim = shim();
+    for needle in [
+        "struct Library *ExpansionBase;",
+        "OpenLibrary((STRPTR)\"expansion.library\", 37)",
+        "FindConfigDev(NULL, -1, -1)",
+        "FindConfigDev(board, -1, -1)",
+        "board->cd_Rom.er_Manufacturer",
+        "board->cd_Rom.er_Product",
+        "board->cd_Rom.er_SerialNumber",
+        "board->cd_Rom.er_Type",
+        "index < 0 || !cl_expansion_open()",
+    ] {
+        assert_contains("expansion-shim", &shim, needle);
+    }
+}
+
+/// The card resource is optional and its base is assigned before the read.
+#[test]
+fn the_card_resource_is_optional() {
+    let shim = shim();
+    for needle in [
+        "struct Library *CardResource;",
+        "OpenResource((STRPTR)\"card.resource\")",
+        "CardResource = (struct Library *)card;",
+        "status = ReadCardStatus();",
+        "RemResource(card);",
+        "CardResource = NULL;",
+    ] {
+        assert_contains("card-shim", &shim, needle);
+    }
+}
+
+/// The keymap call fills an InputEvent and builds an owned String.
+#[test]
+fn the_keymap_call_is_pinned() {
+    let shim = shim();
+    for needle in [
+        "struct Library *KeymapBase;",
+        "OpenLibrary((STRPTR)\"keymap.library\", 37)",
+        "keymap = AskKeyMapDefault();",
+        "event.ie_Code = code;",
+        "event.ie_Qualifier = qualifier;",
+        "MapRawKey(&event, (STRPTR)buffer, (LONG)sizeof buffer, keymap)",
+        "text = cl_string_new((ULONG)length);",
+        "cl_string_append(text, buffer, (ULONG)length);",
+    ] {
+        assert_contains("keymap-shim", &shim, needle);
+    }
+}

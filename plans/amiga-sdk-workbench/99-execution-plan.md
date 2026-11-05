@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 22:40
-> **Progress**: 12/26 tasks (46%) — Executing
+> **Last Updated**: 2026-11-05 22:44
+> **Progress**: 16/26 tasks (62%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -113,10 +113,10 @@ implementation in every phase.
 
 **Reference**: [03-03](03-03-expansion-card-keymap.md) · AR-7, AR-8, R3, R9
 
-- [ ] 4.1.1 [spec-author] Add the expansion/card/keymap surface and its host/1.3 rejection, `nix20` cross-build, and appendix checks to `amiga_workbench_spec_test.rs`; run red
-- [ ] 4.1.2 Add `stdlib/std.amiga.expansion.clo`, the expansion/card/keymap shim section, the export table, and the profile gate; run the spec green
-- [ ] 4.1.3 Add the expansion/card/keymap implementation cases (FindConfigDev loop, field reads, card open/read/RemResource, MapRawKey String, bounds checks) to `amiga_workbench_impl_test.rs`
-- [ ] 4.1.4 Add the appendix §14.3 expansion text and verify the spec/impl cases and the `nix20` cross-build
+- [x] 4.1.1 [spec-author] Add the expansion/card/keymap surface and its host/1.3 rejection, `nix20` cross-build, and appendix checks to `amiga_workbench_spec_test.rs`; run red ✅ (completed: 2026-11-05 22:44; the 1.3 rejection and §14.3 check were the red gate)
+- [x] 4.1.2 Add `stdlib/std.amiga.expansion.clo`, the expansion/card/keymap shim section, the export table, and the profile gate; run the spec green ✅ (completed: 2026-11-05 22:44; 403 lib + 16 spec green)
+- [x] 4.1.3 Add the expansion/card/keymap implementation cases (FindConfigDev loop, field reads, card open/read/RemResource, MapRawKey String, bounds checks) to `amiga_workbench_impl_test.rs` ✅ (completed: 2026-11-05 22:44; 16/16 impl tests green)
+- [x] 4.1.4 Add the appendix §14.3 expansion text and verify the spec/impl cases and the `nix20` cross-build ✅ (completed: 2026-11-05 22:44; §14.3 documents every expansion export)
 
 **Verify**: `cargo test --lib --test amiga_workbench_spec_test --test amiga_workbench_impl_test`
 
