@@ -1,7 +1,7 @@
 # Amiga SDK Bundle 6: Intuition UI Implementation Plan
 
 > **Feature**: Windows, gadgets, menus, IDCMP events, requesters, alerts, and a pointer on the A500/KS1.3 Intuition surface, proven by a GUI demo.
-> **Status**: Executing — 13/17 tasks; Phase 4 blocked on AR-25 (A500 input/menu acceptance)
+> **Status**: Done — 17/17 tasks; Bundle 6 accepted on the A500/KS1.3 and issue #7 closed
 > **Created**: 2026-11-05 10:25
 > **Implements**: —
 > **CodeOps Artifact Schema**: 1
@@ -35,8 +35,8 @@ allocation, so the caller never frees Intuition-owned memory directly.
 gadtools/ASL/BOOPSI, submenus, gadget update/enable APIs, custom pointer image
 formats, Workbench windows, and any language or ABI change. The existing
 spec/impl split and FS-UAE boot/capture harness are reused; the GUI smoke adds
-interaction steps (focus, pointer moves, right-button menu gesture, typing) to
-the existing pattern rather than a new runner.
+keyboard interaction steps (typing, Right Amiga menu shortcuts, and Left Amiga+V
+requester answers) on a private Xvfb display rather than a new runner.
 
 **Approved complexity:** none beyond the direct surface above.
 

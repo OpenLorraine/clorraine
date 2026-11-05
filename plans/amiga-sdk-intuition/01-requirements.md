@@ -59,22 +59,29 @@ no 2.0+ library call to the 1.3 build.
   `RECOVERY_ALERT`. Both copy the body and block until the user answers.
 - **R8 — Pointer and palette.** `setPointer(window, true)` installs a built-in
   16x16 arrow allocated in chip memory; `setPointer(window, false)` clears it.
-  The arrow uses sprite colors 16–19, which the caller sets through the existing
-  `setColor(screen, pen, r, g, b)` before or after opening the window. The
-  `ColorMap` has 32 entries: pens 0–15 are the depth-4 playfield colors and
-  16–31 are the sprite/pointer registers.
-- **R9 — GUI demo.** `examples/amiga/gui.clo` opens a 320x200x4 custom screen
-  and a window, adds one button and one string field, adds two menus, shows one
-  Yes/No requester, shows one alert, installs the pointer, and runs a
-  deterministic event loop. It drains the queue with `pollEvent`, uses the
-  inner-size and drawing calls, and exits through the window close gadget. It
-  prints `gui: ok win 1 gad 2 menu 2 str 3 req 1` after the screen and window
-  close.
+  The arrow uses sprite registers 17 (white) and 18 (black), which the caller
+  sets through the existing `setColor(screen, 17, ...)` and
+  `setColor(screen, 18, ...)` before or after opening the window. The `ColorMap`
+  has 32 entries: pens 0–15 are the depth-4 playfield colors and 16–31 are the
+  sprite/pointer registers.
+- **R9 — GUI demo.** `examples/amiga/gui.clo` opens a 640x256x3 custom screen
+  with a light palette and a 576x208 window at (32,32), adds one button and one
+  string field, adds two menus, installs the pointer, and runs a deterministic
+  event loop. It drains the queue with `pollEvent`, uses the inner-size,
+  drawing, and text calls, and exits through File → Quit. The interactive
+  requester path uses `askYesNo` for the string Return and for Help → About;
+  both count `req` only on Yes. It prints
+  `gui: ok win 1 gad 2 menu 2 str 3 req 2` after the screen and window close.
 - **R10 — A500 acceptance.** `make sdk-a500-gui` builds the demo in release
-  mode, boots it on the real KS1.3 ROM under FS-UAE as an A500, drives the
-  window with `xdotool` (focus, pointer move, right-button menu gesture, typing,
-  close-gadget click), compares the held frame, the alert frame, and the report
-  line to committed goldens, and fails on any mismatch.
+  mode, boots it on the real KS1.3 ROM under FS-UAE as an A500, and drives it
+  keyboard-only on a private Xvfb display: type `abc` + Return, answer the
+  requester with Left Amiga+V, select Hello with Right Amiga+H, select About
+  with Right Amiga+A, answer with Left Amiga+V, and quit with Right Amiga+Q.
+  The app writes a native `CSCR` capture and one-byte `DF0:gui-*` handshake
+  files. The smoke compares the held frame to the committed golden and asserts
+  the pinned `DF0:gui.txt` report line, failing on any mismatch. `showAlert`
+  stays spec-tested because `DisplayAlert`'s private modal screen is not
+  headlessly focusable (AR-25).
 
 ### Should Have
 
@@ -113,7 +120,7 @@ no 2.0+ library call to the 1.3 build.
 
 ### Performance
 
-- The demo must fit the 512 KB chip-RAM A500 with a 320x200x4 screen, one
+- The demo must fit the 512 KB chip-RAM A500 with a 640x256x3 screen, one
   window layer, two gadgets, two menus, and one 64-byte pointer. The release
   build is the acceptance build.
 - Every event loop iteration replies its IntuiMessage before returning; no
@@ -161,10 +168,10 @@ no 2.0+ library call to the 1.3 build.
 2. Both hosted profiles compile the full surface; the host profile rejects
    `std.amiga.intuition` with `E11200`; both cross-builds pass with
    `-Wall -Wextra -Werror`.
-3. The A500 smoke drives the real window, gadgets, menu, requester, alert, and
-   pointer, and matches `docs/amiga-sdk/a500-gui.png`,
-   `docs/amiga-sdk/a500-gui-alert.png`, and `docs/amiga-sdk/a500-gui-line.png`.
-4. The report line is `gui: ok win 1 gad 2 menu 2 str 3 req 1`.
+3. The A500 smoke drives the real window, string gadget, menus, requesters, and
+   pointer, and matches `docs/amiga-sdk/a500-gui.png` and the `DF0:gui.txt`
+   report line. The alert path is spec-tested; there is no alert golden (AR-25).
+4. The report line is `gui: ok win 1 gad 2 menu 2 str 3 req 2`.
 5. `make check`, `make verify`, and `make sdk-registry` pass; the six earlier
    A500 gates stay green.
 6. Registry Bundle 6 is 6/9 done with SDK-INT-006/007/008 deferred; issue #7 is

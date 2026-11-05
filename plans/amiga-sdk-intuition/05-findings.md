@@ -182,6 +182,41 @@ the unresolved harness choice.
 | `make sdk-a500-gui` | Pass; native frame matches `docs/amiga-sdk/a500-gui.png`; line `gui: ok win 1 gad 2 menu 2 str 3 req 2` |
 | `make sdk-registry` | OK (79 capabilities, 10 bundles); coverage regenerated |
 
+## Closeout — full gate and issue closeout
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-16 | 🟠 Major | The five custom-display A500 smokes started polling 30 s after launch and kept the first FS-UAE window ID. Under a loaded headless run the demo could finish before the first capture, or FS-UAE could recreate the window, so the gate failed intermittently (`paddle: never saw the paddle screen`, `boing: held display never matched`). | **Fixed** — poll from 10 s every 2 s, re-find the `FS-UAE` window on each iteration, retry a failed capture, and report a missing window separately. `make sdk-a500-boing` and `make sdk-a500-paddle` pass under Xvfb and on the host display; the full `make verify` passes headlessly. |
+| RV-17 | 🟡 Minor | The plan's success criteria still said `req 1` and expected an alert golden after AR-25 moved the interactive path to `askYesNo`; R9/R10, AR-18/19/20, ST-7/11/12/15/16, and the preflight PF-011/PF-016 rows carried the old mouse/alert flow. | **Fixed** — one consistency pass now records the 640x256x3 demo, two requesters, keyboard-only acceptance, `req 2`, and no alert golden; the alert path stays spec-tested. |
+
+### Closeout review findings
+
+Independent closeout review: correctness and maintainability over the appendix
+docs and the five patched smoke harnesses. No gate-weakening or functional smoke
+defect was found.
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-C1 | 🟠 Major | The §8.1 example used `EVENT_NONE` without importing it. | **Fixed** — added `EVENT_NONE` to the import list; the example compiles on `hosted-amiga-13` with no diagnostics. |
+| RV-C2 | 🟠 Major | Appendix B still showed the screen-only drawing surface and omitted `windowText`. | **Fixed** — §9 now declares and documents `windowFill`, `windowDraw`, and `windowClear`; §21 documents `windowText`. |
+| RV-C3 | 🟠 Major | The plan set still carried the pre-AR-25 criteria (`req 1`, alert golden, mouse flow). | **Fixed** — R9/R10, the acceptance criteria, AR-18/19/20, ST-7/11/12/15/16, the evidence table, and PF-011/PF-016 now record the shipped 640x256x3 keyboard-only flow, `req 2`, and no alert golden. |
+| RV-C4 | 🟡 Minor | The example passed a temporary `String` title to `openScreen`, which keeps the pointer. | **Fixed** — the title is bound to a local `String` that outlives the screen; the example compiles cleanly. |
+| RV-C5 | 🟡 Minor | The feature index still said 13/17 and blocked on AR-25. | **Fixed** — it now says Done 17/17, accepted, issue #7 closed. |
+| RV-C6 | 🟡 Minor | The appendix claimed a pen outside the playfield range has no visible effect, but the drawing calls pass the full `u8` to `SetAPen`. | **Fixed** — the text now states that only `0..(1 << depth) - 1` are defined playfield colors and a higher pen is a caller contract. |
+| RV-C7 | 🟡 Minor | The event fields were described as raw message values, but the mouse fields come from `GZZMouseX`/`GZZMouseY`. | **Fixed** — the text now distinguishes the raw code/qualifier from the current inner-window pointer coordinates. |
+| RV-C8 | 🟡 Minor | `codeops/specialist-check.json` recorded 60 plans while 61 exist; `amiga-sdk-intuition` was missing. | **Fixed** — the check was rerun over all 61 plan folders; `AGENTS.md` records 61. |
+| RV-C9 | 🟡 Minor | AR-26 claimed the appendices distinguish the KS1.3 runtime proof from the 2.0+ compile-only check, but they did not say it. | **Fixed** — both appendices now state that the A500/KS1.3 gate is the runtime proof and `hosted-amiga` is compile-verified. |
+
+### Closeout verification
+
+| Gate | Result |
+|---|---|
+| `make check` | 106 test suites green, 0 failures |
+| `make verify` | All legs passed headlessly on Xvfb: A500 smoke/Boing/sprites/paddle/text/assets/GUI, differential, corpus-fs-uae, and run-fault-amiga |
+| `make sdk-registry` | OK (79 capabilities, 10 bundles); coverage regenerated |
+| `make sdk-issues` | 10 issue bodies; #7 body regenerated |
+| GitHub issue #7 | Updated with the checked body, commented, and closed |
+
 ## Accepted residuals
 
 | Residual | Reason |

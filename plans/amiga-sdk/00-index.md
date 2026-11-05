@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–5 done; Bundle 6 13/17, A500 acceptance blocked on AR-25
+> **Status**: Executing — Bundles 0–6 done; Bundle 7 (Exec and devices) next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -65,8 +65,9 @@ and 2.0+ regions are deferred. Bundle 5 is `plans/amiga-sdk-dos-assets/`:
 the DOS file/lock/path/volume surface, the pure IFF/ILBM parser, the ILBM
 loader, and the image viewer on the real A500/KS1.3 machine. `ReadArgs` and
 `datatypes.library` are deferred. Bundle 6 (Intuition UI) is
-`plans/amiga-sdk-intuition/`; 15 of 17 tasks are verified. The A500 GUI
-acceptance passes with a private Xvfb keyboard run, the native
+`plans/amiga-sdk-intuition/`; all 17 tasks are verified. The A500 GUI acceptance
+passes with a private Xvfb keyboard run, the native
 `docs/amiga-sdk/a500-gui.png`, and the report line `gui: ok win 1 gad 2 menu 2
-str 3 req 2`. The remaining closeout items are the frozen-spec appendix ruling,
-the full `make verify` leg, and issue #7. Bundle 7 (Exec and devices) follows.
+str 3 req 2`. The frozen-spec appendices document the classic 1.3 surface on
+both hosted profiles, the full `make verify` gate passes headlessly, and issue
+#7 is closed. Bundle 7 (Exec and devices) follows.

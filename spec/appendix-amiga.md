@@ -17,9 +17,11 @@ windows, gadgets, menus, IDCMP events, requesters, the pointer, drawing, DOS
 delay, VBlank interrupts, and custom registers. The same classic Intuition
 surface compiles on `hosted-amiga`; the 2.0+ additions (gadtools, ASL
 requesters, and BOOPSI) are not part of this surface and are deferred. The host
-profile has no AmigaOS Intuition and rejects the module with `E11200`.
-`std.amiga.exec` stays gated on 1.3 until the Exec bundle validates it, although
-its shared shim already uses the 1.3-safe port and message calls.
+profile has no AmigaOS Intuition and rejects the module with `E11200`. The
+KS1.3 A500 gate is the runtime proof; the `hosted-amiga` profile is
+compile-verified. `std.amiga.exec` stays gated on 1.3 until the Exec bundle
+validates it, although its shared shim already uses the 1.3-safe port and
+message calls.
 
 ## 1. API surface for v1
 

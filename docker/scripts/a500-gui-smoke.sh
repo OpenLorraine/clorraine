@@ -4,10 +4,10 @@
 # Decrypts the user's licensed Amiga Forever Kickstart 1.3 ROM locally (the
 # decrypted image stays in gitignored build/ and is removed on exit), boots the
 # GUI demo from a clean ADF under FS-UAE configured as an A500, drives it with
-# the host keyboard on a private Xvfb display, and compares the app's native
-# screen capture and report line with committed goldens. No emulator window is
-# shown on the user's desktop; the artifact comes from the Amiga bitmap, not
-# from a host-window screenshot.
+# the host keyboard on a private Xvfb display, compares the app's native screen
+# capture to the committed golden, and asserts the pinned report line. No
+# emulator window is shown on the user's desktop; the artifact comes from the
+# Amiga bitmap, not from a host-window screenshot.
 #
 # The app writes `DF0:gui.cscr` before the event loop, one `DF0:gui-*`
 # handshake file per transition, and `DF0:gui.txt` after a clean Quit. The raw

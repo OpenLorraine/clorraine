@@ -158,7 +158,8 @@ whose locals own the screen.
 The surface is the classic Kickstart 1.3 Intuition API. The same source
 compiles on `hosted-amiga-13` and `hosted-amiga`; the 2.0+ additions (gadtools,
 ASL requesters, and BOOPSI) are deferred and are not exposed. The host profile
-rejects the module with `E11200`.
+rejects the module with `E11200`. The KS1.3 A500 gate is the runtime proof; the
+`hosted-amiga` profile is compile-verified.
 
 ### 8.1 Screen and window lifecycle
 
@@ -179,11 +180,12 @@ gadget labels, menu titles, and menu item labels are copied, so the caller's
 
 ```clorraine
 import { Screen, Window, openScreen, openWindow, waitEvent,
-         EVENT_CLOSE } from std.amiga.intuition;
+         EVENT_CLOSE, EVENT_NONE } from std.amiga.intuition;
 import { String, stringOf, toCString } from std.text;
 
 func demo(): i32 {
-    let screen: Screen? = openScreen(320, 200, 4, toCString(stringOf("demo")));
+    let title: String = stringOf("demo");
+    let screen: Screen? = openScreen(320, 200, 4, toCString(title));
     if (screen == null) { return 1; }
     let window: Window? = openWindow(screen, 24, 24, 272, 136,
                                      toCString(stringOf("window")));
@@ -202,10 +204,11 @@ func demo(): i32 {
 ### 8.2 IDCMP events
 
 `WindowEvent` is a copy-only value: it owns nothing and can be stored or
-compared freely. `kind` selects one of the `EVENT_*` constants; `code`,
-`qualifier`, and the mouse fields carry the raw Intuition message values.
-`gadget` and `menu` carry the caller's id when the event names a gadget or menu
-item, and 0 otherwise.
+compared freely. `kind` selects one of the `EVENT_*` constants; `code` and
+`qualifier` carry the raw Intuition message values. `mouse_x` and `mouse_y` are
+the current inner-window pointer coordinates (`GZZMouseX`/`GZZMouseY`), not
+necessarily the event message's own coordinates. `gadget` and `menu` carry the
+caller's id when the event names a gadget or menu item, and 0 otherwise.
 
 | Constant | Meaning |
 |---|---|
@@ -265,20 +268,26 @@ Intuition screen.
 
 ## 9. Drawing (`std.amiga.graphics`)
 
-The module draws into a screen borrowed from `std.amiga.intuition`. Coordinates
-are pixels and `pen` indexes the screen's color map; the `RastPort` calls stay
-inside the shim (X6).
+The module draws into a screen or window borrowed from `std.amiga.intuition`.
+Screen coordinates are screen pixels; window coordinates are relative to the
+inner drawable area. `pen` indexes the screen's color map; the `RastPort` calls
+stay inside the shim (X6).
 
 ```clorraine
 module std.amiga.graphics;
 
-import { Screen } from std.amiga.intuition;
+import { Screen, Window } from std.amiga.intuition;
 
 ffi stdgraphics {
     func cl_set_color(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void;
     func cl_fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
     func cl_draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
     func cl_clear(borrow screen: Screen, pen: u8): void;
+    func cl_window_fill(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                        y2: i32, pen: u8): void;
+    func cl_window_draw(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                        y2: i32, pen: u8): void;
+    func cl_window_clear(borrow window: Window, pen: u8): void;
 }
 
 export func setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void {
@@ -296,6 +305,20 @@ export func draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen:
 export func clear(borrow screen: Screen, pen: u8): void {
     cl_clear(screen, pen);
 }
+
+export func windowFill(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                       y2: i32, pen: u8): void {
+    cl_window_fill(window, x1, y1, x2, y2, pen);
+}
+
+export func windowDraw(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                       y2: i32, pen: u8): void {
+    cl_window_draw(window, x1, y1, x2, y2, pen);
+}
+
+export func windowClear(borrow window: Window, pen: u8): void {
+    cl_window_clear(window, pen);
+}
 ```
 
 | API | Returns | Rule |
@@ -304,11 +327,15 @@ export func clear(borrow screen: Screen, pen: u8): void {
 | `fill(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
 | `draw(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
 | `clear(borrow screen, pen: u8)` | `void` | fills the whole screen with `pen` |
+| `windowFill(borrow window: Window, x1, y1, x2, y2, pen)` | `void` | fills the inner-window rectangle (`RectFill` on the window RastPort) |
+| `windowDraw(borrow window: Window, x1, y1, x2, y2, pen)` | `void` | draws a line between inner-window points (`Draw`) |
+| `windowClear(borrow window: Window, pen)` | `void` | fills the whole inner window |
 
-Every call takes the screen by `borrow`, so the caller keeps ownership. `pen`
-indexes the 32-entry color map; a pen outside the screen's visible playfield
-range has no visible effect, and `setColor` ignores a pen at or above 32.
-`graphics.library` clips coordinates outside the screen.
+Every call takes the screen or window by `borrow`, so the caller keeps
+ownership. `setColor` indexes the 32-entry color map and ignores a pen at or
+above 32. For drawing, only pens `0..(1 << depth) - 1` are playfield colors; a
+higher pen is a caller contract because the sprite/pointer registers are not
+drawing colors. `graphics.library` clips coordinates outside the target.
 
 ## 10. `Span` - offset-based parsing
 
@@ -562,13 +589,14 @@ never closed. The ROM `topaz.font` opens with `openFont` and measures
 | `textWidth(borrow font, const text: u8[])` | `i32` | `TextLength` on a temporary RastPort |
 | `textHeight(const font)` | `i32` | the font's `tf_YSize` |
 | `drawText(borrow screen, borrow font, x, y, pen, const text)` | `void` | sets the screen RastPort font and pen, then `Move`/`Text`, and restores the previous font |
+| `windowText(borrow window, borrow font, x, y, pen, const text)` | `void` | sets the window RastPort font and pen, then `Move`/`Text`, and restores the previous font; coordinates are inner-window pixels |
 
 The text bytes are the Amiga 8-bit glyph codes; there is no Unicode translation
-in v1. `drawText` and `layerText` restore the RastPort's previous font after
-the draw, so the font handle may be freed before the screen or layer is
-released. The acceptance ADF has no `LIBS:diskfont.library` or `FONTS:`
-volume; the demo's `openDiskFont` call returns `null` and the disk-font row is
-deferred.
+in v1. `drawText`, `windowText`, and `layerText` restore the RastPort's previous
+font after the draw, so the font handle may be freed before the screen, window,
+or layer is released. The acceptance ADF has no `LIBS:diskfont.library` or
+`FONTS:` volume; the demo's `openDiskFont` call returns `null` and the
+disk-font row is deferred.
 
 ## 22. Layers (`std.amiga.layers`)
 

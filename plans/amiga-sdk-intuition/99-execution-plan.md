@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 17:02
-> **Progress**: 16/17 tasks (94%) — Phase 4 closeout; full verify and issue #7 pending
+> **Last Updated**: 2026-11-05 18:08
+> **Progress**: 17/17 tasks (100%) — Done
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -116,7 +116,7 @@ implementation in every phase.
 - [x] 4.1.1 Add `examples/amiga/gui.clo` with the A500 cases ST-4, ST-5, ST-7–ST-13 (poll drain, close gadget, button, string, menus, requester, pointer) and the negative checks; add `docker/scripts/a500-gui-smoke.sh`, the `sdk-a500-gui` Makefile target, and the `verify` leg; compile the demo on both hosted profiles and run the demo-shape implementation case (IT-11/IT-12) — done 2026-11-05; the interactive About path uses `askYesNo` because `DisplayAlert`'s private screen is not headlessly focusable
 - [x] 4.1.2 Run `make sdk-a500-gui` on the FS-UAE A500/KS1.3, fix target-only defects, capture the native `docs/amiga-sdk/a500-gui.png`, and pass ST-4, ST-5, ST-7–ST-13, ST-15, ST-16 — done 2026-11-05; private Xvfb keyboard run, ADF handshake, `gui: ok win 1 gad 2 menu 2 str 3 req 2`; no alert golden (see AR-25)
 - [x] 4.1.3 Update `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` (including the `setColor` 0–31 range), `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (001–005/009 done with acceptance/evidence/spec columns, 006–008 deferred), `bundles.tsv` (status and plan path), generate `coverage.md` with `make sdk-registry`, update issue #7, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` ✅ (completed: 2026-11-05 17:02; user ruling recorded in AR-26: one classic 1.3 surface documented on both hosted profiles; `spec/check.sh` OK; registry, bundles, coverage, AGENTS, index, and roadmap were already current; issue #7 closes in 4.1.4)
-- [~] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry` (ST-17 and ST-18); regenerate the issue body; close #7; commit through the active exec-plan commit mode; confirm a clean tree with no decrypted ROM — `make check`, `make sdk-a500-gui`, and `make sdk-registry` are green; the full `make verify` leg and issue closeout remain
+- [x] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry` (ST-17 and ST-18); regenerate the issue body; close #7; commit through the active exec-plan commit mode; confirm a clean tree with no decrypted ROM ✅ (completed: 2026-11-05 18:08; `make check` 106 suites green; `make verify` all legs passed headlessly on Xvfb; `make sdk-registry` OK with 79 capabilities and 10 bundles; issue #7 body regenerated, checked, commented, and closed; the smoke harness now polls from 10 s and re-finds the FS-UAE window, removing the transient-frame flake in the five custom-display legs)
 
 **Verify**: `make check`; `make verify`; `make sdk-registry`; `make sdk-a500-gui`
 
@@ -146,9 +146,10 @@ Phase 4 (demo/A500/closeout)
 2. The full surface compiles on both hosted profiles, the host rejects
    `std.amiga.intuition` with `E11200`, and both cross-builds pass with
    `-Wall -Wextra -Werror`.
-3. The A500 smoke drives the real window, gadgets, menu, requester, alert, and
-   pointer, and matches the held-frame, alert, and report-line goldens.
-4. The report line is `gui: ok win 1 gad 2 menu 2 str 3 req 1`.
+3. The A500 smoke drives the real window, string gadget, menus, requesters, and
+   pointer, and matches the held frame and the `DF0:gui.txt` report line. The
+   alert path is spec-tested; there is no alert golden.
+4. The report line is `gui: ok win 1 gad 2 menu 2 str 3 req 2`.
 5. `make check`, `make verify`, and `make sdk-registry` pass; the six earlier
    A500 gates stay green.
 6. Registry Bundle 6 is 6/9 done with SDK-INT-006/007/008 deferred; issue #7 is
@@ -157,5 +158,8 @@ Phase 4 (demo/A500/closeout)
 
 ## Completion
 
-In progress: Phases 1–3 are complete and green; Phase 4's demo and A500 gate pass. The remaining closeout items are the frozen-spec appendix ruling, the full `make verify` leg, and issue #7.
-(A500 input and menu-bar acceptance).
+Complete: all 17 tasks are verified. The core registry rows SDK-INT-001–005
+and SDK-INT-009 are done; the 2.0+/3.0+ rows SDK-INT-006/007/008 stay deferred
+to Bundle 9. `make check`, `make verify`, and `make sdk-registry` pass, the A500
+GUI gate reports `gui: ok win 1 gad 2 menu 2 str 3 req 2`, and issue #7 is
+closed.

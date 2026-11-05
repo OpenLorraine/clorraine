@@ -34,7 +34,7 @@ implementation in this document; their first smoke run is the red phase.
 | # | Venue | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|---|
 | ST-6 | Host | The full gadget/menu surface compiles on both hosted profiles and cross-builds under `nix13`/`nix20` | Zero diagnostics; both C builds pass with `-Werror` | R4–R6, R12 |
-| ST-7 | A500 | A button is added at `(8,28)` size `80x18` with id 1; the smoke left-clicks and releases over it | `EVENT_GADGET` with `gadget == 1`; the requester opens | R4, AR-2 |
+| ST-7 | A500 | The string gadget is activated, `abc` + Return is typed, and the smoke answers Yes with Left Amiga+V | `EVENT_GADGET` with `gadget == 2`; `windowString` returns 3; the requester opens; `req` becomes 1. The button is proven visually in the held frame; the string field proves the shared `GADGETUP` path | R4, AR-2, AR-25 |
 | ST-8 | A500 | The string gadget starts empty; the smoke types `abc` and presses Return; `windowString` reads it into a 64-byte buffer | `EVENT_GADGET` with id 2; `windowString` returns 3 and the buffer contains `abc` | R5, AR-2 |
 | ST-9 | A500 | Two menus are added; the smoke right-clicks Help → About and File → Hello | `EVENT_MENU` with the About id 20 and the Hello id 10; the status labels change | R6, AR-10 |
 | ST-10 | A500 + Impl | An overlong label, an id 0, a string `maxChars` 0, a gadget outside the inner window, and an overlong menu title are attempted | Every call returns `false`, `-1`, or 0 as documented; no partial gadget appears; the demo prints `gui: err` if a check fails | R11, AR-14–AR-16 |
@@ -43,8 +43,8 @@ implementation in this document; their first smoke run is the red phase.
 
 | # | Venue | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|---|
-| ST-11 | A500 | `askYesNo` is called by the Press button and the smoke left-clicks Yes | Returns `true`; `req` becomes 1; the loop continues | R7, AR-13 |
-| ST-12 | A500 | Help → About calls `showAlert`; the smoke compares the alert frame and left-clicks Continue | `docs/amiga-sdk/a500-gui-alert.png` matches; the call returns; the custom screen/window content is restored | R7, AR-13, AR-20 |
+| ST-11 | A500 | The string gadget's Return calls `askYesNo`; the smoke answers Yes with Left Amiga+V | Returns `true`; `req` becomes 1; the demo writes `DF0:gui-answered`; the loop continues | R7, AR-13, AR-25 |
+| ST-12 | A500 | Help → About calls `askYesNo` via Right Amiga+A; the smoke answers Yes with Left Amiga+V | `req` becomes 2; the demo writes `DF0:gui-about`; the custom screen/window content is restored. `showAlert` is not driven interactively and stays covered by the host/spec test (AR-25) | R7, AR-13, AR-20, AR-25 |
 | ST-13 | A500 | `setPointer(window, true)` is called and the held frame is captured at a fixed pointer position | The held frame shows the custom 16x16 arrow | R8, AR-7 |
 | ST-14 | Host | The full requester/alert/pointer surface compiles on both hosted profiles and cross-builds under `nix13`/`nix20` | Zero diagnostics; both C builds pass with `-Werror` | R7–R8, R12 |
 
@@ -52,8 +52,8 @@ implementation in this document; their first smoke run is the red phase.
 
 | # | Venue | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|---|
-| ST-15 | A500 | `make sdk-a500-gui` boots the demo and captures the held frame | `docs/amiga-sdk/a500-gui.png` matches; two consecutive captures differ by zero pixels | R9–R10 |
-| ST-16 | A500 | The smoke drives Press → Yes, types `abc` + Return, selects Help → About → Continue and File → Hello, then closes the window | The shell line matches `docs/amiga-sdk/a500-gui-line.png` and reads `gui: ok win 1 gad 2 menu 2 str 3 req 1` | R9–R10 |
+| ST-15 | A500 | `make sdk-a500-gui` boots the demo and captures the native held frame | The `CSCR` capture converts to 1280x512 and matches `docs/amiga-sdk/a500-gui.png` | R9–R10 |
+| ST-16 | A500 | The smoke types `abc` + Return, answers Yes, selects Hello with Right Amiga+H, selects About with Right Amiga+A, answers Yes, then quits with Right Amiga+Q | `DF0:gui.txt` reads `gui: ok win 1 gad 2 menu 2 str 3 req 2`; every handshake file is present | R9–R10, AR-25 |
 | ST-17 | Verify | `make verify` runs after the new leg | The six earlier A500 gates (hello, Boing, sprites, paddle, text, assets) still pass | R10, R13 |
 | ST-18 | Verify | `make check`, `make verify`, and `make sdk-registry` run at closeout | Exit 0; Bundle 6 is 6/9 done; SDK-INT-006/007/008 are deferred; coverage is regenerated | R13 |
 
@@ -121,8 +121,8 @@ guard, not a red case.
 | Evidence | Path |
 |---|---|
 | Held GUI frame | `docs/amiga-sdk/a500-gui.png` |
-| Alert frame | `docs/amiga-sdk/a500-gui-alert.png` |
-| GUI report line | `docs/amiga-sdk/a500-gui-line.png` |
+| GUI report line | `DF0:gui.txt` in the ADF, asserted as `gui: ok win 1 gad 2 menu 2 str 3 req 2` |
+| Handshake files | `DF0:gui-ready`, `gui-answered`, `gui-hello`, `gui-about`, `gui-quit` (transient ADF files) |
 | Last failure screen | `build/amiga-sdk/gui-smoke/screen.png` (gitignored) |
 | Spec/impl output | test stdout |
-| A500 report line | `gui: ok win 1 gad 2 menu 2 str 3 req 1` |
+| A500 report line | `gui: ok win 1 gad 2 menu 2 str 3 req 2` |

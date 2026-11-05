@@ -124,23 +124,28 @@ docker run --rm --name "${container}" \
     --writable-floppy-images=1 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
-sleep 30
-
-window="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
-if [ -z "${window}" ]; then
-    echo "a500-text-smoke: no FS-UAE window" >&2
-    tail -20 "${work}/fs-uae.log" >&2 || true
-    exit 1
-fi
+sleep 10
 
 saw_live=0
 frame_matched=0
 line_matched=0
+window_seen=0
 step=0
-while [ "${step}" -lt 15 ]; do
+window=""
+while [ "${step}" -lt 60 ]; do
     step=$((step + 1))
-    sleep 5
-    DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}"
+    sleep 2
+    found="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
+    if [ -n "${found}" ]; then
+        window="${found}"
+        window_seen=1
+    fi
+    if [ -z "${window}" ]; then
+        continue
+    fi
+    if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
+        continue
+    fi
     # The held acceptance frame is deterministic; comparing the display crop
     # proves the layer clipping, the ROM font, and the parked scroll text. The
     # animation frames differ in text position, so only the hold matches.
@@ -166,6 +171,11 @@ done
 docker stop -t 5 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 
+if [ "${window_seen}" -eq 0 ]; then
+    echo "a500-text-smoke: no FS-UAE window" >&2
+    tail -20 "${work}/fs-uae.log" >&2 || true
+    exit 1
+fi
 if [ "${saw_live}" -eq 0 ]; then
     echo "a500-text-smoke: never saw the native text display" >&2
     echo "a500-text-smoke: last screen kept at ${screenshot}" >&2
