@@ -60,12 +60,15 @@ by the module.
 `cl_create_task(entry, stack_size)`:
 
 1. Reject a null entry or `stack_size` outside 4096..65536 with `NULL`.
-2. Allocate the record; on failure return `NULL`.
-3. `AllocSignal(-1)`; a negative result frees the record and returns `NULL`.
-4. Record the parent from `FindTask(NULL)`, the signal bit, and the entry.
-5. `CreateTask("clorraine.worker", -1, cl_task_entry, stack_size)`.
+2. Reject a creator at priority below 0 with `NULL`. The worker starts at
+   priority -1; a lower-priority creator could run the worker before the record
+   is published, so the guard closes that race (MS-3).
+3. Allocate the record; on failure return `NULL`.
+4. `AllocSignal(-1)`; a negative result frees the record and returns `NULL`.
+5. Record the parent, the signal bit, and the entry.
+6. `CreateTask("clorraine.worker", -1, cl_task_entry, stack_size)`.
    A null result frees the signal and the record and returns `NULL`.
-6. Store the record in `task->tc_UserData` and return it.
+7. Store the record in `task->tc_UserData` and return it.
 
 The worker priority is -1. The normal Clorraine program runs as a DOS process
 at priority 0, so the worker cannot preempt the parent before
@@ -137,6 +140,7 @@ module. The compiler cannot enforce these rules; they are documented in
 | Situation | Result |
 |---|---|
 | null entry, bad stack size | `null`; no allocation |
+| creator at priority below 0 | `null`; no allocation |
 | record allocation fails | `null` |
 | `AllocSignal` fails | `null`; record freed |
 | `CreateTask` fails | `null`; signal and record freed |
@@ -153,6 +157,8 @@ The specification test compiles a program that creates a task, calls
 `reportTaskResult`, and joins it on both hosted profiles. The A500 demo runs a
 stress loop of eight `workerSum` workers plus one `workerProduct`, creating and
 joining one at a time, so the create/signal/`Forbid`+`RemTask` path runs nine
-times on the real machine. The implementation test pins the emitted shim
-calls, the generated drop routing, and the record/removal branches; it does
-not run a task on the host profile because the host has no Exec.
+times on the real machine; a tenth `workerZero` task is left to the generated
+drop so the drop path runs too. The implementation test pins the emitted shim
+calls, the generated drop routing, the parent-priority guard, and the
+record/removal branches; it does not run a task on the host profile because the
+host has no Exec.

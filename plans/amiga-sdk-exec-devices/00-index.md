@@ -1,9 +1,9 @@
 # Amiga SDK Bundle 7: Exec and Devices Implementation Plan
 
 > **Feature**: Worker tasks, signals, message ports, libraries, device I/O, interrupt servers, and input/keyboard/console devices on the A500/KS1.3 surface, proven by a worker-task + async-I/O demo.
-> **Status**: Ready — planning complete
+> **Status**: Executing — 16/18; closeout review fixes in progress
 > **Created**: 2026-11-05 18:50
-> **Last Updated**: 2026-11-05 19:16
+> **Last Updated**: 2026-11-05 20:33
 > **Implements**: —
 > **CodeOps Artifact Schema**: 1
 
@@ -116,13 +116,13 @@ func readBootBlock(borrow buf: u8[]): u32 {
 | Decision | Outcome |
 | -------- | ------- |
 | Core rows | 8 done, 3 advanced 2.0+ rows deferred (AR-1) |
-| Task model | `CreateTask` at priority -1; worker signals then `Wait(0)`; parent removes with `Forbid`/`RemTask`/`Permit` (AR-3) |
+| Task model | Creator at priority >= 0; `CreateTask` at -1; worker signals then `Wait(0)`; parent removes with `Forbid`/`RemTask`/`Permit` (AR-3) |
 | Task result | `reportTaskResult` stores in the current task's `tc_UserData` (AR-4) |
-| Device model | One `IOStdReq` plus one reply port per `Device`; generic commands and buffer (AR-8) |
-| Console | `openConsole(window, unit)` because `console.device` needs an Intuition `Window` (AR-12) |
+| Device model | One `IOStdReq`-sized device plus one reply port and an optional device-owned async buffer; sync calls borrow the caller buffer (AR-8) |
+| Console | `openConsole(window, unit)`; the window is refcounted and closes after the console (AR-12) |
 | Interrupts | One VBlank slot and one ports slot; shared token counter (AR-11) |
-| Demo | Worker stress loop + trackdisk/console/keyboard/input I/O; console-read abort; `task 464`, `io 13`, `key -2` (AR-13) |
-| Gate | ADF report file plus a non-blank line-crop golden (AR-14) |
+| Demo | Worker stress loop with a dropped task + trackdisk/console/keyboard/input I/O; console-read abort; generated drops; `task 464`, `io 13`, `key -2` (AR-13) |
+| Gate | ADF report file plus a non-blank 620x22 line-crop golden (AR-14) |
 
 ## Specialist Agents
 
@@ -135,9 +135,9 @@ stdlib wrappers and C shim code but no IR, codegen, or symbol-name change.
 
 _Detection evidence: `compiler/runtime/shim_hosted_amiga.c` owns the C
 resources; `stdlib/std.amiga.exec.clo` and `stdlib/std.amiga.interrupt.clo`
-are the wrappers; `compiler/src/profile.rs:86-112` is the only compiler change
-(add `std.amiga.exec` to the 1.3 list); no `compiler/src/{ir,codegen}` file is
-touched._
+are the wrappers; `compiler/src/profile.rs:86-112` adds `std.amiga.exec` to the
+1.3 list and `compiler/src/stdlib.rs` updates the export table; no
+`compiler/src/{ir,codegen}` file is touched._
 
 ## Related Files
 

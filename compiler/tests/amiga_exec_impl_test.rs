@@ -155,12 +155,18 @@ fn the_task_wrappers_lower_to_the_shim() {
     assert_contains("task-routing", &c, "if (task) { cl_task_free(task); }");
 }
 
-/// An unjoined task handle goes through the generated drop after the null
-/// check, so the shim's join path runs exactly once.
+/// An unjoined task handle goes through the generated caller cleanup drop
+/// after the null check. The wrapper's own dead-parameter drop emits the same
+/// line, so the cleanup block must occur at least twice.
 #[test]
 fn the_task_drop_routes_an_unjoined_handle() {
     let c = emit("task-drop", "hosted-amiga-13", TASK_DROP_SOURCE);
-    assert_contains("task-drop", &c, "cl_task_free");
+    let block = "__cl_c1:\n    if (task) { cl_task_free(task); }";
+    assert!(
+        c.matches(block).count() >= 2,
+        "the caller cleanup block is missing; occurrences: {}",
+        c.matches(block).count()
+    );
     assert_contains("task-drop", &c, "cl_create_task");
 }
 
@@ -177,6 +183,7 @@ fn the_task_shim_records_the_worker_contract() {
         "LONG result",
         "static void cl_task_entry(void)",
         "FindTask(NULL)",
+        "parent->tc_Node.ln_Pri < 0",
         "record->entry()",
         "Signal(record->parent, 1UL << record->signal_bit)",
         "Wait(0)",
@@ -264,9 +271,9 @@ const DEVICE_SOURCE: &str = r#"module tests.exec.deviceimpl;
 import { Device, CMD_INVALID, CMD_RESET, CMD_READ, CMD_WRITE,
          CMD_UPDATE, CMD_CLEAR, CMD_STOP, CMD_START, CMD_FLUSH,
          openDevice, openConsole, closeDevice, deviceCommand,
-         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceSendIO,
-         deviceWaitIO, deviceCheckIO, deviceAbortIO, deviceActual,
-         deviceError } from std.amiga.exec;
+         deviceSetBuffer, deviceWriteBuffer, deviceSetOffset, deviceDoIO,
+         deviceSendIO, deviceWaitIO, deviceCheckIO, deviceAbortIO,
+         deviceActual, deviceError } from std.amiga.exec;
 import { Window } from std.amiga.intuition;
 import { String, stringOf, toCString } from std.text;
 import { slice } from std.mem;
@@ -279,29 +286,29 @@ export func useDevice(window: Window): i32 {
     let buffer: u8[64] = [; 0];
     let command_ok: bool = deviceCommand(device, CMD_READ);
     if (!command_ok) { return 2; }
-    let buffer_ok: bool = deviceSetBuffer(device, borrow slice(buffer, 0, 64));
-    if (!buffer_ok) { return 3; }
     let offset_ok: bool = deviceSetOffset(device, 0);
-    if (!offset_ok) { return 4; }
-    let error: i32 = deviceDoIO(device);
+    if (!offset_ok) { return 3; }
+    let error: i32 = deviceDoIO(device, borrow slice(buffer, 0, 64));
     let actual: u32 = deviceActual(device);
     let last: i32 = deviceError(device);
+    let reserve_ok: bool = deviceSetBuffer(device, 64);
+    if (!reserve_ok) { return 4; }
+    let write_ok: bool =
+        deviceWriteBuffer(device, borrow slice(buffer, 0, 64));
+    if (!write_ok) { return 5; }
     let send_ok: bool = deviceSendIO(device);
-    if (!send_ok) { return 5; }
-    let checked: bool = deviceCheckIO(device);
-    let waited: i32 = deviceWaitIO(device);
+    if (!send_ok) { return 6; }
+    let checked: bool = deviceCheckIO(device, borrow slice(buffer, 0, 64));
+    let waited: i32 = deviceWaitIO(device, borrow slice(buffer, 0, 64));
     deviceAbortIO(device);
     closeDevice(device);
 
     let console_created: Device? = openConsole(window, 0);
-    if (console_created == null) { return 6; }
+    if (console_created == null) { return 7; }
     let console: Device = console_created;
     let console_command_ok: bool = deviceCommand(console, CMD_WRITE);
-    if (!console_command_ok) { return 7; }
-    let console_buffer_ok: bool =
-        deviceSetBuffer(console, borrow slice(buffer, 0, 64));
-    if (!console_buffer_ok) { return 8; }
-    let consoleError: i32 = deviceDoIO(console);
+    if (!console_command_ok) { return 8; }
+    let consoleError: i32 = deviceDoIO(console, borrow slice(buffer, 0, 64));
     closeDevice(console);
     return error + last + waited + consoleError + i32(actual) +
            (checked ? 1 : 0) + i32(CMD_INVALID) + i32(CMD_RESET) +
@@ -330,7 +337,12 @@ fn the_library_wrappers_lower_to_the_contract_type() {
     assert_contains("library-routing", &c, "cl_library_revision(library);");
 
     let drop = emit("library-drop", "hosted-amiga-13", LIBRARY_DROP_SOURCE);
-    assert_contains("library-drop", &drop, "if (library) { cl_close_library(library); }");
+    let block = "__cl_c1:\n    if (library) { cl_close_library(library); }";
+    assert!(
+        drop.matches(block).count() >= 1,
+        "the labeled caller library drop is missing; occurrences: {}",
+        drop.matches(block).count()
+    );
 }
 
 /// The device wrappers route to the shim, the buffer wrapper passes the
@@ -344,6 +356,7 @@ fn the_device_wrappers_lower_to_the_shim() {
         "cl_std_amiga_exec_closeDevice",
         "cl_std_amiga_exec_deviceCommand",
         "cl_std_amiga_exec_deviceSetBuffer",
+        "cl_std_amiga_exec_deviceWriteBuffer",
         "cl_std_amiga_exec_deviceSetOffset",
         "cl_std_amiga_exec_deviceDoIO",
         "cl_std_amiga_exec_deviceSendIO",
@@ -358,9 +371,32 @@ fn the_device_wrappers_lower_to_the_shim() {
     assert_contains(
         "device-routing",
         &c,
-        "cl_device_set_buffer(device, (u8 *)(data.ptr), (u32)((data).len))",
+        "return cl_device_set_buffer(device, length);",
     );
-    assert_contains("device-routing", &c, "if (device) { cl_close_device(device); }");
+    assert_contains("device-routing", &c, "cl_device_write_buffer(device,");
+    assert_contains("device-routing", &c, "cl_device_do_io(device,");
+    assert_contains("device-routing", &c, "cl_device_wait_io(device,");
+    assert_contains("device-routing", &c, "cl_device_check_io(device,");
+
+    let drop_source = r#"module tests.exec.devicedrop;
+
+import { Device, openDevice, deviceError } from std.amiga.exec;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("input.device");
+    let device: Device? = openDevice(toCString(name), 0, 0);
+    if (device == null) { return 1; }
+    return i32(deviceError(device));
+}
+"#;
+    let drop = emit("device-drop", "hosted-amiga-13", drop_source);
+    let block = "__cl_c1:\n    if (device) { cl_close_device(device); }";
+    assert!(
+        drop.matches(block).count() >= 1,
+        "the labeled caller device drop is missing; occurrences: {}",
+        drop.matches(block).count()
+    );
 }
 
 /// The device shim owns a reply port and implements the documented pending
@@ -372,6 +408,9 @@ fn the_device_shim_pins_the_reply_port_and_state_machine() {
         "typedef struct cl_device",
         "struct IOStdReq request;",
         "struct MsgPort *port;",
+        "APTR buffer;",
+        "ULONG buffer_length;",
+        "cl_window *window_ref;",
         "int pending;",
         "device->port = CreatePort(NULL, 0);",
         "device->request.io_Message.mn_ReplyPort = device->port;",
@@ -385,12 +424,24 @@ fn the_device_shim_pins_the_reply_port_and_state_machine() {
         "return FALSE;",
         "return -1;",
         "device->request.io_Command = command;",
+        "device->buffer = AllocMem(length, MEMF_PUBLIC | MEMF_CLEAR);",
+        "device->request.io_Data = device->buffer;",
+        "device->request.io_Length = device->buffer_length;",
+        "memcpy(device->buffer, data, length);",
         "device->request.io_Data = data;",
         "device->request.io_Length = length;",
         "device->request.io_Offset = offset;",
         "device->pending = 1;",
         "device->pending = 0;",
+        "cl_device_do_io(void *handle, APTR data, ULONG length)",
+        "cl_device_wait_io(void *handle, APTR data, ULONG length)",
+        "cl_device_check_io(void *handle, APTR data, ULONG length)",
+        "cl_device_copy_out(device, data, length);",
         "CheckIO((struct IORequest *)&device->request) != NULL",
+        "(void)WaitIO((struct IORequest *)&device->request);",
+        "cl_device_is_extended(name)",
+        "unit < 0 || unit > 255",
+        "cl_window_release(window);",
         "return (LONG)device->request.io_Error;",
         "return device == NULL ? 0 : device->request.io_Actual;",
         "return device == NULL ? -1 : (LONG)device->request.io_Error;",
@@ -470,7 +521,7 @@ fn the_exec_demo_pins_the_worker_and_device_sequence() {
         "openConsole(window, 0)",
         "openDevice(toCString(stringOf(\"trackdisk.device\")), 0, 0)",
         "deviceSendIO(disk)",
-        "deviceWaitIO(disk)",
+        "deviceWaitIO(disk,",
         "openDevice(toCString(stringOf(\"input.device\")), 0, 0)",
         "openDevice(toCString(stringOf(\"keyboard.device\")), 0, 0)",
         "deviceCommand(console, CMD_READ)",
@@ -495,10 +546,12 @@ fn the_console_helper_pins_the_window_request() {
     for needle in [
         "#include <exec/io.h>",
         "void *cl_open_console(void *window_handle, UBYTE unit)",
-        "const cl_window *window = (const cl_window *)window_handle;",
+        "cl_window *window = (cl_window *)window_handle;",
         "window->window == NULL",
         "device->request.io_Data = (APTR)window->window;",
         "device->request.io_Length = (ULONG)sizeof(struct Window);",
+        "window->console_refs++;",
+        "cl_window_release(window);",
         "OpenDevice((STRPTR)\"console.device\", (ULONG)unit,",
         "(struct IORequest *)&device->request",
         "MEMF_PUBLIC | MEMF_CLEAR",

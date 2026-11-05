@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 20:05
-> **Progress**: 16/18 tasks (89%) — Executing
+> **Last Updated**: 2026-11-05 20:33
+> **Progress**: 17/18 tasks (94%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -116,7 +116,7 @@ bundle. Specification tests come before implementation in every phase.
 - [x] 4.1.2 Add `docker/scripts/a500-exec-smoke.sh` (including the `identify` non-blank check), the `sdk-a500-exec` Makefile target, and the `verify` leg; run `make sdk-a500-exec` on the FS-UAE A500/KS1.3, fix target-only defects, and capture the non-blank `docs/amiga-sdk/a500-exec.png` ✅ (completed: 2026-11-05 19:46; final gate reports `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` and the 620x22 golden matches; RV-1–RV-3 fixed)
 - [x] 4.1.3 Final documentation consistency pass: `spec/appendix-amiga.md`, the per-phase `spec/appendix-stdlib.md` §7/§13 text, `docs/known-limitations.md`, `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (8 done, 3 deferred, with the acceptance/evidence/spec columns), `bundles.tsv`, `coverage.md` via `make sdk-registry`, issue #8, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` ✅ (completed: 2026-11-05 19:49; appendix A/B aligned, `make sdk-registry` OK with 79 capabilities and 10 bundles, 62 plan folders recorded, issue #8 body regenerated; `spec/check.sh` OK)
 - [x] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry`; regenerate the issue body, comment, and close #8; commit locally through the active commit mode; confirm a clean tree with no decrypted ROM ✅ (completed: 2026-11-05 20:05; `make check` 107 suites green; `make verify` all legs passed headlessly including `sdk-a500-exec`; `make sdk-registry` OK; issue #8 commented and CLOSED; the stale pre-Bundle-7 exec-gating controls were updated/removed — RV-7)
-- [ ] 4.1.5 Run the independent correctness/memory-safety closeout review; fix every critical/major finding and re-run the affected gates
+- [x] 4.1.5 Run the independent correctness/memory-safety closeout review; fix every critical/major finding and re-run the affected gates ✅ (completed: 2026-11-05 20:33; RV-C1–RV-C9 and MS-1–MS-5 fixed: `CheckIO` reply reap, device-owned async buffers with copy-out, refcounted console windows, creator priority guard, extended-device rejection, generated-drop and demo checks; `make check` 107 suites and `make verify` all legs green on the review-fixed tree)
 - [ ] 4.1.6 Re-run `spec/check.sh`, the affected Rust suites, and the final status checks; commit the review fixes locally; update the Progress header to Done
 
 **Verify**: `make check && make verify && make sdk-registry`

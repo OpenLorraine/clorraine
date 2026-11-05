@@ -237,8 +237,14 @@ fn the_event_loop_maps_gzz_mouse_and_acknowledges_refresh() {
 fn the_window_close_order_and_free_sizes_are_pinned() {
     let c = emit("close", "hosted-amiga", WINDOW_SOURCE);
     let close_start = c
+        .find("static void cl_window_destroy(cl_window *handle)")
+        .expect("close: missing cl_window_destroy");
+    let close_entry = c
         .find("void cl_close_window(void *window_handle)")
         .expect("close: missing cl_close_window");
+    let close_entry = &c[close_entry..];
+    assert_contains("close", close_entry, "if (handle->console_refs > 0)");
+    assert_contains("close", close_entry, "cl_window_destroy(handle);");
     let close_end = c[close_start..]
         .find("/* Inner drawable width")
         .map(|offset| close_start + offset)
@@ -392,8 +398,8 @@ fn the_gadget_nodes_own_and_free_every_render_record() {
         assert_contains("gadget-free", &c, needle);
     }
     let close_start = c
-        .find("void cl_close_window(void *window_handle)")
-        .expect("gadget-free: missing close");
+        .find("static void cl_window_destroy(cl_window *handle)")
+        .expect("gadget-free: missing cl_window_destroy");
     let close = &c[close_start..];
     assert_before("gadget-free", close, "cl_window_free_gadgets(handle)",
                   "cl_window_free_menus(handle)");
@@ -600,8 +606,8 @@ fn the_requester_alert_and_pointer_calls_are_pinned() {
                   "DisplayAlert(1, (STRPTR)message, 20)",
                   "FreeMem(message, CL_ALERT_MESSAGE_MAX)");
     let close_start = c
-        .find("void cl_close_window(void *window_handle)")
-        .expect("requester-calls: missing close");
+        .find("static void cl_window_destroy(cl_window *handle)")
+        .expect("requester-calls: missing cl_window_destroy");
     let close = &c[close_start..];
     assert_before("requester-calls", close, "cl_window_free_menus(handle)",
                   "FreeMem(handle->pointer, CL_WINDOW_POINTER_BYTES)");

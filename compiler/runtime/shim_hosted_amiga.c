@@ -1262,6 +1262,8 @@ typedef struct cl_window {
     cl_gadget_node *gadgets;
     cl_menu_node *menus;
     cl_window_event last_event;
+    int console_refs;   /* open console.device handles on this window */
+    int close_pending;  /* the Window handle closed while a console was open */
 } cl_window;
 
 static void cl_window_free_gadgets(cl_window *handle);
@@ -1368,13 +1370,9 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
     return handle;
 }
 
-/* Close a window. Null-safe. Clears the pointer and menu strip before
- * CloseWindow, then releases the wrapper-owned allocations. The gadget, menu,
- * and pointer frees are extended by the phases that create them. */
-void cl_close_window(void *window_handle)
+/* Release the wrapper-owned allocations and the Intuition window. */
+static void cl_window_destroy(cl_window *handle)
 {
-    cl_window *handle = (cl_window *)window_handle;
-
     if (handle == NULL) {
         return;
     }
@@ -1396,6 +1394,37 @@ void cl_close_window(void *window_handle)
         FreeMem(handle->title, CL_WINDOW_TEXT_MAX + 1);
     }
     FreeMem(handle, (ULONG)sizeof *handle);
+}
+
+/* Close a window. Null-safe. A window still referenced by an open console
+ * device defers the actual close until the last console reference is
+ * released. */
+void cl_close_window(void *window_handle)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL) {
+        return;
+    }
+    if (handle->console_refs > 0) {
+        handle->close_pending = 1;
+        return;
+    }
+    cl_window_destroy(handle);
+}
+
+/* Drop one console reference; the last reference performs a deferred close. */
+void cl_window_release(cl_window *handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+    if (handle->console_refs > 0) {
+        handle->console_refs--;
+    }
+    if (handle->console_refs == 0 && handle->close_pending) {
+        cl_window_destroy(handle);
+    }
 }
 
 /* Inner drawable width, or 0 on a null window. */
@@ -2780,10 +2809,17 @@ void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
 {
     cl_task *record;
     BYTE signal_bit;
+    struct Task *parent;
     struct Task *task;
 
     if (entry == NULL || stack_size < CL_TASK_STACK_MIN ||
         stack_size > CL_TASK_STACK_MAX) {
+        return NULL;
+    }
+    parent = FindTask(NULL);
+    /* The worker starts at priority -1. A creator at a lower priority could
+     * run the worker before the record is published, so reject it. */
+    if (parent == NULL || parent->tc_Node.ln_Pri < 0) {
         return NULL;
     }
     record = (cl_task *)AllocMem((ULONG)sizeof *record,
@@ -2797,7 +2833,7 @@ void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
         return NULL;
     }
     record->magic = CL_TASK_MAGIC;
-    record->parent = FindTask(NULL);
+    record->parent = parent;
     record->entry = entry;
     record->signal_bit = signal_bit;
     task = CreateTask((STRPTR)"clorraine.worker", -1,
@@ -2879,8 +2915,31 @@ UWORD cl_library_revision(struct Library *library)
 typedef struct cl_device {
     struct IOStdReq request;
     struct MsgPort *port;
+    APTR buffer;             /* device-owned asynchronous buffer */
+    ULONG buffer_length;
+    cl_window *window_ref;   /* console window reference, or NULL */
     int pending;
 } cl_device;
+
+/* Devices that need a request larger than IOStdReq. They keep their typed
+ * modules; the generic handle must not open them with a short request. */
+static int cl_device_is_extended(const char *name)
+{
+    static const char *const names[] = {
+        "audio.device",
+        "timer.device",
+        "serial.device",
+        "parallel.device",
+    };
+    unsigned int index;
+
+    for (index = 0; index < sizeof names / sizeof names[0]; index++) {
+        if (strcmp(name, names[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 /* Allocate a cleared device handle and its reply port. Every failure releases
  * the partial allocation. */
@@ -2902,10 +2961,22 @@ static cl_device *cl_device_alloc(void)
     return device;
 }
 
+/* Release the device-owned asynchronous buffer, if any. */
+static void cl_device_free_buffer(cl_device *device)
+{
+    if (device != NULL && device->buffer != NULL) {
+        FreeMem(device->buffer, device->buffer_length);
+        device->buffer = NULL;
+        device->buffer_length = 0;
+    }
+}
+
 /* Release a handle whose OpenDevice failed. The device is not open, so this
  * must not call CloseDevice. */
 static void cl_device_discard(cl_device *device)
 {
+    cl_window *window;
+
     if (device == NULL) {
         return;
     }
@@ -2914,16 +2985,20 @@ static void cl_device_discard(cl_device *device)
         (void)WaitIO((struct IORequest *)&device->request);
         device->pending = 0;
     }
+    window = device->window_ref;
+    cl_device_free_buffer(device);
     if (device->port != NULL) {
         DeletePort(device->port);
     }
     FreeMem(device, (ULONG)sizeof *device);
+    cl_window_release(window);
 }
 
-/* Abort a pending request and close the device. The caller's buffer is not
- * touched. */
+/* Abort a pending request and close the device. */
 static void cl_device_close(cl_device *device)
 {
+    cl_window *window;
+
     if (device == NULL) {
         return;
     }
@@ -2935,18 +3010,23 @@ static void cl_device_close(cl_device *device)
     if (device->request.io_Device != NULL) {
         CloseDevice((struct IORequest *)&device->request);
     }
+    window = device->window_ref;
+    cl_device_free_buffer(device);
     if (device->port != NULL) {
         DeletePort(device->port);
     }
     FreeMem(device, (ULONG)sizeof *device);
+    cl_window_release(window);
 }
 
-/* Open a generic device with one IOStdReq. */
+/* Open a generic device with one IOStdReq. Extended-request devices are
+ * rejected because their typed modules own the larger request. */
 void *cl_open_device(char *name, LONG unit, ULONG flags)
 {
     cl_device *device;
 
-    if (name == NULL || unit < 0 || unit > 255) {
+    if (name == NULL || unit < 0 || unit > 255 ||
+        cl_device_is_extended(name)) {
         return NULL;
     }
     device = cl_device_alloc();
@@ -2961,11 +3041,12 @@ void *cl_open_device(char *name, LONG unit, ULONG flags)
     return device;
 }
 
-/* Open console.device on a caller-owned Intuition window. The console unit is
- * bound to the window, so the window must outlive the device. */
+/* Open console.device on an Intuition window. The window is refcounted: closing
+ * the Window handle while the console is open defers the actual close until the
+ * device closes. */
 void *cl_open_console(void *window_handle, UBYTE unit)
 {
-    const cl_window *window = (const cl_window *)window_handle;
+    cl_window *window = (cl_window *)window_handle;
     cl_device *device;
 
     if (window == NULL || window->window == NULL) {
@@ -2975,6 +3056,8 @@ void *cl_open_console(void *window_handle, UBYTE unit)
     if (device == NULL) {
         return NULL;
     }
+    device->window_ref = window;
+    window->console_refs++;
     device->request.io_Data = (APTR)window->window;
     device->request.io_Length = (ULONG)sizeof(struct Window);
     if (OpenDevice((STRPTR)"console.device", (ULONG)unit,
@@ -3003,19 +3086,49 @@ BOOL cl_device_command(void *handle, UWORD command)
     return TRUE;
 }
 
-/* Set the request data pointer and length; idle-only and null-safe. */
-BOOL cl_device_set_buffer(void *handle, APTR data, ULONG length)
+/* Reserve a device-owned asynchronous buffer. Length 0 releases it. */
+BOOL cl_device_set_buffer(void *handle, ULONG length)
 {
     cl_device *device = (cl_device *)handle;
 
     if (device == NULL || device->pending) {
         return FALSE;
     }
+    cl_device_free_buffer(device);
+    if (length == 0) {
+        device->request.io_Data = NULL;
+        device->request.io_Length = 0;
+        return TRUE;
+    }
+    device->buffer = AllocMem(length, MEMF_PUBLIC | MEMF_CLEAR);
+    if (device->buffer == NULL) {
+        return FALSE;
+    }
+    device->buffer_length = length;
+    device->request.io_Data = device->buffer;
+    device->request.io_Length = length;
+    return TRUE;
+}
+
+/* Copy data into the device-owned asynchronous buffer. */
+BOOL cl_device_write_buffer(void *handle, APTR data, ULONG length)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending || device->buffer == NULL) {
+        return FALSE;
+    }
     if (data == NULL && length != 0) {
         return FALSE;
     }
-    device->request.io_Data = data;
-    device->request.io_Length = length;
+    if (length > device->buffer_length) {
+        return FALSE;
+    }
+    if (length != 0) {
+        memcpy(device->buffer, data, length);
+    }
+    device->request.io_Data = device->buffer;
+    device->request.io_Length = device->buffer_length;
     return TRUE;
 }
 
@@ -3031,18 +3144,30 @@ BOOL cl_device_set_offset(void *handle, ULONG offset)
     return TRUE;
 }
 
-/* Run a synchronous request and return io_Error. */
-LONG cl_device_do_io(void *handle)
+/* Run a synchronous request over the caller's buffer. The buffer stays alive
+ * for the call, so no pointer outlives the caller's scope. */
+LONG cl_device_do_io(void *handle, APTR data, ULONG length)
 {
     cl_device *device = (cl_device *)handle;
+    LONG error;
 
     if (device == NULL || device->pending) {
         return -1;
     }
-    return (LONG)DoIO((struct IORequest *)&device->request);
+    if (data == NULL && length != 0) {
+        return -1;
+    }
+    device->request.io_Data = data;
+    device->request.io_Length = length;
+    error = (LONG)DoIO((struct IORequest *)&device->request);
+    if (device->buffer != NULL) {
+        device->request.io_Data = device->buffer;
+        device->request.io_Length = device->buffer_length;
+    }
+    return error;
 }
 
-/* Start an asynchronous request. */
+/* Start an asynchronous request over the device-owned buffer. */
 BOOL cl_device_send_io(void *handle)
 {
     cl_device *device = (cl_device *)handle;
@@ -3050,14 +3175,37 @@ BOOL cl_device_send_io(void *handle)
     if (device == NULL || device->pending) {
         return FALSE;
     }
+    device->request.io_Data = device->buffer;
+    device->request.io_Length = device->buffer_length;
     SendIO((struct IORequest *)&device->request);
     device->pending = 1;
     return TRUE;
 }
 
+/* Copy up to `length` bytes of the last result from the device buffer. */
+static void cl_device_copy_out(cl_device *device, APTR data, ULONG length)
+{
+    ULONG actual;
+
+    if (device == NULL || device->buffer == NULL ||
+        data == NULL || length == 0) {
+        return;
+    }
+    actual = device->request.io_Actual;
+    if (actual > device->buffer_length) {
+        actual = device->buffer_length;
+    }
+    if (actual > length) {
+        actual = length;
+    }
+    if (actual != 0) {
+        memcpy(data, device->buffer, actual);
+    }
+}
+
 /* Wait for a pending request and return io_Error. An idle handle returns the
- * request's last error. */
-LONG cl_device_wait_io(void *handle)
+ * request's last error without copying. */
+LONG cl_device_wait_io(void *handle, APTR data, ULONG length)
 {
     cl_device *device = (cl_device *)handle;
 
@@ -3067,13 +3215,15 @@ LONG cl_device_wait_io(void *handle)
     if (device->pending) {
         LONG error = (LONG)WaitIO((struct IORequest *)&device->request);
         device->pending = 0;
+        cl_device_copy_out(device, data, length);
         return error;
     }
     return (LONG)device->request.io_Error;
 }
 
-/* Report whether a pending request completed and clear the pending state. */
-BOOL cl_device_check_io(void *handle)
+/* Report whether a pending request completed. A completed request is reaped
+ * with WaitIO, its result is copied out, and the pending state is cleared. */
+BOOL cl_device_check_io(void *handle, APTR data, ULONG length)
 {
     cl_device *device = (cl_device *)handle;
 
@@ -3081,7 +3231,9 @@ BOOL cl_device_check_io(void *handle)
         return FALSE;
     }
     if (CheckIO((struct IORequest *)&device->request) != NULL) {
+        (void)WaitIO((struct IORequest *)&device->request);
         device->pending = 0;
+        cl_device_copy_out(device, data, length);
         return TRUE;
     }
     return FALSE;

@@ -262,9 +262,9 @@ module tests.exec.device;
 import { Device, CMD_INVALID, CMD_RESET, CMD_READ, CMD_WRITE,
          CMD_UPDATE, CMD_CLEAR, CMD_STOP, CMD_START, CMD_FLUSH,
          openDevice, openConsole, closeDevice, deviceCommand,
-         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceSendIO,
-         deviceWaitIO, deviceCheckIO, deviceAbortIO, deviceActual,
-         deviceError } from std.amiga.exec;
+         deviceSetBuffer, deviceWriteBuffer, deviceSetOffset, deviceDoIO,
+         deviceSendIO, deviceWaitIO, deviceCheckIO, deviceAbortIO,
+         deviceActual, deviceError } from std.amiga.exec;
 import { Window } from std.amiga.intuition;
 import { String, stringOf, toCString } from std.text;
 import { slice } from std.mem;
@@ -281,41 +281,41 @@ export func useDevice(window: Window): i32 {
     if (!command_ok) {
         return 2;
     }
-    let buffer_ok: bool = deviceSetBuffer(device, borrow slice(buffer, 0, 64));
-    if (!buffer_ok) {
-        return 3;
-    }
     let offset_ok: bool = deviceSetOffset(device, 0);
     if (!offset_ok) {
-        return 4;
+        return 3;
     }
-    let error: i32 = deviceDoIO(device);
+    let error: i32 = deviceDoIO(device, borrow slice(buffer, 0, 64));
     let actual: u32 = deviceActual(device);
     let last: i32 = deviceError(device);
-    let send_ok: bool = deviceSendIO(device);
-    if (!send_ok) {
+    let reserve_ok: bool = deviceSetBuffer(device, 64);
+    if (!reserve_ok) {
+        return 4;
+    }
+    let write_ok: bool =
+        deviceWriteBuffer(device, borrow slice(buffer, 0, 64));
+    if (!write_ok) {
         return 5;
     }
-    let checked: bool = deviceCheckIO(device);
-    let waited: i32 = deviceWaitIO(device);
+    let send_ok: bool = deviceSendIO(device);
+    if (!send_ok) {
+        return 6;
+    }
+    let checked: bool = deviceCheckIO(device, borrow slice(buffer, 0, 64));
+    let waited: i32 = deviceWaitIO(device, borrow slice(buffer, 0, 64));
     deviceAbortIO(device);
     closeDevice(device);
 
     let console_created: Device? = openConsole(window, 0);
     if (console_created == null) {
-        return 6;
+        return 7;
     }
     let console: Device = console_created;
     let console_command_ok: bool = deviceCommand(console, CMD_WRITE);
     if (!console_command_ok) {
-        return 7;
-    }
-    let console_buffer_ok: bool =
-        deviceSetBuffer(console, borrow slice(buffer, 0, 64));
-    if (!console_buffer_ok) {
         return 8;
     }
-    let consoleError: i32 = deviceDoIO(console);
+    let consoleError: i32 = deviceDoIO(console, borrow slice(buffer, 0, 64));
     closeDevice(console);
     return error + last + waited + consoleError + i32(actual) +
            (checked ? 1 : 0) + i32(CMD_INVALID) + i32(CMD_RESET) +

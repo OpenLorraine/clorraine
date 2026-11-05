@@ -18,15 +18,15 @@ exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1
 
 | Stage | Action | Failure code |
 |---|---|---|
-| 1 | run the worker stress loop: eight `workerSum` workers (55 each) and one `workerProduct` worker (24), created and joined one at a time; total `8 * 55 + 24 = 464` | 1/2 |
+| 1 | run the worker stress loop: eight `workerSum` workers (55 each) and one `workerProduct` worker (24), created and joined one at a time; total `8 * 55 + 24 = 464`; a tenth `workerZero` task is left to the generated drop | 1/2 |
 | 2 | register a VBlank handler, a ports handler, wait 3 ticks, confirm the VBlank counter advanced, remove both | 3 |
-| 3 | open `exec.library` v33, read its version, close it | 4 |
-| 4 | open `trackdisk.device` unit 0, `CMD_READ` 512 bytes at offset 0 with `DoIO` | 5 |
-| 5 | `CMD_READ` the same block with `SendIO`/`WaitIO`; both reads must report error 0 and `io_Actual` 512 | 6/7 |
-| 6 | call a `writeConsole()` helper: open a 320x80x3 screen and a 300x64 window, `openConsole(window, 0)`, `CMD_WRITE` the 13-byte line `exec console\n` with `DoIO`, then `CMD_READ` with `SendIO`/`AbortIO`/`WaitIO` and expect `IOERR_ABORTED` (-2), close the console/window, and let the screen drop at helper return | 8/9 |
-| 7 | open and close `input.device` unit 0 | 10 |
+| 3 | open `exec.library` v33, read its version, and let the generated drop close it | 4 |
+| 4 | open `trackdisk.device` unit 0, `CMD_READ` 512 bytes at offset 0 with a synchronous `deviceDoIO` over the caller buffer; fail stage 5 before the async read if the first read is short/failed | 5 |
+| 5 | reserve a device-owned buffer, `CMD_READ` the same block with `SendIO`/`WaitIO`, and copy the result out; the second read must report error 0 and `io_Actual` 512 | 6/7 |
+| 6 | call a `writeConsole()` helper: open a 320x80x3 screen and a 300x64 window, `openConsole(window, 0)`, `CMD_WRITE` the 13-byte line `exec console\n` with a synchronous `deviceDoIO`, then `CMD_READ` with a device-owned buffer and `SendIO`/`AbortIO`/`WaitIO`, expect `IOERR_ABORTED` (-2), close the console/window, and let the screen drop at helper return. The window is refcounted, so the console holds it until the device closes | 8/9 |
+| 7 | open `input.device`, read its last error, and let the generated drop close it | 10 |
 | 8 | open and close `keyboard.device` unit 0 | 11 |
-| 9 | print the report line, write `DF0:exec.txt` with the full line | 14 |
+| 9 | print the report line, write `DF0:exec.txt`, and check the written byte count | 14 |
 
 The console helper returns before the report line, so the custom screen is
 already closed when the Shell prints. The Shell output line is the first
@@ -109,13 +109,12 @@ func writeConsole(): ConsoleResult {
     }
     let line: String = stringOf("exec console\n");
     let writeCommand: bool = deviceCommand(console, CMD_WRITE);
-    let writeBuffer: bool = deviceSetBuffer(console, bytes(line));
-    if (!writeCommand || !writeBuffer) {
+    if (!writeCommand) {
         closeDevice(console);
         closeWindow(window);
         return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
-    let error: i32 = deviceDoIO(console);
+    let error: i32 = deviceDoIO(console, bytes(line));
     let actual: u32 = deviceActual(console);
     if (error != 0 || actual != 13) {
         closeDevice(console);
@@ -124,9 +123,8 @@ func writeConsole(): ConsoleResult {
     }
     let readBuffer: u8[64] = [; 0];
     let readCommand: bool = deviceCommand(console, CMD_READ);
-    let readBufferOk: bool =
-        deviceSetBuffer(console, borrow slice(readBuffer, 0, 64));
-    if (!readCommand || !readBufferOk) {
+    let readReserve: bool = deviceSetBuffer(console, 64);
+    if (!readCommand || !readReserve) {
         closeDevice(console);
         closeWindow(window);
         return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
@@ -137,7 +135,8 @@ func writeConsole(): ConsoleResult {
         return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
     }
     deviceAbortIO(console);
-    let keyError: i32 = deviceWaitIO(console);
+    let keyError: i32 =
+        deviceWaitIO(console, borrow slice(readBuffer, 0, 64));
     closeDevice(console);
     closeWindow(window);
     if (keyError != -2) {
@@ -147,15 +146,18 @@ func writeConsole(): ConsoleResult {
 }
 ```
 
-The caller maps `code` to `failedAt(console.code)` and keeps the observed
-`key` error for the failure diagnosis. The console read is on the dedicated
-window; see RV-1 for why the keyboard device itself is only opened/closed.
+The caller maps `code` to `failedKey(console.code, console.key)` and keeps the
+observed `key` error for the failure diagnosis. The console read is on the
+dedicated window; see RV-1 for why the keyboard device itself is only
+opened/closed.
 
-Declare the screen title before the screen so the screen drops first. Declare
-the line before the `doIO` call and keep it alive through the write; the
-`bytes(line)` view is valid until `line` drops at helper return. The console
-device closes before the window; the window closes before the screen. The
-screen drops at helper return, so it cannot cover the Shell report line.
+Declare the screen title before the screen so the screen drops first. The
+synchronous write borrows `line` only for the `deviceDoIO` call; the
+asynchronous read uses the device-owned buffer and copies into `readBuffer` at
+`deviceWaitIO`, so neither pointer outlives the caller's scope. The console
+device closes before the window; the window is refcounted, so the console holds
+it until `closeDevice` releases the last reference. The screen drops at helper
+return, so it cannot cover the Shell report line.
 
 ### Failure Output
 
@@ -220,19 +222,24 @@ The target is added to `.PHONY` and to `verify` after `sdk-a500-gui`.
 ## Determinism Notes
 
 - The worker stress loop creates and joins one task at a time at priority -1;
-  the sum is fixed, so the report does not depend on scheduling. The nine
-  create/join cycles exercise the `Forbid`/`RemTask` removal path repeatedly.
+  the sum is fixed, so the report does not depend on scheduling. The
+  create/join cycles exercise the `Forbid`/`RemTask` removal path repeatedly;
+  the tenth `workerZero` task is left to the generated drop. The `exec.library`
+  and `input.device` handles are also left to their generated drops, so the
+  A500 gate exercises the drop glue as well as the explicit close paths.
 - The VBlank handler only proves that at least one tick arrived; the count is
   not reported.
 - The ports handler is registered and removed but is not required to fire.
 - The trackdisk reads use offset 0, so the device's offset unit does not
-  matter.
+  matter. The first read borrows the caller's buffer for the synchronous call;
+  the second uses the device-owned buffer, so no caller pointer outlives its
+  scope (MS-1). The first read is checked before the async read starts.
 - The aborted read is a `console.device` read on the dedicated window, which
   has no pending input, so the error is deterministically -2. The 1.3
   `keyboard.device` read completes with a queued event/error instead of staying
-  pending (RV-1), so the keyboard and input devices are opened/closed for
-  coverage. A key press on the console window would change the line and fail
-  the gate, which is the intended behavior for a deterministic headless run.
+  pending (RV-1), so the keyboard and input devices are open/close coverage. A
+  key press on the console window would change the line and fail the gate,
+  which is the intended behavior for a deterministic headless run.
 - The console write and read are on a dedicated screen/window, so they cannot
-  disturb the Shell report line; the screen is closed before the line is
-  printed.
+  disturb the Shell report line; the window is refcounted and the screen is
+  closed before the line is printed.

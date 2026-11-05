@@ -39,9 +39,9 @@ The new surface compiles on both hosted profiles and cross-builds with
 |---|---|---|---|---|
 | ST-7 | A500 | The demo runs the worker stress loop: eight `workerSum` workers and one `workerProduct`, created and joined one at a time | `task 464` in the report line; all nine joins return | R1, R7 |
 | ST-8 | A500 | The demo opens `exec.library` v33 and reads the version | `lib 34` on KS1.3 | R3, R7 |
-| ST-9 | A500 | The demo reads the boot block with `DoIO` and with `SendIO`/`WaitIO` on `trackdisk.device` | Both reads return error 0 and `io_Actual` 512; `dev 512` | R4, R7 |
-| ST-10 | A500 | The demo opens a 320x80x3 screen and a 300x64 window, opens `console.device` on the window, writes the 13-byte line `exec console\n` with `DoIO`, sends a `CMD_READ`, aborts it, and closes the console/window/screen | Write error 0 and `io_Actual` 13; the read returns `IOERR_ABORTED` (-2); `io 13`, `key -2`; the Shell report line is unaffected | R4, R6, R7 |
-| ST-11 | A500 | The demo opens/closes `input.device` and `keyboard.device` | `in 1`; both closes are clean; no hang | R4, R6, R7 |
+| ST-9 | A500 | The demo reads the boot block with a synchronous `deviceDoIO` over the caller buffer and with a device-owned buffer and `SendIO`/`WaitIO` on `trackdisk.device`; the first read is checked before the async read starts | Both reads return error 0 and `io_Actual` 512; `dev 512`; a first-read failure is stage 5, not stage 7 | R4, R7 |
+| ST-10 | A500 | The demo opens a 320x80x3 screen and a 300x64 window, opens `console.device` on the window, writes the 13-byte line `exec console\n` with a synchronous `deviceDoIO`, reserves a device buffer, sends a `CMD_READ`, aborts it, and closes the console/window/screen; the window is refcounted | Write error 0 and `io_Actual` 13; the read returns `IOERR_ABORTED` (-2); `io 13`, `key -2`; the console cannot use a freed window; the Shell report line is unaffected | R4, R6, R7 |
+| ST-11 | A500 | The demo opens `input.device`, reads its last error, and lets the generated drop close it; it opens/closes `keyboard.device` | `in 1`; both closes are clean; no hang; the input drop runs | R4, R6, R7 |
 | ST-12 | A500 | The demo registers a VBlank handler, waits three ticks, and removes it; it also registers/removes a ports handler | The VBlank counter advances; both removals are clean; the demo reaches the library stage | R5, R7 |
 | ST-13 | A500 | The smoke reads `DF0:exec.txt` | The file matches `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` | R7, R8 |
 | ST-14 | A500 | The smoke captures the report line | The `620x22+160+88` crop matches `docs/amiga-sdk/a500-exec.png` byte-exact and is not blank | R8 |
@@ -54,14 +54,14 @@ The new surface compiles on both hosted profiles and cross-builds with
 | IT-2 | `compiler/src/profile.rs` unit test | `hosted-amiga-13` supports `std.amiga.exec`; `host` does not; the shared shim is unchanged |
 | IT-3 | Emitted C | The task wrappers call `cl_create_task`, `cl_task_result`, `cl_join_task`, `cl_task_free`; the generated drop routes an unjoined task to `cl_task_free` |
 | IT-4 | Emitted C | The library wrappers call `cl_open_library`, `cl_close_library`, `cl_library_version`, `cl_library_revision`; the drop routes to `cl_close_library` |
-| IT-5 | Emitted C | The device wrappers call every `cl_device_*` shim and `cl_open_console`; `CMD_*` lower to the expected values; the drop routes to `cl_close_device` |
+| IT-5 | Emitted C | The device wrappers call every `cl_device_*` shim and `cl_open_console`; `deviceSetBuffer` passes the length, `deviceWriteBuffer`/`deviceDoIO`/`deviceWaitIO`/`deviceCheckIO` pass the raw pointer and length; `CMD_*` lower to the expected values; the drop routes to `cl_close_device` |
 | IT-6 | Shim | The interrupt shim has a VBlank and a ports server, one shared token counter, `INTB_PORTS`, and a `remove` that checks both slots |
-| IT-7 | Shim | The device state machine rejects `DoIO`/`SendIO` while pending, treats the setters as idle-only, clears pending on `WaitIO`/`CheckIO`, aborts and waits on close, and returns the documented failure values |
-| IT-8 | Demo shape | `examples/amiga/exec-demo.clo` runs the worker stress loop, uses `exec.library`, `trackdisk.device`, a screen/window plus `openConsole` with a write and an aborted read, `input.device`, and `keyboard.device`, and writes the pinned report line to `DF0:exec.txt` |
+| IT-7 | Shim | The device state machine rejects `DoIO`/`SendIO` while pending, treats the setters as idle-only, reaps `CheckIO` with `WaitIO`, copies async results out, aborts and waits on close, rejects extended-request devices, and returns the documented failure values |
+| IT-8 | Demo shape | `examples/amiga/exec-demo.clo` runs the worker stress loop (including the dropped `workerZero` task), uses `exec.library` with the generated drop, `trackdisk.device` with sync and async buffers, a screen/window plus `openConsole` with a write and an aborted read, `input.device` with the generated drop, and `keyboard.device`, and writes the pinned report line to `DF0:exec.txt` |
 | IT-9 | `amiga_exec_spec_test.rs` appendix check | §13 mentions every exec export as a whole identifier; §7 mentions `addPortHandler`; the test's section anchor matches the new §13 title |
 | IT-10 | Test integrity | The existing `amiga_exec_spec_test` host-rejection and transcript cases still run; no golden is weakened |
-| IT-11 | Shim | The task record has the magic guard, the worker signals then `Wait(0)`, and join/drop remove it with `Forbid`/`RemTask`/`Permit` before freeing the signal and record; the demo's nine create/join cycles exercise the path |
-| IT-12 | Shim | The device record creates a private reply port before `OpenDevice`, sets it in `io_Message.mn_ReplyPort`, deletes it on every failure path and on close, and the console helper fills `io_Data`/`io_Length` from the window |
+| IT-11 | Shim | The task record has the magic guard, the creator priority guard, the worker signals then `Wait(0)`, and join/drop remove it with `Forbid`/`RemTask`/`Permit` before freeing the signal and record; the demo's create/join/drop cycles exercise the path |
+| IT-12 | Shim | The device record creates a private reply port before `OpenDevice`, sets it in `io_Message.mn_ReplyPort`, keeps the device-owned async buffer, deletes the port/buffer on every failure path and on close, refcounts the console window, and the console helper fills `io_Data`/`io_Length` from the window |
 
 ## Test Files
 

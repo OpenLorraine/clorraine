@@ -12,10 +12,10 @@ module examples.amiga.exec_demo;
 
 import {
     Task, createTask, reportTaskResult, joinTask,
-    Library, openLibrary, closeLibrary, libraryVersion,
+    Library, openLibrary, libraryVersion,
     Device, CMD_READ, CMD_WRITE, openDevice, openConsole, closeDevice,
     deviceCommand, deviceSetBuffer, deviceSetOffset, deviceDoIO,
-    deviceSendIO, deviceWaitIO, deviceAbortIO, deviceActual
+    deviceSendIO, deviceWaitIO, deviceAbortIO, deviceActual, deviceError
 } from std.amiga.exec;
 import {
     HandlerToken, addHandler, addPortHandler, removeHandler
@@ -109,6 +109,11 @@ func workerProduct(): void {
     reportTaskResult(WORKER_PRODUCT);
 }
 
+/// A worker used only to exercise the generated Task drop.
+func workerZero(): void {
+    reportTaskResult(0);
+}
+
 /// Create and join one worker at a time, stressing the removal path.
 ///
 /// Returns -1 for a sum-worker failure and -2 for the product-worker failure;
@@ -130,6 +135,12 @@ func workerLoop(): i32 {
         return -2;
     }
     let task: Task = created;
+    // A task the caller never joins is removed by the generated drop at the
+    // next return. Its result is intentionally not part of the sum.
+    let dropped: Task? = createTask(workerZero, 8192);
+    if (dropped == null) {
+        return -2;
+    }
     return total + joinTask(task);
 }
 
@@ -162,13 +173,7 @@ func writeConsole(): ConsoleResult {
         closeWindow(window);
         return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
-    let bufferOk: bool = deviceSetBuffer(console, bytes(line));
-    if (!bufferOk) {
-        closeDevice(console);
-        closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
-    }
-    let error: i32 = deviceDoIO(console);
+    let error: i32 = deviceDoIO(console, bytes(line));
     let actual: u32 = deviceActual(console);
     if (error != 0 || actual != CONSOLE_LENGTH) {
         closeDevice(console);
@@ -185,9 +190,8 @@ func writeConsole(): ConsoleResult {
         closeWindow(window);
         return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
     }
-    let readBufferOk: bool =
-        deviceSetBuffer(console, borrow slice(readBuffer, 0, 64));
-    if (!readBufferOk) {
+    let readReserve: bool = deviceSetBuffer(console, 64);
+    if (!readReserve) {
         closeDevice(console);
         closeWindow(window);
         return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
@@ -199,7 +203,8 @@ func writeConsole(): ConsoleResult {
         return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
     }
     deviceAbortIO(console);
-    let keyError: i32 = deviceWaitIO(console);
+    let keyError: i32 =
+        deviceWaitIO(console, borrow slice(readBuffer, 0, 64));
     closeDevice(console);
     closeWindow(window);
     if (keyError != -2) {
@@ -244,7 +249,7 @@ func runExec(): ExecResult {
         return failedAt(4);
     }
     let libVersion: u16 = libraryVersion(library);
-    closeLibrary(library);
+    // The generated Library drop closes it at the end of runExec.
 
     let buffer: u8[512] = [; 0];
     let diskCreated: Device? =
@@ -257,40 +262,37 @@ func runExec(): ExecResult {
     if (!readCommand) {
         return failedAt(5);
     }
-    let readBuffer: bool =
-        deviceSetBuffer(disk, borrow slice(buffer, 0, 512));
-    if (!readBuffer) {
-        return failedAt(5);
-    }
     let readOffset: bool = deviceSetOffset(disk, 0);
     if (!readOffset) {
         return failedAt(5);
     }
-    let readError: i32 = deviceDoIO(disk);
+    let readError: i32 = deviceDoIO(disk, borrow slice(buffer, 0, 512));
     let readActual: u32 = deviceActual(disk);
+    if (readError != 0 || readActual != 512) {
+        closeDevice(disk);
+        return failedAt(5);
+    }
 
     let asyncCommand: bool = deviceCommand(disk, CMD_READ);
     if (!asyncCommand) {
-        return failedAt(6);
-    }
-    let asyncBuffer: bool =
-        deviceSetBuffer(disk, borrow slice(buffer, 0, 512));
-    if (!asyncBuffer) {
         return failedAt(6);
     }
     let asyncOffset: bool = deviceSetOffset(disk, 0);
     if (!asyncOffset) {
         return failedAt(6);
     }
+    let asyncReserve: bool = deviceSetBuffer(disk, 512);
+    if (!asyncReserve) {
+        return failedAt(6);
+    }
     let asyncSend: bool = deviceSendIO(disk);
     if (!asyncSend) {
         return failedAt(6);
     }
-    let asyncError: i32 = deviceWaitIO(disk);
+    let asyncError: i32 = deviceWaitIO(disk, borrow slice(buffer, 0, 512));
     let asyncActual: u32 = deviceActual(disk);
     closeDevice(disk);
-    if (readError != 0 || asyncError != 0 ||
-        readActual != 512 || asyncActual != 512) {
+    if (asyncError != 0 || asyncActual != 512) {
         return failedAt(7);
     }
 
@@ -305,7 +307,12 @@ func runExec(): ExecResult {
         return failedAt(10);
     }
     let input: Device = inputCreated;
-    closeDevice(input);
+    // Keep the input handle alive to the end of runExec; the generated Device
+    // drop closes it and exercises the drop path on the real machine.
+    let inputError: i32 = deviceError(input);
+    if (inputError != 0) {
+        return failedAt(10);
+    }
 
     let keyCreated: Device? =
         openDevice(toCString(stringOf("keyboard.device")), 0, 0);
@@ -345,6 +352,10 @@ func main(): i32 {
         println("exec: err 14");
         return 1;
     }
-    writeBytes(file, bytes(line));
+    let written: i32 = writeBytes(file, bytes(line));
+    if (written != i32(len(bytes(line)))) {
+        println("exec: err 14");
+        return 1;
+    }
     return 0;
 }

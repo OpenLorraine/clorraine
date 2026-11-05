@@ -104,13 +104,17 @@ ffi stdexec {
     func cl_open_console(borrow window: Window, unit: u8): Device?;
     func cl_close_device(take device: Device): void;
     func cl_device_command(borrow device: Device, command: u16): bool;
-    func cl_device_set_buffer(borrow device: Device, data: raw u8,
-                              length: u32): bool;
+    func cl_device_set_buffer(borrow device: Device, length: u32): bool;
+    func cl_device_write_buffer(borrow device: Device, data: raw u8,
+                                length: u32): bool;
     func cl_device_set_offset(borrow device: Device, offset: u32): bool;
-    func cl_device_do_io(borrow device: Device): i32;
+    func cl_device_do_io(borrow device: Device, data: raw u8,
+                         length: u32): i32;
     func cl_device_send_io(borrow device: Device): bool;
-    func cl_device_wait_io(borrow device: Device): i32;
-    func cl_device_check_io(borrow device: Device): bool;
+    func cl_device_wait_io(borrow device: Device, data: raw u8,
+                           length: u32): i32;
+    func cl_device_check_io(borrow device: Device, data: raw u8,
+                            length: u32): bool;
     func cl_device_abort_io(borrow device: Device): void;
     func cl_device_actual(borrow device: Device): u32;
     func cl_device_error(borrow device: Device): i32;
@@ -278,12 +282,23 @@ export func deviceCommand(borrow device: Device, command: u16): bool {
     return cl_device_command(device, command);
 }
 
-/// Sets the request data pointer and length. Returns false for a null handle, a
-/// null pointer with a non-zero length, or a pending request. The caller keeps
-/// the buffer alive until the request completes.
-export func deviceSetBuffer(borrow device: Device, borrow data: u8[]): bool {
+/// Reserves a device-owned buffer of `length` bytes for asynchronous I/O.
+///
+/// The buffer is allocated in public memory and freed when the device closes
+/// or another length is reserved. `length` 0 releases the buffer. Returns
+/// false for a null handle, a pending request, or allocation failure.
+export func deviceSetBuffer(borrow device: Device, length: u32): bool {
+    return cl_device_set_buffer(device, length);
+}
+
+/// Copies `data` into the device-owned asynchronous buffer.
+///
+/// Returns false for a null handle, a pending request, no reserved buffer, or a
+/// source longer than the reserved buffer. Use this before `deviceSendIO` for
+/// an asynchronous write.
+export func deviceWriteBuffer(borrow device: Device, borrow data: u8[]): bool {
     unsafe {
-        return cl_device_set_buffer(device, raw u8(data.ptr), u32(len(data)));
+        return cl_device_write_buffer(device, raw u8(data.ptr), u32(len(data)));
     }
 }
 
@@ -293,10 +308,15 @@ export func deviceSetOffset(borrow device: Device, offset: u32): bool {
     return cl_device_set_offset(device, offset);
 }
 
-/// Runs a synchronous request and returns its error. A pending request returns
-/// -1 without sending.
-export func deviceDoIO(borrow device: Device): i32 {
-    return cl_device_do_io(device);
+/// Runs a synchronous request over the caller's buffer and returns its error.
+///
+/// The buffer is borrowed for the call, so it stays alive until the device
+/// finishes; a synchronous read writes into it directly. A pending request
+/// returns -1 without sending.
+export func deviceDoIO(borrow device: Device, borrow data: u8[]): i32 {
+    unsafe {
+        return cl_device_do_io(device, raw u8(data.ptr), u32(len(data)));
+    }
 }
 
 /// Starts an asynchronous request. Returns false for a null handle or a
@@ -305,16 +325,27 @@ export func deviceSendIO(borrow device: Device): bool {
     return cl_device_send_io(device);
 }
 
-/// Waits for a pending request and returns its error. On an idle handle it
-/// returns the last error; a null handle returns -1.
-export func deviceWaitIO(borrow device: Device): i32 {
-    return cl_device_wait_io(device);
+/// Waits for a pending asynchronous request and returns its error.
+///
+/// When the request was pending, up to `len(data)` bytes of the result are
+/// copied from the device-owned buffer into `data`; the copy is bounded by
+/// `io_Actual`. On an idle handle it returns the last error without copying; a
+/// null handle returns -1.
+export func deviceWaitIO(borrow device: Device, borrow data: u8[]): i32 {
+    unsafe {
+        return cl_device_wait_io(device, raw u8(data.ptr), u32(len(data)));
+    }
 }
 
-/// Reports whether a pending request has completed and clears the pending
-/// state when it has.
-export func deviceCheckIO(borrow device: Device): bool {
-    return cl_device_check_io(device);
+/// Reports whether a pending asynchronous request has completed.
+///
+/// A completed request is reaped with `WaitIO`, its result is copied into
+/// `data`, and the pending state is cleared; the call returns true. An idle or
+/// incomplete request returns false.
+export func deviceCheckIO(borrow device: Device, borrow data: u8[]): bool {
+    unsafe {
+        return cl_device_check_io(device, raw u8(data.ptr), u32(len(data)));
+    }
 }
 
 /// Requests an abort for a pending request. The caller reaps it with

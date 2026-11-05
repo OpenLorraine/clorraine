@@ -24,8 +24,9 @@ no 2.0+ library call to the 1.3 build.
 - **R1 — Worker tasks and join.** `createTask(entry: func(): void,
   stackBytes: u32): Task?` starts a capture-less worker task and returns an
   owned `Task?`, or `null` on allocation failure. `stackBytes` is 4096..65536.
-  The worker runs at priority -1 so the parent can finish its own setup before
-  the worker runs. `reportTaskResult(value: i32)` stores the worker's result in
+  The caller must run at priority 0 or above; a lower-priority creator gets
+  `null` because the worker starts at -1 and the record must be published
+  before the worker runs. `reportTaskResult(value: i32)` stores the worker's result in
   the current task's record. `joinTask(take task: Task): i32` waits for the
   worker to finish, removes the worker with `Forbid(); RemTask(...); Permit();`
   (the V34-safe form), frees the join signal, and returns the result. The
@@ -49,31 +50,42 @@ no 2.0+ library call to the 1.3 build.
   library: Library): u16` read the base fields. A null handle returns 0; a null
   or missing library returns `null`.
 - **R4 — Generic device I/O.** `openDevice(name: cstring, unit: i32, flags:
-  u32): Device?` opens a device with one owned `struct IOStdReq` and one
-  private reply port, or returns `null`. `closeDevice(take device: Device):
-  void` aborts a pending request, waits for it, closes the device, deletes the
-  reply port, and frees the request. `openConsole(borrow window: Window, unit:
-  u8): Device?` is the typed console path: it opens `console.device` with the
-  caller's Intuition window in `io_Data` and `sizeof(struct Window)` in
-  `io_Length`, because the console device is bound to a window. The request
-  surface is:
+  u32): Device?` opens a standard `IOStdReq` device with one owned request,
+  one private reply port, and an optional device-owned asynchronous buffer, or
+  returns `null`. Extended-request devices (`audio.device`, `timer.device`,
+  `serial.device`, `parallel.device`) are rejected; they keep their typed
+  modules. `closeDevice(take device: Device): void` aborts a pending request,
+  waits for it, closes the device, frees the buffer, deletes the reply port,
+  frees the request, and releases the console window. `openConsole(borrow
+  window: Window, unit: u8): Device?` is the typed console path: it opens
+  `console.device` with the caller's Intuition window in `io_Data` and
+  `sizeof(struct Window)` in `io_Length`, because the console device is bound
+  to a window. The window is refcounted, so closing the `Window` handle while
+  the console is open defers the actual close until the device closes. The
+  request surface is:
   - `deviceCommand(borrow device, command: u16): bool` sets `io_Command`,
     returns `true`; idle only, `false` for a null handle or a pending request.
-  - `deviceSetBuffer(borrow device, borrow data: u8[]): bool` sets `io_Data`
-    and `io_Length`; idle only, and the caller keeps the buffer alive until
-    completion. `false` for a null handle, a null buffer with a non-zero
-    length, or a pending request.
+  - `deviceSetBuffer(borrow device, length: u32): bool` reserves a
+    device-owned asynchronous buffer; length 0 releases it. `false` for a null
+    handle, a pending request, or allocation failure.
+  - `deviceWriteBuffer(borrow device, borrow data: u8[]): bool` copies a write
+    payload into the device-owned buffer; `false` without a buffer, while
+    pending, or when `data` is longer than the buffer.
   - `deviceSetOffset(borrow device, offset: u32): bool` sets `io_Offset`,
     returns `true`; idle only, `false` for a null handle or a pending request.
-  - `deviceDoIO(borrow device): i32` runs a synchronous request and returns
-    `io_Error`; a pending request returns -1.
-  - `deviceSendIO(borrow device): bool` starts an asynchronous request; a
-    pending request returns `false`.
-  - `deviceWaitIO(borrow device): i32` waits for a pending request, clears the
-    pending flag, and returns `io_Error`; on an idle handle it returns the last
-    `io_Error`, and a null handle returns -1.
-  - `deviceCheckIO(borrow device): bool` reports whether a pending request has
-    completed and clears the flag when it has.
+  - `deviceDoIO(borrow device, borrow data: u8[]): i32` borrows the caller's
+    buffer for the call, runs a synchronous request, and returns `io_Error`; a
+    pending request returns -1. A synchronous read writes into the caller's
+    buffer during the call.
+  - `deviceSendIO(borrow device): bool` starts an asynchronous request over the
+    device-owned buffer; a pending request returns `false`.
+  - `deviceWaitIO(borrow device, borrow data: u8[]): i32` waits for a pending
+    request, clears the pending flag, copies the result into `data`, and
+    returns `io_Error`; on an idle handle it returns the last `io_Error`
+    without copying, and a null handle returns -1.
+  - `deviceCheckIO(borrow device, borrow data: u8[]): bool` reports whether a
+    pending request has completed; a completed request is reaped with
+    `WaitIO`, its result is copied into `data`, and the flag is cleared.
   - `deviceAbortIO(borrow device): void` requests an abort; the caller waits
     with `deviceWaitIO`.
   - `deviceActual(borrow device): u32` reads `io_Actual`.
@@ -81,9 +93,8 @@ no 2.0+ library call to the 1.3 build.
   - The `CMD_INVALID`, `CMD_RESET`, `CMD_READ`, `CMD_WRITE`, `CMD_UPDATE`,
     `CMD_CLEAR`, `CMD_STOP`, `CMD_START`, and `CMD_FLUSH` constants are
     exported.
-  The generic request is the standard `IOStdReq`; devices that need a larger
-  request (timer, audio) keep their own modules. The console helper imports
-  `Window` from `std.amiga.intuition`; it does not add a console module.
+  The console helper imports `Window` from `std.amiga.intuition`; it does not
+  add a console module.
 - **R5 — Interrupt servers.** `std.amiga.interrupt` keeps
   `addHandler(hook): HandlerToken` for the vertical-blank server and adds
   `addPortHandler(hook): HandlerToken` for the ports interrupt (`INTB_PORTS`).
@@ -92,28 +103,38 @@ no 2.0+ library call to the 1.3 build.
   idempotent. Handlers run in interrupt context and stay allocation-free,
   drop-free, and panic-free.
 - **R6 — Input, keyboard, and console devices.** The generic device surface
-  opens and operates `input.device` and `keyboard.device`; the demo opens and
-  closes both. `console.device` is opened through `openConsole(window, unit)`
-  on a caller-supplied Intuition window, then written with `CMD_WRITE` and
-  `DoIO`. The demo also sends a `CMD_READ` on that window, aborts it, and waits;
-  the aborted read returns `IOERR_ABORTED` (-2) because the dedicated window has
-  no pending input. No separate console or keyboard module is added. (The 1.3
+  opens and operates `input.device` and `keyboard.device`; the input handle is
+  closed by its generated drop and the keyboard handle is closed explicitly.
+  `console.device` is opened through `openConsole(window, unit)` on a
+  caller-supplied Intuition window, then written with `CMD_WRITE` and `DoIO`.
+  The demo also sends a `CMD_READ` on that window using the device-owned
+  asynchronous buffer, aborts it, and waits; the aborted read returns
+  `IOERR_ABORTED` (-2) because the dedicated window has no pending input. The
+  console window is refcounted, so the `Window` handle may close before the
+  console device. No separate console or keyboard module is added. (The 1.3
   keyboard device does not keep a read pending reliably; see RV-1.)
 - **R7 — Worker and async-I/O demo.** `examples/amiga/exec-demo.clo`:
   1. runs a worker stress loop: eight `workerSum` workers (55 each) and one
      `workerProduct` worker (24), created and joined one at a time, for
-     `8 * 55 + 24 = 464`;
-  2. opens `exec.library` version 33 and reports its version;
-  3. reads the boot block with `trackdisk.device` `CMD_READ` using `DoIO`;
-  4. reads it again using `SendIO` and `WaitIO`;
+     `8 * 55 + 24 = 464`; a tenth `workerZero` task is left to the generated
+     `Task` drop;
+  2. opens `exec.library` version 33, reports its version, and lets the
+     generated `Library` drop close it;
+  3. reads the boot block with `trackdisk.device` `CMD_READ` using
+     `deviceDoIO` over the caller's buffer, and fails stage 5 before starting
+     the async read if the first read is short or fails;
+  4. reserves a device-owned buffer, reads the block again with `SendIO`, and
+     copies the result out with `WaitIO`;
   5. opens a 320x80x3 Intuition screen and a 300x64 window, writes the 13-byte
      line `exec console\n` to `console.device` on that window with `CMD_WRITE`
-     and `DoIO`, sends a `CMD_READ` on the same window, aborts it, and expects
-     `IOERR_ABORTED` (-2), then closes the console, window, and screen;
-  6. opens and closes `input.device`;
+     and `DoIO`, sends a `CMD_READ` on the same window using the device-owned
+     buffer, aborts it, expects `IOERR_ABORTED` (-2), then closes the console
+     and window and lets the screen drop;
+  6. opens `input.device`, reads its last error, and lets the generated
+     `Device` drop close it;
   7. opens and closes `keyboard.device`;
-  8. prints and writes `DF0:exec.txt` with the pinned line
-     `exec: ok task <n> lib <v> dev <n> io <n> key <n> in <n>`.
+  8. prints the line, writes `DF0:exec.txt`, and checks the written byte count
+     against the line length.
   The demo exits 0 on every success and prints `exec: err <code>` on failure;
   a failed console read adds `key <error>` to the failure line for diagnosis.
 - **R8 — A500 acceptance.** `make sdk-a500-exec` builds the demo in release
@@ -129,17 +150,20 @@ no 2.0+ library call to the 1.3 build.
 - **R9 — Errors, limits, and ownership.** Every public call is null-safe.
   `openLibrary`, `openDevice`, `openConsole`, and `createTask` return `null` on
   failure. `libraryVersion`/`libraryRevision` return 0 on null. `deviceDoIO`
-  returns -1 on a null handle or a pending request; `deviceWaitIO` returns -1
-  only on a null handle and otherwise returns the request's `io_Error` (idle
-  included); `deviceSendIO`, `deviceCheckIO`, and `deviceSetBuffer` return
-  `false`; `deviceActual` returns 0; `deviceError` returns -1 on null. `unit`
-  must be 0..255. A second send or a synchronous `DoIO` while a request is
-  pending is rejected; `deviceCommand`, `deviceSetBuffer`, and
-  `deviceSetOffset` return `false` while pending and leave the request
-  unchanged.
+  returns -1 on a null handle, a null buffer with a non-zero length, or a
+  pending request; `deviceWaitIO` returns -1 only on a null handle and
+  otherwise returns the request's `io_Error` (idle included, no copy);
+  `deviceCommand`, `deviceSetBuffer`, `deviceWriteBuffer`, `deviceSetOffset`,
+  `deviceSendIO`, and `deviceCheckIO` return `false`; `deviceActual` returns
+  0; `deviceError` returns -1 on null. `unit` must be 0..255 and
+  extended-request devices are rejected. A second send or a synchronous `DoIO`
+  while a request is pending is rejected; the command, buffer, and offset
+  setters are idle-only. A completed `CheckIO` reaps its reply with `WaitIO`
+  before the request can be reused.
   Every partial allocation (task record, signal bit, reply port, device
-  request, library handle) is released before a failure return. The generated
-  drops are exactly-once.
+  request, device buffer, library handle) is released before a failure return.
+  The generated drops are exactly-once. The console window is refcounted so
+  the console cannot outlive the window.
 - **R10 — Compatibility and gating.** The new surface compiles on both
   `hosted-amiga-13` and `hosted-amiga`; the host and freestanding profiles
   still reject `std.amiga.exec` with `E11200`. The 1.3 build calls only the

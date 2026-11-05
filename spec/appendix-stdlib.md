@@ -387,10 +387,11 @@ and `bufferBytes` — for the result's origin
 
 ## 13. Exec (`std.amiga.exec`)
 
-The module owns private `MsgPort` handles, two move-only message handles, and
-a worker `Task` handle. It is available on `hosted-amiga-13` and
-`hosted-amiga`; the host and freestanding profiles reject it with `E11200`.
-The event-loop shape is in [appendix-amiga.md](appendix-amiga.md) §6.
+The module owns private `MsgPort` handles, two move-only message handles, a
+worker `Task` handle, a `Library` handle, and a generic `Device` handle. It is
+available on `hosted-amiga-13` and `hosted-amiga`; the host and freestanding
+profiles reject it with `E11200`. The event-loop shape is in
+[appendix-amiga.md](appendix-amiga.md) §6.
 
 ### 13.1 Worker tasks
 
@@ -483,18 +484,32 @@ version above the installed library returns `null`. `closeLibrary` calls
 
 ### 13.4 Devices
 
-`Device` owns one `struct IOStdReq` and one private reply port. The reply port
-is installed in `io_Message.mn_ReplyPort` before `OpenDevice`, so
-`deviceDoIO`/`deviceSendIO`/`deviceWaitIO` have a port to reply to. The handle
-owns the request and the port; the caller owns the data buffer and must keep it
-alive until the request completes or `closeDevice` returns. The generic request
-is the standard `IOStdReq`; devices that need a larger request (timer, audio)
-keep their typed modules.
+`Device` owns one `struct IOStdReq`, one private reply port, and an optional
+device-owned asynchronous buffer. The reply port is installed in
+`io_Message.mn_ReplyPort` before `OpenDevice`, so the request can be replied.
+The handle owns the request, the port, and the asynchronous buffer; the caller
+never keeps a raw data pointer inside the request.
+
+Synchronous I/O borrows the caller's buffer for the duration of the call:
+`deviceDoIO(device, buffer)` sets `io_Data`/`io_Length`, runs `DoIO`, and
+returns `io_Error`. A synchronous read writes directly into the caller's
+buffer, and the borrow checker keeps that buffer alive for the call.
+
+Asynchronous I/O uses a device-owned buffer so the caller cannot leave a
+dangling pointer behind a returned handle. `deviceSetBuffer(device, length)`
+reserves the buffer (length 0 releases it), `deviceWriteBuffer(device, data)`
+copies a write payload into it, and `deviceSendIO(device)` starts the request.
+`deviceWaitIO(device, dest)` and `deviceCheckIO(device, dest)` copy up to
+`len(dest)` bytes of the result out and return the request status. The buffer
+is freed when the device closes. Only the standard `IOStdReq`-sized devices
+are accepted; `audio.device`, `timer.device`, `serial.device`, and
+`parallel.device` need larger requests and keep their typed modules.
 
 `console.device` is bound to an Intuition `Window`, so it has a typed
 `openConsole(window, unit)` helper: it fills `io_Data` with the window and
-`io_Length` with `sizeof(struct Window)`. The window must stay open until the
-device closes.
+`io_Length` with `sizeof(struct Window)`. The window is refcounted: closing the
+`Window` handle while the console is open defers the actual close until the
+console device closes, so the console cannot use a freed window.
 
 The generic command constants are `CMD_INVALID` (0), `CMD_RESET` (1),
 `CMD_READ` (2), `CMD_WRITE` (3), `CMD_UPDATE` (4), `CMD_CLEAR` (5),
@@ -502,16 +517,17 @@ The generic command constants are `CMD_INVALID` (0), `CMD_RESET` (1),
 
 | API | Returns | Ownership and rules |
 |---|---|---|
-| `openDevice(name: cstring, unit: i32, flags: u32)` | `Device?` | opens a generic device; `unit` 0..255; `null` on failure |
-| `openConsole(borrow window: Window, unit: u8)` | `Device?` | opens `console.device` on an open Intuition window; the window must outlive the device |
-| `closeDevice(take device: Device)` | `void` | aborts a pending request, waits, closes the device, deletes the reply port, and frees the request; null-safe |
+| `openDevice(name: cstring, unit: i32, flags: u32)` | `Device?` | opens a standard `IOStdReq` device; `unit` 0..255; `null` on failure or an extended-request device |
+| `openConsole(borrow window: Window, unit: u8)` | `Device?` | opens `console.device` on an Intuition window; the window is refcounted and closes after the device |
+| `closeDevice(take device: Device)` | `void` | aborts a pending request, waits, closes the device, deletes the reply port, frees the asynchronous buffer, and releases the console window; null-safe |
 | `deviceCommand(borrow device, command: u16)` | `bool` | sets `io_Command`; false for a null handle or a pending request |
-| `deviceSetBuffer(borrow device, borrow data: u8[])` | `bool` | sets `io_Data`/`io_Length`; false for a null handle, a null pointer with a non-zero length, or a pending request |
+| `deviceSetBuffer(borrow device, length: u32)` | `bool` | reserves a device-owned asynchronous buffer; length 0 releases it; false for a null handle, a pending request, or allocation failure |
+| `deviceWriteBuffer(borrow device, borrow data: u8[])` | `bool` | copies a write payload into the device-owned buffer; false without a buffer, while pending, or when `data` is longer |
 | `deviceSetOffset(borrow device, offset: u32)` | `bool` | sets `io_Offset`; the unit is device-specific; false for a null handle or a pending request |
-| `deviceDoIO(borrow device)` | `i32` | synchronous `DoIO`, returns `io_Error`; a pending request returns -1 |
-| `deviceSendIO(borrow device)` | `bool` | starts `SendIO`; false for a null handle or a pending request |
-| `deviceWaitIO(borrow device)` | `i32` | waits for a pending request and returns `io_Error`; idle returns the last error, null returns -1 |
-| `deviceCheckIO(borrow device)` | `bool` | true when a pending request completed; clears the pending state |
+| `deviceDoIO(borrow device, borrow data: u8[])` | `i32` | synchronous `DoIO` over the caller's buffer; returns `io_Error`; a pending request returns -1 |
+| `deviceSendIO(borrow device)` | `bool` | starts `SendIO` over the device-owned buffer; false for a null handle or a pending request |
+| `deviceWaitIO(borrow device, borrow data: u8[])` | `i32` | waits for a pending request, copies the result out, and returns `io_Error`; idle returns the last error, null returns -1 |
+| `deviceCheckIO(borrow device, borrow data: u8[])` | `bool` | true when a pending request completed; reaps the reply, copies the result out, and clears the pending state |
 | `deviceAbortIO(borrow device)` | `void` | requests an abort; the caller reaps it with `deviceWaitIO` |
 | `deviceActual(borrow device)` | `u32` | the last transfer length |
 | `deviceError(borrow device)` | `i32` | the last request error, or -1 for a null handle |
@@ -519,23 +535,31 @@ The generic command constants are `CMD_INVALID` (0), `CMD_RESET` (1),
 
 ```clorraine
 import { Device, CMD_READ, openDevice, closeDevice, deviceCommand,
-         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceActual }
-    from std.amiga.exec;
+         deviceSetOffset, deviceDoIO, deviceActual } from std.amiga.exec;
 
 export func readBlock(borrow buffer: u8[]): u32 {
     let device: Device? = openDevice(toCString(stringOf("trackdisk.device")), 0, 0);
     if (device == null) { return 0; }
-    if (!deviceCommand(device, CMD_READ) ||
-        !deviceSetBuffer(device, borrow buffer) ||
-        !deviceSetOffset(device, 0)) {
+    if (!deviceCommand(device, CMD_READ) || !deviceSetOffset(device, 0)) {
         closeDevice(device);
         return 0;
     }
-    let error: i32 = deviceDoIO(device);
+    let error: i32 = deviceDoIO(device, borrow buffer);
     let actual: u32 = deviceActual(device);
     closeDevice(device);
     return error == 0 ? actual : 0;
 }
+```
+
+For an asynchronous read, reserve the device buffer first, start the request,
+and copy the result out at the wait:
+
+```clorraine
+if (!deviceSetBuffer(device, 512) || !deviceSendIO(device)) {
+    closeDevice(device);
+    return 0;
+}
+let error: i32 = deviceWaitIO(device, borrow buffer);
 ```
 
 ## 15. Native video (`std.amiga.video`)
