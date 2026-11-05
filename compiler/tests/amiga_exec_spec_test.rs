@@ -115,6 +115,121 @@ func main(): i32 {
 }
 ";
 
+/// The worker-task surface: create a capture-less task, report a result, and
+/// join it. This is the Phase 1 part of the bundle's full surface.
+const TASK_SOURCE: &str = "\
+module tests.exec.task;
+
+import { Task, createTask, reportTaskResult, joinTask } from std.amiga.exec;
+
+func worker(): void {
+    reportTaskResult(42);
+}
+
+func main(): i32 {
+    let task: Task? = createTask(worker, 8192);
+    if (task == null) {
+        return 1;
+    }
+    let result: i32 = joinTask(task);
+    return result == 42 ? 0 : 2;
+}
+";
+
+// The worker-task surface compiles on both hosted profiles and names its shim
+// calls. The A500 runtime proof is the demo; this case is the compile gate.
+#[test]
+fn the_task_surface_builds_on_both_hosted_profiles() {
+    for profile in ["hosted-amiga", "hosted-amiga-13"] {
+        let scratch = ScratchDir::new("task-surface");
+        let source_path = write_fixture(&scratch, "main.clo", TASK_SOURCE);
+        let output_path = scratch.path().join("out.c");
+        let output = run_clc(
+            scratch.path(),
+            &[
+                "--profile",
+                profile,
+                "-o",
+                output_path.to_str().expect("the output path is UTF-8"),
+                source_path.to_str().expect("the source path is UTF-8"),
+            ],
+        );
+        assert_exit(profile, &output, 0);
+        assert!(
+            stderr(&output).is_empty(),
+            "{profile}: the task surface must compile with zero diagnostics; stderr:\n{}",
+            stderr(&output)
+        );
+        let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+        for call in [
+            "cl_create_task",
+            "cl_task_result",
+            "cl_join_task",
+            "cl_task_free",
+        ] {
+            assert!(
+                c.contains(call),
+                "{profile}: the emitted C is missing {call}"
+            );
+        }
+    }
+}
+
+// The worker-task surface cross-builds with the 1.3 and 2.0 runtimes. The
+// host-only CI has no m68k compiler, so the case skips itself there.
+#[test]
+fn the_task_surface_cross_builds_with_nix13_and_nix20() {
+    if !tool_available("m68k-amigaos-gcc") {
+        eprintln!("skip: m68k-amigaos-gcc is not on PATH");
+        return;
+    }
+    for (tag, profile, crt) in [
+        ("task-build13", "hosted-amiga-13", "nix13"),
+        ("task-build20", "hosted-amiga", "nix20"),
+    ] {
+        let scratch = ScratchDir::new(tag);
+        let source_path = write_fixture(&scratch, "main.clo", TASK_SOURCE);
+        let c_path = scratch.path().join("out.c");
+        let emit = run_clc(
+            scratch.path(),
+            &[
+                "--profile",
+                profile,
+                "-o",
+                c_path.to_str().expect("the output path is UTF-8"),
+                source_path.to_str().expect("the source path is UTF-8"),
+            ],
+        );
+        assert_exit(tag, &emit, 0);
+        let binary = scratch.path().join("task");
+        let args = vec![
+            "-std=c99".to_owned(),
+            format!("-mcrt={crt}"),
+            "-m68000".to_owned(),
+            "-fwrapv".to_owned(),
+            "-O0".to_owned(),
+            "-g".to_owned(),
+            "-Wall".to_owned(),
+            "-Wextra".to_owned(),
+            "-Werror".to_owned(),
+            "-o".to_owned(),
+            binary.display().to_string(),
+            c_path.display().to_string(),
+            "-lamiga".to_owned(),
+            "-lm".to_owned(),
+        ];
+        let build = Command::new("m68k-amigaos-gcc")
+            .args(&args)
+            .output()
+            .expect("run m68k-amigaos-gcc");
+        assert!(
+            build.status.success(),
+            "{tag}: the task surface must build with {crt}; stderr:\n{}",
+            stderr(&build)
+        );
+    }
+}
+
 // The host profile must reject the Amiga module with the profile diagnostic.
 #[test]
 fn the_host_profile_rejects_the_exec_module() {
@@ -196,7 +311,7 @@ fn the_exec_exports_match_the_stdlib_appendix() {
     let appendix = std::fs::read_to_string(repo_root().join("spec/appendix-stdlib.md"))
         .expect("the stdlib appendix is readable");
     let start = appendix
-        .find("## 13. Message ports")
+        .find("## 13. Exec")
         .expect("the appendix has the exec section");
     let section = &appendix[start..];
     let end = section.find("## 14.").unwrap_or(section.len());

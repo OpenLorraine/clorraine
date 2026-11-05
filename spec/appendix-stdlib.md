@@ -382,11 +382,49 @@ and `bufferBytes` — for the result's origin
 | `Box<T>` with generated drop glue | v1.1 | needs the X1 amendment allowing ordinary Clorraine `freedBy` functions (X1) |
 | C-hook trampolines for capturing lambdas | v1.1 | capturing closures cross synchronous C hooks only, via generated trampolines (L5) |
 
-## 13. Message ports (`std.amiga.exec`)
+## 13. Exec (`std.amiga.exec`)
 
-The module owns private `MsgPort` handles and two move-only message handles. It is available only
-on `hosted-amiga`; the host, `hosted-amiga-13`, and freestanding profiles reject it with `E11200`. The event-loop
-shape is in [appendix-amiga.md](appendix-amiga.md) §6.
+The module owns private `MsgPort` handles, two move-only message handles, and
+a worker `Task` handle. It is available on `hosted-amiga-13` and
+`hosted-amiga`; the host and freestanding profiles reject it with `E11200`.
+The event-loop shape is in [appendix-amiga.md](appendix-amiga.md) §6.
+
+### 13.1 Worker tasks
+
+`createTask` starts a capture-less worker at priority -1 with a
+4096..65536-byte stack and returns an owned `Task?`. The worker's entry must
+use only arithmetic, module-level scalars, and `reportTaskResult`; it must not
+call DOS, Intuition, `std.io`, allocate, drop an owning value, or block. The
+worker reports its result, returns, and the shim signals the parent. `joinTask`
+waits for the worker, removes it with the Kickstart 1.3-safe
+`Forbid`/`RemTask`/`Permit` sequence, and returns the result. The generated
+drop joins an unjoined task. The restrictions are an audited convention; the
+compiler cannot enforce them.
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `createTask(entry: func(): void, stackBytes: u32)` | `Task?` | starts a priority -1 worker; `stackBytes` 4096..65536; `null` on allocation failure |
+| `reportTaskResult(value: i32)` | `void` | stores the current worker's result; no-op outside a created task |
+| `joinTask(take task: Task)` | `i32` | waits, removes the worker, frees the join signal, returns the result |
+| drop (generated) | `void` | joins and removes an unjoined task; it is null-safe |
+
+```clorraine
+import { Task, createTask, reportTaskResult, joinTask } from std.amiga.exec;
+
+func worker(): void {
+    reportTaskResult(42);
+}
+
+export func run(): i32 {
+    let task: Task? = createTask(worker, 8192);
+    if (task == null) { return 1; }
+    return joinTask(task);   // waits for the worker and removes it
+}
+```
+
+### 13.2 Message ports
+
+The message surface owns private ports and two move-only message handles.
 
 | API | Returns | Ownership and rules |
 |---|---|---|

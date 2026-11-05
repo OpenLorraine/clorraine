@@ -1,20 +1,29 @@
-//! Amiga Exec: private message ports, messages, and signals.
+//! Amiga Exec: tasks, private message ports, messages, and signals.
 //!
-//! This module belongs to the hosted-amiga profile; the host and freestanding
+//! This module belongs to the hosted-Amiga profiles; the host and freestanding
 //! profiles have no AmigaOS scheduler, so the module is not available there.
 //! The wrappers reach the profile C shim through `ffi`, so application code
-//! never writes `ffi` and never touches `unsafe`.
+//! never writes `ffi` and never touches `unsafe`. The surface is the classic
+//! Kickstart 1.3 Exec API: private ports (`CreatePort`), tasks, libraries, and
+//! devices.
 //!
-//! The surface is deliberately small: one private message port, one message
-//! with a reply port and an integer payload, and the four operations an event
-//! loop needs. A message is move-only. `putMsg` consumes the sent message,
-//! `getMsg` returns an owned message, and `replyMsg` consumes it. A fetched
-//! message that will not be replied is released with `releaseMsg`; an unsent
-//! `NewMessage` is released by its generated drop or with `freeMessage`.
+//! The message surface is deliberately small: one private message port, one
+//! message with a reply port and an integer payload, and the four operations an
+//! event loop needs. A message is move-only. `putMsg` consumes the sent
+//! message, `getMsg` returns an owned message, and `replyMsg` consumes it. A
+//! fetched message that will not be replied is released with `releaseMsg`; an
+//! unsent `NewMessage` is released by its generated drop or with
+//! `freeMessage`.
 //!
 //! `signals(port)` returns the port's signal mask. `waitSignals(mask)` sleeps
 //! until any bit in the mask arrives and returns the bits that did. The caller
 //! must loop when several sources share one wait.
+//!
+//! A `Task` is a plain Exec worker at priority -1. Its entry is a capture-less
+//! `func(): void` that must use only arithmetic, module-level scalars, and
+//! `reportTaskResult`; it must not call DOS, Intuition, `std.io`, allocate,
+//! drop an owning value, or block. `joinTask` waits for the worker, removes it,
+//! and returns its result. The generated drop joins an unjoined task.
 
 module std.amiga.exec;
 
@@ -37,6 +46,14 @@ export handle NewMessage freedBy cl_free_message;
 /// instead of being replied a second time.
 export handle Message freedBy cl_reply_msg;
 
+/// An owned worker task. The generated drop joins it if the caller did not.
+///
+/// The task runs at priority -1 and uses a stack of 4096..65536 bytes. It is a
+/// plain Exec task, not a DOS process; see the module notes for the entry
+/// restrictions. `joinTask` consumes the handle; an unjoined handle is joined
+/// and removed at scope end.
+export handle Task freedBy cl_task_free;
+
 ffi stdexec {
     func cl_create_msg_port(): MsgPort?;
     func cl_delete_msg_port(take port: MsgPort): void;
@@ -49,6 +66,10 @@ ffi stdexec {
     func cl_reply_msg(take msg: Message): void;
     func cl_free_message(take msg: NewMessage): void;
     func cl_release_message(take msg: Message): void;
+    func cl_create_task(entry: func(): void, stack_size: u32): Task?;
+    func cl_task_result(value: i32): void;
+    func cl_join_task(take task: Task): i32;
+    func cl_task_free(take task: Task): void;
 }
 
 /// Creates a private message port, or returns `null` when the system is out of
@@ -128,4 +149,35 @@ export func freeMessage(take msg: NewMessage): void {
 /// not reply the message afterwards.
 export func releaseMsg(take msg: Message): void {
     cl_release_message(msg);
+}
+
+/// Starts a capture-less worker task and returns an owned handle.
+///
+/// `stackBytes` is 4096..65536. The worker runs at priority -1, so the parent
+/// finishes its own setup before the worker runs. The entry must use only
+/// arithmetic, module-level scalars, and `reportTaskResult`; it must not call
+/// DOS, Intuition, `std.io`, allocate, drop an owning value, or block. The
+/// worker returns its value with `reportTaskResult` and then returns normally.
+///
+/// Returns `null` when the entry is null, the stack size is out of range, or
+/// the task, signal, or record cannot be allocated.
+export func createTask(entry: func(): void, stackBytes: u32): Task? {
+    return cl_create_task(entry, stackBytes);
+}
+
+/// Stores the current worker's result for the parent's `joinTask`.
+///
+/// This is a no-op outside a task created by `createTask`. The value is copied
+/// by the shim; it owns nothing.
+export func reportTaskResult(value: i32): void {
+    cl_task_result(value);
+}
+
+/// Waits for a worker, removes it, and returns the result it reported.
+///
+/// The handle is consumed. The worker must terminate; there is no
+/// cancellation. A task the caller never joins is joined and removed by its
+/// generated drop.
+export func joinTask(take task: Task): i32 {
+    return cl_join_task(task);
 }

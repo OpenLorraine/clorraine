@@ -24,7 +24,17 @@ base-identical GCC 15 warning. GCC 12.2, the version in the SDK image, accepts t
 a build-quality limitation, not a semantic difference: the emitted C remains valid C99 and the
 program's behavior is unchanged.
 
-## 3. CI is host-only
+## 3. Exec worker tasks have no DOS process context
+
+A task created by `std.amiga.exec.createTask` is a plain Kickstart 1.3 Exec
+task, not a DOS process. Its entry must use only arithmetic, module-level
+scalars, and `reportTaskResult`; it must not call DOS, Intuition, `std.io`,
+allocate, drop an owning value, or block. Use a message port plus a DOS process
+for work that needs those services; the language has no process wrapper in v1.
+The compiler cannot enforce this convention, so it is audited and documented in
+`spec/appendix-stdlib.md` §13.1.
+
+## 4. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip

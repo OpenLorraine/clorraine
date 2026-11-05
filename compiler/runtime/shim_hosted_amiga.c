@@ -20,6 +20,7 @@
 #include <exec/interrupts.h>
 #include <exec/memory.h>
 #include <exec/ports.h>
+#include <exec/tasks.h>
 #include <hardware/intbits.h>
 #include <proto/exec.h>
 /* `CreatePort`/`DeletePort` are amiga.lib helpers, not exec.library vectors;
@@ -2654,6 +2655,133 @@ void cl_free_message(void *message_handle)
 void cl_release_message(void *message_handle)
 {
     cl_free_message(message_handle);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Exec worker tasks.                                                        */
+/*                                                                           */
+/* A task is a plain Exec task at priority -1, not a DOS process. The worker  */
+/* runs the capture-less callback, signals the parent, and parks in Wait(0). */
+/* The parent removes it with Forbid/RemTask/Permit (the pre-V36 workaround)  */
+/* before freeing the record and the join signal.                            */
+/* ------------------------------------------------------------------------- */
+
+#define CL_TASK_MAGIC 0x434C544BUL /* "CLTK" */
+#define CL_TASK_STACK_MIN 4096UL
+#define CL_TASK_STACK_MAX 65536UL
+
+typedef struct cl_task {
+    ULONG magic;
+    struct Task *task;
+    struct Task *parent;
+    cl_handler_fn entry;
+    BYTE signal_bit;
+    int joined;
+    LONG result;
+} cl_task;
+
+/* The C entry point Exec calls. The record is in tc_UserData; the worker
+ * signals the parent after the Clorraine callback returns, then waits for the
+ * parent to remove it. */
+static void cl_task_entry(void)
+{
+    struct Task *self = FindTask(NULL);
+    cl_task *record = (cl_task *)self->tc_UserData;
+
+    if (record != NULL && record->magic == CL_TASK_MAGIC &&
+        record->entry != NULL) {
+        record->entry();
+    }
+    if (record != NULL && record->magic == CL_TASK_MAGIC) {
+        Signal(record->parent, 1UL << record->signal_bit);
+    }
+    Wait(0);
+}
+
+/* Wait for the worker, remove it, and free the signal and record. The
+ * Forbid/Permit pair is required on Kickstart 1.3 because removing another
+ * task created by CreateTask has a pre-V36 crash risk without it. */
+static LONG cl_task_join_record(cl_task *record)
+{
+    LONG result;
+
+    if (record == NULL || record->magic != CL_TASK_MAGIC) {
+        return 0;
+    }
+    if (!record->joined) {
+        Wait(1UL << record->signal_bit);
+        record->joined = 1;
+        Forbid();
+        RemTask(record->task);
+        Permit();
+        FreeSignal(record->signal_bit);
+    }
+    result = record->result;
+    record->magic = 0;
+    FreeMem(record, (ULONG)sizeof *record);
+    return result;
+}
+
+/* Start a worker task. Returns NULL on a null callback, an out-of-range stack,
+ * or an allocation failure; every partial allocation is released. */
+void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
+{
+    cl_task *record;
+    BYTE signal_bit;
+    struct Task *task;
+
+    if (entry == NULL || stack_size < CL_TASK_STACK_MIN ||
+        stack_size > CL_TASK_STACK_MAX) {
+        return NULL;
+    }
+    record = (cl_task *)AllocMem((ULONG)sizeof *record,
+                                 MEMF_PUBLIC | MEMF_CLEAR);
+    if (record == NULL) {
+        return NULL;
+    }
+    signal_bit = AllocSignal(-1);
+    if (signal_bit < 0) {
+        FreeMem(record, (ULONG)sizeof *record);
+        return NULL;
+    }
+    record->magic = CL_TASK_MAGIC;
+    record->parent = FindTask(NULL);
+    record->entry = entry;
+    record->signal_bit = signal_bit;
+    task = CreateTask((STRPTR)"clorraine.worker", -1,
+                      (APTR)cl_task_entry, stack_size);
+    if (task == NULL) {
+        FreeSignal(signal_bit);
+        FreeMem(record, (ULONG)sizeof *record);
+        return NULL;
+    }
+    record->task = task;
+    task->tc_UserData = record;
+    return record;
+}
+
+/* Store the current worker's result. A task not created by this module has a
+ * different (or null) tc_UserData, so the magic check makes this a no-op. */
+void cl_task_result(LONG value)
+{
+    struct Task *self = FindTask(NULL);
+    cl_task *record = (cl_task *)self->tc_UserData;
+
+    if (record != NULL && record->magic == CL_TASK_MAGIC) {
+        record->result = value;
+    }
+}
+
+/* Join a worker and return its result. The handle is consumed. */
+LONG cl_join_task(void *handle)
+{
+    return cl_task_join_record((cl_task *)handle);
+}
+
+/* The generated drop for an unjoined task. */
+void cl_task_free(void *handle)
+{
+    (void)cl_task_join_record((cl_task *)handle);
 }
 
 /* ------------------------------------------------------------------------- */

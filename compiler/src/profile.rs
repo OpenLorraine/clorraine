@@ -81,10 +81,10 @@ impl Profile {
         match self {
             Profile::Host => !module.starts_with("std.amiga."),
             Profile::HostedAmiga => true,
-            // Kickstart 1.3 predates the message-port allocation calls and the
-            // later Intuition/utility APIs. The 1.3 surface is the smallest
-            // set whose wrappers work on the stock A500; `std.amiga.exec`
-            // arrives with the Exec bundle.
+            // Kickstart 1.3 provides the classic Exec surface used here:
+            // private ports (`CreatePort`), tasks, libraries, and devices.
+            // The 1.3 list is the smallest set whose wrappers work on the
+            // stock A500; later library APIs stay on `hosted-amiga` only.
             Profile::HostedAmiga13 => matches!(
                 module,
                 "std.io"
@@ -106,6 +106,7 @@ impl Profile {
                     | "std.amiga.graphics"
                     | "std.amiga.intuition"
                     | "std.amiga.interrupt"
+                    | "std.amiga.exec"
             ),
             Profile::Freestanding => module == "std.io",
         }
@@ -238,7 +239,7 @@ mod tests {
         assert!(!Profile::Host.supports_module("std.amiga.ilbm"));
         assert!(Profile::HostedAmiga13.supports_module("std.amiga.graphics"));
         assert!(Profile::HostedAmiga13.supports_module("std.amiga.intuition"));
-        assert!(!Profile::HostedAmiga13.supports_module("std.amiga.exec"));
+        assert!(Profile::HostedAmiga13.supports_module("std.amiga.exec"));
         assert!(Profile::HostedAmiga.supports_module("std.amiga.exec"));
     }
 

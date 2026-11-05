@@ -448,6 +448,7 @@ pub const MODULES: &[StdlibModule] = &[
             "MsgPort",
             "NewMessage",
             "Message",
+            "Task",
             "createMsgPort",
             "deleteMsgPort",
             "createMessage",
@@ -459,6 +460,9 @@ pub const MODULES: &[StdlibModule] = &[
             "replyMsg",
             "freeMessage",
             "releaseMsg",
+            "createTask",
+            "reportTaskResult",
+            "joinTask",
         ],
     },
 ];
@@ -627,6 +631,7 @@ mod tests {
             "MsgPort",
             "NewMessage",
             "Message",
+            "Task",
             "createMsgPort",
             "deleteMsgPort",
             "createMessage",
@@ -638,6 +643,9 @@ mod tests {
             "replyMsg",
             "freeMessage",
             "releaseMsg",
+            "createTask",
+            "reportTaskResult",
+            "joinTask",
         ] {
             assert!(exports("std.amiga.exec", name), "missing export {name}");
         }
