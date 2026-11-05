@@ -1,0 +1,309 @@
+//! Exec acceptance demo: worker tasks, libraries, generic devices, the
+//! console device, input/keyboard devices, and both interrupt servers on a
+//! Kickstart 1.3 A500.
+//!
+//! The worker stress loop creates and joins nine tasks one at a time (eight
+//! sums of 55 and one product of 24, so the reported total is 464). The
+//! console write lives on its own small Intuition screen/window and closes
+//! before the report line, so the Shell line is the only console output.
+//! The report line is also written to `DF0:exec.txt` for the automated smoke.
+
+module examples.amiga.exec_demo;
+
+import {
+    Task, createTask, reportTaskResult, joinTask,
+    Library, openLibrary, closeLibrary, libraryVersion,
+    Device, CMD_READ, CMD_WRITE, openDevice, openConsole, closeDevice,
+    deviceCommand, deviceSetBuffer, deviceSetOffset, deviceDoIO,
+    deviceSendIO, deviceWaitIO, deviceAbortIO, deviceActual
+} from std.amiga.exec;
+import {
+    HandlerToken, addHandler, addPortHandler, removeHandler
+} from std.amiga.interrupt;
+import { delayTicks } from std.amiga.dos;
+import {
+    Screen, openScreen, Window, openWindow, closeWindow
+} from std.amiga.intuition;
+import { setColor } from std.amiga.graphics;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+import { File, createFile, writeBytes, println } from std.io;
+
+/// The VBlank handler increments this counter; it is read only after a delay.
+volatile let ticks: u32 = 0;
+
+/// The value reported by one `workerSum` task.
+const WORKER_SUM: i32 = 55;
+/// The value reported by the single `workerProduct` task.
+const WORKER_PRODUCT: i32 = 24;
+/// The number of sum workers in the stress loop.
+const WORKER_COUNT: i32 = 8;
+/// The expected length of the console line `exec console\n`.
+const CONSOLE_LENGTH: u32 = 13;
+
+/// The final values reported by the demo.
+struct ExecResult {
+    ok: bool;
+    task: i32;
+    lib: i32;
+    dev: i32;
+    io: i32;
+    key: i32;
+    input: i32;
+    stage: i32;
+}
+
+/// The console helper's result; `code` is the failure stage.
+struct ConsoleResult {
+    ok: bool;
+    actual: u32;
+    code: i32;
+}
+
+/// The failure result for one stage code.
+func failedAt(stage: i32): ExecResult {
+    return ExecResult {
+        ok: false,
+        task: 0,
+        lib: 0,
+        dev: 0,
+        io: 0,
+        key: 0,
+        input: 0,
+        stage: stage,
+    };
+}
+
+/// The VBlank handler: a capture-less function called from interrupt context.
+func onTick(): void {
+    ticks = ticks + 1;
+}
+
+/// The ports handler: registered and removed, but not required to fire.
+func onPort(): void {
+}
+
+/// A worker that reports a fixed sum.
+func workerSum(): void {
+    reportTaskResult(WORKER_SUM);
+}
+
+/// A worker that reports a fixed product.
+func workerProduct(): void {
+    reportTaskResult(WORKER_PRODUCT);
+}
+
+/// Create and join one worker at a time, stressing the removal path.
+///
+/// Returns -1 for a sum-worker failure and -2 for the product-worker failure;
+/// the successful total is positive.
+func workerLoop(): i32 {
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < WORKER_COUNT) {
+        let created: Task? = createTask(workerSum, 8192);
+        if (created == null) {
+            return -1;
+        }
+        let task: Task = created;
+        total = total + joinTask(task);
+        index = index + 1;
+    }
+    let created: Task? = createTask(workerProduct, 8192);
+    if (created == null) {
+        return -2;
+    }
+    let task: Task = created;
+    return total + joinTask(task);
+}
+
+/// Write the 13-byte console line to a small Intuition window.
+///
+/// The screen and window are local to this helper, so they are closed before
+/// the caller prints the report line to the Shell.
+func writeConsole(): ConsoleResult {
+    let title: String = stringOf("exec console");
+    let screen: Screen? = openScreen(320, 80, 3, toCString(title));
+    if (screen == null) {
+        return ConsoleResult { ok: false, actual: 0, code: 8 };
+    }
+    setColor(screen, 0, 150, 165, 190);
+    setColor(screen, 1, 20, 30, 50);
+    let window: Window? = openWindow(screen, 8, 8, 300, 64,
+                                     toCString(stringOf("exec console")));
+    if (window == null) {
+        return ConsoleResult { ok: false, actual: 0, code: 8 };
+    }
+    let console: Device? = openConsole(window, 0);
+    if (console == null) {
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: 0, code: 8 };
+    }
+    let line: String = stringOf("exec console\n");
+    let commandOk: bool = deviceCommand(console, CMD_WRITE);
+    if (!commandOk) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: 0, code: 8 };
+    }
+    let bufferOk: bool = deviceSetBuffer(console, bytes(line));
+    if (!bufferOk) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: 0, code: 8 };
+    }
+    let error: i32 = deviceDoIO(console);
+    let actual: u32 = deviceActual(console);
+    closeDevice(console);
+    closeWindow(window);
+    if (error != 0 || actual != CONSOLE_LENGTH) {
+        return ConsoleResult { ok: false, actual: actual, code: 9 };
+    }
+    return ConsoleResult { ok: true, actual: actual, code: 0 };
+}
+
+/// Run the full acceptance sequence.
+func runExec(): ExecResult {
+    let total: i32 = workerLoop();
+    if (total == -1) {
+        return failedAt(1);
+    }
+    if (total == -2) {
+        return failedAt(2);
+    }
+
+    let vblank: HandlerToken = addHandler(onTick);
+    let ports: HandlerToken = addPortHandler(onPort);
+    delayTicks(3);
+    let seen: u32 = ticks;
+    removeHandler(vblank);
+    removeHandler(ports);
+    if (seen == 0) {
+        return failedAt(3);
+    }
+
+    let library: Library? =
+        openLibrary(toCString(stringOf("exec.library")), 33);
+    if (library == null) {
+        return failedAt(4);
+    }
+    let libVersion: u16 = libraryVersion(library);
+    closeLibrary(library);
+
+    let buffer: u8[512] = [; 0];
+    let diskCreated: Device? =
+        openDevice(toCString(stringOf("trackdisk.device")), 0, 0);
+    if (diskCreated == null) {
+        return failedAt(5);
+    }
+    let disk: Device = diskCreated;
+    let readCommand: bool = deviceCommand(disk, CMD_READ);
+    if (!readCommand) {
+        return failedAt(5);
+    }
+    let readBuffer: bool =
+        deviceSetBuffer(disk, borrow slice(buffer, 0, 512));
+    if (!readBuffer) {
+        return failedAt(5);
+    }
+    let readOffset: bool = deviceSetOffset(disk, 0);
+    if (!readOffset) {
+        return failedAt(5);
+    }
+    let readError: i32 = deviceDoIO(disk);
+    let readActual: u32 = deviceActual(disk);
+
+    let asyncCommand: bool = deviceCommand(disk, CMD_READ);
+    if (!asyncCommand) {
+        return failedAt(6);
+    }
+    let asyncBuffer: bool =
+        deviceSetBuffer(disk, borrow slice(buffer, 0, 512));
+    if (!asyncBuffer) {
+        return failedAt(6);
+    }
+    let asyncOffset: bool = deviceSetOffset(disk, 0);
+    if (!asyncOffset) {
+        return failedAt(6);
+    }
+    let asyncSend: bool = deviceSendIO(disk);
+    if (!asyncSend) {
+        return failedAt(6);
+    }
+    let asyncError: i32 = deviceWaitIO(disk);
+    let asyncActual: u32 = deviceActual(disk);
+    closeDevice(disk);
+    if (readError != 0 || asyncError != 0 ||
+        readActual != 512 || asyncActual != 512) {
+        return failedAt(7);
+    }
+
+    let consoleResult: ConsoleResult = writeConsole();
+    if (!consoleResult.ok) {
+        return failedAt(consoleResult.code);
+    }
+
+    let inputCreated: Device? =
+        openDevice(toCString(stringOf("input.device")), 0, 0);
+    if (inputCreated == null) {
+        return failedAt(10);
+    }
+    let input: Device = inputCreated;
+    closeDevice(input);
+
+    let keyCreated: Device? =
+        openDevice(toCString(stringOf("keyboard.device")), 0, 0);
+    if (keyCreated == null) {
+        return failedAt(11);
+    }
+    let key: Device = keyCreated;
+    let keyBuffer: u8[64] = [; 0];
+    let keyCommand: bool = deviceCommand(key, CMD_READ);
+    if (!keyCommand) {
+        return failedAt(11);
+    }
+    let keyBufferOk: bool =
+        deviceSetBuffer(key, borrow slice(keyBuffer, 0, 64));
+    if (!keyBufferOk) {
+        return failedAt(11);
+    }
+    let keySend: bool = deviceSendIO(key);
+    if (!keySend) {
+        return failedAt(12);
+    }
+    deviceAbortIO(key);
+    let keyError: i32 = deviceWaitIO(key);
+    closeDevice(key);
+    if (keyError != -2) {
+        return failedAt(13);
+    }
+
+    return ExecResult {
+        ok: true,
+        task: total,
+        lib: i32(libVersion),
+        dev: i32(readActual),
+        io: i32(consoleResult.actual),
+        key: keyError,
+        input: 1,
+        stage: 0,
+    };
+}
+
+func main(): i32 {
+    let result: ExecResult = runExec();
+    if (!result.ok) {
+        println($"exec: err {result.stage}");
+        return 1;
+    }
+    let line: String =
+        $"exec: ok task {result.task} lib {result.lib} dev {result.dev} io {result.io} key {result.key} in {result.input}";
+    println(line);
+    let file: File? = createFile(toCString(stringOf("DF0:exec.txt")));
+    if (file == null) {
+        println("exec: err 14");
+        return 1;
+    }
+    writeBytes(file, bytes(line));
+    return 0;
+}

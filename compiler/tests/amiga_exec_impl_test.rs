@@ -104,6 +104,11 @@ fn shim() -> String {
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
 }
 
+/// The repository root, for the demo and appendix sources.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
 const TASK_SOURCE: &str = r#"module tests.exec.taskimpl;
 
 import { Task, createTask, reportTaskResult, joinTask } from std.amiga.exec;
@@ -443,6 +448,40 @@ fn the_interrupt_wrappers_and_server_slots_are_pinned() {
         "id == cl_ports_token && cl_ports_handler != NULL",
     ] {
         assert_contains("interrupt-shim", &shim, needle);
+    }
+}
+
+/// The A500 demo pins the worker stress loop, the console helper, the
+/// trackdisk/console/input/keyboard sequence, and the report line.
+#[test]
+fn the_exec_demo_pins_the_worker_and_device_sequence() {
+    let path = repo_root().join("examples/amiga/exec-demo.clo");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
+    for needle in [
+        "const WORKER_SUM: i32 = 55;",
+        "const WORKER_PRODUCT: i32 = 24;",
+        "const WORKER_COUNT: i32 = 8;",
+        "const CONSOLE_LENGTH: u32 = 13;",
+        "func workerSum(): void",
+        "func workerProduct(): void",
+        "while (index < WORKER_COUNT)",
+        "func writeConsole(): ConsoleResult",
+        "openConsole(window, 0)",
+        "openDevice(toCString(stringOf(\"trackdisk.device\")), 0, 0)",
+        "deviceSendIO(disk)",
+        "deviceWaitIO(disk)",
+        "openDevice(toCString(stringOf(\"input.device\")), 0, 0)",
+        "openDevice(toCString(stringOf(\"keyboard.device\")), 0, 0)",
+        "deviceAbortIO(key)",
+        "keyError != -2",
+        "exec: ok task {result.task} lib {result.lib} dev {result.dev} io {result.io} key {result.key} in {result.input}",
+        "DF0:exec.txt",
+    ] {
+        assert!(
+            source.contains(needle),
+            "the exec demo is missing {needle:?}"
+        );
     }
 }
 
