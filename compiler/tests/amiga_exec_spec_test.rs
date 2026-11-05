@@ -87,6 +87,55 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+/// Emits `source` for `profile` and cross-builds it with the named libnix
+/// runtime. The host-only CI has no m68k compiler, so the case skips itself.
+fn cross_build(tag: &str, profile: &str, crt: &str, source: &str) {
+    if !tool_available("m68k-amigaos-gcc") {
+        eprintln!("skip: m68k-amigaos-gcc is not on PATH");
+        return;
+    }
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_fixture(&scratch, "main.clo", source);
+    let c_path = scratch.path().join("out.c");
+    let emit = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            profile,
+            "-o",
+            c_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit(tag, &emit, 0);
+    let binary = scratch.path().join("probe");
+    let args = vec![
+        "-std=c99".to_owned(),
+        format!("-mcrt={crt}"),
+        "-m68000".to_owned(),
+        "-fwrapv".to_owned(),
+        "-O0".to_owned(),
+        "-g".to_owned(),
+        "-Wall".to_owned(),
+        "-Wextra".to_owned(),
+        "-Werror".to_owned(),
+        "-o".to_owned(),
+        binary.display().to_string(),
+        c_path.display().to_string(),
+        "-lamiga".to_owned(),
+        "-lm".to_owned(),
+    ];
+    let build = Command::new("m68k-amigaos-gcc")
+        .args(&args)
+        .output()
+        .expect("run m68k-amigaos-gcc");
+    assert!(
+        build.status.success(),
+        "{tag}: the surface must build with {crt}; stderr:\n{}",
+        stderr(&build)
+    );
+}
+
 /// A source that imports the module and calls every surface the emitter needs.
 const EXEC_SOURCE: &str = "\
 module tests.exec;
@@ -179,55 +228,200 @@ fn the_task_surface_builds_on_both_hosted_profiles() {
 // host-only CI has no m68k compiler, so the case skips itself there.
 #[test]
 fn the_task_surface_cross_builds_with_nix13_and_nix20() {
-    if !tool_available("m68k-amigaos-gcc") {
-        eprintln!("skip: m68k-amigaos-gcc is not on PATH");
-        return;
+    cross_build("task-build13", "hosted-amiga-13", "nix13", TASK_SOURCE);
+    cross_build("task-build20", "hosted-amiga", "nix20", TASK_SOURCE);
+}
+
+/// The library surface: open, read the version/revision, and close.
+const LIBRARY_SOURCE: &str = "\
+module tests.exec.library;
+
+import { Library, openLibrary, closeLibrary, libraryVersion,
+         libraryRevision } from std.amiga.exec;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf(\"exec.library\");
+    let library: Library? = openLibrary(toCString(name), 33);
+    if (library == null) {
+        return 1;
     }
-    for (tag, profile, crt) in [
-        ("task-build13", "hosted-amiga-13", "nix13"),
-        ("task-build20", "hosted-amiga", "nix20"),
-    ] {
-        let scratch = ScratchDir::new(tag);
-        let source_path = write_fixture(&scratch, "main.clo", TASK_SOURCE);
-        let c_path = scratch.path().join("out.c");
-        let emit = run_clc(
+    let version: u16 = libraryVersion(library);
+    let revision: u16 = libraryRevision(library);
+    closeLibrary(library);
+    return i32(version) + i32(revision);
+}
+";
+
+/// The generic device surface and the console helper. The function takes a
+/// `Window` so the console helper is exercised without opening a screen in the
+/// compile-only probe.
+const DEVICE_SOURCE: &str = "\
+module tests.exec.device;
+
+import { Device, CMD_INVALID, CMD_RESET, CMD_READ, CMD_WRITE,
+         CMD_UPDATE, CMD_CLEAR, CMD_STOP, CMD_START, CMD_FLUSH,
+         openDevice, openConsole, closeDevice, deviceCommand,
+         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceSendIO,
+         deviceWaitIO, deviceCheckIO, deviceAbortIO, deviceActual,
+         deviceError } from std.amiga.exec;
+import { Window } from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+
+export func useDevice(window: Window): i32 {
+    let name: String = stringOf(\"trackdisk.device\");
+    let created: Device? = openDevice(toCString(name), 0, 0);
+    if (created == null) {
+        return 1;
+    }
+    let device: Device = created;
+    let buffer: u8[64] = [; 0];
+    let command_ok: bool = deviceCommand(device, CMD_READ);
+    if (!command_ok) {
+        return 2;
+    }
+    let buffer_ok: bool = deviceSetBuffer(device, borrow slice(buffer, 0, 64));
+    if (!buffer_ok) {
+        return 3;
+    }
+    let offset_ok: bool = deviceSetOffset(device, 0);
+    if (!offset_ok) {
+        return 4;
+    }
+    let error: i32 = deviceDoIO(device);
+    let actual: u32 = deviceActual(device);
+    let last: i32 = deviceError(device);
+    let send_ok: bool = deviceSendIO(device);
+    if (!send_ok) {
+        return 5;
+    }
+    let checked: bool = deviceCheckIO(device);
+    let waited: i32 = deviceWaitIO(device);
+    deviceAbortIO(device);
+    closeDevice(device);
+
+    let console_created: Device? = openConsole(window, 0);
+    if (console_created == null) {
+        return 6;
+    }
+    let console: Device = console_created;
+    let console_command_ok: bool = deviceCommand(console, CMD_WRITE);
+    if (!console_command_ok) {
+        return 7;
+    }
+    let console_buffer_ok: bool =
+        deviceSetBuffer(console, borrow slice(buffer, 0, 64));
+    if (!console_buffer_ok) {
+        return 8;
+    }
+    let consoleError: i32 = deviceDoIO(console);
+    closeDevice(console);
+    return error + last + waited + consoleError + i32(actual) +
+           (checked ? 1 : 0) + i32(CMD_INVALID) + i32(CMD_RESET) +
+           i32(CMD_UPDATE) + i32(CMD_CLEAR) + i32(CMD_STOP) +
+           i32(CMD_START) + i32(CMD_FLUSH);
+}
+
+func main(): i32 {
+    return 0;
+}
+";
+
+// The library surface compiles on both hosted profiles and names its shim
+// calls. The 1.3 runtime is the A500 demo; this is the compile gate.
+#[test]
+fn the_library_surface_builds_on_both_hosted_profiles() {
+    for profile in ["hosted-amiga", "hosted-amiga-13"] {
+        let scratch = ScratchDir::new("library-surface");
+        let source_path = write_fixture(&scratch, "main.clo", LIBRARY_SOURCE);
+        let output_path = scratch.path().join("out.c");
+        let output = run_clc(
             scratch.path(),
             &[
                 "--profile",
                 profile,
                 "-o",
-                c_path.to_str().expect("the output path is UTF-8"),
+                output_path.to_str().expect("the output path is UTF-8"),
                 source_path.to_str().expect("the source path is UTF-8"),
             ],
         );
-        assert_exit(tag, &emit, 0);
-        let binary = scratch.path().join("task");
-        let args = vec![
-            "-std=c99".to_owned(),
-            format!("-mcrt={crt}"),
-            "-m68000".to_owned(),
-            "-fwrapv".to_owned(),
-            "-O0".to_owned(),
-            "-g".to_owned(),
-            "-Wall".to_owned(),
-            "-Wextra".to_owned(),
-            "-Werror".to_owned(),
-            "-o".to_owned(),
-            binary.display().to_string(),
-            c_path.display().to_string(),
-            "-lamiga".to_owned(),
-            "-lm".to_owned(),
-        ];
-        let build = Command::new("m68k-amigaos-gcc")
-            .args(&args)
-            .output()
-            .expect("run m68k-amigaos-gcc");
+        assert_exit(profile, &output, 0);
         assert!(
-            build.status.success(),
-            "{tag}: the task surface must build with {crt}; stderr:\n{}",
-            stderr(&build)
+            stderr(&output).is_empty(),
+            "{profile}: the library surface must compile with zero diagnostics; stderr:\n{}",
+            stderr(&output)
         );
+        let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+        for call in [
+            "cl_open_library",
+            "cl_close_library",
+            "cl_library_version",
+            "cl_library_revision",
+        ] {
+            assert!(
+                c.contains(call),
+                "{profile}: the emitted C is missing {call}"
+            );
+        }
     }
+}
+
+// The device and console surface compiles on both hosted profiles and names
+// every shim call.
+#[test]
+fn the_device_surface_builds_on_both_hosted_profiles() {
+    for profile in ["hosted-amiga", "hosted-amiga-13"] {
+        let scratch = ScratchDir::new("device-surface");
+        let source_path = write_fixture(&scratch, "main.clo", DEVICE_SOURCE);
+        let output_path = scratch.path().join("out.c");
+        let output = run_clc(
+            scratch.path(),
+            &[
+                "--profile",
+                profile,
+                "-o",
+                output_path.to_str().expect("the output path is UTF-8"),
+                source_path.to_str().expect("the source path is UTF-8"),
+            ],
+        );
+        assert_exit(profile, &output, 0);
+        assert!(
+            stderr(&output).is_empty(),
+            "{profile}: the device surface must compile with zero diagnostics; stderr:\n{}",
+            stderr(&output)
+        );
+        let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+        for call in [
+            "cl_open_device",
+            "cl_open_console",
+            "cl_close_device",
+            "cl_device_command",
+            "cl_device_set_buffer",
+            "cl_device_set_offset",
+            "cl_device_do_io",
+            "cl_device_send_io",
+            "cl_device_wait_io",
+            "cl_device_check_io",
+            "cl_device_abort_io",
+            "cl_device_actual",
+            "cl_device_error",
+        ] {
+            assert!(
+                c.contains(call),
+                "{profile}: the emitted C is missing {call}"
+            );
+        }
+    }
+}
+
+// The library and device surfaces cross-build with the 1.3 and 2.0 runtimes.
+#[test]
+fn the_library_and_device_surfaces_cross_build_with_nix13_and_nix20() {
+    cross_build("library-build13", "hosted-amiga-13", "nix13", LIBRARY_SOURCE);
+    cross_build("library-build20", "hosted-amiga", "nix20", LIBRARY_SOURCE);
+    cross_build("device-build13", "hosted-amiga-13", "nix13", DEVICE_SOURCE);
+    cross_build("device-build20", "hosted-amiga", "nix20", DEVICE_SOURCE);
 }
 
 // The host profile must reject the Amiga module with the profile diagnostic.

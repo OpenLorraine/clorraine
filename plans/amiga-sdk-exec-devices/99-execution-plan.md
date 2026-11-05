@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 19:22
-> **Progress**: 5/18 tasks (28%) — Executing
+> **Last Updated**: 2026-11-05 19:27
+> **Progress**: 9/18 tasks (50%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -77,10 +77,10 @@ bundle. Specification tests come before implementation in every phase.
 
 **Reference**: [03-02](03-02-libraries-and-devices.md) · AR-7–AR-10, AR-15
 
-- [ ] 2.1.1 [spec-author] Add the library and device surface to the spec source (ST-1/ST-3) and run it red; add the `openConsole` path and the `Window` import
-- [ ] 2.1.2 Add `Library`, `openLibrary`, `closeLibrary`, `libraryVersion`, and `libraryRevision` to the module and shim; update the export table
-- [ ] 2.1.3 Add `Device`, the `CMD_*` constants, the open/openConsole/close/command/buffer/offset/do/send/wait/check/abort/actual/error wrappers, the `IOStdReq` reply port, and the console-window shim; use the `raw u8`+`u32` FFI for `deviceSetBuffer`; add `#include <exec/io.h>` and the `struct IORequest *` casts; update the export table and the §13 library/device text
-- [ ] 2.1.4 Add the library/device implementation cases (IT-4, IT-5, IT-7, IT-12) to `amiga_exec_impl_test.rs`; run them green
+- [x] 2.1.1 [spec-author] Add the library and device surface to the spec source (ST-1/ST-3) and run it red; add the `openConsole` path and the `Window` import ✅ (completed: 2026-11-05 19:25; red evidence: `E11102` for `Library`, `Device`, the `CMD_*` constants, and every wrapper)
+- [x] 2.1.2 Add `Library`, `openLibrary`, `closeLibrary`, `libraryVersion`, and `libraryRevision` to the module and shim; update the export table ✅ (completed: 2026-11-05 19:26; the `Library` contract maps to `struct Library *`; the shim matches)
+- [x] 2.1.3 Add `Device`, the `CMD_*` constants, the open/openConsole/close/command/buffer/offset/do/send/wait/check/abort/actual/error wrappers, the `IOStdReq` reply port, and the console-window shim; use the `raw u8`+`u32` FFI for `deviceSetBuffer`; add `#include <exec/io.h>` and the `struct IORequest *` casts; update the export table and the §13 library/device text ✅ (completed: 2026-11-05 19:26; the reply port, pending state machine, console window fields, and appendix §13.3/§13.4 are in)
+- [x] 2.1.4 Add the library/device implementation cases (IT-4, IT-5, IT-7, IT-12) to `amiga_exec_impl_test.rs`; run them green ✅ (completed: 2026-11-05 19:27; 9/9 impl tests green; wrapper bodies, reply port, state machine, and console helper pinned)
 
 **Verify**: `cargo test --lib --test amiga_exec_spec_test --test amiga_exec_impl_test`
 

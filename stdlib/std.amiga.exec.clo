@@ -27,6 +27,8 @@
 
 module std.amiga.exec;
 
+import { Window } from std.amiga.intuition;
+
 /// A private message port. The generated drop deletes it.
 ///
 /// The caller must drain the port before the drop runs; a queued message would
@@ -54,6 +56,30 @@ export handle Message freedBy cl_reply_msg;
 /// and removed at scope end.
 export handle Task freedBy cl_task_free;
 
+/// An open AmigaOS library. The generated drop closes it.
+///
+/// The handle is the library base; opening version 0 accepts any version and a
+/// version above the installed library returns `null`.
+export handle Library freedBy cl_close_library;
+
+/// An open Exec device with one owned `IOStdReq` and a reply port.
+///
+/// The generic request is the standard `IOStdReq`; devices with a larger
+/// request (timer, audio) keep their typed modules. The generated drop aborts a
+/// pending request, waits for it, and closes the device.
+export handle Device freedBy cl_close_device;
+
+/// Generic Exec device commands from `exec/io.h`.
+export const CMD_INVALID: u16 = 0;
+export const CMD_RESET: u16 = 1;
+export const CMD_READ: u16 = 2;
+export const CMD_WRITE: u16 = 3;
+export const CMD_UPDATE: u16 = 4;
+export const CMD_CLEAR: u16 = 5;
+export const CMD_STOP: u16 = 6;
+export const CMD_START: u16 = 7;
+export const CMD_FLUSH: u16 = 8;
+
 ffi stdexec {
     func cl_create_msg_port(): MsgPort?;
     func cl_delete_msg_port(take port: MsgPort): void;
@@ -70,6 +96,24 @@ ffi stdexec {
     func cl_task_result(value: i32): void;
     func cl_join_task(take task: Task): i32;
     func cl_task_free(take task: Task): void;
+    func cl_open_library(name: cstring, version: u16): Library?;
+    func cl_close_library(take library: Library): void;
+    func cl_library_version(borrow library: Library): u16;
+    func cl_library_revision(borrow library: Library): u16;
+    func cl_open_device(name: cstring, unit: i32, flags: u32): Device?;
+    func cl_open_console(borrow window: Window, unit: u8): Device?;
+    func cl_close_device(take device: Device): void;
+    func cl_device_command(borrow device: Device, command: u16): bool;
+    func cl_device_set_buffer(borrow device: Device, data: raw u8,
+                              length: u32): bool;
+    func cl_device_set_offset(borrow device: Device, offset: u32): bool;
+    func cl_device_do_io(borrow device: Device): i32;
+    func cl_device_send_io(borrow device: Device): bool;
+    func cl_device_wait_io(borrow device: Device): i32;
+    func cl_device_check_io(borrow device: Device): bool;
+    func cl_device_abort_io(borrow device: Device): void;
+    func cl_device_actual(borrow device: Device): u32;
+    func cl_device_error(borrow device: Device): i32;
 }
 
 /// Creates a private message port, or returns `null` when the system is out of
@@ -180,4 +224,111 @@ export func reportTaskResult(value: i32): void {
 /// generated drop.
 export func joinTask(take task: Task): i32 {
     return cl_join_task(task);
+}
+
+/// Opens a library at or above `version`, or returns `null`.
+///
+/// A version of 0 opens any installed version; a version above the installed
+/// library returns `null`. The handle is closed by `closeLibrary` or the
+/// generated drop.
+export func openLibrary(name: cstring, version: u16): Library? {
+    return cl_open_library(name, version);
+}
+
+/// Closes a library exactly once.
+export func closeLibrary(take library: Library): void {
+    cl_close_library(library);
+}
+
+/// Returns the library's major version, or 0 for a null handle.
+export func libraryVersion(borrow library: Library): u16 {
+    return cl_library_version(library);
+}
+
+/// Returns the library's minor revision, or 0 for a null handle.
+export func libraryRevision(borrow library: Library): u16 {
+    return cl_library_revision(library);
+}
+
+/// Opens an Exec device with one owned `IOStdReq`, or returns `null`.
+///
+/// `unit` is 0..255; `flags` is passed to `OpenDevice`. The generic request is
+/// the standard `IOStdReq`. Use `openConsole` for `console.device`, which needs
+/// a caller-supplied Intuition window.
+export func openDevice(name: cstring, unit: i32, flags: u32): Device? {
+    return cl_open_device(name, unit, flags);
+}
+
+/// Opens `console.device` on an open Intuition window, or returns `null`.
+///
+/// The console device is bound to the window; the window must stay open until
+/// `closeDevice` returns. `unit` is 0..255.
+export func openConsole(borrow window: Window, unit: u8): Device? {
+    return cl_open_console(window, unit);
+}
+
+/// Aborts a pending request, waits for it, and closes the device.
+export func closeDevice(take device: Device): void {
+    cl_close_device(device);
+}
+
+/// Sets the request command. Returns false for a null handle or a pending
+/// request; the request is left unchanged in that case.
+export func deviceCommand(borrow device: Device, command: u16): bool {
+    return cl_device_command(device, command);
+}
+
+/// Sets the request data pointer and length. Returns false for a null handle, a
+/// null pointer with a non-zero length, or a pending request. The caller keeps
+/// the buffer alive until the request completes.
+export func deviceSetBuffer(borrow device: Device, borrow data: u8[]): bool {
+    unsafe {
+        return cl_device_set_buffer(device, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Sets the request offset. Returns false for a null handle or a pending
+/// request. The offset unit is device-specific.
+export func deviceSetOffset(borrow device: Device, offset: u32): bool {
+    return cl_device_set_offset(device, offset);
+}
+
+/// Runs a synchronous request and returns its error. A pending request returns
+/// -1 without sending.
+export func deviceDoIO(borrow device: Device): i32 {
+    return cl_device_do_io(device);
+}
+
+/// Starts an asynchronous request. Returns false for a null handle or a
+/// request that is already pending.
+export func deviceSendIO(borrow device: Device): bool {
+    return cl_device_send_io(device);
+}
+
+/// Waits for a pending request and returns its error. On an idle handle it
+/// returns the last error; a null handle returns -1.
+export func deviceWaitIO(borrow device: Device): i32 {
+    return cl_device_wait_io(device);
+}
+
+/// Reports whether a pending request has completed and clears the pending
+/// state when it has.
+export func deviceCheckIO(borrow device: Device): bool {
+    return cl_device_check_io(device);
+}
+
+/// Requests an abort for a pending request. The caller reaps it with
+/// `deviceWaitIO`; `closeDevice` does this automatically.
+export func deviceAbortIO(borrow device: Device): void {
+    cl_device_abort_io(device);
+}
+
+/// Returns the number of bytes transferred by the last request.
+export func deviceActual(borrow device: Device): u32 {
+    return cl_device_actual(device);
+}
+
+/// Returns the last request error, or -1 for a null handle.
+export func deviceError(borrow device: Device): i32 {
+    return cl_device_error(device);
 }

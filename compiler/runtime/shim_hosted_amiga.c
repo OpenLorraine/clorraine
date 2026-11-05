@@ -18,6 +18,7 @@
 
 #include <exec/types.h>
 #include <exec/interrupts.h>
+#include <exec/io.h>
 #include <exec/memory.h>
 #include <exec/ports.h>
 #include <exec/tasks.h>
@@ -2782,6 +2783,284 @@ LONG cl_join_task(void *handle)
 void cl_task_free(void *handle)
 {
     (void)cl_task_join_record((cl_task *)handle);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Exec libraries and generic devices.                                       */
+/*                                                                           */
+/* A device handle owns one IOStdReq and one private reply port. The reply   */
+/* port is required for DoIO/SendIO/WaitIO; the request must have it before  */
+/* OpenDevice. The console helper fills io_Data/io_Length from the caller's  */
+/* Intuition window because console.device is bound to a window.             */
+/* ------------------------------------------------------------------------- */
+
+/* Open a library at or above `version`; a null name is rejected. The
+ * `Library` handle maps to `struct Library *` in the FFI contract table, so
+ * these signatures use that type rather than `void *`. */
+struct Library *cl_open_library(char *name, UWORD version)
+{
+    if (name == NULL) {
+        return NULL;
+    }
+    return OpenLibrary((STRPTR)name, version);
+}
+
+/* Close a library exactly once; null-safe. */
+void cl_close_library(struct Library *library)
+{
+    if (library != NULL) {
+        CloseLibrary(library);
+    }
+}
+
+/* The library's major version, or 0 for a null handle. */
+UWORD cl_library_version(struct Library *library)
+{
+    return library == NULL ? 0 : library->lib_Version;
+}
+
+/* The library's minor revision, or 0 for a null handle. */
+UWORD cl_library_revision(struct Library *library)
+{
+    return library == NULL ? 0 : library->lib_Revision;
+}
+
+typedef struct cl_device {
+    struct IOStdReq request;
+    struct MsgPort *port;
+    int pending;
+} cl_device;
+
+/* Allocate a cleared device handle and its reply port. Every failure releases
+ * the partial allocation. */
+static cl_device *cl_device_alloc(void)
+{
+    cl_device *device =
+        (cl_device *)AllocMem((ULONG)sizeof *device,
+                              MEMF_PUBLIC | MEMF_CLEAR);
+
+    if (device == NULL) {
+        return NULL;
+    }
+    device->port = CreatePort(NULL, 0);
+    if (device->port == NULL) {
+        FreeMem(device, (ULONG)sizeof *device);
+        return NULL;
+    }
+    device->request.io_Message.mn_ReplyPort = device->port;
+    return device;
+}
+
+/* Release a handle whose OpenDevice failed. The device is not open, so this
+ * must not call CloseDevice. */
+static void cl_device_discard(cl_device *device)
+{
+    if (device == NULL) {
+        return;
+    }
+    if (device->pending) {
+        (void)AbortIO((struct IORequest *)&device->request);
+        (void)WaitIO((struct IORequest *)&device->request);
+        device->pending = 0;
+    }
+    if (device->port != NULL) {
+        DeletePort(device->port);
+    }
+    FreeMem(device, (ULONG)sizeof *device);
+}
+
+/* Abort a pending request and close the device. The caller's buffer is not
+ * touched. */
+static void cl_device_close(cl_device *device)
+{
+    if (device == NULL) {
+        return;
+    }
+    if (device->pending) {
+        (void)AbortIO((struct IORequest *)&device->request);
+        (void)WaitIO((struct IORequest *)&device->request);
+        device->pending = 0;
+    }
+    if (device->request.io_Device != NULL) {
+        CloseDevice((struct IORequest *)&device->request);
+    }
+    if (device->port != NULL) {
+        DeletePort(device->port);
+    }
+    FreeMem(device, (ULONG)sizeof *device);
+}
+
+/* Open a generic device with one IOStdReq. */
+void *cl_open_device(char *name, LONG unit, ULONG flags)
+{
+    cl_device *device;
+
+    if (name == NULL || unit < 0 || unit > 255) {
+        return NULL;
+    }
+    device = cl_device_alloc();
+    if (device == NULL) {
+        return NULL;
+    }
+    if (OpenDevice((STRPTR)name, (ULONG)unit,
+                   (struct IORequest *)&device->request, flags) != 0) {
+        cl_device_discard(device);
+        return NULL;
+    }
+    return device;
+}
+
+/* Open console.device on a caller-owned Intuition window. The console unit is
+ * bound to the window, so the window must outlive the device. */
+void *cl_open_console(void *window_handle, UBYTE unit)
+{
+    const cl_window *window = (const cl_window *)window_handle;
+    cl_device *device;
+
+    if (window == NULL || window->window == NULL) {
+        return NULL;
+    }
+    device = cl_device_alloc();
+    if (device == NULL) {
+        return NULL;
+    }
+    device->request.io_Data = (APTR)window->window;
+    device->request.io_Length = (ULONG)sizeof(struct Window);
+    if (OpenDevice((STRPTR)"console.device", (ULONG)unit,
+                   (struct IORequest *)&device->request, 0) != 0) {
+        cl_device_discard(device);
+        return NULL;
+    }
+    return device;
+}
+
+/* Close a device; null-safe. */
+void cl_close_device(void *handle)
+{
+    cl_device_close((cl_device *)handle);
+}
+
+/* Set the request command; idle-only and null-safe. */
+BOOL cl_device_command(void *handle, UWORD command)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending) {
+        return FALSE;
+    }
+    device->request.io_Command = command;
+    return TRUE;
+}
+
+/* Set the request data pointer and length; idle-only and null-safe. */
+BOOL cl_device_set_buffer(void *handle, APTR data, ULONG length)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending) {
+        return FALSE;
+    }
+    if (data == NULL && length != 0) {
+        return FALSE;
+    }
+    device->request.io_Data = data;
+    device->request.io_Length = length;
+    return TRUE;
+}
+
+/* Set the request offset; idle-only and null-safe. */
+BOOL cl_device_set_offset(void *handle, ULONG offset)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending) {
+        return FALSE;
+    }
+    device->request.io_Offset = offset;
+    return TRUE;
+}
+
+/* Run a synchronous request and return io_Error. */
+LONG cl_device_do_io(void *handle)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending) {
+        return -1;
+    }
+    return (LONG)DoIO((struct IORequest *)&device->request);
+}
+
+/* Start an asynchronous request. */
+BOOL cl_device_send_io(void *handle)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || device->pending) {
+        return FALSE;
+    }
+    SendIO((struct IORequest *)&device->request);
+    device->pending = 1;
+    return TRUE;
+}
+
+/* Wait for a pending request and return io_Error. An idle handle returns the
+ * request's last error. */
+LONG cl_device_wait_io(void *handle)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL) {
+        return -1;
+    }
+    if (device->pending) {
+        LONG error = (LONG)WaitIO((struct IORequest *)&device->request);
+        device->pending = 0;
+        return error;
+    }
+    return (LONG)device->request.io_Error;
+}
+
+/* Report whether a pending request completed and clear the pending state. */
+BOOL cl_device_check_io(void *handle)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || !device->pending) {
+        return FALSE;
+    }
+    if (CheckIO((struct IORequest *)&device->request) != NULL) {
+        device->pending = 0;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* Request an abort; the caller reaps it with WaitIO or closeDevice. */
+void cl_device_abort_io(void *handle)
+{
+    cl_device *device = (cl_device *)handle;
+
+    if (device == NULL || !device->pending) {
+        return;
+    }
+    (void)AbortIO((struct IORequest *)&device->request);
+}
+
+/* The last transfer length. */
+ULONG cl_device_actual(void *handle)
+{
+    const cl_device *device = (const cl_device *)handle;
+
+    return device == NULL ? 0 : device->request.io_Actual;
+}
+
+/* The last request error, or -1 for a null handle. */
+LONG cl_device_error(void *handle)
+{
+    const cl_device *device = (const cl_device *)handle;
+
+    return device == NULL ? -1 : (LONG)device->request.io_Error;
 }
 
 /* ------------------------------------------------------------------------- */

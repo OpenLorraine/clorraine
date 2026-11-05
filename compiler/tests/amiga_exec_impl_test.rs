@@ -223,3 +223,193 @@ fn the_task_shim_has_no_20_plus_task_calls() {
         );
     }
 }
+
+const LIBRARY_SOURCE: &str = r#"module tests.exec.libimpl;
+
+import { Library, openLibrary, closeLibrary, libraryVersion,
+         libraryRevision } from std.amiga.exec;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("exec.library");
+    let library: Library? = openLibrary(toCString(name), 33);
+    if (library == null) { return 1; }
+    let version: u16 = libraryVersion(library);
+    let revision: u16 = libraryRevision(library);
+    closeLibrary(library);
+    return i32(version) + i32(revision);
+}
+"#;
+
+const LIBRARY_DROP_SOURCE: &str = r#"module tests.exec.libdrop;
+
+import { Library, openLibrary, libraryVersion } from std.amiga.exec;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("exec.library");
+    let library: Library? = openLibrary(toCString(name), 33);
+    if (library == null) { return 1; }
+    return i32(libraryVersion(library));
+}
+"#;
+
+const DEVICE_SOURCE: &str = r#"module tests.exec.deviceimpl;
+
+import { Device, CMD_INVALID, CMD_RESET, CMD_READ, CMD_WRITE,
+         CMD_UPDATE, CMD_CLEAR, CMD_STOP, CMD_START, CMD_FLUSH,
+         openDevice, openConsole, closeDevice, deviceCommand,
+         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceSendIO,
+         deviceWaitIO, deviceCheckIO, deviceAbortIO, deviceActual,
+         deviceError } from std.amiga.exec;
+import { Window } from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+
+export func useDevice(window: Window): i32 {
+    let name: String = stringOf("trackdisk.device");
+    let created: Device? = openDevice(toCString(name), 0, 0);
+    if (created == null) { return 1; }
+    let device: Device = created;
+    let buffer: u8[64] = [; 0];
+    let command_ok: bool = deviceCommand(device, CMD_READ);
+    if (!command_ok) { return 2; }
+    let buffer_ok: bool = deviceSetBuffer(device, borrow slice(buffer, 0, 64));
+    if (!buffer_ok) { return 3; }
+    let offset_ok: bool = deviceSetOffset(device, 0);
+    if (!offset_ok) { return 4; }
+    let error: i32 = deviceDoIO(device);
+    let actual: u32 = deviceActual(device);
+    let last: i32 = deviceError(device);
+    let send_ok: bool = deviceSendIO(device);
+    if (!send_ok) { return 5; }
+    let checked: bool = deviceCheckIO(device);
+    let waited: i32 = deviceWaitIO(device);
+    deviceAbortIO(device);
+    closeDevice(device);
+
+    let console_created: Device? = openConsole(window, 0);
+    if (console_created == null) { return 6; }
+    let console: Device = console_created;
+    let console_command_ok: bool = deviceCommand(console, CMD_WRITE);
+    if (!console_command_ok) { return 7; }
+    let console_buffer_ok: bool =
+        deviceSetBuffer(console, borrow slice(buffer, 0, 64));
+    if (!console_buffer_ok) { return 8; }
+    let consoleError: i32 = deviceDoIO(console);
+    closeDevice(console);
+    return error + last + waited + consoleError + i32(actual) +
+           (checked ? 1 : 0) + i32(CMD_INVALID) + i32(CMD_RESET) +
+           i32(CMD_UPDATE) + i32(CMD_CLEAR) + i32(CMD_STOP) +
+           i32(CMD_START) + i32(CMD_FLUSH);
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+
+/// The library wrappers route to the shim and use the contract `struct
+/// Library *` type. The generated drop closes an unclosed library.
+#[test]
+fn the_library_wrappers_lower_to_the_contract_type() {
+    let c = emit("library-routing", "hosted-amiga", LIBRARY_SOURCE);
+    assert_before(
+        "library-routing",
+        &c,
+        "struct Library * cl_std_amiga_exec_openLibrary(char *name, u16 version)",
+        "return cl_open_library(name, version);",
+    );
+    assert_contains("library-routing", &c, "cl_close_library(library);");
+    assert_contains("library-routing", &c, "cl_library_version(library);");
+    assert_contains("library-routing", &c, "cl_library_revision(library);");
+
+    let drop = emit("library-drop", "hosted-amiga-13", LIBRARY_DROP_SOURCE);
+    assert_contains("library-drop", &drop, "if (library) { cl_close_library(library); }");
+}
+
+/// The device wrappers route to the shim, the buffer wrapper passes the
+/// pointer and length explicitly, and the drop closes an unclosed device.
+#[test]
+fn the_device_wrappers_lower_to_the_shim() {
+    let c = emit("device-routing", "hosted-amiga", DEVICE_SOURCE);
+    for wrapper in [
+        "cl_std_amiga_exec_openDevice",
+        "cl_std_amiga_exec_openConsole",
+        "cl_std_amiga_exec_closeDevice",
+        "cl_std_amiga_exec_deviceCommand",
+        "cl_std_amiga_exec_deviceSetBuffer",
+        "cl_std_amiga_exec_deviceSetOffset",
+        "cl_std_amiga_exec_deviceDoIO",
+        "cl_std_amiga_exec_deviceSendIO",
+        "cl_std_amiga_exec_deviceWaitIO",
+        "cl_std_amiga_exec_deviceCheckIO",
+        "cl_std_amiga_exec_deviceAbortIO",
+        "cl_std_amiga_exec_deviceActual",
+        "cl_std_amiga_exec_deviceError",
+    ] {
+        assert_contains("device-routing", &c, wrapper);
+    }
+    assert_contains(
+        "device-routing",
+        &c,
+        "cl_device_set_buffer(device, (u8 *)(data.ptr), (u32)((data).len))",
+    );
+    assert_contains("device-routing", &c, "if (device) { cl_close_device(device); }");
+}
+
+/// The device shim owns a reply port and implements the documented pending
+/// state machine and failure values.
+#[test]
+fn the_device_shim_pins_the_reply_port_and_state_machine() {
+    let shim = shim();
+    for needle in [
+        "typedef struct cl_device",
+        "struct IOStdReq request;",
+        "struct MsgPort *port;",
+        "int pending;",
+        "device->port = CreatePort(NULL, 0);",
+        "device->request.io_Message.mn_ReplyPort = device->port;",
+        "static void cl_device_discard(cl_device *device)",
+        "DeletePort(device->port);",
+        "static void cl_device_close(cl_device *device)",
+        "AbortIO((struct IORequest *)&device->request)",
+        "WaitIO((struct IORequest *)&device->request)",
+        "CloseDevice((struct IORequest *)&device->request)",
+        "if (device == NULL || device->pending)",
+        "return FALSE;",
+        "return -1;",
+        "device->request.io_Command = command;",
+        "device->request.io_Data = data;",
+        "device->request.io_Length = length;",
+        "device->request.io_Offset = offset;",
+        "device->pending = 1;",
+        "device->pending = 0;",
+        "CheckIO((struct IORequest *)&device->request) != NULL",
+        "return (LONG)device->request.io_Error;",
+        "return device == NULL ? 0 : device->request.io_Actual;",
+        "return device == NULL ? -1 : (LONG)device->request.io_Error;",
+    ] {
+        assert_contains("device-shim", &shim, needle);
+    }
+}
+
+/// The console helper fills the request from the caller's Intuition window and
+/// the device request uses the 1.3 `IOStdReq`/`exec/io.h` types.
+#[test]
+fn the_console_helper_pins_the_window_request() {
+    let shim = shim();
+    for needle in [
+        "#include <exec/io.h>",
+        "void *cl_open_console(void *window_handle, UBYTE unit)",
+        "const cl_window *window = (const cl_window *)window_handle;",
+        "window->window == NULL",
+        "device->request.io_Data = (APTR)window->window;",
+        "device->request.io_Length = (ULONG)sizeof(struct Window);",
+        "OpenDevice((STRPTR)\"console.device\", (ULONG)unit,",
+        "(struct IORequest *)&device->request",
+        "MEMF_PUBLIC | MEMF_CLEAR",
+    ] {
+        assert_contains("console-shim", &shim, needle);
+    }
+}

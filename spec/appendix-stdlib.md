@@ -461,6 +461,80 @@ export func drain(borrow port: MsgPort): void {
 }
 ```
 
+### 13.3 Libraries
+
+`Library` owns an open `Library *` base. `openLibrary(name, version)` opens a
+library at or above `version`; version 0 accepts any installed version, and a
+version above the installed library returns `null`. `closeLibrary` calls
+`CloseLibrary` exactly once; the generated drop is null-safe.
+`libraryVersion`/`libraryRevision` read `lib_Version`/`lib_Revision` and return
+0 for a null handle.
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `openLibrary(name: cstring, version: u16)` | `Library?` | `OpenLibrary`; `null` on a null name or a missing/too-old library |
+| `closeLibrary(take library: Library)` | `void` | `CloseLibrary` exactly once |
+| `libraryVersion(borrow library: Library)` | `u16` | `lib_Version`, or 0 for null |
+| `libraryRevision(borrow library: Library)` | `u16` | `lib_Revision`, or 0 for null |
+| drop (generated) | `void` | closes an unclosed library; null-safe |
+
+### 13.4 Devices
+
+`Device` owns one `struct IOStdReq` and one private reply port. The reply port
+is installed in `io_Message.mn_ReplyPort` before `OpenDevice`, so
+`deviceDoIO`/`deviceSendIO`/`deviceWaitIO` have a port to reply to. The handle
+owns the request and the port; the caller owns the data buffer and must keep it
+alive until the request completes or `closeDevice` returns. The generic request
+is the standard `IOStdReq`; devices that need a larger request (timer, audio)
+keep their typed modules.
+
+`console.device` is bound to an Intuition `Window`, so it has a typed
+`openConsole(window, unit)` helper: it fills `io_Data` with the window and
+`io_Length` with `sizeof(struct Window)`. The window must stay open until the
+device closes.
+
+The generic command constants are `CMD_INVALID` (0), `CMD_RESET` (1),
+`CMD_READ` (2), `CMD_WRITE` (3), `CMD_UPDATE` (4), `CMD_CLEAR` (5),
+`CMD_STOP` (6), `CMD_START` (7), and `CMD_FLUSH` (8).
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `openDevice(name: cstring, unit: i32, flags: u32)` | `Device?` | opens a generic device; `unit` 0..255; `null` on failure |
+| `openConsole(borrow window: Window, unit: u8)` | `Device?` | opens `console.device` on an open Intuition window; the window must outlive the device |
+| `closeDevice(take device: Device)` | `void` | aborts a pending request, waits, closes the device, deletes the reply port, and frees the request; null-safe |
+| `deviceCommand(borrow device, command: u16)` | `bool` | sets `io_Command`; false for a null handle or a pending request |
+| `deviceSetBuffer(borrow device, borrow data: u8[])` | `bool` | sets `io_Data`/`io_Length`; false for a null handle, a null pointer with a non-zero length, or a pending request |
+| `deviceSetOffset(borrow device, offset: u32)` | `bool` | sets `io_Offset`; the unit is device-specific; false for a null handle or a pending request |
+| `deviceDoIO(borrow device)` | `i32` | synchronous `DoIO`, returns `io_Error`; a pending request returns -1 |
+| `deviceSendIO(borrow device)` | `bool` | starts `SendIO`; false for a null handle or a pending request |
+| `deviceWaitIO(borrow device)` | `i32` | waits for a pending request and returns `io_Error`; idle returns the last error, null returns -1 |
+| `deviceCheckIO(borrow device)` | `bool` | true when a pending request completed; clears the pending state |
+| `deviceAbortIO(borrow device)` | `void` | requests an abort; the caller reaps it with `deviceWaitIO` |
+| `deviceActual(borrow device)` | `u32` | the last transfer length |
+| `deviceError(borrow device)` | `i32` | the last request error, or -1 for a null handle |
+| drop (generated) | `void` | `closeDevice` semantics; null-safe |
+
+```clorraine
+import { Device, CMD_READ, openDevice, closeDevice, deviceCommand,
+         deviceSetBuffer, deviceSetOffset, deviceDoIO, deviceActual }
+    from std.amiga.exec;
+
+export func readBlock(borrow buffer: u8[]): u32 {
+    let device: Device? = openDevice(toCString(stringOf("trackdisk.device")), 0, 0);
+    if (device == null) { return 0; }
+    if (!deviceCommand(device, CMD_READ) ||
+        !deviceSetBuffer(device, borrow buffer) ||
+        !deviceSetOffset(device, 0)) {
+        closeDevice(device);
+        return 0;
+    }
+    let error: i32 = deviceDoIO(device);
+    let actual: u32 = deviceActual(device);
+    closeDevice(device);
+    return error == 0 ? actual : 0;
+}
+```
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a
