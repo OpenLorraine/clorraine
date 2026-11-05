@@ -19,22 +19,25 @@ surface compiles on `hosted-amiga`; the 2.0+ additions (gadtools, ASL
 requesters, and BOOPSI) are not part of this surface and are deferred. The host
 profile has no AmigaOS Intuition and rejects the module with `E11200`. The
 KS1.3 A500 gate is the runtime proof; the `hosted-amiga` profile is
-compile-verified. `std.amiga.exec` stays gated on 1.3 until the Exec bundle
-validates it, although its shared shim already uses the 1.3-safe port and
-message calls.
+compile-verified. The classic Exec surface (private ports, worker tasks,
+libraries, and generic devices) is available on both hosted profiles; the
+KS1.3 A500 Exec gate is its runtime proof. The 2.0+ Exec additions (signal
+semaphores, hooks, and the utility library) are deferred.
 
 ## 1. API surface for v1
 
-The v1 library wraps two AmigaOS libraries. Each area sits behind ownership
-contracts (X3; [Ch 12](12-ffi-contracts.md)), so a wrapper, not the caller,
-holds the FFI declaration.
+The v1 library wraps the AmigaOS libraries the profiles provide. Each area
+sits behind ownership contracts (X3; [Ch 12](12-ffi-contracts.md)), so a
+wrapper, not the caller, holds the FFI declaration.
 
 | Library | Area | Covered in v1 | State behind it |
 |---|---|---|---|
 | `exec.library` | memory | allocate and free (`AllocVec`/`FreeVec`); pools later | `Buffer`, `Array<T>` |
-| `exec.library` | libraries | open and close (`OpenLibrary`/`CloseLibrary`) | `handle Library` |
-| `exec.library` | ports | create and delete message ports | `handle MsgPort` |
+| `exec.library` | tasks | create, join, and remove a worker task (`CreateTask`/`RemTask`) | `handle Task` |
+| `exec.library` | libraries | open, close, and read the version (`OpenLibrary`/`CloseLibrary`) | `handle Library` |
+| `exec.library` | ports | create and delete private message ports | `handle MsgPort` |
 | `exec.library` | signals | wait for and set signals (`Wait`/`SetSignal`) | event loop (§6) |
+| `exec.library` | devices | open, close, and run `IOStdReq` requests (`DoIO`/`SendIO`/`WaitIO`) | `handle Device` |
 | `dos.library` | files | open, close, read, write, seek, position, and length | `handle File` |
 | `dos.library` | locks | lock and unlock a path, inspect it, create/delete/rename entries, current/parent directory | `handle Lock`, `PathInfo` |
 | `dos.library` | volumes | volume name, free bytes, used bytes | `VolumeInfo` |
@@ -418,6 +421,12 @@ export func run(port: MsgPort): void {
 `getMsg` returns a nullable `Message?`; `replyMsg` takes `take Message`, so
 the binding is moved and re-initialized for the next turn (O3). The library
 wrappers hold the FFI calls and their contracts.
+
+Worker tasks are plain Exec tasks, not DOS processes; their entry restrictions
+are in [appendix-stdlib.md](appendix-stdlib.md) §13.1 and
+[known limitations](../docs/known-limitations.md). `console.device` is the one
+device with a typed open helper because it is bound to an Intuition window; see
+[appendix-stdlib.md](appendix-stdlib.md) §13.4.
 
 ## 7. ROM and runner policy
 

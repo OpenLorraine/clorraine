@@ -12,7 +12,7 @@
 | 4-text-layers | core | 1.3 | 4 | 6 | 0 | #5 |
 | 5-dos-assets | core | 1.3 | 5 | 7 | 0 | #6 |
 | 6-intuition | core | 1.3 | 6 | 9 | 0 | #7 |
-| 7-exec-devices | core | 1.3 | 0 | 11 | 5 | #8 |
+| 7-exec-devices | core | 1.3 | 8 | 11 | 0 | #8 |
 | 8-workbench | advanced | 2.0 | 0 | 9 | 0 | #9 |
 | 9-optional | optional | 3.1 | 0 | 3 | 0 | #10 |
 
@@ -127,17 +127,17 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-EXE-001 | Worker task creation and join | should | missing | task |
-| SDK-EXE-002 | Signals | must | missing | signals |
-| SDK-EXE-011 | Signal semaphores (2.0+) | should | missing | semaphores |
-| SDK-EXE-003 | Message ports (extend exec module) | must | missing | messages |
-| SDK-EXE-004 | Library open/close and version | must | missing | library |
-| SDK-EXE-005 | Device IORequest/DoIO/SendIO | must | missing | device_io |
-| SDK-EXE-006 | Interrupt servers (VBlank, ports) | should | missing | interrupts |
-| SDK-EXE-010 | Hooks (2.0+) | should | missing | hooks_20 |
-| SDK-EXE-007 | Tags/hooks/date/memory pools (2.0+) | should | missing | utility |
-| SDK-EXE-008 | input/keyboard/console devices | should | missing | input_devices |
-| SDK-EXE-009 | Worker task + async IO demo | must | missing | task_io_demo |
+| SDK-EXE-001 | Worker task creation and join | should | done | task |
+| SDK-EXE-002 | Signals | must | done | signals |
+| SDK-EXE-011 | Signal semaphores (2.0+) | should | deferred | semaphores |
+| SDK-EXE-003 | Message ports (extend exec module) | must | done | messages |
+| SDK-EXE-004 | Library open/close and version | must | done | library |
+| SDK-EXE-005 | Device IORequest/DoIO/SendIO | must | done | device_io |
+| SDK-EXE-006 | Interrupt servers (VBlank, ports) | should | done | interrupts |
+| SDK-EXE-010 | Hooks (2.0+) | should | deferred | hooks_20 |
+| SDK-EXE-007 | Tags/hooks/date/memory pools (2.0+) | should | deferred | utility |
+| SDK-EXE-008 | input/keyboard/console devices | should | done | input_devices |
+| SDK-EXE-009 | Worker task + async IO demo | must | done | task_io_demo |
 
 ## 8-workbench — Workbench and services
 

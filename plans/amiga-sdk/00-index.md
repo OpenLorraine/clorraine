@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–6 done; Bundle 7 (Exec and devices) next
+> **Status**: Executing — Bundles 0–7 done; Bundle 8 (Workbench and services) next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -70,4 +70,12 @@ passes with a private Xvfb keyboard run, the native
 `docs/amiga-sdk/a500-gui.png`, and the report line `gui: ok win 1 gad 2 menu 2
 str 3 req 2`. The frozen-spec appendices document the classic 1.3 surface on
 both hosted profiles, the full `make verify` gate passes headlessly, and issue
-#7 is closed. Bundle 7 (Exec and devices) follows.
+#7 is closed. Bundle 7 (Exec and devices) is
+`plans/amiga-sdk-exec-devices/`: worker tasks with the V34-safe
+`Forbid`/`RemTask` join, the existing private ports and signals, library
+open/close/version, the generic `IOStdReq` device surface with its reply port,
+the console-window helper, the VBlank and ports interrupt servers, and the
+input/keyboard/console device coverage. The A500 Exec gate reports
+`exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` with the 620x22
+`docs/amiga-sdk/a500-exec.png`; issue #8 is closed. Bundle 8 (Workbench and
+services) follows.

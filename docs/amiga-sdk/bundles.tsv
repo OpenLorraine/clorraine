@@ -6,6 +6,6 @@ id	title	tier	min_os	min_hw	status	tracking_issue	plan
 4-text-layers	Text, fonts, layers	core	1.3	OCS/68000/512K	done	#5	plans/amiga-sdk-text-layers
 5-dos-assets	DOS and assets	core	1.3	OCS/68000/512K	done	#6	plans/amiga-sdk-dos-assets
 6-intuition	Intuition UI	core	1.3	OCS/68000/512K	done	#7	plans/amiga-sdk-intuition
-7-exec-devices	Exec and devices	core	1.3	OCS/68000/512K	missing	#8	-
+7-exec-devices	Exec and devices	core	1.3	OCS/68000/512K	done	#8	plans/amiga-sdk-exec-devices
 8-workbench	Workbench and services	advanced	2.0	ECS/68000/1M	missing	#9	-
 9-optional	Optional add-ons	optional	3.1	AGA/68020/2M	missing	#10	-
