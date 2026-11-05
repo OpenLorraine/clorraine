@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 22:44
-> **Progress**: 16/26 tasks (62%) — Executing
+> **Last Updated**: 2026-11-05 22:53
+> **Progress**: 22/26 tasks (85%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -130,12 +130,12 @@ implementation in every phase.
 
 **Reference**: [03-04](03-04-demo-and-gates.md) · AR-9, AR-13, AR-14, R5–R7
 
-- [ ] 5.1.1 Add `examples/amiga/services.clo` and `examples/amiga/workbench.clo` with the pinned report lines; compile both for `hosted-amiga`
-- [ ] 5.1.2 Add the test-only `docker/scripts/workbench-start.c` and `workbench-post.c`; compile them and run the start fixture on the A600 and A1200 ROMs
-- [ ] 5.1.3 Add `docker/scripts/a600-services-smoke.sh` and the `sdk-a600-services` Makefile target; run the gate on A600/KS2.05
-- [ ] 5.1.4 Add `docker/scripts/a1200-workbench-smoke.sh` and the `sdk-a1200-workbench` Makefile target; run the gate on A1200/KS3.1 and capture `docs/amiga-sdk/a1200-workbench.png` and `docs/amiga-sdk/a1200-workbench-icon.png`
-- [ ] 5.1.5 Add both targets to `verify` and the demo/fixture implementation cases (IT-11, IT-13); re-run both gates
-- [ ] 5.1.6 Run `make sdk-a600-services` and `make sdk-a1200-workbench` together; record the report lines and both goldens (full screen and AppIcon crop)
+- [x] 5.1.1 Add `examples/amiga/services.clo` and `examples/amiga/workbench.clo` with the pinned report lines; compile both for `hosted-amiga` ✅ (completed: 2026-11-05 22:53; both build with no warnings)
+- [x] 5.1.2 Add the test-only `docker/scripts/workbench-start.c` and `workbench-post.c`; compile them and run the start fixture on the A600 and A1200 ROMs ✅ (completed: 2026-11-05 22:53; both compile under -Werror; `startwb 1 screen ...` on both ROMs)
+- [x] 5.1.3 Add `docker/scripts/a600-services-smoke.sh` and the `sdk-a600-services` Makefile target; run the gate on A600/KS2.05 ✅ (completed: 2026-11-05 22:53; `make sdk-a600-services` OK with the Workbench and services lines)
+- [x] 5.1.4 Add `docker/scripts/a1200-workbench-smoke.sh` and the `sdk-a1200-workbench` Makefile target; run the gate on A1200/KS3.1 and capture `docs/amiga-sdk/a1200-workbench.png` and `docs/amiga-sdk/a1200-workbench-icon.png` ✅ (completed: 2026-11-05 22:53; full capture 1280x512, AppIcon crop 160x120, 3 colors)
+- [x] 5.1.5 Add both targets to `verify` and the demo/fixture implementation cases (IT-11, IT-13); re-run both gates ✅ (completed: 2026-11-05 22:53; 20/20 impl tests green; both gates pass through the Makefile targets)
+- [x] 5.1.6 Run `make sdk-a600-services` and `make sdk-a1200-workbench` together; record the report lines and both goldens (full screen and AppIcon crop) ✅ (completed: 2026-11-05 22:53; `make check` 109 suites green)
 
 **Verify**: `make sdk-a600-services && make sdk-a1200-workbench`
 

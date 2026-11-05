@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -124,6 +124,8 @@ verify:
 	$(MAKE) sdk-a500-assets
 	$(MAKE) sdk-a500-gui
 	$(MAKE) sdk-a500-exec
+	$(MAKE) sdk-a600-services
+	$(MAKE) sdk-a1200-workbench
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -191,6 +193,20 @@ sdk-a500-gui:
 sdk-a500-exec:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/exec-demo.clo"
 	docker/scripts/a500-exec-smoke.sh build/clorraine/exec-demo/hosted-amiga-13/exec-demo
+
+# Advanced 2.0+ build: the Workbench and services demos plus the two test-only
+# fixtures. The gates below boot A600/KS2.05 and A1200/KS3.1 directory hard
+# drives; the A1200 gate also compares the native Workbench capture.
+sdk-advanced-build:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga examples/amiga/services.clo && ./target/debug/clorraine build --profile hosted-amiga examples/amiga/workbench.clo"
+	$(DOCKER_MAKE) exec CMD="m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -Wall -Wextra -Werror -o build/amiga-sdk/workbench-start docker/scripts/workbench-start.c -lamiga -lm"
+	$(DOCKER_MAKE) exec CMD="m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -Wall -Wextra -Werror -o build/amiga-sdk/workbench-post docker/scripts/workbench-post.c -lamiga -lm"
+
+sdk-a600-services: sdk-advanced-build
+	docker/scripts/a600-services-smoke.sh build/clorraine/workbench/hosted-amiga/workbench build/clorraine/services/hosted-amiga/services
+
+sdk-a1200-workbench: sdk-advanced-build
+	docker/scripts/a1200-workbench-smoke.sh build/clorraine/workbench/hosted-amiga/workbench build/clorraine/services/hosted-amiga/services
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

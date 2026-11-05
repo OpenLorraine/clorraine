@@ -496,3 +496,136 @@ fn the_keymap_call_is_pinned() {
         assert_contains("keymap-shim", &shim, needle);
     }
 }
+
+fn repo_text(path: &str) -> String {
+    let full = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
+    std::fs::read_to_string(&full)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", full.display()))
+}
+
+/// The Workbench demo pins the port/name lifetimes, all three objects, the
+/// native capture, the three messages, the report line, and the removes.
+#[test]
+fn the_workbench_demo_pins_the_sequence() {
+    let demo = repo_text("examples/amiga/workbench.clo");
+    for needle in [
+        "let portName: String = stringOf(\"ClorraineWbTest\");",
+        "let screenTitle: String = stringOf(\"Clorraine WB\");",
+        "createPublicPort(toCString(portName))",
+        "addAppIcon(port, toCString(iconTitle), 7, 0)",
+        "addAppWindow(window, port, 1, 0)",
+        "addAppMenuItem(port, toCString(menuTitle), 2, 0)",
+        "delayTicks(u32(10))",
+        "savePublicScreen(toCString(shotName), toCString(shotPath))",
+        "CNEXT:wb-ready.txt",
+        "waitAppMessage(port)",
+        "replyAppMessage(first)",
+        "replyAppMessage(second)",
+        "replyAppMessage(third)",
+        "wb: ok icon 1 win 1 menu 1 types {type1} {type2} {type3} ids {id1} {id2} {id3} users {user1} {user2} {user3} classes {class1} {class2} {class3} args {args1} {args2} {args3}",
+        "removeAppMenuItem(item)",
+        "removeAppWindow(appWindow)",
+        "removeAppIcon(icon)",
+        "closeWindow(window)",
+        "deleteMsgPort(port)",
+    ] {
+        assert!(
+            demo.contains(needle),
+            "the Workbench demo is missing {needle:?}"
+        );
+    }
+}
+
+/// The services demo pins the icon round-trip, the board/card/keymap calls, and
+/// the report line; it prints only (the gate redirects stdout).
+#[test]
+fn the_services_demo_pins_the_sequence() {
+    let demo = repo_text("examples/amiga/services.clo");
+    for needle in [
+        "getDefDiskObject(ICON_TOOL)",
+        "putDiskObject(toCString(name), icon)",
+        "getDiskObject(toCString(name))",
+        "expansionBoardCount()",
+        "expansionBoardManufacturer(0)",
+        "expansionBoardProduct(0)",
+        "cardPresent()",
+        "cardStatus()",
+        "mapRawKey(0x20, 0)",
+        "svc: ok icon {loadedKind} exp {boards} man {i32(manufacturer)} prod {i32(product)} card {card} status {i32(status)} key {mapped}",
+    ] {
+        assert!(
+            demo.contains(needle),
+            "the services demo is missing {needle:?}"
+        );
+    }
+    assert!(
+        !demo.contains("createFile"),
+        "the services demo must print only; the gate redirects stdout"
+    );
+}
+
+/// The test-only fixtures pin the private start vector, the AppMessage header,
+/// and the three application-object types.
+#[test]
+fn the_workbench_fixtures_pin_the_start_and_messages() {
+    let start = repo_text("docker/scripts/workbench-start.c");
+    for needle in [
+        "jsr %/a6@(-42:W)",
+        "OpenLibrary((STRPTR)\"workbench.library\", 37)",
+        "LockPubScreen((STRPTR)\"Workbench\")",
+        "startwb %ld screen %lx",
+    ] {
+        assert!(start.contains(needle), "the start fixture is missing {needle:?}");
+    }
+    let post = repo_text("docker/scripts/workbench-post.c");
+    for needle in [
+        "SystemTags((STRPTR)\"CNEXT:wb-demo\", SYS_Asynch, TRUE, TAG_END)",
+        "FindPort((STRPTR)\"ClorraineWbTest\")",
+        "mn_Length = (UWORD)sizeof *message",
+        "mn_Node.ln_Type = NT_MESSAGE",
+        "mn_ReplyPort = reply",
+        "am_Version = AM_VERSION",
+        "AMTYPE_APPICON",
+        "AMTYPE_APPWINDOW",
+        "AMTYPE_APPMENUITEM",
+        "printf(\"posted\\n\")",
+    ] {
+        assert!(post.contains(needle), "the post fixture is missing {needle:?}");
+    }
+}
+
+/// The gates clear the HD and pin the ROM/model, the start/ready handshakes,
+/// the report lines, and the capture comparison.
+#[test]
+fn the_gates_pin_the_handshakes_and_reports() {
+    let a1200 = repo_text("docker/scripts/a1200-workbench-smoke.sh");
+    for needle in [
+        "rm -rf \"${work}\"",
+        "--amiga-model=A1200",
+        "--chip-memory=2048 --fast-memory=0 --slow-memory=0",
+        "e21545723fe8374e91342617604f1b3d703094f1",
+        "grep -aq '^startwb 1 screen '",
+        "grep -aq '^ready$'",
+        "grep -aq '^posted$'",
+        "wb: ok icon 1 win 1 menu 1 types 8 7 9",
+        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0",
+        "cscr2png.py",
+        "compare -metric AE",
+    ] {
+        assert!(a1200.contains(needle), "the A1200 gate is missing {needle:?}");
+    }
+    let a600 = repo_text("docker/scripts/a600-services-smoke.sh");
+    for needle in [
+        "rm -rf \"${work}\"",
+        "--amiga-model=A600",
+        "--chip-memory=1024 --fast-memory=0 --slow-memory=0",
+        "02843c4253bbd29aba535b0aa3bd9a85034ecde4",
+        "grep -aq '^startwb 1 screen '",
+        "grep -aq '^ready$'",
+        "grep -aq '^posted$'",
+        "wb: ok icon 1 win 1 menu 1 types 8 7 9",
+        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0",
+    ] {
+        assert!(a600.contains(needle), "the A600 gate is missing {needle:?}");
+    }
+}

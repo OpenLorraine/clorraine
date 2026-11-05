@@ -1,0 +1,153 @@
+//! Workbench acceptance demo: a live AppIcon, AppWindow, AppMenuItem, a native
+//! Workbench capture, and three AppMessage replies on Kickstart 2.0+.
+//!
+//! The demo writes files only; it never prints, so the fixture's redirected
+//! stdout stays clean. The gate converts `CNEXT:workbench.cscr` to PNG and
+//! compares it with the committed goldens. A test-only fixture starts the
+//! Workbench task and posts the three AppMessages; the public SDK never starts
+//! Workbench itself.
+
+module examples.amiga.workbench;
+
+import { MsgPort, createPublicPort, deleteMsgPort } from std.amiga.exec;
+import { Screen, Window, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { String, stringOf, toCString, bytes } from std.text;
+import { AppIcon, AppWindow, AppMenuItem, AppMessage, addAppIcon,
+         removeAppIcon, addAppWindow, removeAppWindow, addAppMenuItem,
+         removeAppMenuItem, waitAppMessage, appMessageType, appMessageId,
+         appMessageUserData, appMessageClass, appMessageArgCount,
+         replyAppMessage, savePublicScreen } from std.amiga.workbench;
+import { delayTicks } from std.amiga.dos;
+import { File, createFile, writeBytes } from std.io;
+
+/// Writes `text` to `path` and reports whether every byte was written.
+func writeText(path: cstring, text: String): bool {
+    let file: File? = createFile(path);
+    if (file == null) {
+        return false;
+    }
+    let written: i32 = writeBytes(file, bytes(text));
+    return written == i32(len(bytes(text)));
+}
+
+/// Writes a failure line and returns 1.
+func fail(stage: i32): i32 {
+    let path: String = stringOf("CNEXT:wb.txt");
+    let line: String = $"wb: err {stage}\n";
+    if (!writeText(toCString(path), line)) {
+        return 1;
+    }
+    return 1;
+}
+
+func main(): i32 {
+    // CreatePort and OpenScreen store these names; keep the Strings alive
+    // until the port/screen drop at the end of the function.
+    let portName: String = stringOf("ClorraineWbTest");
+    let screenTitle: String = stringOf("Clorraine WB");
+
+    let screenCreated: Screen? = openScreen(320, 80, 3, toCString(screenTitle));
+    if (screenCreated == null) {
+        return fail(1);
+    }
+    let screen: Screen = screenCreated;
+
+    let windowCreated: Window? =
+        openWindow(screen, 8, 8, 300, 64, toCString(screenTitle));
+    if (windowCreated == null) {
+        return fail(1);
+    }
+    let window: Window = windowCreated;
+
+    let portCreated: MsgPort? = createPublicPort(toCString(portName));
+    if (portCreated == null) {
+        return fail(2);
+    }
+    let port: MsgPort = portCreated;
+
+    let iconTitle: String = stringOf("Clorraine");
+    let iconCreated: AppIcon? = addAppIcon(port, toCString(iconTitle), 7, 0);
+    if (iconCreated == null) {
+        return fail(3);
+    }
+    let icon: AppIcon = iconCreated;
+
+    let appWindowCreated: AppWindow? = addAppWindow(window, port, 1, 0);
+    if (appWindowCreated == null) {
+        return fail(4);
+    }
+    let appWindow: AppWindow = appWindowCreated;
+
+    let menuTitle: String = stringOf("Clorraine");
+    let itemCreated: AppMenuItem? =
+        addAppMenuItem(port, toCString(menuTitle), 2, 0);
+    if (itemCreated == null) {
+        return fail(5);
+    }
+    let item: AppMenuItem = itemCreated;
+
+    // Let Workbench redraw the new AppIcon before the native capture.
+    delayTicks(u32(10));
+    let shotName: String = stringOf("Workbench");
+    let shotPath: String = stringOf("CNEXT:workbench.cscr");
+    if (!savePublicScreen(toCString(shotName), toCString(shotPath))) {
+        return fail(6);
+    }
+
+    let readyPath: String = stringOf("CNEXT:wb-ready.txt");
+    let readyLine: String = stringOf("ready\n");
+    if (!writeText(toCString(readyPath), readyLine)) {
+        return fail(7);
+    }
+
+    let firstCreated: AppMessage? = waitAppMessage(port);
+    if (firstCreated == null) {
+        return fail(8);
+    }
+    let first: AppMessage = firstCreated;
+    let type1: i32 = appMessageType(first);
+    let id1: u32 = appMessageId(first);
+    let user1: u32 = appMessageUserData(first);
+    let class1: i32 = appMessageClass(first);
+    let args1: i32 = appMessageArgCount(first);
+    replyAppMessage(first);
+
+    let secondCreated: AppMessage? = waitAppMessage(port);
+    if (secondCreated == null) {
+        return fail(8);
+    }
+    let second: AppMessage = secondCreated;
+    let type2: i32 = appMessageType(second);
+    let id2: u32 = appMessageId(second);
+    let user2: u32 = appMessageUserData(second);
+    let class2: i32 = appMessageClass(second);
+    let args2: i32 = appMessageArgCount(second);
+    replyAppMessage(second);
+
+    let thirdCreated: AppMessage? = waitAppMessage(port);
+    if (thirdCreated == null) {
+        return fail(8);
+    }
+    let third: AppMessage = thirdCreated;
+    let type3: i32 = appMessageType(third);
+    let id3: u32 = appMessageId(third);
+    let user3: u32 = appMessageUserData(third);
+    let class3: i32 = appMessageClass(third);
+    let args3: i32 = appMessageArgCount(third);
+    replyAppMessage(third);
+
+    let line: String =
+        $"wb: ok icon 1 win 1 menu 1 types {type1} {type2} {type3} ids {id1} {id2} {id3} users {user1} {user2} {user3} classes {class1} {class2} {class3} args {args1} {args2} {args3}\n";
+    let reportPath: String = stringOf("CNEXT:wb.txt");
+    if (!writeText(toCString(reportPath), line)) {
+        return fail(9);
+    }
+
+    removeAppMenuItem(item);
+    removeAppWindow(appWindow);
+    removeAppIcon(icon);
+    closeWindow(window);
+    deleteMsgPort(port);
+    return 0;
+}

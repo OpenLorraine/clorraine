@@ -1,0 +1,58 @@
+//! Advanced services acceptance demo: the icon library round-trip, expansion
+//! boards, the card resource, and a raw-key keymap call on Kickstart 2.0+.
+//!
+//! The gate redirects standard output to `CNEXT:svc.txt`; the program does not
+//! write the file itself, so there is one writer.
+
+module examples.amiga.services;
+
+import { DiskObject, ICON_TOOL, getDefDiskObject, getDiskObject,
+         putDiskObject, freeDiskObject, diskObjectType } from std.amiga.icon;
+import { expansionBoardCount, expansionBoardManufacturer,
+         expansionBoardProduct, cardPresent, cardStatus, mapRawKey }
+    from std.amiga.expansion;
+import { String, stringOf, toCString } from std.text;
+import { println } from std.io;
+
+func main(): i32 {
+    let name: String = stringOf("CNEXT:svc-icon");
+    let created: DiskObject? = getDefDiskObject(ICON_TOOL);
+    if (created == null) {
+        println("svc: err 1");
+        return 1;
+    }
+    let icon: DiskObject = created;
+    let defaultKind: i32 = diskObjectType(icon);
+    if (defaultKind != ICON_TOOL) {
+        freeDiskObject(icon);
+        println("svc: err 2");
+        return 1;
+    }
+    if (!putDiskObject(toCString(name), icon)) {
+        freeDiskObject(icon);
+        println("svc: err 3");
+        return 1;
+    }
+    freeDiskObject(icon);
+
+    let loaded: DiskObject? = getDiskObject(toCString(name));
+    if (loaded == null) {
+        println("svc: err 4");
+        return 1;
+    }
+    let loadedIcon: DiskObject = loaded;
+    let loadedKind: i32 = diskObjectType(loadedIcon);
+    freeDiskObject(loadedIcon);
+
+    let boards: i32 = expansionBoardCount();
+    let manufacturer: u16 = expansionBoardManufacturer(0);
+    let product: u8 = expansionBoardProduct(0);
+    let present: bool = cardPresent();
+    let status: u32 = cardStatus();
+    let card: i32 = present ? 1 : 0;
+    let text: String? = mapRawKey(0x20, 0);
+    let mapped: i32 = text == null ? 0 : 1;
+
+    println($"svc: ok icon {loadedKind} exp {boards} man {i32(manufacturer)} prod {i32(product)} card {card} status {i32(status)} key {mapped}");
+    return 0;
+}
