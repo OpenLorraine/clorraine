@@ -1,9 +1,9 @@
 # Amiga SDK Bundle 7: Exec and Devices Implementation Plan
 
 > **Feature**: Worker tasks, signals, message ports, libraries, device I/O, interrupt servers, and input/keyboard/console devices on the A500/KS1.3 surface, proven by a worker-task + async-I/O demo.
-> **Status**: Executing — 16/18; closeout review fixes in progress
+> **Status**: Done — 18/18; Bundle 7 accepted on the A500/KS1.3, issue #8 closed, independent review fixes complete
 > **Created**: 2026-11-05 18:50
-> **Last Updated**: 2026-11-05 20:33
+> **Last Updated**: 2026-11-05 20:50
 > **Implements**: —
 > **CodeOps Artifact Schema**: 1
 
