@@ -97,9 +97,10 @@ func main(): i32 {
     assert!(emitted, "accepted source must emit C");
 }
 
-/// `std.amiga.exec` is a 2.0+ surface; the 1.3 profile rejects it.
+/// `std.amiga.exec` is part of the classic 1.3 Exec surface; the A500 profile
+/// accepts it and emits C.
 #[test]
-fn the_a500_profile_rejects_the_exec_module() {
+fn the_a500_profile_accepts_the_exec_module() {
     let source = r#"module tests.a500.exec;
 
 import { MsgPort, createMsgPort, deleteMsgPort } from std.amiga.exec;
@@ -116,19 +117,16 @@ func main(): i32 {
     let (output, emitted) = compile_source("exec", "hosted-amiga-13", source);
     assert_eq!(
         output.status.code(),
-        Some(1),
-        "the 1.3 profile must reject std.amiga.exec; stderr:\n{}",
+        Some(0),
+        "the 1.3 profile must accept std.amiga.exec; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("E11200"),
-        "expected E11200, got:\n{stderr}"
+        output.stderr.is_empty(),
+        "the 1.3 exec surface must compile with zero diagnostics; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        !emitted,
-        "a rejected program must not write a translation unit"
-    );
+    assert!(emitted, "accepted source must emit C");
 }
 
 /// The 3.1 profile keeps the exec surface.

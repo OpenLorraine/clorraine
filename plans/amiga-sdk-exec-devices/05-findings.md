@@ -18,6 +18,7 @@ this ledger records what the real 1.3 machine and the emitted C taught us.
 | RV-4 | 🟡 Minor | `#include <intuition/window.h>` does not exist in the 1.3 NDK, so the emitted C failed to compile until the include was removed; `intuition/intuition.h` provides the complete `struct Window` used by `sizeof`. | **Fixed** — the shim keeps `intuition/intuition.h` and drops the nonexistent header. |
 | RV-5 | 🟡 Minor | The `Library` handle is a contract handle mapped to `struct Library *`, not an opaque `void *`; the first shim signatures conflicted with the emitted prototypes. | **Fixed** — `cl_open_library`/`cl_close_library`/`cl_library_version`/`cl_library_revision` use `struct Library *`, matching `compiler/src/abi.rs`. |
 | RV-6 | 🟡 Minor | The `deviceSetBuffer` FFI must take `raw u8` + `u32`; an array parameter crosses as one `APTR` and the length would never reach the shim. | **Fixed** as planned by PF-022; the wrapper passes `raw u8(data.ptr)`/`u32(len(data))` and the shim takes `APTR` + `ULONG`. |
+| RV-7 | 🟠 Major | Five pre-Bundle-7 spec tests still asserted that `hosted-amiga-13` rejects `std.amiga.exec` and expected `E11200`: `amiga_a500_spec_test` and the audio/sprite/text/video cross-bundle controls. The first `make check` failed on the now-obsolete contract. | **Fixed** — `amiga_a500_spec_test` now asserts the A500 profile accepts the module and emits C with zero diagnostics; the four redundant cross-bundle controls were removed because `amiga_exec_spec_test` now owns both-profile acceptance and the host rejection. |
 
 ## Closeout verification
 
@@ -25,7 +26,7 @@ this ledger records what the real 1.3 machine and the emitted C taught us.
 |---|---|
 | `cargo test --lib --test amiga_exec_spec_test --test amiga_exec_impl_test` | 400 lib + 11 impl + 14 spec green |
 | `make sdk-a500-exec` | `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1`; 620x22 golden matches |
-| `make check` | pending |
-| `make verify` | pending |
-| `make sdk-registry` | pending |
-| GitHub issue #8 | pending |
+| `make check` | 107 test suites green, 0 failures |
+| `make verify` | All legs passed headlessly: A500 hello, Boing, sprites, paddle, text, assets, GUI, Exec, differential, corpus-fs-uae, and the six runtime faults |
+| `make sdk-registry` | OK (79 capabilities, 10 bundles); coverage regenerated |
+| GitHub issue #8 | Updated with the checked body, commented, and **CLOSED** |

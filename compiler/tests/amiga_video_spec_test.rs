@@ -353,23 +353,7 @@ fn the_full_surface_cross_builds_with_nix20() {
     );
 }
 
-/// The 1.3 profile still rejects `std.amiga.exec`.
-#[test]
-fn the_a500_profile_still_rejects_exec() {
-    let source = r#"module tests.video.exec;
 
-import { createMsgPort } from std.amiga.exec;
-
-func main(): i32 {
-    return 0;
-}
-"#;
-    let (output, emitted) = compile_source("exec-still-gated", "hosted-amiga-13", source);
-    assert_eq!(output.status.code(), Some(1));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("E11200"), "expected E11200, got:\n{stderr}");
-    assert!(!emitted);
-}
 
 /// `std.math` runs on the host with the pinned quarter-turn values.
 ///
