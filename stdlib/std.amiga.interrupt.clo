@@ -1,18 +1,21 @@
-//! Amiga interrupts: token-based registration of a vertical-blank handler.
+//! Amiga interrupts: token-based registration of VBlank and ports handlers.
 //!
-//! This module belongs to the hosted-amiga profile; the host profile has no
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
 //! AmigaOS interrupt dispatcher, so the module is not available there. The
 //! wrappers reach the profile C shim through `ffi`, and the shim owns the C-side
-//! server, so application code never writes `ffi` and never touches `unsafe`.
+//! servers, so application code never writes `ffi` and never touches `unsafe`.
 //!
 //! A handler is a capture-less `func(): void`. The dispatcher stores the plain
-//! C function pointer and calls it on every vertical blank, so the handler runs
-//! in an interrupt context. A handler must therefore stay allocation-free,
-//! drop-free, and panic-free. State shared with a handler belongs in a
-//! `volatile` module-level binding, or the polling code may read a stale copy.
+//! C function pointer and calls it from the vertical-blank or ports interrupt,
+//! so the handler runs in an interrupt context. A handler must therefore stay
+//! allocation-free, drop-free, and panic-free. State shared with a handler
+//! belongs in a `volatile` module-level binding, or the polling code may read a
+//! stale copy.
 //!
-//! The dispatcher has one server slot, so registering a new handler replaces
-//! the current one. Removing a token is idempotent: removing it twice is safe.
+//! There is one server slot per kind, so registering a new handler of the same
+//! kind replaces the current one. Both kinds share one token counter, and
+//! `removeHandler` removes whichever slot owns the token. Removing a token is
+//! idempotent: removing it twice is safe.
 
 module std.amiga.interrupt;
 
@@ -26,6 +29,7 @@ export struct HandlerToken {
 
 ffi stdinterrupt {
     func cl_add_handler(hook: func(): void): u32;
+    func cl_add_port_handler(hook: func(): void): u32;
     func cl_remove_handler(id: u32): void;
 }
 
@@ -39,7 +43,18 @@ export func addHandler(hook: func(): void): HandlerToken {
     };
 }
 
-/// Removes the handler named by `t`.
+/// Registers `hook` as the ports interrupt handler.
+///
+/// The ports interrupt is `INTB_PORTS` (I/O ports and timers). A previously
+/// registered ports handler is replaced; a VBlank registration is unaffected.
+/// The returned token is removed with the same `removeHandler` call.
+export func addPortHandler(hook: func(): void): HandlerToken {
+    return HandlerToken {
+        id: cl_add_port_handler(hook),
+    };
+}
+
+/// Removes the VBlank or ports handler named by `t`.
 ///
 /// Removing a token that is not registered, or removing the same token twice,
 /// does nothing.

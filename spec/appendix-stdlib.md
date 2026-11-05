@@ -136,13 +136,16 @@ code registers a capture-less `func(): void` and gets a token back.
 
 | API | Returns | Rule |
 |---|---|---|
-| `addHandler(hook: func(): void)` | `HandlerToken` | installs the C-side handler; the token identifies the registration |
-| `removeHandler(t: HandlerToken)` | `void` | unregister; removing an unknown token is safe |
+| `addHandler(hook: func(): void)` | `HandlerToken` | installs the vertical-blank (`INTB_VERTB`) handler; the token identifies the registration |
+| `addPortHandler(hook: func(): void)` | `HandlerToken` | installs the ports (`INTB_PORTS`) handler; independent of the VBlank slot |
+| `removeHandler(t: HandlerToken)` | `void` | removes whichever slot owns the token; removing an unknown token is safe |
 | handler rules | - | allocation-free, drop-free, panic-free (IH-2); an audited convention, not a compiler check |
 
-A token is `struct HandlerToken { id: u32; }`. The handler rules are enforced by
-audit in v1; effect-marker enforcement is a Phase 2 follow-up. State
-shared with a handler is a `volatile` module-level `let` (T7).
+A token is `struct HandlerToken { id: u32; }`. There is one slot per kind, and
+both kinds share one token counter, so a token names exactly one registration.
+The handler rules are enforced by audit in v1; effect-marker enforcement is a
+Phase 2 follow-up. State shared with a handler is a `volatile` module-level
+`let` (T7).
 
 ## 8. Intuition (`std.amiga.intuition`)
 

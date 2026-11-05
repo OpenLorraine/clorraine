@@ -390,7 +390,7 @@ pub const MODULES: &[StdlibModule] = &[
     },
     StdlibModule {
         name: "std.amiga.interrupt",
-        exports: &["HandlerToken", "addHandler", "removeHandler"],
+        exports: &["HandlerToken", "addHandler", "addPortHandler", "removeHandler"],
     },
     StdlibModule {
         name: "std.amiga.intuition",

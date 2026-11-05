@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 19:27
-> **Progress**: 9/18 tasks (50%) — Executing
+> **Last Updated**: 2026-11-05 19:29
+> **Progress**: 12/18 tasks (67%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -95,9 +95,9 @@ bundle. Specification tests come before implementation in every phase.
 
 **Reference**: [03-03](03-03-interrupts-and-input.md) · AR-11, AR-12, AR-16
 
-- [ ] 3.1.1 [spec-author] Add `addPortHandler` to the spec source and the appendix check (ST-1/ST-6) and run it red
-- [ ] 3.1.2 Add the VBlank/ports server pair, shared token counter, and `INTB_PORTS` removal to `stdlib/std.amiga.interrupt.clo` and the shim; update the export table, the module doc comment, and the §7 text in `spec/appendix-stdlib.md`
-- [ ] 3.1.3 Add the interrupt implementation cases (IT-6) to `amiga_exec_impl_test.rs`; run them green
+- [x] 3.1.1 [spec-author] Add `addPortHandler` to the spec source and the appendix check (ST-1/ST-6) and run it red ✅ (completed: 2026-11-05 19:28; red evidence: `E11102` for `addPortHandler`)
+- [x] 3.1.2 Add the VBlank/ports server pair, shared token counter, and `INTB_PORTS` removal to `stdlib/std.amiga.interrupt.clo` and the shim; update the export table, the module doc comment, and the §7 text in `spec/appendix-stdlib.md` ✅ (completed: 2026-11-05 19:28; the shim has two one-slot servers and one shared token counter; `removeHandler` checks both)
+- [x] 3.1.3 Add the interrupt implementation cases (IT-6) to `amiga_exec_impl_test.rs`; run them green ✅ (completed: 2026-11-05 19:29; 10/10 impl tests green; the wrapper body and both server slots are pinned)
 
 **Verify**: `cargo test --lib --test amiga_exec_spec_test --test amiga_exec_impl_test`
 

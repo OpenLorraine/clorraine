@@ -572,17 +572,22 @@ static inline void cl_panic(const unsigned char *message, unsigned long len)
  * trampoline calls it and returns, so the handler stays allocation-free,
  * drop-free, and panic-free as the interrupt contract requires.
  *
- * The dispatcher has one server slot, so registering a handler replaces the
- * current one. Each registration gets a fresh non-zero token, so a token from a
- * replaced registration can never remove the handler installed after it.
- * `cl_remove_handler` clears the live token, which makes a second removal a
- * no-op. */
+ * There is one server slot per kind, so registering a handler replaces the
+ * current one of that kind. Each registration gets a fresh non-zero token from
+ * one shared counter, so a token from a replaced registration can never remove
+ * the handler installed after it. `cl_remove_handler` clears the live token,
+ * which makes a second removal a no-op. */
 typedef void (*cl_handler_fn)(void);
 
 static cl_handler_fn cl_vblank_handler;
 static struct Interrupt cl_vblank_server;
 static ULONG cl_vblank_token;
-static ULONG cl_vblank_next_token = 1;
+
+static cl_handler_fn cl_ports_handler;
+static struct Interrupt cl_ports_server;
+static ULONG cl_ports_token;
+
+static ULONG cl_next_token = 1;
 
 static void cl_vblank_code(void)
 {
@@ -591,12 +596,31 @@ static void cl_vblank_code(void)
     }
 }
 
+static void cl_ports_code(void)
+{
+    if (cl_ports_handler != NULL) {
+        cl_ports_handler();
+    }
+}
+
+/* Take the next non-zero token so a wrapped counter never names a
+ * registration with the token's "no handler" sentinel. */
+static ULONG cl_take_token(void)
+{
+    ULONG token = cl_next_token;
+
+    cl_next_token++;
+    if (cl_next_token == 0) {
+        cl_next_token = 1;
+    }
+    return token;
+}
+
 /* Installs `handler` as the VBlank server, replacing any current one.
  *
  * A null handler is rejected so an accidental unregister cannot leave a
- * dangling callback. The token is advanced past zero so a wrapped counter
- * never names a registration with the token's "no handler" sentinel. The
- * server primitives return no status on this NDK, so no result is checked. */
+ * dangling callback. The server primitives return no status on this NDK, so
+ * no result is checked. */
 ULONG cl_add_handler(cl_handler_fn handler)
 {
     if (handler == NULL) {
@@ -606,11 +630,7 @@ ULONG cl_add_handler(cl_handler_fn handler)
         RemIntServer(INTB_VERTB, &cl_vblank_server);
     }
     cl_vblank_handler = handler;
-    cl_vblank_token = cl_vblank_next_token;
-    cl_vblank_next_token++;
-    if (cl_vblank_next_token == 0) {
-        cl_vblank_next_token = 1;
-    }
+    cl_vblank_token = cl_take_token();
     cl_vblank_server.is_Node.ln_Type = NT_INTERRUPT;
     cl_vblank_server.is_Node.ln_Pri = 0;
     cl_vblank_server.is_Node.ln_Name = (char *)"clorraine.vblank";
@@ -620,14 +640,45 @@ ULONG cl_add_handler(cl_handler_fn handler)
     return cl_vblank_token;
 }
 
-/* Removes the VBlank server when `id` names the live registration. Idempotent:
- * a second removal, a zero token, or a stale token does nothing. */
+/* Installs `handler` as the ports interrupt server, replacing any current one.
+ * The VBlank slot is independent. */
+ULONG cl_add_port_handler(cl_handler_fn handler)
+{
+    if (handler == NULL) {
+        return 0;
+    }
+    if (cl_ports_handler != NULL) {
+        RemIntServer(INTB_PORTS, &cl_ports_server);
+    }
+    cl_ports_handler = handler;
+    cl_ports_token = cl_take_token();
+    cl_ports_server.is_Node.ln_Type = NT_INTERRUPT;
+    cl_ports_server.is_Node.ln_Pri = 0;
+    cl_ports_server.is_Node.ln_Name = (char *)"clorraine.ports";
+    cl_ports_server.is_Data = NULL;
+    cl_ports_server.is_Code = (VOID (*)())cl_ports_code;
+    AddIntServer(INTB_PORTS, &cl_ports_server);
+    return cl_ports_token;
+}
+
+/* Removes the server whose slot owns `id`. Idempotent: a second removal, a
+ * zero token, or a stale token does nothing. The shared counter makes the two
+ * live tokens distinct, so at most one slot matches. */
 void cl_remove_handler(ULONG id)
 {
-    if (id != 0 && id == cl_vblank_token && cl_vblank_handler != NULL) {
+    if (id == 0) {
+        return;
+    }
+    if (id == cl_vblank_token && cl_vblank_handler != NULL) {
         RemIntServer(INTB_VERTB, &cl_vblank_server);
         cl_vblank_handler = NULL;
         cl_vblank_token = 0;
+        return;
+    }
+    if (id == cl_ports_token && cl_ports_handler != NULL) {
+        RemIntServer(INTB_PORTS, &cl_ports_server);
+        cl_ports_handler = NULL;
+        cl_ports_token = 0;
     }
 }
 

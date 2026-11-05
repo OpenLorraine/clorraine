@@ -424,6 +424,94 @@ fn the_library_and_device_surfaces_cross_build_with_nix13_and_nix20() {
     cross_build("device-build20", "hosted-amiga", "nix20", DEVICE_SOURCE);
 }
 
+/// The interrupt surface: one VBlank handler and one ports handler, both
+/// removed by their tokens. The ports slot is the Phase 3 addition.
+const INTERRUPT_SOURCE: &str = "\
+module tests.exec.interrupt;
+
+import { HandlerToken, addHandler, addPortHandler,
+         removeHandler } from std.amiga.interrupt;
+
+volatile let ticks: u32 = 0;
+
+func onTick(): void {
+    ticks = ticks + 1;
+}
+
+func onPort(): void {
+}
+
+func main(): i32 {
+    let vblank: HandlerToken = addHandler(onTick);
+    let ports: HandlerToken = addPortHandler(onPort);
+    removeHandler(vblank);
+    removeHandler(ports);
+    return i32(ticks);
+}
+";
+
+// The interrupt surface compiles on both hosted profiles and names the ports
+// shim call.
+#[test]
+fn the_interrupt_surface_builds_on_both_hosted_profiles() {
+    for profile in ["hosted-amiga", "hosted-amiga-13"] {
+        let scratch = ScratchDir::new("interrupt-surface");
+        let source_path = write_fixture(&scratch, "main.clo", INTERRUPT_SOURCE);
+        let output_path = scratch.path().join("out.c");
+        let output = run_clc(
+            scratch.path(),
+            &[
+                "--profile",
+                profile,
+                "-o",
+                output_path.to_str().expect("the output path is UTF-8"),
+                source_path.to_str().expect("the source path is UTF-8"),
+            ],
+        );
+        assert_exit(profile, &output, 0);
+        assert!(
+            stderr(&output).is_empty(),
+            "{profile}: the interrupt surface must compile with zero diagnostics; stderr:\n{}",
+            stderr(&output)
+        );
+        let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+        for call in ["cl_add_handler", "cl_add_port_handler", "cl_remove_handler"] {
+            assert!(
+                c.contains(call),
+                "{profile}: the emitted C is missing {call}"
+            );
+        }
+    }
+}
+
+// The interrupt surface cross-builds with the 1.3 and 2.0 runtimes.
+#[test]
+fn the_interrupt_surface_cross_builds_with_nix13_and_nix20() {
+    cross_build("interrupt-build13", "hosted-amiga-13", "nix13", INTERRUPT_SOURCE);
+    cross_build("interrupt-build20", "hosted-amiga", "nix20", INTERRUPT_SOURCE);
+}
+
+// The stdlib appendix §7 documents every interrupt export.
+#[test]
+fn the_interrupt_exports_match_the_stdlib_appendix() {
+    let appendix = std::fs::read_to_string(repo_root().join("spec/appendix-stdlib.md"))
+        .expect("the stdlib appendix is readable");
+    let start = appendix
+        .find("## 7. Interrupt")
+        .expect("the appendix has the interrupt section");
+    let section = &appendix[start..];
+    let end = section.find("## 8.").unwrap_or(section.len());
+    let section = &section[..end];
+    let module =
+        clc::stdlib::lookup("std.amiga.interrupt").expect("the interrupt module is registered");
+    for name in module.exports {
+        assert!(
+            mentions(section, name),
+            "the appendix is missing the export '{name}'"
+        );
+    }
+}
+
 // The host profile must reject the Amiga module with the profile diagnostic.
 #[test]
 fn the_host_profile_rejects_the_exec_module() {

@@ -394,6 +394,58 @@ fn the_device_shim_pins_the_reply_port_and_state_machine() {
     }
 }
 
+const INTERRUPT_SOURCE: &str = r#"module tests.exec.interruptimpl;
+
+import { HandlerToken, addHandler, addPortHandler,
+         removeHandler } from std.amiga.interrupt;
+
+volatile let ticks: u32 = 0;
+
+func onTick(): void { ticks = ticks + 1; }
+func onPort(): void { }
+
+func main(): i32 {
+    let vblank: HandlerToken = addHandler(onTick);
+    let ports: HandlerToken = addPortHandler(onPort);
+    removeHandler(vblank);
+    removeHandler(ports);
+    return i32(ticks);
+}
+"#;
+
+/// The interrupt wrappers route to the shim, and the shim has two independent
+/// server slots with one shared token counter.
+#[test]
+fn the_interrupt_wrappers_and_server_slots_are_pinned() {
+    let c = emit("interrupt-routing", "hosted-amiga-13", INTERRUPT_SOURCE);
+    for call in ["cl_add_handler", "cl_add_port_handler", "cl_remove_handler"] {
+        assert_contains("interrupt-routing", &c, call);
+    }
+    assert_contains(
+        "interrupt-routing",
+        &c,
+        "return (ClHandlerToken){ cl_add_port_handler(hook) };",
+    );
+
+    let shim = shim();
+    for needle in [
+        "static cl_handler_fn cl_vblank_handler;",
+        "static cl_handler_fn cl_ports_handler;",
+        "static struct Interrupt cl_ports_server;",
+        "static ULONG cl_ports_token;",
+        "static ULONG cl_next_token = 1;",
+        "static ULONG cl_take_token(void)",
+        "static void cl_ports_code(void)",
+        "ULONG cl_add_port_handler(cl_handler_fn handler)",
+        "RemIntServer(INTB_PORTS, &cl_ports_server);",
+        "AddIntServer(INTB_PORTS, &cl_ports_server);",
+        "id == cl_vblank_token && cl_vblank_handler != NULL",
+        "id == cl_ports_token && cl_ports_handler != NULL",
+    ] {
+        assert_contains("interrupt-shim", &shim, needle);
+    }
+}
+
 /// The console helper fills the request from the caller's Intuition window and
 /// the device request uses the 1.3 `IOStdReq`/`exec/io.h` types.
 #[test]
