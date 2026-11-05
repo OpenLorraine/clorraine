@@ -4,11 +4,11 @@
 //! profiles have no AmigaOS scheduler, so the module is not available there.
 //! The wrappers reach the profile C shim through `ffi`, so application code
 //! never writes `ffi` and never touches `unsafe`. The surface is the classic
-//! Kickstart 1.3 Exec API: private ports (`CreatePort`), tasks, libraries, and
-//! devices.
+//! Kickstart 1.3 Exec API: private and public ports (`CreatePort`), tasks,
+//! libraries, and devices.
 //!
-//! The message surface is deliberately small: one private message port, one
-//! message with a reply port and an integer payload, and the four operations an
+//! The message surface is deliberately small: private and public message ports,
+//! one message with a reply port and an integer payload, and the operations an
 //! event loop needs. A message is move-only. `putMsg` consumes the sent
 //! message, `getMsg` returns an owned message, and `replyMsg` consumes it. A
 //! fetched message that will not be replied is released with `releaseMsg`; an
@@ -82,6 +82,7 @@ export const CMD_FLUSH: u16 = 8;
 
 ffi stdexec {
     func cl_create_msg_port(): MsgPort?;
+    func cl_create_public_port(name: cstring): MsgPort?;
     func cl_delete_msg_port(take port: MsgPort): void;
     func cl_create_message(borrow reply: MsgPort, payload: i32): NewMessage?;
     func cl_message_payload(borrow msg: Message): i32;
@@ -126,7 +127,17 @@ export func createMsgPort(): MsgPort? {
     return cl_create_msg_port();
 }
 
-/// Deletes a private port.
+/// Creates a public named message port, or returns `null` for an empty name or
+/// an allocation failure.
+///
+/// `CreatePort` stores the name pointer rather than copying it, so the name
+/// must stay alive until the port is deleted. A public port can be found by
+/// another program with `FindPort`. The name must be non-empty and unique.
+export func createPublicPort(name: cstring): MsgPort? {
+    return cl_create_public_port(name);
+}
+
+/// Deletes a message port.
 ///
 /// The port must be empty; the acceptance programs drain it before deleting.
 export func deleteMsgPort(take port: MsgPort): void {

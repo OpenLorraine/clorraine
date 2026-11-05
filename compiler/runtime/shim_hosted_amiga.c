@@ -56,6 +56,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The hosted-amiga profile provides the 2.0+ Workbench, icon, and expansion
+ * surface. The hosted-amiga-13 build compiles this source without the macro,
+ * so the section is preprocessed out and the 1.3 NDK never sees the 2.0-only
+ * headers or symbols. */
+#if defined(CL_HOSTED_AMIGA_20)
+/* Filled by the icon, Workbench, and expansion phases. */
+#endif
+
 /* The DOS timer primitive. The library calling convention needs the
  * standard-argument attribute, so the prototype is written directly instead
  * of including `proto/dos.h`, which would also declare the file functions with
@@ -2647,13 +2655,23 @@ typedef struct cl_message {
 } cl_message;
 
 /* Create a private message port, or NULL when the system is out of signals or
- * memory. A private port is enough for the v1 acceptance programs; public
- * named ports stay outside the wrapper surface. */
+ * memory. */
 void *cl_create_msg_port(void)
 {
     /* CreatePort is the 1.3-compatible private-port constructor. Passing a
      * null name keeps the port private, matching CreateMsgPort's semantics. */
     return (void *)CreatePort(NULL, 0);
+}
+
+/* Create a public named message port, or NULL for a null/empty name or an
+ * allocation failure. CreatePort does not copy the name: the caller keeps the
+ * string alive until the port is deleted. */
+void *cl_create_public_port(char *name)
+{
+    if (name == NULL || name[0] == '\0') {
+        return NULL;
+    }
+    return (void *)CreatePort((STRPTR)name, 0);
 }
 
 /* Delete a private message port. Null-safe; the caller has already drained it. */

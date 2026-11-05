@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 21:56
-> **Progress**: 0/26 tasks (0%) — Ready
+> **Last Updated**: 2026-11-05 22:29
+> **Progress**: 4/26 tasks (15%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -61,10 +61,10 @@ implementation in every phase.
 
 **Reference**: [03-03](03-03-expansion-card-keymap.md) · AR-10, R4, R9
 
-- [ ] 1.1.1 Add the `CL_HOSTED_AMIGA_20` define to `compiler/src/codegen.rs` and guard the 2.0-only shim section; add a unit test that the define is emitted only for `hosted-amiga`, and verify a 1.3 and a 2.0 emit still cross-build
-- [ ] 1.1.2 Add `createPublicPort(name)` to `stdlib/std.amiga.exec.clo`, `cl_create_public_port` to the shared shim, the export table, and `spec/appendix-stdlib.md` §13.2; update the exec module doc; add the specification case (both hosted profiles) and the drop/delete case
-- [ ] 1.1.3 Add the Phase 1 implementation cases (public-port shim, delete routing, null/empty-name guards) to `compiler/tests/amiga_workbench_impl_test.rs`; run them green
-- [ ] 1.1.4 Add the Phase 1 `amiga_workbench_spec_test.rs` public-port case and the IT-1/IT-2 unit-test scaffolding (module tables and profile gates); run the small suite green
+- [x] 1.1.1 Add the `CL_HOSTED_AMIGA_20` define to `compiler/src/codegen.rs` and guard the 2.0-only shim section; add a unit test that the define is emitted only for `hosted-amiga`, and verify a 1.3 and a 2.0 emit still cross-build ✅ (completed: 2026-11-05 22:29; the 2.0 emit defines the macro, the 1.3 emit does not, and both cross-build through the workbench spec cases)
+- [x] 1.1.2 Add `createPublicPort(name)` to `stdlib/std.amiga.exec.clo`, `cl_create_public_port` to the shared shim, the export table, and `spec/appendix-stdlib.md` §13.2; update the exec module doc; add the specification case (both hosted profiles) and the drop/delete case ✅ (completed: 2026-11-05 22:29; both hosted profiles compile, the host rejects E11200, and the 1.3/2.0 cross-builds pass)
+- [x] 1.1.3 Add the Phase 1 implementation cases (public-port shim, delete routing, null/empty-name guards) to `compiler/tests/amiga_workbench_impl_test.rs`; run them green ✅ (completed: 2026-11-05 22:29; 4/4 impl tests green)
+- [x] 1.1.4 Add the Phase 1 `amiga_workbench_spec_test.rs` public-port case and the IT-1/IT-2 unit-test scaffolding (module tables and profile gates); run the small suite green ✅ (completed: 2026-11-05 22:29; 4/4 spec tests green)
 
 **Verify**: `cargo test --lib --test amiga_exec_spec_test --test amiga_workbench_spec_test --test amiga_workbench_impl_test`
 

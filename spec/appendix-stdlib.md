@@ -428,11 +428,13 @@ export func run(): i32 {
 
 ### 13.2 Message ports
 
-The message surface owns private ports and two move-only message handles.
+The message surface owns private and public ports and two move-only message
+handles.
 
 | API | Returns | Ownership and rules |
 |---|---|---|
 | `createMsgPort()` | `MsgPort?` | private port; `null` on failure; delete it after draining |
+| `createPublicPort(name: cstring)` | `MsgPort?` | named port for `FindPort`; `null` for an empty name or allocation failure; the name must stay alive until the port is deleted |
 | `deleteMsgPort(take port)` | `void` | deletes a drained port |
 | `createMessage(borrow reply: MsgPort, payload: i32)` | `NewMessage?` | allocates an unsent message with a reply port and an integer payload |
 | `messagePayload(borrow msg: Message)` | `i32` | reads the payload of a fetched message |
