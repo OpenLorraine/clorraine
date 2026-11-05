@@ -26,8 +26,8 @@ implementation in this document; their first smoke run is the red phase.
 | ST-1 | Host | A program imports `Screen`, `openScreen`, `Window`, `openWindow`, `closeWindow`, `windowWidth`, `windowHeight`, `waitEvent`, `pollEvent`, `WindowEvent`, and every `EVENT_*` constant; opens a 320x200x4 screen and a window; draws with `windowFill`/`windowDraw`/`windowClear`/`windowText`; calls both event functions; closes the window | Compiles with zero diagnostics on `hosted-amiga` and `hosted-amiga-13`; emits C | R1–R3, R12 |
 | ST-2 | Host | The same program is compiled for `host` | Exit 1 with `E11200`; no C emitted. This is a regression guard: the host already rejects `std.amiga.*` | R12 |
 | ST-3 | Host | The full window/event surface is cross-built with `m68k-amigaos-gcc` under `nix13` and `nix20` | Both builds pass `-std=c99 -m68000 -fwrapv -Wall -Wextra -Werror -lamiga -lm` | R1–R3, R12 |
-| ST-4 | A500 | The demo drains the queue with `pollEvent` until `EVENT_NONE`, then runs `waitEvent`; the smoke clicks the close gadget | The drain terminates; the close gadget produces `EVENT_CLOSE` and the loop exits | R3, AR-23 |
-| ST-5 | Impl + A500 | The shim receives `IDCMP_REFRESHWINDOW`; the alert covers and restores the custom screen | The shim calls `BeginRefresh`/`EndRefresh` and replies the message; no refresh event reaches the caller; the loop continues after the alert | R3, AR-12 |
+| ST-4 | A500 + Impl | The demo drains the queue with `pollEvent` until `EVENT_NONE`, then runs `waitEvent`; the smoke quits with Right Amiga+Q | The drain terminates; Quit produces `EVENT_MENU` id 11 and the loop exits. The close-gadget `EVENT_CLOSE` branch is pinned by the impl case and is visual-only on A500 because the harness is keyboard-only (AR-25) | R3, AR-23, AR-25 |
+| ST-5 | Impl + A500 | The shim receives `IDCMP_REFRESHWINDOW`; `showAlert` is spec-tested rather than driven by the keyboard-only A500 smoke | The shim calls `BeginRefresh`/`EndRefresh` and replies the message; no refresh event reaches the caller; the demo's requester path restores the window content | R3, AR-12, AR-25 |
 
 ### Gadgets and menus
 
@@ -36,7 +36,7 @@ implementation in this document; their first smoke run is the red phase.
 | ST-6 | Host | The full gadget/menu surface compiles on both hosted profiles and cross-builds under `nix13`/`nix20` | Zero diagnostics; both C builds pass with `-Werror` | R4–R6, R12 |
 | ST-7 | A500 | The string gadget is activated, `abc` + Return is typed, and the smoke answers Yes with Left Amiga+V | `EVENT_GADGET` with `gadget == 2`; `windowString` returns 3; the requester opens; `req` becomes 1. The button is proven visually in the held frame; the string field proves the shared `GADGETUP` path | R4, AR-2, AR-25 |
 | ST-8 | A500 | The string gadget starts empty; the smoke types `abc` and presses Return; `windowString` reads it into a 64-byte buffer | `EVENT_GADGET` with id 2; `windowString` returns 3 and the buffer contains `abc` | R5, AR-2 |
-| ST-9 | A500 | Two menus are added; the smoke right-clicks Help → About and File → Hello | `EVENT_MENU` with the About id 20 and the Hello id 10; the status labels change | R6, AR-10 |
+| ST-9 | A500 | Two menus are added; the smoke selects File → Hello with Right Amiga+H and Help → About with Right Amiga+A | `EVENT_MENU` with the Hello id 10 and the About id 20; the status labels change | R6, AR-10, AR-25 |
 | ST-10 | A500 + Impl | An overlong label, an id 0, a string `maxChars` 0, a gadget outside the inner window, and an overlong menu title are attempted | Every call returns `false`, `-1`, or 0 as documented; no partial gadget appears; the demo prints `gui: err` if a check fails | R11, AR-14–AR-16 |
 
 ### Requesters, alerts, and pointer

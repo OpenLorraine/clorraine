@@ -323,13 +323,13 @@ export func windowClear(borrow window: Window, pen: u8): void {
 
 | API | Returns | Rule |
 |---|---|---|
-| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` indexes the 32-entry color map. On a depth-4 screen, 0-15 are the playfield colors and 16-31 are the sprite/pointer registers; a depth-5 screen uses 0-31 for the playfield. `pen` at or above 32 is a no-op |
-| `fill(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
-| `draw(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
-| `clear(borrow screen, pen: u8)` | `void` | fills the whole screen with `pen` |
-| `windowFill(borrow window: Window, x1, y1, x2, y2, pen)` | `void` | fills the inner-window rectangle (`RectFill` on the window RastPort) |
-| `windowDraw(borrow window: Window, x1, y1, x2, y2, pen)` | `void` | draws a line between inner-window points (`Draw`) |
-| `windowClear(borrow window: Window, pen)` | `void` | fills the whole inner window |
+| `setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` indexes the 32-entry color map. On a depth-4 screen, 0-15 are the playfield colors and 16-31 are the sprite/pointer registers; a depth-5 screen uses 0-31 for the playfield. `pen` at or above 32 is a no-op |
+| `fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
+| `draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
+| `clear(borrow screen: Screen, pen: u8)` | `void` | fills the whole screen with `pen` |
+| `windowFill(borrow window: Window, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inner-window rectangle (`RectFill` on the window RastPort) |
+| `windowDraw(borrow window: Window, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws a line between inner-window points (`Draw`) |
+| `windowClear(borrow window: Window, pen: u8)` | `void` | fills the whole inner window |
 
 Every call takes the screen or window by `borrow`, so the caller keeps
 ownership. `setColor` indexes the 32-entry color map and ignores a pen at or

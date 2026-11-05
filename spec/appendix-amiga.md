@@ -45,7 +45,7 @@ holds the FFI declaration.
 | `graphics` | drawing | set colors and fill, line, and clear a screen or window | `handle Screen`, `handle Window` |
 | `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
 | `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
-| `graphics/text` | fonts and text | ROM and disk fonts, measurement, screen drawing | `Font` |
+| `graphics/text` | fonts and text | ROM and disk fonts, measurement, screen and window drawing | `Font` |
 | `layers` | clipped layers | front layers, clipping, move/size, damage updates | `Layer` |
 
 The library is written in copy, not in the surface. Application code imports
