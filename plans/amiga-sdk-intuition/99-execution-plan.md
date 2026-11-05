@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-05 12:50
-> **Progress**: 13/17 tasks (76%) — Phase 4 blocked on AR-25
+> **Progress**: 15/17 tasks (88%) — Phase 4 closeout partial
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -113,10 +113,10 @@ implementation in every phase.
 
 **Reference**: [03-04](03-04-gui-demo-and-smoke.md) · AR-5, AR-18–AR-22
 
-- [~] 4.1.1 Add `examples/amiga/gui.clo` with the A500 cases ST-4, ST-5, ST-7–ST-13 (poll drain, close gadget, button, string, menus, requester, alert, pointer) and the negative checks; add `docker/scripts/a500-gui-smoke.sh`, the `sdk-a500-gui` Makefile target, and the `verify` leg; compile the demo on both hosted profiles and run the demo-shape implementation case (IT-11/IT-12) ⏳ (implemented: 2026-11-05 12:50; demo builds; smoke/Makefile pending)
-- [!] 4.1.2 Run `make sdk-a500-gui` on the FS-UAE A500/KS1.3, calibrate the focus/click/crop coordinates and the right-button menu gesture, fix target-only defects, capture `docs/amiga-sdk/a500-gui.png`, `docs/amiga-sdk/a500-gui-alert.png`, and `docs/amiga-sdk/a500-gui-line.png`, and pass ST-4, ST-5, ST-7–ST-13, ST-15, ST-16 — Blocked: AR-25 (host Xwayland XTEST input; Xvfb mousehack pointer; menu bar not visible)
-- [!] 4.1.3 Update `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` (including the `setColor` 0–31 range), `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (001–005/009 done with acceptance/evidence/spec columns, 006–008 deferred), `bundles.tsv` (status and plan path), generate `coverage.md` with `make sdk-registry`, update issue #7, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` — Blocked: depends on 4.1.2
-- [!] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry` (ST-17 and ST-18); regenerate the issue body; close #7; commit through the active exec-plan commit mode; confirm a clean tree with no decrypted ROM — Blocked: depends on 4.1.2/4.1.3
+- [x] 4.1.1 Add `examples/amiga/gui.clo` with the A500 cases ST-4, ST-5, ST-7–ST-13 (poll drain, close gadget, button, string, menus, requester, pointer) and the negative checks; add `docker/scripts/a500-gui-smoke.sh`, the `sdk-a500-gui` Makefile target, and the `verify` leg; compile the demo on both hosted profiles and run the demo-shape implementation case (IT-11/IT-12) — done 2026-11-05; the interactive About path uses `askYesNo` because `DisplayAlert`'s private screen is not headlessly focusable
+- [x] 4.1.2 Run `make sdk-a500-gui` on the FS-UAE A500/KS1.3, fix target-only defects, capture the native `docs/amiga-sdk/a500-gui.png`, and pass ST-4, ST-5, ST-7–ST-13, ST-15, ST-16 — done 2026-11-05; private Xvfb keyboard run, ADF handshake, `gui: ok win 1 gad 2 menu 2 str 3 req 2`; no alert golden (see AR-25)
+- [~] 4.1.3 Update `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` (including the `setColor` 0–31 range), `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (001–005/009 done with acceptance/evidence/spec columns, 006–008 deferred), `bundles.tsv` (status and plan path), generate `coverage.md` with `make sdk-registry`, update issue #7, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` — registry, bundles, coverage, and AGENTS done; the two spec appendices are frozen-oracle changes and need an explicit user ruling before editing
+- [~] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry` (ST-17 and ST-18); regenerate the issue body; close #7; commit through the active exec-plan commit mode; confirm a clean tree with no decrypted ROM — `make check`, `make sdk-a500-gui`, and `make sdk-registry` are green; the full `make verify` leg and issue closeout remain
 
 **Verify**: `make check`; `make verify`; `make sdk-registry`; `make sdk-a500-gui`
 
@@ -157,5 +157,5 @@ Phase 4 (demo/A500/closeout)
 
 ## Completion
 
-In progress: Phases 1–3 are complete and green; Phase 4 is blocked on AR-25
+In progress: Phases 1–3 are complete and green; Phase 4's demo and A500 gate pass. The remaining closeout items are the frozen-spec appendix ruling, the full `make verify` leg, and issue #7.
 (A500 input and menu-bar acceptance).

@@ -65,6 +65,8 @@ and 2.0+ regions are deferred. Bundle 5 is `plans/amiga-sdk-dos-assets/`:
 the DOS file/lock/path/volume surface, the pure IFF/ILBM parser, the ILBM
 loader, and the image viewer on the real A500/KS1.3 machine. `ReadArgs` and
 `datatypes.library` are deferred. Bundle 6 (Intuition UI) is
-`plans/amiga-sdk-intuition/`; 13 of 17 tasks are verified and the A500 GUI
-acceptance is blocked on the input/menu harness decision recorded as AR-25.
-Bundle 7 (Exec and devices) follows after that acceptance.
+`plans/amiga-sdk-intuition/`; 15 of 17 tasks are verified. The A500 GUI
+acceptance passes with a private Xvfb keyboard run, the native
+`docs/amiga-sdk/a500-gui.png`, and the report line `gui: ok win 1 gad 2 menu 2
+str 3 req 2`. The remaining closeout items are the frozen-spec appendix ruling,
+the full `make verify` leg, and issue #7. Bundle 7 (Exec and devices) follows.

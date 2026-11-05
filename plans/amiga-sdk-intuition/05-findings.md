@@ -158,10 +158,36 @@ self-driving synthetic events, or a reduced visual gate). Phase 4 tasks 4.1.2–
 4.1.4 are `[!]` until the user decides. No code or test in Phases 1–3 depends on
 the unresolved harness choice.
 
+## Phase 4 — GUI demo and automated A500 acceptance
+
+### Correctness and runtime findings
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-8 | 🔴 Critical | `cl_open_window` rejected every window wider than 320 or taller than 256, so the 640x256 demo's 576x208 window returned NULL (`gui: err 3`). The limit was an implementation guard, not an Intuition or chip-RAM limit. | **Fixed** — the artificial cap is gone; the screen-bounds check remains. `make sdk-a500-gui` opens the window. |
+| RV-9 | 🔴 Critical | The native capture read the 1.3 `ColorMap` as three bytes per entry. Kickstart 1.3 stores each color as a big-endian 12-bit `0x0RGB` word, so the first capture had the wrong palette. | **Fixed** — read `UWORD` entries and expand the four-bit components. The committed golden has the intended palette. |
+| RV-10 | 🔴 Critical | String gadgets set only `GACT_IMMEDIATE`. Kickstart sends `IDCMP_GADGETUP` only for a `GACT_RELVERIFY` string gadget, so Return deactivated the field silently and the requester never opened. | **Fixed** — `GACT_IMMEDIATE \| GACT_RELVERIFY`; the impl pin is updated. |
+| RV-11 | 🟠 Major | `cl_window_add_menu_item_internal` set `item->Command` for a shortcut and then cleared it unconditionally with `item->Command = 0`, so Right Amiga+H/A/Q never fired. | **Fixed** — the clear is removed; the impl case pins `COMMSEQ` and `Command` and rejects the stray clear. |
+| RV-12 | 🟡 Minor | The first capture wrote a 491 KB PPM through `fputc`; the floppy write blocked the event loop for minutes. | **Fixed** — compact `CSCR` bitplanes (61 KB) and plane writes; the smoke enables FS-UAE turbo floppy mode. |
+| RV-13 | 🟡 Minor | Host XTEST on Xwayland does not reach FS-UAE, and `Alt_R` was host Alt rather than an Amiga key. | **Fixed** — private Xvfb display; `Super_L` is Left Amiga and `Menu` is Right Amiga. `make sdk-a500-gui` is headless. |
+| RV-14 | 🟡 Minor | `DisplayAlert` opens a private modal screen that the headless harness cannot reliably focus and dismiss, so the About path stalled. | The interactive About item uses `askYesNo`; `showAlert` remains implemented, documented, and spec-tested. Recorded in AR-25. |
+| RV-15 | 🟡 Minor | The first per-event debug markers created one file per key on the emulated floppy and stalled the app. | Removed; the final demo writes only five one-byte handshake files at real state transitions. |
+
+### Phase 4 verification
+
+| Gate | Result |
+|---|---|
+| `cargo test --test amiga_intuition_spec_test` | 13/13 green; both cross-builds pass with `-Werror` |
+| `cargo test --test amiga_intuition_impl_test` | 14/14 green |
+| `make sdk-a500-gui` | Pass; native frame matches `docs/amiga-sdk/a500-gui.png`; line `gui: ok win 1 gad 2 menu 2 str 3 req 2` |
+| `make sdk-registry` | OK (79 capabilities, 10 bundles); coverage regenerated |
+
 ## Accepted residuals
 
 | Residual | Reason |
 |---|---|
+| The interactive About path uses a requester instead of `DisplayAlert`. | A private modal alert screen is not reliably focusable from the headless harness. `showAlert` is covered by the spec suite and the host C probe. |
+| The native capture is slower on a real floppy than under FS-UAE turbo mode. | The helper is an acceptance/development tool, not a production hot path; the compact format keeps a normal run bounded. |
 | The window has no lifetime tie to its screen. | The language has no lifetime parameter here; the rule is documented and both local/struct drop orders are pinned. |
 | The m68k Intuition path cannot run under host ASan. | The A500 gates are the execution oracle; the extracted host probes cover the pure C block. |
 | Phase 1 target behavior is proved in Phase 4. | The GUI smoke is the acceptance vehicle; the plan’s phases deliberately build the surface first. |

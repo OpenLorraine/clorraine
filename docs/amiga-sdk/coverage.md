@@ -11,7 +11,7 @@
 | 3-audio-input | core | 1.3 | 6 | 8 | 0 | #4 |
 | 4-text-layers | core | 1.3 | 4 | 6 | 0 | #5 |
 | 5-dos-assets | core | 1.3 | 5 | 7 | 0 | #6 |
-| 6-intuition | core | 1.3 | 0 | 9 | 4 | #7 |
+| 6-intuition | core | 1.3 | 6 | 9 | 0 | #7 |
 | 7-exec-devices | core | 1.3 | 0 | 11 | 5 | #8 |
 | 8-workbench | advanced | 2.0 | 0 | 9 | 0 | #9 |
 | 9-optional | optional | 3.1 | 0 | 3 | 0 | #10 |
@@ -111,15 +111,15 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-INT-001 | Screens/windows open/close | must | missing | int_screens |
-| SDK-INT-002 | Gadgets and menus | must | missing | int_gadgets |
-| SDK-INT-003 | IDCMP event loop | must | missing | int_events |
-| SDK-INT-004 | Requesters and alerts | should | missing | int_requesters |
-| SDK-INT-005 | Pointer and palette | could | missing | int_pointer |
-| SDK-INT-006 | gadtools (2.0+) | should | missing | gadtools |
-| SDK-INT-007 | asl requesters (2.0+) | should | missing | asl |
-| SDK-INT-008 | BOOPSI (3.0+) | could | missing | boopsi |
-| SDK-INT-009 | GUI demo | must | missing | gui_demo |
+| SDK-INT-001 | Screens/windows open/close | must | done | int_screens |
+| SDK-INT-002 | Gadgets and menus | must | done | int_gadgets |
+| SDK-INT-003 | IDCMP event loop | must | done | int_events |
+| SDK-INT-004 | Requesters and alerts | should | done | int_requesters |
+| SDK-INT-005 | Pointer and palette | could | done | int_pointer |
+| SDK-INT-006 | gadtools (2.0+) | should | deferred | - |
+| SDK-INT-007 | asl requesters (2.0+) | should | deferred | - |
+| SDK-INT-008 | BOOPSI (3.0+) | could | deferred | - |
+| SDK-INT-009 | GUI demo | must | done | gui_demo |
 
 ## 7-exec-devices — Exec and devices
 

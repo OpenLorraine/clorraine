@@ -397,6 +397,7 @@ pub const MODULES: &[StdlibModule] = &[
         exports: &[
             "Screen",
             "openScreen",
+            "saveScreen",
             "Window",
             "WindowEvent",
             "EVENT_NONE",
@@ -416,6 +417,8 @@ pub const MODULES: &[StdlibModule] = &[
             "windowString",
             "addMenu",
             "addMenuItem",
+            "addMenuItemKey",
+            "activateGadget",
             "askYesNo",
             "showAlert",
             "setPointer",

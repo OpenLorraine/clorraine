@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -122,6 +122,7 @@ verify:
 	$(MAKE) sdk-a500-paddle
 	$(MAKE) sdk-a500-text
 	$(MAKE) sdk-a500-assets
+	$(MAKE) sdk-a500-gui
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -181,6 +182,10 @@ sdk-a500-text:
 sdk-a500-assets:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/imageviewer.clo"
 	docker/scripts/a500-assets-smoke.sh build/clorraine/imageviewer/hosted-amiga-13/imageviewer
+
+sdk-a500-gui:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/gui.clo"
+	docker/scripts/a500-gui-smoke.sh build/clorraine/gui/hosted-amiga-13/gui
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

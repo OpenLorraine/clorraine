@@ -65,6 +65,7 @@ export const EVENT_INACTIVE: i32 = 7;
 ffi stdintuition {
     func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
     func cl_close_screen(take screen: Screen): void;
+    func cl_screen_save_native(borrow screen: Screen, path: cstring): bool;
     func cl_open_window(borrow screen: Screen, x: i32, y: i32, width: i32,
                         height: i32, title: cstring): Window?;
     func cl_close_window(take window: Window): void;
@@ -82,6 +83,9 @@ ffi stdintuition {
     func cl_window_add_menu(borrow window: Window, title: cstring): i32;
     func cl_window_add_menu_item(borrow window: Window, menu: i32,
                                  label: cstring, id: i32): bool;
+    func cl_window_add_menu_item_key(borrow window: Window, menu: i32,
+                                     label: cstring, id: i32, key: u8): bool;
+    func cl_window_activate_gadget(borrow window: Window, id: i32): bool;
     func cl_window_ask_yes_no(borrow window: Window, body: cstring): bool;
     func cl_show_alert(body: cstring): void;
     func cl_window_set_pointer(borrow window: Window, show: bool): void;
@@ -109,6 +113,19 @@ export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Scre
     return cl_open_screen(width, height, depth, title);
 }
 
+/// Saves the screen's raw bitmap in the compact `CSCR` capture format.
+///
+/// This is a development and acceptance helper: it reads the Amiga screen
+/// bitmap directly, so the image is the native resolution and is independent of
+/// the host window size or emulator scaling. The file starts with the four
+/// ASCII bytes `CSCR`, followed by the width, height, depth, and bytes per row
+/// as big-endian 16-bit values, the palette as 8-bit RGB triples, and the
+/// bitplanes. `path` is an AmigaDOS path; the caller must have a writable
+/// volume. Returns `true` on success.
+export func saveScreen(borrow screen: Screen, path: cstring): bool {
+    return cl_screen_save_native(screen, path);
+}
+
 /// Opens a window on `screen`, or returns `null` on failure.
 ///
 /// `x`/`y` are screen pixels and `width`/`height` are the outer window size.
@@ -118,8 +135,9 @@ export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Scre
 /// The title is copied, so the caller's string only has to live for the call.
 ///
 /// The window is rejected with `null` when the screen is null, the title is
-/// null or over 64 bytes, the size is non-positive or larger than 320x256, or
-/// the rectangle leaves the screen. No allocation survives a rejection.
+/// null or over 64 bytes, the size is non-positive or larger than the
+/// screen, or the rectangle leaves the screen. No allocation survives a
+/// rejection.
 export func openWindow(borrow screen: Screen, x: i32, y: i32, width: i32,
                        height: i32, title: cstring): Window? {
     return cl_open_window(screen, x, y, width, height, title);
@@ -202,6 +220,27 @@ export func addMenu(borrow window: Window, title: cstring): i32 {
 export func addMenuItem(borrow window: Window, menu: i32, label: cstring,
                         id: i32): bool {
     return cl_window_add_menu_item(window, menu, label, id);
+}
+
+/// Appends an enabled textual item with a keyboard command key.
+///
+/// `key` is the ASCII command key; the item is invoked with the right Amiga
+/// key plus that character. The label, id, and error behavior are the same as
+/// `addMenuItem`. The command key is useful when the menu bar is not visible
+/// (for example on a custom screen or in an automated smoke).
+export func addMenuItemKey(borrow window: Window, menu: i32, label: cstring,
+                           id: i32, key: u8): bool {
+    return cl_window_add_menu_item_key(window, menu, label, id, key);
+}
+
+/// Activates the gadget `id` so the keyboard goes to it.
+///
+/// This is intended for a string gadget: after activation, typed characters
+/// edit the field and Return delivers `EVENT_GADGET`. A boolean or custom
+/// gadget may accept the activation depending on Intuition. Returns `false`
+/// when the window or id is invalid.
+export func activateGadget(borrow window: Window, id: i32): bool {
+    return cl_window_activate_gadget(window, id);
 }
 
 /// Shows a modal Yes/No requester in `window` and returns `true` for Yes.

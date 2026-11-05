@@ -190,8 +190,8 @@ fn the_new_window_flags_and_idcmp_bits_are_pinned() {
         "WFLG_ACTIVATE",
         "WFLG_GIMMEZEROZERO",
         "CUSTOMSCREEN",
-        "DetailPen = 1",
-        "BlockPen = 0",
+        "DetailPen = 0",
+        "BlockPen = 1",
         "IDCMP_CLOSEWINDOW",
         "IDCMP_GADGETUP",
         "IDCMP_MENUPICK",
@@ -424,7 +424,7 @@ fn the_button_image_and_string_border_are_pinned() {
         "gadget->GadgetType = GTYP_STRGADGET;",
         "gadget->Flags = GFLG_GADGIMAGE | GFLG_GADGHIMAGE;",
         "gadget->Activation = GACT_RELVERIFY;",
-        "gadget->Activation = GACT_IMMEDIATE;",
+        "gadget->Activation = GACT_IMMEDIATE | GACT_RELVERIFY;",
         "gadget->GadgetRender = normal;",
         "gadget->SelectRender = select;",
         "gadget->GadgetText = text;",
@@ -445,6 +445,8 @@ fn the_menu_chain_and_attach_calls_are_pinned() {
         "menu->FirstItem = NULL;",
         "menu->NextMenu = NULL;",
         "item->Flags = ITEMTEXT | ITEMENABLED;",
+        "item->Flags |= COMMSEQ;",
+        "item->Command = (BYTE)key;",
         "item->ItemFill = text;",
         "item->SelectFill = NULL;",
         "menu->menu->FirstItem = item;",
@@ -478,6 +480,10 @@ fn the_menu_chain_and_attach_calls_are_pinned() {
         .find("BOOL cl_window_add_menu_item")
         .expect("gadget-menus: missing add_menu_item");
     let add_item = &c[add_item..];
+    assert!(
+        !add_item.contains("item->Command = 0;"),
+        "gadget-menus: a menu item must not clear the command key it just set"
+    );
     assert_before("gadget-menus", add_item, "cl_window_menu_detach(handle);",
                   "tail->item->NextItem = item;");
     assert_before("gadget-menus", add_item, "cl_window_menu_link(handle);",

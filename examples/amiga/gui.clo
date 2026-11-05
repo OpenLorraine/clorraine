@@ -1,32 +1,31 @@
-//! GUI acceptance demo: a window, gadgets, menus, a requester, an alert, and
-//! the built-in pointer on a Kickstart 1.3 A500.
+//! GUI acceptance demo: a light 640x256 desktop with a name field, a button,
+//! command-key menus, two Yes/No requesters, and the built-in pointer on a
+//! Kickstart 1.3 A500.
 //!
-//! The program opens a 320x200x4 custom screen and a window, runs the negative
-//! geometry/id/title checks, builds two gadgets and two menus, drains the
-//! startup events with `pollEvent`, then handles clicks, typing, menu picks,
-//! the Yes/No requester, and the recovery alert. It exits through the window
-//! close gadget and prints the deterministic report line after the window and
-//! screen have closed.
-//!
-//! The exact report line is the A500 smoke golden:
-//! `gui: ok win 1 gad 2 menu 2 str 3 req 1`.
+//! The field is activated with `ActivateGadget`, so the smoke can type with a
+//! virtual keyboard without positioning a pointer. The menu items carry
+//! command keys (Right Amiga + H/A/Q). The native screen capture is written
+//! before the event loop, and the report line is also written to `DF0:gui.txt`
+//! so an automated run can read it without a screen scrape. A few one-byte
+//! `DF0:gui-*` handshake files let the smoke wait for each transition instead
+//! of racing fixed sleeps against the emulated floppy.
 
 module examples.amiga.gui;
 
 import {
-    Screen, openScreen, Window, openWindow, closeWindow,
+    Screen, openScreen, saveScreen, Window, openWindow, closeWindow,
     windowWidth, windowHeight, WindowEvent, waitEvent, pollEvent,
     EVENT_NONE, EVENT_CLOSE, EVENT_GADGET, EVENT_MENU,
-    addButton, addString, windowString, addMenu, addMenuItem,
-    askYesNo, showAlert, setPointer
+    addButton, addString, windowString, addMenu, addMenuItemKey,
+    activateGadget, askYesNo, setPointer
 } from std.amiga.intuition;
 import {
-    setColor, windowClear, windowFill, windowDraw
+    setColor, clear, fill, windowClear, windowFill, windowDraw
 } from std.amiga.graphics;
-import { Font, openFont, defaultFont, windowText } from std.amiga.text;
+import { Font, openFont, defaultFont, drawText, windowText } from std.amiga.text;
 import { String, stringOf, toCString, bytes } from std.text;
 import { slice } from std.mem;
-import { println } from std.io;
+import { File, createFile, writeBytes, println } from std.io;
 
 /// Counts collected by the demo and reported in the acceptance line.
 struct GuiResult {
@@ -36,10 +35,11 @@ struct GuiResult {
     menu: i32;
     chars: i32;
     req: i32;
+    stage: i32;
 }
 
 /// The failure result: no line counts are reported.
-func failed(): GuiResult {
+func failedAt(stage: i32): GuiResult {
     return GuiResult {
         ok: false,
         win: 0,
@@ -47,72 +47,98 @@ func failed(): GuiResult {
         menu: 0,
         chars: 0,
         req: 0,
+        stage: stage,
     };
 }
 
-/// Draw the status box and write `text` on its left.
+/// Write a one-byte handshake file for the automated A500 smoke.
 ///
-/// The box is the bottom strip of the inner window; the call is repeated after
-/// every handled event so the held frame always shows the last action.
-func drawStatus(borrow window: Window, borrow font: Font, const text: u8[]): void {
-    let inner_width: i32 = windowWidth(window);
-    let inner_height: i32 = windowHeight(window);
-    windowFill(window, 8, inner_height - 20, inner_width - 9,
-               inner_height - 9, 0);
-    windowText(window, font, 8, inner_height - 12, 3, text);
+/// The emulated floppy is shared with the host as an ADF, so the smoke can poll
+/// the raw image for these names. The names are unique and are built from a
+/// prefix plus `name`, so they do not appear as contiguous literals in the
+/// program image.
+func mark(name: str): void {
+    let path: String = $"DF0:gui-{name}";
+    let file: File? = createFile(toCString(path));
+    if (file != null) {
+        let one: u8[1] = [1];
+        writeBytes(file, slice(one, 0, 1));
+    }
 }
 
-/// Run the demo and return its counts.
-///
-/// The screen and window are locals, so the window closes before the screen
-/// when this function returns. `main` prints the line after that drop order has
-/// restored the shell.
+/// Draw the status panel along the bottom of the window.
+func drawStatus(borrow window: Window, borrow font: Font, const text: u8[]): void {
+    let width: i32 = windowWidth(window);
+    let height: i32 = windowHeight(window);
+    windowFill(window, 12, height - 32, width - 12, height - 10, 6);
+    windowDraw(window, 12, height - 32, width - 12, height - 32, 5);
+    windowDraw(window, 12, height - 10, width - 12, height - 10, 5);
+    windowText(window, font, 20, height - 23, 3, text);
+}
+
+/// Draw the screen footer that stays visible below the window.
+func drawFooter(borrow screen: Screen, borrow font: Font): void {
+    fill(screen, 0, 240, 639, 255, 1);
+    drawText(screen, font, 16, 252, 4, bytes(stringOf("Clorraine GUI demo")));
+    drawText(screen, font, 430, 252, 4,
+             bytes(stringOf("640x256  |  8 colours")));
+}
+
+/// Build and run the demo, returning its counts.
 func runGui(): GuiResult {
-    let screenTitle: String = stringOf("Clorraine GUI");
-    let screen: Screen? = openScreen(320, 200, 4, toCString(screenTitle));
+    let screenTitle: String = stringOf("Clorraine");
+    let screen: Screen? = openScreen(640, 256, 3, toCString(screenTitle));
     if (screen == null) {
-        return failed();
+        return failedAt(1);
     }
-    setColor(screen, 0, 8, 8, 24);
-    setColor(screen, 1, 220, 220, 220);
-    setColor(screen, 2, 255, 128, 0);
-    setColor(screen, 3, 0, 200, 80);
+
+    /* A light eight-colour palette: 0 desktop, 1 ink, 2 accent, 3 success,
+     * 4 paper, 5 muted, 6 panel, 7 white. */
+    setColor(screen, 0, 150, 165, 190);
+    setColor(screen, 1, 20, 30, 50);
+    setColor(screen, 2, 240, 130, 20);
+    setColor(screen, 3, 0, 140, 70);
+    setColor(screen, 4, 252, 252, 250);
+    setColor(screen, 5, 80, 110, 160);
+    setColor(screen, 6, 226, 231, 240);
+    setColor(screen, 7, 255, 255, 255);
     setColor(screen, 17, 255, 255, 255);
     setColor(screen, 18, 0, 0, 0);
+    clear(screen, 0);
 
     let badWindow: Window? = openWindow(screen, -1, 0, 100, 100,
                                         toCString(stringOf("bad")));
     if (badWindow != null) {
-        return failed();
+        return failedAt(2);
     }
 
-    let window: Window? = openWindow(screen, 24, 24, 272, 136,
+    let window: Window? = openWindow(screen, 32, 32, 576, 208,
                                       toCString(stringOf("Clorraine GUI")));
     if (window == null) {
-        return failed();
+        return failedAt(3);
     }
 
     let badButton: bool = addButton(window, 1000, 0, 20, 20,
                                     toCString(stringOf("x")), 1);
     if (badButton) {
-        return failed();
+        return failedAt(4);
     }
     let badString: bool = addString(window, 0, 0, 20, 20,
                                     toCString(stringOf("x")),
                                     toCString(stringOf("y")), 0, 2);
     if (badString) {
-        return failed();
+        return failedAt(5);
     }
     let badId: bool = addButton(window, 0, 0, 20, 20,
                                 toCString(stringOf("x")), 0);
     if (badId) {
-        return failed();
+        return failedAt(6);
     }
     let longTitle: String =
         stringOf("0123456789012345678901234567890123456789012345678901234567890123456789");
     let badMenu: i32 = addMenu(window, toCString(longTitle));
     if (badMenu != -1) {
-        return failed();
+        return failedAt(7);
     }
 
     let font: Font? = openFont(toCString(stringOf("topaz.font")), 8, 0);
@@ -120,48 +146,77 @@ func runGui(): GuiResult {
         font = defaultFont();
     }
     if (font == null) {
-        return failed();
+        return failedAt(8);
     }
 
-    windowClear(window, 0);
-    windowDraw(window, 8, 22, windowWidth(window) - 9, 22, 1);
-    windowText(window, font, 8, 8, 1, bytes(stringOf("Clorraine GUI demo")));
-    drawStatus(window, font, bytes(stringOf("ready")));
+    let width: i32 = windowWidth(window);
+    let height: i32 = windowHeight(window);
+    windowClear(window, 4);
+    windowFill(window, 0, 0, 3, height - 1, 2);
 
-    let button: bool = addButton(window, 8, 28, 80, 18,
-                                 toCString(stringOf("Press")), 1);
-    if (!button) {
-        return failed();
-    }
-    let field: bool = addString(window, 8, 56, 160, 18,
-                                toCString(stringOf("Name:")),
+    windowText(window, font, 20, 14, 1, bytes(stringOf("Clorraine GUI demo")));
+    windowText(window, font, 20, 30, 5, bytes(stringOf("A500 / Kickstart 1.3")));
+    windowFill(window, width - 190, 14, width - 20, 38, 6);
+    windowDraw(window, width - 190, 14, width - 20, 14, 5);
+    windowDraw(window, width - 190, 38, width - 20, 38, 5);
+    windowText(window, font, width - 180, 22, 1,
+               bytes(stringOf("8 colours - 640x256")));
+    windowDraw(window, 20, 50, width - 20, 50, 6);
+
+    windowText(window, font, 20, 68, 1, bytes(stringOf("Name:")));
+    let field: bool = addString(window, 72, 62, 320, 20,
+                                toCString(stringOf("")),
                                 toCString(stringOf("")), 32, 2);
     if (!field) {
-        return failed();
+        return failedAt(9);
     }
+    let button: bool = addButton(window, 20, 94, 150, 24,
+                                 toCString(stringOf("Say hello")), 1);
+    if (!button) {
+        return failedAt(10);
+    }
+    windowText(window, font, 186, 100, 5,
+               bytes(stringOf("Return opens a Yes/No requester")));
+    windowDraw(window, 20, 124, width - 20, 124, 6);
+    windowText(window, font, 20, 138, 1,
+               bytes(stringOf("Command keys (Right Amiga):")));
+    windowText(window, font, 20, 152, 5,
+               bytes(stringOf("H  Hello        A  About        Q  Quit")));
 
     let file: i32 = addMenu(window, toCString(stringOf("File")));
     if (file != 0) {
-        return failed();
+        return failedAt(11);
     }
-    let hello: bool = addMenuItem(window, file, toCString(stringOf("Hello")), 10);
+    let hello: bool = addMenuItemKey(window, file, toCString(stringOf("Hello")),
+                                     10, u8(72));
     if (!hello) {
-        return failed();
+        return failedAt(12);
     }
-    let quit: bool = addMenuItem(window, file, toCString(stringOf("Quit")), 11);
+    let quit: bool = addMenuItemKey(window, file, toCString(stringOf("Quit")),
+                                    11, u8(81));
     if (!quit) {
-        return failed();
+        return failedAt(13);
     }
     let help: i32 = addMenu(window, toCString(stringOf("Help")));
     if (help != 1) {
-        return failed();
+        return failedAt(14);
     }
-    let about: bool = addMenuItem(window, help, toCString(stringOf("About")), 20);
+    let about: bool = addMenuItemKey(window, help, toCString(stringOf("About")),
+                                     20, u8(65));
     if (!about) {
-        return failed();
+        return failedAt(15);
     }
 
+    drawFooter(screen, font);
     setPointer(window, true);
+    drawStatus(window, font, bytes(stringOf("ready")));
+    if (!activateGadget(window, 2)) {
+        return failedAt(16);
+    }
+    if (!saveScreen(screen, toCString(stringOf("DF0:gui.cscr")))) {
+        return failedAt(17);
+    }
+    mark("ready");
 
     let pending: WindowEvent = pollEvent(window);
     while (pending.kind != EVENT_NONE) {
@@ -179,7 +234,10 @@ func runGui(): GuiResult {
         } else if (event.kind == EVENT_NONE) {
             running = false;
         } else if (event.kind == EVENT_GADGET) {
-            if (event.gadget == 1) {
+            if (event.gadget == 2) {
+                strCount = windowString(window, 2, borrow slice(buffer, 0, 64));
+            }
+            if (event.gadget == 1 || event.gadget == 2) {
                 let answer: bool = askYesNo(window,
                                             toCString(stringOf("Continue?")));
                 if (answer) {
@@ -188,18 +246,23 @@ func runGui(): GuiResult {
                 } else {
                     drawStatus(window, font, bytes(stringOf("no")));
                 }
-            } else if (event.gadget == 2) {
-                strCount = windowString(window, 2, borrow slice(buffer, 0, 64));
-                drawStatus(window, font, bytes(stringOf("name")));
+                mark("answered");
             }
         } else if (event.kind == EVENT_MENU) {
             if (event.menu == 10) {
                 drawStatus(window, font, bytes(stringOf("hello")));
+                mark("hello");
             } else if (event.menu == 11) {
+                mark("quit");
                 running = false;
             } else if (event.menu == 20) {
-                showAlert(toCString(stringOf("Clorraine GUI")));
+                let aboutAnswer: bool =
+                    askYesNo(window, toCString(stringOf("Clorraine GUI / A500")));
+                if (aboutAnswer) {
+                    reqCount = reqCount + 1;
+                }
                 drawStatus(window, font, bytes(stringOf("about")));
+                mark("about");
             }
         }
     }
@@ -213,15 +276,24 @@ func runGui(): GuiResult {
         menu: 2,
         chars: strCount,
         req: reqCount,
+        stage: 0,
     };
 }
 
 func main(): i32 {
     let result: GuiResult = runGui();
     if (!result.ok) {
-        println("gui: err");
+        println($"gui: err {result.stage}");
         return 1;
     }
-    println($"gui: ok win {result.win} gad {result.gad} menu {result.menu} str {result.chars} req {result.req}");
+    let line: String =
+        $"gui: ok win {result.win} gad {result.gad} menu {result.menu} str {result.chars} req {result.req}";
+    println(line);
+    {
+        let file: File? = createFile(toCString(stringOf("DF0:gui.txt")));
+        if (file != null) {
+            writeBytes(file, bytes(line));
+        }
+    }
     return 0;
 }

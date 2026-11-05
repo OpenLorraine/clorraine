@@ -1259,9 +1259,6 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
     if (x < 0 || y < 0 || width <= 0 || height <= 0) {
         return NULL;
     }
-    if (width > 320 || height > 256) {
-        return NULL;
-    }
     if (width > (LONG)screen->Width || height > (LONG)screen->Height) {
         return NULL;
     }
@@ -1285,8 +1282,8 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
     nw.TopEdge = (WORD)y;
     nw.Width = (WORD)width;
     nw.Height = (WORD)height;
-    nw.DetailPen = 1;
-    nw.BlockPen = 0;
+    nw.DetailPen = 0;
+    nw.BlockPen = 1;
     nw.IDCMPFlags = IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
                   | IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_VANILLAKEY
                   | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW
@@ -1765,7 +1762,10 @@ BOOL cl_window_add_string(void *window_handle, LONG x, LONG y, LONG width,
     gadget->Width = (WORD)width;
     gadget->Height = (WORD)height;
     gadget->Flags = 0;
-    gadget->Activation = GACT_IMMEDIATE;
+    /* Kickstart only sends IDCMP_GADGETUP for a string gadget that has
+     * GACT_RELVERIFY set; Return otherwise deactivates the field silently.
+     * GACT_IMMEDIATE keeps the field active from mouse-down. */
+    gadget->Activation = GACT_IMMEDIATE | GACT_RELVERIFY;
     gadget->GadgetType = GTYP_STRGADGET;
     gadget->GadgetRender = box;
     gadget->SelectRender = box;
@@ -2008,8 +2008,9 @@ LONG cl_window_add_menu(void *window_handle, char *title)
 }
 
 /* Append a textual, enabled menu item. Returns FALSE on failure. */
-BOOL cl_window_add_menu_item(void *window_handle, LONG menu_index, char *label,
-                             LONG id)
+static BOOL cl_window_add_menu_item_internal(void *window_handle,
+                                            LONG menu_index, char *label,
+                                            LONG id, LONG key, BOOL has_key)
 {
     cl_window *handle = (cl_window *)window_handle;
     cl_menu_node *menu;
@@ -2067,10 +2068,13 @@ BOOL cl_window_add_menu_item(void *window_handle, LONG menu_index, char *label,
     item->Width = CL_MENU_WIDTH;
     item->Height = CL_MENU_HEIGHT;
     item->Flags = ITEMTEXT | ITEMENABLED;
+    if (has_key) {
+        item->Flags |= COMMSEQ;
+        item->Command = (BYTE)key;
+    }
     item->MutualExclude = 0;
     item->ItemFill = text;
     item->SelectFill = NULL;
-    item->Command = 0;
     item->SubItem = NULL;
     item->NextSelect = 0;
 
@@ -2107,6 +2111,36 @@ BOOL cl_window_add_menu_item(void *window_handle, LONG menu_index, char *label,
         return FALSE;
     }
     return TRUE;
+}
+
+BOOL cl_window_add_menu_item(void *window_handle, LONG menu_index, char *label,
+                             LONG id)
+{
+    return cl_window_add_menu_item_internal(window_handle, menu_index, label,
+                                            id, 0, FALSE);
+}
+
+BOOL cl_window_add_menu_item_key(void *window_handle, LONG menu_index,
+                                 char *label, LONG id, UBYTE key)
+{
+    return cl_window_add_menu_item_internal(window_handle, menu_index, label,
+                                            id, (LONG)key, TRUE);
+}
+
+/* Activate a string or custom gadget so the keyboard goes to it. */
+BOOL cl_window_activate_gadget(void *window_handle, LONG id)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_gadget_node *node;
+
+    if (handle == NULL || handle->window == NULL) {
+        return FALSE;
+    }
+    node = cl_window_find_gadget(handle, id);
+    if (node == NULL || node->gadget == NULL) {
+        return FALSE;
+    }
+    return ActivateGadget(node->gadget, handle->window, NULL);
 }
 
 /* --- Intuition requesters, alerts, and the built-in pointer. ------------- */
@@ -2229,6 +2263,123 @@ void cl_window_set_pointer(void *window_handle, BOOL show)
     }
     SetPointer(handle->window, handle->pointer, 16, 16, 0, 0);
     handle->pointer_shown = 1;
+}
+
+/* Native screen-capture format written by cl_screen_save_native:
+ *
+ *   0  "CSCR"
+ *   4  u16 width          (big-endian)
+ *   6  u16 height
+ *   8  u16 depth
+ *  10  u16 bytes_per_row
+ *  12  palette: (1 << depth) RGB triples, 8 bits per component
+ *  ..  bitplanes: depth * bytes_per_row * height bytes
+ *
+ * The capture stores the raw screen bitmap, so it is the native Amiga image
+ * and does not depend on the host window size or emulator scaling. Keeping the
+ * bitplanes instead of expanded pixels makes the file small enough to write to
+ * a floppy without stalling the UI. */
+BOOL cl_screen_save_native(void *screen_handle, char *path)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    struct BitMap *bitmap;
+    struct ColorMap *colormap;
+    UBYTE header[12];
+    UBYTE rgb[3];
+    UBYTE *table;
+    FILE *file;
+    UWORD width;
+    UWORD height;
+    UWORD depth;
+    UWORD bytes_per_row;
+    UWORD colors;
+    UWORD count;
+    UWORD index;
+    WORD plane;
+    ULONG plane_bytes;
+    BOOL ok = TRUE;
+
+    if (screen == NULL || path == NULL) {
+        return FALSE;
+    }
+    bitmap = &screen->BitMap;
+    colormap = screen->ViewPort.ColorMap;
+    if (colormap == NULL || colormap->ColorTable == NULL) {
+        return FALSE;
+    }
+    if (screen->Width <= 0 || screen->Height <= 0) {
+        return FALSE;
+    }
+    if (bitmap->Depth < 1 || bitmap->Depth > 8
+        || bitmap->BytesPerRow == 0) {
+        return FALSE;
+    }
+    table = (UBYTE *)colormap->ColorTable;
+    width = (UWORD)screen->Width;
+    height = (UWORD)screen->Height;
+    depth = (UWORD)bitmap->Depth;
+    bytes_per_row = (UWORD)bitmap->BytesPerRow;
+    colors = (UWORD)(1U << depth);
+    count = colormap->Count < colors ? colormap->Count : colors;
+    plane_bytes = (ULONG)bytes_per_row * (ULONG)height;
+
+    header[0] = 'C';
+    header[1] = 'S';
+    header[2] = 'C';
+    header[3] = 'R';
+    header[4] = (UBYTE)(width >> 8);
+    header[5] = (UBYTE)width;
+    header[6] = (UBYTE)(height >> 8);
+    header[7] = (UBYTE)height;
+    header[8] = (UBYTE)(depth >> 8);
+    header[9] = (UBYTE)depth;
+    header[10] = (UBYTE)(bytes_per_row >> 8);
+    header[11] = (UBYTE)bytes_per_row;
+
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        return FALSE;
+    }
+    if (fwrite(header, 1, (ULONG)sizeof header, file) != sizeof header) {
+        ok = FALSE;
+    }
+    for (index = 0; ok && index < colors; index++) {
+        if (index < count) {
+            if (colormap->Type == 0) {
+                /* Kickstart 1.3 stores each color as a big-endian 12-bit
+                 * 0x0RGB word, not as three separate bytes. */
+                UWORD color = (UWORD)(((UWORD)table[index * 2] << 8)
+                                      | (UWORD)table[index * 2 + 1]);
+                rgb[0] = (UBYTE)(((color >> 8) & 0x0F) * 17);
+                rgb[1] = (UBYTE)(((color >> 4) & 0x0F) * 17);
+                rgb[2] = (UBYTE)((color & 0x0F) * 17);
+            } else {
+                /* V36 and later use three bytes of four-bit components. */
+                rgb[0] = (UBYTE)((table[index * 3] & 0x0F) * 17);
+                rgb[1] = (UBYTE)((table[index * 3 + 1] & 0x0F) * 17);
+                rgb[2] = (UBYTE)((table[index * 3 + 2] & 0x0F) * 17);
+            }
+        } else {
+            rgb[0] = 0;
+            rgb[1] = 0;
+            rgb[2] = 0;
+        }
+        if (fwrite(rgb, 1, 3, file) != 3) {
+            ok = FALSE;
+        }
+    }
+    for (plane = 0; ok && plane < (WORD)depth; plane++) {
+        UBYTE *data = (UBYTE *)bitmap->Planes[plane];
+        if (data == NULL) {
+            ok = FALSE;
+        } else if (fwrite(data, 1, plane_bytes, file) != plane_bytes) {
+            ok = FALSE;
+        }
+    }
+    if (fclose(file) != 0) {
+        ok = FALSE;
+    }
+    return ok;
 }
 
 /* EVENT_* values shared with std.amiga.intuition. */

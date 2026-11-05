@@ -46,15 +46,15 @@ SDK-DOS-004	5-dos-assets	dos/cli	CLI args via ReadArgs (2.0+)	should	advanced	2.
 SDK-DOS-005	5-dos-assets	iff	IFF/ILBM parser	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	ilbm	stdlib/std.iff.clo; fixture hash 603248125; amiga_ilbm_spec_test	spec/appendix-stdlib.md	FORM ILBM; BMHD/CMAP/BODY; ByteRun1; depth 1..8
 SDK-DOS-006	5-dos-assets	datatypes	datatypes.library (3.0+)	could	advanced	3.0	AGA/68020/2M	deferred	SDK-DOS-005	datatypes	-	-	3.0+ advanced; Bundle 9
 SDK-DOS-008	5-dos-assets	demo	Image viewer demo	must	core	1.3	OCS/68000/512K	done	SDK-DOS-005,SDK-TXT-002	image_viewer	docs/amiga-sdk/a500-assets.png; docs/amiga-sdk/a500-assets-line.png; make sdk-a500-assets	spec/appendix-amiga.md	A500 real KS1.3; release build; img: ok 320x200x4 hash 603248125 dos 255 vol 1
-SDK-INT-001	6-intuition	intuition/screens	Screens/windows open/close	must	core	1.3	OCS/68000/512K	missing	SDK-VID-006	int_screens	-	-	-
-SDK-INT-002	6-intuition	intuition/gadgets	Gadgets and menus	must	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_gadgets	-	-	-
-SDK-INT-003	6-intuition	intuition/events	IDCMP event loop	must	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_events	-	-	-
-SDK-INT-004	6-intuition	intuition/requesters	Requesters and alerts	should	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_requesters	-	-	-
-SDK-INT-005	6-intuition	intuition/pointer	Pointer and palette	could	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_pointer	-	-	-
-SDK-INT-006	6-intuition	gadtools	gadtools (2.0+)	should	advanced	2.0	ECS/68000/1M	missing	SDK-INT-002	gadtools	-	-	-
-SDK-INT-007	6-intuition	asl	asl requesters (2.0+)	should	advanced	2.0	ECS/68000/1M	missing	SDK-INT-004	asl	-	-	-
-SDK-INT-008	6-intuition	boopsi	BOOPSI (3.0+)	could	optional	3.0	AGA/68020/2M	missing	SDK-INT-002	boopsi	-	-	-
-SDK-INT-009	6-intuition	demo	GUI demo	must	core	1.3	OCS/68000/512K	missing	SDK-INT-002,SDK-INT-003	gui_demo	-	-	-
+SDK-INT-001	6-intuition	intuition/screens	Screens/windows open/close	must	core	1.3	OCS/68000/512K	done	SDK-VID-006	int_screens	stdlib/std.amiga.intuition.clo; amiga_intuition_spec_test; make sdk-a500-gui	spec/appendix-stdlib.md	Bundle 6
+SDK-INT-002	6-intuition	intuition/gadgets	Gadgets and menus	must	core	1.3	OCS/68000/512K	done	SDK-INT-001	int_gadgets	stdlib/std.amiga.intuition.clo; amiga_intuition_spec_test; make sdk-a500-gui	spec/appendix-stdlib.md	Bundle 6
+SDK-INT-003	6-intuition	intuition/events	IDCMP event loop	must	core	1.3	OCS/68000/512K	done	SDK-INT-001	int_events	stdlib/std.amiga.intuition.clo; amiga_intuition_spec_test; make sdk-a500-gui	spec/appendix-stdlib.md	Bundle 6
+SDK-INT-004	6-intuition	intuition/requesters	Requesters and alerts	should	core	1.3	OCS/68000/512K	done	SDK-INT-001	int_requesters	stdlib/std.amiga.intuition.clo; amiga_intuition_spec_test	spec/appendix-stdlib.md	Bundle 6; DisplayAlert is spec-tested, interactive demo uses requesters
+SDK-INT-005	6-intuition	intuition/pointer	Pointer and palette	could	core	1.3	OCS/68000/512K	done	SDK-INT-001	int_pointer	stdlib/std.amiga.intuition.clo; make sdk-a500-gui	spec/appendix-stdlib.md	Bundle 6
+SDK-INT-006	6-intuition	gadtools	gadtools (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-INT-002	-	-	-	2.0+ advanced; Bundle 9
+SDK-INT-007	6-intuition	asl	asl requesters (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-INT-004	-	-	-	2.0+ advanced; Bundle 9
+SDK-INT-008	6-intuition	boopsi	BOOPSI (3.0+)	could	optional	3.0	AGA/68020/2M	deferred	SDK-INT-002	-	-	-	3.0+ optional; Bundle 9
+SDK-INT-009	6-intuition	demo	GUI demo	must	core	1.3	OCS/68000/512K	done	SDK-INT-002,SDK-INT-003	gui_demo	docs/amiga-sdk/a500-gui.png; make sdk-a500-gui	spec/appendix-amiga.md	Bundle 6
 SDK-EXE-001	7-exec-devices	exec/tasks	Worker task creation and join	should	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	task	-	-	-
 SDK-EXE-002	7-exec-devices	exec/signals	Signals	must	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	signals	-	-	-
 SDK-EXE-011	7-exec-devices	exec/semaphores	Signal semaphores (2.0+)	should	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-002	semaphores	-	-	-

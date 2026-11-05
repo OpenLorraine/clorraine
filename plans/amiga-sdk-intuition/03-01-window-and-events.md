@@ -160,7 +160,7 @@ export func pollEvent(borrow window: Window): WindowEvent {
 `cl_open_window` validates and opens:
 
 1. Reject a null screen, a null title, a title over 64 bytes, `x < 0`, `y < 0`,
-   `width <= 0`, `height <= 0`, `width > 320`, `height > 256`, `x > screen->Width - width`,
+   `width <= 0`, `height <= 0`, `width > screen->Width`, `height > screen->Height`, `x > screen->Width - width`,
    or `y > screen->Height - height`. The subtraction checks avoid a signed
    overflow before the values are narrowed into `WORD` fields.
 2. Allocate `cl_window` with `AllocMem(sizeof *handle, MEMF_CLEAR)`; return

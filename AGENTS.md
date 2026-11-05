@@ -39,7 +39,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, then `cargo test --workspace` in the container |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
-| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display |
+| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
@@ -53,6 +53,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-a500-paddle` | Build the audio/input paddle game for `hosted-amiga-13`, see the live court on the A500/KS1.3 run, and compare the hit/audio/input line |
 | `make sdk-a500-text` | Build the scrolling text/layers demo for `hosted-amiga-13`, see the held layer frame on the A500/KS1.3 run, and compare the measured text line |
 | `make sdk-a500-assets` | Build the ILBM viewer for `hosted-amiga-13` in release mode, see the held image frame on the A500/KS1.3 run, and compare the DOS/asset report line |
+| `make sdk-a500-gui` | Build the Intuition GUI demo for `hosted-amiga-13`, drive it headlessly on Xvfb with the Amiga-key shortcuts, and compare its native screen capture and report line |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
@@ -98,6 +99,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 - `make differential` is a convenience gate over the same host and hosted-amiga
   outputs the corpus pins; it is not an independent signal. The CI workflow is
   host-only, so m68k-only tests skip themselves without the SDK toolchain.
+- `make sdk-a500-gui` runs FS-UAE on a private Xvfb display and drives the demo
+  with Amiga-key shortcuts; it does not open a window on the desktop. The
+  artifact is the app's native `CSCR` capture, converted by
+  `docker/scripts/cscr2png.py`, not a host-window screenshot.
 
 ## Generated files and the frozen spec
 
