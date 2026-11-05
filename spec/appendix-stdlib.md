@@ -564,6 +564,52 @@ if (!deviceSetBuffer(device, 512) || !deviceSendIO(device)) {
 let error: i32 = deviceWaitIO(device, borrow buffer);
 ```
 
+## 14. Icon, Workbench, and expansion
+
+This section covers the Kickstart 2.0+ services. The three modules are
+available only on `hosted-amiga`; the host and `hosted-amiga-13` profiles
+reject them with `E11200`. The Workbench-disk services (commodities, locale,
+ARexx, clipboard, serial/parallel/printer) and `nonvolatile.library` are not
+part of this surface because the acceptance baseline has no Workbench media.
+
+### 14.1 Icon library (`std.amiga.icon`)
+
+`DiskObject` owns one in-memory `.info` icon. `getDiskObject(name)` reads
+`<name>.info`; `putDiskObject(name, icon)` writes it; the caller frees every
+handle with `freeDiskObject` or the generated drop. `getDefDiskObject(kind)`
+returns a fresh default icon for one of `ICON_DISK`, `ICON_DRAWER`,
+`ICON_TOOL`, `ICON_PROJECT`, `ICON_GARBAGE`, `ICON_DEVICE`, `ICON_KICK`, and
+`ICON_APPICON`. `diskObjectType`/`setDiskObjectType` read or validate the
+`do_Type` field.
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `getDiskObject(name: cstring)` | `DiskObject?` | reads `<name>.info`; `null` on a missing file or failure |
+| `putDiskObject(name: cstring, borrow icon: DiskObject)` | `bool` | writes `<name>.info`; false on a null name/icon or a write failure |
+| `freeDiskObject(take icon: DiskObject)` | `void` | frees exactly once; null-safe |
+| `getDefDiskObject(kind: i32)` | `DiskObject?` | fresh default icon; the caller owns it |
+| `diskObjectType(borrow icon: DiskObject)` | `i32` | `do_Type`, or 0 for null |
+| `setDiskObjectType(borrow icon: DiskObject, kind: i32)` | `bool` | accepts `ICON_DISK`..`ICON_APPICON`; false otherwise |
+| drop (generated) | `void` | frees an unfreed icon; null-safe |
+
+```clorraine
+import { DiskObject, ICON_TOOL, getDefDiskObject, putDiskObject,
+         getDiskObject, diskObjectType, freeDiskObject } from std.amiga.icon;
+
+func roundTrip(name: cstring): i32 {
+    let icon: DiskObject? = getDefDiskObject(ICON_TOOL);
+    if (icon == null) { return 0; }
+    let ok: bool = putDiskObject(name, icon);
+    freeDiskObject(icon);
+    if (!ok) { return 0; }
+    let loaded: DiskObject? = getDiskObject(name);
+    if (loaded == null) { return 0; }
+    let kind: i32 = diskObjectType(loaded);
+    freeDiskObject(loaded);
+    return kind;
+}
+```
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

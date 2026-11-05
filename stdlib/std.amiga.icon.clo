@@ -1,0 +1,85 @@
+//! Amiga icon library: `DiskObject` read, write, default, and type.
+//!
+//! This module belongs to the hosted-Amiga profiles that provide
+//! `icon.library` (Kickstart 2.0+). The host and `hosted-amiga-13` profiles do
+//! not provide the library, so the module is rejected there with `E11200`.
+//! The wrappers reach the profile C shim through `ffi`, so application code
+//! never writes `ffi` and never touches `unsafe`.
+//!
+//! A `DiskObject` is an `.info` file's in-memory icon. `getDiskObject` reads
+//! `<name>.info`; `putDiskObject` writes it. The caller owns every handle and
+//! releases it with `freeDiskObject` or the generated drop. A default icon from
+//! `getDefDiskObject` is a fresh allocation and must be freed the same way.
+
+module std.amiga.icon;
+
+/// An in-memory Workbench icon. The generated drop frees it.
+export handle DiskObject freedBy cl_free_disk_object;
+
+/// A disk icon.
+export const ICON_DISK: i32 = 1;
+/// A drawer (directory) icon.
+export const ICON_DRAWER: i32 = 2;
+/// A tool (executable) icon.
+export const ICON_TOOL: i32 = 3;
+/// A project (data file) icon.
+export const ICON_PROJECT: i32 = 4;
+/// The Trashcan icon.
+export const ICON_GARBAGE: i32 = 5;
+/// A device icon.
+export const ICON_DEVICE: i32 = 6;
+/// A Kickstart disk icon.
+export const ICON_KICK: i32 = 7;
+/// A Workbench application icon.
+export const ICON_APPICON: i32 = 8;
+
+ffi stdicon {
+    func cl_get_disk_object(name: cstring): DiskObject?;
+    func cl_put_disk_object(name: cstring, borrow icon: DiskObject): bool;
+    func cl_free_disk_object(take icon: DiskObject): void;
+    func cl_get_def_disk_object(kind: i32): DiskObject?;
+    func cl_disk_object_type(borrow icon: DiskObject): i32;
+    func cl_set_disk_object_type(borrow icon: DiskObject, kind: i32): bool;
+}
+
+/// Reads `<name>.info` and returns an owned icon, or `null`.
+///
+/// `name` is the base name without `.info`. The caller frees the result with
+/// `freeDiskObject` or the generated drop. A missing file, a null name, or an
+/// allocation failure returns `null`.
+export func getDiskObject(name: cstring): DiskObject? {
+    return cl_get_disk_object(name);
+}
+
+/// Writes `icon` to `<name>.info` and returns true on success.
+///
+/// `name` is the base name without `.info`. A null name or icon, a read-only
+/// volume, or a write failure returns false; the caller owns the file.
+export func putDiskObject(name: cstring, borrow icon: DiskObject): bool {
+    return cl_put_disk_object(name, icon);
+}
+
+/// Releases an icon exactly once.
+export func freeDiskObject(take icon: DiskObject): void {
+    cl_free_disk_object(icon);
+}
+
+/// Returns a fresh default icon of `kind`, or `null`.
+///
+/// `kind` is one of the `ICON_*` constants. The result is owned by the caller.
+export func getDefDiskObject(kind: i32): DiskObject? {
+    return cl_get_def_disk_object(kind);
+}
+
+/// Returns the icon's Workbench type, or 0 for a null handle.
+export func diskObjectType(borrow icon: DiskObject): i32 {
+    return cl_disk_object_type(icon);
+}
+
+/// Sets the icon's Workbench type and returns true.
+///
+/// `kind` must be one of the `ICON_*` constants; a null handle or an
+/// out-of-range kind returns false and leaves the icon unchanged.
+export func setDiskObjectType(borrow icon: DiskObject, kind: i32): bool {
+    return cl_set_disk_object_type(icon, kind);
+}

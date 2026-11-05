@@ -150,3 +150,81 @@ fn the_shim_guards_the_20_section() {
     assert_contains("shim-guard", &shim, "#if defined(CL_HOSTED_AMIGA_20)");
     assert_contains("shim-guard", &shim, "#endif");
 }
+
+const ICON_SOURCE: &str = r#"module tests.wb.iconimpl;
+
+import { DiskObject, ICON_TOOL, ICON_APPICON, getDefDiskObject,
+         getDiskObject, putDiskObject, freeDiskObject, diskObjectType,
+         setDiskObjectType } from std.amiga.icon;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("CNEXT:icon-test");
+    let icon: DiskObject? = getDefDiskObject(ICON_TOOL);
+    if (icon == null) { return 1; }
+    let kind: i32 = diskObjectType(icon);
+    if (!setDiskObjectType(icon, ICON_APPICON)) { freeDiskObject(icon); return 2; }
+    if (!putDiskObject(toCString(name), icon)) { freeDiskObject(icon); return 3; }
+    freeDiskObject(icon);
+    let loaded: DiskObject? = getDiskObject(toCString(name));
+    if (loaded == null) { return 4; }
+    let loadedKind: i32 = diskObjectType(loaded);
+    freeDiskObject(loaded);
+    return kind + loadedKind;
+}
+"#;
+
+const ICON_DROP_SOURCE: &str = r#"module tests.wb.icondrop;
+
+import { DiskObject, ICON_TOOL, getDefDiskObject, diskObjectType }
+    from std.amiga.icon;
+
+func main(): i32 {
+    let icon: DiskObject? = getDefDiskObject(ICON_TOOL);
+    if (icon == null) { return 1; }
+    return diskObjectType(icon);
+}
+"#;
+
+/// The icon wrappers lower to the shim and an un-freed icon goes through the
+/// generated caller cleanup.
+#[test]
+fn the_icon_wrappers_lower_to_the_shim() {
+    let c = emit("icon-routing", "hosted-amiga", ICON_SOURCE);
+    for call in [
+        "cl_get_disk_object",
+        "cl_put_disk_object",
+        "cl_free_disk_object",
+        "cl_get_def_disk_object",
+        "cl_disk_object_type",
+        "cl_set_disk_object_type",
+    ] {
+        assert_contains("icon-routing", &c, call);
+    }
+
+    let drop = emit("icon-drop", "hosted-amiga", ICON_DROP_SOURCE);
+    assert_contains(
+        "icon-drop",
+        &drop,
+        "__cl_c1:\n    if (icon) { cl_free_disk_object(icon); }",
+    );
+}
+
+/// The icon shim pins the library base, the library calls, and the type guard.
+#[test]
+fn the_icon_shim_pins_the_calls_and_guards() {
+    let shim = shim();
+    for needle in [
+        "struct Library *IconBase;",
+        "OpenLibrary((STRPTR)\"icon.library\", 37)",
+        "GetDiskObject((STRPTR)name)",
+        "PutDiskObject((STRPTR)name, (const struct DiskObject *)icon)",
+        "FreeDiskObject((struct DiskObject *)icon)",
+        "GetDefDiskObject(kind)",
+        "kind < WBDISK || kind > WBAPPICON",
+        "object->do_Type = (UBYTE)kind;",
+        "return object == NULL ? 0 : (LONG)object->do_Type;",
+    ] {
+        assert_contains("icon-shim", &shim, needle);
+    }
+}

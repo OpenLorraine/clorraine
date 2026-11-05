@@ -61,7 +61,74 @@
  * so the section is preprocessed out and the 1.3 NDK never sees the 2.0-only
  * headers or symbols. */
 #if defined(CL_HOSTED_AMIGA_20)
-/* Filled by the icon, Workbench, and expansion phases. */
+#include <clib/icon_protos.h>
+
+/* The icon library base used by the clib stubs. */
+struct Library *IconBase;
+
+/* Open icon.library 37 once and publish its base. */
+static int cl_icon_open(void)
+{
+    if (IconBase == NULL) {
+        IconBase = OpenLibrary((STRPTR)"icon.library", 37);
+    }
+    return IconBase != NULL;
+}
+
+/* Read <name>.info into a fresh DiskObject, or NULL. */
+void *cl_get_disk_object(char *name)
+{
+    if (name == NULL || !cl_icon_open()) {
+        return NULL;
+    }
+    return (void *)GetDiskObject((STRPTR)name);
+}
+
+/* Write <name>.info from a DiskObject. The caller keeps the icon alive. */
+BOOL cl_put_disk_object(char *name, void *icon)
+{
+    if (name == NULL || icon == NULL || !cl_icon_open()) {
+        return FALSE;
+    }
+    return PutDiskObject((STRPTR)name, (const struct DiskObject *)icon);
+}
+
+/* Free a DiskObject exactly once; null-safe. */
+void cl_free_disk_object(void *icon)
+{
+    if (icon != NULL) {
+        FreeDiskObject((struct DiskObject *)icon);
+    }
+}
+
+/* A fresh default icon of the requested Workbench type, or NULL. */
+void *cl_get_def_disk_object(LONG kind)
+{
+    if (kind < WBDISK || kind > WBAPPICON || !cl_icon_open()) {
+        return NULL;
+    }
+    return (void *)GetDefDiskObject(kind);
+}
+
+/* The icon's Workbench type, or 0 for a null handle. */
+LONG cl_disk_object_type(void *icon)
+{
+    const struct DiskObject *object = (const struct DiskObject *)icon;
+
+    return object == NULL ? 0 : (LONG)object->do_Type;
+}
+
+/* Set a valid Workbench type; reject a null handle or an invalid kind. */
+BOOL cl_set_disk_object_type(void *icon, LONG kind)
+{
+    struct DiskObject *object = (struct DiskObject *)icon;
+
+    if (object == NULL || kind < WBDISK || kind > WBAPPICON) {
+        return FALSE;
+    }
+    object->do_Type = (UBYTE)kind;
+    return TRUE;
+}
 #endif
 
 /* The DOS timer primitive. The library calling convention needs the

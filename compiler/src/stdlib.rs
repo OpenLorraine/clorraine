@@ -113,6 +113,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.exec",
         source: include_str!("../../stdlib/std.amiga.exec.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.icon",
+        source: include_str!("../../stdlib/std.amiga.icon.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -494,6 +498,26 @@ pub const MODULES: &[StdlibModule] = &[
             "deviceError",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.icon",
+        exports: &[
+            "DiskObject",
+            "ICON_DISK",
+            "ICON_DRAWER",
+            "ICON_TOOL",
+            "ICON_PROJECT",
+            "ICON_GARBAGE",
+            "ICON_DEVICE",
+            "ICON_KICK",
+            "ICON_APPICON",
+            "getDiskObject",
+            "putDiskObject",
+            "freeDiskObject",
+            "getDefDiskObject",
+            "diskObjectType",
+            "setDiskObjectType",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -650,6 +674,31 @@ mod tests {
         assert!(source("std.amiga.custom").is_some());
         assert!(exports("std.amiga.custom", "setDma"));
         assert!(exports("std.amiga.custom", "setColor"));
+    }
+
+    #[test]
+    fn the_icon_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.amiga.icon").is_some());
+        assert!(source("std.amiga.icon").is_some());
+        for name in [
+            "DiskObject",
+            "ICON_DISK",
+            "ICON_DRAWER",
+            "ICON_TOOL",
+            "ICON_PROJECT",
+            "ICON_GARBAGE",
+            "ICON_DEVICE",
+            "ICON_KICK",
+            "ICON_APPICON",
+            "getDiskObject",
+            "putDiskObject",
+            "freeDiskObject",
+            "getDefDiskObject",
+            "diskObjectType",
+            "setDiskObjectType",
+        ] {
+            assert!(exports("std.amiga.icon", name), "missing export {name}");
+        }
     }
 
     #[test]

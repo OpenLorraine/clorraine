@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 22:29
-> **Progress**: 4/26 tasks (15%) — Executing
+> **Last Updated**: 2026-11-05 22:30
+> **Progress**: 8/26 tasks (30%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -78,10 +78,10 @@ implementation in every phase.
 
 **Reference**: [03-02](03-02-icon-library.md) · AR-6, R2, R9
 
-- [ ] 2.1.1 [spec-author] Add the icon surface and its host/1.3 rejection, `nix20` cross-build, and appendix checks to `amiga_workbench_spec_test.rs`; run red
-- [ ] 2.1.2 Add `stdlib/std.amiga.icon.clo`, the icon shim section, the export table, and the `hosted-amiga`-only profile gate; run the spec green
-- [ ] 2.1.3 Add the icon implementation cases (shim calls, default object, type range, drop) to `amiga_workbench_impl_test.rs`
-- [ ] 2.1.4 Add the appendix §14.1 icon text and verify the icon spec/impl cases and the `nix20` cross-build
+- [x] 2.1.1 [spec-author] Add the icon surface and its host/1.3 rejection, `nix20` cross-build, and appendix checks to `amiga_workbench_spec_test.rs`; run red ✅ (completed: 2026-11-05 22:30; the 1.3 rejection and the appendices check were the red gate before the module existed)
+- [x] 2.1.2 Add `stdlib/std.amiga.icon.clo`, the icon shim section, the export table, and the `hosted-amiga`-only profile gate; run the spec green ✅ (completed: 2026-11-05 22:30; 401 lib + 8 spec tests green)
+- [x] 2.1.3 Add the icon implementation cases (shim calls, default object, type range, drop) to `amiga_workbench_impl_test.rs` ✅ (completed: 2026-11-05 22:30; 6/6 impl tests green)
+- [x] 2.1.4 Add the appendix §14.1 icon text and verify the icon spec/impl cases and the `nix20` cross-build ✅ (completed: 2026-11-05 22:30; §14.1 documents every icon export)
 
 **Verify**: `cargo test --lib --test amiga_workbench_spec_test --test amiga_workbench_impl_test`
 
