@@ -1,6 +1,6 @@
 # Appendix B - Standard Library (v1)
 
-> **Status:** stable (v1.0)
+> **Status:** stable (v1.0; v1.1 adds the A500 classic Intuition surface)
 > **Depends on:** Ch 08 (arrays and strings), Ch 11 (memory and resources), Ch 12 (FFI and contracts), Ch 14 (diagnostics), Ch 16 (borrow-checker rules), Ch 17 (codegen)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (parameter modes), 4 (types), 6.4 (member and call suffixes), 7 (intrinsics)
 > **Ledger:** [decisions.md](decisions.md) section 18 (standard-library scope); T2, T5, T7, T8, F7, F8, X1, X6, L5, P5, P6, P8a
@@ -144,37 +144,124 @@ A token is `struct HandlerToken { id: u32; }`. The handler rules are enforced by
 audit in v1; effect-marker enforcement is a Phase 2 follow-up. State
 shared with a handler is a `volatile` module-level `let` (T7).
 
-## 8. Screen lifecycle (`std.amiga.intuition`)
+## 8. Intuition (`std.amiga.intuition`)
 
-The module owns a custom screen. `openScreen` returns an owned `Screen?`; the
-caller null-checks it (T8, E10010), and the generated drop closes the screen once
-through the null-safe deleter (P5). The `RastPort` is never exposed; the drawing
-calls live in the companion module (§9).
+The module owns two Intuition handles and the event value. `Screen` owns a
+custom screen; `Window` owns a window on that screen and every gadget, menu,
+string, and pointer image it builds. Both are move-only and close through the
+generated drop. A window borrows its screen, so keep the screen alive until the
+window has closed: locals drop in reverse declaration order (declare the screen
+before the window), while struct fields drop in declaration order (declare the
+window field before the screen field). Do not return a window from a function
+whose locals own the screen.
 
-```clorraine
-module std.amiga.intuition;
+The surface is the classic Kickstart 1.3 Intuition API. The same source
+compiles on `hosted-amiga-13` and `hosted-amiga`; the 2.0+ additions (gadtools,
+ASL requesters, and BOOPSI) are deferred and are not exposed. The host profile
+rejects the module with `E11200`.
 
-export handle Screen freedBy cl_close_screen;
-
-ffi stdintuition {
-    func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
-    func cl_close_screen(take screen: Screen): void;
-}
-
-export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
-    return cl_open_screen(width, height, depth, title);
-}
-```
+### 8.1 Screen and window lifecycle
 
 | API | Returns | Ownership and rules |
 |---|---|---|
 | `openScreen(width: i32, height: i32, depth: u8, title: cstring)` | `Screen?` | opens a custom screen; `null` on failure. `width`/`height` are pixels; `depth` is the bitplane count (1-5 on the base chipset) |
+| `saveScreen(borrow screen: Screen, path: cstring)` | `bool` | writes the screen's raw bitmap in `CSCR` form: the header carries the size and depth, followed by the palette and bitplanes. The path is an AmigaDOS path and the volume must be writable |
 | drop (generated) | `void` | `cl_close_screen(take screen)` runs exactly once; it is null-safe |
+| `openWindow(borrow screen: Screen, x: i32, y: i32, width: i32, height: i32, title: cstring)` | `Window?` | opens a window at screen pixel (`x`,`y`). `width`/`height` are the outer size; the inner drawable area is `windowWidth`/`windowHeight`. The window has a drag bar, depth gadget, close gadget, and `WFLG_GIMMEZEROZERO`. `null` for a null screen, a null or over-long title, a non-positive size, a size larger than the screen, or a rectangle that leaves the screen |
+| `closeWindow(take window: Window)` | `void` | closes now instead of at scope end; clears the menu strip and pointer, then releases the window, gadgets, menus, strings, and pointer image |
+| `windowWidth(borrow window: Window)` / `windowHeight(borrow window: Window)` | `i32` | inner drawable size in pixels; 0 on a null window |
+| drop (generated) | `void` | `cl_close_window(take window)` runs exactly once; it is null-safe |
 
 `title` names the screen and must stay alive for as long as the screen is open:
-Intuition keeps the pointer and does not copy the string. `Screen` is move-only;
-windows, text, sprites, and runtime palettes beyond four bits are outside v1.
-The native-video path in §15 is the bitmap/blitter/copper alternative.
+Intuition keeps the pointer and does not copy the screen title. Window titles,
+gadget labels, menu titles, and menu item labels are copied, so the caller's
+`cstring` only has to live for the call.
+
+```clorraine
+import { Screen, Window, openScreen, openWindow, waitEvent,
+         EVENT_CLOSE } from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+
+func demo(): i32 {
+    let screen: Screen? = openScreen(320, 200, 4, toCString(stringOf("demo")));
+    if (screen == null) { return 1; }
+    let window: Window? = openWindow(screen, 24, 24, 272, 136,
+                                     toCString(stringOf("window")));
+    if (window == null) { return 1; }
+    let running: bool = true;
+    while (running) {
+        let event = waitEvent(window);
+        if (event.kind == EVENT_CLOSE || event.kind == EVENT_NONE) {
+            running = false;
+        }
+    }
+    return 0;   // the window drops first, then the screen
+}
+```
+
+### 8.2 IDCMP events
+
+`WindowEvent` is a copy-only value: it owns nothing and can be stored or
+compared freely. `kind` selects one of the `EVENT_*` constants; `code`,
+`qualifier`, and the mouse fields carry the raw Intuition message values.
+`gadget` and `menu` carry the caller's id when the event names a gadget or menu
+item, and 0 otherwise.
+
+| Constant | Meaning |
+|---|---|
+| `EVENT_NONE` | no event; returned by `pollEvent` and for an invalid or closed window |
+| `EVENT_CLOSE` | the window's close gadget was selected |
+| `EVENT_GADGET` | a gadget was released; `gadget` names it |
+| `EVENT_MENU` | a menu item was selected; `menu` names it |
+| `EVENT_MOUSE` | a mouse button event; `code`, `qualifier`, and the mouse fields are set |
+| `EVENT_KEY` | a raw or vanilla key event; `code` and `qualifier` are set |
+| `EVENT_ACTIVE` / `EVENT_INACTIVE` | the window became active or inactive |
+
+| API | Returns | Rules |
+|---|---|---|
+| `waitEvent(borrow window: Window)` | `WindowEvent` | blocks for the next event; returns `EVENT_NONE` for a null or closed window |
+| `pollEvent(borrow window: Window)` | `WindowEvent` | returns the next queued event, or `EVENT_NONE` when the queue is empty |
+
+Both calls reply the Intuition message before returning, so the queue cannot
+grow without bound. Refresh events are acknowledged inside the shim and are not
+delivered; the window is not resizable.
+
+### 8.3 Gadgets and menus
+
+Gadget and menu-item ids must be at least 1 and unique within the window; the
+event fields use 0 for "none". Buttons use pens 0, 1, and 2 (label, fill, and
+select), so the caller sets those screen pens before adding a button. Strings
+and labels are copied. A label wider than its gadget is clipped by Intuition.
+
+| API | Returns | Rules |
+|---|---|---|
+| `addButton(borrow window: Window, x: i32, y: i32, width: i32, height: i32, label: cstring, id: i32)` | `bool` | appends a classic boolean button; the hit box is the inner-window rectangle. `false` for invalid geometry, an over-long label, a duplicate id, or allocation failure |
+| `addString(borrow window: Window, x: i32, y: i32, width: i32, height: i32, label: cstring, initial: cstring, maxChars: i32, id: i32)` | `bool` | appends a classic string gadget; `maxChars` is 1..64. Enter delivers `EVENT_GADGET` with `id` |
+| `windowString(borrow window: Window, id: i32, borrow buf: u8[])` | `i32` | copies the current text into `buf` and returns the byte count; 0 for an unknown or non-string id, or an empty buffer. The copy is bounded by the gadget's own limit and NUL-terminated when there is room |
+| `activateGadget(borrow window: Window, id: i32)` | `bool` | sends keyboard focus to the gadget; intended for a string field |
+| `addMenu(borrow window: Window, title: cstring)` | `i32` | appends a menu header and returns its zero-based index, or -1 on failure |
+| `addMenuItem(borrow window: Window, menu: i32, label: cstring, id: i32)` | `bool` | appends an enabled textual item; a selection delivers `EVENT_MENU` with `id` |
+| `addMenuItemKey(borrow window: Window, menu: i32, label: cstring, id: i32, key: u8)` | `bool` | the same item with an ASCII command key, invoked with Right Amiga plus that character |
+
+Menu titles, item labels, and window and gadget labels are limited to 64 bytes.
+Submenus, checkmarks, toggles, and menu enable/disable are outside this surface.
+
+### 8.4 Requesters, alerts, and pointer
+
+| API | Returns | Rules |
+|---|---|---|
+| `askYesNo(borrow window: Window, body: cstring)` | `bool` | shows a blocking 240x40 `AutoRequest` with fixed Yes/No labels; `true` for Yes. The body is copied and limited to 28 bytes; a null window, a null body, an over-long body, or allocation failure returns `false` without showing a requester |
+| `showAlert(body: cstring)` | `void` | shows a blocking recovery alert with a Continue button on the default screen; the body is copied and limited to 28 bytes. A null or over-long body is a no-op |
+| `setPointer(borrow window: Window, show: bool)` | `void` | installs or clears the built-in 16x16 arrow. The first `true` allocates it in chip memory and later calls reuse it; `false` clears it without freeing. The arrow uses sprite registers 17 (white) and 18 (black); set them with `setColor`. The image is freed when the window closes |
+
+`DisplayAlert` uses a private modal screen, so the alert temporarily covers the
+caller's custom screen; the window layer restores its content when the alert
+returns. The interactive A500 acceptance uses `askYesNo` because the private
+alert screen cannot be focused reliably by the headless harness; `showAlert`
+stays part of the surface and is covered by the specification test.
+
+The native-video path in §15 is the bitmap/blitter/copper alternative to an
+Intuition screen.
 
 ## 9. Drawing (`std.amiga.graphics`)
 
@@ -213,13 +300,14 @@ export func clear(borrow screen: Screen, pen: u8): void {
 
 | API | Returns | Rule |
 |---|---|---|
-| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` is valid in `0..(1 << depth)` |
+| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` indexes the 32-entry color map. On a depth-4 screen, 0-15 are the playfield colors and 16-31 are the sprite/pointer registers; a depth-5 screen uses 0-31 for the playfield. `pen` at or above 32 is a no-op |
 | `fill(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
 | `draw(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
 | `clear(borrow screen, pen: u8)` | `void` | fills the whole screen with `pen` |
 
-Every call takes the screen by `borrow`, so the caller keeps ownership; the
-screen's depth bounds `pen`, and an out-of-range pen is a caller contract.
+Every call takes the screen by `borrow`, so the caller keeps ownership. `pen`
+indexes the 32-entry color map; a pen outside the screen's visible playfield
+range has no visible effect, and `setColor` ignores a pen at or above 32.
 `graphics.library` clips coordinates outside the screen.
 
 ## 10. `Span` - offset-based parsing

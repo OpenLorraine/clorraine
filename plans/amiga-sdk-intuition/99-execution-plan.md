@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 12:50
-> **Progress**: 15/17 tasks (88%) — Phase 4 closeout partial
+> **Last Updated**: 2026-11-05 17:02
+> **Progress**: 16/17 tasks (94%) — Phase 4 closeout; full verify and issue #7 pending
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -115,7 +115,7 @@ implementation in every phase.
 
 - [x] 4.1.1 Add `examples/amiga/gui.clo` with the A500 cases ST-4, ST-5, ST-7–ST-13 (poll drain, close gadget, button, string, menus, requester, pointer) and the negative checks; add `docker/scripts/a500-gui-smoke.sh`, the `sdk-a500-gui` Makefile target, and the `verify` leg; compile the demo on both hosted profiles and run the demo-shape implementation case (IT-11/IT-12) — done 2026-11-05; the interactive About path uses `askYesNo` because `DisplayAlert`'s private screen is not headlessly focusable
 - [x] 4.1.2 Run `make sdk-a500-gui` on the FS-UAE A500/KS1.3, fix target-only defects, capture the native `docs/amiga-sdk/a500-gui.png`, and pass ST-4, ST-5, ST-7–ST-13, ST-15, ST-16 — done 2026-11-05; private Xvfb keyboard run, ADF handshake, `gui: ok win 1 gad 2 menu 2 str 3 req 2`; no alert golden (see AR-25)
-- [~] 4.1.3 Update `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` (including the `setColor` 0–31 range), `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (001–005/009 done with acceptance/evidence/spec columns, 006–008 deferred), `bundles.tsv` (status and plan path), generate `coverage.md` with `make sdk-registry`, update issue #7, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` — registry, bundles, coverage, and AGENTS done; the two spec appendices are frozen-oracle changes and need an explicit user ruling before editing
+- [x] 4.1.3 Update `spec/appendix-amiga.md`, `spec/appendix-stdlib.md` (including the `setColor` 0–31 range), `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (001–005/009 done with acceptance/evidence/spec columns, 006–008 deferred), `bundles.tsv` (status and plan path), generate `coverage.md` with `make sdk-registry`, update issue #7, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json` ✅ (completed: 2026-11-05 17:02; user ruling recorded in AR-26: one classic 1.3 surface documented on both hosted profiles; `spec/check.sh` OK; registry, bundles, coverage, AGENTS, index, and roadmap were already current; issue #7 closes in 4.1.4)
 - [~] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry` (ST-17 and ST-18); regenerate the issue body; close #7; commit through the active exec-plan commit mode; confirm a clean tree with no decrypted ROM — `make check`, `make sdk-a500-gui`, and `make sdk-registry` are green; the full `make verify` leg and issue closeout remain
 
 **Verify**: `make check`; `make verify`; `make sdk-registry`; `make sdk-a500-gui`

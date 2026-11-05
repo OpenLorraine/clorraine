@@ -2,9 +2,9 @@
 
 > **Document**: 00-ambiguity-register.md
 > **Parent**: [Index](00-index.md)
-> **Status**: ✅ PLANNING GATE PASSED — 24 planning items resolved; ❌ 1 runtime item open (AR-25, A500 acceptance input/menu)
+> **Status**: ✅ PLANNING GATE PASSED — 25 planning items resolved; 0 runtime items open
 > **Mode**: normal (every material decision confirmed by the user)
-> **Last Updated**: 2026-11-05 10:25
+> **Last Updated**: 2026-11-05 17:02
 
 ## Scope baseline
 
@@ -42,6 +42,7 @@ language, grammar, diagnostic, or ABI change.
 | AR-22 | Stakeholder conflicts | What is out of scope and which specialists are needed? | Out: Workbench windows, resize/zoom, submenus/checkmarks/command keys, gadget updates, custom pointer data, `std.amiga.exec` changes, 2.0+ gadtools/ASL, BOOPSI, and any language/grammar/diagnostic/ABI change. Specialist: none; the bundle is C shim plus embedded stdlib, reviewed with the correctness/memory-safety packet and its blast-radius and test-integrity steps. | User (design package) | ✅ Resolved |
 | AR-23 | Feature gaps | `WindowEvent?` is illegal because the language rejects nullable structs (`E10011`; Bundle 5 F-2). What replaces it? | `waitEvent` and `pollEvent` return a non-nullable `WindowEvent`. Add `EVENT_NONE = 0`; `pollEvent` and an invalid window return that sentinel. The public value struct is unchanged. | User (design package) + language constraint | ✅ Resolved |
 | AR-24 | Consistency | `setColor` documents pens `0..(1 << depth) - 1`, but the pointer uses pens 16–19 on a depth-4 screen. | The 1.3 `ColorMap` has 32 entries: pens 0–15 are the playfield colors on a depth-4 screen and 16–31 are the sprite/pointer registers. Correct the `setColor` and appendix wording to `0..31` with that split. This is a documentation correction, not a behavior change. | User (design package) + 1.3 ColorMap fact | ✅ Resolved |
+| AR-26 | Compatibility | How should the frozen appendices describe the Intuition surface across the two hosted profiles? | One classic 1.3 API documented for both `hosted-amiga-13` and `hosted-amiga`. The 2.0+ additions (gadtools, ASL requesters, and BOOPSI) stay deferred and are not documented as available. The appendix text states that the KS1.3 A500 gate is the runtime proof and the 2.0+ profile is compile-verified. This removes the stale claims that Intuition is 2.0+ only, that 1.3 rejects it, and that windows are outside v1. | User (2026-11-05 directive: proceed with the recommended one-surface wording) | ✅ Resolved |
 
 ## Runtime ambiguities
 

@@ -1,6 +1,6 @@
 # Appendix A - Amiga Platform Notes
 
-> **Status:** stable (v1.0; v1.1 adds the A500/Kickstart 1.3 note)
+> **Status:** stable (v1.0; v1.1 adds the A500/Kickstart 1.3 profile and its classic Intuition surface)
 > **Depends on:** Ch 12 (contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; the surface is the frozen [grammar.ebnf.md](grammar.ebnf.md)
 > **Ledger:** [decisions.md](decisions.md): C1-C4, F7, T6, T7, X1-X6, L5, P14, P15; validated by [findings](../docs/findings-phase0.md)
@@ -13,8 +13,11 @@ the `unsafe` code and the raw addresses.
 
 The `hosted-amiga-13` profile targets a stock A500 (68000, OCS, 512 KB chip,
 Kickstart 1.3). It provides the pre-2.0 subset documented here: screens,
-drawing, DOS delay, VBlank interrupts, and custom registers. The later
-Intuition/utility libraries are 2.0+ and are rejected on 1.3 with `E11200`.
+windows, gadgets, menus, IDCMP events, requesters, the pointer, drawing, DOS
+delay, VBlank interrupts, and custom registers. The same classic Intuition
+surface compiles on `hosted-amiga`; the 2.0+ additions (gadtools, ASL
+requesters, and BOOPSI) are not part of this surface and are deferred. The host
+profile has no AmigaOS Intuition and rejects the module with `E11200`.
 `std.amiga.exec` stays gated on 1.3 until the Exec bundle validates it, although
 its shared shim already uses the 1.3-safe port and message calls.
 
@@ -36,7 +39,8 @@ holds the FFI declaration.
 | `dos.library` | output | write to standard output | `println` |
 | `iff` | assets | pure IFF/ILBM parser, ByteRun1, palette, chunky hash | `IlbmInfo` |
 | `ilbm` / `graphics` | image loading | read an ILBM into a `Bitmap` and palette | `IlbmImage`, `bitmapFromIndices` |
-| `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
+| `intuition` | screens, windows, gadgets, menus, events | open and close a custom screen or window; add classic buttons, string gadgets, and menus; wait for or poll IDCMP events; requesters, alerts, and the pointer | `handle Screen`, `handle Window`, `WindowEvent` |
+| `graphics` | drawing | set colors and fill, line, and clear a screen or window | `handle Screen`, `handle Window` |
 | `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
 | `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
 | `graphics/text` | fonts and text | ROM and disk fonts, measurement, screen drawing | `Font` |
@@ -45,10 +49,12 @@ holds the FFI declaration.
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).
 
-The `intuition`/`graphics` surface is the smallest that draws on a real screen:
-a custom screen owned by the caller and four drawing calls, with no windows. The
-`RastPort` stays inside the shim, and the screen's `title` is a `cstring` the
-caller must keep alive for the screen's lifetime.
+The `std.amiga.intuition` surface is one classic Intuition API shared by both
+hosted profiles: a custom screen, a window on that screen, classic gadgets and
+menus, the IDCMP event loop, requesters, and the built-in pointer. The
+`RastPort` stays inside the shim. The screen's `title` is a `cstring` the
+caller must keep alive for the screen's lifetime; window, gadget, and menu text
+is copied.
 
 ```clorraine
 import { Screen, openScreen } from std.amiga.intuition;
@@ -192,9 +198,10 @@ ROM-font caption layer, and prints `img: ok 320x200x4 hash <N> dos 255 vol 1`.
 The A500 smoke builds it in release mode so the executable and chip allocations
 fit the 512 KB machine.
 
-The 2.0+ regions/damage API is not part of this surface. Windows and their
-event loop, `SetRGB32`, runtime palette animation after the first flip, and
-palettes beyond four bits are out of scope for v1.
+The 2.0+ regions/damage API and the 2.0+ Intuition additions (gadtools, ASL
+requesters, and BOOPSI) are not part of this surface. `SetRGB32`, runtime
+palette animation after the first flip, and palettes beyond four bits are out
+of scope for v1.
 
 ## 2. Amiga boundary types
 
