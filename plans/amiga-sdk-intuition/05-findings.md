@@ -207,6 +207,7 @@ defect was found.
 | RV-C8 | 🟡 Minor | `codeops/specialist-check.json` recorded 60 plans while 61 exist; `amiga-sdk-intuition` was missing. | **Fixed** — the check was rerun over all 61 plan folders; `AGENTS.md` records 61. |
 | RV-C9 | 🟡 Minor | AR-26 claimed the appendices distinguish the KS1.3 runtime proof from the 2.0+ compile-only check, but they did not say it. | **Fixed** — both appendices now state that the A500/KS1.3 gate is the runtime proof and `hosted-amiga` is compile-verified. |
 | RV-C10 | 🟡 Minor | ST-4/ST-5/ST-9 and PF-012 still described a close-gadget click, right-click menus, and an interactive alert, while the shipped smoke is keyboard-only and uses `askYesNo`. | **Fixed** — the rows now describe the Right Amiga menu shortcuts and File → Quit, mark the close-gadget branch as impl-pinned and visual-only on A500, and state that `showAlert` is spec-tested. |
+| RV-C11 | 🟡 Minor | The umbrella `PLAN-16` roadmap row was marked Done while Bundles 7–9 remain. | **Fixed** — the umbrella stays Executing with Bundles 0–6 done and Bundle 7 next; the Bundle 6 plan itself is Done 17/17. |
 
 ### Closeout verification
 

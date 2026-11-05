@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-05
-> **Progress**: 559/562 rows done; 3 open (0 Executing; 1 Backlog: 0 critical + 0 major + 0 minor); 2 Deferred
+> **Progress**: 558/562 rows done; 4 open (1 Executing; 1 Backlog: 0 critical + 0 major + 0 minor); 2 Deferred
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -576,7 +576,7 @@
 | PLAN-13 | Amiga library surface | — | [amiga-library-surface](amiga-library-surface/00-index.md) | Done | ✅ | 2026-11-04 00:30 | 16/16; `std.amiga.exec` delivered; Hamurabi (MIT) and `exec-self-test` run on hosted-amiga; appendices re-reviewed `stable (v1.0)`; wider `std.amiga.*` surface stays backlog |
 | PLAN-14 | Generated-C optimization | — | — | Backlog | ⬜ | 2026-10-03 22:17 | Trigger: only after the open DEF backlog closes and the semantics freeze (no remaining plan changes the emitted ABI/semantics); optimize only against a measured need (a visibly slow or oversized Amiga program), never on feel. First build the benchmark harness — host timing, FS-UAE instruction/cycle counts, `.text`/struct sizes — then plan from those numbers. Guard every optimization with the emission-integrity auditor (behavior preservation, base-vs-head emission diff), the memory-safety auditor (copy/move elision), and a deterministic benchmark script; dispatch the global performance-auditor per phase for `spec/17-codegen` ABI and over-optimization judgment. Expected cost: the shape-pinning implementation suites migrate with every emission optimization. Separate axis: compiler compile-time speed, evaluated only if it becomes a workflow bottleneck |
 | PLAN-15 | v1.0 production readiness | — | [v1-production-readiness](v1-production-readiness/00-index.md) | Done | ✅ | 2026-11-04 08:20 | 45/45; DX 28/28; PLAN-13 16/16 (`std.amiga.exec` + two programs); MIT 1.0.0 release readiness; `make check`, `make verify` all legs, `make asan` 24/24, and `make differential` 3/3 green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0 |
-| PLAN-16 | Amiga SDK surface | — | [amiga-sdk-intuition](amiga-sdk-intuition/00-index.md) | Done | ✅ | 2026-11-05 18:08 | Bundle 5 done (5/7). Bundle 6 done (17/17): the Intuition window/gadget/menu/IDCMP/requester/pointer surface and the A500 GUI gate pass; issue #7 closed; `make check`, `make verify`, and `make sdk-registry` green headlessly. Bundles 7–9 next |
+| PLAN-16 | Amiga SDK surface | — | [amiga-sdk-intuition](amiga-sdk-intuition/00-index.md) | Executing | 🔄 | 2026-11-05 18:08 | Bundles 0–6 done (6/9). Bundle 6 done (17/17): the Intuition window/gadget/menu/IDCMP/requester/pointer surface and the A500 GUI gate pass; issue #7 closed; `make check`, `make verify`, and `make sdk-registry` green headlessly. Bundle 7 (Exec and devices) next; Bundles 8–9 follow |
 
 ## Batch N accounting (2026-10-19)
 
