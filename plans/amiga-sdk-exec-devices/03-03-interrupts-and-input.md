@@ -84,14 +84,17 @@ The generic device surface in
 | Device | Demo action | Proof |
 |---|---|---|
 | `input.device` unit 0 | open and close | non-null `Device`, clean close |
-| `console.device` unit 0 | `openConsole(window, 0)` on a 300x64 window, `CMD_WRITE` the 13-byte line, `DoIO` | error 0, `io_Actual` 13 |
-| `keyboard.device` unit 0 | `CMD_READ` with `SendIO`, `AbortIO`, `WaitIO` | `io_Error` is `IOERR_ABORTED` (-2) on an idle keyboard |
+| `console.device` unit 0 | `openConsole(window, 0)` on a 300x64 window, `CMD_WRITE` the 13-byte line, `DoIO`; then `CMD_READ` with `SendIO`, `AbortIO`, `WaitIO` | write error 0 and `io_Actual` 13; read `io_Error` is `IOERR_ABORTED` (-2) |
+| `keyboard.device` unit 0 | open and close | non-null `Device`, clean close |
 
 The console path uses the typed `openConsole` helper because the console
 device is bound to an Intuition window; see
-[03-02](03-02-libraries-and-devices.md). No separate console or keyboard
-module is added. The generic `IOStdReq` is the surface for input and keyboard;
-a device-specific request type is out of scope.
+[03-02](03-02-libraries-and-devices.md). The aborted console read is the
+deterministic keyboard-input abort proof: the dedicated window has no pending
+input, while the 1.3 `keyboard.device` read completes immediately with a queued
+event or an error (RV-1). No separate console or keyboard module is added. The
+generic `IOStdReq` is the surface for input and keyboard; a device-specific
+request type is out of scope.
 
 ## Live Interrupt Check
 

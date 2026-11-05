@@ -40,11 +40,11 @@ The new surface compiles on both hosted profiles and cross-builds with
 | ST-7 | A500 | The demo runs the worker stress loop: eight `workerSum` workers and one `workerProduct`, created and joined one at a time | `task 464` in the report line; all nine joins return | R1, R7 |
 | ST-8 | A500 | The demo opens `exec.library` v33 and reads the version | `lib 34` on KS1.3 | R3, R7 |
 | ST-9 | A500 | The demo reads the boot block with `DoIO` and with `SendIO`/`WaitIO` on `trackdisk.device` | Both reads return error 0 and `io_Actual` 512; `dev 512` | R4, R7 |
-| ST-10 | A500 | The demo opens a 320x80x3 screen and a 300x64 window, opens `console.device` on the window, writes the 13-byte line `exec console\n` with `DoIO`, and closes the console/window/screen | Error 0 and `io_Actual` 13; `io 13`; the Shell report line is unaffected | R4, R6, R7 |
-| ST-11 | A500 | The demo opens/closes `input.device` and aborts a pending `keyboard.device` read | `in 1`, `key -2`; no hang | R4, R6, R7 |
+| ST-10 | A500 | The demo opens a 320x80x3 screen and a 300x64 window, opens `console.device` on the window, writes the 13-byte line `exec console\n` with `DoIO`, sends a `CMD_READ`, aborts it, and closes the console/window/screen | Write error 0 and `io_Actual` 13; the read returns `IOERR_ABORTED` (-2); `io 13`, `key -2`; the Shell report line is unaffected | R4, R6, R7 |
+| ST-11 | A500 | The demo opens/closes `input.device` and `keyboard.device` | `in 1`; both closes are clean; no hang | R4, R6, R7 |
 | ST-12 | A500 | The demo registers a VBlank handler, waits three ticks, and removes it; it also registers/removes a ports handler | The VBlank counter advances; both removals are clean; the demo reaches the library stage | R5, R7 |
 | ST-13 | A500 | The smoke reads `DF0:exec.txt` | The file matches `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` | R7, R8 |
-| ST-14 | A500 | The smoke captures the report line | The `430x22+160+88` crop matches `docs/amiga-sdk/a500-exec.png` byte-exact and is not blank | R8 |
+| ST-14 | A500 | The smoke captures the report line | The `620x22+160+88` crop matches `docs/amiga-sdk/a500-exec.png` byte-exact and is not blank | R8 |
 
 ## Implementation Test Cases
 
@@ -57,7 +57,7 @@ The new surface compiles on both hosted profiles and cross-builds with
 | IT-5 | Emitted C | The device wrappers call every `cl_device_*` shim and `cl_open_console`; `CMD_*` lower to the expected values; the drop routes to `cl_close_device` |
 | IT-6 | Shim | The interrupt shim has a VBlank and a ports server, one shared token counter, `INTB_PORTS`, and a `remove` that checks both slots |
 | IT-7 | Shim | The device state machine rejects `DoIO`/`SendIO` while pending, treats the setters as idle-only, clears pending on `WaitIO`/`CheckIO`, aborts and waits on close, and returns the documented failure values |
-| IT-8 | Demo shape | `examples/amiga/exec-demo.clo` runs the worker stress loop, uses `exec.library`, `trackdisk.device`, a screen/window plus `openConsole`, `input.device`, and `keyboard.device`, and writes the pinned report line to `DF0:exec.txt` |
+| IT-8 | Demo shape | `examples/amiga/exec-demo.clo` runs the worker stress loop, uses `exec.library`, `trackdisk.device`, a screen/window plus `openConsole` with a write and an aborted read, `input.device`, and `keyboard.device`, and writes the pinned report line to `DF0:exec.txt` |
 | IT-9 | `amiga_exec_spec_test.rs` appendix check | §13 mentions every exec export as a whole identifier; §7 mentions `addPortHandler`; the test's section anchor matches the new §13 title |
 | IT-10 | Test integrity | The existing `amiga_exec_spec_test` host-rejection and transcript cases still run; no golden is weakened |
 | IT-11 | Shim | The task record has the magic guard, the worker signals then `Wait(0)`, and join/drop remove it with `Forbid`/`RemTask`/`Permit` before freeing the signal and record; the demo's nine create/join cycles exercise the path |

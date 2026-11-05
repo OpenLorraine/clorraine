@@ -92,12 +92,13 @@ no 2.0+ library call to the 1.3 build.
   idempotent. Handlers run in interrupt context and stay allocation-free,
   drop-free, and panic-free.
 - **R6 — Input, keyboard, and console devices.** The generic device surface
-  opens and operates `input.device` and `keyboard.device`. `console.device` is
-  opened through `openConsole(window, unit)` on a caller-supplied Intuition
-  window, then written with `CMD_WRITE` and `DoIO`. The demo opens `input.device`
-  and closes it, writes a short line to the console window, and sends a
-  `keyboard.device` `CMD_READ` that it aborts and waits. No separate console or
-  keyboard module is added.
+  opens and operates `input.device` and `keyboard.device`; the demo opens and
+  closes both. `console.device` is opened through `openConsole(window, unit)`
+  on a caller-supplied Intuition window, then written with `CMD_WRITE` and
+  `DoIO`. The demo also sends a `CMD_READ` on that window, aborts it, and waits;
+  the aborted read returns `IOERR_ABORTED` (-2) because the dedicated window has
+  no pending input. No separate console or keyboard module is added. (The 1.3
+  keyboard device does not keep a read pending reliably; see RV-1.)
 - **R7 — Worker and async-I/O demo.** `examples/amiga/exec-demo.clo`:
   1. runs a worker stress loop: eight `workerSum` workers (55 each) and one
      `workerProduct` worker (24), created and joined one at a time, for
@@ -107,16 +108,19 @@ no 2.0+ library call to the 1.3 build.
   4. reads it again using `SendIO` and `WaitIO`;
   5. opens a 320x80x3 Intuition screen and a 300x64 window, writes the 13-byte
      line `exec console\n` to `console.device` on that window with `CMD_WRITE`
-     and `DoIO`, then closes the console, window, and screen;
+     and `DoIO`, sends a `CMD_READ` on the same window, aborts it, and expects
+     `IOERR_ABORTED` (-2), then closes the console, window, and screen;
   6. opens and closes `input.device`;
-  7. sends a `keyboard.device` `CMD_READ`, aborts it, and waits;
+  7. opens and closes `keyboard.device`;
   8. prints and writes `DF0:exec.txt` with the pinned line
      `exec: ok task <n> lib <v> dev <n> io <n> key <n> in <n>`.
-  The demo exits 0 on every success and prints `exec: err <code>` on failure.
+  The demo exits 0 on every success and prints `exec: err <code>` on failure;
+  a failed console read adds `key <error>` to the failure line for diagnosis.
 - **R8 — A500 acceptance.** `make sdk-a500-exec` builds the demo in release
   mode for `hosted-amiga-13`, boots a clean ADF on the real KS1.3 ROM under
   FS-UAE as an A500, polls `DF0:exec.txt` for the report line, and compares a
-  `430x22` line crop at `(160,88)` with `docs/amiga-sdk/a500-exec.png`. The
+  `620x22` line crop at `(160,88)` with `docs/amiga-sdk/a500-exec.png` (the
+  longer Exec line needs the wider crop at the emulator's 1.5x scale). The
   smoke polls from 10 s every 2 s, re-finds the FS-UAE window, and uses a
   60-iteration bound. It is keyboard- and pointer-free.
 

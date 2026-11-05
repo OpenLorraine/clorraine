@@ -23,9 +23,9 @@ exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1
 | 3 | open `exec.library` v33, read its version, close it | 4 |
 | 4 | open `trackdisk.device` unit 0, `CMD_READ` 512 bytes at offset 0 with `DoIO` | 5 |
 | 5 | `CMD_READ` the same block with `SendIO`/`WaitIO`; both reads must report error 0 and `io_Actual` 512 | 6/7 |
-| 6 | call a `writeConsole()` helper: open a 320x80x3 screen and a 300x64 window, `openConsole(window, 0)`, `CMD_WRITE` the 13-byte line `exec console\n` with `DoIO`, close the console/window, and let the screen drop at helper return | 8/9 |
+| 6 | call a `writeConsole()` helper: open a 320x80x3 screen and a 300x64 window, `openConsole(window, 0)`, `CMD_WRITE` the 13-byte line `exec console\n` with `DoIO`, then `CMD_READ` with `SendIO`/`AbortIO`/`WaitIO` and expect `IOERR_ABORTED` (-2), close the console/window, and let the screen drop at helper return | 8/9 |
 | 7 | open and close `input.device` unit 0 | 10 |
-| 8 | open `keyboard.device` unit 0, `CMD_READ` into a 64-byte buffer with `SendIO`, `AbortIO`, `WaitIO`; expect `IOERR_ABORTED` (-2) | 11/12/13 |
+| 8 | open and close `keyboard.device` unit 0 | 11 |
 | 9 | print the report line, write `DF0:exec.txt` with the full line | 14 |
 
 The console helper returns before the report line, so the custom screen is
@@ -44,9 +44,10 @@ On KS1.3 the pinned values are `task 464`, `lib 34`, `dev 512`, `io 13`,
 `key -2`, `in 1`. The `task` value is `8 * 55 + 24`. The `dev` field is the
 first trackdisk read's `io_Actual`; the second read is checked in the program
 but not repeated in the line. The `io` field is the console write's
-`io_Actual` (the 13-byte `exec console\n`). The `key` field is the keyboard
-`WaitIO` error. The `in` field is 1 after the input device opens and closes
-cleanly.
+`io_Actual` (the 13-byte `exec console\n`). The `key` field is the aborted
+console read's `WaitIO` error; the dedicated console window has no pending
+input, so the abort is deterministic. The `in` field is 1 after the input
+device opens and closes cleanly.
 
 ### Worker Shape
 
@@ -84,6 +85,7 @@ time keeps at most one worker alive and stresses the removal path nine times.
 struct ConsoleResult {
     ok: bool;
     actual: u32;
+    key: i32;
     code: i32;
 }
 
@@ -91,40 +93,63 @@ func writeConsole(): ConsoleResult {
     let title: String = stringOf("exec console");
     let screen: Screen? = openScreen(320, 80, 3, toCString(title));
     if (screen == null) {
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     setColor(screen, 0, 150, 165, 190);
     setColor(screen, 1, 20, 30, 50);
     let window: Window? = openWindow(screen, 8, 8, 300, 64,
                                      toCString(stringOf("exec console")));
     if (window == null) {
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let console: Device? = openConsole(window, 0);
     if (console == null) {
         closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let line: String = stringOf("exec console\n");
-    if (!deviceCommand(console, CMD_WRITE) ||
-        !deviceSetBuffer(console, bytes(line))) {
+    let writeCommand: bool = deviceCommand(console, CMD_WRITE);
+    let writeBuffer: bool = deviceSetBuffer(console, bytes(line));
+    if (!writeCommand || !writeBuffer) {
         closeDevice(console);
         closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let error: i32 = deviceDoIO(console);
     let actual: u32 = deviceActual(console);
+    if (error != 0 || actual != 13) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    let readBuffer: u8[64] = [; 0];
+    let readCommand: bool = deviceCommand(console, CMD_READ);
+    let readBufferOk: bool =
+        deviceSetBuffer(console, borrow slice(readBuffer, 0, 64));
+    if (!readCommand || !readBufferOk) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    if (!deviceSendIO(console)) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    deviceAbortIO(console);
+    let keyError: i32 = deviceWaitIO(console);
     closeDevice(console);
     closeWindow(window);
-    if (error != 0 || actual != 13) {
-        return ConsoleResult { ok: false, actual: actual, code: 9 };
+    if (keyError != -2) {
+        return ConsoleResult { ok: false, actual: actual, key: keyError, code: 9 };
     }
-    return ConsoleResult { ok: true, actual: actual, code: 0 };
+    return ConsoleResult { ok: true, actual: actual, key: keyError, code: 0 };
 }
 ```
 
-The caller maps `code` directly to `failedAt(console.code)` and uses
-`actual` only on success.
+The caller maps `code` to `failedAt(console.code)` and keeps the observed
+`key` error for the failure diagnosis. The console read is on the dedicated
+window; see RV-1 for why the keyboard device itself is only opened/closed.
 
 Declare the screen title before the screen so the screen drops first. Declare
 the line before the `doIO` call and keep it alive through the write; the
@@ -134,9 +159,10 @@ screen drops at helper return, so it cannot cover the Shell report line.
 
 ### Failure Output
 
-On failure the program prints `exec: err <code>` and exits 1. A partial console
-screen may be visible when stage 6 fails; the helper closes it on the failure
-paths. The code values are the `Failure code` column above.
+On failure the program prints `exec: err <code>` and exits 1. A failed console
+read prints `exec: err 9 key <error>` so the observed abort error is visible. A
+partial console screen may be visible when stage 6 fails; the helper closes it
+on the failure paths. The code values are the `Failure code` column above.
 
 ## A500 Smoke
 
@@ -153,10 +179,14 @@ paths. The code values are the `Failure code` column above.
 5. Poll from 10 s, every 2 s, up to 60 iterations:
    - re-find the `FS-UAE` window;
    - capture the host screen;
-   - poll the raw ADF for the ASCII report line;
-   - once the line is present, crop `430x22` at `(160,88)` and compare it to
-     `docs/amiga-sdk/a500-exec.png`.
-6. Stop the emulator, read `exec.txt` from the ADF, and assert the full line.
+   - poll the raw ADF for `exec: ok task 464` (the runtime value, not the
+     binary's format-string literal; see RV-2);
+   - once the line is present, crop `620x22` at `(160,88)` and compare it to
+     `docs/amiga-sdk/a500-exec.png`. The Exec line is 50 characters, so the
+     crop is wider than the hello gate's 430-pixel crop at the emulator's
+     1.5x scale.
+6. Stop the emulator, read `exec.txt` from the ADF, and assert the full line;
+   a missing file prints the ADF listing and fails.
 7. Assert the line crop is not blank (`identify -format '%k'` is at least 2)
    before the byte-exact comparison, so a blank golden cannot pass.
 8. On failure, keep the screenshot and print the ADF listing.
@@ -197,8 +227,12 @@ The target is added to `.PHONY` and to `verify` after `sdk-a500-gui`.
 - The ports handler is registered and removed but is not required to fire.
 - The trackdisk reads use offset 0, so the device's offset unit does not
   matter.
-- The keyboard read is aborted on an idle keyboard; the error is -2. A key
-  press would produce a different line and fail the gate, which is the
-  intended behavior for a deterministic headless run.
-- The console write is on a dedicated screen/window, so it cannot disturb the
-  Shell report line; the screen is closed before the line is printed.
+- The aborted read is a `console.device` read on the dedicated window, which
+  has no pending input, so the error is deterministically -2. The 1.3
+  `keyboard.device` read completes with a queued event/error instead of staying
+  pending (RV-1), so the keyboard and input devices are opened/closed for
+  coverage. A key press on the console window would change the line and fail
+  the gate, which is the intended behavior for a deterministic headless run.
+- The console write and read are on a dedicated screen/window, so they cannot
+  disturb the Shell report line; the screen is closed before the line is
+  printed.

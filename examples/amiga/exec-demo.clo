@@ -53,10 +53,12 @@ struct ExecResult {
     stage: i32;
 }
 
-/// The console helper's result; `code` is the failure stage.
+/// The console helper's result; `code` is the failure stage and `key` is the
+/// aborted console-read error.
 struct ConsoleResult {
     ok: bool;
     actual: u32;
+    key: i32;
     code: i32;
 }
 
@@ -69,6 +71,20 @@ func failedAt(stage: i32): ExecResult {
         dev: 0,
         io: 0,
         key: 0,
+        input: 0,
+        stage: stage,
+    };
+}
+
+/// A failure that keeps the observed console-read error for diagnosis.
+func failedKey(stage: i32, key: i32): ExecResult {
+    return ExecResult {
+        ok: false,
+        task: 0,
+        lib: 0,
+        dev: 0,
+        io: 0,
+        key: key,
         input: 0,
         stage: stage,
     };
@@ -125,41 +141,81 @@ func writeConsole(): ConsoleResult {
     let title: String = stringOf("exec console");
     let screen: Screen? = openScreen(320, 80, 3, toCString(title));
     if (screen == null) {
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     setColor(screen, 0, 150, 165, 190);
     setColor(screen, 1, 20, 30, 50);
     let window: Window? = openWindow(screen, 8, 8, 300, 64,
                                      toCString(stringOf("exec console")));
     if (window == null) {
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let console: Device? = openConsole(window, 0);
     if (console == null) {
         closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let line: String = stringOf("exec console\n");
     let commandOk: bool = deviceCommand(console, CMD_WRITE);
     if (!commandOk) {
         closeDevice(console);
         closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let bufferOk: bool = deviceSetBuffer(console, bytes(line));
     if (!bufferOk) {
         closeDevice(console);
         closeWindow(window);
-        return ConsoleResult { ok: false, actual: 0, code: 8 };
+        return ConsoleResult { ok: false, actual: 0, key: 0, code: 8 };
     }
     let error: i32 = deviceDoIO(console);
     let actual: u32 = deviceActual(console);
+    if (error != 0 || actual != CONSOLE_LENGTH) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+
+    // A console read on the dedicated window has no pending input, so the
+    // abort is deterministic. This is the keyboard-input path's abort proof.
+    let readBuffer: u8[64] = [; 0];
+    let readCommand: bool = deviceCommand(console, CMD_READ);
+    if (!readCommand) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    let readBufferOk: bool =
+        deviceSetBuffer(console, borrow slice(readBuffer, 0, 64));
+    if (!readBufferOk) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    let readSend: bool = deviceSendIO(console);
+    if (!readSend) {
+        closeDevice(console);
+        closeWindow(window);
+        return ConsoleResult { ok: false, actual: actual, key: 0, code: 9 };
+    }
+    deviceAbortIO(console);
+    let keyError: i32 = deviceWaitIO(console);
     closeDevice(console);
     closeWindow(window);
-    if (error != 0 || actual != CONSOLE_LENGTH) {
-        return ConsoleResult { ok: false, actual: actual, code: 9 };
+    if (keyError != -2) {
+        return ConsoleResult {
+            ok: false,
+            actual: actual,
+            key: keyError,
+            code: 9,
+        };
     }
-    return ConsoleResult { ok: true, actual: actual, code: 0 };
+    return ConsoleResult {
+        ok: true,
+        actual: actual,
+        key: keyError,
+        code: 0,
+    };
 }
 
 /// Run the full acceptance sequence.
@@ -240,7 +296,7 @@ func runExec(): ExecResult {
 
     let consoleResult: ConsoleResult = writeConsole();
     if (!consoleResult.ok) {
-        return failedAt(consoleResult.code);
+        return failedKey(consoleResult.code, consoleResult.key);
     }
 
     let inputCreated: Device? =
@@ -257,26 +313,7 @@ func runExec(): ExecResult {
         return failedAt(11);
     }
     let key: Device = keyCreated;
-    let keyBuffer: u8[64] = [; 0];
-    let keyCommand: bool = deviceCommand(key, CMD_READ);
-    if (!keyCommand) {
-        return failedAt(11);
-    }
-    let keyBufferOk: bool =
-        deviceSetBuffer(key, borrow slice(keyBuffer, 0, 64));
-    if (!keyBufferOk) {
-        return failedAt(11);
-    }
-    let keySend: bool = deviceSendIO(key);
-    if (!keySend) {
-        return failedAt(12);
-    }
-    deviceAbortIO(key);
-    let keyError: i32 = deviceWaitIO(key);
     closeDevice(key);
-    if (keyError != -2) {
-        return failedAt(13);
-    }
 
     return ExecResult {
         ok: true,
@@ -284,7 +321,7 @@ func runExec(): ExecResult {
         lib: i32(libVersion),
         dev: i32(readActual),
         io: i32(consoleResult.actual),
-        key: keyError,
+        key: consoleResult.key,
         input: 1,
         stage: 0,
     };
@@ -293,7 +330,11 @@ func runExec(): ExecResult {
 func main(): i32 {
     let result: ExecResult = runExec();
     if (!result.ok) {
-        println($"exec: err {result.stage}");
+        if (result.stage == 9) {
+            println($"exec: err 9 key {result.key}");
+        } else {
+            println($"exec: err {result.stage}");
+        }
         return 1;
     }
     let line: String =

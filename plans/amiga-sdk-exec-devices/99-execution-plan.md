@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 19:30
-> **Progress**: 13/18 tasks (72%) — Executing
+> **Last Updated**: 2026-11-05 19:46
+> **Progress**: 14/18 tasks (78%) — Executing
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -112,8 +112,8 @@ bundle. Specification tests come before implementation in every phase.
 
 **Reference**: [03-04](03-04-demo-and-smoke.md) · AR-13, AR-14, AR-18–AR-22
 
-- [x] 4.1.1 Add `examples/amiga/exec-demo.clo` with the worker stress loop, library, trackdisk reads, console helper/window/device, input device, keyboard abort, and report line; compile it on both hosted profiles and run the demo-shape case (IT-8) ✅ (completed: 2026-11-05 19:30; both `hosted-amiga-13` and `hosted-amiga` builds pass; 11/11 impl tests green)
-- [ ] 4.1.2 Add `docker/scripts/a500-exec-smoke.sh` (including the `identify` non-blank check), the `sdk-a500-exec` Makefile target, and the `verify` leg; run `make sdk-a500-exec` on the FS-UAE A500/KS1.3, fix target-only defects, and capture the non-blank `docs/amiga-sdk/a500-exec.png`
+- [x] 4.1.1 Add `examples/amiga/exec-demo.clo` with the worker stress loop, library, trackdisk reads, console helper/window/device with an aborted read, input/keyboard open/close, and report line; compile it on both hosted profiles and run the demo-shape case (IT-8) ✅ (completed: 2026-11-05 19:30; both `hosted-amiga-13` and `hosted-amiga` builds pass; 11/11 impl tests green)
+- [x] 4.1.2 Add `docker/scripts/a500-exec-smoke.sh` (including the `identify` non-blank check), the `sdk-a500-exec` Makefile target, and the `verify` leg; run `make sdk-a500-exec` on the FS-UAE A500/KS1.3, fix target-only defects, and capture the non-blank `docs/amiga-sdk/a500-exec.png` ✅ (completed: 2026-11-05 19:46; final gate reports `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` and the 620x22 golden matches; RV-1–RV-3 fixed)
 - [ ] 4.1.3 Final documentation consistency pass: `spec/appendix-amiga.md`, the per-phase `spec/appendix-stdlib.md` §7/§13 text, `docs/known-limitations.md`, `AGENTS.md`, `docs/amiga-sdk/registry.tsv` (8 done, 3 deferred, with the acceptance/evidence/spec columns), `bundles.tsv`, `coverage.md` via `make sdk-registry`, issue #8, `plans/amiga-sdk/00-index.md`, `plans/00-roadmap.md`, and `codeops/specialist-check.json`
 - [ ] 4.1.4 Run `make check`, `make verify`, and `make sdk-registry`; regenerate the issue body, comment, and close #8; commit locally through the active commit mode; confirm a clean tree with no decrypted ROM
 - [ ] 4.1.5 Run the independent correctness/memory-safety closeout review; fix every critical/major finding and re-run the affected gates

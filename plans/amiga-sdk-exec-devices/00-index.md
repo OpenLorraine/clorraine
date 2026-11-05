@@ -32,9 +32,9 @@ bit for join; wrap `OpenLibrary`/`CloseLibrary`; add one generic device handle
 backed by a single `IOStdReq` and one typed `openConsole(window, unit)` helper
 because `console.device` needs an Intuition `Window`; add one ports-interrupt
 slot beside the existing VBlank slot; prove the surface with a worker stress
-loop, two trackdisk reads, a console device write on a small window, and a
-keyboard request that is aborted. Reuse the existing ADF boot, report-file
-handshake, and line-crop golden pattern.
+loop, two trackdisk reads, a console device write and aborted read on a small
+window, and input/keyboard device open/close. Reuse the existing ADF boot,
+report-file handshake, and line-crop golden pattern.
 
 **Excluded machinery:** public named ports, DOS processes
 (`CreateNewProc`), signal semaphores, hooks, the utility library, typed
@@ -56,6 +56,7 @@ concurrency. No language, grammar, diagnostic, or ABI change.
 | 04  | [Libraries and Devices](03-02-libraries-and-devices.md)     | Library and generic device I/O surface      |
 | 05  | [Interrupts and Input](03-03-interrupts-and-input.md)       | Port interrupt server and device coverage   |
 | 06  | [Demo and A500 Smoke](03-04-demo-and-smoke.md)              | Worker/async-I/O demo and acceptance gate   |
+| 05  | [Findings](05-findings.md)                                  | Implementation and closeout findings        |
 | 07  | [Testing Strategy](07-testing-strategy.md)                  | Spec cases, impl cases, and verification    |
 | 99  | [Execution Plan](99-execution-plan.md)                      | Phases, sessions, and task checklist        |
 
@@ -120,7 +121,7 @@ func readBootBlock(borrow buf: u8[]): u32 {
 | Device model | One `IOStdReq` plus one reply port per `Device`; generic commands and buffer (AR-8) |
 | Console | `openConsole(window, unit)` because `console.device` needs an Intuition `Window` (AR-12) |
 | Interrupts | One VBlank slot and one ports slot; shared token counter (AR-11) |
-| Demo | Worker stress loop + trackdisk/console/keyboard I/O; `task 464`, `io 13` (AR-13) |
+| Demo | Worker stress loop + trackdisk/console/keyboard/input I/O; console-read abort; `task 464`, `io 13`, `key -2` (AR-13) |
 | Gate | ADF report file plus a non-blank line-crop golden (AR-14) |
 
 ## Specialist Agents
