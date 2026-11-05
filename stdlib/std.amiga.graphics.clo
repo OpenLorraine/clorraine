@@ -1,31 +1,35 @@
-//! Amiga graphics: drawing into a custom screen.
+//! Amiga graphics: drawing into a custom screen or an Intuition window.
 //!
 //! This module belongs to the hosted-amiga profile; the host profile has no
 //! AmigaOS `graphics.library`, so the module is not available there. The
 //! drawing calls reach the profile C shim through `ffi`, so application code
 //! never writes `ffi` and never touches `unsafe`.
 //!
-//! Every call takes `borrow screen: Screen`, so the caller keeps ownership of
-//! the screen (its lifecycle lives in `std.amiga.intuition`) and the raw
-//! `RastPort` stays hidden inside the shim.
+//! Every call takes a borrowed `Screen` or `Window`, so the caller keeps
+//! ownership (the lifecycle lives in `std.amiga.intuition`) and the raw
+//! `RastPort` stays hidden inside the shim. Window coordinates are relative to
+//! the inner drawable area; the window layer clips every call.
 
 module std.amiga.graphics;
 
-import { Screen } from std.amiga.intuition;
+import { Screen, Window } from std.amiga.intuition;
 
 ffi stdgraphics {
     func cl_set_color(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void;
     func cl_fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
     func cl_draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
     func cl_clear(borrow screen: Screen, pen: u8): void;
+    func cl_window_fill(borrow window: Window, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_window_draw(borrow window: Window, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_window_clear(borrow window: Window, pen: u8): void;
 }
 
 /// Sets screen color `pen` from `r`, `g`, and `b` (0-255 each).
 ///
 /// The 8-bit components are reduced to the Amiga 4-bit palette. `pen` indexes
-/// the screen's color map: its valid range is `0..(1 << depth) - 1`, so a
-/// depth-4 screen accepts 0-15 and a depth-5 screen accepts 0-31. An index
-/// outside that range is a caller error.
+/// the screen's 32-entry color map. On a depth-4 screen, pens 0-15 are the
+/// playfield colors and pens 16-31 are the sprite/pointer registers; a depth-5
+/// screen uses 0-31 for the playfield. An index at or above 32 is a no-op.
 export func setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void {
     cl_set_color(screen, pen, r, g, b);
 }
@@ -49,4 +53,28 @@ export func draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen:
 /// Fills the whole screen with color `pen`.
 export func clear(borrow screen: Screen, pen: u8): void {
     cl_clear(screen, pen);
+}
+
+/// Fills the inner-window rectangle from (`x1`,`y1`) to (`x2`,`y2`) with
+/// color `pen`.
+///
+/// Coordinates are relative to the window's inner drawable area; the window
+/// layer clips anything outside.
+export func windowFill(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                       y2: i32, pen: u8): void {
+    cl_window_fill(window, x1, y1, x2, y2, pen);
+}
+
+/// Draws the line from (`x1`,`y1`) to (`x2`,`y2`) in the window with color
+/// `pen`.
+///
+/// Coordinates are relative to the window's inner drawable area.
+export func windowDraw(borrow window: Window, x1: i32, y1: i32, x2: i32,
+                       y2: i32, pen: u8): void {
+    cl_window_draw(window, x1, y1, x2, y2, pen);
+}
+
+/// Fills the whole inner window with color `pen`.
+export func windowClear(borrow window: Window, pen: u8): void {
+    cl_window_clear(window, pen);
 }

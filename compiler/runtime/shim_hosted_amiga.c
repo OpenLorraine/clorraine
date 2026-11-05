@@ -27,6 +27,7 @@
 #include <clib/alib_protos.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
+#include <intuition/intuition.h>
 #include <intuition/screens.h>
 #include <graphics/rastport.h>
 #include <graphics/gfx.h>
@@ -1099,7 +1100,7 @@ void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
 void cl_set_color(void *screen_handle, UBYTE pen, UBYTE r, UBYTE g, UBYTE b)
 {
     struct Screen *screen = (struct Screen *)screen_handle;
-    if (screen != NULL) {
+    if (screen != NULL && pen < 32) {
         SetRGB4(&screen->ViewPort, (LONG)pen, r >> 4, g >> 4, b >> 4);
     }
 }
@@ -1144,6 +1145,1264 @@ void cl_close_screen(void *screen_handle)
         cl_sprite_screen_closing(screen);
         CloseScreen(screen);
     }
+}
+
+/* --- Amiga Intuition: windows and the IDCMP event loop. -------------------
+ *
+ * A `Window` contract handle is a private `cl_window` wrapper, not the raw
+ * `struct Window *`: the wrapper owns the copied title, the gadget and menu
+ * nodes, the pointer image, and the last decoded event. The window borrows the
+ * caller's screen; the caller must close the window before the screen. */
+
+#define CL_WINDOW_TEXT_MAX 64
+#define CL_WINDOW_BODY_MAX 28
+#define CL_ALERT_MESSAGE_MAX (CL_WINDOW_BODY_MAX + 5)
+#define CL_WINDOW_POINTER_BYTES 64
+#define CL_MENU_HEIGHT 11
+#define CL_MENU_WIDTH 48
+
+typedef struct cl_window_event {
+    LONG kind;        /* EVENT_* */
+    LONG code;        /* raw IntuiMessage.Code */
+    UWORD qualifier;
+    LONG mouse_x;     /* inner-window coordinate */
+    LONG mouse_y;
+    LONG gadget;      /* user id, 0 when none */
+    LONG menu;        /* user id, 0 when none */
+} cl_window_event;
+
+typedef struct cl_gadget_node {
+    struct cl_gadget_node *next;
+    struct Gadget *gadget;
+    struct Image *normal_image;   /* button only */
+    struct Image *select_image;   /* button only */
+    struct Border *box;           /* string only */
+    WORD *box_xy;                 /* string only */
+    struct IntuiText *label;
+    char *label_text;
+    struct StringInfo *string_info; /* string only */
+    char *string_buffer;            /* string only */
+    ULONG string_buffer_size;       /* string only */
+    LONG id;
+} cl_gadget_node;
+
+typedef struct cl_menu_item_node {
+    struct cl_menu_item_node *next;
+    struct MenuItem *item;
+    struct IntuiText *label;
+    char *label_text;
+    LONG id;
+} cl_menu_item_node;
+
+typedef struct cl_menu_node {
+    struct cl_menu_node *next;
+    struct Menu *menu;
+    cl_menu_item_node *items;
+    char *title;
+} cl_menu_node;
+
+typedef struct cl_window {
+    struct Window *window;
+    char *title;
+    UWORD *pointer;
+    int pointer_shown;
+    cl_gadget_node *gadgets;
+    cl_menu_node *menus;
+    cl_window_event last_event;
+} cl_window;
+
+static void cl_window_free_gadgets(cl_window *handle);
+static void cl_window_free_menus(cl_window *handle);
+static cl_gadget_node *cl_window_find_gadget(cl_window *handle, LONG id);
+static cl_menu_node *cl_window_find_menu(cl_window *handle, LONG index);
+static int cl_window_id_taken(cl_window *handle, LONG id);
+
+/* Copy a NUL-terminated string with a hard byte bound. Returns NULL when the
+ * source is null or longer than `max`; the allocation is `alloc_size` bytes and
+ * is always freed with the same size. */
+static char *cl_window_copy_text(const char *text, ULONG max, ULONG alloc_size)
+{
+    ULONG length = 0;
+    char *copy;
+
+    if (text == NULL) {
+        return NULL;
+    }
+    while (text[length] != '\0') {
+        length++;
+        if (length > max) {
+            return NULL;
+        }
+    }
+    copy = (char *)AllocMem(alloc_size, MEMF_CLEAR);
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, text, length);
+    copy[length] = '\0';
+    return copy;
+}
+
+/* Open a window on a custom screen. Returns NULL on invalid geometry, an
+ * over-long title, or an Intuition failure. The title is copied. */
+void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
+                     LONG height, char *title)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    cl_window *handle;
+    struct NewWindow nw;
+    char *title_copy;
+
+    if (screen == NULL || title == NULL) {
+        return NULL;
+    }
+    if (x < 0 || y < 0 || width <= 0 || height <= 0) {
+        return NULL;
+    }
+    if (width > 320 || height > 256) {
+        return NULL;
+    }
+    if (width > (LONG)screen->Width || height > (LONG)screen->Height) {
+        return NULL;
+    }
+    if (x > (LONG)screen->Width - width || y > (LONG)screen->Height - height) {
+        return NULL;
+    }
+    title_copy =
+        cl_window_copy_text(title, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (title_copy == NULL) {
+        return NULL;
+    }
+    handle = (cl_window *)AllocMem((ULONG)sizeof *handle, MEMF_CLEAR);
+    if (handle == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        return NULL;
+    }
+    handle->title = title_copy;
+
+    memset(&nw, 0, sizeof nw);
+    nw.LeftEdge = (WORD)x;
+    nw.TopEdge = (WORD)y;
+    nw.Width = (WORD)width;
+    nw.Height = (WORD)height;
+    nw.DetailPen = 1;
+    nw.BlockPen = 0;
+    nw.IDCMPFlags = IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
+                  | IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_VANILLAKEY
+                  | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW
+                  | IDCMP_REFRESHWINDOW;
+    nw.Flags = WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
+             | WFLG_ACTIVATE | WFLG_GIMMEZEROZERO;
+    nw.FirstGadget = NULL;
+    nw.CheckMark = NULL;
+    nw.Title = (STRPTR)title_copy;
+    nw.Screen = screen;
+    nw.BitMap = NULL;
+    nw.MinWidth = 0;
+    nw.MinHeight = 0;
+    nw.MaxWidth = 0;
+    nw.MaxHeight = 0;
+    nw.Type = CUSTOMSCREEN;
+
+    handle->window = OpenWindow(&nw);
+    if (handle->window == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    /* WFLG_ACTIVATE normally suffices, but an explicit activation makes the
+     * menu strip visible on a custom screen even when another window had the
+     * screen's input focus at open time. */
+    WindowToFront(handle->window);
+    ActivateWindow(handle->window);
+    return handle;
+}
+
+/* Close a window. Null-safe. Clears the pointer and menu strip before
+ * CloseWindow, then releases the wrapper-owned allocations. The gadget, menu,
+ * and pointer frees are extended by the phases that create them. */
+void cl_close_window(void *window_handle)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL) {
+        return;
+    }
+    if (handle->window != NULL) {
+        if (handle->pointer_shown) {
+            ClearPointer(handle->window);
+        }
+        if (handle->window->MenuStrip != NULL) {
+            ClearMenuStrip(handle->window);
+        }
+        CloseWindow(handle->window);
+    }
+    cl_window_free_gadgets(handle);
+    cl_window_free_menus(handle);
+    if (handle->pointer != NULL) {
+        FreeMem(handle->pointer, CL_WINDOW_POINTER_BYTES);
+    }
+    if (handle->title != NULL) {
+        FreeMem(handle->title, CL_WINDOW_TEXT_MAX + 1);
+    }
+    FreeMem(handle, (ULONG)sizeof *handle);
+}
+
+/* Inner drawable width, or 0 on a null window. */
+LONG cl_window_width(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return 0;
+    }
+    return (LONG)handle->window->GZZWidth;
+}
+
+/* Inner drawable height, or 0 on a null window. */
+LONG cl_window_height(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return 0;
+    }
+    return (LONG)handle->window->GZZHeight;
+}
+
+/* Fill an inner-window rectangle. Null-safe. */
+void cl_window_fill(void *window_handle, LONG x1, LONG y1, LONG x2, LONG y2,
+                    UBYTE pen)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return;
+    }
+    SetAPen(handle->window->RPort, (ULONG)pen);
+    RectFill(handle->window->RPort, x1, y1, x2, y2);
+}
+
+/* Draw an inner-window line. Null-safe. */
+void cl_window_draw(void *window_handle, LONG x1, LONG y1, LONG x2, LONG y2,
+                    UBYTE pen)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return;
+    }
+    SetAPen(handle->window->RPort, (ULONG)pen);
+    Move(handle->window->RPort, x1, y1);
+    Draw(handle->window->RPort, x2, y2);
+}
+
+/* Fill the whole inner window. Null-safe. */
+void cl_window_clear(void *window_handle, UBYTE pen)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return;
+    }
+    SetAPen(handle->window->RPort, (ULONG)pen);
+    RectFill(handle->window->RPort, 0, 0,
+             (LONG)handle->window->GZZWidth - 1,
+             (LONG)handle->window->GZZHeight - 1);
+}
+
+/* --- Intuition gadgets: buttons and one string field. -------------------
+ *
+ * Each node owns its classic `struct Gadget` and every render/label record
+ * Intuition reads. The window closes before the nodes are freed, so the
+ * Intuition list never points at released storage. */
+
+static cl_gadget_node *cl_window_find_gadget(cl_window *handle, LONG id)
+{
+    cl_gadget_node *node;
+
+    if (handle == NULL) {
+        return NULL;
+    }
+    for (node = handle->gadgets; node != NULL; node = node->next) {
+        if (node->id == id) {
+            return node;
+        }
+    }
+    return NULL;
+}
+
+static int cl_window_id_taken(cl_window *handle, LONG id)
+{
+    cl_menu_node *menu;
+
+    if (cl_window_find_gadget(handle, id) != NULL) {
+        return 1;
+    }
+    if (handle == NULL) {
+        return 0;
+    }
+    for (menu = handle->menus; menu != NULL; menu = menu->next) {
+        cl_menu_item_node *item;
+        for (item = menu->items; item != NULL; item = item->next) {
+            if (item->id == id) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int cl_window_gadget_geometry_ok(cl_window *handle, LONG x, LONG y,
+                                        LONG width, LONG height)
+{
+    if (handle == NULL || handle->window == NULL) {
+        return 0;
+    }
+    if (x < 0 || y < 0 || width <= 0 || height <= 0) {
+        return 0;
+    }
+    if (width > (LONG)handle->window->GZZWidth
+        || height > (LONG)handle->window->GZZHeight) {
+        return 0;
+    }
+    if (x > (LONG)handle->window->GZZWidth - width) {
+        return 0;
+    }
+    if (y > (LONG)handle->window->GZZHeight - height) {
+        return 0;
+    }
+    return 1;
+}
+
+static void cl_window_free_gadget(cl_gadget_node *node)
+{
+    if (node == NULL) {
+        return;
+    }
+    if (node->string_buffer != NULL && node->string_buffer_size > 0) {
+        FreeMem(node->string_buffer, node->string_buffer_size);
+    }
+    if (node->string_info != NULL) {
+        FreeMem(node->string_info, (ULONG)sizeof *node->string_info);
+    }
+    if (node->box_xy != NULL) {
+        FreeMem(node->box_xy, (ULONG)(10 * sizeof(WORD)));
+    }
+    if (node->box != NULL) {
+        FreeMem(node->box, (ULONG)sizeof *node->box);
+    }
+    if (node->normal_image != NULL) {
+        FreeMem(node->normal_image, (ULONG)sizeof *node->normal_image);
+    }
+    if (node->select_image != NULL) {
+        FreeMem(node->select_image, (ULONG)sizeof *node->select_image);
+    }
+    if (node->label != NULL) {
+        FreeMem(node->label, (ULONG)sizeof *node->label);
+    }
+    if (node->label_text != NULL) {
+        FreeMem(node->label_text, CL_WINDOW_TEXT_MAX + 1);
+    }
+    if (node->gadget != NULL) {
+        FreeMem(node->gadget, (ULONG)sizeof *node->gadget);
+    }
+    FreeMem(node, (ULONG)sizeof *node);
+}
+
+static void cl_window_free_gadgets(cl_window *handle)
+{
+    cl_gadget_node *node;
+
+    if (handle == NULL) {
+        return;
+    }
+    node = handle->gadgets;
+    while (node != NULL) {
+        cl_gadget_node *next = node->next;
+        cl_window_free_gadget(node);
+        node = next;
+    }
+    handle->gadgets = NULL;
+}
+
+static void cl_window_append_gadget(cl_window *handle, cl_gadget_node *node)
+{
+    cl_gadget_node **link = &handle->gadgets;
+
+    while (*link != NULL) {
+        link = &(*link)->next;
+    }
+    *link = node;
+}
+
+/* Append a boolean button. Returns FALSE on validation or allocation
+ * failure; the caller's label is copied. */
+BOOL cl_window_add_button(void *window_handle, LONG x, LONG y, LONG width,
+                          LONG height, char *label, LONG id)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_gadget_node *node;
+    struct Gadget *gadget;
+    struct Image *normal;
+    struct Image *select;
+    struct IntuiText *text;
+    char *label_text;
+
+    if (handle == NULL || handle->window == NULL || label == NULL || id < 1) {
+        return FALSE;
+    }
+    if (!cl_window_gadget_geometry_ok(handle, x, y, width, height)) {
+        return FALSE;
+    }
+    if (cl_window_id_taken(handle, id)) {
+        return FALSE;
+    }
+    label_text =
+        cl_window_copy_text(label, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (label_text == NULL) {
+        return FALSE;
+    }
+    node = (cl_gadget_node *)AllocMem((ULONG)sizeof *node, MEMF_CLEAR);
+    if (node == NULL) {
+        FreeMem(label_text, CL_WINDOW_TEXT_MAX + 1);
+        return FALSE;
+    }
+    node->label_text = label_text;
+    node->id = id;
+    gadget = (struct Gadget *)AllocMem((ULONG)sizeof *gadget, MEMF_CLEAR);
+    if (gadget == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->gadget = gadget;
+    normal = (struct Image *)AllocMem((ULONG)sizeof *normal, MEMF_CLEAR);
+    if (normal == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->normal_image = normal;
+    select = (struct Image *)AllocMem((ULONG)sizeof *select, MEMF_CLEAR);
+    if (select == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->select_image = select;
+    text = (struct IntuiText *)AllocMem((ULONG)sizeof *text, MEMF_CLEAR);
+    if (text == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->label = text;
+
+    normal->LeftEdge = 0;
+    normal->TopEdge = 0;
+    normal->Width = (WORD)width;
+    normal->Height = (WORD)height;
+    normal->Depth = 1;
+    normal->ImageData = NULL;
+    normal->PlanePick = 0;
+    normal->PlaneOnOff = 1;
+    normal->NextImage = NULL;
+    *select = *normal;
+    select->PlaneOnOff = 2;
+
+    text->FrontPen = 0;
+    text->BackPen = 1;
+    text->DrawMode = JAM1;
+    text->LeftEdge = 0;
+    text->TopEdge = 0;
+    text->ITextFont = NULL;
+    text->IText = (STRPTR)label_text;
+    text->NextText = NULL;
+
+    gadget->NextGadget = NULL;
+    gadget->LeftEdge = (WORD)x;
+    gadget->TopEdge = (WORD)y;
+    gadget->Width = (WORD)width;
+    gadget->Height = (WORD)height;
+    gadget->Flags = GFLG_GADGIMAGE | GFLG_GADGHIMAGE;
+    gadget->Activation = GACT_RELVERIFY;
+    gadget->GadgetType = GTYP_BOOLGADGET;
+    gadget->GadgetRender = normal;
+    gadget->SelectRender = select;
+    gadget->GadgetText = text;
+    gadget->MutualExclude = 0;
+    gadget->SpecialInfo = NULL;
+    gadget->GadgetID = (UWORD)id;
+    gadget->UserData = NULL;
+
+    AddGList(handle->window, gadget, (ULONG)-1, 1, NULL);
+    RefreshGList(gadget, handle->window, NULL, 1);
+    cl_window_append_gadget(handle, node);
+    return TRUE;
+}
+
+/* Append a string gadget. Returns FALSE on validation or allocation failure;
+ * the label and initial text are copied. */
+BOOL cl_window_add_string(void *window_handle, LONG x, LONG y, LONG width,
+                          LONG height, char *label, char *initial,
+                          LONG max_chars, LONG id)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_gadget_node *node;
+    struct Gadget *gadget;
+    struct Border *box;
+    struct IntuiText *text;
+    struct StringInfo *info;
+    char *label_text;
+    char *string_buffer;
+    WORD *box_xy;
+
+    if (handle == NULL || handle->window == NULL || label == NULL
+        || initial == NULL || id < 1) {
+        return FALSE;
+    }
+    if (max_chars < 1 || max_chars > 64) {
+        return FALSE;
+    }
+    if (!cl_window_gadget_geometry_ok(handle, x, y, width, height)) {
+        return FALSE;
+    }
+    if (cl_window_id_taken(handle, id)) {
+        return FALSE;
+    }
+    label_text =
+        cl_window_copy_text(label, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (label_text == NULL) {
+        return FALSE;
+    }
+    string_buffer = cl_window_copy_text(initial, (ULONG)max_chars,
+                                        (ULONG)max_chars + 1);
+    if (string_buffer == NULL) {
+        FreeMem(label_text, CL_WINDOW_TEXT_MAX + 1);
+        return FALSE;
+    }
+    node = (cl_gadget_node *)AllocMem((ULONG)sizeof *node, MEMF_CLEAR);
+    if (node == NULL) {
+        FreeMem(label_text, CL_WINDOW_TEXT_MAX + 1);
+        FreeMem(string_buffer, (ULONG)max_chars + 1);
+        return FALSE;
+    }
+    node->label_text = label_text;
+    node->string_buffer = string_buffer;
+    node->string_buffer_size = (ULONG)max_chars + 1;
+    node->id = id;
+    gadget = (struct Gadget *)AllocMem((ULONG)sizeof *gadget, MEMF_CLEAR);
+    if (gadget == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->gadget = gadget;
+    box = (struct Border *)AllocMem((ULONG)sizeof *box, MEMF_CLEAR);
+    if (box == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->box = box;
+    box_xy = (WORD *)AllocMem((ULONG)(10 * sizeof(WORD)), MEMF_CLEAR);
+    if (box_xy == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->box_xy = box_xy;
+    text = (struct IntuiText *)AllocMem((ULONG)sizeof *text, MEMF_CLEAR);
+    if (text == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->label = text;
+    info = (struct StringInfo *)AllocMem((ULONG)sizeof *info, MEMF_CLEAR);
+    if (info == NULL) {
+        cl_window_free_gadget(node);
+        return FALSE;
+    }
+    node->string_info = info;
+
+    box_xy[0] = 0;
+    box_xy[1] = 0;
+    box_xy[2] = (WORD)(width - 1);
+    box_xy[3] = 0;
+    box_xy[4] = (WORD)(width - 1);
+    box_xy[5] = (WORD)(height - 1);
+    box_xy[6] = 0;
+    box_xy[7] = (WORD)(height - 1);
+    box_xy[8] = 0;
+    box_xy[9] = 0;
+    box->LeftEdge = 0;
+    box->TopEdge = 0;
+    box->FrontPen = 1;
+    box->BackPen = 0;
+    box->DrawMode = JAM2;
+    box->Count = 5;
+    box->XY = box_xy;
+    box->NextBorder = NULL;
+
+    text->FrontPen = 1;
+    text->BackPen = 0;
+    text->DrawMode = JAM1;
+    text->LeftEdge = 0;
+    text->TopEdge = 0;
+    text->ITextFont = NULL;
+    text->IText = (STRPTR)label_text;
+    text->NextText = NULL;
+
+    info->Buffer = (STRPTR)string_buffer;
+    info->UndoBuffer = NULL;
+    info->BufferPos = 0;
+    info->MaxChars = (WORD)(max_chars + 1);
+    info->DispPos = 0;
+    info->NumChars = (WORD)strlen(string_buffer);
+    info->UndoPos = 0;
+    info->DispCount = 0;
+    info->CLeft = 0;
+    info->CTop = 0;
+    info->Extension = NULL;
+
+    gadget->NextGadget = NULL;
+    gadget->LeftEdge = (WORD)x;
+    gadget->TopEdge = (WORD)y;
+    gadget->Width = (WORD)width;
+    gadget->Height = (WORD)height;
+    gadget->Flags = 0;
+    gadget->Activation = GACT_IMMEDIATE;
+    gadget->GadgetType = GTYP_STRGADGET;
+    gadget->GadgetRender = box;
+    gadget->SelectRender = box;
+    gadget->GadgetText = text;
+    gadget->MutualExclude = 0;
+    gadget->SpecialInfo = info;
+    gadget->GadgetID = (UWORD)id;
+    gadget->UserData = NULL;
+
+    AddGList(handle->window, gadget, (ULONG)-1, 1, NULL);
+    RefreshGList(gadget, handle->window, NULL, 1);
+    cl_window_append_gadget(handle, node);
+    return TRUE;
+}
+
+/* Copy the current string field into the caller's buffer. Never trusts the
+ * Intuition-edited buffer's NUL; the length comes from StringInfo.NumChars and
+ * is clamped to MaxChars - 1 and the caller's capacity. */
+LONG cl_window_string(void *window_handle, LONG id, APTR buffer, ULONG capacity)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_gadget_node *node;
+    LONG length;
+    UBYTE *out = (UBYTE *)buffer;
+
+    if (handle == NULL || buffer == NULL || capacity == 0) {
+        return 0;
+    }
+    node = cl_window_find_gadget(handle, id);
+    if (node == NULL || node->string_info == NULL) {
+        return 0;
+    }
+    length = (LONG)node->string_info->NumChars;
+    if (length < 0) {
+        length = 0;
+    }
+    if (length > (LONG)node->string_info->MaxChars - 1) {
+        length = (LONG)node->string_info->MaxChars - 1;
+    }
+    if ((ULONG)length > capacity) {
+        length = (LONG)capacity;
+    }
+    memcpy(out, node->string_info->Buffer, (size_t)length);
+    if ((ULONG)length < capacity) {
+        out[length] = '\0';
+    }
+    return length;
+}
+
+/* --- Intuition menus: one classic menu strip. ---------------------------
+ *
+ * The window owns the menu headers and items. Every add reattaches the strip
+ * so Intuition lays out the new chain; a failed attach unlinks and frees the
+ * new node before the previous strip is restored. */
+
+static cl_menu_node *cl_window_find_menu(cl_window *handle, LONG index)
+{
+    cl_menu_node *menu;
+    LONG current = 0;
+
+    if (handle == NULL || index < 0) {
+        return NULL;
+    }
+    for (menu = handle->menus; menu != NULL; menu = menu->next) {
+        if (current == index) {
+            return menu;
+        }
+        current++;
+    }
+    return NULL;
+}
+
+static void cl_window_free_menu_item(cl_menu_item_node *node)
+{
+    if (node == NULL) {
+        return;
+    }
+    if (node->label_text != NULL) {
+        FreeMem(node->label_text, CL_WINDOW_TEXT_MAX + 1);
+    }
+    if (node->label != NULL) {
+        FreeMem(node->label, (ULONG)sizeof *node->label);
+    }
+    if (node->item != NULL) {
+        FreeMem(node->item, (ULONG)sizeof *node->item);
+    }
+    FreeMem(node, (ULONG)sizeof *node);
+}
+
+static void cl_window_free_menus(cl_window *handle)
+{
+    cl_menu_node *menu;
+
+    if (handle == NULL) {
+        return;
+    }
+    menu = handle->menus;
+    while (menu != NULL) {
+        cl_menu_node *next_menu = menu->next;
+        cl_menu_item_node *item = menu->items;
+        while (item != NULL) {
+            cl_menu_item_node *next_item = item->next;
+            cl_window_free_menu_item(item);
+            item = next_item;
+        }
+        if (menu->title != NULL) {
+            FreeMem(menu->title, CL_WINDOW_TEXT_MAX + 1);
+        }
+        if (menu->menu != NULL) {
+            FreeMem(menu->menu, (ULONG)sizeof *menu->menu);
+        }
+        FreeMem(menu, (ULONG)sizeof *menu);
+        menu = next_menu;
+    }
+    handle->menus = NULL;
+}
+
+/* Detach the strip before the menu chain is modified. Clearing an attached
+ * strip after a NextMenu/NextItem change would let Intuition walk a mutating
+ * list. */
+static void cl_window_menu_detach(cl_window *handle)
+{
+    if (handle != NULL && handle->window != NULL
+        && handle->window->MenuStrip != NULL) {
+        ClearMenuStrip(handle->window);
+    }
+}
+
+/* Return the first menu with at least one item, or NULL. Intuition does not
+ * accept an empty FirstItem chain, so empty headers are skipped. */
+static struct Menu *cl_window_menu_head(cl_window *handle)
+{
+    cl_menu_node *node;
+
+    if (handle == NULL) {
+        return NULL;
+    }
+    for (node = handle->menus; node != NULL; node = node->next) {
+        if (node->menu->FirstItem != NULL) {
+            return node->menu;
+        }
+    }
+    return NULL;
+}
+
+/* Rebuild the Menu.NextMenu chain from the non-empty menus. */
+static void cl_window_menu_link(cl_window *handle)
+{
+    cl_menu_node *node;
+    struct Menu *previous = NULL;
+
+    if (handle == NULL) {
+        return;
+    }
+    for (node = handle->menus; node != NULL; node = node->next) {
+        if (node->menu->FirstItem == NULL) {
+            node->menu->NextMenu = NULL;
+            continue;
+        }
+        if (previous != NULL) {
+            previous->NextMenu = node->menu;
+        }
+        previous = node->menu;
+    }
+    if (previous != NULL) {
+        previous->NextMenu = NULL;
+    }
+}
+
+/* Attach the current chain. Only called with a detached strip. */
+static BOOL cl_window_menu_set(cl_window *handle)
+{
+    struct Menu *head;
+
+    if (handle == NULL || handle->window == NULL) {
+        return FALSE;
+    }
+    head = cl_window_menu_head(handle);
+    if (head == NULL) {
+        return FALSE;
+    }
+    return SetMenuStrip(handle->window, head);
+}
+
+/* Append a menu header. Returns its zero-based index, or -1 on failure.
+ *
+ * The header is not attached until it has at least one item: Intuition does
+ * not accept a menu with an empty FirstItem chain. The header is linked into
+ * the Menu.NextMenu chain by the first addMenuItem call. */
+LONG cl_window_add_menu(void *window_handle, char *title)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_menu_node *node;
+    cl_menu_node *tail;
+    struct Menu *menu;
+    char *title_copy;
+    LONG index = 0;
+
+    if (handle == NULL || handle->window == NULL || title == NULL) {
+        return -1;
+    }
+    title_copy =
+        cl_window_copy_text(title, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (title_copy == NULL) {
+        return -1;
+    }
+    node = (cl_menu_node *)AllocMem((ULONG)sizeof *node, MEMF_CLEAR);
+    if (node == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        return -1;
+    }
+    menu = (struct Menu *)AllocMem((ULONG)sizeof *menu, MEMF_CLEAR);
+    if (menu == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        FreeMem(node, (ULONG)sizeof *node);
+        return -1;
+    }
+    node->menu = menu;
+    node->title = title_copy;
+    menu->MenuName = (STRPTR)title_copy;
+    menu->Flags = MENUENABLED;
+    menu->LeftEdge = (WORD)(index * CL_MENU_WIDTH);
+    menu->Width = CL_MENU_WIDTH;
+    menu->Height = CL_MENU_HEIGHT;
+    menu->FirstItem = NULL;
+    menu->NextMenu = NULL;
+
+    tail = handle->menus;
+    if (tail == NULL) {
+        handle->menus = node;
+    } else {
+        index = 1;
+        while (tail->next != NULL) {
+            tail = tail->next;
+            index++;
+        }
+        tail->next = node;
+    }
+    return index;
+}
+
+/* Append a textual, enabled menu item. Returns FALSE on failure. */
+BOOL cl_window_add_menu_item(void *window_handle, LONG menu_index, char *label,
+                             LONG id)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_menu_node *menu;
+    cl_menu_item_node *node;
+    cl_menu_item_node *tail;
+    struct MenuItem *item;
+    struct IntuiText *text;
+    char *label_text;
+
+    if (handle == NULL || handle->window == NULL || label == NULL || id < 1) {
+        return FALSE;
+    }
+    menu = cl_window_find_menu(handle, menu_index);
+    if (menu == NULL) {
+        return FALSE;
+    }
+    if (cl_window_id_taken(handle, id)) {
+        return FALSE;
+    }
+    label_text =
+        cl_window_copy_text(label, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (label_text == NULL) {
+        return FALSE;
+    }
+    node = (cl_menu_item_node *)AllocMem((ULONG)sizeof *node, MEMF_CLEAR);
+    if (node == NULL) {
+        FreeMem(label_text, CL_WINDOW_TEXT_MAX + 1);
+        return FALSE;
+    }
+    node->label_text = label_text;
+    node->id = id;
+    item = (struct MenuItem *)AllocMem((ULONG)sizeof *item, MEMF_CLEAR);
+    if (item == NULL) {
+        cl_window_free_menu_item(node);
+        return FALSE;
+    }
+    node->item = item;
+    text = (struct IntuiText *)AllocMem((ULONG)sizeof *text, MEMF_CLEAR);
+    if (text == NULL) {
+        cl_window_free_menu_item(node);
+        return FALSE;
+    }
+    node->label = text;
+
+    text->FrontPen = 1;
+    text->BackPen = 0;
+    text->DrawMode = JAM1;
+    text->LeftEdge = 0;
+    text->TopEdge = 0;
+    text->ITextFont = NULL;
+    text->IText = (STRPTR)label_text;
+    text->NextText = NULL;
+
+    item->NextItem = NULL;
+    item->Width = CL_MENU_WIDTH;
+    item->Height = CL_MENU_HEIGHT;
+    item->Flags = ITEMTEXT | ITEMENABLED;
+    item->MutualExclude = 0;
+    item->ItemFill = text;
+    item->SelectFill = NULL;
+    item->Command = 0;
+    item->SubItem = NULL;
+    item->NextSelect = 0;
+
+    cl_window_menu_detach(handle);
+    if (menu->items == NULL) {
+        menu->items = node;
+        menu->menu->FirstItem = item;
+    } else {
+        tail = menu->items;
+        while (tail->next != NULL) {
+            tail = tail->next;
+        }
+        tail->next = node;
+        tail->item->NextItem = item;
+    }
+    cl_window_menu_link(handle);
+    if (!cl_window_menu_set(handle)) {
+        if (menu->items == node) {
+            menu->items = NULL;
+            menu->menu->FirstItem = NULL;
+        } else {
+            cl_menu_item_node *previous = menu->items;
+            while (previous->next != NULL && previous->next != node) {
+                previous = previous->next;
+            }
+            if (previous->next == node) {
+                previous->next = NULL;
+                previous->item->NextItem = NULL;
+            }
+        }
+        cl_window_menu_link(handle);
+        (void)cl_window_menu_set(handle);
+        cl_window_free_menu_item(node);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* --- Intuition requesters, alerts, and the built-in pointer. ------------- */
+
+/* Show a modal Yes/No requester and return TRUE for Yes. The body is copied
+ * for the duration of the blocking call. */
+BOOL cl_window_ask_yes_no(void *window_handle, char *body)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    struct IntuiText body_text;
+    struct IntuiText yes_text;
+    struct IntuiText no_text;
+    char *body_copy;
+    BOOL result;
+
+    if (handle == NULL || handle->window == NULL || body == NULL) {
+        return FALSE;
+    }
+    body_copy =
+        cl_window_copy_text(body, CL_WINDOW_BODY_MAX, CL_WINDOW_BODY_MAX + 1);
+    if (body_copy == NULL) {
+        return FALSE;
+    }
+
+    memset(&body_text, 0, sizeof body_text);
+    body_text.FrontPen = 1;
+    body_text.BackPen = 0;
+    body_text.DrawMode = JAM2;
+    body_text.IText = (STRPTR)body_copy;
+
+    memset(&yes_text, 0, sizeof yes_text);
+    yes_text.FrontPen = 1;
+    yes_text.BackPen = 0;
+    yes_text.DrawMode = JAM2;
+    yes_text.IText = (STRPTR) "Yes";
+
+    memset(&no_text, 0, sizeof no_text);
+    no_text.FrontPen = 1;
+    no_text.BackPen = 0;
+    no_text.DrawMode = JAM2;
+    no_text.IText = (STRPTR) "No";
+
+    /* The 1.3 AutoRequest uses these dimensions directly; 0,0 does not
+     * auto-size (the V36 note says the parameters are ignored). The IDCMP
+     * flags are 0; they are not pen flags. */
+    result = AutoRequest(handle->window, &body_text, &yes_text, &no_text,
+                         0, 0, 240, 40);
+    FreeMem(body_copy, CL_WINDOW_BODY_MAX + 1);
+    return result;
+}
+
+/* Show a modal recovery alert. The call blocks until the user clicks
+ * Continue; a null or over-long body is a no-op.
+ *
+ * DisplayAlert takes an AlertMessage: a 16-bit x, an 8-bit y, the text, a
+ * terminating NUL, and a zero continuation byte (two NULs total). The fixed
+ * header places the text at (20,20). */
+void cl_show_alert(char *body)
+{
+    char *message;
+    ULONG length = 0;
+
+    if (body == NULL) {
+        return;
+    }
+    while (body[length] != '\0') {
+        length++;
+        if (length > CL_WINDOW_BODY_MAX) {
+            return;
+        }
+    }
+    message = (char *)AllocMem(CL_ALERT_MESSAGE_MAX, MEMF_CLEAR);
+    if (message == NULL) {
+        return;
+    }
+    message[0] = 0;
+    message[1] = 20;
+    message[2] = 20;
+    memcpy(message + 3, body, length);
+    /* MEMF_CLEAR leaves the text NUL at 3+length and the continuation NUL at
+     * 3+length+1. */
+    (void)DisplayAlert(1, (STRPTR)message, 20);
+    FreeMem(message, CL_ALERT_MESSAGE_MAX);
+}
+
+/* A 16x16, two-plane pointer. Color 0 is transparent, color 1 is the white
+ * interior (plane 0), and color 2 is the black outline (plane 1). Intuition
+ * reads 16 rows of two words: plane 0 then plane 1. */
+static const UWORD cl_window_pointer_template[32] = {
+    0x0000, 0x8000, 0x0000, 0xC000, 0x4000, 0xA000, 0x6000, 0x9000,
+    0x7000, 0x8800, 0x7800, 0x8400, 0x7C00, 0x8200, 0x7E00, 0x8100,
+    0x7F00, 0x8080, 0x7F80, 0x8040, 0x7FC0, 0x8020, 0x7FE0, 0x8010,
+    0x7E00, 0x81F0, 0x6C00, 0x9200, 0x4600, 0xA900, 0x0600, 0xC900,
+};
+
+/* Install or clear the built-in pointer. The image is allocated in chip memory
+ * on first show and kept until the window closes. */
+void cl_window_set_pointer(void *window_handle, BOOL show)
+{
+    cl_window *handle = (cl_window *)window_handle;
+
+    if (handle == NULL || handle->window == NULL) {
+        return;
+    }
+    if (!show) {
+        if (handle->pointer_shown) {
+            ClearPointer(handle->window);
+            handle->pointer_shown = 0;
+        }
+        return;
+    }
+    if (handle->pointer == NULL) {
+        handle->pointer = (UWORD *)AllocMem(CL_WINDOW_POINTER_BYTES,
+                                            MEMF_CHIP | MEMF_CLEAR);
+        if (handle->pointer == NULL) {
+            return;
+        }
+        memcpy(handle->pointer, cl_window_pointer_template,
+               CL_WINDOW_POINTER_BYTES);
+    }
+    SetPointer(handle->window, handle->pointer, 16, 16, 0, 0);
+    handle->pointer_shown = 1;
+}
+
+/* EVENT_* values shared with std.amiga.intuition. */
+#define CL_EVENT_NONE 0
+#define CL_EVENT_CLOSE 1
+#define CL_EVENT_GADGET 2
+#define CL_EVENT_MENU 3
+#define CL_EVENT_MOUSE 4
+#define CL_EVENT_KEY 5
+#define CL_EVENT_ACTIVE 6
+#define CL_EVENT_INACTIVE 7
+
+/* Resolve a gadget IAddress to the caller's id. */
+static LONG cl_window_gadget_id(cl_window *handle, APTR address)
+{
+    cl_gadget_node *node;
+
+    if (handle == NULL) {
+        return 0;
+    }
+    for (node = handle->gadgets; node != NULL; node = node->next) {
+        if ((APTR)node->gadget == address) {
+            return node->id;
+        }
+    }
+    return 0;
+}
+
+/* Resolve a menu number to the caller's item id. */
+static LONG cl_window_menu_id(cl_window *handle, ULONG code)
+{
+    struct MenuItem *item;
+    cl_menu_node *menu;
+
+    if (handle == NULL || handle->window == NULL
+        || handle->window->MenuStrip == NULL) {
+        return 0;
+    }
+    if ((UWORD)code == MENUNULL) {
+        return 0;
+    }
+    item = ItemAddress(handle->window->MenuStrip, code);
+    if (item == NULL) {
+        return 0;
+    }
+    for (menu = handle->menus; menu != NULL; menu = menu->next) {
+        cl_menu_item_node *node;
+        for (node = menu->items; node != NULL; node = node->next) {
+            if (node->item == item) {
+                return node->id;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Copy one IntuiMessage into the wrapper's last_event. Returns false when the
+ * class is not part of the published event set (the caller replies and skips
+ * it). */
+static bool cl_window_fill_event(cl_window *handle, struct IntuiMessage *msg)
+{
+    memset(&handle->last_event, 0, sizeof handle->last_event);
+    handle->last_event.code = (LONG)msg->Code;
+    handle->last_event.qualifier = msg->Qualifier;
+    handle->last_event.mouse_x = (LONG)handle->window->GZZMouseX;
+    handle->last_event.mouse_y = (LONG)handle->window->GZZMouseY;
+
+    switch (msg->Class) {
+    case IDCMP_CLOSEWINDOW:
+        handle->last_event.kind = CL_EVENT_CLOSE;
+        return true;
+    case IDCMP_GADGETUP:
+        handle->last_event.kind = CL_EVENT_GADGET;
+        handle->last_event.gadget =
+            cl_window_gadget_id(handle, msg->IAddress);
+        return true;
+    case IDCMP_MENUPICK:
+        handle->last_event.kind = CL_EVENT_MENU;
+        handle->last_event.menu =
+            cl_window_menu_id(handle, (ULONG)msg->Code);
+        return true;
+    case IDCMP_MOUSEBUTTONS:
+        handle->last_event.kind = CL_EVENT_MOUSE;
+        return true;
+    case IDCMP_RAWKEY:
+    case IDCMP_VANILLAKEY:
+        handle->last_event.kind = CL_EVENT_KEY;
+        return true;
+    case IDCMP_ACTIVEWINDOW:
+        handle->last_event.kind = CL_EVENT_ACTIVE;
+        return true;
+    case IDCMP_INACTIVEWINDOW:
+        handle->last_event.kind = CL_EVENT_INACTIVE;
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* Wait for (or poll) one event. Refresh messages are acknowledged and skipped.
+ * Every other message is copied to last_event and replied before returning. */
+BOOL cl_window_next_event(void *window_handle, BOOL wait)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    struct IntuiMessage *msg;
+
+    if (handle == NULL || handle->window == NULL
+        || handle->window->UserPort == NULL) {
+        return false;
+    }
+    for (;;) {
+        if (wait) {
+            (void)WaitPort(handle->window->UserPort);
+        }
+        msg = (struct IntuiMessage *)GetMsg(handle->window->UserPort);
+        if (msg == NULL) {
+            return false;
+        }
+        if (msg->Class == IDCMP_REFRESHWINDOW) {
+            BeginRefresh(handle->window);
+            EndRefresh(handle->window, TRUE);
+            ReplyMsg((struct Message *)msg);
+            continue;
+        }
+        if (!cl_window_fill_event(handle, msg)) {
+            ReplyMsg((struct Message *)msg);
+            continue;
+        }
+        ReplyMsg((struct Message *)msg);
+        return true;
+    }
+}
+
+/* Event field accessors. Null-safe; an invalid window reads as zero. */
+LONG cl_window_event_kind(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.kind;
+}
+
+LONG cl_window_event_code(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.code;
+}
+
+UWORD cl_window_event_qualifier(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.qualifier;
+}
+
+LONG cl_window_event_mouse_x(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.mouse_x;
+}
+
+LONG cl_window_event_mouse_y(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.mouse_y;
+}
+
+LONG cl_window_event_gadget(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.gadget;
+}
+
+LONG cl_window_event_menu(void *window_handle)
+{
+    const cl_window *handle = (const cl_window *)window_handle;
+    return handle == NULL ? 0 : handle->last_event.menu;
 }
 
 /* One message with a small integer payload the acceptance programs can read.
@@ -3449,6 +4708,28 @@ void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,
         return;
     }
     rast_port = &screen->RastPort;
+    old_font = rast_port->Font;
+    (void)SetFont(rast_port, font->font);
+    SetAPen(rast_port, (ULONG)pen);
+    Move(rast_port, x, y);
+    (void)Text(rast_port, (STRPTR)text, count);
+    (void)SetFont(rast_port, old_font);
+}
+
+/* Draw text on an Intuition window's inner RastPort. */
+void cl_window_text_draw(void *window_handle, void *font_handle, LONG x,
+                         LONG y, UBYTE pen, APTR text, ULONG count)
+{
+    cl_window *handle = (cl_window *)window_handle;
+    cl_font *font = (cl_font *)font_handle;
+    struct RastPort *rast_port;
+    struct TextFont *old_font;
+
+    if (handle == NULL || handle->window == NULL || font == NULL
+        || font->font == NULL || text == NULL) {
+        return;
+    }
+    rast_port = handle->window->RPort;
     old_font = rast_port->Font;
     (void)SetFont(rast_port, font->font);
     SetAPen(rast_port, (ULONG)pen);

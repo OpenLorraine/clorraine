@@ -1,0 +1,227 @@
+//! GUI acceptance demo: a window, gadgets, menus, a requester, an alert, and
+//! the built-in pointer on a Kickstart 1.3 A500.
+//!
+//! The program opens a 320x200x4 custom screen and a window, runs the negative
+//! geometry/id/title checks, builds two gadgets and two menus, drains the
+//! startup events with `pollEvent`, then handles clicks, typing, menu picks,
+//! the Yes/No requester, and the recovery alert. It exits through the window
+//! close gadget and prints the deterministic report line after the window and
+//! screen have closed.
+//!
+//! The exact report line is the A500 smoke golden:
+//! `gui: ok win 1 gad 2 menu 2 str 3 req 1`.
+
+module examples.amiga.gui;
+
+import {
+    Screen, openScreen, Window, openWindow, closeWindow,
+    windowWidth, windowHeight, WindowEvent, waitEvent, pollEvent,
+    EVENT_NONE, EVENT_CLOSE, EVENT_GADGET, EVENT_MENU,
+    addButton, addString, windowString, addMenu, addMenuItem,
+    askYesNo, showAlert, setPointer
+} from std.amiga.intuition;
+import {
+    setColor, windowClear, windowFill, windowDraw
+} from std.amiga.graphics;
+import { Font, openFont, defaultFont, windowText } from std.amiga.text;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+
+/// Counts collected by the demo and reported in the acceptance line.
+struct GuiResult {
+    ok: bool;
+    win: i32;
+    gad: i32;
+    menu: i32;
+    chars: i32;
+    req: i32;
+}
+
+/// The failure result: no line counts are reported.
+func failed(): GuiResult {
+    return GuiResult {
+        ok: false,
+        win: 0,
+        gad: 0,
+        menu: 0,
+        chars: 0,
+        req: 0,
+    };
+}
+
+/// Draw the status box and write `text` on its left.
+///
+/// The box is the bottom strip of the inner window; the call is repeated after
+/// every handled event so the held frame always shows the last action.
+func drawStatus(borrow window: Window, borrow font: Font, const text: u8[]): void {
+    let inner_width: i32 = windowWidth(window);
+    let inner_height: i32 = windowHeight(window);
+    windowFill(window, 8, inner_height - 20, inner_width - 9,
+               inner_height - 9, 0);
+    windowText(window, font, 8, inner_height - 12, 3, text);
+}
+
+/// Run the demo and return its counts.
+///
+/// The screen and window are locals, so the window closes before the screen
+/// when this function returns. `main` prints the line after that drop order has
+/// restored the shell.
+func runGui(): GuiResult {
+    let screenTitle: String = stringOf("Clorraine GUI");
+    let screen: Screen? = openScreen(320, 200, 4, toCString(screenTitle));
+    if (screen == null) {
+        return failed();
+    }
+    setColor(screen, 0, 8, 8, 24);
+    setColor(screen, 1, 220, 220, 220);
+    setColor(screen, 2, 255, 128, 0);
+    setColor(screen, 3, 0, 200, 80);
+    setColor(screen, 17, 255, 255, 255);
+    setColor(screen, 18, 0, 0, 0);
+
+    let badWindow: Window? = openWindow(screen, -1, 0, 100, 100,
+                                        toCString(stringOf("bad")));
+    if (badWindow != null) {
+        return failed();
+    }
+
+    let window: Window? = openWindow(screen, 24, 24, 272, 136,
+                                      toCString(stringOf("Clorraine GUI")));
+    if (window == null) {
+        return failed();
+    }
+
+    let badButton: bool = addButton(window, 1000, 0, 20, 20,
+                                    toCString(stringOf("x")), 1);
+    if (badButton) {
+        return failed();
+    }
+    let badString: bool = addString(window, 0, 0, 20, 20,
+                                    toCString(stringOf("x")),
+                                    toCString(stringOf("y")), 0, 2);
+    if (badString) {
+        return failed();
+    }
+    let badId: bool = addButton(window, 0, 0, 20, 20,
+                                toCString(stringOf("x")), 0);
+    if (badId) {
+        return failed();
+    }
+    let longTitle: String =
+        stringOf("0123456789012345678901234567890123456789012345678901234567890123456789");
+    let badMenu: i32 = addMenu(window, toCString(longTitle));
+    if (badMenu != -1) {
+        return failed();
+    }
+
+    let font: Font? = openFont(toCString(stringOf("topaz.font")), 8, 0);
+    if (font == null) {
+        font = defaultFont();
+    }
+    if (font == null) {
+        return failed();
+    }
+
+    windowClear(window, 0);
+    windowDraw(window, 8, 22, windowWidth(window) - 9, 22, 1);
+    windowText(window, font, 8, 8, 1, bytes(stringOf("Clorraine GUI demo")));
+    drawStatus(window, font, bytes(stringOf("ready")));
+
+    let button: bool = addButton(window, 8, 28, 80, 18,
+                                 toCString(stringOf("Press")), 1);
+    if (!button) {
+        return failed();
+    }
+    let field: bool = addString(window, 8, 56, 160, 18,
+                                toCString(stringOf("Name:")),
+                                toCString(stringOf("")), 32, 2);
+    if (!field) {
+        return failed();
+    }
+
+    let file: i32 = addMenu(window, toCString(stringOf("File")));
+    if (file != 0) {
+        return failed();
+    }
+    let hello: bool = addMenuItem(window, file, toCString(stringOf("Hello")), 10);
+    if (!hello) {
+        return failed();
+    }
+    let quit: bool = addMenuItem(window, file, toCString(stringOf("Quit")), 11);
+    if (!quit) {
+        return failed();
+    }
+    let help: i32 = addMenu(window, toCString(stringOf("Help")));
+    if (help != 1) {
+        return failed();
+    }
+    let about: bool = addMenuItem(window, help, toCString(stringOf("About")), 20);
+    if (!about) {
+        return failed();
+    }
+
+    setPointer(window, true);
+
+    let pending: WindowEvent = pollEvent(window);
+    while (pending.kind != EVENT_NONE) {
+        pending = pollEvent(window);
+    }
+
+    let buffer: u8[64] = [; 0];
+    let strCount: i32 = 0;
+    let reqCount: i32 = 0;
+    let running: bool = true;
+    while (running) {
+        let event: WindowEvent = waitEvent(window);
+        if (event.kind == EVENT_CLOSE) {
+            running = false;
+        } else if (event.kind == EVENT_NONE) {
+            running = false;
+        } else if (event.kind == EVENT_GADGET) {
+            if (event.gadget == 1) {
+                let answer: bool = askYesNo(window,
+                                            toCString(stringOf("Continue?")));
+                if (answer) {
+                    reqCount = reqCount + 1;
+                    drawStatus(window, font, bytes(stringOf("yes")));
+                } else {
+                    drawStatus(window, font, bytes(stringOf("no")));
+                }
+            } else if (event.gadget == 2) {
+                strCount = windowString(window, 2, borrow slice(buffer, 0, 64));
+                drawStatus(window, font, bytes(stringOf("name")));
+            }
+        } else if (event.kind == EVENT_MENU) {
+            if (event.menu == 10) {
+                drawStatus(window, font, bytes(stringOf("hello")));
+            } else if (event.menu == 11) {
+                running = false;
+            } else if (event.menu == 20) {
+                showAlert(toCString(stringOf("Clorraine GUI")));
+                drawStatus(window, font, bytes(stringOf("about")));
+            }
+        }
+    }
+
+    setPointer(window, false);
+    closeWindow(window);
+    return GuiResult {
+        ok: true,
+        win: 1,
+        gad: 2,
+        menu: 2,
+        chars: strCount,
+        req: reqCount,
+    };
+}
+
+func main(): i32 {
+    let result: GuiResult = runGui();
+    if (!result.ok) {
+        println("gui: err");
+        return 1;
+    }
+    println($"gui: ok win {result.win} gad {result.gad} menu {result.menu} str {result.chars} req {result.req}");
+    return 0;
+}

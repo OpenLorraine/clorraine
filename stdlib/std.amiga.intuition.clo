@@ -1,24 +1,98 @@
-//! Amiga Intuition: the custom-screen lifecycle.
+//! Amiga Intuition: custom screens, windows, and the event loop.
 //!
-//! This module belongs to the hosted-amiga profile; the host profile has no
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
 //! AmigaOS `intuition.library`, so the module is not available there. It owns
-//! the opaque `Screen` handle: opening a custom screen and releasing it. The
-//! drawing calls live in the companion `std.amiga.graphics` module, which
-//! borrows the screen.
+//! the opaque `Screen` and `Window` handles. The drawing calls live in the
+//! companion `std.amiga.graphics` and `std.amiga.text` modules, which borrow
+//! the window.
 //!
 //! The wrappers reach the profile C shim through `ffi`, so application code
-//! never writes `ffi` and never touches `unsafe`. The `Screen` handle is owned
-//! by the caller and released through the generated drop, which calls the
-//! null-safe `cl_close_screen` deleter exactly once.
+//! never writes `ffi` and never touches `unsafe`. Both handles are owned by the
+//! caller and released through the generated drop, which calls the null-safe
+//! deleter exactly once. A window borrows its screen without a lifetime
+//! parameter: the screen must stay alive until the window has closed.
 
 module std.amiga.intuition;
 
 /// An owned custom screen. The caller releases it through the generated drop.
 export handle Screen freedBy cl_close_screen;
 
+/// An owned window on a custom screen. The generated drop closes it.
+///
+/// The window owns its copied title, every gadget and menu it builds, and the
+/// optional pointer image. The caller must keep the screen alive until the
+/// window has closed. Locals drop in reverse declaration order, so declare the
+/// screen before the window. Struct fields drop in declaration order, so a
+/// struct that holds both must declare the window field before the screen
+/// field. Do not return a window from a function whose locals own the screen:
+/// the screen would close at the return and leave the window dangling.
+export handle Window freedBy cl_close_window;
+
+/// One IDCMP event copied out of Intuition.
+///
+/// `kind` is one of the `EVENT_*` constants; `code`, `qualifier`, and the mouse
+/// coordinates are copied from the message. `gadget`/`menu` carry the caller's
+/// id when the event names one and 0 otherwise. The value is a copy: it owns
+/// nothing and can be stored or compared freely.
+export struct WindowEvent {
+    kind: i32;
+    code: i32;
+    qualifier: u16;
+    mouse_x: i32;
+    mouse_y: i32;
+    gadget: i32;
+    menu: i32;
+}
+
+/// No event was available. `waitEvent` returns it only for an invalid or
+/// closed window; `pollEvent` returns it when the queue is empty.
+export const EVENT_NONE: i32 = 0;
+/// The window's close gadget was selected.
+export const EVENT_CLOSE: i32 = 1;
+/// A gadget was released; `gadget` names it.
+export const EVENT_GADGET: i32 = 2;
+/// A menu item was selected; `menu` names it.
+export const EVENT_MENU: i32 = 3;
+/// A mouse button event; `code`, `qualifier`, and the mouse fields are set.
+export const EVENT_MOUSE: i32 = 4;
+/// A raw or vanilla key event; `code` and `qualifier` are set.
+export const EVENT_KEY: i32 = 5;
+/// The window became active.
+export const EVENT_ACTIVE: i32 = 6;
+/// The window became inactive.
+export const EVENT_INACTIVE: i32 = 7;
+
 ffi stdintuition {
     func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
     func cl_close_screen(take screen: Screen): void;
+    func cl_open_window(borrow screen: Screen, x: i32, y: i32, width: i32,
+                        height: i32, title: cstring): Window?;
+    func cl_close_window(take window: Window): void;
+    func cl_window_width(borrow window: Window): i32;
+    func cl_window_height(borrow window: Window): i32;
+    func cl_window_add_button(borrow window: Window, x: i32, y: i32,
+                              width: i32, height: i32, label: cstring,
+                              id: i32): bool;
+    func cl_window_add_string(borrow window: Window, x: i32, y: i32,
+                              width: i32, height: i32, label: cstring,
+                              initial: cstring, max_chars: i32,
+                              id: i32): bool;
+    func cl_window_string(borrow window: Window, id: i32, buf: raw u8,
+                          cap: u32): i32;
+    func cl_window_add_menu(borrow window: Window, title: cstring): i32;
+    func cl_window_add_menu_item(borrow window: Window, menu: i32,
+                                 label: cstring, id: i32): bool;
+    func cl_window_ask_yes_no(borrow window: Window, body: cstring): bool;
+    func cl_show_alert(body: cstring): void;
+    func cl_window_set_pointer(borrow window: Window, show: bool): void;
+    func cl_window_next_event(borrow window: Window, wait: bool): bool;
+    func cl_window_event_kind(borrow window: Window): i32;
+    func cl_window_event_code(borrow window: Window): i32;
+    func cl_window_event_qualifier(borrow window: Window): u16;
+    func cl_window_event_mouse_x(borrow window: Window): i32;
+    func cl_window_event_mouse_y(borrow window: Window): i32;
+    func cl_window_event_gadget(borrow window: Window): i32;
+    func cl_window_event_menu(borrow window: Window): i32;
 }
 
 /// Opens a custom screen, or returns `null` on failure.
@@ -33,4 +107,176 @@ ffi stdintuition {
 /// must check before using the screen.
 export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
     return cl_open_screen(width, height, depth, title);
+}
+
+/// Opens a window on `screen`, or returns `null` on failure.
+///
+/// `x`/`y` are screen pixels and `width`/`height` are the outer window size.
+/// The window uses a drag bar, a depth gadget, a close gadget, and
+/// `WFLG_GIMMEZEROZERO`, so the inner drawable area is
+/// `windowWidth`/`windowHeight` and all drawing coordinates are relative to it.
+/// The title is copied, so the caller's string only has to live for the call.
+///
+/// The window is rejected with `null` when the screen is null, the title is
+/// null or over 64 bytes, the size is non-positive or larger than 320x256, or
+/// the rectangle leaves the screen. No allocation survives a rejection.
+export func openWindow(borrow screen: Screen, x: i32, y: i32, width: i32,
+                       height: i32, title: cstring): Window? {
+    return cl_open_window(screen, x, y, width, height, title);
+}
+
+/// Closes an owned window now; the generated drop would otherwise close it at
+/// the end of the scope.
+///
+/// The handle is moved, so it cannot be used afterwards. Closing clears any
+/// menu and pointer, closes the Intuition window, and releases every gadget,
+/// menu, label, string, and pointer allocation the window owns.
+export func closeWindow(take window: Window): void {
+    cl_close_window(window);
+}
+
+/// Returns the window's inner drawable width in pixels, or 0 on a null window.
+export func windowWidth(borrow window: Window): i32 {
+    return cl_window_width(window);
+}
+
+/// Returns the window's inner drawable height in pixels, or 0 on a null window.
+export func windowHeight(borrow window: Window): i32 {
+    return cl_window_height(window);
+}
+
+/// Appends a classic boolean button and returns `true` on success.
+///
+/// (`x`,`y`) is the inner-window position and `width`/`height` is the hit box.
+/// The label is copied (at most 64 bytes) and the button uses a pen-1 fill and
+/// a pen-2 select image, so the caller sets those screen pens first. `id` must
+/// be at least 1 and unique within the window; a click delivers `EVENT_GADGET`
+/// with that id. Invalid geometry, an over-long label, a duplicate id, or an
+/// allocation failure returns `false` with no partial button.
+export func addButton(borrow window: Window, x: i32, y: i32, width: i32,
+                      height: i32, label: cstring, id: i32): bool {
+    return cl_window_add_button(window, x, y, width, height, label, id);
+}
+
+/// Appends a classic string gadget and returns `true` on success.
+///
+/// The label and initial text are copied; `maxChars` is 1..64. The field owns
+/// its edit buffer, and `windowString` copies the current contents back to the
+/// caller. Enter over the field delivers `EVENT_GADGET` with `id`.
+export func addString(borrow window: Window, x: i32, y: i32, width: i32,
+                      height: i32, label: cstring, initial: cstring,
+                      maxChars: i32, id: i32): bool {
+    return cl_window_add_string(window, x, y, width, height, label, initial,
+                                maxChars, id);
+}
+
+/// Copies the current text of the string gadget `id` into `buf`.
+///
+/// Returns the copied byte count, or 0 when the id is unknown, is not a string
+/// gadget, or `buf` is empty. At most `len(buf)` bytes are written; a trailing
+/// NUL is added when there is room. The copy is bounded by the gadget's own
+/// `NumChars`/`MaxChars`, never by an unbounded `strlen`.
+export func windowString(borrow window: Window, id: i32,
+                         borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_window_string(window, id, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Appends a menu header and returns its zero-based index, or -1 on failure.
+///
+/// The title is copied (at most 64 bytes). The strip is attached and refreshed
+/// after the add; no submenus, checkmarks, toggles, or command keys are part of
+/// this surface.
+export func addMenu(borrow window: Window, title: cstring): i32 {
+    return cl_window_add_menu(window, title);
+}
+
+/// Appends an enabled textual item to menu `menu` and returns `true` on
+/// success.
+///
+/// The label is copied (at most 64 bytes); `id` must be at least 1 and unique
+/// within the window. A selection delivers `EVENT_MENU` with that id. An
+/// invalid menu index, a duplicate id, an over-long label, or an allocation
+/// failure returns `false` with no partial item.
+export func addMenuItem(borrow window: Window, menu: i32, label: cstring,
+                        id: i32): bool {
+    return cl_window_add_menu_item(window, menu, label, id);
+}
+
+/// Shows a modal Yes/No requester in `window` and returns `true` for Yes.
+///
+/// The body is copied (at most 28 bytes) for the blocking call; the buttons
+/// carry the fixed labels Yes and No. A null window or body, an over-long body,
+/// or an allocation failure returns `false` without showing a requester. The
+/// call blocks until the user answers.
+export func askYesNo(borrow window: Window, body: cstring): bool {
+    return cl_window_ask_yes_no(window, body);
+}
+
+/// Shows a modal recovery alert with a Continue button.
+///
+/// The body is copied (at most 28 bytes) for the blocking call. The alert uses
+/// the default screen, so it temporarily covers the caller's custom screen; the
+/// window layer restores its content when the alert returns. A null or
+/// over-long body is a no-op.
+export func showAlert(body: cstring): void {
+    cl_show_alert(body);
+}
+
+/// Installs or clears the built-in 16x16 pointer arrow.
+///
+/// The first `true` allocates the arrow in chip memory; later calls reuse it.
+/// The arrow's white and black colors are the sprite registers 17 and 18, set
+/// through `setColor(screen, 17, ...)` and `setColor(screen, 18, ...)`.
+/// `false` clears the pointer without freeing the image. The image is freed
+/// when the window closes.
+export func setPointer(borrow window: Window, show: bool): void {
+    cl_window_set_pointer(window, show);
+}
+
+/// Waits for the next event and returns it, or returns `EVENT_NONE` when the
+/// window is null or closed.
+///
+/// Refresh events are acknowledged inside the shim and are not delivered. The
+/// message is replied before the value is returned, so the caller can call this
+/// again immediately.
+export func waitEvent(borrow window: Window): WindowEvent {
+    if (!cl_window_next_event(window, true)) {
+        return WindowEvent {
+            kind: EVENT_NONE, code: 0, qualifier: 0,
+            mouse_x: 0, mouse_y: 0, gadget: 0, menu: 0,
+        };
+    }
+    return WindowEvent {
+        kind: cl_window_event_kind(window),
+        code: cl_window_event_code(window),
+        qualifier: cl_window_event_qualifier(window),
+        mouse_x: cl_window_event_mouse_x(window),
+        mouse_y: cl_window_event_mouse_y(window),
+        gadget: cl_window_event_gadget(window),
+        menu: cl_window_event_menu(window),
+    };
+}
+
+/// Returns the next queued event, or `EVENT_NONE` when the queue is empty.
+///
+/// This is the non-blocking companion to `waitEvent`; both share the same
+/// message reply and refresh behavior.
+export func pollEvent(borrow window: Window): WindowEvent {
+    if (!cl_window_next_event(window, false)) {
+        return WindowEvent {
+            kind: EVENT_NONE, code: 0, qualifier: 0,
+            mouse_x: 0, mouse_y: 0, gadget: 0, menu: 0,
+        };
+    }
+    return WindowEvent {
+        kind: cl_window_event_kind(window),
+        code: cl_window_event_code(window),
+        qualifier: cl_window_event_qualifier(window),
+        mouse_x: cl_window_event_mouse_x(window),
+        mouse_y: cl_window_event_mouse_y(window),
+        gadget: cl_window_event_gadget(window),
+        menu: cl_window_event_menu(window),
+    };
 }

@@ -11,7 +11,7 @@
 
 module std.amiga.text;
 
-import { Screen } from std.amiga.intuition;
+import { Screen, Window } from std.amiga.intuition;
 
 /// A text font. Owned fonts are closed on drop; the default font is borrowed.
 export handle Font freedBy cl_font_free;
@@ -24,6 +24,7 @@ ffi stdtext {
     func cl_text_width(borrow font: Font, text: raw u8, count: u32): i32;
     func cl_text_height(const font: Font): i32;
     func cl_text_draw(borrow screen: Screen, borrow font: Font, x: i32, y: i32, pen: u8, text: raw u8, count: u32): void;
+    func cl_window_text_draw(borrow window: Window, borrow font: Font, x: i32, y: i32, pen: u8, text: raw u8, count: u32): void;
 }
 
 /// Opens `name` at `size`/`style` with graphics.library, or returns null.
@@ -74,5 +75,17 @@ export func textHeight(const font: Font): i32 {
 export func drawText(borrow screen: Screen, borrow font: Font, x: i32, y: i32, pen: u8, const text: u8[]): void {
     unsafe {
         cl_text_draw(screen, font, x, y, pen, raw u8(text.ptr), u32(len(text)));
+    }
+}
+
+/// Draws `text` at (`x`,`y`) in the window with color `pen`.
+///
+/// Coordinates are relative to the window's inner drawable area; the window
+/// layer clips the text. The font and window must stay alive while drawing.
+export func windowText(borrow window: Window, borrow font: Font, x: i32,
+                       y: i32, pen: u8, const text: u8[]): void {
+    unsafe {
+        cl_window_text_draw(window, font, x, y, pen, raw u8(text.ptr),
+                            u32(len(text)));
     }
 }

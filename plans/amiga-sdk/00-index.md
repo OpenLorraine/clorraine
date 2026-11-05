@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–5 done; Bundle 6 next
+> **Status**: Executing — Bundles 0–5 done; Bundle 6 13/17, A500 acceptance blocked on AR-25
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -64,4 +64,7 @@ clipping, and the scrolling text demo on the real A500/KS1.3 machine. Diskfont
 and 2.0+ regions are deferred. Bundle 5 is `plans/amiga-sdk-dos-assets/`:
 the DOS file/lock/path/volume surface, the pure IFF/ILBM parser, the ILBM
 loader, and the image viewer on the real A500/KS1.3 machine. `ReadArgs` and
-`datatypes.library` are deferred. Bundle 6 (Intuition UI) is next.
+`datatypes.library` are deferred. Bundle 6 (Intuition UI) is
+`plans/amiga-sdk-intuition/`; 13 of 17 tasks are verified and the A500 GUI
+acceptance is blocked on the input/menu harness decision recorded as AR-25.
+Bundle 7 (Exec and devices) follows after that acceptance.
