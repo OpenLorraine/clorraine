@@ -1,0 +1,268 @@
+// Image viewer: the Bundle 5 DOS and asset acceptance program.
+//
+// The demo first proves the DOS surface on the target: it creates a directory
+// and file, writes, seeks, reads back, renames, inspects, deletes, and removes
+// the directory, then reads the DF0: volume information. It then loads the
+// committed 320x200x4 ILBM, applies its 16-color palette, shows it on a custom
+// display, draws a caption layer with the ROM Topaz font, and holds a
+// deterministic frame for the A500 capture.
+//
+// The report line is
+//   img: ok 320x200x4 hash <FNV> dos <mask> vol <bit>
+// where `dos` is the eight-bit self-test mask and `hash` is the parser's FNV-1a
+// hash of the decoded chunky pixels.
+
+module example.ImageViewer;
+
+import {
+    File, openFile, createFile, readFile, writeBytes, MODE_OLDFILE
+} from std.io;
+import {
+    SEEK_SET, seekFile, filePosition, fileLength,
+    Lock, lockPath, unlockPath,
+    PathInfo, pathInfo, pathInfoIsDir, pathInfoSize, pathInfoName,
+    VolumeInfo, volumeInfo, volumeName, volumeFreeBytes, volumeUsedBytes,
+    makeDir, deleteFile, renameFile, setCurrentDir, currentDirName,
+    parentDirName
+} from std.amiga.dos;
+import {
+    Display, Bitmap, newBitmap, freeBitmap, openDisplay, freeDisplay,
+    displaySetColor, displayFlip
+} from std.amiga.video;
+import { loadIlbm, IlbmImage } from std.amiga.ilbm;
+import { Font, openFont, defaultFont, freeFont } from std.amiga.text;
+import { Layer, newLayer, freeLayer, layerFill, layerText } from std.amiga.layers;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+import { delayTicks } from std.amiga.dos;
+
+/// The text probe and its renamed form.
+const PROBE: static str = "DF0:tmp/probe";
+const PROBE2: static str = "DF0:tmp/probe2";
+/// The acceptance image on the boot disk.
+const IMAGE: static str = "DF0:image.ilbm";
+/// The hold for the A500 capture, in DOS ticks (about 24 seconds).
+const HOLD: u32 = 1200;
+
+/// Runs the DOS self-test and returns the eight-bit check mask plus the volume
+/// bit.
+func dosSelfTest(): i32 {
+    let tmp: String = stringOf("DF0:tmp");
+    let probe: String = stringOf(PROBE);
+    let probe2: String = stringOf(PROBE2);
+    let payload: u8[4] = [73, 76, 66, 77];
+
+    let dirOk: bool = makeDir(toCString(tmp));
+    let lockOk: bool = false;
+    let lock: Lock? = lockPath(toCString(tmp));
+    if (lock != null) {
+        unlockPath(lock);
+        lockOk = true;
+    }
+
+    let cwdOk: bool = false;
+    if (setCurrentDir(toCString(tmp))) {
+        let cwd: u8[64] = [; 0];
+        let cwdLen: i32 = currentDirName(borrow slice(cwd, 0, 64));
+        let parent: u8[64] = [; 0];
+        let parentLen: i32 = parentDirName(borrow slice(parent, 0, 64));
+        let oneCwd: u8[1] = [; 0];
+        let oneCwdLen: i32 = currentDirName(borrow slice(oneCwd, 0, 1));
+        let oneParent: u8[1] = [; 0];
+        let oneParentLen: i32 = parentDirName(borrow slice(oneParent, 0, 1));
+        if (cwdLen == 3 && parentLen > 0 && oneCwdLen == 1 &&
+            oneParentLen == 1 &&
+            cwd[0] == 116 && cwd[1] == 109 && cwd[2] == 112) {
+            cwdOk = true;
+        }
+        let restored: bool = setCurrentDir(toCString(stringOf("DF0:")));
+        if (!restored) {
+            cwdOk = false;
+        }
+    }
+
+    let fileOk: bool = false;
+    let createdOk: bool = false;
+    {
+        let created: File? = createFile(toCString(probe));
+        if (created != null) {
+            let written: i32 = writeBytes(created, slice(payload, 0, 4));
+            if (written == 4) {
+                createdOk = true;
+            }
+        }
+    }
+    if (createdOk) {
+        let reopened: File? = openFile(toCString(probe), MODE_OLDFILE);
+        if (reopened != null) {
+            let length: i32 = fileLength(reopened);
+            let moved: bool = seekFile(reopened, 1, SEEK_SET);
+            let position: i32 = filePosition(reopened);
+            let one: u8[1] = [; 0];
+            let got: i32 = readFile(reopened, borrow slice(one, 0, 1));
+            if (length == 4 && moved && position == 1 &&
+                got == 1 && one[0] == 76) {
+                fileOk = true;
+            }
+        }
+    }
+
+    let pathOk: bool = false;
+    let info: PathInfo? = pathInfo(toCString(probe));
+    if (info != null) {
+        let isDir: bool = pathInfoIsDir(info);
+        let size: i32 = pathInfoSize(info);
+        let name: u8[32] = [; 0];
+        let nameLen: i32 = pathInfoName(info, borrow slice(name, 0, 32));
+        let one: u8[1] = [; 0];
+        let oneLen: i32 = pathInfoName(info, borrow slice(one, 0, 1));
+        if (!isDir && size == 4 && nameLen == 5 && oneLen == 1 &&
+            name[0] == 112 && name[1] == 114 && name[2] == 111 &&
+            name[3] == 98 && name[4] == 101 && one[0] == 112) {
+            pathOk = true;
+        }
+    }
+
+    let renameOk: bool = false;
+    if (renameFile(toCString(probe), toCString(probe2))) {
+        let renamed: PathInfo? = pathInfo(toCString(probe2));
+        if (renamed != null) {
+            let name: u8[32] = [; 0];
+            let nameLen: i32 = pathInfoName(renamed, borrow slice(name, 0, 32));
+            if (nameLen == 6 &&
+                name[0] == 112 && name[1] == 114 && name[2] == 111 &&
+                name[3] == 98 && name[4] == 101 && name[5] == 50) {
+                renameOk = true;
+            }
+        }
+    }
+
+    let deleteOk: bool = deleteFile(toCString(probe2));
+    let dirRemoved: bool = deleteFile(toCString(tmp));
+
+    let volOk: bool = false;
+    let volume: VolumeInfo? = volumeInfo(toCString(stringOf("DF0:")));
+    if (volume != null) {
+        let name: u8[32] = [; 0];
+        let nameLen: i32 = volumeName(volume, borrow slice(name, 0, 32));
+        let one: u8[1] = [; 0];
+        let oneLen: i32 = volumeName(volume, borrow slice(one, 0, 1));
+        let free: i32 = volumeFreeBytes(volume);
+        let used: i32 = volumeUsedBytes(volume);
+        if (nameLen > 0 && oneLen == 1 && free > 0 && used > 0) {
+            volOk = true;
+        }
+    }
+
+    let mask: i32 = 0;
+    if (fileOk) {
+        mask = mask | 1;
+    }
+    if (pathOk) {
+        mask = mask | 2;
+    }
+    if (renameOk) {
+        mask = mask | 4;
+    }
+    if (deleteOk) {
+        mask = mask | 8;
+    }
+    if (dirOk && dirRemoved) {
+        mask = mask | 16;
+    }
+    if (volOk) {
+        mask = mask | 32;
+    }
+    if (lockOk) {
+        mask = mask | 64;
+    }
+    if (cwdOk) {
+        mask = mask | 128;
+    }
+    return mask;
+}
+
+func main(): i32 {
+    let dos: i32 = dosSelfTest();
+    let volBit: i32 = 0;
+    {
+        let volume: VolumeInfo? = volumeInfo(toCString(stringOf("DF0:")));
+        if (volume != null) {
+            let name: u8[32] = [; 0];
+            let nameLen: i32 = volumeName(volume, borrow slice(name, 0, 32));
+            if (nameLen > 0) {
+                volBit = 1;
+            }
+        }
+    }
+
+    let palette: u8[48] = [; 0];
+    let image: IlbmImage = loadIlbm(
+        toCString(stringOf(IMAGE)), borrow slice(palette, 0, 48));
+    if (!image.ok) {
+        println("image: load failed");
+        return 3;
+    }
+    if (image.bitmap == null) {
+        println("image: load failed");
+        return 3;
+    }
+
+    let backMaybe: Bitmap? = newBitmap(image.width, image.height, image.depth);
+    if (backMaybe == null) {
+        println("image: bitmap failed");
+        return 1;
+    }
+    let back: Bitmap = backMaybe;
+    let front: Bitmap = image.bitmap;
+    let displayMaybe: Display? = openDisplay(front, back);
+    if (displayMaybe == null) {
+        println("image: display failed");
+        return 2;
+    }
+    let display: Display = displayMaybe;
+
+    let colors: u16 = image.colors;
+    let index: usize = 0;
+    while (index < usize(colors)) {
+        displaySetColor(
+            display, u8(index),
+            palette[index * 3], palette[index * 3 + 1],
+            palette[index * 3 + 2]);
+        index = index + 1;
+    }
+    displayFlip(display);
+
+    let fontMaybe: Font? = openFont(toCString(stringOf("topaz.font")), 8, 0);
+    if (fontMaybe == null) {
+        fontMaybe = defaultFont();
+    }
+    if (fontMaybe == null) {
+        println("image: font failed");
+        return 5;
+    }
+    let font: Font = fontMaybe;
+
+    let caption: u8[21] = [
+        67, 108, 111, 114, 114, 97, 105, 110, 101, 32, 73, 76, 66, 77,
+        32, 118, 105, 101, 119, 101, 114
+    ];
+    let layerMaybe: Layer? = newLayer(front, 8, 8, 207, 23);
+    if (layerMaybe == null) {
+        println("image: layer failed");
+        return 4;
+    }
+    let layer: Layer = layerMaybe;
+    layerFill(layer, 0, 0, 199, 15, 15);
+    layerText(layer, font, 4, 12, 1, slice(caption, 0, 21));
+
+    delayTicks(HOLD);
+
+    freeLayer(layer);
+    freeDisplay(display);
+    freeFont(font);
+    freeBitmap(back);
+    println($"img: ok {image.width}x{image.height}x{image.depth} hash {image.hash} dos {dos} vol {volBit}");
+    return 0;
+}

@@ -1,0 +1,331 @@
+//! IFF and ILBM: chunk parsing, palette extraction, and plane decoding.
+//!
+//! This module is pure Clorraine: it uses only language intrinsics, so the host
+//! profile runs the same parser the Amiga profiles run.
+//! Every read is bounds-checked by the language, and the parser adds explicit
+//! window checks before it slices or indexes. A malformed file returns a failed
+//! `IlbmInfo` or `false`; it never traps and never writes past the caller's
+//! pixel buffer.
+//!
+//! The supported subset is the common ILBM shape: `FORM ILBM`, one `BMHD`, an
+//! optional `CMAP` with up to 256 entries, and one row-interleaved `BODY` with
+//! no compression or ByteRun1 compression. HAM, EHB, masking, and multi-`BODY`
+//! files are rejected or outside the subset.
+
+module std.iff;
+
+/// The result of parsing an ILBM header.
+///
+/// `ok` is the gate every later call checks. When it is false the remaining
+/// fields are zero and no decode should be attempted. `cmap_start` is zero when
+/// the file has no `CMAP`; `body_start` and `body_len` locate the first `BODY`
+/// payload inside the original data.
+export struct IlbmInfo {
+    ok: bool;
+    width: i32;
+    height: i32;
+    depth: u8;
+    compression: u8;
+    colors: u16;
+    cmap_start: usize;
+    body_start: usize;
+    body_len: usize;
+}
+
+/// Reads one big-endian 16-bit value.
+func be16(data: u8[], at: usize): u16 {
+    return u16((u32(data[at]) << 8) | u32(data[at + 1]));
+}
+
+/// Reads one big-endian 32-bit value.
+func be32(data: u8[], at: usize): u32 {
+    return (u32(data[at]) << 24) |
+           (u32(data[at + 1]) << 16) |
+           (u32(data[at + 2]) << 8) |
+           u32(data[at + 3]);
+}
+
+/// Returns the failed parse result.
+func failed(): IlbmInfo {
+    return IlbmInfo {
+        ok: false,
+        width: 0,
+        height: 0,
+        depth: 0,
+        compression: 0,
+        colors: 0,
+        cmap_start: 0,
+        body_start: 0,
+        body_len: 0,
+    };
+}
+
+/// Parses the IFF/ILBM header and locates the palette and body.
+///
+/// The function walks the chunks inside the `FORM` window and records only the
+/// fields the decoder needs. It rejects a wrapped FORM length or chunk size, a
+/// second `BODY`, a zero-length `BODY`, and any geometry the decoder cannot
+/// represent.
+export func ilbmInfo(data: u8[]): IlbmInfo {
+    let n: usize = len(data);
+    if (n < 12) {
+        return failed();
+    }
+    if (be32(data, 0) != u32(0x464F524D)) {
+        return failed();
+    }
+    let form_len: usize = usize(be32(data, 4));
+    if (form_len < 4 || form_len > n - 8) {
+        return failed();
+    }
+    if (be32(data, 8) != u32(0x494C424D)) {
+        return failed();
+    }
+    let end: usize = 8 + form_len;
+    let have_bmhd: bool = false;
+    let have_body: bool = false;
+    let width: i32 = 0;
+    let height: i32 = 0;
+    let depth: u8 = 0;
+    let compression: u8 = 0;
+    let colors: u16 = 0;
+    let cmap_start: usize = 0;
+    let body_start: usize = 0;
+    let body_len: usize = 0;
+    let offset: usize = 12;
+
+    while (end - offset >= 8) {
+        let id: u32 = be32(data, offset);
+        let size: usize = usize(be32(data, offset + 4));
+        if (size > end - offset - 8) {
+            return failed();
+        }
+        let payload: usize = offset + 8;
+
+        if (id == u32(0x424D4844)) {
+            // BMHD
+            if (have_bmhd || size < 20) {
+                return failed();
+            }
+            width = i32(be16(data, payload));
+            height = i32(be16(data, payload + 2));
+            depth = data[payload + 8];
+            let masking: u8 = data[payload + 9];
+            compression = data[payload + 10];
+            if (width < 1 || width > 1024 ||
+                height < 1 || height > 1024 ||
+                depth < 1 || depth > 8 ||
+                masking != 0 || compression > 1) {
+                return failed();
+            }
+            have_bmhd = true;
+        } else if (id == u32(0x434D4150)) {
+            // CMAP
+            let count: usize = size / 3;
+            if (count > 256) {
+                count = 256;
+            }
+            colors = u16(count);
+            cmap_start = payload;
+        } else if (id == u32(0x424F4459)) {
+            // BODY
+            if (have_body || size == 0) {
+                return failed();
+            }
+            body_start = payload;
+            body_len = size;
+            have_body = true;
+        }
+
+        offset = payload + size;
+        if ((size & 1) != 0) {
+            offset = offset + 1;
+        }
+        if (offset > end) {
+            return failed();
+        }
+    }
+
+    if (offset != end || !have_bmhd || !have_body) {
+        return failed();
+    }
+    return IlbmInfo {
+        ok: true,
+        width: width,
+        height: height,
+        depth: depth,
+        compression: compression,
+        colors: colors,
+        cmap_start: cmap_start,
+        body_start: body_start,
+        body_len: body_len,
+    };
+}
+
+/// Converts one unsigned byte to a signed control value.
+func signedByte(value: u8): i32 {
+    if (value >= 128) {
+        return i32(value) - 256;
+    }
+    return i32(value);
+}
+
+/// Decodes the ILBM planes into one chunky index per pixel.
+///
+/// `pixels` must hold at least `width * height` bytes. The function clears the
+/// destination first, so recycled memory cannot leak into the image, and then
+/// writes every pixel. It returns false on a failed or inconsistent `info`, a
+/// short buffer, a truncated body, or an invalid ByteRun1 stream.
+export func ilbmDecode(data: u8[], const info: IlbmInfo, borrow pixels: u8[]): bool {
+    if (!info.ok) {
+        return false;
+    }
+    if (info.width < 1 || info.width > 1024 ||
+        info.height < 1 || info.height > 1024 ||
+        info.depth < 1 || info.depth > 8 || info.compression > 1) {
+        return false;
+    }
+    let n: usize = len(data);
+    if (info.body_start > n || info.body_len == 0 ||
+        info.body_len > n - info.body_start) {
+        return false;
+    }
+    let width: usize = usize(info.width);
+    let height: usize = usize(info.height);
+    let total: usize = width * height;
+    if (len(pixels) < total) {
+        return false;
+    }
+    let row_bytes: usize = ((width + 15) / 16) * 2;
+    if (row_bytes == 0 || row_bytes > 128) {
+        return false;
+    }
+    let body_end: usize = info.body_start + info.body_len;
+    let depth: usize = usize(info.depth);
+
+    let clear: usize = 0;
+    while (clear < total) {
+        pixels[clear] = 0;
+        clear = clear + 1;
+    }
+
+    let row: u8[128] = [; 0];
+    let cursor: usize = info.body_start;
+    let y: usize = 0;
+    while (y < height) {
+        let plane: usize = 0;
+        while (plane < depth) {
+            let out_at: usize = 0;
+            if (cursor > body_end) {
+                return false;
+            }
+            if (info.compression == 0) {
+                if (row_bytes > body_end - cursor) {
+                    return false;
+                }
+                let copy: usize = 0;
+                while (copy < row_bytes) {
+                    row[copy] = data[cursor + copy];
+                    copy = copy + 1;
+                }
+                cursor = cursor + row_bytes;
+            } else {
+                while (out_at < row_bytes) {
+                    if (cursor >= body_end) {
+                        return false;
+                    }
+                    let control: i32 = signedByte(data[cursor]);
+                    cursor = cursor + 1;
+                    if (control >= 0) {
+                        let count: usize = usize(control + 1);
+                        if (count > row_bytes - out_at ||
+                            count > body_end - cursor) {
+                            return false;
+                        }
+                        let literal: usize = 0;
+                        while (literal < count) {
+                            row[out_at + literal] = data[cursor + literal];
+                            literal = literal + 1;
+                        }
+                        cursor = cursor + count;
+                        out_at = out_at + count;
+                    } else if (control != -128) {
+                        let count: usize = usize(0 - control + 1);
+                        if (cursor >= body_end || count > row_bytes - out_at) {
+                            return false;
+                        }
+                        let value: u8 = data[cursor];
+                        cursor = cursor + 1;
+                        let repeat: usize = 0;
+                        while (repeat < count) {
+                            row[out_at + repeat] = value;
+                            repeat = repeat + 1;
+                        }
+                        out_at = out_at + count;
+                    }
+                }
+            }
+
+            let x: usize = 0;
+            while (x < width) {
+                let mask: u8 = u8(128) >> u8(x & 7);
+                if ((row[x / 8] & mask) != 0) {
+                    let index: usize = y * width + x;
+                    pixels[index] = pixels[index] | (u8(1) << u8(plane));
+                }
+                x = x + 1;
+            }
+            plane = plane + 1;
+        }
+        y = y + 1;
+    }
+    return true;
+}
+
+/// Copies whole RGB triplets from `CMAP` into `palette`.
+///
+/// The return value is the number of whole colors copied, so a buffer shorter
+/// than one triplet copies nothing. A missing `CMAP`, a failed `info`, or an
+/// inconsistent palette location copies nothing and returns 0.
+export func ilbmPalette(data: u8[], const info: IlbmInfo, borrow palette: u8[]): u16 {
+    if (!info.ok || info.colors == 0 || info.cmap_start == 0) {
+        return 0;
+    }
+    let n: usize = len(data);
+    if (info.cmap_start > n) {
+        return 0;
+    }
+    let available: usize = n - info.cmap_start;
+    let wanted: usize = usize(info.colors);
+    let cap: usize = len(palette) / 3;
+    let count: usize = 0;
+    if (wanted < cap) {
+        count = wanted;
+    } else {
+        count = cap;
+    }
+    if (count > available / 3) {
+        count = available / 3;
+    }
+    let bytes: usize = count * 3;
+    let i: usize = 0;
+    while (i < bytes) {
+        palette[i] = data[info.cmap_start + i];
+        i = i + 1;
+    }
+    return u16(count);
+}
+
+/// Returns the FNV-1a hash of the decoded pixel bytes.
+///
+/// The host tests and the A500 acceptance line use the same value, so the
+/// target run cannot hide a decoder defect behind a self-captured golden.
+export func ilbmPixelHash(pixels: u8[]): u32 {
+    let hash: u32 = u32(2166136261);
+    let i: usize = 0;
+    while (i < len(pixels)) {
+        hash = (hash ^ u32(pixels[i])) * u32(16777619);
+        i = i + 1;
+    }
+    return hash;
+}

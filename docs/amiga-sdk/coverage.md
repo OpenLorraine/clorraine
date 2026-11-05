@@ -10,7 +10,7 @@
 | 2-sprites | core | 1.3 | 6 | 6 | 0 | #3 |
 | 3-audio-input | core | 1.3 | 6 | 8 | 0 | #4 |
 | 4-text-layers | core | 1.3 | 4 | 6 | 0 | #5 |
-| 5-dos-assets | core | 1.3 | 0 | 7 | 4 | #6 |
+| 5-dos-assets | core | 1.3 | 5 | 7 | 0 | #6 |
 | 6-intuition | core | 1.3 | 0 | 9 | 4 | #7 |
 | 7-exec-devices | core | 1.3 | 0 | 11 | 5 | #8 |
 | 8-workbench | advanced | 2.0 | 0 | 9 | 0 | #9 |
@@ -97,13 +97,13 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-DOS-001 | Seek/read/write | must | missing | dos_seek |
-| SDK-DOS-002 | Locks, directories, delete/rename | must | missing | dos_dirs |
-| SDK-DOS-003 | Path/assign/volume info | should | missing | dos_info |
-| SDK-DOS-004 | CLI args via ReadArgs (2.0+) | should | missing | dos_args |
-| SDK-DOS-005 | IFF/ILBM parser | must | missing | ilbm |
-| SDK-DOS-006 | datatypes.library (3.0+) | could | missing | datatypes |
-| SDK-DOS-008 | Image viewer demo | must | missing | image_viewer |
+| SDK-DOS-001 | Seek/read/write | must | done | dos_seek |
+| SDK-DOS-002 | Locks, directories, delete/rename | must | done | dos_dirs |
+| SDK-DOS-003 | Path/assign/volume info | should | done | dos_info |
+| SDK-DOS-004 | CLI args via ReadArgs (2.0+) | should | deferred | dos_args |
+| SDK-DOS-005 | IFF/ILBM parser | must | done | ilbm |
+| SDK-DOS-006 | datatypes.library (3.0+) | could | deferred | datatypes |
+| SDK-DOS-008 | Image viewer demo | must | done | image_viewer |
 
 ## 6-intuition — Intuition UI
 

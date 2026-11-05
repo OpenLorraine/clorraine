@@ -30,9 +30,12 @@ holds the FFI declaration.
 | `exec.library` | libraries | open and close (`OpenLibrary`/`CloseLibrary`) | `handle Library` |
 | `exec.library` | ports | create and delete message ports | `handle MsgPort` |
 | `exec.library` | signals | wait for and set signals (`Wait`/`SetSignal`) | event loop (§6) |
-| `dos.library` | files | open, close, read, and write; `Seek` planned, not yet wrapped | `handle File` |
-| `dos.library` | locks | lock and unlock a path (planned; not yet wrapped) | `handle Lock` (planned) |
-| `dos.library` | output | write to standard output (planned; print helpers not yet wrapped) | `println` (planned) |
+| `dos.library` | files | open, close, read, write, seek, position, and length | `handle File` |
+| `dos.library` | locks | lock and unlock a path, inspect it, create/delete/rename entries, current/parent directory | `handle Lock`, `PathInfo` |
+| `dos.library` | volumes | volume name, free bytes, used bytes | `VolumeInfo` |
+| `dos.library` | output | write to standard output | `println` |
+| `iff` | assets | pure IFF/ILBM parser, ByteRun1, palette, chunky hash | `IlbmInfo` |
+| `ilbm` / `graphics` | image loading | read an ILBM into a `Bitmap` and palette | `IlbmImage`, `bitmapFromIndices` |
 | `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
 | `graphics` | native video | chip memory, bitmaps, blitter copies, copper list, double-buffered `LoadView` display, 4-bit palette | `ChipBuffer`, `Bitmap`, `Copper`, `Display` |
 | `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
@@ -165,6 +168,29 @@ bitmap. Each layer has its own `Layer_Info`, so layers do not stack or occlude
 one another; a simple layer leaves stale pixels when moved or resized. Free the
 layer before its bitmap. `drawText`/`layerText` restore the RastPort font after
 the draw, so a font may be freed before the screen or layer.
+
+### 1.5 DOS and assets
+
+`std.amiga.dos` adds file positioning (`seekFile`, `filePosition`,
+`fileLength`), shared locks, `PathInfo` and `VolumeInfo` handles, directory and
+file mutation, and current/parent directory names. The `File` handle remains the
+libc-backed stream; locks and path/volume information use `dos.library`. Name
+copies are bounded by the caller buffer. Assigns resolve through `Lock`/`Open`;
+assign-list enumeration, `ReadArgs`, and `datatypes.library` are 2.0+/3.0+ and
+deferred.
+
+`std.iff` is a pure parser for the common ILBM shape: one `FORM ILBM`, one
+`BMHD`, an optional `CMAP`, and one row-interleaved `BODY` with no compression
+or ByteRun1. It rejects wrapped lengths, truncated chunks, zero-length or
+multiple bodies, masking, and bad geometry without trapping. `ilbmPixelHash`
+gives the host tests and the A500 report the same FNV-1a value.
+
+`std.amiga.ilbm.loadIlbm` reads at most 128 KB, caps the image at 320x256, builds
+the bitmap, and fills the caller's palette. The acceptance viewer runs a DOS
+self-test, shows the committed 320x200x4 fixture, applies its 16 colors, draws a
+ROM-font caption layer, and prints `img: ok 320x200x4 hash <N> dos 255 vol 1`.
+The A500 smoke builds it in release mode so the executable and chip allocations
+fit the 512 KB machine.
 
 The 2.0+ regions/damage API is not part of this surface. Windows and their
 event loop, `SetRGB32`, runtime palette animation after the first flip, and

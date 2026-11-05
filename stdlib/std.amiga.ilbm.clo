@@ -1,0 +1,154 @@
+//! Amiga ILBM loading: read a file, decode it, and build a `Bitmap`.
+//!
+//! This module belongs to the hosted-Amiga profiles. It composes the pure
+//! `std.iff` parser with the DOS file length, the byte-buffer helpers, and the
+//! bitmap primitive that copies chunky pixel indices into the Amiga planes.
+//!
+//! The loader accepts the common ILBM subset the parser documents and caps the
+//! image at the custom-display budget (320x256) and the file at 128 KB, so the
+//! allocations fit a 512 KB A500. A failed open, read, parse, decode, or
+//! allocation returns an image with `ok = false` and no bitmap; every temporary
+//! handle drops on that path.
+
+module std.amiga.ilbm;
+
+import { File, openFile, readFile, MODE_OLDFILE } from std.io;
+import {
+    Buffer, bufferNew, bufferBytes, slice
+} from std.mem;
+import {
+    Bitmap, newBitmap, bitmapFromIndices
+} from std.amiga.video;
+import { fileLength } from std.amiga.dos;
+import {
+    IlbmInfo, ilbmInfo, ilbmDecode, ilbmPalette, ilbmPixelHash
+} from std.iff;
+
+/// One decoded ILBM image and its metadata.
+///
+/// `ok` is the gate: when it is false, `bitmap` is null and the other fields
+/// are zero. The struct owns the bitmap when `ok` is true. `colors` is the
+/// number of whole palette entries copied into the caller's buffer, `hash` is
+/// the FNV-1a hash of the chunky pixels before conversion, and
+/// `width`/`height`/`depth` repeat the bitmap geometry for the caller's report.
+export struct IlbmImage {
+    ok: bool;
+    bitmap: Bitmap?;
+    colors: u16;
+    hash: u32;
+    width: i32;
+    height: i32;
+    depth: u8;
+}
+
+/// Returns the failed result with no bitmap.
+func failedImage(): IlbmImage {
+    return IlbmImage {
+        ok: false,
+        bitmap: null,
+        colors: 0,
+        hash: 0,
+        width: 0,
+        height: 0,
+        depth: 0,
+    };
+}
+
+/// Reads one chunk of the file into the data buffer.
+func readInto(borrow file: File, borrow data: Buffer, offset: i32,
+              total: i32): i32 {
+    return readFile(
+        file, borrow slice(bufferBytes(data), usize(offset), usize(total)));
+}
+
+/// Parses the IFF header from the loaded bytes.
+func parseInfo(borrow data: Buffer): IlbmInfo {
+    return ilbmInfo(bufferBytes(data));
+}
+
+/// Decodes the planes from the loaded bytes into the pixel buffer.
+func decodeInto(borrow data: Buffer, info: IlbmInfo,
+                borrow pixels: Buffer): bool {
+    return ilbmDecode(bufferBytes(data), info, borrow bufferBytes(pixels));
+}
+
+/// Hashes the decoded pixels.
+func hashPixels(borrow pixels: Buffer): u32 {
+    return ilbmPixelHash(bufferBytes(pixels));
+}
+
+/// Copies the decoded pixels into the bitmap planes.
+func fillBitmap(borrow bitmap: Bitmap, borrow pixels: Buffer): void {
+    bitmapFromIndices(bitmap, bufferBytes(pixels));
+}
+
+/// Loads the ILBM at `path` into a bitmap and fills `palette`.
+///
+/// The palette buffer receives whole RGB triplets; a short buffer receives
+/// fewer colors and the returned `colors` field reports how many. The caller
+/// owns the returned bitmap and the palette buffer.
+export func loadIlbm(path: cstring, borrow palette: u8[]): IlbmImage {
+    let file: File? = openFile(path, MODE_OLDFILE);
+    if (file == null) {
+        return failedImage();
+    }
+    let size: i32 = fileLength(file);
+    if (size <= 0 || size > 131072) {
+        return failedImage();
+    }
+    let data: Buffer? = bufferNew(usize(size));
+    if (data == null) {
+        return failedImage();
+    }
+    let dataBuffer: Buffer = data;
+    let read: i32 = 0;
+    while (read < size) {
+        let moved: i32 = readInto(file, dataBuffer, read, size);
+        if (moved <= 0) {
+            return failedImage();
+        }
+        read = read + moved;
+    }
+
+    let info: IlbmInfo = parseInfo(dataBuffer);
+    if (!info.ok || info.width > 320 || info.height > 256 ||
+        info.depth > 5) {
+        return failedImage();
+    }
+    let pixels: Buffer? = bufferNew(usize(info.width * info.height));
+    if (pixels == null) {
+        return failedImage();
+    }
+    let pixelBuffer: Buffer = pixels;
+    if (!decodeInto(dataBuffer, info, pixelBuffer)) {
+        return failedImage();
+    }
+    let localPalette: u8[768] = [; 0];
+    let colors: u16 = ilbmPalette(
+        bufferBytes(dataBuffer), info, borrow slice(localPalette, 0, 768));
+    let copyBytes: usize = usize(colors) * 3;
+    if (copyBytes > len(palette)) {
+        copyBytes = (len(palette) / 3) * 3;
+    }
+    let copied: usize = 0;
+    while (copied < copyBytes) {
+        palette[copied] = localPalette[copied];
+        copied = copied + 1;
+    }
+    let copiedColors: u16 = u16(copyBytes / 3);
+    let hash: u32 = hashPixels(pixelBuffer);
+    let bitmap: Bitmap? = newBitmap(info.width, info.height, info.depth);
+    if (bitmap == null) {
+        return failedImage();
+    }
+    fillBitmap(bitmap, pixelBuffer);
+    return IlbmImage {
+        ok: true,
+        bitmap: bitmap,
+        colors: copiedColors,
+        hash: hash,
+        width: info.width,
+        height: info.height,
+        depth: info.depth,
+    };
+}

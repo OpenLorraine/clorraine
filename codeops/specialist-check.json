@@ -1,10 +1,11 @@
 {
-  "checkedAt": "2026-11-04T20:32:23+01:00",
+  "checkedAt": "2026-11-05T00:05:05+01:00",
   "plans": [
     "amiga-library-surface",
     "amiga-sdk",
     "amiga-sdk-audio-input",
     "amiga-sdk-baseline",
+    "amiga-sdk-dos-assets",
     "amiga-sdk-native-video",
     "amiga-sdk-sprites",
     "amiga-sdk-text-layers",

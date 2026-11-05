@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–4 done; Bundle 5 next
+> **Status**: Executing — Bundles 0–5 done; Bundle 6 next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -61,4 +61,7 @@ timer.device delays, and the paddle game on the real A500/KS1.3 machine. The
 two advanced `could` rows are deferred. Bundle 4 is
 `plans/amiga-sdk-text-layers/`: ROM fonts, text measurement, layers with
 clipping, and the scrolling text demo on the real A500/KS1.3 machine. Diskfont
-and 2.0+ regions are deferred. Bundle 5 (DOS and assets) is next.
+and 2.0+ regions are deferred. Bundle 5 is `plans/amiga-sdk-dos-assets/`:
+the DOS file/lock/path/volume surface, the pure IFF/ILBM parser, the ILBM
+loader, and the image viewer on the real A500/KS1.3 machine. `ReadArgs` and
+`datatypes.library` are deferred. Bundle 6 (Intuition UI) is next.

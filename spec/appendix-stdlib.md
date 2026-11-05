@@ -508,7 +508,70 @@ it is created, so draw its background explicitly. Each layer owns a separate
 simple-refresh layer leaves stale pixels when moved or resized; repaint the
 background after such an operation.
 
-## 23. Diagnostics
+## 23. DOS (`std.amiga.dos`)
+
+The module wraps the 1.3 `dos.library` path, lock, directory, and volume calls.
+The `File` handle stays the existing libc-backed stream, so `seekFile`,
+`filePosition`, and `fileLength` use the stream's `fseek`/`ftell`; locks and
+path/volume information use `dos.library`.
+
+| API | Returns | Rule |
+|---|---|---|
+| `seekFile(borrow f, offset, whence)` | `bool` | `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; unknown `whence` is false |
+| `filePosition(borrow f)` / `fileLength(borrow f)` | `i32` | -1 on failure; `fileLength` restores the position |
+| `lockPath(path)` / `unlockPath(take lock)` | `Lock?` / `void` | shared `dos.library` lock; null-safe release |
+| `pathInfo(path)` | `PathInfo?` | captures one `FileInfoBlock`; the lock is released before return |
+| `pathInfoIsDir(const info)` / `pathInfoSize(const info)` | `bool` / `i32` | reads `fib_DirEntryType` / `fib_Size` |
+| `pathInfoName(const info, borrow buf)` | `i32` | copies `min(name, buf.len)` bytes; no NUL, no overflow |
+| `volumeInfo(path)` | `VolumeInfo?` | captures `InfoData` and the `DeviceNode`/`Examine` name |
+| `volumeName(const info, borrow buf)` | `i32` | bounded name copy |
+| `volumeFreeBytes` / `volumeUsedBytes` | `i32` | blocks × bytes per block, clamped to `LONG_MAX` |
+| `makeDir(path)` / `deleteFile(path)` / `renameFile(old, new)` | `bool` | `CreateDir` / `DeleteFile` / `Rename` |
+| `setCurrentDir(path)` | `bool` | `CurrentDir`; the old lock may be zero at the boot root |
+| `currentDirName(borrow buf)` / `parentDirName(borrow buf)` | `i32` | bounded copies through `Lock("")` and `ParentDir` |
+
+Assigns are resolved by DOS inside `Lock`/`Open`; enumerating the assign list
+needs `LockDosList` (2.0+) and is outside the 1.3 row. `ReadArgs` and
+`datatypes.library` are likewise 2.0+/3.0+ and are deferred.
+
+## 24. IFF/ILBM (`std.iff`)
+
+`std.iff` is pure Clorraine and runs on the host as well as the Amiga profiles.
+`ilbmInfo` validates `FORM`/`ILBM`, walks the chunks with subtraction-based
+window checks, and records `BMHD`, `CMAP`, and the first `BODY`. `ilbmDecode`
+clears the destination, decodes uncompressed or ByteRun1 row-interleaved planes
+into one byte per pixel, and returns false on a short buffer, truncated body,
+bad RLE stream, or inconsistent info. `ilbmPalette` copies whole RGB triplets;
+`ilbmPixelHash` is FNV-1a over the chunky pixels.
+
+| API | Returns | Rule |
+|---|---|---|
+| `ilbmInfo(const data: u8[])` | `IlbmInfo` | `ok` requires `BMHD` + one non-empty `BODY`; width/height 1..1024, depth 1..8, masking 0, compression 0/1 |
+| `ilbmDecode(const data, const info, borrow pixels)` | `bool` | clears and overwrites `width * height` pixels; never traps on bad input |
+| `ilbmPalette(const data, const info, borrow palette)` | `u16` | whole triplets only; missing `CMAP` returns 0 |
+| `ilbmPixelHash(const pixels)` | `u32` | FNV-1a over the decoded bytes |
+
+The accepted subset is the common ILBM shape. HAM, EHB, masking, multi-`BODY`,
+and images deeper than eight planes are outside it.
+
+## 25. Image loader and viewer (`std.amiga.ilbm`)
+
+`std.amiga.ilbm.loadIlbm(path, borrow palette)` opens the file, reads at most
+128 KB, parses and decodes it, creates a bitmap through `std.amiga.video`, and
+copies the chunky indices with `bitmapFromIndices`. It returns an `IlbmImage`
+with an `ok` gate, the owned bitmap, the copied color count, the pixel hash, and
+the geometry. An image wider than 320 or taller than 256 is rejected to stay
+inside the A500 display and chip-memory budget.
+
+`std.amiga.video.bitmapFromIndices(borrow bitmap, const indices)` clears the
+planes and sets one bit per plane from each chunky index; a short view leaves
+the bitmap cleared.
+
+`examples/amiga/imageviewer.clo` runs the DOS self-test, loads
+`DF0:image.ilbm`, applies its 16 colors, draws the caption layer, and prints
+`img: ok 320x200x4 hash <N> dos 255 vol 1` on the A500.
+
+## 26. Diagnostics
 
 | Code | Trigger |
 |---|---|

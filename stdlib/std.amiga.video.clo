@@ -68,6 +68,7 @@ ffi videocore {
     func cl_video_bitmap_blit(borrow dest: Bitmap, const src: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void;
     func cl_video_bitmap_blit_masked(borrow dest: Bitmap, const src: Bitmap, const mask: Bitmap, sx: i32, sy: i32, dx: i32, dy: i32, w: i32, h: i32): void;
     func cl_video_bitmap_checksum(const bitmap: Bitmap): u32;
+    func cl_video_bitmap_indices(borrow bitmap: Bitmap, indices: raw u8, count: u32): void;
 
     func cl_video_copper_new(): Copper?;
     func cl_video_copper_free(take copper: Copper): void;
@@ -228,6 +229,17 @@ export func bitmapBlitMasked(borrow dest: Bitmap, const src: Bitmap, const mask:
 /// fixed drawing sequence therefore has a stable checksum across runs.
 export func bitmapChecksum(const bitmap: Bitmap): u32 {
     return cl_video_bitmap_checksum(bitmap);
+}
+
+/// Replaces every bitmap pixel with one chunky palette index.
+///
+/// `indices` is row-major, one byte per pixel. The destination planes are
+/// cleared first, so a short view leaves the bitmap cleared rather than reading
+/// past the view. The pixel value is masked to the bitmap depth.
+export func bitmapFromIndices(borrow bitmap: Bitmap, const indices: u8[]): void {
+    unsafe {
+        cl_video_bitmap_indices(bitmap, raw u8(indices.ptr), u32(len(indices)));
+    }
 }
 
 /// Creates an empty user copper list, or returns `null`.

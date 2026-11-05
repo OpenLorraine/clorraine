@@ -39,13 +39,13 @@ SDK-TXT-003	4-text-layers	graphics/fonts	diskfont.library	should	core	1.3	OCS/68
 SDK-TXT-004	4-text-layers	graphics/layers	Layers and clipping	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	layers	docs/amiga-sdk/a500-text.png; clipped title + scroll layers; checks 510	spec/appendix-stdlib.md	NewLayerInfo/CreateUpfrontLayer local coords
 SDK-TXT-005	4-text-layers	graphics/layers	Regions and damage (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-TXT-004	regions	-	-	2.0+ advanced; Bundle 9
 SDK-TXT-006	4-text-layers	demo	Scrolling text/layers demo	must	core	1.3	OCS/68000/512K	done	SDK-TXT-002,SDK-TXT-004	text_layers_demo	docs/amiga-sdk/a500-text.png; docs/amiga-sdk/a500-text-line.png; checks 510; make sdk-a500-text	spec/appendix-amiga.md	A500 real KS1.3; 128x8
-SDK-DOS-001	5-dos-assets	dos/files	Seek/read/write	must	core	1.3	OCS/68000/512K	missing	SDK-BASE-001	dos_seek	-	-	-
-SDK-DOS-002	5-dos-assets	dos/dirs	Locks, directories, delete/rename	must	core	1.3	OCS/68000/512K	missing	SDK-DOS-001	dos_dirs	-	-	-
-SDK-DOS-003	5-dos-assets	dos/info	Path/assign/volume info	should	core	1.3	OCS/68000/512K	missing	SDK-DOS-002	dos_info	-	-	-
-SDK-DOS-004	5-dos-assets	dos/cli	CLI args via ReadArgs (2.0+)	should	advanced	2.0	ECS/68000/1M	missing	SDK-DOS-001	dos_args	-	-	-
-SDK-DOS-005	5-dos-assets	iff	IFF/ILBM parser	must	core	1.3	OCS/68000/512K	missing	SDK-VID-002	ilbm	-	-	-
-SDK-DOS-006	5-dos-assets	datatypes	datatypes.library (3.0+)	could	advanced	3.0	AGA/68020/2M	missing	SDK-DOS-005	datatypes	-	-	-
-SDK-DOS-008	5-dos-assets	demo	Image viewer demo	must	core	1.3	OCS/68000/512K	missing	SDK-DOS-005,SDK-TXT-002	image_viewer	-	-	-
+SDK-DOS-001	5-dos-assets	dos/files	Seek/read/write	must	core	1.3	OCS/68000/512K	done	SDK-BASE-001	dos_seek	stdlib/std.amiga.dos.clo; seek/position/length; demo dos 255; amiga_dos_spec_test	spec/appendix-stdlib.md	SEEK on libc stream; fileLength restores position
+SDK-DOS-002	5-dos-assets	dos/dirs	Locks, directories, delete/rename	must	core	1.3	OCS/68000/512K	done	SDK-DOS-001	dos_dirs	locks/pathInfo/delete/rename/cwd; demo dos 255; amiga_dos_spec_test	spec/appendix-stdlib.md	Lock/Examine/CreateDir/DeleteFile/Rename/CurrentDir/ParentDir
+SDK-DOS-003	5-dos-assets	dos/info	Path/assign/volume info	should	core	1.3	OCS/68000/512K	done	SDK-DOS-002	dos_info	volume name/free/used; demo vol 1; amiga_dos_spec_test	spec/appendix-stdlib.md	InfoData + DeviceNode name; assigns resolve via Lock/Open
+SDK-DOS-004	5-dos-assets	dos/cli	CLI args via ReadArgs (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-DOS-001	dos_args	-	-	2.0+ advanced; Bundle 9
+SDK-DOS-005	5-dos-assets	iff	IFF/ILBM parser	must	core	1.3	OCS/68000/512K	done	SDK-VID-002	ilbm	stdlib/std.iff.clo; fixture hash 603248125; amiga_ilbm_spec_test	spec/appendix-stdlib.md	FORM ILBM; BMHD/CMAP/BODY; ByteRun1; depth 1..8
+SDK-DOS-006	5-dos-assets	datatypes	datatypes.library (3.0+)	could	advanced	3.0	AGA/68020/2M	deferred	SDK-DOS-005	datatypes	-	-	3.0+ advanced; Bundle 9
+SDK-DOS-008	5-dos-assets	demo	Image viewer demo	must	core	1.3	OCS/68000/512K	done	SDK-DOS-005,SDK-TXT-002	image_viewer	docs/amiga-sdk/a500-assets.png; docs/amiga-sdk/a500-assets-line.png; make sdk-a500-assets	spec/appendix-amiga.md	A500 real KS1.3; release build; img: ok 320x200x4 hash 603248125 dos 255 vol 1
 SDK-INT-001	6-intuition	intuition/screens	Screens/windows open/close	must	core	1.3	OCS/68000/512K	missing	SDK-VID-006	int_screens	-	-	-
 SDK-INT-002	6-intuition	intuition/gadgets	Gadgets and menus	must	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_gadgets	-	-	-
 SDK-INT-003	6-intuition	intuition/events	IDCMP event loop	must	core	1.3	OCS/68000/512K	missing	SDK-INT-001	int_events	-	-	-

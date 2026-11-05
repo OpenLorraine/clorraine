@@ -90,9 +90,9 @@ if ! xdftool list | grep -q ' startup-sequence'; then
     exit 1
 fi
 
-# Boot the real A500/KS1.3 machine and capture the visible screen. FS-UAE takes
-# roughly twenty seconds to reach the Shell in this environment; the extra wait
-# lets the startup notifications fade before the screenshot.
+# Boot the real A500/KS1.3 machine and poll for the visible line. FS-UAE takes
+# roughly forty seconds to reach the Shell in this environment; polling keeps
+# the gate stable when the host is busy while still comparing the same golden.
 XAUTHORITY="${XAUTHORITY}" DISPLAY="${DISPLAY}"
 docker run --rm --name "${container}" \
     -e DISPLAY="${DISPLAY}" -e XAUTHORITY=/tmp/.Xauthority \
@@ -107,7 +107,7 @@ docker run --rm --name "${container}" \
     --writable-floppy-images=1 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
-sleep 35
+sleep 30
 
 window="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
 if [ -z "${window}" ]; then
@@ -115,10 +115,19 @@ if [ -z "${window}" ]; then
     tail -20 "${work}/fs-uae.log" >&2 || true
     exit 1
 fi
-DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}"
-convert "${screenshot}" -crop 430x22+160+88 +repage "${crop}"
-metric="$(compare -metric AE "${crop}" "${golden}" null: 2>&1 || true)"
-metric="${metric%% *}"
+metric=1
+step=0
+while [ "${step}" -lt 15 ]; do
+    step=$((step + 1))
+    sleep 5
+    DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}"
+    convert "${screenshot}" -crop 430x22+160+88 +repage "${crop}"
+    metric="$(compare -metric AE "${crop}" "${golden}" null: 2>&1 || true)"
+    metric="${metric%% *}"
+    if [ "${metric}" = "0" ]; then
+        break
+    fi
+done
 docker stop -t 5 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 

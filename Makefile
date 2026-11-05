@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -121,6 +121,7 @@ verify:
 	$(MAKE) sdk-a500-sprites
 	$(MAKE) sdk-a500-paddle
 	$(MAKE) sdk-a500-text
+	$(MAKE) sdk-a500-assets
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -172,6 +173,14 @@ sdk-a500-paddle:
 sdk-a500-text:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga-13 examples/amiga/scroller.clo"
 	docker/scripts/a500-text-smoke.sh build/clorraine/scroller/hosted-amiga-13/scroller
+
+# A500/Kickstart 1.3 DOS/asset smoke: build the ILBM viewer in release mode,
+# boot it on the real Kickstart 1.3 ROM, compare the held image frame, and match
+# the report line. Release keeps the executable small enough for the ADF and
+# chip-RAM budget.
+sdk-a500-assets:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/imageviewer.clo"
+	docker/scripts/a500-assets-smoke.sh build/clorraine/imageviewer/hosted-amiga-13/imageviewer
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

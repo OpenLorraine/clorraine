@@ -45,6 +45,7 @@
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
 #include <dos/dos.h>
+#include <dos/filehandler.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -58,6 +59,22 @@
  * signatures the generated ABI prototypes cannot match. */
 extern void __stdargs Delay(LONG timeout);
 extern void __stdargs DateStamp(struct DateStamp *stamp);
+
+/* The dos.library calls Bundle 5 adds. `proto/dos.h` cannot be included: its
+ * `Open`/`Close`/`Read`/`Write` prototypes conflict with the libc-backed ABI
+ * functions above, so each call is declared directly with the standard-argument
+ * attribute the m68k library vectors require. The names match the NDK
+ * prototypes; `char *` is used instead of `STRPTR` so the shim's caller
+ * arguments and the declarations agree without a pointer-sign warning. */
+extern BPTR __stdargs Lock(char *name, LONG type);
+extern void __stdargs UnLock(BPTR lock);
+extern LONG __stdargs Examine(BPTR lock, struct FileInfoBlock *fileInfoBlock);
+extern LONG __stdargs Info(BPTR lock, struct InfoData *parameterBlock);
+extern BPTR __stdargs CreateDir(char *name);
+extern LONG __stdargs DeleteFile(char *name);
+extern LONG __stdargs Rename(char *oldName, char *newName);
+extern BPTR __stdargs CurrentDir(BPTR lock);
+extern BPTR __stdargs ParentDir(BPTR lock);
 
 /* Suspends the calling task for `ticks` vertical-blank intervals. */
 void cl_delay_ticks(ULONG ticks)
@@ -73,6 +90,428 @@ ULONG cl_dos_ticks(void)
     return (ULONG)stamp.ds_Days * 24UL * 60UL * 3000UL +
            (ULONG)stamp.ds_Minute * 3000UL +
            (ULONG)stamp.ds_Tick;
+}
+
+/* --- Amiga DOS: file positioning, locks, paths, and volumes. ------------ */
+
+/* A BCPL pointer stores an address divided by four. `InfoData.id_VolumeNode`
+ * and `DeviceNode.dn_Name` are BCPL pointers, so they need this conversion
+ * before they can be dereferenced as C pointers. */
+#define CL_BADDR(value) ((APTR)((ULONG)(value) << 2))
+
+/* The longest volume name a BSTR can carry. */
+#define CL_DOS_NAME_CAP 256
+
+/* One captured FileInfoBlock. The lock that filled it is not retained. */
+typedef struct cl_dos_pathinfo {
+    struct FileInfoBlock fib;
+    ULONG name_len;
+} cl_dos_pathinfo;
+
+/* One captured InfoData plus the copied volume name and byte totals. */
+typedef struct cl_dos_volumeinfo {
+    struct InfoData info;
+    UBYTE name[CL_DOS_NAME_CAP];
+    ULONG name_len;
+    LONG free_bytes;
+    LONG used_bytes;
+} cl_dos_volumeinfo;
+
+/* Bounded text length for a NUL-terminated DOS field. */
+static ULONG cl_dos_text_length(const char *text, ULONG maximum)
+{
+    ULONG length = 0;
+
+    while (length < maximum && text[length] != '\0') {
+        length++;
+    }
+    return length;
+}
+
+/* Copy at most `capacity` name bytes, never a NUL. */
+static LONG cl_dos_copy_name(APTR buffer, ULONG capacity, const UBYTE *name,
+                             ULONG length)
+{
+    if (buffer == NULL || capacity == 0 || name == NULL) {
+        return 0;
+    }
+    if (length > capacity) {
+        length = capacity;
+    }
+    memcpy(buffer, name, (size_t)length);
+    return (LONG)length;
+}
+
+/* Convert a block count to bytes without wrapping the signed result. */
+static LONG cl_dos_bytes(LONG blocks, LONG bytes_per_block)
+{
+    if (blocks <= 0 || bytes_per_block <= 0) {
+        return 0;
+    }
+    if (blocks > LONG_MAX / bytes_per_block) {
+        return LONG_MAX;
+    }
+    return blocks * bytes_per_block;
+}
+
+/* Move the libc stream behind `file`; the File contract is a FILE pointer. */
+BOOL cl_dos_seek(BPTR file, LONG offset, LONG whence)
+{
+    FILE *stream = (FILE *)(intptr_t)file;
+    int origin;
+
+    if (stream == NULL) {
+        return FALSE;
+    }
+    if (whence == 0) {
+        origin = SEEK_SET;
+    } else if (whence == 1) {
+        origin = SEEK_CUR;
+    } else if (whence == 2) {
+        origin = SEEK_END;
+    } else {
+        return FALSE;
+    }
+    return fseek(stream, (long)offset, origin) == 0 ? TRUE : FALSE;
+}
+
+/* The current libc stream position, or -1. */
+LONG cl_dos_tell(BPTR file)
+{
+    FILE *stream = (FILE *)(intptr_t)file;
+    long position;
+
+    if (stream == NULL) {
+        return -1;
+    }
+    position = ftell(stream);
+    if (position < 0) {
+        return -1;
+    }
+    return (LONG)position;
+}
+
+/* The stream length, restoring the original position, or -1. */
+LONG cl_dos_file_length(BPTR file)
+{
+    FILE *stream = (FILE *)(intptr_t)file;
+    long position;
+    long end;
+
+    if (stream == NULL) {
+        return -1;
+    }
+    position = ftell(stream);
+    if (position < 0) {
+        return -1;
+    }
+    if (fseek(stream, 0L, SEEK_END) != 0) {
+        return -1;
+    }
+    end = ftell(stream);
+    if (end < 0 || fseek(stream, position, SEEK_SET) != 0) {
+        return -1;
+    }
+    return (LONG)end;
+}
+
+/* A shared DOS lock, or zero. */
+BPTR cl_dos_lock(char *path)
+{
+    if (path == NULL) {
+        return 0;
+    }
+    return Lock(path, SHARED_LOCK);
+}
+
+/* Release a lock; null-safe. */
+void cl_dos_unlock(BPTR lock)
+{
+    if (lock != 0) {
+        UnLock(lock);
+    }
+}
+
+/* Capture one path's FileInfoBlock, releasing the lock before returning. */
+void *cl_dos_pathinfo_new(char *path)
+{
+    BPTR lock;
+    cl_dos_pathinfo *info;
+
+    if (path == NULL) {
+        return NULL;
+    }
+    lock = Lock(path, SHARED_LOCK);
+    if (lock == 0) {
+        return NULL;
+    }
+    info = (cl_dos_pathinfo *)AllocMem(
+        (ULONG)sizeof *info, MEMF_ANY | MEMF_CLEAR);
+    if (info == NULL) {
+        UnLock(lock);
+        return NULL;
+    }
+    if (!Examine(lock, &info->fib)) {
+        FreeMem(info, (ULONG)sizeof *info);
+        UnLock(lock);
+        return NULL;
+    }
+    UnLock(lock);
+    info->name_len = cl_dos_text_length(
+        (const char *)info->fib.fib_FileName,
+        (ULONG)sizeof info->fib.fib_FileName);
+    return info;
+}
+
+/* Release one path-info handle; null-safe. */
+void cl_dos_pathinfo_free(void *handle)
+{
+    if (handle != NULL) {
+        FreeMem(handle, (ULONG)sizeof(cl_dos_pathinfo));
+    }
+}
+
+/* True when the captured entry is a directory. */
+BOOL cl_dos_pathinfo_is_dir(void *handle)
+{
+    const cl_dos_pathinfo *info = (const cl_dos_pathinfo *)handle;
+
+    if (info == NULL) {
+        return FALSE;
+    }
+    return info->fib.fib_DirEntryType > 0 ? TRUE : FALSE;
+}
+
+/* The captured entry size in bytes. */
+LONG cl_dos_pathinfo_size(void *handle)
+{
+    const cl_dos_pathinfo *info = (const cl_dos_pathinfo *)handle;
+
+    if (info == NULL) {
+        return 0;
+    }
+    return info->fib.fib_Size;
+}
+
+/* Copy the captured entry name, bounded by the caller's buffer. */
+LONG cl_dos_pathinfo_name(void *handle, APTR buffer, ULONG capacity)
+{
+    const cl_dos_pathinfo *info = (const cl_dos_pathinfo *)handle;
+
+    if (info == NULL) {
+        return 0;
+    }
+    return cl_dos_copy_name(buffer, capacity,
+                            (const UBYTE *)info->fib.fib_FileName,
+                            info->name_len);
+}
+
+/* Capture volume information and the volume name. The lock stays held until
+ * both the InfoData and the Examine fallback have finished. */
+void *cl_dos_volumeinfo_new(char *path)
+{
+    BPTR lock;
+    cl_dos_volumeinfo *info;
+    struct FileInfoBlock fib;
+
+    if (path == NULL) {
+        return NULL;
+    }
+    lock = Lock(path, SHARED_LOCK);
+    if (lock == 0) {
+        return NULL;
+    }
+    info = (cl_dos_volumeinfo *)AllocMem(
+        (ULONG)sizeof *info, MEMF_ANY | MEMF_CLEAR);
+    if (info == NULL) {
+        UnLock(lock);
+        return NULL;
+    }
+    if (!Info(lock, &info->info)) {
+        FreeMem(info, (ULONG)sizeof *info);
+        UnLock(lock);
+        return NULL;
+    }
+    if (info->info.id_VolumeNode != 0) {
+        struct DeviceNode *node = (struct DeviceNode *)CL_BADDR(
+            info->info.id_VolumeNode);
+        if (node != NULL && node->dn_Name != 0) {
+            const UBYTE *name = (const UBYTE *)CL_BADDR(node->dn_Name);
+            if (name != NULL) {
+                ULONG length = name[0];
+                if (length > CL_DOS_NAME_CAP) {
+                    length = CL_DOS_NAME_CAP;
+                }
+                memcpy(info->name, name + 1, (size_t)length);
+                info->name_len = length;
+            }
+        }
+    }
+    if (info->name_len == 0 && Examine(lock, &fib)) {
+        ULONG length = cl_dos_text_length(
+            (const char *)fib.fib_FileName,
+            (ULONG)sizeof fib.fib_FileName);
+        memcpy(info->name, fib.fib_FileName, (size_t)length);
+        info->name_len = length;
+    }
+    info->free_bytes = cl_dos_bytes(
+        info->info.id_NumBlocks - info->info.id_NumBlocksUsed,
+        info->info.id_BytesPerBlock);
+    info->used_bytes = cl_dos_bytes(info->info.id_NumBlocksUsed,
+                                    info->info.id_BytesPerBlock);
+    UnLock(lock);
+    return info;
+}
+
+/* Release one volume-info handle; null-safe. */
+void cl_dos_volumeinfo_free(void *handle)
+{
+    if (handle != NULL) {
+        FreeMem(handle, (ULONG)sizeof(cl_dos_volumeinfo));
+    }
+}
+
+/* Copy the captured volume name, bounded by the caller's buffer. */
+LONG cl_dos_volume_name(void *handle, APTR buffer, ULONG capacity)
+{
+    const cl_dos_volumeinfo *info = (const cl_dos_volumeinfo *)handle;
+
+    if (info == NULL) {
+        return 0;
+    }
+    return cl_dos_copy_name(buffer, capacity, info->name, info->name_len);
+}
+
+/* The captured free byte count. */
+LONG cl_dos_volume_free(void *handle)
+{
+    const cl_dos_volumeinfo *info = (const cl_dos_volumeinfo *)handle;
+
+    if (info == NULL) {
+        return 0;
+    }
+    return info->free_bytes;
+}
+
+/* The captured used byte count. */
+LONG cl_dos_volume_used(void *handle)
+{
+    const cl_dos_volumeinfo *info = (const cl_dos_volumeinfo *)handle;
+
+    if (info == NULL) {
+        return 0;
+    }
+    return info->used_bytes;
+}
+
+/* Create one directory and release the lock CreateDir returns. */
+BOOL cl_dos_make_dir(char *path)
+{
+    BPTR lock;
+
+    if (path == NULL) {
+        return FALSE;
+    }
+    lock = CreateDir(path);
+    if (lock == 0) {
+        return FALSE;
+    }
+    UnLock(lock);
+    return TRUE;
+}
+
+/* Delete one file or empty directory. */
+BOOL cl_dos_delete_file(char *path)
+{
+    if (path == NULL) {
+        return FALSE;
+    }
+    return DeleteFile(path) ? TRUE : FALSE;
+}
+
+/* Rename one path. */
+BOOL cl_dos_rename(char *old_path, char *new_path)
+{
+    if (old_path == NULL || new_path == NULL) {
+        return FALSE;
+    }
+    return Rename(old_path, new_path) ? TRUE : FALSE;
+}
+
+/* Change the process current directory; the old lock may be zero at the boot
+ * volume root and is not unlocked in that case. */
+BOOL cl_dos_set_current_dir(char *path)
+{
+    BPTR lock;
+    BPTR old_lock;
+
+    if (path == NULL) {
+        return FALSE;
+    }
+    lock = Lock(path, SHARED_LOCK);
+    if (lock == 0) {
+        return FALSE;
+    }
+    old_lock = CurrentDir(lock);
+    if (old_lock != 0) {
+        UnLock(old_lock);
+    }
+    return TRUE;
+}
+
+/* Copy the current directory name through a temporary lock. */
+LONG cl_dos_current_dir_name(APTR buffer, ULONG capacity)
+{
+    BPTR lock;
+    struct FileInfoBlock fib;
+    LONG copied = 0;
+
+    if (buffer == NULL || capacity == 0) {
+        return 0;
+    }
+    lock = Lock("", SHARED_LOCK);
+    if (lock == 0) {
+        return 0;
+    }
+    if (Examine(lock, &fib)) {
+        ULONG length = cl_dos_text_length(
+            (const char *)fib.fib_FileName,
+            (ULONG)sizeof fib.fib_FileName);
+        copied = cl_dos_copy_name(buffer, capacity,
+                                  (const UBYTE *)fib.fib_FileName, length);
+    }
+    UnLock(lock);
+    return copied;
+}
+
+/* Copy the parent directory name through a current-directory lock. */
+LONG cl_dos_parent_dir_name(APTR buffer, ULONG capacity)
+{
+    BPTR current_lock;
+    BPTR parent_lock;
+    struct FileInfoBlock fib;
+    LONG copied = 0;
+
+    if (buffer == NULL || capacity == 0) {
+        return 0;
+    }
+    current_lock = Lock("", SHARED_LOCK);
+    if (current_lock == 0) {
+        return 0;
+    }
+    parent_lock = ParentDir(current_lock);
+    if (parent_lock != 0 && Examine(parent_lock, &fib)) {
+        ULONG length = cl_dos_text_length(
+            (const char *)fib.fib_FileName,
+            (ULONG)sizeof fib.fib_FileName);
+        copied = cl_dos_copy_name(buffer, capacity,
+                                  (const UBYTE *)fib.fib_FileName, length);
+    }
+    if (parent_lock != 0) {
+        UnLock(parent_lock);
+    }
+    UnLock(current_lock);
+    return copied;
 }
 
 /* Zero one object through its address. A macro so a call site writes the
@@ -1445,6 +1884,42 @@ ULONG cl_video_bitmap_checksum(void *handle)
         }
     }
     return (ULONG)hash;
+}
+
+/* Replace every pixel with one chunky palette index. The planes are cleared
+ * first, so a short index view cannot leave stale pixels or read past the
+ * caller's buffer. */
+void cl_video_bitmap_indices(void *handle, APTR indices, ULONG count)
+{
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    const UBYTE *pixels = (const UBYTE *)indices;
+    ULONG total;
+    int plane;
+    int x;
+    int y;
+
+    if (bitmap == NULL) {
+        return;
+    }
+    total = (ULONG)bitmap->width * (ULONG)bitmap->height;
+    for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+        memset(bitmap->bitmap.Planes[plane], 0,
+               (size_t)bitmap->bitmap.BytesPerRow *
+                   (size_t)bitmap->bitmap.Rows);
+    }
+    if (pixels == NULL || count < total) {
+        return;
+    }
+    for (y = 0; y < (int)bitmap->height; y++) {
+        for (x = 0; x < (int)bitmap->width; x++) {
+            UBYTE pen = pixels[(ULONG)y * (ULONG)bitmap->width + (ULONG)x];
+            for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
+                if ((pen & (UBYTE)(1U << (unsigned)plane)) != 0) {
+                    cl_video_plot_plane(bitmap, plane, x, y, 1);
+                }
+            }
+        }
+    }
 }
 
 /* Free one user copper list through a temporary viewport. */

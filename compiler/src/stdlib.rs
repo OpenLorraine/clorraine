@@ -54,8 +54,16 @@ pub const SOURCES: &[StdlibSource] = &[
         source: include_str!("../../stdlib/std.math.clo"),
     },
     StdlibSource {
+        name: "std.iff",
+        source: include_str!("../../stdlib/std.iff.clo"),
+    },
+    StdlibSource {
         name: "std.amiga.video",
         source: include_str!("../../stdlib/std.amiga.video.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.ilbm",
+        source: include_str!("../../stdlib/std.amiga.ilbm.clo"),
     },
     StdlibSource {
         name: "std.amiga.sprite",
@@ -189,6 +197,20 @@ pub const MODULES: &[StdlibModule] = &[
         exports: &["sin", "cos", "sqrt"],
     },
     StdlibModule {
+        name: "std.iff",
+        exports: &[
+            "IlbmInfo",
+            "ilbmInfo",
+            "ilbmDecode",
+            "ilbmPalette",
+            "ilbmPixelHash",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.ilbm",
+        exports: &["IlbmImage", "loadIlbm"],
+    },
+    StdlibModule {
         name: "std.amiga.video",
         exports: &[
             "ChipBuffer",
@@ -219,6 +241,7 @@ pub const MODULES: &[StdlibModule] = &[
             "bitmapBlit",
             "bitmapBlitMasked",
             "bitmapChecksum",
+            "bitmapFromIndices",
             "newCopper",
             "freeCopper",
             "copperWait",
@@ -334,7 +357,35 @@ pub const MODULES: &[StdlibModule] = &[
     },
     StdlibModule {
         name: "std.amiga.dos",
-        exports: &["delayTicks", "ticks"],
+        exports: &[
+            "SEEK_SET",
+            "SEEK_CUR",
+            "SEEK_END",
+            "Lock",
+            "PathInfo",
+            "VolumeInfo",
+            "delayTicks",
+            "ticks",
+            "seekFile",
+            "filePosition",
+            "fileLength",
+            "lockPath",
+            "unlockPath",
+            "pathInfo",
+            "pathInfoIsDir",
+            "pathInfoSize",
+            "pathInfoName",
+            "volumeInfo",
+            "volumeName",
+            "volumeFreeBytes",
+            "volumeUsedBytes",
+            "makeDir",
+            "deleteFile",
+            "renameFile",
+            "setCurrentDir",
+            "currentDirName",
+            "parentDirName",
+        ],
     },
     StdlibModule {
         name: "std.amiga.interrupt",
@@ -501,6 +552,28 @@ mod tests {
 
     #[test]
     fn the_custom_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.iff").is_some());
+        assert!(lookup("std.amiga.ilbm").is_some());
+        assert!(exports("std.amiga.ilbm", "loadIlbm"));
+        assert!(exports("std.amiga.video", "bitmapFromIndices"));
+        for name in [
+            "seekFile",
+            "filePosition",
+            "fileLength",
+            "lockPath",
+            "pathInfo",
+            "volumeInfo",
+            "makeDir",
+            "deleteFile",
+            "renameFile",
+            "setCurrentDir",
+            "currentDirName",
+            "parentDirName",
+        ] {
+            assert!(exports("std.amiga.dos", name), "missing DOS export {name}");
+        }
+        assert!(source("std.iff").is_some());
+        assert!(exports("std.iff", "ilbmInfo"));
         assert!(lookup("std.amiga.custom").is_some());
         assert!(source("std.amiga.custom").is_some());
         assert!(exports("std.amiga.custom", "setDma"));

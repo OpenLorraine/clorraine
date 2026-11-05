@@ -92,7 +92,9 @@ impl Profile {
                     | "std.text"
                     | "std.fmt"
                     | "std.math"
+                    | "std.iff"
                     | "std.amiga.video"
+                    | "std.amiga.ilbm"
                     | "std.amiga.sprite"
                     | "std.amiga.audio"
                     | "std.amiga.input"
@@ -231,6 +233,9 @@ mod tests {
         assert!(Profile::HostedAmiga.supports_module("std.mem"));
         assert!(Profile::HostedAmiga13.supports_module("std.io"));
         assert!(Profile::HostedAmiga13.supports_module("std.mem"));
+        assert!(Profile::HostedAmiga13.supports_module("std.iff"));
+        assert!(Profile::HostedAmiga13.supports_module("std.amiga.ilbm"));
+        assert!(!Profile::Host.supports_module("std.amiga.ilbm"));
         assert!(Profile::HostedAmiga13.supports_module("std.amiga.graphics"));
         assert!(Profile::HostedAmiga13.supports_module("std.amiga.intuition"));
         assert!(!Profile::HostedAmiga13.supports_module("std.amiga.exec"));

@@ -1,19 +1,66 @@
-//! Amiga DOS primitives: scheduler delays and the tick counter.
+//! Amiga DOS: scheduler delays, file positioning, locks, paths, and volumes.
 //!
-//! This module belongs to the hosted-amiga profile; the host profile has no
-//! AmigaOS scheduler, so the module is not available there. The wrapper reaches
-//! the profile C shim through `ffi`, and the shim names the DOS `Delay`
-//! primitive, so application code never writes `ffi` and never touches
+//! This module belongs to the hosted-Amiga profiles; the host profile has no
+//! AmigaOS DOS library, so the module is not available there. The wrapper
+//! reaches the profile C shim through `ffi`, and the shim names the DOS
+//! primitives, so application code never writes `ffi` and never touches
 //! `unsafe`.
 //!
 //! One tick is one vertical-blank interval: about 1/50 of a second on a PAL
 //! machine and 1/60 of a second on NTSC.
+//!
+//! File positioning uses the libc stream behind the `File` handle; locks,
+//! path information, directory mutation, and volume information use
+//! `dos.library`. A `PathInfo`, `VolumeInfo`, or `Lock` is owned by the caller
+//! and released by its `take` wrapper or its drop.
 
 module std.amiga.dos;
+
+import { File } from std.io;
+
+/// Seek relative to the start of the file.
+export const SEEK_SET: i32 = 0;
+/// Seek relative to the current position.
+export const SEEK_CUR: i32 = 1;
+/// Seek relative to the end of the file.
+export const SEEK_END: i32 = 2;
+
+/// A shared AmigaDOS lock on a file, directory, or volume.
+export handle Lock freedBy cl_dos_unlock;
+
+/// A captured `FileInfoBlock` for one path.
+///
+/// The handle owns the DOS structure; the lock used to fill it is released
+/// before the handle is returned.
+export handle PathInfo freedBy cl_dos_pathinfo_free;
+
+/// A captured `InfoData` and volume name for one path.
+export handle VolumeInfo freedBy cl_dos_volumeinfo_free;
 
 ffi stddos {
     func cl_delay_ticks(ticks: u32): void;
     func cl_dos_ticks(): u32;
+    func cl_dos_seek(borrow f: File, offset: i32, whence: i32): bool;
+    func cl_dos_tell(borrow f: File): i32;
+    func cl_dos_file_length(borrow f: File): i32;
+    func cl_dos_lock(path: cstring): Lock?;
+    func cl_dos_unlock(take lock: Lock): void;
+    func cl_dos_pathinfo_new(path: cstring): PathInfo?;
+    func cl_dos_pathinfo_free(take info: PathInfo): void;
+    func cl_dos_pathinfo_is_dir(const info: PathInfo): bool;
+    func cl_dos_pathinfo_size(const info: PathInfo): i32;
+    func cl_dos_pathinfo_name(const info: PathInfo, buf: raw u8, cap: u32): i32;
+    func cl_dos_volumeinfo_new(path: cstring): VolumeInfo?;
+    func cl_dos_volumeinfo_free(take info: VolumeInfo): void;
+    func cl_dos_volume_name(const info: VolumeInfo, buf: raw u8, cap: u32): i32;
+    func cl_dos_volume_free(const info: VolumeInfo): i32;
+    func cl_dos_volume_used(const info: VolumeInfo): i32;
+    func cl_dos_make_dir(path: cstring): bool;
+    func cl_dos_delete_file(path: cstring): bool;
+    func cl_dos_rename(old_path: cstring, new_path: cstring): bool;
+    func cl_dos_set_current_dir(path: cstring): bool;
+    func cl_dos_current_dir_name(buf: raw u8, cap: u32): i32;
+    func cl_dos_parent_dir_name(buf: raw u8, cap: u32): i32;
 }
 
 /// Suspends the calling task for `ticks` vertical-blank intervals.
@@ -29,4 +76,121 @@ export func delayTicks(ticks: u32): void {
 /// interval. One vertical blank is one tick.
 export func ticks(): u32 {
     return cl_dos_ticks();
+}
+
+/// Moves `f` by `offset` bytes relative to `whence` (`SEEK_SET`, `SEEK_CUR`,
+/// or `SEEK_END`) and reports success.
+///
+/// An unknown `whence`, a closed file, or an out-of-range position returns
+/// `false`. The file's content is never changed.
+export func seekFile(borrow f: File, offset: i32, whence: i32): bool {
+    return cl_dos_seek(f, offset, whence);
+}
+
+/// Returns the current byte position in `f`, or -1 on failure.
+export func filePosition(borrow f: File): i32 {
+    return cl_dos_tell(f);
+}
+
+/// Returns the total size of `f` in bytes, or -1 on failure.
+///
+/// The current position is restored on success; a failure makes a best effort
+/// to restore it before returning -1.
+export func fileLength(borrow f: File): i32 {
+    return cl_dos_file_length(f);
+}
+
+/// Obtains a shared lock on `path`, or returns null.
+export func lockPath(path: cstring): Lock? {
+    return cl_dos_lock(path);
+}
+
+/// Releases a lock obtained from `lockPath`.
+export func unlockPath(take lock: Lock): void {
+    cl_dos_unlock(lock);
+}
+
+/// Captures the DOS information for `path`, or returns null.
+///
+/// The returned handle keeps the `FileInfoBlock`, not the lock.
+export func pathInfo(path: cstring): PathInfo? {
+    return cl_dos_pathinfo_new(path);
+}
+
+/// Returns true when the captured path is a directory.
+export func pathInfoIsDir(const info: PathInfo): bool {
+    return cl_dos_pathinfo_is_dir(info);
+}
+
+/// Returns the captured entry's size in bytes (zero for most directories).
+export func pathInfoSize(const info: PathInfo): i32 {
+    return cl_dos_pathinfo_size(info);
+}
+
+/// Copies up to `buf.len` bytes of the captured entry name and returns the
+/// number copied. No NUL terminator is written.
+export func pathInfoName(const info: PathInfo, borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_dos_pathinfo_name(info, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Captures the volume information for the volume containing `path`, or
+/// returns null.
+export func volumeInfo(path: cstring): VolumeInfo? {
+    return cl_dos_volumeinfo_new(path);
+}
+
+/// Copies up to `buf.len` bytes of the volume name and returns the number
+/// copied. No NUL terminator is written.
+export func volumeName(const info: VolumeInfo, borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_dos_volume_name(info, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Returns the volume's free space in bytes, or 0 when unknown.
+export func volumeFreeBytes(const info: VolumeInfo): i32 {
+    return cl_dos_volume_free(info);
+}
+
+/// Returns the volume's used space in bytes, or 0 when unknown.
+export func volumeUsedBytes(const info: VolumeInfo): i32 {
+    return cl_dos_volume_used(info);
+}
+
+/// Creates the directory `path` and reports success.
+export func makeDir(path: cstring): bool {
+    return cl_dos_make_dir(path);
+}
+
+/// Deletes the file or empty directory `path` and reports success.
+export func deleteFile(path: cstring): bool {
+    return cl_dos_delete_file(path);
+}
+
+/// Renames `oldPath` to `newPath` and reports success.
+export func renameFile(oldPath: cstring, newPath: cstring): bool {
+    return cl_dos_rename(oldPath, newPath);
+}
+
+/// Changes the process current directory to `path` and reports success.
+export func setCurrentDir(path: cstring): bool {
+    return cl_dos_set_current_dir(path);
+}
+
+/// Copies up to `buf.len` bytes of the current directory name and returns the
+/// number copied. No NUL terminator is written.
+export func currentDirName(borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_dos_current_dir_name(raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Copies up to `buf.len` bytes of the parent directory name and returns the
+/// number copied. No NUL terminator is written.
+export func parentDirName(borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_dos_parent_dir_name(raw u8(buf.ptr), u32(len(buf)));
+    }
 }
