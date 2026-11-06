@@ -1,0 +1,52 @@
+//! Amiga locale.library (Kickstart 2.1+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Locale` owns one
+//! `struct Locale`. `openLocale` with an empty name uses the default locale;
+//! the string accessors return owned `String?` copies.
+
+module std.amiga.locale;
+
+import { String } from std.text;
+
+/// An open locale. The generated drop closes it.
+export handle Locale freedBy cl_locale_close;
+
+ffi stdlocale {
+    func cl_locale_open(name: cstring): Locale?;
+    func cl_locale_close(take locale: Locale): void;
+    func cl_locale_language(borrow locale: Locale): String?;
+    func cl_locale_country(borrow locale: Locale): u32;
+    func cl_locale_gmt(borrow locale: Locale): i32;
+    func cl_locale_date_format(borrow locale: Locale): String?;
+}
+
+/// Opens a locale, or returns null. An empty name uses the default locale.
+export func openLocale(name: cstring): Locale? {
+    return cl_locale_open(name);
+}
+
+/// Closes a locale exactly once.
+export func closeLocale(take locale: Locale): void {
+    cl_locale_close(locale);
+}
+
+/// Returns the language name, or null for an invalid locale.
+export func localeLanguageName(borrow locale: Locale): String? {
+    return cl_locale_language(locale);
+}
+
+/// Returns the country code, or 0 for an invalid locale.
+export func localeCountryCode(borrow locale: Locale): u32 {
+    return cl_locale_country(locale);
+}
+
+/// Returns the GMT offset in minutes.
+export func localeGmtOffset(borrow locale: Locale): i32 {
+    return cl_locale_gmt(locale);
+}
+
+/// Returns the date-time format pattern, or null.
+export func localeDateTimeFormat(borrow locale: Locale): String? {
+    return cl_locale_date_format(locale);
+}

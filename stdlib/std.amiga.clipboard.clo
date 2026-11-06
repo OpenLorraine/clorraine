@@ -1,0 +1,53 @@
+//! Amiga clipboard device (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Clipboard` owns one
+//! `IOClipReq` and a private reply port. `clipboardWrite` writes the whole
+//! clip and sends `CMD_UPDATE`; `clipboardRead` reads at most the caller's
+//! buffer. Obsolete clip IDs are retried a bounded number of times.
+
+module std.amiga.clipboard;
+
+/// An open clipboard unit. The generated drop closes it.
+export handle Clipboard freedBy cl_clipboard_close;
+
+ffi stdclipboard {
+    func cl_clipboard_open(unit: i32): Clipboard?;
+    func cl_clipboard_close(take clipboard: Clipboard): void;
+    func cl_clipboard_write(borrow clipboard: Clipboard, data: raw u8,
+                            length: u32): bool;
+    func cl_clipboard_read(borrow clipboard: Clipboard, data: raw u8,
+                           length: u32): i32;
+    func cl_clipboard_clear(borrow clipboard: Clipboard): bool;
+}
+
+/// Opens a clipboard unit, or returns null.
+export func openClipboard(unit: i32): Clipboard? {
+    return cl_clipboard_open(unit);
+}
+
+/// Closes a clipboard unit exactly once.
+export func closeClipboard(take clipboard: Clipboard): void {
+    cl_clipboard_close(clipboard);
+}
+
+/// Writes the whole clip and marks it current; true on success.
+export func clipboardWrite(borrow clipboard: Clipboard,
+                           borrow data: u8[]): bool {
+    unsafe {
+        return cl_clipboard_write(clipboard, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Reads at most `len(buf)` bytes and returns the count, or -1.
+export func clipboardRead(borrow clipboard: Clipboard,
+                          borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_clipboard_read(clipboard, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Clears the clip.
+export func clipboardClear(borrow clipboard: Clipboard): bool {
+    return cl_clipboard_clear(clipboard);
+}

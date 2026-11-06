@@ -1,0 +1,43 @@
+//! Bundle 9 nonvolatile acceptance: a 23-byte store/get/delete round-trip.
+//!
+//! The A600/KS3.1 gate assigns writable `ENV:` and `ENVARC:` directories.
+
+module examples.amiga.optional_nonvolatile;
+
+import { NonvolatileData, getNonvolatile, freeNonvolatileData,
+         nonvolatileSize, nonvolatileRead, storeNonvolatile,
+         deleteNonvolatile } from std.amiga.nonvolatile;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+
+func main(): i32 {
+    let app: String = stringOf("Bundle9");
+    let item: String = stringOf("nv-item");
+    let value: String = stringOf("01234567890123456789012");
+    if (!storeNonvolatile(toCString(app), toCString(item), slice(bytes(value), 0, 23))) {
+        println("nv: err 1");
+        return 1;
+    }
+    let storedCreated: NonvolatileData? =
+        getNonvolatile(toCString(app), toCString(item));
+    if (storedCreated == null) {
+        println("nv: err 2");
+        return 1;
+    }
+    let stored: NonvolatileData = storedCreated;
+    let size: u32 = nonvolatileSize(stored);
+    let buffer: u8[32] = [0; 32];
+    let read: i32 = nonvolatileRead(stored, slice(buffer, 0, 32));
+    freeNonvolatileData(stored);
+    if (!deleteNonvolatile(toCString(app), toCString(item))) {
+        println("nv: err 3");
+        return 1;
+    }
+    if (size != 23 || read != 23 || buffer[0] != 48 || buffer[22] != 50) {
+        println("nv: err 4");
+        return 1;
+    }
+    println("nv: ok n 23");
+    return 0;
+}

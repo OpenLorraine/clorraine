@@ -605,3 +605,208 @@ fn the_intuition_advanced_exports_match_the_stdlib_appendix() {
         }
     }
 }
+
+const SERVICES_SOURCE: &str = r#"module tests.opt.services;
+
+import { MsgPort, createMsgPort, deleteMsgPort } from std.amiga.exec;
+import { Commodity, openCommodity, closeCommodity }
+    from std.amiga.commodities;
+import { Locale, openLocale, closeLocale, localeLanguageName,
+         localeCountryCode, localeGmtOffset, localeDateTimeFormat }
+    from std.amiga.locale;
+import { RexxMessage, createRexxMessage, setRexxAction, setRexxArg, sendRexxMessage, receiveRexxMessage,
+         replyRexxMessage, reclaimRexxMessage, rexxMessageAction,
+         rexxMessageResult1, rexxMessageResult2, rexxMessageArg }
+    from std.amiga.arexx;
+import { Clipboard, openClipboard, closeClipboard, clipboardWrite,
+         clipboardRead, clipboardClear } from std.amiga.clipboard;
+import { Serial, Parallel, Printer, openSerial, closeSerial, serialWrite,
+         serialRead, openParallel, closeParallel, parallelWrite,
+         openPrinter, closePrinter, printerWrite } from std.amiga.devices;
+import { NonvolatileData, getNonvolatile, freeNonvolatileData,
+         nonvolatileSize, nonvolatileRead, storeNonvolatile,
+         deleteNonvolatile } from std.amiga.nonvolatile;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let name: String = stringOf("Bundle9");
+    let portCreated: MsgPort? = createMsgPort();
+    if (portCreated == null) { return 1; }
+    let port: MsgPort = portCreated;
+    let commodityCreated: Commodity? =
+        openCommodity(toCString(name), toCString(name), toCString(name),
+                      port, true, 0);
+    if (commodityCreated == null) { return 2; }
+    let commodity: Commodity = commodityCreated;
+    closeCommodity(commodity);
+
+    let empty: String = stringOf("");
+    let localeCreated: Locale? = openLocale(toCString(empty));
+    if (localeCreated == null) { return 3; }
+    let locale: Locale = localeCreated;
+    let language: String? = localeLanguageName(locale);
+    let country: u32 = localeCountryCode(locale);
+    let gmt: i32 = localeGmtOffset(locale);
+    let pattern: String? = localeDateTimeFormat(locale);
+    closeLocale(locale);
+
+    let replyCreated: MsgPort? = createMsgPort();
+    if (replyCreated == null) { return 4; }
+    let reply: MsgPort = replyCreated;
+    let extension: String = stringOf("");
+    let host: String = stringOf("");
+    let messageCreated: RexxMessage? =
+        createRexxMessage(reply, toCString(extension), toCString(host));
+    if (messageCreated == null) { return 5; }
+    let message: RexxMessage = messageCreated;
+    if (!setRexxAction(message, 1)) { return 6; }
+    if (!setRexxArg(message, 0, toCString(name))) { return 7; }
+    sendRexxMessage(port, message);
+    let receivedCreated: RexxMessage? = receiveRexxMessage(port);
+    if (receivedCreated == null) { return 8; }
+    let received: RexxMessage = receivedCreated;
+    let action: i32 = rexxMessageAction(received);
+    let result1: i32 = rexxMessageResult1(received);
+    let result2: i32 = rexxMessageResult2(received);
+    let argument: u8[32] = [0; 32];
+    let argumentLength: i32 = rexxMessageArg(received, 0, slice(argument, 0, 32));
+    replyRexxMessage(received);
+    let returnedCreated: RexxMessage? = receiveRexxMessage(reply);
+    if (returnedCreated == null) { return 9; }
+    let returned: RexxMessage = returnedCreated;
+    reclaimRexxMessage(returned);
+
+    let clipboardCreated: Clipboard? = openClipboard(0);
+    if (clipboardCreated == null) { return 10; }
+    let clipboard: Clipboard = clipboardCreated;
+    let clipText: String = stringOf("clip");
+    if (!clipboardWrite(clipboard, bytes(clipText))) { return 11; }
+    let clipBuf: u8[16] = [0; 16];
+    let clipRead: i32 = clipboardRead(clipboard, slice(clipBuf, 0, 16));
+    if (!clipboardClear(clipboard)) { return 12; }
+    closeClipboard(clipboard);
+
+    let serialCreated: Serial? = openSerial(0, 9600);
+    if (serialCreated == null) { return 13; }
+    let serial: Serial = serialCreated;
+    let serialText: String = stringOf("serial");
+    let serialWritten: i32 = serialWrite(serial, bytes(serialText));
+    let serialBuf: u8[16] = [0; 16];
+    let serialReadCount: i32 = serialRead(serial, slice(serialBuf, 0, 16));
+    closeSerial(serial);
+
+    let parallelCreated: Parallel? = openParallel(0, 0);
+    if (parallelCreated == null) { return 14; }
+    let parallel: Parallel = parallelCreated;
+    let parallelWritten: i32 = parallelWrite(parallel, bytes(serialText));
+    closeParallel(parallel);
+
+    let printerCreated: Printer? = openPrinter(0);
+    if (printerCreated == null) { return 15; }
+    let printer: Printer = printerCreated;
+    let printerWritten: i32 = printerWrite(printer, bytes(serialText));
+    closePrinter(printer);
+
+    let app: String = stringOf("Bundle9");
+    let item: String = stringOf("item");
+    let value: String = stringOf("value");
+    if (!storeNonvolatile(toCString(app), toCString(item), bytes(value))) { return 16; }
+    let storedCreated: NonvolatileData? = getNonvolatile(toCString(app), toCString(item));
+    if (storedCreated == null) { return 17; }
+    let stored: NonvolatileData = storedCreated;
+    let size: u32 = nonvolatileSize(stored);
+    let nvBuf: u8[32] = [0; 32];
+    let nvRead: i32 = nonvolatileRead(stored, slice(nvBuf, 0, 32));
+    freeNonvolatileData(stored);
+    if (!deleteNonvolatile(toCString(app), toCString(item))) { return 18; }
+
+    deleteMsgPort(reply);
+    deleteMsgPort(port);
+    return action + result1 + result2 + argumentLength + clipRead +
+           serialWritten + serialReadCount + parallelWritten + printerWritten +
+           i32(size) + nvRead + i32(country) + gmt +
+           (language != null ? 1 : 0) + (pattern != null ? 1 : 0);
+}
+"#;
+
+#[test]
+fn the_workbench_services_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("services-surface");
+    let source_path = write_fixture(&scratch, "main.clo", SERVICES_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("services-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the services surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in [
+        "cl_commodity_open",
+        "cl_locale_open",
+        "cl_rexx_create",
+        "cl_clipboard_open",
+        "cl_serial_open",
+        "cl_nv_get",
+    ] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+#[test]
+fn the_a500_profile_rejects_the_workbench_services_surface() {
+    let scratch = ScratchDir::new("services-a500");
+    let source_path = write_fixture(&scratch, "main.clo", SERVICES_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("services-a500", &output, 1);
+    assert!(stderr(&output).contains("E11200"), "expected E11200, got:\n{}", stderr(&output));
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+#[test]
+fn the_workbench_services_surface_cross_builds_with_nix20() {
+    cross_build("services-build20", "hosted-amiga", "nix20", SERVICES_SOURCE);
+}
+
+#[test]
+fn the_workbench_services_exports_match_the_stdlib_appendix() {
+    for (section, module) in [
+        ("### 14.15", "std.amiga.commodities"),
+        ("### 14.16", "std.amiga.locale"),
+        ("### 14.17", "std.amiga.arexx"),
+        ("### 14.18", "std.amiga.clipboard"),
+        ("### 14.19", "std.amiga.devices"),
+        ("### 14.20", "std.amiga.nonvolatile"),
+    ] {
+        let text = appendix_section(section);
+        let module = clc::stdlib::lookup(module).expect("the module is registered");
+        for name in module.exports {
+            assert!(
+                text.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|word| word == *name),
+                "the appendix section {section} is missing {name}"
+            );
+        }
+    }
+}

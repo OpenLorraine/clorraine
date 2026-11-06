@@ -169,6 +169,30 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.boopsi",
         source: include_str!("../../stdlib/std.amiga.boopsi.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.commodities",
+        source: include_str!("../../stdlib/std.amiga.commodities.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.locale",
+        source: include_str!("../../stdlib/std.amiga.locale.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.arexx",
+        source: include_str!("../../stdlib/std.amiga.arexx.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.clipboard",
+        source: include_str!("../../stdlib/std.amiga.clipboard.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.devices",
+        source: include_str!("../../stdlib/std.amiga.devices.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.nonvolatile",
+        source: include_str!("../../stdlib/std.amiga.nonvolatile.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -761,6 +785,81 @@ pub const MODULES: &[StdlibModule] = &[
             "disposeObject",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.commodities",
+        exports: &["Commodity", "openCommodity", "closeCommodity"],
+    },
+    StdlibModule {
+        name: "std.amiga.locale",
+        exports: &[
+            "Locale",
+            "openLocale",
+            "closeLocale",
+            "localeLanguageName",
+            "localeCountryCode",
+            "localeGmtOffset",
+            "localeDateTimeFormat",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.arexx",
+        exports: &[
+            "RexxMessage",
+            "createRexxMessage",
+            "deleteRexxMessage",
+            "setRexxAction",
+            "setRexxArg",
+            "sendRexxMessage",
+            "receiveRexxMessage",
+            "replyRexxMessage",
+            "reclaimRexxMessage",
+            "rexxMessageAction",
+            "rexxMessageResult1",
+            "rexxMessageResult2",
+            "rexxMessageArg",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.clipboard",
+        exports: &[
+            "Clipboard",
+            "openClipboard",
+            "closeClipboard",
+            "clipboardWrite",
+            "clipboardRead",
+            "clipboardClear",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.devices",
+        exports: &[
+            "Serial",
+            "Parallel",
+            "Printer",
+            "openSerial",
+            "closeSerial",
+            "serialWrite",
+            "serialRead",
+            "openParallel",
+            "closeParallel",
+            "parallelWrite",
+            "openPrinter",
+            "closePrinter",
+            "printerWrite",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.nonvolatile",
+        exports: &[
+            "NonvolatileData",
+            "getNonvolatile",
+            "freeNonvolatileData",
+            "nonvolatileSize",
+            "nonvolatileRead",
+            "storeNonvolatile",
+            "deleteNonvolatile",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -1059,6 +1158,43 @@ mod tests {
                 &["BoopsiObject", "newColorWheel", "attachObject",
                   "detachObject", "setColorWheelHue", "colorWheelHue",
                   "disposeObject"][..],
+            ),
+            (
+                "std.amiga.commodities",
+                &["Commodity", "openCommodity", "closeCommodity"][..],
+            ),
+            (
+                "std.amiga.locale",
+                &["Locale", "openLocale", "closeLocale", "localeLanguageName",
+                  "localeCountryCode", "localeGmtOffset",
+                  "localeDateTimeFormat"][..],
+            ),
+            (
+                "std.amiga.arexx",
+                &["RexxMessage", "createRexxMessage", "deleteRexxMessage",
+                  "setRexxAction", "setRexxArg", "sendRexxMessage",
+                  "receiveRexxMessage", "replyRexxMessage",
+                  "reclaimRexxMessage", "rexxMessageAction",
+                  "rexxMessageResult1", "rexxMessageResult2",
+                  "rexxMessageArg"][..],
+            ),
+            (
+                "std.amiga.clipboard",
+                &["Clipboard", "openClipboard", "closeClipboard",
+                  "clipboardWrite", "clipboardRead", "clipboardClear"][..],
+            ),
+            (
+                "std.amiga.devices",
+                &["Serial", "Parallel", "Printer", "openSerial", "closeSerial",
+                  "serialWrite", "serialRead", "openParallel", "closeParallel",
+                  "parallelWrite", "openPrinter", "closePrinter",
+                  "printerWrite"][..],
+            ),
+            (
+                "std.amiga.nonvolatile",
+                &["NonvolatileData", "getNonvolatile", "freeNonvolatileData",
+                  "nonvolatileSize", "nonvolatileRead", "storeNonvolatile",
+                  "deleteNonvolatile"][..],
             ),
         ] {
             assert!(lookup(module).is_some(), "missing module {module}");

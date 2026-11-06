@@ -414,3 +414,171 @@ fn the_shared_gadget_lookup_uses_the_public_list() {
         assert_contains("shared-gadget", &shim, needle);
     }
 }
+
+const SERVICES_SOURCE: &str = r#"module tests.opt.servicesimpl;
+
+import { MsgPort, createMsgPort, deleteMsgPort } from std.amiga.exec;
+import { Commodity, openCommodity, closeCommodity } from std.amiga.commodities;
+import { Locale, openLocale, closeLocale, localeLanguageName,
+         localeCountryCode, localeGmtOffset, localeDateTimeFormat }
+    from std.amiga.locale;
+import { RexxMessage, createRexxMessage, setRexxAction, setRexxArg,
+         sendRexxMessage, receiveRexxMessage, replyRexxMessage,
+         reclaimRexxMessage, rexxMessageAction, rexxMessageResult1,
+         rexxMessageResult2, rexxMessageArg } from std.amiga.arexx;
+import { Clipboard, openClipboard, closeClipboard, clipboardWrite,
+         clipboardRead, clipboardClear } from std.amiga.clipboard;
+import { Serial, Parallel, Printer, openSerial, closeSerial, serialWrite,
+         serialRead, openParallel, closeParallel, parallelWrite,
+         openPrinter, closePrinter, printerWrite } from std.amiga.devices;
+import { NonvolatileData, getNonvolatile, freeNonvolatileData,
+         nonvolatileSize, nonvolatileRead, storeNonvolatile,
+         deleteNonvolatile } from std.amiga.nonvolatile;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let name: String = stringOf("Bundle9");
+    let portCreated: MsgPort? = createMsgPort();
+    if (portCreated == null) { return 1; }
+    let port: MsgPort = portCreated;
+    let commodityCreated: Commodity? =
+        openCommodity(toCString(name), toCString(name), toCString(name), port, true, 0);
+    if (commodityCreated == null) { return 2; }
+    let commodity: Commodity = commodityCreated;
+    closeCommodity(commodity);
+
+    let empty: String = stringOf("");
+    let localeCreated: Locale? = openLocale(toCString(empty));
+    if (localeCreated == null) { return 3; }
+    let locale: Locale = localeCreated;
+    let language: String? = localeLanguageName(locale);
+    let country: u32 = localeCountryCode(locale);
+    let gmt: i32 = localeGmtOffset(locale);
+    let pattern: String? = localeDateTimeFormat(locale);
+    closeLocale(locale);
+
+    let replyCreated: MsgPort? = createMsgPort();
+    if (replyCreated == null) { return 4; }
+    let reply: MsgPort = replyCreated;
+    let extension: String = stringOf("");
+    let host: String = stringOf("");
+    let messageCreated: RexxMessage? =
+        createRexxMessage(reply, toCString(extension), toCString(host));
+    if (messageCreated == null) { return 5; }
+    let message: RexxMessage = messageCreated;
+    if (!setRexxAction(message, 1)) { return 6; }
+    if (!setRexxArg(message, 0, toCString(name))) { return 7; }
+    sendRexxMessage(port, message);
+    let receivedCreated: RexxMessage? = receiveRexxMessage(port);
+    if (receivedCreated == null) { return 8; }
+    let received: RexxMessage = receivedCreated;
+    let action: i32 = rexxMessageAction(received);
+    let result1: i32 = rexxMessageResult1(received);
+    let result2: i32 = rexxMessageResult2(received);
+    let argument: u8[32] = [0; 32];
+    let argumentLength: i32 = rexxMessageArg(received, 0, slice(argument, 0, 32));
+    replyRexxMessage(received);
+    let returnedCreated: RexxMessage? = receiveRexxMessage(reply);
+    if (returnedCreated == null) { return 9; }
+    let returned: RexxMessage = returnedCreated;
+    reclaimRexxMessage(returned);
+
+    let clipboardCreated: Clipboard? = openClipboard(0);
+    if (clipboardCreated == null) { return 10; }
+    let clipboard: Clipboard = clipboardCreated;
+    if (!clipboardWrite(clipboard, bytes(name))) { return 11; }
+    let clipBuf: u8[16] = [0; 16];
+    let clipRead: i32 = clipboardRead(clipboard, slice(clipBuf, 0, 16));
+    if (!clipboardClear(clipboard)) { return 12; }
+    closeClipboard(clipboard);
+
+    let serialCreated: Serial? = openSerial(0, 9600);
+    if (serialCreated == null) { return 13; }
+    let serial: Serial = serialCreated;
+    let serialWritten: i32 = serialWrite(serial, bytes(name));
+    let serialBuf: u8[16] = [0; 16];
+    let serialReadCount: i32 = serialRead(serial, slice(serialBuf, 0, 16));
+    closeSerial(serial);
+
+    let parallelCreated: Parallel? = openParallel(0, 0);
+    if (parallelCreated == null) { return 14; }
+    let parallel: Parallel = parallelCreated;
+    let parallelWritten: i32 = parallelWrite(parallel, bytes(name));
+    closeParallel(parallel);
+
+    let printerCreated: Printer? = openPrinter(0);
+    if (printerCreated == null) { return 15; }
+    let printer: Printer = printerCreated;
+    let printerWritten: i32 = printerWrite(printer, bytes(name));
+    closePrinter(printer);
+
+    let app: String = stringOf("Bundle9");
+    let item: String = stringOf("item");
+    let storedValue: String = stringOf("value");
+    if (!storeNonvolatile(toCString(app), toCString(item), bytes(storedValue))) { return 16; }
+    let storedCreated: NonvolatileData? = getNonvolatile(toCString(app), toCString(item));
+    if (storedCreated == null) { return 17; }
+    let stored: NonvolatileData = storedCreated;
+    let size: u32 = nonvolatileSize(stored);
+    let nvBuf: u8[32] = [0; 32];
+    let nvRead: i32 = nonvolatileRead(stored, slice(nvBuf, 0, 32));
+    freeNonvolatileData(stored);
+    if (!deleteNonvolatile(toCString(app), toCString(item))) { return 18; }
+
+    deleteMsgPort(reply);
+    deleteMsgPort(port);
+    return action + result1 + result2 + argumentLength + clipRead +
+           serialWritten + serialReadCount + parallelWritten + printerWritten +
+           i32(size) + nvRead + i32(country) + gmt +
+           (language != null ? 1 : 0) + (pattern != null ? 1 : 0);
+}
+"#;
+
+#[test]
+fn the_workbench_services_wrappers_route_to_the_shim() {
+    let c = emit("services-routing", "hosted-amiga", SERVICES_SOURCE);
+    for call in [
+        "cl_commodity_open",
+        "cl_locale_open",
+        "cl_rexx_create",
+        "cl_clipboard_open",
+        "cl_serial_open",
+        "cl_parallel_open",
+        "cl_printer_open",
+        "cl_nv_get",
+    ] {
+        assert_contains("services-routing", &c, call);
+    }
+}
+
+#[test]
+fn the_workbench_services_shim_pins_the_native_calls() {
+    let shim = shim();
+    for needle in [
+        "broker.nb_Version = NB_VERSION",
+        "CxBroker(&broker, &error)",
+        "DeleteCxObjAll(commodity->broker)",
+        "OpenLocale(",
+        "CloseLocale(locale->locale)",
+        "CreateRexxMsg((struct MsgPort *)reply_port,",
+        "FillRexxMsg(handle->message, 16, 0)",
+        "CreateArgstring((STRPTR)value,",
+        "ClearRexxMsg(handle->message, 16)",
+        "DeleteRexxMsg(handle->message)",
+        "CBD_CURRENTWRITEID",
+        "CMD_UPDATE",
+        "CBERR_OBSOLETEID",
+        "IOExtSer",
+        "IOSer.io_Command = SDCMD_SETPARAMS",
+        "IOExtPar",
+        "IOPar.io_Command = PDCMD_SETPARAMS",
+        "PRD_RAWWRITE",
+        "GetCopyNV(",
+        "SizeNVData(data)",
+        "(length + 9UL) / 10UL",
+        "DeleteNV(",
+    ] {
+        assert_contains("services-shim", &shim, needle);
+    }
+}

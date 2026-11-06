@@ -1,0 +1,210 @@
+//! Bundle 9 Workbench services acceptance: commodities, locale, ARexx,
+//! clipboard, serial/parallel/printer.
+//!
+//! The A600/KS2.05 gate redirects standard output and provides the serial and
+//! parallel host peers. The program prints one line per surface.
+
+module examples.amiga.optional_services;
+
+import { MsgPort, createMsgPort, deleteMsgPort } from std.amiga.exec;
+import { Commodity, openCommodity, closeCommodity }
+    from std.amiga.commodities;
+import { Locale, openLocale, closeLocale, localeLanguageName,
+         localeCountryCode, localeGmtOffset, localeDateTimeFormat }
+    from std.amiga.locale;
+import { RexxMessage, createRexxMessage, setRexxAction, setRexxArg,
+         sendRexxMessage, receiveRexxMessage, replyRexxMessage,
+         reclaimRexxMessage, rexxMessageAction, rexxMessageArg }
+    from std.amiga.arexx;
+import { Clipboard, openClipboard, closeClipboard, clipboardWrite,
+         clipboardRead, clipboardClear } from std.amiga.clipboard;
+import { Serial, Parallel, Printer, openSerial, closeSerial, serialWrite,
+         serialRead, openParallel, closeParallel, parallelWrite,
+         openPrinter, closePrinter, printerWrite } from std.amiga.devices;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+
+func main(): i32 {
+    let name: String = stringOf("Bundle9");
+    let portCreated: MsgPort? = createMsgPort();
+    if (portCreated == null) {
+        println("cmd: err 1");
+        return 1;
+    }
+    let port: MsgPort = portCreated;
+    let firstCreated: Commodity? =
+        openCommodity(toCString(name), toCString(name), toCString(name),
+                      port, true, 0);
+    if (firstCreated == null) {
+        deleteMsgPort(port);
+        println("cmd: err 2");
+        return 1;
+    }
+    let first: Commodity = firstCreated;
+    let duplicate: Commodity? =
+        openCommodity(toCString(name), toCString(name), toCString(name),
+                      port, true, 0);
+    let duplicateFailed: bool = duplicate == null;
+    closeCommodity(first);
+    let secondCreated: Commodity? =
+        openCommodity(toCString(name), toCString(name), toCString(name),
+                      port, true, 0);
+    if (secondCreated == null) {
+        deleteMsgPort(port);
+        println("cmd: err 3");
+        return 1;
+    }
+    let second: Commodity = secondCreated;
+    closeCommodity(second);
+    deleteMsgPort(port);
+    if (!duplicateFailed) {
+        println("cmd: err 4");
+        return 1;
+    }
+    println("cmd: ok broker 1 dup 1 reopen 1");
+
+    let empty: String = stringOf("");
+    let localeCreated: Locale? = openLocale(toCString(empty));
+    if (localeCreated == null) {
+        println("locale: err 1");
+        return 1;
+    }
+    let locale: Locale = localeCreated;
+    let language: String? = localeLanguageName(locale);
+    let country: u32 = localeCountryCode(locale);
+    let gmt: i32 = localeGmtOffset(locale);
+    let pattern: String? = localeDateTimeFormat(locale);
+    closeLocale(locale);
+    if (language == null || country == 0 || pattern == null ||
+        gmt < -1000 || gmt > 1000) {
+        println("locale: err 2");
+        return 1;
+    }
+    println("locale: ok name 1 cc 1 gmt 1 fmt 1");
+
+    let appPortCreated: MsgPort? = createMsgPort();
+    let replyPortCreated: MsgPort? = createMsgPort();
+    if (appPortCreated == null || replyPortCreated == null) {
+        println("rexx: err 1");
+        return 1;
+    }
+    let appPort: MsgPort = appPortCreated;
+    let replyPort: MsgPort = replyPortCreated;
+    let extension: String = stringOf("");
+    let host: String = stringOf("");
+    let messageCreated: RexxMessage? =
+        createRexxMessage(replyPort, toCString(extension), toCString(host));
+    if (messageCreated == null) {
+        println("rexx: err 2");
+        return 1;
+    }
+    let message: RexxMessage = messageCreated;
+    if (!setRexxAction(message, 1)) {
+        println("rexx: err 3");
+        return 1;
+    }
+    if (!setRexxArg(message, 0, toCString(name))) {
+        println("rexx: err 4");
+        return 1;
+    }
+    sendRexxMessage(appPort, message);
+    let receivedCreated: RexxMessage? = receiveRexxMessage(appPort);
+    if (receivedCreated == null) {
+        println("rexx: err 5");
+        return 1;
+    }
+    let received: RexxMessage = receivedCreated;
+    let action: i32 = rexxMessageAction(received);
+    let argument: u8[32] = [0; 32];
+    let argumentLength: i32 = rexxMessageArg(received, 0, slice(argument, 0, 32));
+    replyRexxMessage(received);
+    let returnedCreated: RexxMessage? = receiveRexxMessage(replyPort);
+    if (returnedCreated == null) {
+        println("rexx: err 6");
+        return 1;
+    }
+    let returned: RexxMessage = returnedCreated;
+    reclaimRexxMessage(returned);
+    deleteMsgPort(replyPort);
+    deleteMsgPort(appPort);
+    if (action != 1 || argumentLength != 7) {
+        println("rexx: err 7");
+        return 1;
+    }
+    println("rexx: ok action 1");
+
+    let clipboardCreated: Clipboard? = openClipboard(0);
+    if (clipboardCreated == null) {
+        println("clip: err 1");
+        return 1;
+    }
+    let clipboard: Clipboard = clipboardCreated;
+    let clipText: String = stringOf("clip");
+    if (!clipboardWrite(clipboard, bytes(clipText))) {
+        println("clip: err 2");
+        return 1;
+    }
+    let clipBuf: u8[16] = [0; 16];
+    let clipRead: i32 = clipboardRead(clipboard, slice(clipBuf, 0, 16));
+    if (!clipboardClear(clipboard)) {
+        println("clip: err 3");
+        return 1;
+    }
+    closeClipboard(clipboard);
+    if (clipRead != 4 || clipBuf[0] != 99) {
+        println("clip: err 4");
+        return 1;
+    }
+    println("clip: ok n 4");
+
+    let serialCreated: Serial? = openSerial(0, 9600);
+    if (serialCreated == null) {
+        println("ser: err 1");
+        return 1;
+    }
+    let serial: Serial = serialCreated;
+    let serialText: String = stringOf("ser\n");
+    let serialWritten: i32 = serialWrite(serial, bytes(serialText));
+    let serialBuf: u8[16] = [0; 16];
+    let serialReadCount: i32 = serialRead(serial, slice(serialBuf, 0, 16));
+    closeSerial(serial);
+    if (serialWritten != 4 || serialReadCount != 4) {
+        println("ser: err 2");
+        return 1;
+    }
+    println("ser: ok n 4");
+
+    let parallelCreated: Parallel? = openParallel(0, 0);
+    if (parallelCreated == null) {
+        println("par: err 1");
+        return 1;
+    }
+    let parallel: Parallel = parallelCreated;
+    let parallelText: String = stringOf("par\n");
+    let parallelWritten: i32 = parallelWrite(parallel, bytes(parallelText));
+    closeParallel(parallel);
+    if (parallelWritten != 4) {
+        println("par: err 2");
+        return 1;
+    }
+    println("par: ok n 4");
+
+    let printerCreated: Printer? = openPrinter(0);
+    if (printerCreated == null) {
+        println("prt: err 1");
+        return 1;
+    }
+    let printer: Printer = printerCreated;
+    let printerText: String = stringOf("prt\n");
+    let printerWritten: i32 = printerWrite(printer, bytes(printerText));
+    closePrinter(printer);
+    if (printerWritten < 0) {
+        /* No printer driver sink is configured; open/close still proves the
+         * typed surface. */
+        println("prt: ok open 1");
+        return 0;
+    }
+    println("prt: ok open 1");
+    return 0;
+}

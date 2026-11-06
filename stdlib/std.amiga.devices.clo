@@ -1,0 +1,95 @@
+//! Amiga serial, parallel, and printer devices (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. Each handle owns its typed
+//! request structure and private reply port. Serial applies `SDCMD_SETPARAMS`
+//! after opening; parallel applies `PDCMD_SETPARAMS`; printer exposes
+//! `PRD_RAWWRITE`. The generic `openDevice` rejects only clipboard because its
+//! request is larger than `IOStdReq`.
+
+module std.amiga.devices;
+
+/// An open serial unit.
+export handle Serial freedBy cl_serial_close;
+
+/// An open parallel unit.
+export handle Parallel freedBy cl_parallel_close;
+
+/// An open printer unit.
+export handle Printer freedBy cl_printer_close;
+
+ffi stddevices {
+    func cl_serial_open(unit: i32, baud: u32): Serial?;
+    func cl_serial_close(take serial: Serial): void;
+    func cl_serial_write(borrow serial: Serial, data: raw u8,
+                         length: u32): i32;
+    func cl_serial_read(borrow serial: Serial, data: raw u8,
+                        length: u32): i32;
+    func cl_parallel_open(unit: i32, flags: u32): Parallel?;
+    func cl_parallel_close(take parallel: Parallel): void;
+    func cl_parallel_write(borrow parallel: Parallel, data: raw u8,
+                           length: u32): i32;
+    func cl_printer_open(unit: i32): Printer?;
+    func cl_printer_close(take printer: Printer): void;
+    func cl_printer_write(borrow printer: Printer, data: raw u8,
+                          length: u32): i32;
+}
+
+/// Opens serial.device, or returns null. `baud` is 300..115200.
+export func openSerial(unit: i32, baud: u32): Serial? {
+    return cl_serial_open(unit, baud);
+}
+
+/// Closes a serial unit.
+export func closeSerial(take serial: Serial): void {
+    cl_serial_close(serial);
+}
+
+/// Writes bytes and returns the count, or -1.
+export func serialWrite(borrow serial: Serial, borrow data: u8[]): i32 {
+    unsafe {
+        return cl_serial_write(serial, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Reads bytes and returns the count, or -1.
+export func serialRead(borrow serial: Serial, borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_serial_read(serial, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Opens parallel.device, or returns null.
+export func openParallel(unit: i32, flags: u32): Parallel? {
+    return cl_parallel_open(unit, flags);
+}
+
+/// Closes a parallel unit.
+export func closeParallel(take parallel: Parallel): void {
+    cl_parallel_close(parallel);
+}
+
+/// Writes bytes to the parallel sink and returns the count, or -1.
+export func parallelWrite(borrow parallel: Parallel,
+                          borrow data: u8[]): i32 {
+    unsafe {
+        return cl_parallel_write(parallel, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Opens printer.device, or returns null.
+export func openPrinter(unit: i32): Printer? {
+    return cl_printer_open(unit);
+}
+
+/// Closes a printer unit.
+export func closePrinter(take printer: Printer): void {
+    cl_printer_close(printer);
+}
+
+/// Raw-writes bytes and returns the count, or -1.
+export func printerWrite(borrow printer: Printer, borrow data: u8[]): i32 {
+    unsafe {
+        return cl_printer_write(printer, raw u8(data.ptr), u32(len(data)));
+    }
+}

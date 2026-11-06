@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 12/30 tasks (40%) — Executing
+> **Progress**: 15/30 tasks (50%) — Executing
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 03:12
+> **Last Updated**: 2026-11-06 03:22
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -56,9 +56,9 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — six disk-based services add library/device bases, message ownership, and
 > extended device requests.
 
-- [ ] 4.1.1 [spec-author] Add the commodities/locale/arexx/clipboard/devices/nonvolatile surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red
-- [ ] 4.1.2 Add the six modules with their optional-suffix C, base globals, and module/export tables; run the spec green
-- [ ] 4.1.3 Add impl pins for `NB_VERSION`/port lifetime, locale fields, ARexx `ClearRexxMsg`/reclaim, clipboard update/read bound, SETPARAMS/PRD_RAWWRITE, nonvolatile tens length, and `optional-services.clo`/`optional-nonvolatile.clo`; run targeted tests
+- [x] 4.1.1 [spec-author] Add the commodities/locale/arexx/clipboard/devices/nonvolatile surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:22; §14.15–§14.20 added)
+- [x] 4.1.2 Add the six modules with their optional-suffix C, base globals, and module/export tables; run the spec green ✅ (completed: 2026-11-06 03:22; commodities, locale, ARexx, clipboard, devices, nonvolatile)
+- [x] 4.1.3 Add impl pins for `NB_VERSION`/port lifetime, locale fields, ARexx `ClearRexxMsg`/reclaim, clipboard update/read bound, SETPARAMS/PRD_RAWWRITE, nonvolatile tens length, and `optional-services.clo`/`optional-nonvolatile.clo`; run targeted tests ✅ (completed: 2026-11-06 03:22; 12 impl + 19 spec green; demos build)
 
 ## Phase 5: Network and AmigaGuide
 

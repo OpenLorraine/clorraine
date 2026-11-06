@@ -1,0 +1,102 @@
+//! Amiga ARexx message port (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A created `RexxMessage`
+//! owns a `CreateRexxMsg` packet; `sendRexxMessage` puts it and releases the
+//! wrapper. A received message is replied with `replyRexxMessage`; the sender
+//! reclaims the reply with `reclaimRexxMessage`. `deleteRexxMessage` clears
+//! argument strings before deleting a created packet.
+
+module std.amiga.arexx;
+
+import { MsgPort } from std.amiga.exec;
+
+/// A RexxMsg packet. The generated drop deletes a created packet or replies
+/// a received one.
+export handle RexxMessage freedBy cl_rexx_delete;
+
+ffi stdarexx {
+    func cl_rexx_create(borrow reply: MsgPort, extension: cstring,
+                        host: cstring): RexxMessage?;
+    func cl_rexx_delete(take message: RexxMessage): void;
+    func cl_rexx_set_action(borrow message: RexxMessage,
+                            action: i32): bool;
+    func cl_rexx_set_arg(borrow message: RexxMessage, index: i32,
+                         value: cstring): bool;
+    func cl_rexx_send(borrow port: MsgPort, take message: RexxMessage): void;
+    func cl_rexx_receive(borrow port: MsgPort): RexxMessage?;
+    func cl_rexx_reply(take message: RexxMessage): void;
+    func cl_rexx_reclaim(take message: RexxMessage): void;
+    func cl_rexx_action(borrow message: RexxMessage): i32;
+    func cl_rexx_result1(borrow message: RexxMessage): i32;
+    func cl_rexx_result2(borrow message: RexxMessage): i32;
+    func cl_rexx_arg(borrow message: RexxMessage, index: i32,
+                     buffer: raw u8, length: u32): i32;
+}
+
+/// Creates an ARexx message with a reply port, or returns null.
+///
+/// `extension` and `host` must stay valid until the packet is deleted.
+export func createRexxMessage(borrow reply: MsgPort, extension: cstring,
+                              host: cstring): RexxMessage? {
+    return cl_rexx_create(reply, extension, host);
+}
+
+/// Deletes a created message or replies a received one.
+export func deleteRexxMessage(take message: RexxMessage): void {
+    cl_rexx_delete(message);
+}
+
+/// Sets the ARexx action code.
+export func setRexxAction(borrow message: RexxMessage, action: i32): bool {
+    return cl_rexx_set_action(message, action);
+}
+
+/// Copies argument `index` (0..15) into the message.
+export func setRexxArg(borrow message: RexxMessage, index: i32,
+                       value: cstring): bool {
+    return cl_rexx_set_arg(message, index, value);
+}
+
+/// Sends a message to `port`; consumes the wrapper.
+export func sendRexxMessage(borrow port: MsgPort, take message: RexxMessage): void {
+    cl_rexx_send(port, message);
+}
+
+/// Receives the next ARexx message, or returns null.
+export func receiveRexxMessage(borrow port: MsgPort): RexxMessage? {
+    return cl_rexx_receive(port);
+}
+
+/// Replies a received message; consumes the wrapper.
+export func replyRexxMessage(take message: RexxMessage): void {
+    cl_rexx_reply(message);
+}
+
+/// Clears and deletes a created message returned to its reply port.
+export func reclaimRexxMessage(take message: RexxMessage): void {
+    cl_rexx_reclaim(message);
+}
+
+/// Returns the action code.
+export func rexxMessageAction(borrow message: RexxMessage): i32 {
+    return cl_rexx_action(message);
+}
+
+/// Returns the primary result.
+export func rexxMessageResult1(borrow message: RexxMessage): i32 {
+    return cl_rexx_result1(message);
+}
+
+/// Returns the secondary result.
+export func rexxMessageResult2(borrow message: RexxMessage): i32 {
+    return cl_rexx_result2(message);
+}
+
+/// Copies argument `index` and returns its length, or -1.
+export func rexxMessageArg(borrow message: RexxMessage, index: i32,
+                           borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_rexx_arg(message, index, raw u8(buf.ptr), u32(len(buf)));
+    }
+}

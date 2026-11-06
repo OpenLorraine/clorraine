@@ -1,0 +1,58 @@
+//! Amiga nonvolatile.library byte storage (Kickstart 3.1+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `NonvolatileData` owns a
+//! `GetCopyNV` copy. `storeNonvolatile` rounds the byte length up to the
+//! library’s ten-byte units. `ENV:`/`ENVARC:` must be assigned by the caller.
+
+module std.amiga.nonvolatile;
+
+/// A copied nonvolatile item. The generated drop frees it.
+export handle NonvolatileData freedBy cl_nv_free;
+
+ffi stdnonvolatile {
+    func cl_nv_get(app: cstring, item: cstring): NonvolatileData?;
+    func cl_nv_free(take data: NonvolatileData): void;
+    func cl_nv_size(borrow data: NonvolatileData): u32;
+    func cl_nv_read(borrow data: NonvolatileData, buffer: raw u8,
+                    length: u32): i32;
+    func cl_nv_store(app: cstring, item: cstring, data: raw u8,
+                     length: u32): bool;
+    func cl_nv_delete(app: cstring, item: cstring): bool;
+}
+
+/// Reads a nonvolatile item, or returns null.
+export func getNonvolatile(app: cstring, item: cstring): NonvolatileData? {
+    return cl_nv_get(app, item);
+}
+
+/// Frees a copied item.
+export func freeNonvolatileData(take data: NonvolatileData): void {
+    cl_nv_free(data);
+}
+
+/// Returns the item size in bytes.
+export func nonvolatileSize(borrow data: NonvolatileData): u32 {
+    return cl_nv_size(data);
+}
+
+/// Copies at most `len(buf)` bytes and returns the count.
+export func nonvolatileRead(borrow data: NonvolatileData,
+                            borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_nv_read(data, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Stores a byte array; the length is rounded up to ten-byte units.
+export func storeNonvolatile(app: cstring, item: cstring,
+                             borrow data: u8[]): bool {
+    unsafe {
+        return cl_nv_store(app, item, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Deletes a nonvolatile item; false when it is absent or fails.
+export func deleteNonvolatile(app: cstring, item: cstring): bool {
+    return cl_nv_delete(app, item);
+}

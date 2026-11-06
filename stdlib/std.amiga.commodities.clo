@@ -1,0 +1,37 @@
+//! Amiga commodities broker (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Commodity` owns one
+//! `CxBroker` object and copied name/title/description. The caller's message
+//! port is borrowed and must outlive the broker. This minimal surface covers
+//! broker registration, uniqueness, and clean shutdown; the controller
+//! input-event network is not exposed.
+
+module std.amiga.commodities;
+
+import { MsgPort } from std.amiga.exec;
+
+/// A registered commodities broker. The generated drop removes it.
+export handle Commodity freedBy cl_commodity_close;
+
+ffi stdcommodities {
+    func cl_commodity_open(name: cstring, title: cstring,
+                           description: cstring, borrow port: MsgPort,
+                           unique: bool, priority: i32): Commodity?;
+    func cl_commodity_close(take commodity: Commodity): void;
+}
+
+/// Registers a commodity broker, or returns null.
+///
+/// `unique` requests `NBU_UNIQUE`; a duplicate name fails. `priority` is
+/// clamped to -128..127. The port is borrowed until `closeCommodity`.
+export func openCommodity(name: cstring, title: cstring,
+                          description: cstring, borrow port: MsgPort,
+                          unique: bool, priority: i32): Commodity? {
+    return cl_commodity_open(name, title, description, port, unique, priority);
+}
+
+/// Removes a commodity broker exactly once.
+export func closeCommodity(take commodity: Commodity): void {
+    cl_commodity_close(commodity);
+}

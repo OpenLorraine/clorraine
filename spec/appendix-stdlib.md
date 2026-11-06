@@ -897,6 +897,109 @@ accepted drawer/file path (an absolute file wins), or -1 on cancel.
 | `colorWheelHue(borrow)` | `u32` | `GetAttr` |
 | `disposeObject(take)` | — | detach + dispose |
 
+### 14.15 Commodities (`std.amiga.commodities`)
+
+`openCommodity` registers a `NewBroker` with `NB_VERSION`, a borrowed port,
+optional `NBU_UNIQUE`, and a clamped priority. `closeCommodity` calls
+`DeleteCxObjAll`. The surface covers broker lifecycle and uniqueness; the
+controller input-event network is not exposed.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openCommodity(name, title, desc, port, unique, priority)` | `Commodity?` | port borrowed; null on duplicate |
+| `closeCommodity(take)` | — | `DeleteCxObjAll` |
+
+### 14.16 Locale (`std.amiga.locale`)
+
+`openLocale` uses `OpenLocale(NULL)` for an empty name and returns a `Locale`
+handle. The accessors copy the language and date-time pattern as `String?` and
+return the country code and GMT offset. `closeLocale` releases it.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openLocale(name)` | `Locale?` | empty name = default |
+| `closeLocale(take)` | — | `CloseLocale` |
+| `localeLanguageName(borrow)` | `String?` | copied |
+| `localeCountryCode(borrow)` | `u32` | |
+| `localeGmtOffset(borrow)` | `i32` | minutes |
+| `localeDateTimeFormat(borrow)` | `String?` | copied pattern |
+
+### 14.17 ARexx messages (`std.amiga.arexx`)
+
+`createRexxMessage` owns a `CreateRexxMsg` packet and fills its argument
+slots. `setRexxAction`/`setRexxArg` set the action and copied arguments.
+`sendRexxMessage` puts the packet and releases the wrapper; the receiver uses
+`receiveRexxMessage` and `replyRexxMessage`. The sender reclaims the reply with
+`reclaimRexxMessage`, which clears the arguments before `DeleteRexxMsg`.
+`deleteRexxMessage` deletes a created packet or replies a received one.
+
+| API | Returns | Rules |
+|---|---|---|
+| `createRexxMessage(reply, ext, host)` | `RexxMessage?` | `CreateRexxMsg`/`FillRexxMsg` |
+| `setRexxAction` / `setRexxArg` | `bool` | arg 0..15; copied |
+| `sendRexxMessage(port, take)` | — | `PutMsg`; consumes wrapper |
+| `receiveRexxMessage(port)` | `RexxMessage?` | `GetMsg`/`IsRexxMsg` |
+| `replyRexxMessage(take)` | — | `ReplyMsg` |
+| `reclaimRexxMessage(take)` | — | `ClearRexxMsg` + `DeleteRexxMsg` |
+| `rexxMessageAction` | `i32` | `rm_Action` |
+| `rexxMessageResult1` | `i32` | `rm_Result1` |
+| `rexxMessageResult2` | `i32` | `rm_Result2` |
+| `rexxMessageArg(borrow, index, buf)` | `i32` | bounded copy |
+
+### 14.18 Clipboard (`std.amiga.clipboard`)
+
+`openClipboard` owns an `IOClipReq` and reply port. `clipboardWrite` obtains
+the current write ID, writes the whole clip, and sends `CMD_UPDATE`;
+`clipboardRead` obtains the current read ID and reads at most the caller’s
+buffer. Both retry `CBERR_OBSOLETEID` a bounded number of times.
+`clipboardClear` writes an empty clip.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openClipboard(unit)` | `Clipboard?` | `OpenDevice` |
+| `closeClipboard(take)` | — | close/free |
+| `clipboardWrite(borrow, data)` | `bool` | write + update |
+| `clipboardRead(borrow, buf)` | `i32` | bounded; -1 error |
+| `clipboardClear(borrow)` | `bool` | zero-length clip |
+
+### 14.19 Serial, parallel, printer (`std.amiga.devices`)
+
+`openSerial` owns `IOExtSer`, sets `io_Baud`, opens, and sends
+`SDCMD_SETPARAMS`; `serialWrite`/`serialRead` use `CMD_WRITE`/`CMD_READ`.
+`openParallel` owns `IOExtPar`, sets `io_ParFlags`, and sends
+`PDCMD_SETPARAMS`; `parallelWrite` writes to the host sink. `openPrinter`
+owns an `IOStdReq`; `printerWrite` uses `PRD_RAWWRITE`. Each close aborts and
+frees its request and port.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openSerial(unit, baud)` | `Serial?` | baud 300..115200 |
+| `serialWrite/Read(borrow, buf)` | `i32` | actual count or -1 |
+| `closeSerial(take)` | — | close/free |
+| `openParallel(unit, flags)` | `Parallel?` | `PDCMD_SETPARAMS` |
+| `parallelWrite(borrow, data)` | `i32` | output sink |
+| `closeParallel(take)` | — | close/free |
+| `openPrinter(unit)` | `Printer?` | `IOStdReq` |
+| `printerWrite(borrow, data)` | `i32` | `PRD_RAWWRITE` |
+| `closePrinter(take)` | — | close/free |
+
+### 14.20 Nonvolatile storage (`std.amiga.nonvolatile`)
+
+`getNonvolatile` owns a `GetCopyNV` copy; `nonvolatileSize` uses
+`SizeNVData`; `nonvolatileRead` copies at most the caller’s buffer.
+`storeNonvolatile` rounds the byte length up to ten-byte units for `StoreNV`;
+`deleteNonvolatile` uses `DeleteNV`. `ENV:`/`ENVARC:` must be assigned by the
+application.
+
+| API | Returns | Rules |
+|---|---|---|
+| `getNonvolatile(app, item)` | `NonvolatileData?` | `GetCopyNV` |
+| `freeNonvolatileData(take)` | — | `FreeNVData` |
+| `nonvolatileSize(borrow)` | `u32` | bytes |
+| `nonvolatileRead(borrow, buf)` | `i32` | bounded |
+| `storeNonvolatile(app, item, data)` | `bool` | `(len+9)/10` units |
+| `deleteNonvolatile(app, item)` | `bool` | `DeleteNV` |
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a
