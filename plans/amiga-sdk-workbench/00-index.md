@@ -1,8 +1,9 @@
 # Amiga SDK Bundle 8: Workbench and Services Implementation Plan
 
 > **Feature**: Workbench AppIcon/AppWindow/AppMenuItem integration, the icon library, expansion boards, the card resource, a keymap call, and an A1200 Workbench demo on Kickstart 2.0+.
-> **Status**: Executing — 0/26 tasks; plan preflighted
+> **Status**: Done — 26/26; Bundle 8 accepted on A1200/KS3.1 and A600/KS2.05, issue #9 closed, independent review fixes complete
 > **Created**: 2026-11-05 21:55
+> **Last Updated**: 2026-11-06 01:05
 > **Implements**: —
 > **CodeOps Artifact Schema**: 1
 
