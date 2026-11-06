@@ -50,7 +50,7 @@ headlessly on a private Xvfb display and must not commit P96 or ROM media.
 - [x] 5.1.1 Run `make check` and `make asan`; fix every failure ✅ (completed: 2026-11-06 15:45; 113 suites, 25 ASan suites)
 - [x] 5.1.2 Run `make sdk-a1200-rtg`, `make corpus-amiga`, and full `make verify`; capture the gate report and PPM evidence ✅ (completed: 2026-11-06 15:45; all legs passed)
 - [x] 5.1.3 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding and re-run the affected gates ✅ (completed: 2026-11-06 15:45; findings fixed in `05-findings.md`)
-- [x] 5.1.4 Clean temporary artifacts and archives, confirm the working tree and `docker/.env`, update the plan/roadmap to Done, commit locally, and close issue #11 ✅ (completed: 2026-11-06 15:45; local commit and issue #11 close)
+- [x] 5.1.4 Clean temporary artifacts and archives, confirm the working tree and `docker/.env`, update the plan/roadmap to Done, commit locally, and close issue #11 ✅ (completed: 2026-11-06 15:45; commit `7ce2478`; issue #11 closed)
 
 ## Acceptance
 
