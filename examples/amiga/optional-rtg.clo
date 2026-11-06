@@ -1,0 +1,228 @@
+//! Picasso96 RTG acceptance: screen, bitmap, pixels, blit, and PPM capture.
+//!
+//! The gate redirects standard output to `CNEXT:rtg.txt` and reads
+//! `CNEXT:rtg.ppm`. The screen is 640x480x32; the capture is the 64x64 region
+//! at (200,200), which contains the red/green/blue probe pixels and the bitmap
+//! blitted at (210,210). A top-left write and fill at (20,20)-(30,30) prove
+//! the clip-free path; the larger blue fill at (300,300) stays outside the
+//! capture.
+
+module examples.amiga.optional_rtg;
+
+import { RtgScreen, RtgBitmap, openRtgScreen, closeRtgScreen,
+         rtgBoards, rtgMode, rtgModeWidth, rtgModeHeight, rtgModeDepth,
+         rtgModeFormat, rtgScreenWidth, rtgScreenHeight, rtgScreenDepth,
+         rtgScreenFormat, rtgScreenMode, allocRtgBitmap, freeRtgBitmap,
+         rtgBitmapWidth, rtgBitmapHeight, rtgBitmapDepth, rtgBitmapFormat,
+         rtgBitmapBytesPerRow, rtgScreenWritePixel, rtgScreenReadPixel,
+         rtgScreenFillRect, rtgBitmapWritePixel, rtgBitmapReadPixel,
+         rtgBitmapFillRect, rtgScreenBlitBitmap, rtgScreenReadPixels,
+         rtgBitmapReadPixels } from std.amiga.picasso96;
+import { Buffer, bufferNew, bufferBytes } from std.mem;
+import { String, stringOf, toCString, bytes } from std.text;
+import { File, createFile, writeBytes } from std.io;
+import { println } from std.io;
+
+/// Writes a P6 PPM with the fixed 64x64 header and the RGB payload.
+func writePpm(path: cstring, data: u8[]): bool {
+    let fileCreated: File? = createFile(path);
+    if (fileCreated == null) {
+        return false;
+    }
+    let file: File = fileCreated;
+    let header: String = stringOf("P6\n64 64\n255\n");
+    let headerBytes: u8[] = bytes(header);
+    let headerWritten: i32 = writeBytes(file, headerBytes);
+    let dataWritten: i32 = writeBytes(file, data);
+    return headerWritten == i32(len(headerBytes)) &&
+           dataWritten == i32(len(data));
+}
+
+/// Returns one RGB byte from a packed 64x64 capture.
+func channel(data: u8[], pixel: i32, offset: i32): i32 {
+    return i32(data[usize(pixel * 3 + offset)]);
+}
+
+func main(): i32 {
+    let boardCount: i32 = rtgBoards();
+    let mode: u32 = rtgMode(640, 480, 32);
+    if (boardCount != 1 || mode == 0) {
+        println("rtg: err 1");
+        return 1;
+    }
+    if (rtgModeWidth(mode) != 640 || rtgModeHeight(mode) != 480 ||
+        rtgModeDepth(mode) != 32 || rtgModeFormat(mode) == 0) {
+        println("rtg: err 2");
+        return 1;
+    }
+
+    let screenCreated: RtgScreen? = openRtgScreen(640, 480, 32, "Clorraine RTG");
+    if (screenCreated == null) {
+        println("rtg: err 3");
+        return 1;
+    }
+    let screen: RtgScreen = screenCreated;
+    if (rtgScreenWidth(screen) != 640 || rtgScreenHeight(screen) != 480 ||
+        rtgScreenDepth(screen) != 32 || rtgScreenFormat(screen) == 0 ||
+        rtgScreenMode(screen) == 0) {
+        closeRtgScreen(screen);
+        println("rtg: err 4");
+        return 1;
+    }
+
+    if (!rtgScreenWritePixel(screen, 200, 200, 0x00FF0000) ||
+        !rtgScreenWritePixel(screen, 201, 200, 0x0000FF00) ||
+        !rtgScreenWritePixel(screen, 202, 200, 0x000000FF)) {
+        closeRtgScreen(screen);
+        println("rtg: err 5");
+        return 1;
+    }
+    if (!rtgScreenWritePixel(screen, 20, 20, 0x0000FF00) ||
+        rtgScreenReadPixel(screen, 20, 20) != 0x0000FF00) {
+        closeRtgScreen(screen);
+        println("rtg: err 5b");
+        return 1;
+    }
+    let red: u32 = rtgScreenReadPixel(screen, 200, 200);
+    let green: u32 = rtgScreenReadPixel(screen, 201, 200);
+    let blue: u32 = rtgScreenReadPixel(screen, 202, 200);
+
+    if (!rtgScreenFillRect(screen, 300, 300, 310, 310, 0x000000FF) ||
+        rtgScreenReadPixel(screen, 305, 305) != 0x000000FF ||
+        !rtgScreenFillRect(screen, 20, 20, 30, 30, 0x00FF0000) ||
+        rtgScreenReadPixel(screen, 25, 25) != 0x00FF0000) {
+        closeRtgScreen(screen);
+        println("rtg: err 6");
+        return 1;
+    }
+
+    let bitmapCreated: RtgBitmap? = allocRtgBitmap(32, 32, 32);
+    if (bitmapCreated == null) {
+        closeRtgScreen(screen);
+        println("rtg: err 7");
+        return 1;
+    }
+    let bitmap: RtgBitmap = bitmapCreated;
+    if (rtgBitmapWidth(bitmap) != 32 || rtgBitmapHeight(bitmap) != 32 ||
+        rtgBitmapDepth(bitmap) != 32 || rtgBitmapFormat(bitmap) == 0 ||
+        rtgBitmapBytesPerRow(bitmap) <= 0) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 8");
+        return 1;
+    }
+    if (!rtgBitmapFillRect(bitmap, 0, 0, 31, 31, 0x000000FF) ||
+        !rtgBitmapWritePixel(bitmap, 0, 0, 0x00FFFF00) ||
+        rtgBitmapReadPixel(bitmap, 0, 0) != 0x00FFFF00 ||
+        rtgBitmapReadPixel(bitmap, 1, 1) != 0x000000FF) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 9");
+        return 1;
+    }
+
+    if (!rtgScreenBlitBitmap(screen, bitmap, 210, 210, 0, 0, 32, 32) ||
+        rtgScreenReadPixel(screen, 210, 210) != 0x00FFFF00 ||
+        rtgScreenReadPixel(screen, 211, 211) != 0x000000FF) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 10");
+        return 1;
+    }
+
+    // A top-left blit proves the full display clip; the capture stays at
+    // (200,200), where the larger blit is also checked.
+    if (!rtgScreenBlitBitmap(screen, bitmap, 10, 10, 0, 0, 32, 32) ||
+        rtgScreenReadPixel(screen, 10, 10) != 0x00FFFF00 ||
+        rtgScreenReadPixel(screen, 11, 11) != 0x000000FF) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 10b");
+        return 1;
+    }
+
+    let bitmapReadCreated: Buffer? = bufferNew(usize(32 * 32 * 3));
+    if (bitmapReadCreated == null) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 11");
+        return 1;
+    }
+    let bitmapReadBuffer: Buffer = bitmapReadCreated;
+    let bitmapReadBytes: u8[] = bufferBytes(bitmapReadBuffer);
+    let bitmapRead: i32 =
+        rtgBitmapReadPixels(bitmap, 0, 0, 32, 32, bitmapReadBytes);
+    let bitmapReadOk: bool =
+        bitmapRead == 32 * 32 * 3 &&
+        channel(bitmapReadBytes, 0, 0) == 255 &&
+        channel(bitmapReadBytes, 0, 1) == 255 &&
+        channel(bitmapReadBytes, 0, 2) == 0 &&
+        channel(bitmapReadBytes, 33, 2) == 255;
+
+    let captureCreated: Buffer? = bufferNew(usize(64 * 64 * 3));
+    if (captureCreated == null) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 12");
+        return 1;
+    }
+    let captureBuffer: Buffer = captureCreated;
+    let capture: u8[] = bufferBytes(captureBuffer);
+    let captureRead: i32 = rtgScreenReadPixels(screen, 200, 200, 64, 64,
+                                               capture);
+    if (captureRead != 64 * 64 * 3) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 13");
+        return 1;
+    }
+
+    let redOk: bool = channel(capture, 0, 0) == 255 &&
+                      channel(capture, 0, 1) == 0 &&
+                      channel(capture, 0, 2) == 0;
+    let greenOk: bool = channel(capture, 1, 0) == 0 &&
+                        channel(capture, 1, 1) == 255 &&
+                        channel(capture, 1, 2) == 0;
+    let blueOk: bool = channel(capture, 2, 0) == 0 &&
+                       channel(capture, 2, 1) == 0 &&
+                       channel(capture, 2, 2) == 255;
+    let blitOk: bool = channel(capture, 650, 0) == 255 &&
+                       channel(capture, 650, 1) == 255 &&
+                       channel(capture, 650, 2) == 0 &&
+                       channel(capture, 715, 0) == 0 &&
+                       channel(capture, 715, 1) == 0 &&
+                       channel(capture, 715, 2) == 255 &&
+                       channel(capture, 1300, 2) == 255;
+    if (!redOk || !greenOk || !blueOk || !blitOk || !bitmapReadOk) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 14");
+        return 1;
+    }
+
+    let ppmPath: String = stringOf("CNEXT:rtg.ppm");
+    if (!writePpm(toCString(ppmPath), capture)) {
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        println("rtg: err 15");
+        return 1;
+    }
+
+    let bitmapReadFlag: i32 = bitmapReadOk ? 1 : 0;
+    let screenFormat: i32 = rtgScreenFormat(screen);
+    let bitmapFormat: i32 = rtgBitmapFormat(bitmap);
+    let bitmapRow: i32 = rtgBitmapBytesPerRow(bitmap);
+    println($"rtg: accessors boards {boardCount} mode 640x480x32 screen 640 480 32 {screenFormat} bmp 32 32 32 {bitmapFormat} {bitmapRow} fill 1 bmpread {bitmapReadFlag}");
+    if (red == 0x00FF0000 && green == 0x0000FF00 && blue == 0x000000FF) {
+        println("rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1");
+    } else {
+        println("rtg: err 16");
+        freeRtgBitmap(bitmap);
+        closeRtgScreen(screen);
+        return 1;
+    }
+
+    freeRtgBitmap(bitmap);
+    closeRtgScreen(screen);
+    return 0;
+}

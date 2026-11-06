@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-a1200-rtg demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -131,6 +131,7 @@ verify:
 	$(MAKE) sdk-a600-ks31-addons
 	$(MAKE) sdk-a1200-ks30-addons
 	$(MAKE) sdk-a1200-addons
+	$(MAKE) sdk-a1200-rtg
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -233,6 +234,10 @@ sdk-a1200-ks30-addons: sdk-bundle9-build
 
 sdk-a1200-addons: sdk-bundle9-build sdk-advanced-build
 	docker/scripts/a1200-addons-smoke.sh
+
+sdk-a1200-rtg:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga examples/amiga/optional-rtg.clo"
+	docker/scripts/a1200-rtg-smoke.sh build/clorraine/optional-rtg/hosted-amiga/optional-rtg
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

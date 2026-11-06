@@ -29,3 +29,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Picasso96 developer definitions
+
+`compiler/runtime/picasso96.h` is a minimal derivative of the P96 developer
+package `P96Develop` 3.6.0 from Aminet (`dev/misc/P96Develop`). The original
+P96 API definitions are copyright 1996–1998 Alexander Kneer and Tobias Abt;
+the developer package is distributed under the Creative Commons
+Attribution 4.0 International license
+(<https://creativecommons.org/licenses/by/4.0/>).
+
+The vendored file keeps only the constants, structures, and fixed-argument
+library-call macros used by `compiler/runtime/shim_hosted_amiga_optional_rtg.c`.
+The full P96 varargs macro forms and the PIP/overlay and palette APIs are
+omitted. The vbcc branch uses plain prototypes; the compiler's `amiga.lib` provides the
+P96 stubs for the build-only corpus leg.

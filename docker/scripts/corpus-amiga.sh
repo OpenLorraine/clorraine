@@ -107,6 +107,41 @@ else
     status=1
 fi
 
+# RTG is toolchain-neutral: GCC uses fixed-argument inline calls; vbcc uses
+# plain prototypes and the SDK amiga.lib P96 stubs. Build the emitted unit
+# with both compilers so the RTG suffix is covered by the toolchain matrix.
+rtg_src="${RTG_SRC:-examples/amiga/optional-rtg.clo}"
+rtg_c="${OUTDIR}/rtg-build.c"
+rtg_gcc_c="${OUTDIR}/rtg-gcc.c"
+rtg_vbcc_c="${OUTDIR}/rtg-vbcc.c"
+rm -f "${OUTDIR}/rtg-gcc" "${OUTDIR}/rtg-vbcc"
+echo "corpus-amiga: rtg: gcc build-only"
+"${CLC}" --profile hosted-amiga -o "${rtg_c}" "${rtg_src}"
+cp "${rtg_c}" "${rtg_gcc_c}"
+cp "${rtg_c}" "${rtg_vbcc_c}"
+if "${GCC}" "${GCC_FLAGS[@]}" -o "${OUTDIR}/rtg-gcc" \
+    "${rtg_gcc_c}" -lamiga -lm > "${OUTDIR}/rtg-gcc.log" 2>&1; then
+    echo "corpus-amiga: rtg: gcc build is warning-free"
+else
+    echo "corpus-amiga: rtg: gcc build failed" >&2
+    cat "${OUTDIR}/rtg-gcc.log" >&2
+    status=1
+fi
+echo "corpus-amiga: rtg: vbcc build-only"
+if "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/rtg-vbcc" \
+    "${rtg_vbcc_c}" -lamiga -lmieee > "${OUTDIR}/rtg-vbcc.log" 2>&1; then
+    if grep -i 'warning' "${OUTDIR}/rtg-vbcc.log" | grep -q 'rtg-vbcc\.c'; then
+        echo "corpus-amiga: rtg: vbcc emitted warnings in the emitted C" >&2
+        status=1
+    else
+        echo "corpus-amiga: rtg: vbcc build is warning-free"
+    fi
+else
+    echo "corpus-amiga: rtg: vbcc build failed" >&2
+    cat "${OUTDIR}/rtg-vbcc.log" >&2
+    status=1
+fi
+
 # The interrupt-counter is hosted-amiga only and needs the real interrupt
 # dispatcher, so it cannot run under `vamos`. It is built here because the
 # FS-UAE leg consumes the binary; that leg boots the emulator separately.

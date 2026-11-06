@@ -21,6 +21,10 @@ const HOSTED_AMIGA_SUFFIX: &str = concat!(
     include_str!("../runtime/shim_hosted_amiga_optional_ui.c"),
     include_str!("../runtime/shim_hosted_amiga_optional_services.c"),
     include_str!("../runtime/shim_hosted_amiga_optional_net.c"),
+    "\n/* Picasso96 RTG definitions, embedded before the RTG shim. */\n",
+    include_str!("../runtime/picasso96.h"),
+    "\n",
+    include_str!("../runtime/shim_hosted_amiga_optional_rtg.c"),
 );
 
 /// The C runtime shim source of the freestanding profile.
@@ -280,6 +284,7 @@ mod tests {
         assert_eq!(Profile::HostedAmiga13.shim(), Profile::HostedAmiga.shim());
         assert!(!Profile::HostedAmiga.shim_suffix().is_empty());
         assert!(Profile::HostedAmiga.shim_suffix().contains("cl_add_app_icon"));
+        assert!(Profile::HostedAmiga.shim_suffix().contains("cl_rtg_boards"));
         assert!(Profile::HostedAmiga13.shim_suffix().is_empty());
         assert!(Profile::Host.shim_suffix().is_empty());
         assert!(Profile::Freestanding.shim_suffix().is_empty());

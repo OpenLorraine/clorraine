@@ -1,0 +1,256 @@
+//! Picasso96 RTG screens and offscreen bitmaps (Kickstart 3.0+, 68020+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. The surface is a deliberately
+//! small Picasso96 subset: query boards and modes, open a 32-bit truecolor
+//! screen, allocate a 32-bit user-private bitmap, draw and read ARGB pixels,
+//! blit a bitmap to the screen, and read RGB bytes for a PPM capture.
+//!
+//! The gate runs on an A1200/KS3.1 with FS-UAE's `uaegfx` card and the Aminet
+//! Picasso96 2.0 runtime. CyberGraphX, real-card drivers, PIP/video overlay,
+//! CLUT palette editing, and text/font rendering are not part of this module.
+
+module std.amiga.picasso96;
+
+/// An open Picasso96 screen. The generated drop closes it.
+export handle RtgScreen freedBy cl_rtg_close_screen;
+
+/// A user-private Picasso96 bitmap. The generated drop frees it.
+export handle RtgBitmap freedBy cl_rtg_free_bitmap;
+
+/// 32-bit ARGB byte order.
+export const RTG_FORMAT_A8R8G8B8: i32 = 6;
+/// 32-bit ABGR byte order.
+export const RTG_FORMAT_A8B8G8R8: i32 = 7;
+/// 32-bit RGBA byte order.
+export const RTG_FORMAT_R8G8B8A8: i32 = 8;
+/// 32-bit BGRA byte order.
+export const RTG_FORMAT_B8G8R8A8: i32 = 9;
+
+ffi stdpicasso96 {
+    func cl_rtg_boards(): i32;
+    func cl_rtg_mode(width: i32, height: i32, depth: i32): u32;
+    func cl_rtg_mode_width(mode: u32): i32;
+    func cl_rtg_mode_height(mode: u32): i32;
+    func cl_rtg_mode_depth(mode: u32): i32;
+    func cl_rtg_mode_format(mode: u32): i32;
+    func cl_rtg_open_screen(width: i32, height: i32, depth: i32,
+                            title: cstring): RtgScreen?;
+    func cl_rtg_close_screen(take screen: RtgScreen): void;
+    func cl_rtg_screen_width(borrow screen: RtgScreen): i32;
+    func cl_rtg_screen_height(borrow screen: RtgScreen): i32;
+    func cl_rtg_screen_depth(borrow screen: RtgScreen): i32;
+    func cl_rtg_screen_format(borrow screen: RtgScreen): i32;
+    func cl_rtg_screen_mode(borrow screen: RtgScreen): u32;
+    func cl_rtg_alloc_bitmap(width: i32, height: i32, depth: i32): RtgBitmap?;
+    func cl_rtg_free_bitmap(take bitmap: RtgBitmap): void;
+    func cl_rtg_bitmap_width(borrow bitmap: RtgBitmap): i32;
+    func cl_rtg_bitmap_height(borrow bitmap: RtgBitmap): i32;
+    func cl_rtg_bitmap_depth(borrow bitmap: RtgBitmap): i32;
+    func cl_rtg_bitmap_format(borrow bitmap: RtgBitmap): i32;
+    func cl_rtg_bitmap_bytes_per_row(borrow bitmap: RtgBitmap): i32;
+    func cl_rtg_screen_write_pixel(borrow screen: RtgScreen, x: i32, y: i32,
+                                   color: u32): bool;
+    func cl_rtg_screen_read_pixel(borrow screen: RtgScreen, x: i32,
+                                  y: i32): u32;
+    func cl_rtg_screen_fill_rect(borrow screen: RtgScreen, x0: i32, y0: i32,
+                                 x1: i32, y1: i32, color: u32): bool;
+    func cl_rtg_bitmap_write_pixel(borrow bitmap: RtgBitmap, x: i32, y: i32,
+                                   color: u32): bool;
+    func cl_rtg_bitmap_read_pixel(borrow bitmap: RtgBitmap, x: i32,
+                                  y: i32): u32;
+    func cl_rtg_bitmap_fill_rect(borrow bitmap: RtgBitmap, x0: i32, y0: i32,
+                                 x1: i32, y1: i32, color: u32): bool;
+    func cl_rtg_screen_blit_bitmap(borrow screen: RtgScreen,
+                                   borrow bitmap: RtgBitmap, dx: i32, dy: i32,
+                                   sx: i32, sy: i32, width: i32,
+                                   height: i32): bool;
+    func cl_rtg_screen_read_pixels(borrow screen: RtgScreen, x: i32, y: i32,
+                                   width: i32, height: i32, out: raw u8,
+                                   length: u32): i32;
+    func cl_rtg_bitmap_read_pixels(borrow bitmap: RtgBitmap, x: i32, y: i32,
+                                   width: i32, height: i32, out: raw u8,
+                                   length: u32): i32;
+}
+
+/// Returns the number of Picasso96 boards, or 0 when P96 is unavailable.
+export func rtgBoards(): i32 {
+    return cl_rtg_boards();
+}
+
+/// Returns the best 32-bit display ID for the requested size, or 0.
+///
+/// `depth` must be 32; other depths return 0.
+export func rtgMode(width: i32, height: i32, depth: i32): u32 {
+    return cl_rtg_mode(width, height, depth);
+}
+
+/// Returns a mode's width, or 0 for an unknown mode.
+export func rtgModeWidth(mode: u32): i32 {
+    return cl_rtg_mode_width(mode);
+}
+
+/// Returns a mode's height, or 0 for an unknown mode.
+export func rtgModeHeight(mode: u32): i32 {
+    return cl_rtg_mode_height(mode);
+}
+
+/// Returns a mode's depth, or 0 for an unknown mode.
+export func rtgModeDepth(mode: u32): i32 {
+    return cl_rtg_mode_depth(mode);
+}
+
+/// Returns a mode's P96 `RGBFB_*` format, or 0 for an unknown mode.
+export func rtgModeFormat(mode: u32): i32 {
+    return cl_rtg_mode_format(mode);
+}
+
+/// Opens a 32-bit Picasso96 screen, or returns null.
+///
+/// `width` and `height` are 1..4096. `title` is copied into the handle for
+/// the screen lifetime; an empty string means no title. The screen opens
+/// quietly so the gate never shows a mode requester.
+export func openRtgScreen(width: i32, height: i32, depth: i32,
+                          title: cstring): RtgScreen? {
+    return cl_rtg_open_screen(width, height, depth, title);
+}
+
+/// Closes an RTG screen exactly once.
+export func closeRtgScreen(take screen: RtgScreen): void {
+    cl_rtg_close_screen(screen);
+}
+
+/// Returns a screen's width, or 0 for a null handle.
+export func rtgScreenWidth(borrow screen: RtgScreen): i32 {
+    return cl_rtg_screen_width(screen);
+}
+
+/// Returns a screen's height, or 0 for a null handle.
+export func rtgScreenHeight(borrow screen: RtgScreen): i32 {
+    return cl_rtg_screen_height(screen);
+}
+
+/// Returns a screen's depth, or 0 for a null handle.
+export func rtgScreenDepth(borrow screen: RtgScreen): i32 {
+    return cl_rtg_screen_depth(screen);
+}
+
+/// Returns a screen's actual P96 `RGBFB_*` format.
+export func rtgScreenFormat(borrow screen: RtgScreen): i32 {
+    return cl_rtg_screen_format(screen);
+}
+
+/// Returns the display ID selected when the screen was opened.
+export func rtgScreenMode(borrow screen: RtgScreen): u32 {
+    return cl_rtg_screen_mode(screen);
+}
+
+/// Allocates a 32-bit user-private bitmap, or returns null.
+///
+/// `width` and `height` are 1..4096. The bitmap is not displayable directly;
+/// use `rtgScreenBlitBitmap` to copy it to a screen.
+export func allocRtgBitmap(width: i32, height: i32,
+                           depth: i32): RtgBitmap? {
+    return cl_rtg_alloc_bitmap(width, height, depth);
+}
+
+/// Frees a bitmap exactly once.
+export func freeRtgBitmap(take bitmap: RtgBitmap): void {
+    cl_rtg_free_bitmap(bitmap);
+}
+
+/// Returns a bitmap's width, or 0 for a null handle.
+export func rtgBitmapWidth(borrow bitmap: RtgBitmap): i32 {
+    return cl_rtg_bitmap_width(bitmap);
+}
+
+/// Returns a bitmap's height, or 0 for a null handle.
+export func rtgBitmapHeight(borrow bitmap: RtgBitmap): i32 {
+    return cl_rtg_bitmap_height(bitmap);
+}
+
+/// Returns a bitmap's depth, or 0 for a null handle.
+export func rtgBitmapDepth(borrow bitmap: RtgBitmap): i32 {
+    return cl_rtg_bitmap_depth(bitmap);
+}
+
+/// Returns a bitmap's actual P96 `RGBFB_*` format.
+export func rtgBitmapFormat(borrow bitmap: RtgBitmap): i32 {
+    return cl_rtg_bitmap_format(bitmap);
+}
+
+/// Returns a bitmap's P96 bytes-per-row, or 0 for a null handle.
+export func rtgBitmapBytesPerRow(borrow bitmap: RtgBitmap): i32 {
+    return cl_rtg_bitmap_bytes_per_row(bitmap);
+}
+
+/// Writes one ARGB pixel to a screen; false when out of bounds.
+export func rtgScreenWritePixel(borrow screen: RtgScreen, x: i32, y: i32,
+                                color: u32): bool {
+    return cl_rtg_screen_write_pixel(screen, x, y, color);
+}
+
+/// Reads one ARGB pixel from a screen; 0 when out of bounds.
+export func rtgScreenReadPixel(borrow screen: RtgScreen, x: i32,
+                               y: i32): u32 {
+    return cl_rtg_screen_read_pixel(screen, x, y);
+}
+
+/// Fills an inclusive screen rectangle; false when invalid.
+export func rtgScreenFillRect(borrow screen: RtgScreen, x0: i32, y0: i32,
+                              x1: i32, y1: i32, color: u32): bool {
+    return cl_rtg_screen_fill_rect(screen, x0, y0, x1, y1, color);
+}
+
+/// Writes one ARGB pixel to a bitmap; false when out of bounds.
+export func rtgBitmapWritePixel(borrow bitmap: RtgBitmap, x: i32, y: i32,
+                                color: u32): bool {
+    return cl_rtg_bitmap_write_pixel(bitmap, x, y, color);
+}
+
+/// Reads one ARGB pixel from a bitmap; 0 when out of bounds.
+export func rtgBitmapReadPixel(borrow bitmap: RtgBitmap, x: i32,
+                               y: i32): u32 {
+    return cl_rtg_bitmap_read_pixel(bitmap, x, y);
+}
+
+/// Fills an inclusive bitmap rectangle; false when invalid.
+///
+/// The bitmap fill uses a bounded pixel loop, so a rectangle larger than
+/// 1,048,576 pixels is rejected.
+export func rtgBitmapFillRect(borrow bitmap: RtgBitmap, x0: i32, y0: i32,
+                              x1: i32, y1: i32, color: u32): bool {
+    return cl_rtg_bitmap_fill_rect(bitmap, x0, y0, x1, y1, color);
+}
+
+/// Blits a bitmap rectangle to a screen rectangle; false when invalid.
+export func rtgScreenBlitBitmap(borrow screen: RtgScreen,
+                                borrow bitmap: RtgBitmap, dx: i32, dy: i32,
+                                sx: i32, sy: i32, width: i32,
+                                height: i32): bool {
+    return cl_rtg_screen_blit_bitmap(screen, bitmap, dx, dy, sx, sy, width,
+                                     height);
+}
+
+/// Reads RGB bytes from a screen rectangle into `out`.
+///
+/// Returns `width * height * 3`, or -1 when the handle, rectangle, or buffer
+/// is invalid. The bytes are top-down RGB, ready for a P6 PPM.
+export func rtgScreenReadPixels(borrow screen: RtgScreen, x: i32, y: i32,
+                                width: i32, height: i32,
+                                out: u8[]): i32 {
+    unsafe {
+        return cl_rtg_screen_read_pixels(screen, x, y, width, height,
+                                         raw u8(out.ptr), u32(len(out)));
+    }
+}
+
+/// Reads RGB bytes from a bitmap rectangle into `out`.
+export func rtgBitmapReadPixels(borrow bitmap: RtgBitmap, x: i32, y: i32,
+                                width: i32, height: i32,
+                                out: u8[]): i32 {
+    unsafe {
+        return cl_rtg_bitmap_read_pixels(bitmap, x, y, width, height,
+                                         raw u8(out.ptr), u32(len(out)));
+    }
+}

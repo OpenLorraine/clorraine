@@ -1,7 +1,8 @@
 {
-  "checkedAt": "2026-11-05T22:54:46+01:00",
+  "checkedAt": "2026-11-06T15:50:05+01:00",
   "plans": [
     "amiga-library-surface",
+    "amiga-rtg",
     "amiga-sdk",
     "amiga-sdk-audio-input",
     "amiga-sdk-baseline",
@@ -9,6 +10,7 @@
     "amiga-sdk-exec-devices",
     "amiga-sdk-intuition",
     "amiga-sdk-native-video",
+    "amiga-sdk-optional",
     "amiga-sdk-sprites",
     "amiga-sdk-text-layers",
     "amiga-sdk-workbench",

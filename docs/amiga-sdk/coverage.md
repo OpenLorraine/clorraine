@@ -14,7 +14,8 @@
 | 6-intuition | core | 1.3 | 6 | 6 | 0 | #7 |
 | 7-exec-devices | core | 1.3 | 8 | 8 | 0 | #8 |
 | 8-workbench | advanced | 2.0 | 4 | 4 | 0 | #9 |
-| 9-optional | optional | 1.3 | 20 | 21 | 0 | #10 |
+| 9-optional | optional | 1.3 | 20 | 20 | 0 | #10 |
+| 10-rtg | optional | 3.0 | 1 | 1 | 0 | #11 |
 
 ## 0-baseline — Baseline and registry
 
@@ -164,4 +165,11 @@ Tier: optional; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-WBK-010 | nonvolatile.library | could | done | nonvolatile |
 | SDK-OPT-002 | bsdsocket.library | could | done | bsdsocket |
 | SDK-OPT-003 | AmigaGuide library (3.0+) | could | done | amigaguide |
-| SDK-OPT-004 | RTG/Picasso96/CyberGraphix | wont | out-of-scope | rtg |
+
+## 10-rtg — Picasso96 RTG
+
+Tier: optional; min OS: 3.0; min hardware: AGA/68020/2M.
+
+| ID | Capability | Priority | Status | Acceptance |
+|---|---|---|---|---|
+| SDK-RTG-001 | Picasso96 RTG (UAEGFX) | should | done | a1200-rtg |

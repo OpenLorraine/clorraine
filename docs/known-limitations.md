@@ -93,7 +93,20 @@ These are deliberate boundaries, not hidden gaps:
   shim is reviewed statically, with host record models and m68k runtime gates;
   `make asan` does not instrument the new m68k-only code.
 
-## 6. Runtime and generated C symbol collisions
+## 6. RTG is Picasso96 on UAEGFX only
+
+`std.amiga.picasso96` is a 32-bit truecolor PC-RTG surface for Picasso96 2.0
+on FS-UAE’s `uaegfx` card. It is not a generic RTG abstraction:
+CyberGraphX, physical Picasso II/IV or CyberVision drivers, PIP/video overlay,
+CLUT palette editing, hardware sprites, and RTG text/font rendering are out of
+scope. The runtime gate runs on A1200/KS3.1 with the Aminet Picasso96 archive
+and checks a PPM capture rather than a native CSCR, because an RTG screen is
+chunky/truecolor. The P96 archive is user-provided and verified by SHA-256; it
+is not committed. The bitmap fill uses a bounded pixel loop because
+`p96RectFill` did not round-trip pure blue on a user-private bitmap in the
+spike; screen fills still use `p96RectFill`.
+
+## 7. Runtime and generated C symbol collisions
 
 The compiler mangles a user definition to `cl_<module>_<name>`. The runtime
 shim and some generated helpers use the same `cl_` namespace, so a legal source
@@ -117,7 +130,7 @@ shape, or a binding to an internal shim helper, is rejected with `E11101` at
 the declaration. The regression tests emit and cross-build the `socket.open`
 and `zero.ClSlice_u8` shapes, and a unit test pins the `init.foo` rename.
 
-## 7. CI is host-only
+## 8. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip

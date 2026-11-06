@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Done — Bundles 0–9 complete; Bundle 9 closeout 20/21 (RTG out-of-scope, issue #11); runtime-symbol collisions resolved (issue #12)
+> **Status**: Done — Bundles 0–10 complete; Bundle 9 closeout 20/20; Bundle 10 Picasso96 RTG 1/1 (issue #11); runtime-symbol collisions resolved (issue #12)
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -35,7 +35,8 @@ rows declare `min_os`/`min_hw` in the registry.
 | 6 | Intuition UI | core + advanced | GUI demo |
 | 7 | Exec and devices | core + advanced | Worker task + async IO |
 | 8 | Workbench and services | advanced | Workbench integration |
-| 9 | Optional add-ons and advanced closeout | optional | A500 diskfont, A600 2.05/3.1, A1200 3.0/3.1 headless gates; 20/21 done, RTG in #11 |
+| 9 | Optional add-ons and advanced closeout | optional | A500 diskfont, A600 2.05/3.1, A1200 3.0/3.1 headless gates; 20/20 done |
+| 10 | Picasso96 RTG | optional | A1200/KS3.1 UAEGFX gate, report, and PPM capture |
 
 ## Rules
 
@@ -93,6 +94,8 @@ printer, nonvolatile, bsdsocket, and AmigaGuide. The licensed Workbench
 1.3.4/2.04/2.1/3.0/3.1 media supplies the disk libraries. Five headless gates
 report `diskfont: ok h 12`, the A600 2.05/3.1 lines, `pool: ok 1` and
 `boopsi: ok val 42`, and `dt: ok w 320 h 200 depth 4 colors 16` / `net: ok send
-5 recv 5` / `guide: ok msg 1 result 0`. The registry is 80 capabilities, all
-done except the RTG `wont` row tracked by issue #11; issue #10 is the generated
-Bundle 9 view.
+5 recv 5` / `guide: ok msg 1 result 0`. Bundle 10 (Picasso96 RTG) is `plans/amiga-rtg/`: the
+`std.amiga.picasso96` screen/bitmap/pixel/blit/readback surface, the vendored
+P96 definitions, and the A1200/KS3.1 UAEGFX gate. The registry is 80
+capabilities in 11 bundles, all done; issue #10 is the generated Bundle 9 view
+and issue #11 is the generated Bundle 10 view.

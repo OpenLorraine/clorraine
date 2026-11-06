@@ -1,7 +1,7 @@
 # Amiga SDK Bundle 9: Optional Add-ons and Advanced Closeout
 
 > **Feature**: Close the remaining 20 Amiga SDK capabilities: advanced Exec/utility, Intuition, DOS, graphics, input, Workbench services, networking, and AmigaGuide, using the licensed Amiga Forever Workbench media.
-> **Status**: Done — 30/30; 20/21 capabilities; RTG #11 tracked; runtime-symbol collisions resolved (#12)
+> **Status**: Done — 30/30; 20/20 in-scope capabilities; separate RTG plan #11; runtime-symbol collisions resolved (#12)
 > **Created**: 2026-11-06 02:09
 > **Last Updated**: 2026-11-06 07:30
 > **Implements**: —
@@ -18,7 +18,7 @@ committed.
 The bundle follows the established stdlib pattern: one module per library/domain, opaque handles
 with exactly-once `freedBy` cleanup, typed wrappers over a new optional C shim suffix, and headless
 FS-UAE gates. Network uses FS-UAE’s built-in `bsdsocket.library`; real hardware still needs a
-third-party stack. RTG remains out of scope and is tracked by issue #11. Runtime/generated C symbol collisions are a documented limitation (issue #12), not a source-name rule.
+third-party stack. RTG was out of scope for this closeout; it is now implemented by the separate `plans/amiga-rtg` plan and Bundle 10, tracked by issue #11. Runtime/generated C symbol collisions are resolved (issue #12).
 
 ## Minimum-Sufficient Baseline
 

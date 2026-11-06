@@ -251,9 +251,12 @@ OS structs in application code. The detailed API tables are in
 | `std.amiga.nonvolatile` | Nonvolatile byte storage | 3.1 |
 | `std.amiga.bsdsocket` | IPv4 TCP client subset | 3.1 |
 | `std.amiga.amigaguide` | Async AmigaGuide context | 3.0 (gate at 3.1) |
+| `std.amiga.picasso96` | Picasso96 RTG screen, bitmap, pixels, blit | 3.0 (gate at 3.1) |
 
 The optional services are loaded from the licensed Workbench media by the
-acceptance gates; nothing in this appendix makes them part of the 1.3 profile.
+acceptance gates, except `std.amiga.picasso96`, which uses the user-provided
+Aminet Picasso96 archive. Nothing in this appendix makes them part of the 1.3
+profile.
 
 ## 2. Amiga boundary types
 

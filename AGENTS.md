@@ -39,7 +39,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, then `cargo test --workspace` in the container |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
-| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
+| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `sdk-a1200-rtg`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
@@ -64,6 +64,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-a600-ks31-addons` | Boot A600/KS3.1 and assert `ll: ok v 40` and `nv: ok n 23 size 30` |
 | `make sdk-a1200-ks30-addons` | Boot A1200/KS3.0, assert `pool: ok 1` and `boopsi: ok val 42`, and compare the BOOPSI capture |
 | `make sdk-a1200-addons` | Boot A1200/KS3.1 with Workbench and the host echo peer, and assert the datatypes, network, and AmigaGuide lines |
+| `make sdk-a1200-rtg` | Boot A1200/KS3.1 with Picasso96 and FS-UAE UAEGFX, assert the RTG report and PPM capture, and write `docs/amiga-sdk/a1200-rtg.png` |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
@@ -73,9 +74,9 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | Path | Contents |
 |------|----------|
 | `spec/` | Frozen specification: chapters, grammar, diagnostics registry, and golden data (`spec/tests/{compile-fail,run,staged,corpus}`) |
-| `stdlib/` | Embedded standard library (`std.*.clo`), including `std.iff`, `std.math`, `std.amiga.video`, `std.amiga.ilbm`, `std.amiga.sprite`, `std.amiga.audio`, `std.amiga.input`, `std.amiga.timer`, `std.amiga.text`, `std.amiga.layers`, `std.amiga.exec`, `std.amiga.icon`, `std.amiga.workbench`, `std.amiga.expansion`, and the other Amiga modules (`std.amiga.*`) |
+| `stdlib/` | Embedded standard library (`std.*.clo`), including `std.iff`, `std.math`, `std.amiga.video`, `std.amiga.ilbm`, `std.amiga.sprite`, `std.amiga.audio`, `std.amiga.input`, `std.amiga.timer`, `std.amiga.text`, `std.amiga.layers`, `std.amiga.exec`, `std.amiga.icon`, `std.amiga.workbench`, `std.amiga.expansion`, `std.amiga.picasso96`, and the other Amiga modules (`std.amiga.*`) |
 | `compiler/src/` | Compiler stages (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph`, and the `clorraine` driver |
-| `compiler/runtime/` | C runtime shims: `shim_host.c`, `shim_hosted_amiga.c` plus the 2.0+ `shim_hosted_amiga_20.c` suffix, `shim_freestanding.c` |
+| `compiler/runtime/` | C runtime shims: `shim_host.c`, `shim_hosted_amiga.c` plus the 2.0+ `shim_hosted_amiga_20.c` and optional suffixes, `shim_freestanding.c`, and the vendored `picasso96.h` definitions |
 | `compiler/tests/` | Rust integration test drivers |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
 | `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
@@ -147,7 +148,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   tree; `codeops/` holds only `specialist-check.json`.
 - Branch: `main` is the integration branch (`origin`:
   `git@github.com:OpenLorraine/clorraine.git`).
-- Specialist coverage: **up to date (2026-11-05)** — 63 plan folders recorded in
+- Specialist coverage: **up to date (2026-11-06)** — 65 plan folders recorded in
   `codeops/specialist-check.json`.
 - Do not run the CodeOps installer from inside this repository: it replaces the
   two customized reviewer briefs (`correctness-reviewer`, `semantics-reviewer`)

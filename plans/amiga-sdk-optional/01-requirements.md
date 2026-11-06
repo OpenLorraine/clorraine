@@ -22,7 +22,8 @@ evidence at the row’s baseline.
 - **R1 — Closeout scope.** Implement the 20 open registry capabilities:
   `SDK-EXE-007/010/011`, `SDK-INT-006/007/008`, `SDK-DOS-004/006`, `SDK-TXT-003/005`,
   `SDK-AUD-006/008`, `SDK-WBK-003/004/005/006/007/010`, and `SDK-OPT-002/003`.
-  RTG (`SDK-OPT-004`) stays `wont` and is tracked by issue #11. [AR-1, AR-5]
+  The former RTG placeholder (`SDK-OPT-004`) is implemented by the separate
+  `plans/amiga-rtg` plan and Bundle 10. [AR-1, AR-5]
 - **R2 — Exec and utility.** Signal semaphores; capture-less Hooks with a scalar data payload;
   tag lists and date-stamp handles in `std.amiga.utility`; OS memory pools in a distinct
   `std.amiga.pool` module (3.0+). [AR-11, AR-12, AR-13]
@@ -65,7 +66,7 @@ evidence at the row’s baseline.
 
 ### Won't Have (Out of Scope)
 
-- RTG, Picasso96, CyberGraphX, third-party graphics cards.
+- RTG/Picasso96/CyberGraphX in this closeout; RTG now has `plans/amiga-rtg`.
 - A real third-party TCP/IP stack for the gate; Roadshow/Miami/AmiTCP are documented only.
 - Full commodities input-event/custom-hook routing; only broker lifecycle and uniqueness.
 - ClassAct/custom BOOPSI classes; only native Intuition classes.

@@ -35,7 +35,7 @@ directories. [AR-33, AR-34]
 | `SDK-OPT-002` | `bsdsocket` | `sdk-a1200-addons` | `net: ok send 5 recv 5` |
 | `SDK-OPT-003` | `amigaguide` | `sdk-a1200-addons` | `guide: ok msg 1 result 0` |
 
-`SDK-OPT-004` RTG remains out-of-scope. Coverage is 20 in-scope done / 21 total. [AR-39]
+The former `SDK-OPT-004` RTG placeholder is implemented by `plans/amiga-rtg` (Bundle 10). Bundle 9 coverage is 20/20. [AR-39]
 
 ## Specification Test Cases
 
