@@ -1004,7 +1004,7 @@ impl<'a> Emitter<'a> {
     /// An `ffi` signature lowers through the ABI mapping, so a parameter mode
     /// never shapes it: the declared type alone fixes the C type. The
     /// parameters are unnamed because the prototype only declares the ABI.
-    fn ffi_signature(&self, signature: &crate::ast::FuncSignature) -> String {
+    pub(super) fn ffi_signature(&self, signature: &crate::ast::FuncSignature) -> String {
         let ret = resolve_ty(&signature.returns, &[], &self.sema.table);
         let ret_c = self.ffi_c_type(&ret);
         let mut params: Vec<String> = Vec::new();

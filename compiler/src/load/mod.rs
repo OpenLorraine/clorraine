@@ -82,6 +82,10 @@ pub struct Module {
     pub decls: BTreeMap<String, Decl>,
     /// Declarations in source order, merged across the contributing files.
     pub items: Vec<Item>,
+    /// True when every contributing file is an embedded standard-library
+    /// module. The emitter uses this to tell runtime FFI declarations from
+    /// user code that must not redeclare them.
+    pub embedded: bool,
 }
 
 impl Module {
@@ -138,6 +142,8 @@ struct Group {
     imports: Vec<ImportDecl>,
     /// Declarations from every contributing file.
     items: Vec<Item>,
+    /// True when every contributing file is an embedded library module.
+    embedded: bool,
 }
 
 /// Builds the module table from the parsed files.
@@ -155,6 +161,7 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
             check_reserved_declarations(&program.items, diagnostics);
         }
         group.files.push(file);
+        group.embedded |= program.embedded;
         group.imports.extend(program.imports);
         group.items.extend(program.items);
     }
@@ -184,6 +191,7 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
                 imports,
                 decls,
                 items: group.items,
+                embedded: group.embedded,
             },
         );
     }

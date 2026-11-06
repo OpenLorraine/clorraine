@@ -198,6 +198,118 @@ fn the_utility_shim_pins_tags_dates_hooks_and_pool_refcount() {
 }
 
 #[test]
+fn user_symbols_that_collide_with_the_runtime_are_renamed() {
+    let socket = emit(
+        "ns-socket",
+        "hosted-amiga",
+        "module socket;
+
+func open(): i32 { return 0; }
+
+func main(): i32 { return open(); }
+",
+    );
+    assert_contains("ns-socket", &socket, "static i32 cl_socket_open__user(void)");
+    assert_contains("ns-socket", &socket, "return cl_socket_open__user();");
+
+    let zero = emit(
+        "ns-zero",
+        "hosted-amiga",
+        "module zero;
+
+import { slice } from std.mem;
+
+func ClSlice_u8(borrow xs: u8[]): i32 { return i32(xs[0]); }
+
+func main(): i32 {
+    let xs: u8[2] = [1, 2];
+    return ClSlice_u8(slice(xs, 0, 2));
+}
+",
+    );
+    assert_contains(
+        "ns-zero",
+        &zero,
+        "static i32 cl_zero_ClSlice_u8__user(ClSlice_u8 xs)",
+    );
+    assert_contains(
+        "ns-zero",
+        &zero,
+        "static inline ClSlice_u8 cl_zero_ClSlice_u8(void)",
+    );
+
+    let scratch = ScratchDir::new("ns-init");
+    let main_path = scratch.path().join("main.clo");
+    let foo_path = scratch.path().join("foo.clo");
+    std::fs::write(
+        &main_path,
+        "module init;
+
+func foo(): i32 { return 7; }
+
+func main(): i32 { return foo(); }
+",
+    )
+    .expect("write the entry module");
+    std::fs::write(&foo_path, "module foo;\n\nlet ready: i32 = 1;\n")
+        .expect("write the colliding module");
+    let init_path = scratch.path().join("out.c");
+    let run = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        init_path.display().to_string(),
+        main_path.display().to_string(),
+        foo_path.display().to_string(),
+    ]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "the init collision must compile: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let init = std::fs::read_to_string(&init_path).expect("read the emitted C");
+    assert_contains("ns-init", &init, "static i32 cl_init_foo__user(void)");
+    assert_contains("ns-init", &init, "return cl_init_foo__user();");
+    assert_contains("ns-init", &init, "static void cl_init_foo(void)");
+}
+
+#[test]
+fn an_ffi_binding_to_a_runtime_symbol_is_rejected() {
+    let scratch = ScratchDir::new("ns-ffi");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(
+        &source_path,
+        "module hostffi;
+
+ffi lib { func cl_create_semaphore(): i32; }
+
+func main(): i32 { return 0; }
+",
+    )
+    .expect("write the snippet");
+    let output_path = scratch.path().join("out.c");
+    let run = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        run.status.code(),
+        Some(1),
+        "a mismatched runtime FFI binding must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("E11101") && stderr.contains("cl_create_semaphore"),
+        "the diagnostic must name the symbol: {stderr}"
+    );
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+#[test]
 fn the_optional_suffix_follows_the_generated_program() {
     let c = emit(
         "suffix-order",

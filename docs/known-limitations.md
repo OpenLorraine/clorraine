@@ -93,26 +93,29 @@ These are deliberate boundaries, not hidden gaps:
   shim is reviewed statically, with host record models and m68k runtime gates;
   `make asan` does not instrument the new m68k-only code.
 
-## 6. Reserved runtime and generated C symbol collisions
+## 6. Runtime and generated C symbol collisions
 
 The compiler mangles a user definition to `cl_<module>_<name>`. The runtime
 shim and some generated helpers use the same `cl_` namespace, so a legal source
-name can emit two conflicting C definitions. The front end accepts the source;
-the strict m68k C build then fails. This is a known limitation accepted for the
-Bundle 9 closeout and tracked by [issue #12](https://github.com/OpenLorraine/clorraine/issues/12).
+name could emit two conflicting C definitions. The emitter now checks every
+user function and global against the file-scope names the selected profile
+shim defines and against the generated helpers (`cl_init_*`,
+`cl_zero_ClSlice_*`, and `cl_lambda_*`). A colliding declaration gets a
+deterministic `__user` suffix, and the suffix grows until it misses every other
+user spelling. Non-colliding declarations keep their ordinary symbol, so the
+change only affects names that previously failed the strict C build.
 
-| Source shape | Colliding C symbol | Origin |
+| Source shape | Ordinary symbol | Emitted symbol |
 |---|---|---|
-| `module socket; func open` | `cl_socket_open` | `std.amiga.bsdsocket` FFI |
-| `module zero; func ClSlice_u8` | `cl_zero_ClSlice_u8` | generated empty-slice helper |
-| `module init; func foo` | `cl_init_foo` | generated module initializer |
-| user `ffi` declaration of a runtime name | the literal C name | runtime shim |
+| `module socket; func open` | `cl_socket_open` | `cl_socket_open__user` |
+| `module zero; func ClSlice_u8` | `cl_zero_ClSlice_u8` | `cl_zero_ClSlice_u8__user` |
+| `module init; func foo` beside module `foo` | `cl_init_foo` | `cl_init_foo__user` |
 
-No source-name rule is added in v1.1: the existing `E20006` diagnostic is frozen
-for the fixed reserved-builtin list, so rejecting these names would be an
-unauthorized language change. A follow-up release can reserve the runtime
-namespace, move runtime symbols to a disjoint prefix, or rename user symbols on
-collision.
+An explicit `ffi` name is a literal C symbol and is never renamed. Re-declaring
+a public standard-library prototype with the same shape is allowed; a different
+shape, or a binding to an internal shim helper, is rejected with `E11101` at
+the declaration. The regression tests emit and cross-build the `socket.open`
+and `zero.ClSlice_u8` shapes, and a unit test pins the `init.foo` rename.
 
 ## 7. CI is host-only
 

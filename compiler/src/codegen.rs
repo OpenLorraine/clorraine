@@ -92,6 +92,18 @@ pub(super) struct Emitter<'a> {
     out: String,
     /// User functions keyed by `(module, name)`.
     functions: BTreeMap<(String, String), FuncInfo<'a>>,
+    /// C identifiers the profile runtime and generated helpers already use.
+    ///
+    /// A user declaration normally emits `cl_<module>_<name>`. When that
+    /// spelling is already defined by the shim or by a generated helper, the
+    /// declaration gets a deterministic `__user` suffix instead, so accepted
+    /// source cannot produce two conflicting C definitions.
+    reserved_symbols: BTreeSet<String>,
+    /// The unsuffixed C spellings of every user function and global.
+    ///
+    /// The collision suffix must not land on another user declaration, so the
+    /// renamed candidate is checked against this set as well.
+    user_symbols: BTreeSet<String>,
     /// `ffi` signatures keyed by their declaring module and name.
     ///
     /// The module is part of the key so a module-qualified call reaches that
@@ -362,6 +374,8 @@ impl<'a> Emitter<'a> {
             profile,
             out: String::new(),
             functions: BTreeMap::new(),
+            reserved_symbols: BTreeSet::new(),
+            user_symbols: BTreeSet::new(),
             ffi_functions: BTreeMap::new(),
             current_module: String::new(),
             globals: BTreeMap::new(),
@@ -424,6 +438,11 @@ impl<'a> Emitter<'a> {
             for item in &module.items {
                 match item {
                     Item::Func(decl) => {
+                        self.user_symbols.insert(format!(
+                            "cl_{}_{}",
+                            mangle_module(&module.name),
+                            decl.name
+                        ));
                         self.functions
                             .entry((module.name.clone(), decl.name.clone()))
                             .or_insert(FuncInfo {
@@ -460,9 +479,116 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        self.collect_reserved_symbols();
+        self.check_ffi_collisions();
     }
 
-    /// Records a module-level binding with its resolved type.
+    /// Rejects a user `ffi` declaration that would redeclare a runtime symbol
+    /// with an incompatible prototype.
+    ///
+    /// An `ffi` name is a literal C symbol, so it cannot be renamed the way a
+    /// user function can. Re-declaring a public stdlib prototype with the same
+    /// shape is harmless and allowed; a different shape, or a binding to an
+    /// internal shim helper, would make the translation unit fail to compile.
+    /// Report it at the declaration instead.
+    fn check_ffi_collisions(&mut self) {
+        let mut embedded: BTreeMap<String, String> = BTreeMap::new();
+        for ((module, _), signature) in &self.ffi_functions {
+            if self
+                .loaded
+                .modules
+                .get(module)
+                .is_some_and(|found| found.embedded)
+            {
+                embedded.insert(signature.name.clone(), self.ffi_signature(signature));
+            }
+        }
+        let mut conflicts = Vec::new();
+        for ((module, _), signature) in &self.ffi_functions {
+            if self
+                .loaded
+                .modules
+                .get(module)
+                .is_none_or(|found| found.embedded)
+            {
+                continue;
+            }
+            let conflict = if let Some(expected) = embedded.get(&signature.name) {
+                *expected != self.ffi_signature(signature)
+            } else {
+                self.reserved_symbols.contains(&signature.name)
+            };
+            if conflict {
+                conflicts.push((module.clone(), signature.name.clone(), signature.name_span));
+            }
+        }
+        for (module, name, span) in conflicts {
+            self.diagnostics.push(
+                crate::diag::Diagnostic::error(
+                    "E11101",
+                    format!("duplicate declaration of '{name}' in module '{module}'"),
+                    span,
+                )
+                .with_help(
+                    "the runtime or an embedded module already declares this C symbol; import the standard-library module instead",
+                ),
+            );
+        }
+    }
+
+    /// Records the C names the runtime and generated helpers define.
+    ///
+    /// The shim scan covers its functions, typedefs, globals, and macros. The
+    /// generated set adds every `cl_init_<module>` initializer and every
+    /// embedded-module FFI name, because those bindings are also emitted into
+    /// the same unit.
+    fn collect_reserved_symbols(&mut self) {
+        self.reserved_symbols = types::runtime_symbols(&format!(
+            "{}{}",
+            self.profile.shim(),
+            self.profile.shim_suffix()
+        ));
+        for module in self.loaded.modules.values() {
+            self.reserved_symbols
+                .insert(format!("cl_init_{}", mangle_module(&module.name)));
+        }
+        for ((module, _), signature) in &self.ffi_functions {
+            if self
+                .loaded
+                .modules
+                .get(module)
+                .is_some_and(|found| found.embedded)
+            {
+                self.reserved_symbols.insert(signature.name.clone());
+            }
+        }
+    }
+
+    /// True when an unsuffixed spelling belongs to the runtime or a generated
+    /// helper.
+    ///
+    /// The two prefixes cover helpers whose exact name depends on the used
+    /// slice element types and lambda sites, which are not all known when the
+    /// symbol table is built.
+    fn is_reserved_symbol(&self, symbol: &str) -> bool {
+        self.reserved_symbols.contains(symbol)
+            || symbol.starts_with("cl_zero_ClSlice_")
+            || symbol.starts_with("cl_lambda_")
+    }
+
+    /// True when a renamed candidate is already taken.
+    ///
+    /// The candidate carries a `__user` suffix, so it cannot equal a generated
+    /// helper name even when its base shared the helper's prefix. Only the
+    /// exact runtime set and the other user spellings can take it.
+    fn is_taken_symbol(&self, symbol: &str) -> bool {
+        self.reserved_symbols.contains(symbol)
+            || self.user_symbols.contains(symbol)
+            || self
+                .ffi_functions
+                .values()
+                .any(|signature| signature.name == symbol)
+    }
     fn record_global(
         &mut self,
         module: &Module,
@@ -471,6 +597,11 @@ impl<'a> Emitter<'a> {
         init: &'a Expr,
         volatile: bool,
     ) {
+        self.user_symbols.insert(format!(
+            "cl_{}_{}",
+            mangle_module(&module.name),
+            name
+        ));
         let ty = declared
             .map(|ty| resolve_ty_folded(ty, &[], &self.sema.table, module, self.loaded))
             .or_else(|| self.expr_type(init))
@@ -652,12 +783,31 @@ impl<'a> Emitter<'a> {
 
     /// The mangled symbol of a module-level binding.
     pub(super) fn global_symbol(&self, module: &str, name: &str) -> String {
-        format!("cl_{}_{}", mangle_module(module), name)
+        self.user_symbol(module, name)
     }
 
     /// The mangled symbol of a user function.
     pub(super) fn function_symbol(&self, module: &str, name: &str) -> String {
-        format!("cl_{}_{}", mangle_module(module), name)
+        self.user_symbol(module, name)
+    }
+
+    /// The C spelling of one user declaration, avoiding reserved symbols.
+    ///
+    /// The ordinary spelling is `cl_<module>_<name>`. If the runtime shim or a
+    /// generated helper already defines that name, the declaration gets a
+    /// `__user` suffix; the suffix grows until it also misses every other user
+    /// declaration, so two renamed symbols cannot meet. The result is stable
+    /// for a given program and does not change any non-colliding spelling.
+    fn user_symbol(&self, module: &str, name: &str) -> String {
+        let base = format!("cl_{}_{}", mangle_module(module), name);
+        if !self.is_reserved_symbol(&base) {
+            return base;
+        }
+        let mut candidate = format!("{base}__user");
+        while self.is_taken_symbol(&candidate) {
+            candidate.push('_');
+        }
+        candidate
     }
 
     /// Picks a unique C name for a local declared with `name`.

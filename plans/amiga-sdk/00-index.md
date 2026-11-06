@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Done — Bundles 0–9 complete; Bundle 9 closeout 20/21 (RTG out-of-scope, issue #11); symbol collisions tracked (issue #12)
+> **Status**: Done — Bundles 0–9 complete; Bundle 9 closeout 20/21 (RTG out-of-scope, issue #11); runtime-symbol collisions resolved (issue #12)
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)

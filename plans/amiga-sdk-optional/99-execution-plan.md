@@ -90,7 +90,7 @@ spec test or weaken a gate pin.
 - [x] 7.1.1 Update `spec/appendix-stdlib.md`, `spec/appendix-amiga.md`, `docs/known-limitations.md`, and `AGENTS.md`; leave `spec/15-profiles.md` untouched; run the appendix section checks ✅ (completed: 2026-11-06 06:45; hook/BOOPSI/AmigaGuide/min-OS text reconciled)
 - [x] 7.1.2 Reassign the 20 open rows to `9-optional`; correct `SDK-EXE-007` 3.0, `SDK-DOS-006` 3.1, `SDK-AUD-006`/`SDK-WBK-010` 3.1, `SDK-INT-008` 2.0, `SDK-OPT-003` 3.0, and `SDK-WBK-003` depends; set Bundle 9 floor 1.3/OCS; update `bundles.tsv`/issue #10/coverage/programme index/roadmap; run `make sdk-registry` ✅ (completed: 2026-11-06 06:45; 80 capabilities, 20/21)
 - [x] 7.1.3 Run `make check`, `make verify`, and `make sdk-registry`; fix every regression ✅ (completed: 2026-11-06 06:45; check 111 suites, verify all legs)
-- [x] 7.1.4 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding; re-run the affected gates ✅ (completed: 2026-11-06 07:00; RV/MS/EI findings fixed; runtime-symbol collision accepted as documented limitation §6 + issue #12 per user ruling)
+- [x] 7.1.4 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding; re-run the affected gates ✅ (completed: 2026-11-06 07:00; RV/MS/EI findings fixed; runtime-symbol collisions fixed in codegen with a `__user` suffix; issue #12 closed)
 - [x] 7.1.5 Clean temporary artifacts and decrypted ROMs, commit with the git-commit skill, mark the plan Done, and close issue #10 ✅ (completed: 2026-11-06 07:30; local commit, issue #10 closed; follow-up #12 open)
 
 ## Verification

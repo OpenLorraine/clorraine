@@ -1,7 +1,7 @@
 # Amiga SDK Bundle 9: Optional Add-ons and Advanced Closeout
 
 > **Feature**: Close the remaining 20 Amiga SDK capabilities: advanced Exec/utility, Intuition, DOS, graphics, input, Workbench services, networking, and AmigaGuide, using the licensed Amiga Forever Workbench media.
-> **Status**: Done — 30/30; 20/21 capabilities; RTG #11 and symbol-collision #12 tracked
+> **Status**: Done — 30/30; 20/21 capabilities; RTG #11 tracked; runtime-symbol collisions resolved (#12)
 > **Created**: 2026-11-06 02:09
 > **Last Updated**: 2026-11-06 07:30
 > **Implements**: —

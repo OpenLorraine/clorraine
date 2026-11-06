@@ -741,6 +741,47 @@ func main(): i32 {
 "#;
 
 #[test]
+fn a_user_symbol_that_matches_a_runtime_function_builds() {
+    cross_build(
+        "ns-socket-build",
+        "hosted-amiga",
+        "nix20",
+        r#"module socket;
+
+func open(): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    return open();
+}
+"#,
+    );
+}
+
+#[test]
+fn a_user_symbol_that_matches_a_generated_slice_helper_builds() {
+    cross_build(
+        "ns-slice-build",
+        "hosted-amiga",
+        "nix20",
+        r#"module zero;
+
+import { slice } from std.mem;
+
+func ClSlice_u8(borrow xs: u8[]): i32 {
+    return i32(xs[0]);
+}
+
+func main(): i32 {
+    let xs: u8[2] = [1, 2];
+    return ClSlice_u8(slice(xs, 0, 2));
+}
+"#,
+    );
+}
+
+#[test]
 fn the_workbench_services_surface_builds_on_hosted_amiga() {
     let scratch = ScratchDir::new("services-surface");
     let source_path = write_fixture(&scratch, "main.clo", SERVICES_SOURCE);

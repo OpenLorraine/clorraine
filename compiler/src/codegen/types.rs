@@ -19,6 +19,74 @@ pub(super) fn mangle_module(module: &str) -> String {
     module.replace('.', "_")
 }
 
+/// Every file-scope C identifier beginning with `cl_` that a runtime shim
+/// defines.
+///
+/// A user definition emits `cl_<module>_<name>`, so a source name can spell a
+/// shim function, typedef, or global. The emitter renames the user symbol when
+/// that happens; this scan is the reserved side of the check. Only column-zero
+/// lines are examined: a shim's local variables cannot collide with a
+/// file-scope user symbol, and including them would rename harmless names.
+/// Comments and string literals are skipped so documentation never reserves a
+/// spelling. Functions, typedefs, globals, and object-like macros are all
+/// tokenized the same way.
+pub(super) fn runtime_symbols(text: &str) -> std::collections::BTreeSet<String> {
+    let mut symbols = std::collections::BTreeSet::new();
+    let mut in_block_comment = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if in_block_comment {
+            if trimmed.contains("*/") {
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("/*") {
+            if !trimmed.contains("*/") {
+                in_block_comment = true;
+            }
+            continue;
+        }
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with('*')
+            || line.chars().next().is_some_and(char::is_whitespace)
+        {
+            continue;
+        }
+        let mut current = String::new();
+        let mut in_string = false;
+        let mut escaped = false;
+        for ch in line.chars() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            if ch == '"' {
+                in_string = true;
+                current.clear();
+            } else if ch.is_ascii_alphanumeric() || ch == '_' {
+                current.push(ch);
+            } else {
+                if current.starts_with("cl_") {
+                    symbols.insert(current.clone());
+                }
+                current.clear();
+            }
+        }
+        if current.starts_with("cl_") {
+            symbols.insert(current);
+        }
+    }
+    symbols
+}
+
 /// True when a parameter lowers to a C pointer rather than a value.
 ///
 /// A writable lend of a non-duplicable struct must reach the caller's storage,
