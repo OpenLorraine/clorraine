@@ -23,7 +23,7 @@ accepted. Iteration 2 re-checked the corrected documents against the code and me
 |---|---|---|---|
 | PF-001 | 🔴 | `u64` is not a v1 type; EClock could not compile. | Dedicated `EClock` handle, `EClockTicks { hi, lo }`, frequency. |
 | PF-002 | 🔴 | `CreateGadgets` is not a gadtools function; event path used classic `GetMsg`. | `CreateContext` + `CreateGadgetA`; `GT_GetIMsg`/`GT_ReplyIMsg`/refresh path. |
-| PF-003 | 🔴 | `gradientslider` tags were wrong; `colorwheel` lacked `WHEEL_Screen`. | BOOPSI scoped to native `colorwheel.gadget` with `WHEEL_Screen`. |
+| PF-003 | 🔴 | `gradientslider` tags were wrong; `colorwheel` lacked `WHEEL_Screen`. | BOOPSI scoped to a native Intuition class; runtime probes later selected `strgclass` because `colorwheel` color readback did not round-trip. |
 | PF-004 | 🟠 | `GT_GetGadgetAttrsA` is V39, not 2.0. | Removed gadget readback; capture + count. |
 | PF-005 | 🟠 | ASL path/save-mode/input handshake were underspecified. | Drawer/file split, V38 save mode, `asl-ready`/`asl-done`, retries. |
 | PF-006 | 🟠 | Hooks exposed unsafe `raw` data and public `h_SubEntry` hack. | `func(i32): i32`, scalar `h_Data`, documented trampoline. |
@@ -37,8 +37,8 @@ accepted. Iteration 2 re-checked the corrected documents against the code and me
 | PF-014 | 🔴 | Media helper copied `S/`, used lowercase paths, omitted `Classes`/`AddDataTypes`. | Stage, named-tree copy, exact case, `LIBS ... ADD Classes`, `AddDataTypes`. |
 | PF-015 | 🔴 | A500 diskfont gate lacked `C/Assign`, writable ADF, and safe read timing. | `DF1:C/Assign`, `--writable-floppy-images=1`, stop before read, size 12. |
 | PF-016 | 🟠 | Gate handshakes/lines were inconsistent (`asl-ready`, `services.txt`, booleans). | One handshake table; full lines with measured values. |
-| PF-017 | 🔴 | ARexx `DeleteRexxMsg` does not free args. | `ClearRexxMsg(16)` before delete; created/received/reclaim ownership. |
-| PF-018 | 🟠 | Clipboard write omitted `CMD_UPDATE`; `CLIPS:` was unnecessary. | Current write ID, write, update, read ID; no `CLIPS:`. |
+| PF-017 | 🔴 | ARexx message ownership was undefined. | Created/received/reclaim ownership; runtime probes later showed `ClearRexxMsg` after the reply crashes, so `DeleteRexxMsg` alone releases the packet. |
+| PF-018 | 🟠 | Clipboard write omitted `CMD_UPDATE`; `CLIPS:` was unnecessary. | Fresh clip ID (`io_ClipID=0`), write, update, read ID; no `CLIPS:`. |
 | PF-019 | 🔴 | `IOPrtCmdReq` has no write fields; printer guard was over-broad. | `union printerIO` + `PRD_RAWWRITE`; guard only clipboard. |
 | PF-020 | 🟠 | Serial/parallel parameters were inert; parallel is output-only. | SETPARAMS; serial loopback; parallel host sink. |
 | PF-021 | 🔴 | `StoreNV` length is in tens of bytes. | Round up; 23-byte round-trip. |

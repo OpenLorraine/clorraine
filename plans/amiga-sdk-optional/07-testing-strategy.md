@@ -19,7 +19,7 @@ directories. [AR-33, AR-34]
 | `SDK-EXE-011` | `semaphore` | `sdk-a600-addons` | `exec: ok sem 1 ...` |
 | `SDK-INT-006` | `gadtools` | `sdk-a600-addons` (intuition mode) | `gt: ok gad 4` |
 | `SDK-INT-007` | `asl` | `sdk-a600-addons` (intuition mode) | `asl: ok path 1` |
-| `SDK-INT-008` | `boopsi` | `sdk-a1200-ks30-addons` | `boopsi: ok hue 42` |
+| `SDK-INT-008` | `boopsi` | `sdk-a1200-ks30-addons` | `boopsi: ok val 42` |
 | `SDK-DOS-004` | `args` | `sdk-a600-addons` | `args: ok n 3 file 1 num 7 sw 1` |
 | `SDK-DOS-006` | `datatypes` | `sdk-a1200-addons` | `dt: ok w 320 h 200 depth 4 colors 16` |
 | `SDK-TXT-003` | `std.amiga.text.openDiskFont` | `sdk-a500-diskfont` | `diskfont: ok h 12` |
@@ -31,7 +31,7 @@ directories. [AR-33, AR-34]
 | `SDK-WBK-005` | `arexx` | `sdk-a600-addons` | `rexx: ok action 1` |
 | `SDK-WBK-006` | `clipboard` | `sdk-a600-addons` | `clip: ok n 4` |
 | `SDK-WBK-007` | `devices` | `sdk-a600-addons` | `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1` |
-| `SDK-WBK-010` | `nonvolatile` | `sdk-a600-ks31-addons` | `nv: ok n 23` |
+| `SDK-WBK-010` | `nonvolatile` | `sdk-a600-ks31-addons` | `nv: ok n 23 size 30` |
 | `SDK-OPT-002` | `bsdsocket` | `sdk-a1200-addons` | `net: ok send 5 recv 5` |
 | `SDK-OPT-003` | `amigaguide` | `sdk-a1200-addons` | `guide: ok msg 1 result 0` |
 
@@ -51,7 +51,7 @@ directories. [AR-33, AR-34]
 | ST-8 | Pool source | `cl_pool_*`; `write`/`read`; refcounted pool | R2; AR-12, AR-39 |
 | ST-9 | gadtools source | `CreateContext`/`CreateGadgetA`/`RefreshGList`/`GT_*`; no readback | R3; AR-14 |
 | ST-10 | ASL source | `cl_asl_*`; split drawer/file; save flag | R3; AR-15 |
-| ST-11 | BOOPSI source | `colorwheel.gadget`, `WHEEL_Screen`, `SetGadgetAttrsA`/`GetAttr` | R3; AR-16 |
+| ST-11 | BOOPSI source | `strgclass`, `STRINGA_LongVal`, `SetGadgetAttrsA`/`GetAttr`; value 42 | R3; AR-16 |
 | ST-12 | ReadArgs source with 3 slots and command text | `cl_args_*`; `readArgsFrom`; template kinds; no overflow | R4; AR-17 |
 | ST-13 | Datatypes source + ILBM | `PDTA_BitMapHeader`/`PDTA_NumColors`; `dtDraw` | R4; AR-18, AR-39 |
 | ST-14 | Region source | `cl_region_*`; `regionAndRect` void; clip borrow | R5; AR-19 |
@@ -59,11 +59,11 @@ directories. [AR-33, AR-34]
 | ST-16 | Lowlevel source | `cl_lowlevel_*`; type-aware decode | R5; AR-21 |
 | ST-17 | Commodities source | `NewBroker` `NB_VERSION`, duplicate, close | R6; AR-22 |
 | ST-18 | Locale source | `cl_locale_*`; all four fields | R6; AR-23 |
-| ST-19 | ARexx source | `ClearRexxMsg` + `DeleteRexxMsg`; reply/reclaim | R6; AR-24 |
-| ST-20 | Clipboard source | `CBD_CURRENTWRITEID`, `CMD_UPDATE`, current-read ID | R6; AR-25 |
+| ST-19 | ARexx source | `DeleteRexxMsg`; reply/reclaim | R6; AR-24 |
+| ST-20 | Clipboard source | `CMD_WRITE` with `io_ClipID=0`, `CMD_UPDATE`, current-read ID | R6; AR-25 |
 | ST-21 | Devices source | serial/parallel SETPARAMS; printer `union printerIO`/`PRD_RAWWRITE`; guard only clipboard | R6, R10; AR-26, AR-31 |
 | ST-22 | Nonvolatile source | `StoreNV` tens length; `SizeNVData`; value/delete | R6; AR-27, AR-39 |
-| ST-23 | bsdsocket source | `127.0.0.1`, loop send/recv, close | R7; AR-28 |
+| ST-23 | bsdsocket source | `127.0.0.1`, typed send/recv/close, `tcpEcho` | R7; AR-28 |
 | ST-24 | AmigaGuide source | keep `NewAmigaGuide`; message result; Workbench start | R7; AR-29 |
 | ST-25 | `openDiskFont` on 1.3 | `diamond.font` size 12, height 12 | R8; AR-30 |
 | ST-26 | Registry closeout | 20 in-scope done / 21 total; baselines corrected; RTG out | R13; AR-3, AR-39 |
@@ -91,7 +91,7 @@ directories. [AR-33, AR-34]
 | IT-13 | Lowlevel type mask, port range, library version |
 | IT-14 | Commodities `NB_VERSION`, port lifetime, duplicate |
 | IT-15 | Locale fields/copies, default name |
-| IT-16 | ARexx `ClearRexxMsg`, created/received/reclaim, reply exactly once |
+| IT-16 | ARexx `DeleteRexxMsg`, created/received/reclaim, reply exactly once |
 | IT-17 | Clipboard current IDs, `CMD_UPDATE`, read bound, retry |
 | IT-18 | Serial/parallel SETPARAMS, printer union/PRD_RAWWRITE, close/reap |
 | IT-19 | Nonvolatile tens length, 23-byte round-trip, free/size |
@@ -108,9 +108,9 @@ directories. [AR-33, AR-34]
 |---|---|---|---|
 | `sdk-a500-diskfont` | A500/KS1.3 | TXT-003 | `diskfont: ok h 12` |
 | `sdk-a600-addons` | A600/KS2.05 | EXE-007/010/011, INT-006/007, DOS-004, TXT-005, AUD-008, WBK-003/004/005/006/007 | `exec`, `args`, `regions`, `eclock`, `gt`, `asl`, `cmd`, `locale`, `rexx`, `clip`, `ser`, `par`, `prt` |
-| `sdk-a600-ks31-addons` | A600/KS3.1 | AUD-006, WBK-010 | `ll: ok v 40`; `nv: ok n 23` |
-| `sdk-a1200-ks30-addons` | A1200/KS3.0 | EXE-007 (pool), INT-008 | `pool: ok 1`; `boopsi: ok hue 42`; golden `a1200-ks30-boopsi.png` |
-| `sdk-a1200-addons` | A1200/KS3.1 | DOS-006, OPT-002, OPT-003 | `dt`, `net`, `guide`; optional `a1200-datatypes.png` |
+| `sdk-a600-ks31-addons` | A600/KS3.1 | AUD-006, WBK-010 | `ll: ok v 40`; `nv: ok n 23 size 30` |
+| `sdk-a1200-ks30-addons` | A1200/KS3.0 | EXE-007 (pool), INT-008 | `pool: ok 1`; `boopsi: ok val 42`; golden `a1200-ks30-boopsi.png` |
+| `sdk-a1200-addons` | A1200/KS3.1 | DOS-006, OPT-002, OPT-003 | `dt`, `net`, `guide` |
 
 ## Commands
 

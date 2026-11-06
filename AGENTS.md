@@ -39,7 +39,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, then `cargo test --workspace` in the container |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
-| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display |
+| `make verify` | Full acceptance: `check` plus `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
@@ -58,6 +58,12 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-advanced-build` | Build the Workbench and services demos plus the two test-only Workbench fixtures |
 | `make sdk-a600-services` | Build the advanced demos/fixtures, boot A600/KS2.05, start the ROM Workbench, and assert the Workbench and services report lines |
 | `make sdk-a1200-workbench` | Build the advanced demos/fixtures, boot A1200/KS3.1, assert the report lines, and compare the native Workbench capture and AppIcon crop goldens |
+| `make sdk-bundle9-build` | Build the release Bundle 9 hosted-amiga demos |
+| `make sdk-a500-diskfont` | Build the diskfont demo for `hosted-amiga-13`, boot A500/KS1.3 with the Workbench 1.3.5 HDF, and assert `diskfont: ok h 12` |
+| `make sdk-a600-addons` | Boot A600/KS2.05, assert the Exec/args/services/intuition lines, drive the ASL requester on Xvfb, and compare the intuition capture |
+| `make sdk-a600-ks31-addons` | Boot A600/KS3.1 and assert `ll: ok v 40` and `nv: ok n 23 size 30` |
+| `make sdk-a1200-ks30-addons` | Boot A1200/KS3.0, assert `pool: ok 1` and `boopsi: ok val 42`, and compare the BOOPSI capture |
+| `make sdk-a1200-addons` | Boot A1200/KS3.1 with Workbench and the host echo peer, and assert the datatypes, network, and AmigaGuide lines |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
@@ -107,6 +113,12 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   with Amiga-key shortcuts; it does not open a window on the desktop. The
   artifact is the app's native `CSCR` capture, converted by
   `docker/scripts/cscr2png.py`, not a host-window screenshot.
+- Bundle 9's `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`,
+  `sdk-a1200-ks30-addons`, and `sdk-a1200-addons` gates install the licensed
+  Workbench media into clean directory HDs. The A1200/KS3.1 gate starts
+  Workbench, runs the host TCP echo peer with `--network host`, and uses
+  FS-UAE's `bsdsocket_library`. The optional C shim is m68k-only, so it is not
+  covered by host AddressSanitizer; `make asan` does not instrument it.
 - `make sdk-a600-services` and `make sdk-a1200-workbench` boot clean directory
   hard drives and start the ROM-resident Workbench with the test-only
   `docker/scripts/workbench-start.c` fixture (the private vector `C:LoadWB`

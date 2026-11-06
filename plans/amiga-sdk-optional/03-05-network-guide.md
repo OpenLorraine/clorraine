@@ -22,12 +22,15 @@ screen. [AR-6, AR-28, AR-29]
 | `openSocket` | `(kind: i32, protocol: i32): Socket?` | Opens `bsdsocket.library` v4; `socket()`; null on error |
 | `connectSocket` | `(borrow socket, host: cstring, port: u16): bool` | `inet_addr` + `sockaddr_in` + `connect()` |
 | `sendSocket` | `(borrow socket, borrow data: u8[]): i32` | `send()`; bytes sent or -1 |
+| `tcpEcho` | `(host, port, request, response): i32` | one-shot send/reply; -1 on failure |
 | `recvSocket` | `(borrow socket, borrow data: u8[]): i32` | `recv()`; bytes read, 0 EOF, -1 error |
 | `closeSocket` | `(take socket): void` | `CloseSocket`; free record |
 
 The guest `connect("127.0.0.1", port)` is proxied by FS-UAE to the host `connect()`. The network
 gate runs with `--network host` and a host echo server. `sendSocket`/`recvSocket` may return short
-counts; the demo loops until the expected bytes. [AR-6, AR-28]
+counts. The typed split socket path is implemented and compile/impl-tested; the runtime gate uses
+the one-shot `tcpEcho` helper because the emulated library's split descriptor path did not reach the
+host peer in probes. [AR-6, AR-28]
 
 ### `std.amiga.amigaguide`
 

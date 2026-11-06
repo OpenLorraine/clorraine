@@ -45,21 +45,22 @@ fields are present (`name 1 cc 1 gmt 1 fmt 1`). [AR-23]
 |---|---|---|
 | `RexxMessage` | `handle freedBy cl_delete_rexx_message` | Wraps `struct RexxMsg *`; tracks created/received |
 | `createRexxMessage` | `(borrow reply: MsgPort, extension: cstring, host: cstring): RexxMessage?` | `CreateRexxMsg`; copies extension/host |
-| `deleteRexxMessage` | `(take message): void` | Created: `ClearRexxMsg(16)` then `DeleteRexxMsg`; received: reply only |
+| `deleteRexxMessage` | `(take message): void` | Created: `DeleteRexxMsg`; received: reply only |
 | `setRexxAction` | `(borrow message, action: u32): bool` | Sets `rm_Action` |
 | `setRexxArg` | `(borrow message, index: i32, value: cstring): bool` | Copies an argument; index 0..15 |
 | `sendRexxMessage` | `(borrow port: MsgPort, take message): void` | `PutMsg`; consumes |
 | `receiveRexxMessage` | `(borrow port: MsgPort): RexxMessage?` | `GetMsg`; received handle |
 | `replyRexxMessage` | `(take message): void` | `ReplyMsg`; consumes |
-| `reclaimRexxMessage` | `(take message): void` | `ClearRexxMsg(16)` + `DeleteRexxMsg` for a created message returned to its reply port |
+| `reclaimRexxMessage` | `(take message): void` | `DeleteRexxMsg` for a created message returned to its reply port |
 | `rexxMessageAction` | `(borrow message): u32` | `rm_Action` |
 | `rexxMessageResult1` | `(borrow message): i32` | `rm_Result1` |
 | `rexxMessageResult2` | `(borrow message): i32` | `rm_Result2` |
 | `rexxMessageArg` | `(borrow message, index: i32, borrow buf: u8[]): i32` | Copies an argument; -1 for absent |
 
 The gate creates a message with a private reply port, sends it to the application port, receives,
-inspects, replies, receives the reply, and reclaims it. `DeleteRexxMsg` does not free arguments;
-every created/reclaimed message is cleared first. [AR-24]
+inspects, replies, receives the reply, and reclaims it. `DeleteRexxMsg` releases the packet; the
+shim does not call `ClearRexxMsg` because that call crashed after the reply on the licensed 2.05
+library. [AR-24]
 
 ### `std.amiga.clipboard` (2.0+)
 
@@ -68,7 +69,7 @@ every created/reclaimed message is cleared first. [AR-24]
 | `Clipboard` | `handle freedBy cl_close_clipboard` | Owns `IOClipReq` and reply port |
 | `openClipboard` | `(unit: i32): Clipboard?` | `OpenDevice("clipboard.device", unit, ...)` |
 | `closeClipboard` | `(take clipboard): void` | Close/delete/free |
-| `clipboardWrite` | `(borrow clipboard, borrow data: u8[]): bool` | `CBD_CURRENTWRITEID`, `CMD_WRITE`, `CMD_UPDATE`; retries obsolete ID |
+| `clipboardWrite` | `(borrow clipboard, borrow data: u8[]): bool` | `io_ClipID=0`, `CMD_WRITE`, `CMD_UPDATE`; retries obsolete ID |
 | `clipboardRead` | `(borrow clipboard, borrow data: u8[]): i32` | `CBD_CURRENTREADID` + `CMD_READ`; at most buffer length |
 | `clipboardClear` | `(borrow clipboard): bool` | Zero-length write/update |
 
@@ -126,11 +127,11 @@ Printer open/close and `PRD_RAWWRITE` are proven; printer output is not claimed.
 - Compile all six surfaces on `hosted-amiga`; reject host/1.3/freestanding with `E11200`.
 - Cross-build `nix20`; pin base globals (`CxBase`, `LocaleBase`, `RexxSysBase`, `NVBase`).
 - Pin `NewBroker`/`CxBroker`/`DeleteCxObjAll`, `OpenLocale`/`CloseLocale`,
-  `CreateRexxMsg`/`ClearRexxMsg`/`DeleteRexxMsg`/`PutMsg`/`GetMsg`/`ReplyMsg`,
-  `OpenDevice`/`CMD_READ`/`CMD_WRITE`/`CMD_UPDATE`/`SDCMD_SETPARAMS`/`PDCMD_SETPARAMS`/
+  `CreateRexxMsg`/`DeleteRexxMsg`/`PutMsg`/`GetMsg`/`ReplyMsg`,
+  `OpenDevice`/`CMD_READ`/`CMD_WRITE`/`CMD_UPDATE`/`CBD_CURRENTREADID`/`SDCMD_SETPARAMS`/`PDCMD_SETPARAMS`/
   `PRD_RAWWRITE`, `GetCopyNV`/`FreeNVData`/`SizeNVData`/`StoreNV`/`DeleteNV`.
 - Runtime: A600/KS2.05 for commodities/locale/ARexx/clipboard/serial/parallel/printer;
   A600/KS3.1 for nonvolatile.
 - Gate lines: `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`;
   `rexx: ok action 1`; `clip: ok n 4`; `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1`;
-  `nv: ok n 23`.
+  `nv: ok n 23 size 30`.

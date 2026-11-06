@@ -8,7 +8,7 @@
 This component adds `SDK-INT-006` gadtools, `SDK-INT-007` ASL requesters, and `SDK-INT-008`
 BOOPSI. The classic `std.amiga.intuition` module stays 1.3-safe; the new modules are
 `hosted-amiga` only. gadtools/ASL are 2.0+; BOOPSI is 3.0+ and uses the native
-`colorwheel.gadget`. [AR-8, AR-10, AR-14–AR-16]
+a native Intuition BOOPSI string gadget. [AR-8, AR-10, AR-14–AR-16]
 
 ## Architecture
 
@@ -25,7 +25,8 @@ shared lookup must walk `window->FirstGadget` to find the node and read its `Gad
 Add `stdlib/std.amiga.gadtools.clo`, `stdlib/std.amiga.asl.clo`, and
 `stdlib/std.amiga.boopsi.clo`; put C in the optional suffix. Add the shared event fallback and the
 optional `GT_*` event path. The ASL library is installed from the Workbench 2.04/3.1 ADF; the
-colorwheel class is installed from the Workbench 3.0/3.1 ADF. [AR-7, AR-14–AR-16]
+gadtools/ASL libraries are installed from the Workbench media; the BOOPSI
+class (`strgclass`) is built into Intuition. [AR-7, AR-14–AR-16]
 
 ## Implementation Details
 
@@ -66,16 +67,18 @@ before `AslRequest` and `asl-done.txt` after. [AR-15]
 | Export | Signature | Ownership / behavior |
 |---|---|---|
 | `BoopsiObject` | `handle freedBy cl_dispose_object` | Owns `Object *`; tracks the attached window |
-| `newColorWheel` | `(borrow window: Window, id: i32, x: i32, y: i32, width: i32, height: i32): BoopsiObject?` | `NewObjectA(NULL, "colorwheel.gadget", GA_*, WHEEL_Screen)` |
+| `newStringGadget` | `(borrow window: Window, id: i32, x: i32, y: i32, width: i32, height: i32, initial: i32): BoopsiObject?` | `NewObjectA(NULL, "strgclass", GA_*, STRINGA_LongVal)` |
 | `attachObject` | `(borrow window: Window, borrow object): bool` | `AddGList` + `RefreshGList`; false if already attached |
 | `detachObject` | `(borrow object): void` | `RemoveGList` + `RefreshGList` |
-| `setColorWheelHue` | `(borrow object, hue: u32): bool` | `SetGadgetAttrsA(WHEEL_Hue)` when attached |
-| `colorWheelHue` | `(borrow object): u32` | `GetAttr(WHEEL_Hue)` |
+| `setStringValue` | `(borrow object, value: i32): bool` | `SetGadgetAttrsA(STRINGA_LongVal)` when attached |
+| `stringValue` | `(borrow object): i32` | `GetAttr(STRINGA_LongVal)` |
 | `disposeObject` | `(take object): void` | Detaches if attached, then `DisposeObject` |
 
-`colorwheel.gadget` requires `WHEEL_Screen`; the shim passes `((cl_window *)window)->window->WScreen`.
-The object must be disposed before the window; `disposeObject` detaches if the window is still alive.
-No custom class, no ClassAct. [AR-16]
+The class is built into Intuition, so no disk class file or class-library base is
+needed. The object must be disposed before the window; `disposeObject` detaches
+if the window is still alive. The earlier `colorwheel.gadget` probe loaded but
+its `WHEEL_Hue`/`WHEEL_HSB` set/get did not round-trip on the licensed 3.0/3.1
+media, so it is not used. No custom class, no ClassAct. [AR-16]
 
 ## Shared-Shim Changes
 
@@ -100,6 +103,7 @@ Both use only 1.3-era structures and remain in the shared shim.
 - Pin `GetVisualInfo`, `CreateContext`, `CreateGadgetA`, `RefreshGList`, `GT_RefreshWindow`,
   `GT_GetIMsg`, `GT_ReplyIMsg`, `GT_BeginRefresh`, `GT_EndRefresh`, `FreeGadgets`,
   `FreeVisualInfo`, `AllocAslRequest`, `AslRequest`, `FreeAslRequest`, `NewObjectA`,
-  `SetGadgetAttrsA`, `GetAttr`, `AddGList`, `RemoveGList`, `DisposeObject`.
+  `strgclass`, `STRINGA_LongVal`, `SetGadgetAttrsA`, `GetAttr`, `AddGList`,
+  `RemoveGList`, `DisposeObject`.
 - Runtime: A600/KS2.05 for gadtools/ASL; A1200/KS3.0 for BOOPSI.
-- Gate lines: `gt: ok gad 4`; `asl: ok path 1`; `boopsi: ok hue 42`.
+- Gate lines: `gt: ok gad 4`; `asl: ok path 1`; `boopsi: ok val 42`.

@@ -486,8 +486,8 @@ import { GadgetList, newGadgetList, addButton, addText, addString,
     from std.amiga.gadtools;
 import { FileRequester, newFileRequester, requestFile, fileRequesterPath,
          freeFileRequester } from std.amiga.asl;
-import { BoopsiObject, newColorWheel, attachObject, detachObject,
-         setColorWheelHue, colorWheelHue, disposeObject } from std.amiga.boopsi;
+import { BoopsiObject, newStringGadget, attachObject, detachObject,
+         setStringValue, stringValue, disposeObject } from std.amiga.boopsi;
 import { String, stringOf, toCString } from std.text;
 import { slice } from std.mem;
 
@@ -521,18 +521,18 @@ func main(): i32 {
     let pathLength: i32 = fileRequesterPath(requester, slice(path, 0, 64));
     freeFileRequester(requester);
 
-    let objectCreated: BoopsiObject? = newColorWheel(window, 10, 8, 120, 100, 60);
+    let objectCreated: BoopsiObject? =
+        newStringGadget(window, 10, 8, 120, 100, 20, 7);
     if (objectCreated == null) { return 10; }
     let object: BoopsiObject = objectCreated;
     if (!attachObject(window, object)) { return 11; }
-    if (!setColorWheelHue(object, 42)) { return 12; }
-    let hue: u32 = colorWheelHue(object);
+    if (!setStringValue(object, 42)) { return 12; }
+    let value: i32 = stringValue(object);
     detachObject(object);
     disposeObject(object);
 
     closeWindow(window);
-    return i32(event.kind) + (requested ? 1 : 0) + pathLength +
-           i32(hue);
+    return i32(event.kind) + (requested ? 1 : 0) + pathLength + value;
 }
 "#;
 
@@ -558,7 +558,7 @@ fn the_intuition_advanced_surface_builds_on_hosted_amiga() {
         stderr(&output)
     );
     let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
-    for call in ["cl_gt_new", "cl_asl_new", "cl_boopsi_new_colorwheel"] {
+    for call in ["cl_gt_new", "cl_asl_new", "cl_boopsi_new_string"] {
         assert!(c.contains(call), "the emitted C is missing {call}");
     }
 }
@@ -815,7 +815,7 @@ fn the_workbench_services_exports_match_the_stdlib_appendix() {
 const NETWORK_SOURCE: &str = r#"module tests.opt.network;
 
 import { Socket, AF_INET, SOCK_STREAM, openSocket, connectSocket,
-         sendSocket, recvSocket, closeSocket } from std.amiga.bsdsocket;
+         sendSocket, recvSocket, closeSocket, tcpEcho } from std.amiga.bsdsocket;
 import { AmigaGuide, GuideMessage, openAmigaGuide, closeAmigaGuide,
          amigaGuideSignal, waitAmigaGuideMessage, guideMessageType,
          guideMessagePrimary, guideMessageSecondary, replyGuideMessage,
@@ -834,6 +834,9 @@ func main(): i32 {
     let buffer: u8[16] = [0; 16];
     let received: i32 = recvSocket(socket, slice(buffer, 0, 16));
     closeSocket(socket);
+    let echoResponse: u8[8] = [0; 8];
+    let echoed: i32 = tcpEcho(toCString(host), 1234, bytes(payload),
+                              slice(echoResponse, 0, 8));
 
     let path: String = stringOf("CNEXT:hello.guide");
     let screen: String = stringOf("Workbench");
@@ -851,8 +854,8 @@ func main(): i32 {
     let command: String = stringOf("NODE Main");
     let sentCommand: bool = sendAmigaGuideCommand(guide, toCString(command));
     closeAmigaGuide(guide);
-    return sent + received + i32(signal) + i32(kind) + i32(primary) +
-           i32(secondary) + (sentCommand ? 1 : 0);
+    return sent + received + echoed + i32(signal) + i32(kind) +
+           i32(primary) + i32(secondary) + (sentCommand ? 1 : 0);
 }
 "#;
 

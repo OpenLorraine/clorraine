@@ -880,21 +880,22 @@ accepted drawer/file path (an absolute file wins), or -1 on cancel.
 | `fileRequesterPath(borrow, buf)` | `i32` | bounded; -1 cancel |
 | `freeFileRequester(take)` | — | `FreeAslRequest` |
 
-### 14.14 BOOPSI colorwheel (`std.amiga.boopsi`)
+### 14.14 BOOPSI string gadget (`std.amiga.boopsi`)
 
-`newColorWheel` creates a native `colorwheel.gadget` with `GA_*` geometry and
-`WHEEL_Screen` from the window. `attachObject` uses `AddGList`/`RefreshGList`;
-`detachObject` removes and refreshes; `setColorWheelHue`/`colorWheelHue` use
-`SetGadgetAttrsA`/`GetAttr`. `disposeObject` detaches if needed and calls
+`newStringGadget` creates a native Intuition `strgclass` object with `GA_*`
+geometry and an initial `STRINGA_LongVal`. `attachObject` uses
+`AddGList`/`RefreshGList`; `detachObject` removes and refreshes;
+`setStringValue`/`stringValue` use `SetGadgetAttrsA`/`GetAttr` on
+`STRINGA_LongVal`. `disposeObject` detaches if needed and calls
 `DisposeObject`. The object must be disposed before the window closes.
 
 | API | Returns | Rules |
 |---|---|---|
-| `newColorWheel(window, id, geometry)` | `BoopsiObject?` | native 3.0+ class |
+| `newStringGadget(window, id, geometry, initial)` | `BoopsiObject?` | native `strgclass` |
 | `attachObject(window, object)` | `bool` | `AddGList` + refresh |
 | `detachObject(borrow)` | — | `RemoveGList` + refresh |
-| `setColorWheelHue(borrow, hue)` | `bool` | `WHEEL_Hue` |
-| `colorWheelHue(borrow)` | `u32` | `GetAttr` |
+| `setStringValue(borrow, value)` | `bool` | `STRINGA_LongVal`; attached only |
+| `stringValue(borrow)` | `i32` | `GetAttr` |
 | `disposeObject(take)` | — | detach + dispose |
 
 ### 14.15 Commodities (`std.amiga.commodities`)
@@ -930,8 +931,8 @@ return the country code and GMT offset. `closeLocale` releases it.
 slots. `setRexxAction`/`setRexxArg` set the action and copied arguments.
 `sendRexxMessage` puts the packet and releases the wrapper; the receiver uses
 `receiveRexxMessage` and `replyRexxMessage`. The sender reclaims the reply with
-`reclaimRexxMessage`, which clears the arguments before `DeleteRexxMsg`.
-`deleteRexxMessage` deletes a created packet or replies a received one.
+`reclaimRexxMessage`, which calls `DeleteRexxMsg`. `deleteRexxMessage` deletes a
+created packet or replies a received one.
 
 | API | Returns | Rules |
 |---|---|---|
@@ -940,7 +941,7 @@ slots. `setRexxAction`/`setRexxArg` set the action and copied arguments.
 | `sendRexxMessage(port, take)` | — | `PutMsg`; consumes wrapper |
 | `receiveRexxMessage(port)` | `RexxMessage?` | `GetMsg`/`IsRexxMsg` |
 | `replyRexxMessage(take)` | — | `ReplyMsg` |
-| `reclaimRexxMessage(take)` | — | `ClearRexxMsg` + `DeleteRexxMsg` |
+| `reclaimRexxMessage(take)` | — | `DeleteRexxMsg` |
 | `rexxMessageAction` | `i32` | `rm_Action` |
 | `rexxMessageResult1` | `i32` | `rm_Result1` |
 | `rexxMessageResult2` | `i32` | `rm_Result2` |
@@ -948,8 +949,8 @@ slots. `setRexxAction`/`setRexxArg` set the action and copied arguments.
 
 ### 14.18 Clipboard (`std.amiga.clipboard`)
 
-`openClipboard` owns an `IOClipReq` and reply port. `clipboardWrite` obtains
-the current write ID, writes the whole clip, and sends `CMD_UPDATE`;
+`openClipboard` owns an `IOClipReq` and reply port. `clipboardWrite` starts a
+fresh clip (`io_ClipID=0`), writes the whole clip, and sends `CMD_UPDATE`;
 `clipboardRead` obtains the current read ID and reads at most the caller’s
 buffer. Both retry `CBERR_OBSOLETEID` a bounded number of times.
 `clipboardClear` writes an empty clip.
@@ -1016,6 +1017,7 @@ a third-party stack; the gate uses FS-UAE’s emulated library.
 | `sendSocket(borrow, data)` | `i32` | bytes or -1 |
 | `recvSocket(borrow, buf)` | `i32` | bytes, 0 EOF, -1 |
 | `closeSocket(take)` | — | `CloseSocket` |
+| `tcpEcho(host, port, request, response)` | `i32` | one-shot send/reply; -1 on failure |
 
 ### 14.22 AmigaGuide (`std.amiga.amigaguide`)
 

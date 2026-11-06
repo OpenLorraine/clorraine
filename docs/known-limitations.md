@@ -34,18 +34,52 @@ for work that needs those services; the language has no process wrapper in v1.
 The compiler cannot enforce this convention, so it is audited and documented in
 `spec/appendix-stdlib.md` §13.1.
 
-## 4. Advanced Workbench services need Workbench media
+## 4. Advanced Workbench services use licensed media
 
-The advanced-tier acceptance baseline has licensed Kickstart ROMs but no
-Workbench ADF/HDF. `commodities.library`, `locale.library`,
-`rexxsyslib.library`, `clipboard.device`, `serial.device`, `parallel.device`,
-`printer.device`, and `nonvolatile.library` are on Workbench media, not in the
-ROMs, so Bundle 8 defers those capabilities. The ROM-resident Workbench, icon,
-expansion, card, and keymap services are implemented and gated on A1200/KS3.1
-and A600/KS2.05. The ROM default keymap maps the raw keys the services demo
-checks; a Workbench installation with additional keymaps can map more.
+The advanced and optional-tier gates install the licensed Amiga Forever
+Workbench media from the local `~/amiga` tree. No media or decrypted ROM is
+committed. The gates are headless and use private Xvfb displays; they still
+need the media present on the machine running `make verify`.
 
-## 5. CI is host-only
+The Bundle 9 services are runtime-proven at these baselines:
+
+| Service | Baseline | Runtime proof |
+|---|---|---|
+| Commodities | A600/KS2.05 | Broker open, duplicate rejection, close, reopen |
+| Locale | A600/KS2.05 | Default locale language, country, GMT, format |
+| ARexx | A600/KS2.05 | Typed message create/send/receive/reply/reclaim |
+| Clipboard | A600/KS2.05 | Whole-clip write and `CMD_UPDATE` |
+| Serial/parallel/printer | A600/KS2.05 | Typed open and close; printer raw-write result |
+| Nonvolatile | A600/KS3.1 | 23-byte store/get/delete round-trip |
+
+## 5. Optional-service limits
+
+These are deliberate boundaries, not hidden gaps:
+
+- **BOOPSI** uses the native Intuition `strgclass`. The licensed 3.0/3.1
+  `colorwheel.gadget` loads but its color attributes did not round-trip in
+  probes, so the module does not claim them.
+- **Clipboard read** is implemented and pinned, but the gate proves only the
+  write/update path; the 2.05 clipboard device returned no data on read in the
+  probe environment.
+- **Serial and parallel I/O** are typed and bounded, but the runtime gate proves
+  open/close only. **Printer** proves open/close and the raw-write result; it
+  does not claim printer output because no driver/prefs sink is configured.
+- **Datatypes** proves the V40 object opens and parses the 320x200x4 ILBM
+  (width, height, depth, colors). Its `DTM_DRAW` did not render visibly on the
+  custom screen, so no visual capture is claimed.
+- **Network** proves a TCP echo through `tcpEcho`. The typed split
+  `openSocket`/`connectSocket`/`sendSocket` path is compile- and impl-tested but
+  the FS-UAE emulated library's split descriptor path did not reach the host
+  peer in probes. Real hardware needs a third-party TCP/IP stack.
+- **Nonvolatile** uses an `nv_location` file pointing at `CNEXT:nonvolatile`.
+  `StoreNV` length is in ten-byte units, so a 23-byte payload reads back as a
+  padded 30-byte record.
+- **m68k shim memory safety** cannot use host AddressSanitizer. The optional
+  shim is reviewed statically, with host record models and m68k runtime gates;
+  `make asan` does not instrument the new m68k-only code.
+
+## 6. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip

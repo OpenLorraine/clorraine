@@ -11,7 +11,7 @@
 #include <clib/asl_protos.h>
 #include <intuition/classusr.h>
 #include <intuition/gadgetclass.h>
-#include <gadgets/colorwheel.h>
+#include <gadgets/string.h>
 
 struct Library *GadToolsBase;
 struct Library *AslBase;
@@ -479,7 +479,7 @@ void cl_asl_free(void *handle_void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* BOOPSI colorwheel.                                                        */
+/* BOOPSI string gadget.                                                     */
 /* ------------------------------------------------------------------------- */
 
 typedef struct cl_boopsi {
@@ -488,12 +488,12 @@ typedef struct cl_boopsi {
     int attached;
 } cl_boopsi;
 
-void *cl_boopsi_new_colorwheel(void *window_handle, LONG id, LONG x, LONG y,
-                               LONG width, LONG height)
+void *cl_boopsi_new_string(void *window_handle, LONG id, LONG x, LONG y,
+                           LONG width, LONG height, LONG initial)
 {
     cl_window *window = (cl_window *)window_handle;
     cl_boopsi *handle;
-    struct TagItem tags[7];
+    struct TagItem tags[8];
 
     if (window == NULL || window->window == NULL || id < 1 || id > 65535) {
         return NULL;
@@ -508,16 +508,15 @@ void *cl_boopsi_new_colorwheel(void *window_handle, LONG id, LONG x, LONG y,
     tags[3].ti_Data = (ULONG)width;
     tags[4].ti_Tag = GA_Height;
     tags[4].ti_Data = (ULONG)height;
-    tags[5].ti_Tag = WHEEL_Screen;
-    tags[5].ti_Data = (ULONG)window->window->WScreen;
+    tags[5].ti_Tag = STRINGA_LongVal;
+    tags[5].ti_Data = (ULONG)initial;
     tags[6].ti_Tag = TAG_DONE;
     tags[6].ti_Data = 0;
     handle = (cl_boopsi *)AllocMem((ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
     if (handle == NULL) {
         return NULL;
     }
-    handle->object = (Object *)NewObjectA(NULL,
-        (STRPTR)"colorwheel.gadget", tags);
+    handle->object = (Object *)NewObjectA(NULL, (STRPTR)"strgclass", tags);
     if (handle->object == NULL) {
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
@@ -557,7 +556,7 @@ void cl_boopsi_detach(void *handle_void)
     handle->window = NULL;
 }
 
-BOOL cl_boopsi_set_hue(void *handle_void, ULONG hue)
+BOOL cl_boopsi_set_value(void *handle_void, LONG value)
 {
     cl_boopsi *handle = (cl_boopsi *)handle_void;
     struct TagItem tags[2];
@@ -566,16 +565,16 @@ BOOL cl_boopsi_set_hue(void *handle_void, ULONG hue)
         handle->window == NULL) {
         return FALSE;
     }
-    tags[0].ti_Tag = WHEEL_Hue;
-    tags[0].ti_Data = hue;
+    tags[0].ti_Tag = STRINGA_LongVal;
+    tags[0].ti_Data = (ULONG)value;
     tags[1].ti_Tag = TAG_DONE;
     tags[1].ti_Data = 0;
-    SetGadgetAttrsA((struct Gadget *)handle->object, handle->window, NULL,
-                    tags);
+    (void)SetGadgetAttrsA((struct Gadget *)handle->object, handle->window,
+                          NULL, tags);
     return TRUE;
 }
 
-ULONG cl_boopsi_hue(void *handle_void)
+LONG cl_boopsi_value(void *handle_void)
 {
     cl_boopsi *handle = (cl_boopsi *)handle_void;
     ULONG value = 0;
@@ -583,8 +582,8 @@ ULONG cl_boopsi_hue(void *handle_void)
     if (handle == NULL || handle->object == NULL) {
         return 0;
     }
-    (void)GetAttr(WHEEL_Hue, handle->object, &value);
-    return value;
+    (void)GetAttr(STRINGA_LongVal, handle->object, &value);
+    return (LONG)value;
 }
 
 void cl_boopsi_dispose(void *handle_void)

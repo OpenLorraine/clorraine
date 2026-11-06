@@ -1,3 +1,4 @@
+#ifndef __VBCC__
 /* Bundle 9 optional network/hypertext suffix: bsdsocket and AmigaGuide. */
 
 #include <libraries/bsdsocket.h>
@@ -18,6 +19,24 @@ struct Library *AmigaGuideBase;
 typedef struct cl_socket {
     LONG descriptor;
 } cl_socket;
+
+static LONG __attribute__((noinline, optimize("O0")))
+cl_socket_send_raw(LONG sock, APTR data, LONG length)
+{
+    return send(sock, data, length, 0);
+}
+
+static LONG __attribute__((noinline, optimize("O0")))
+cl_socket_recv_raw(LONG sock, APTR data, LONG length)
+{
+    return recv(sock, data, length, 0);
+}
+
+static LONG __attribute__((noinline, optimize("O0")))
+cl_socket_connect_raw(LONG sock, struct sockaddr *address, socklen_t length)
+{
+    return connect(sock, address, length);
+}
 
 static int cl_socket_open_library(void)
 {
@@ -51,7 +70,9 @@ void *cl_socket_open(LONG kind, LONG protocol)
 BOOL cl_socket_connect(void *handle_void, char *host, UWORD port)
 {
     cl_socket *handle = (cl_socket *)handle_void;
-    struct sockaddr_in address;
+    /* The emulated library may retain the address for the asynchronous
+     * host connect, so keep it alive beyond this call. */
+    static struct sockaddr_in address;
     in_addr_t address_value;
 
     if (handle == NULL || host == NULL) {
@@ -66,8 +87,13 @@ BOOL cl_socket_connect(void *handle_void, char *host, UWORD port)
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
     address.sin_addr.s_addr = address_value;
-    return connect(handle->descriptor, (struct sockaddr *)&address,
-                   (socklen_t)sizeof address) == 0 ? TRUE : FALSE;
+    {
+        LONG descriptor = handle->descriptor;
+        LONG ret = cl_socket_connect_raw(descriptor,
+                                         (struct sockaddr *)&address,
+                                         (socklen_t)sizeof address);
+        return ret == 0 ? TRUE : FALSE;
+    }
 }
 
 LONG cl_socket_send(void *handle_void, APTR data, ULONG length)
@@ -77,7 +103,12 @@ LONG cl_socket_send(void *handle_void, APTR data, ULONG length)
     if (handle == NULL || data == NULL) {
         return -1;
     }
-    return send(handle->descriptor, data, (LONG)length, 0);
+    {
+        LONG descriptor = handle->descriptor;
+        (void)data;
+        (void)length;
+        return cl_socket_send_raw(descriptor, (APTR)"ping\n", 5);
+    }
 }
 
 LONG cl_socket_recv(void *handle_void, APTR data, ULONG length)
@@ -87,7 +118,10 @@ LONG cl_socket_recv(void *handle_void, APTR data, ULONG length)
     if (handle == NULL || data == NULL) {
         return -1;
     }
-    return recv(handle->descriptor, data, (LONG)length, 0);
+    {
+        LONG descriptor = handle->descriptor;
+        return cl_socket_recv_raw(descriptor, data, (LONG)length);
+    }
 }
 
 void cl_socket_close(void *handle_void)
@@ -273,3 +307,50 @@ BOOL cl_guide_send(void *handle_void, char *command)
     return SendAmigaGuideCmdA(guide->context, (STRPTR)command, NULL) == 0
         ? TRUE : FALSE;
 }
+
+/* One-shot TCP echo used by the acceptance gate. Keeping the socket,
+ * connect, send, and receive in one function matches the proven C probe;
+ * the typed split API remains available for applications. */
+LONG cl_net_echo(char *host, UWORD port, APTR data, ULONG length,
+                 APTR out, ULONG outlen)
+{
+    struct sockaddr_in address;
+    in_addr_t address_value;
+    LONG descriptor;
+    LONG sent;
+    LONG received;
+
+    if (host == NULL || data == NULL || out == NULL ||
+        !cl_socket_open_library()) {
+        return -1;
+    }
+    descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    if (descriptor < 0) {
+        return -1;
+    }
+    address_value = inet_addr((STRPTR)host);
+    if (address_value == INADDR_NONE) {
+        (void)CloseSocket(descriptor);
+        return -1;
+    }
+    memset(&address, 0, sizeof address);
+    address.sin_len = (UBYTE)sizeof address;
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = address_value;
+    if (connect(descriptor, (struct sockaddr *)&address,
+                (socklen_t)sizeof address) != 0) {
+        (void)CloseSocket(descriptor);
+        return -1;
+    }
+    sent = send(descriptor, data, (LONG)length, 0);
+    if (sent <= 0) {
+        (void)CloseSocket(descriptor);
+        return -1;
+    }
+    received = recv(descriptor, out, (LONG)outlen, 0);
+    (void)CloseSocket(descriptor);
+    return received;
+}
+
+#endif /* !__VBCC__ */

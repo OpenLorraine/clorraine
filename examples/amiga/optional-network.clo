@@ -2,49 +2,28 @@
 //! bytes, and receive them back.
 //!
 //! The A1200/KS3.1 gate runs FS-UAE with `--bsdsocket_library=1` and
-//! `--network host`, and a host echo server on 127.0.0.1:12345.
+//! `--network host`, and a host echo server on 127.0.0.1:12345. The one-shot
+//! `tcpEcho` helper keeps socket/connect/send/receive in one shim call.
 
 module examples.amiga.optional_network;
 
-import { Socket, AF_INET, SOCK_STREAM, openSocket, connectSocket,
-         sendSocket, recvSocket, closeSocket } from std.amiga.bsdsocket;
+import { tcpEcho } from std.amiga.bsdsocket;
 import { String, stringOf, toCString, bytes } from std.text;
 import { slice } from std.mem;
 import { println } from std.io;
 
 func main(): i32 {
-    let socketCreated: Socket? = openSocket(AF_INET, SOCK_STREAM);
-    if (socketCreated == null) {
-        println("net: err 1");
-        return 1;
-    }
-    let socket: Socket = socketCreated;
     let host: String = stringOf("127.0.0.1");
-    if (!connectSocket(socket, toCString(host), 12345)) {
-        closeSocket(socket);
-        println("net: err 2");
-        return 1;
-    }
     let payload: String = stringOf("ping\n");
-    let sent: i32 = sendSocket(socket, bytes(payload));
-    if (sent != 5) {
-        closeSocket(socket);
-        println("net: err 3");
+    let request: u8[] = bytes(payload);
+    let response: u8[8] = [0; 8];
+    let received: i32 = tcpEcho(toCString(host), 12345, request,
+                               slice(response, 0, 8));
+    if (received != 5) {
+        println($"net: err 3 recv {received}");
         return 1;
     }
-    let buffer: u8[8] = [0; 8];
-    let total: i32 = 0;
-    while (total < 5) {
-        let count: i32 = recvSocket(socket, slice(buffer, u32(total), u32(5 - total)));
-        if (count <= 0) {
-            closeSocket(socket);
-            println("net: err 4");
-            return 1;
-        }
-        total = total + count;
-    }
-    closeSocket(socket);
-    if (buffer[0] != 112 || buffer[3] != 103) {
+    if (response[0] != 112 || response[3] != 103) {
         println("net: err 5");
         return 1;
     }

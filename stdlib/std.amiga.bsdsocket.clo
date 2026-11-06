@@ -25,6 +25,8 @@ ffi stdbsdsocket {
     func cl_socket_recv(borrow socket: Socket, data: raw u8,
                         length: u32): i32;
     func cl_socket_close(take socket: Socket): void;
+    func cl_net_echo(host: cstring, port: u16, data: raw u8, length: u32,
+                     out: raw u8, outlen: u32): i32;
 }
 
 /// Opens a socket, or returns null.
@@ -55,4 +57,18 @@ export func recvSocket(borrow socket: Socket, borrow buf: u8[]): i32 {
 /// Closes a socket exactly once.
 export func closeSocket(take socket: Socket): void {
     cl_socket_close(socket);
+}
+
+/// Sends `request` to `host:port`, receives one reply, and returns its length.
+///
+/// This is a one-shot helper for request/response protocols and the runtime
+/// acceptance gate. It opens and closes its own socket; use `openSocket` for
+/// a long-lived connection. Returns -1 on a socket, connect, or send failure.
+export func tcpEcho(host: cstring, port: u16, const request: u8[],
+                    response: u8[]): i32 {
+    unsafe {
+        return cl_net_echo(host, port, raw u8(request.ptr),
+                           u32(len(request)), raw u8(response.ptr),
+                           u32(len(response)));
+    }
 }

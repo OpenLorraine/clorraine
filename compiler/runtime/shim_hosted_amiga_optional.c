@@ -14,9 +14,13 @@
 #include <utility/tagitem.h>
 #include <clib/exec_protos.h>
 
-/* utility.library base used by the DateStamp clib stub. libnix/amiga.lib
- * already provides the symbol; the shim only opens and assigns it. */
+/* utility.library base used by the DateStamp clib stub. libnix provides the
+ * symbol for gcc, while vbcc's amiga.lib does not; define it for vbcc. */
+#ifdef __VBCC__
+struct Library *UtilityBase;
+#else
 extern struct Library *UtilityBase;
+#endif
 
 static int cl_utility_open(void)
 {
@@ -263,8 +267,10 @@ static ULONG cl_hook_trampoline(struct Hook *hook, APTR object, APTR message)
 {
     cl_hook *record = (cl_hook *)hook->h_Data;
 
+#ifndef __VBCC__
     (void)object;
     (void)message;
+#endif
     cl_hook_data_value = record->data;
     cl_hook_current_result = 0;
     record->entry();
@@ -1047,6 +1053,7 @@ struct Library *DataTypesBase;
 
 typedef struct cl_dt {
     Object *object;
+    Object *template_object;
     LONG width;
     LONG height;
     LONG depth;
@@ -1057,6 +1064,11 @@ static int cl_datatypes_open(void)
 {
     if (DataTypesBase == NULL) {
         DataTypesBase = OpenLibrary((STRPTR)"datatypes.library", 40);
+        /* The datatype class list is populated by AddDataTypes; give the
+         * library a moment before the first class lookup. */
+        if (DataTypesBase != NULL) {
+            Delay(5);
+        }
     }
     return DataTypesBase != NULL;
 }
@@ -1065,13 +1077,13 @@ void *cl_dt_open_picture(char *path)
 {
     cl_dt *handle;
     struct TagItem tags[2];
-    struct TagItem attrs[3];
-    struct BitMapHeader *header = NULL;
-    UWORD colors = 0;
+    static char path_copy[256];
 
     if (path == NULL || !cl_datatypes_open()) {
         return NULL;
     }
+    strncpy(path_copy, path, sizeof path_copy - 1);
+    path_copy[sizeof path_copy - 1] = '\0';
     tags[0].ti_Tag = DTA_GroupID;
     tags[0].ti_Data = GID_PICTURE;
     tags[1].ti_Tag = TAG_DONE;
@@ -1080,24 +1092,31 @@ void *cl_dt_open_picture(char *path)
     if (handle == NULL) {
         return NULL;
     }
-    handle->object = NewDTObjectA((STRPTR)path, tags);
+    /* The first lookup initializes the disk datatype class; keep it alive
+     * while the second object parses the bitmap. */
+    handle->template_object = NewDTObjectA((STRPTR)path_copy, tags);
+    Delay(25);
+    handle->object = NewDTObjectA((STRPTR)path_copy, tags);
     if (handle->object == NULL) {
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
-    attrs[0].ti_Tag = PDTA_BitMapHeader;
-    attrs[0].ti_Data = (ULONG)&header;
-    attrs[1].ti_Tag = PDTA_NumColors;
-    attrs[1].ti_Data = (ULONG)&colors;
-    attrs[2].ti_Tag = TAG_DONE;
-    attrs[2].ti_Data = 0;
-    (void)GetDTAttrsA(handle->object, attrs);
-    if (header != NULL) {
-        handle->width = header->bmh_Width;
-        handle->height = header->bmh_Height;
-        handle->depth = header->bmh_Depth;
+    {
+        struct TagItem a[2];
+        struct BitMapHeader *h = NULL;
+        a[0].ti_Tag = PDTA_BitMapHeader; a[0].ti_Data = (ULONG)&h;
+        a[1].ti_Tag = TAG_DONE; a[1].ti_Data = 0;
+        (void)GetDTAttrsA(handle->object, a);
+        if (h != NULL) {
+            handle->width = h->bmh_Width;
+            handle->height = h->bmh_Height;
+            handle->depth = h->bmh_Depth;
+            if (handle->colors == 0 && handle->depth > 0 &&
+                handle->depth <= 8) {
+                handle->colors = 1L << handle->depth;
+            }
+        }
     }
-    handle->colors = colors;
     return handle;
 }
 
@@ -1110,6 +1129,9 @@ void cl_dispose_dt_object(void *handle)
     }
     if (object->object != NULL) {
         DisposeDTObject(object->object);
+    }
+    if (object->template_object != NULL) {
+        DisposeDTObject(object->template_object);
     }
     FreeMem(object, (ULONG)sizeof *object);
 }
@@ -1135,7 +1157,19 @@ LONG cl_dt_depth(void *handle)
 LONG cl_dt_colors(void *handle)
 {
     const cl_dt *object = (const cl_dt *)handle;
-    return object == NULL ? 0 : object->colors;
+
+    if (object == NULL) {
+        return 0;
+    }
+    if (object->colors != 0) {
+        return object->colors;
+    }
+    /* The 3.1 ilbm.datatype may leave PDTA_NumColors zero; a bitmap of
+     * `depth` planes has at most 2^depth palette entries. */
+    if (object->depth > 0 && object->depth <= 8) {
+        return 1L << object->depth;
+    }
+    return 0;
 }
 
 BOOL cl_dt_draw(void *handle, void *window_handle, LONG x, LONG y)
@@ -1145,7 +1179,7 @@ BOOL cl_dt_draw(void *handle, void *window_handle, LONG x, LONG y)
     struct dtDraw draw;
 
     if (object == NULL || object->object == NULL || window == NULL ||
-        window->window == NULL) {
+        window->window == NULL || object->width <= 0 || object->height <= 0) {
         return FALSE;
     }
     memset(&draw, 0, sizeof draw);

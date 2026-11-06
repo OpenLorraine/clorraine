@@ -239,7 +239,7 @@ static int cl_rexx_open(void)
 {
     if (RexxSysBase == NULL) {
         RexxSysBase = (struct RxsLib *)OpenLibrary(
-            (STRPTR)"rexxsyslib.library", 37);
+            (STRPTR)"rexxsyslib.library", 36);
     }
     return RexxSysBase != NULL;
 }
@@ -276,7 +276,6 @@ void cl_rexx_delete(void *handle_void)
     }
     if (handle->message != NULL) {
         if (handle->owns) {
-            ClearRexxMsg(handle->message, 16);
             DeleteRexxMsg(handle->message);
         } else {
             ReplyMsg((struct Message *)handle->message);
@@ -338,10 +337,7 @@ void *cl_rexx_receive(void *port)
         return NULL;
     }
     message = (struct RexxMsg *)GetMsg((struct MsgPort *)port);
-    if (message == NULL || !IsRexxMsg(message)) {
-        if (message != NULL) {
-            ReplyMsg((struct Message *)message);
-        }
+    if (message == NULL) {
         return NULL;
     }
     handle = (cl_rexx_message *)AllocMem(
@@ -375,7 +371,6 @@ void cl_rexx_reclaim(void *handle_void)
         return;
     }
     if (handle->message != NULL) {
-        ClearRexxMsg(handle->message, 16);
         DeleteRexxMsg(handle->message);
     }
     FreeMem(handle, (ULONG)sizeof *handle);
@@ -460,6 +455,8 @@ void *cl_clipboard_open(LONG unit)
         return NULL;
     }
     clipboard->request->io_Message.mn_ReplyPort = clipboard->port;
+    clipboard->request->io_Message.mn_Length =
+        (UWORD)sizeof(struct IOClipReq);
     if (OpenDevice((STRPTR)"clipboard.device", unit,
                    (struct IORequest *)clipboard->request, 0) != 0) {
         FreeMem(clipboard->request, (ULONG)sizeof(struct IOClipReq));
@@ -496,10 +493,8 @@ BOOL cl_clipboard_write(void *handle, APTR data, ULONG length)
         return FALSE;
     }
     for (attempts = 0; attempts < 3; attempts++) {
-        clipboard->request->io_Command = CBD_CURRENTWRITEID;
-        if (DoIO((struct IORequest *)clipboard->request) != 0) {
-            return FALSE;
-        }
+        /* A new cut starts with io_ClipID zero; CMD_WRITE assigns the ID. */
+        clipboard->request->io_ClipID = 0;
         clipboard->request->io_Command = CMD_WRITE;
         clipboard->request->io_Data = (STRPTR)data;
         clipboard->request->io_Length = length;
@@ -508,8 +503,6 @@ BOOL cl_clipboard_write(void *handle, APTR data, ULONG length)
             return FALSE;
         }
         clipboard->request->io_Command = CMD_UPDATE;
-        clipboard->request->io_Offset = 0;
-        clipboard->request->io_Length = 0;
         if (DoIO((struct IORequest *)clipboard->request) == 0) {
             return TRUE;
         }

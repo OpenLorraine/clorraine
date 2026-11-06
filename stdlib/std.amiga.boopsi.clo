@@ -1,35 +1,39 @@
-//! Amiga BOOPSI colorwheel object (Kickstart 3.0+).
+//! Amiga BOOPSI string-gadget objects (Kickstart 2.0+).
 //!
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
-//! freestanding profiles reject it with `E11200`. A `BoopsiObject` owns a
-//! native `colorwheel.gadget`; attach it to a window, set/read its hue, then
-//! detach/dispose before the window closes.
+//! freestanding profiles reject it with `E11200`. A `BoopsiObject` owns one
+//! native Intuition `strgclass` object: create it, attach it to a window, set
+//! and read its integer value, then detach and dispose it before the window
+//! closes. The class is built into Intuition, so no disk class file is loaded.
 
 module std.amiga.boopsi;
 
 import { Window } from std.amiga.intuition;
 
-/// A BOOPSI colorwheel object. The generated drop disposes it.
+/// A BOOPSI string-gadget object. The generated drop disposes it.
 export handle BoopsiObject freedBy cl_boopsi_dispose;
 
 ffi stdboopsi {
-    func cl_boopsi_new_colorwheel(borrow window: Window, id: i32,
-                                  x: i32, y: i32, width: i32,
-                                  height: i32): BoopsiObject?;
+    func cl_boopsi_new_string(borrow window: Window, id: i32, x: i32,
+                              y: i32, width: i32, height: i32,
+                              initial: i32): BoopsiObject?;
     func cl_boopsi_attach(borrow object: BoopsiObject,
                           borrow window: Window): bool;
     func cl_boopsi_detach(borrow object: BoopsiObject): void;
-    func cl_boopsi_set_hue(borrow object: BoopsiObject, hue: u32): bool;
-    func cl_boopsi_hue(borrow object: BoopsiObject): u32;
+    func cl_boopsi_set_value(borrow object: BoopsiObject,
+                             value: i32): bool;
+    func cl_boopsi_value(borrow object: BoopsiObject): i32;
     func cl_boopsi_dispose(take object: BoopsiObject): void;
 }
 
-/// Creates a colorwheel object on `window`, or returns null.
+/// Creates an integer string gadget on `window`, or returns null.
 ///
-/// The object uses `WHEEL_Screen` from the window's screen; `id` is 1..65535.
-export func newColorWheel(borrow window: Window, id: i32, x: i32, y: i32,
-                          width: i32, height: i32): BoopsiObject? {
-    return cl_boopsi_new_colorwheel(window, id, x, y, width, height);
+/// `id` is 1..65535. The object is created with `initial` as its value and is
+/// attached separately with `attachObject`.
+export func newStringGadget(borrow window: Window, id: i32, x: i32, y: i32,
+                            width: i32, height: i32,
+                            initial: i32): BoopsiObject? {
+    return cl_boopsi_new_string(window, id, x, y, width, height, initial);
 }
 
 /// Adds the object to the window and refreshes it.
@@ -43,14 +47,14 @@ export func detachObject(borrow object: BoopsiObject): void {
     cl_boopsi_detach(object);
 }
 
-/// Sets the colorwheel hue; the object must be attached.
-export func setColorWheelHue(borrow object: BoopsiObject, hue: u32): bool {
-    return cl_boopsi_set_hue(object, hue);
+/// Sets the gadget's integer value; the object must be attached.
+export func setStringValue(borrow object: BoopsiObject, value: i32): bool {
+    return cl_boopsi_set_value(object, value);
 }
 
-/// Returns the colorwheel hue.
-export func colorWheelHue(borrow object: BoopsiObject): u32 {
-    return cl_boopsi_hue(object);
+/// Returns the gadget's integer value, or 0 for a null object.
+export func stringValue(borrow object: BoopsiObject): i32 {
+    return cl_boopsi_value(object);
 }
 
 /// Detaches if needed and disposes the object.

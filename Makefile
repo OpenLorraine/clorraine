@@ -51,7 +51,7 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench demo demo-check channel-assets demo-youtube
+.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -126,6 +126,11 @@ verify:
 	$(MAKE) sdk-a500-exec
 	$(MAKE) sdk-a600-services
 	$(MAKE) sdk-a1200-workbench
+	$(MAKE) sdk-a500-diskfont
+	$(MAKE) sdk-a600-addons
+	$(MAKE) sdk-a600-ks31-addons
+	$(MAKE) sdk-a1200-ks30-addons
+	$(MAKE) sdk-a1200-addons
 	$(MAKE) DIFF_ONLY=0 differential
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
@@ -207,6 +212,27 @@ sdk-a600-services: sdk-advanced-build
 
 sdk-a1200-workbench: sdk-advanced-build
 	docker/scripts/a1200-workbench-smoke.sh build/clorraine/workbench/hosted-amiga/workbench build/clorraine/services/hosted-amiga/services
+
+# Bundle 9 closeout demos and gates. The demos are release builds because the
+# A600/A1200 gates boot 1 MB / 2 MB machines and the debug images do not fit.
+sdk-bundle9-build:
+	$(DOCKER_MAKE) exec CMD="docker/scripts/build-bundle9-demos.sh"
+
+sdk-a500-diskfont:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/diskfont.clo"
+	docker/scripts/a500-diskfont-smoke.sh build/clorraine/diskfont/hosted-amiga-13/diskfont
+
+sdk-a600-addons: sdk-bundle9-build
+	docker/scripts/a600-addons-smoke.sh
+
+sdk-a600-ks31-addons: sdk-bundle9-build
+	docker/scripts/a600-ks31-addons-smoke.sh
+
+sdk-a1200-ks30-addons: sdk-bundle9-build
+	docker/scripts/a1200-ks30-addons-smoke.sh
+
+sdk-a1200-addons: sdk-bundle9-build sdk-advanced-build
+	docker/scripts/a1200-addons-smoke.sh
 
 # Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
 # which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;

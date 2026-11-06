@@ -202,8 +202,8 @@ the draw, so a font may be freed before the screen or layer.
 file mutation, and current/parent directory names. The `File` handle remains the
 libc-backed stream; locks and path/volume information use `dos.library`. Name
 copies are bounded by the caller buffer. Assigns resolve through `Lock`/`Open`;
-assign-list enumeration, `ReadArgs`, and `datatypes.library` are 2.0+/3.0+ and
-deferred.
+assign-list enumeration is not exposed. `ReadArgs` and `datatypes.library` are
+covered in §1.6.
 
 `std.iff` is a pure parser for the common ILBM shape: one `FORM ILBM`, one
 `BMHD`, an optional `CMAP`, and one row-interleaved `BODY` with no compression
@@ -218,10 +218,42 @@ ROM-font caption layer, and prints `img: ok 320x200x4 hash <N> dos 255 vol 1`.
 The A500 smoke builds it in release mode so the executable and chip allocations
 fit the 512 KB machine.
 
-The 2.0+ regions/damage API and the 2.0+ Intuition additions (gadtools, ASL
-requesters, and BOOPSI) are not part of this surface. `SetRGB32`, runtime
-palette animation after the first flip, and palettes beyond four bits are out
-of scope for v1.
+The 2.0+ regions/damage API and the Intuition advanced additions (gadtools, ASL
+requesters, and BOOPSI) are covered in §1.6. `SetRGB32`, runtime palette
+animation after the first flip, and palettes beyond four bits are out of scope
+for v1.
+
+### 1.6 Advanced and optional services
+
+Bundle 9 adds the disk- and ROM-based 2.0+ surfaces. Each module has opaque
+handles with exactly-once cleanup, typed scalar/string accessors, and no raw
+OS structs in application code. The detailed API tables are in
+`spec/appendix-stdlib.md` §14.4–§14.22.
+
+| Module | Surface | Min OS |
+|---|---|---|
+| `std.amiga.semaphore` | Signal semaphores | 2.0 |
+| `std.amiga.utility` | Tag lists, date stamps, capture-less hooks | 2.0 |
+| `std.amiga.pool` | `utility.library` memory pools | 3.0 |
+| `std.amiga.gadtools` | Typed gadget builder and `GT_*` events | 2.0 |
+| `std.amiga.asl` | File requester | 2.0 (save mode 2.04) |
+| `std.amiga.boopsi` | Native `strgclass` object, attach, set/get | 2.0 |
+| `std.amiga.args` | `ReadArgs` template parsing | 2.0 |
+| `std.amiga.datatypes` | Picture datatype objects (V40) | 3.1 |
+| `std.amiga.regions` | Graphics regions and layer clipping | 2.0 |
+| `std.amiga.eclock` | `timer.device` EClock | 2.0 |
+| `std.amiga.lowlevel` | `ReadJoyPort` and type-aware decoding | 3.1 |
+| `std.amiga.commodities` | Commodity broker lifecycle | 2.0 |
+| `std.amiga.locale` | Locale fields | 2.1 |
+| `std.amiga.arexx` | ARexx message packet | 2.0 |
+| `std.amiga.clipboard` | Clipboard device | 2.0 |
+| `std.amiga.devices` | Serial, parallel, and printer devices | 2.0 |
+| `std.amiga.nonvolatile` | Nonvolatile byte storage | 3.1 |
+| `std.amiga.bsdsocket` | IPv4 TCP client subset | 3.1 |
+| `std.amiga.amigaguide` | Async AmigaGuide context | 3.1 |
+
+The optional services are loaded from the licensed Workbench media by the
+acceptance gates; nothing in this appendix makes them part of the 1.3 profile.
 
 ## 2. Amiga boundary types
 

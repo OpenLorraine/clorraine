@@ -77,7 +77,7 @@ Key contents verified with `xdftool`:
 - `nonvolatile.library` appears only in the 3.1 Workbench ADF; the row is 3.1.
 - `datatypes.library`’s object API (`NewDTObjectA`) is V40; the row is 3.1.
 - `CreatePool`/`AllocPooled` are V39; the pool module and `SDK-EXE-007` are 3.0.
-- `colorwheel.gadget` exists on 3.0 and 3.1; it requires `WHEEL_Screen`. [AR-16]
+- `colorwheel.gadget` exists on 3.0 and 3.1, but its `WHEEL_Hue`/`WHEEL_HSB` set/get returned 0 in runtime probes; the BOOPSI acceptance uses the built-in `strgclass`, whose `STRINGA_LongVal` set/get round-trips. [AR-16]
 
 FS-UAE 3.1.66 includes an emulated `bsdsocket.library` (`bsdsocket_library=1`). The guest
 `connect()` is proxied to the host `connect()`, so the gate uses `127.0.0.1` with

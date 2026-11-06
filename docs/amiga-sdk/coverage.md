@@ -8,13 +8,13 @@
 | 0-baseline | core | 1.3 | 9 | 9 | 0 | #1 |
 | 1-native-video | core | 1.3 | 11 | 11 | 0 | #2 |
 | 2-sprites | core | 1.3 | 6 | 6 | 0 | #3 |
-| 3-audio-input | core | 1.3 | 6 | 8 | 0 | #4 |
-| 4-text-layers | core | 1.3 | 4 | 6 | 0 | #5 |
-| 5-dos-assets | core | 1.3 | 5 | 7 | 0 | #6 |
-| 6-intuition | core | 1.3 | 6 | 9 | 0 | #7 |
-| 7-exec-devices | core | 1.3 | 8 | 11 | 0 | #8 |
-| 8-workbench | advanced | 2.0 | 4 | 10 | 0 | #9 |
-| 9-optional | optional | 3.1 | 0 | 3 | 0 | #10 |
+| 3-audio-input | core | 1.3 | 6 | 6 | 0 | #4 |
+| 4-text-layers | core | 1.3 | 4 | 4 | 0 | #5 |
+| 5-dos-assets | core | 1.3 | 5 | 5 | 0 | #6 |
+| 6-intuition | core | 1.3 | 6 | 6 | 0 | #7 |
+| 7-exec-devices | core | 1.3 | 8 | 8 | 0 | #8 |
+| 8-workbench | advanced | 2.0 | 4 | 4 | 0 | #9 |
+| 9-optional | optional | 1.3 | 20 | 21 | 0 | #10 |
 
 ## 0-baseline — Baseline and registry
 
@@ -74,8 +74,6 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-AUD-003 | Period/volume/loop and stop | must | done | audio_control |
 | SDK-AUD-004 | gameport joystick | must | done | joystick |
 | SDK-AUD-005 | timer.device delays | should | done | timer |
-| SDK-AUD-008 | EClock (2.0+) | could | deferred | eclock |
-| SDK-AUD-006 | lowlevel ReadJoyPort (3.1+) | could | deferred | lowlevel |
 | SDK-AUD-007 | Paddle game with sound | must | done | game_demo |
 
 ## 4-text-layers — Text, fonts, layers
@@ -86,9 +84,7 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 |---|---|---|---|---|
 | SDK-TXT-001 | Font open/close | must | done | font |
 | SDK-TXT-002 | Text draw and measure | must | done | text_draw |
-| SDK-TXT-003 | diskfont.library | should | deferred | diskfont |
 | SDK-TXT-004 | Layers and clipping | must | done | layers |
-| SDK-TXT-005 | Regions and damage (2.0+) | should | deferred | regions |
 | SDK-TXT-006 | Scrolling text/layers demo | must | done | text_layers_demo |
 
 ## 5-dos-assets — DOS and assets
@@ -100,9 +96,7 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-DOS-001 | Seek/read/write | must | done | dos_seek |
 | SDK-DOS-002 | Locks, directories, delete/rename | must | done | dos_dirs |
 | SDK-DOS-003 | Path/assign/volume info | should | done | dos_info |
-| SDK-DOS-004 | CLI args via ReadArgs (2.0+) | should | deferred | dos_args |
 | SDK-DOS-005 | IFF/ILBM parser | must | done | ilbm |
-| SDK-DOS-006 | datatypes.library (3.0+) | could | deferred | datatypes |
 | SDK-DOS-008 | Image viewer demo | must | done | image_viewer |
 
 ## 6-intuition — Intuition UI
@@ -116,9 +110,6 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-INT-003 | IDCMP event loop | must | done | int_events |
 | SDK-INT-004 | Requesters and alerts | should | done | int_requesters |
 | SDK-INT-005 | Pointer and palette | could | done | int_pointer |
-| SDK-INT-006 | gadtools (2.0+) | should | deferred | - |
-| SDK-INT-007 | asl requesters (2.0+) | should | deferred | - |
-| SDK-INT-008 | BOOPSI (3.0+) | could | deferred | - |
 | SDK-INT-009 | GUI demo | must | done | gui_demo |
 
 ## 7-exec-devices — Exec and devices
@@ -129,13 +120,10 @@ Tier: core; min OS: 1.3; min hardware: OCS/68000/512K.
 |---|---|---|---|---|
 | SDK-EXE-001 | Worker task creation and join | should | done | task |
 | SDK-EXE-002 | Signals | must | done | signals |
-| SDK-EXE-011 | Signal semaphores (2.0+) | should | deferred | semaphores |
 | SDK-EXE-003 | Message ports (extend exec module) | must | done | messages |
 | SDK-EXE-004 | Library open/close and version | must | done | library |
 | SDK-EXE-005 | Device IORequest/DoIO/SendIO | must | done | device_io |
 | SDK-EXE-006 | Interrupt servers (VBlank, ports) | should | done | interrupts |
-| SDK-EXE-010 | Hooks (2.0+) | should | deferred | hooks_20 |
-| SDK-EXE-007 | Tags/hooks/date/memory pools (2.0+) | should | deferred | utility |
 | SDK-EXE-008 | input/keyboard/console devices | should | done | input_devices |
 | SDK-EXE-009 | Worker task + async IO demo | must | done | task_io_demo |
 
@@ -147,21 +135,33 @@ Tier: advanced; min OS: 2.0; min hardware: ECS/68000/1M.
 |---|---|---|---|---|
 | SDK-WBK-001 | AppIcon/AppWindow and messages | should | done | workbench_app |
 | SDK-WBK-002 | Icon library | should | done | icon_lib |
-| SDK-WBK-003 | Commodity broker | could | deferred | commodities |
-| SDK-WBK-004 | locale.library | could | deferred | locale |
-| SDK-WBK-005 | ARexx message port | could | deferred | arexx |
-| SDK-WBK-006 | Clipboard device | should | deferred | clipboard |
-| SDK-WBK-007 | Serial/parallel/printer | could | deferred | serial |
 | SDK-WBK-008 | Expansion/keymap/card | could | done | expansion |
-| SDK-WBK-010 | nonvolatile.library | could | deferred | nonvolatile |
 | SDK-WBK-009 | Workbench integration demo | should | done | workbench_demo |
 
-## 9-optional — Optional add-ons
+## 9-optional — Optional add-ons and advanced closeout
 
-Tier: optional; min OS: 3.1; min hardware: AGA/68020/2M.
+Tier: optional; min OS: 1.3; min hardware: OCS/68000/512K.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-OPT-002 | bsdsocket.library | could | missing | bsdsocket |
-| SDK-OPT-003 | AmigaGuide library | could | missing | amigaguide |
+| SDK-AUD-008 | EClock (2.0+) | could | done | eclock |
+| SDK-AUD-006 | lowlevel ReadJoyPort (3.1+) | could | done | lowlevel |
+| SDK-TXT-003 | diskfont.library | should | done | diskfont |
+| SDK-TXT-005 | Regions and damage (2.0+) | should | done | regions |
+| SDK-DOS-004 | CLI args via ReadArgs (2.0+) | should | done | dos_args |
+| SDK-DOS-006 | datatypes.library (3.1+) | could | done | datatypes |
+| SDK-INT-006 | gadtools (2.0+) | should | done | gadtools |
+| SDK-INT-007 | asl requesters (2.0+) | should | done | asl |
+| SDK-INT-008 | BOOPSI (3.0+) | could | done | boopsi |
+| SDK-EXE-011 | Signal semaphores (2.0+) | should | done | semaphores |
+| SDK-EXE-010 | Hooks (2.0+) | should | done | hooks_20 |
+| SDK-EXE-007 | Tags/hooks/date/memory pools (3.0+) | should | done | utility_pool |
+| SDK-WBK-003 | Commodity broker | could | done | commodities |
+| SDK-WBK-004 | locale.library | could | done | locale |
+| SDK-WBK-005 | ARexx message port | could | done | arexx |
+| SDK-WBK-006 | Clipboard device | should | done | clipboard |
+| SDK-WBK-007 | Serial/parallel/printer | could | done | serial |
+| SDK-WBK-010 | nonvolatile.library | could | done | nonvolatile |
+| SDK-OPT-002 | bsdsocket.library | could | done | bsdsocket |
+| SDK-OPT-003 | AmigaGuide library | could | done | amigaguide |
 | SDK-OPT-004 | RTG/Picasso96/CyberGraphix | wont | out-of-scope | rtg |

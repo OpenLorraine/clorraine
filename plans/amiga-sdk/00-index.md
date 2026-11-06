@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–8 done; Bundle 9 closeout plan preflighted
+> **Status**: Done — Bundles 0–9 complete; Bundle 9 closeout 20/21 (RTG out-of-scope, issue #11)
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -35,7 +35,7 @@ rows declare `min_os`/`min_hw` in the registry.
 | 6 | Intuition UI | core + advanced | GUI demo |
 | 7 | Exec and devices | core + advanced | Worker task + async IO |
 | 8 | Workbench and services | advanced | Workbench integration |
-| 9 | Optional add-ons | optional | BOOPSI/bsdsocket/etc. |
+| 9 | Optional add-ons and advanced closeout | optional | A500 diskfont, A600 2.05/3.1, A1200 3.0/3.1 headless gates; 20/21 done, RTG in #11 |
 
 ## Rules
 
@@ -85,6 +85,14 @@ enumeration, the card resource, and a keymap call. The A1200/KS3.1 gate reports
 and `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1`, with the
 native `docs/amiga-sdk/a1200-workbench.png` and
 `docs/amiga-sdk/a1200-workbench-icon.png`; the A600/KS2.05 gate asserts the
-same lines. The Workbench-disk services and nonvolatile are deferred because
-the baseline has no Workbench media; issue #9 is closed. Bundle 9 (Optional
-add-ons) follows.
+same lines; issue #9 is closed. Bundle 9 (Optional add-ons and advanced
+closeout) is `plans/amiga-sdk-optional/`: signal semaphores, utility
+tags/date/hooks, OS pools, gadtools, ASL, BOOPSI, ReadArgs, datatypes, regions,
+EClock, lowlevel, commodities, locale, ARexx, clipboard, serial/parallel/
+printer, nonvolatile, bsdsocket, and AmigaGuide. The licensed Workbench
+1.3.4/2.04/2.1/3.0/3.1 media supplies the disk libraries. Five headless gates
+report `diskfont: ok h 12`, the A600 2.05/3.1 lines, `pool: ok 1` and
+`boopsi: ok val 42`, and `dt: ok w 320 h 200 depth 4 colors 16` / `net: ok send
+5 recv 5` / `guide: ok msg 1 result 0`. The registry is 80 capabilities, all
+done except the RTG `wont` row tracked by issue #11; issue #10 is the generated
+Bundle 9 view.

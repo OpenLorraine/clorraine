@@ -327,8 +327,8 @@ import { GadgetList, newGadgetList, addButton, buildGadgets, freeGadgetList }
     from std.amiga.gadtools;
 import { FileRequester, newFileRequester, requestFile, freeFileRequester }
     from std.amiga.asl;
-import { BoopsiObject, newColorWheel, attachObject, detachObject,
-         disposeObject } from std.amiga.boopsi;
+import { BoopsiObject, newStringGadget, attachObject, detachObject,
+         setStringValue, disposeObject } from std.amiga.boopsi;
 import { String, stringOf, toCString } from std.text;
 
 func main(): i32 {
@@ -351,10 +351,12 @@ func main(): i32 {
     let requester: FileRequester = requesterCreated;
     if (requestFile(requester, window)) { }
     freeFileRequester(requester);
-    let objectCreated: BoopsiObject? = newColorWheel(window, 10, 8, 8, 100, 60);
+    let objectCreated: BoopsiObject? =
+        newStringGadget(window, 10, 8, 8, 100, 20, 7);
     if (objectCreated == null) { return 7; }
     let object: BoopsiObject = objectCreated;
     if (!attachObject(window, object)) { return 8; }
+    if (!setStringValue(object, 42)) { return 9; }
     detachObject(object);
     disposeObject(object);
     closeWindow(window);
@@ -371,7 +373,7 @@ fn the_intuition_advanced_wrappers_route_to_the_shim() {
         "cl_gt_build",
         "cl_asl_new",
         "cl_asl_request",
-        "cl_boopsi_new_colorwheel",
+        "cl_boopsi_new_string",
         "cl_boopsi_attach",
     ] {
         assert_contains("ui-routing", &c, call);
@@ -391,9 +393,10 @@ fn the_intuition_advanced_shim_pins_the_native_calls() {
         "AllocAslRequest(",
         "AslRequest(handle->request, tags)",
         "NewObjectA(NULL,",
-        "WHEEL_Screen",
+        "\"strgclass\"",
+        "STRINGA_LongVal",
         "SetGadgetAttrsA((struct Gadget *)handle->object",
-        "GetAttr(WHEEL_Hue",
+        "GetAttr(STRINGA_LongVal",
         "DisposeObject(",
     ] {
         assert_contains("ui-shim", &shim, needle);
@@ -564,9 +567,8 @@ fn the_workbench_services_shim_pins_the_native_calls() {
         "CreateRexxMsg((struct MsgPort *)reply_port,",
         "FillRexxMsg(handle->message, 16, 0)",
         "CreateArgstring((STRPTR)value,",
-        "ClearRexxMsg(handle->message, 16)",
         "DeleteRexxMsg(handle->message)",
-        "CBD_CURRENTWRITEID",
+        "clipboard->request->io_ClipID = 0;",
         "CMD_UPDATE",
         "CBERR_OBSOLETEID",
         "IOExtSer",
@@ -624,7 +626,8 @@ func main(): i32 {
 #[test]
 fn the_network_guide_wrappers_route_to_the_shim() {
     let c = emit("network-routing", "hosted-amiga", NETWORK_SOURCE);
-    for call in ["cl_socket_open", "cl_socket_connect", "cl_guide_open", "cl_guide_wait"] {
+    for call in ["cl_socket_open", "cl_socket_connect", "cl_net_echo",
+                 "cl_guide_open", "cl_guide_wait"] {
         assert_contains("network-routing", &c, call);
     }
 }
@@ -634,10 +637,10 @@ fn the_network_guide_shim_pins_the_native_calls() {
     let shim = shim();
     for needle in [
         "socket(AF_INET, kind, protocol)",
-        "connect(handle->descriptor,",
-        "send(handle->descriptor,",
-        "recv(handle->descriptor,",
-        "CloseSocket(handle->descriptor)",
+        "cl_socket_connect_raw",
+        "send(descriptor, data, (LONG)length, 0)",
+        "recv(descriptor, out, (LONG)outlen, 0)",
+        "CloseSocket(descriptor)",
         "inet_addr((STRPTR)host)",
         "address.sin_family = AF_INET",
         "OpenAmigaGuideAsyncA(&guide->guide, NULL)",

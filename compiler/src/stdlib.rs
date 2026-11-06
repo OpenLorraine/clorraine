@@ -785,11 +785,11 @@ pub const MODULES: &[StdlibModule] = &[
         name: "std.amiga.boopsi",
         exports: &[
             "BoopsiObject",
-            "newColorWheel",
+            "newStringGadget",
             "attachObject",
             "detachObject",
-            "setColorWheelHue",
-            "colorWheelHue",
+            "setStringValue",
+            "stringValue",
             "disposeObject",
         ],
     },
@@ -879,6 +879,7 @@ pub const MODULES: &[StdlibModule] = &[
             "sendSocket",
             "recvSocket",
             "closeSocket",
+            "tcpEcho",
         ],
     },
     StdlibModule {
@@ -1192,8 +1193,8 @@ mod tests {
             ),
             (
                 "std.amiga.boopsi",
-                &["BoopsiObject", "newColorWheel", "attachObject",
-                  "detachObject", "setColorWheelHue", "colorWheelHue",
+                &["BoopsiObject", "newStringGadget", "attachObject",
+                  "detachObject", "setStringValue", "stringValue",
                   "disposeObject"][..],
             ),
             (
@@ -1237,7 +1238,7 @@ mod tests {
                 "std.amiga.bsdsocket",
                 &["Socket", "AF_INET", "SOCK_STREAM", "openSocket",
                   "connectSocket", "sendSocket", "recvSocket",
-                  "closeSocket"][..],
+                  "closeSocket", "tcpEcho"][..],
             ),
             (
                 "std.amiga.amigaguide",

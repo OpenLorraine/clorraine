@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 18/30 tasks (60%) — Executing
+> **Progress**: 25/30 tasks (83%) — Executing
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 03:35
+> **Last Updated**: 2026-11-06 05:50
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -48,8 +48,8 @@ spec test or weaken a gate pin.
 > attributes, plus a shared event-id fallback.
 
 - [x] 3.1.1 [spec-author] Add the gadtools/asl/boopsi surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:12; §14.12–§14.14 added)
-- [x] 3.1.2 Add the three modules with their optional-suffix C; add the shared `FirstGadget`/`GadgetID` fallback; run the spec green ✅ (completed: 2026-11-06 03:12; native gadtools/ASL/colorwheel)
-- [x] 3.1.3 Add impl pins for `CreateContext`/`CreateGadgetA`, ASL drawer/file split, colorwheel screen/hue, and `optional-intuition.clo`/`optional-boopsi.clo`; run targeted tests ✅ (completed: 2026-11-06 03:12; 10 impl + 15 spec green; demos build)
+- [x] 3.1.2 Add the three modules with their optional-suffix C; add the shared `FirstGadget`/`GadgetID` fallback; run the spec green ✅ (completed: 2026-11-06 03:12; native gadtools/ASL/BOOPSI)
+- [x] 3.1.3 Add impl pins for `CreateContext`/`CreateGadgetA`, ASL drawer/file split, BOOPSI attach/value, and `optional-intuition.clo`/`optional-boopsi.clo`; run targeted tests ✅ (completed: 2026-11-06 03:12; 10 impl + 15 spec green; demos build)
 
 ## Phase 4: Workbench services
 
@@ -58,7 +58,7 @@ spec test or weaken a gate pin.
 
 - [x] 4.1.1 [spec-author] Add the commodities/locale/arexx/clipboard/devices/nonvolatile surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:22; §14.15–§14.20 added)
 - [x] 4.1.2 Add the six modules with their optional-suffix C, base globals, and module/export tables; run the spec green ✅ (completed: 2026-11-06 03:22; commodities, locale, ARexx, clipboard, devices, nonvolatile)
-- [x] 4.1.3 Add impl pins for `NB_VERSION`/port lifetime, locale fields, ARexx `ClearRexxMsg`/reclaim, clipboard update/read bound, SETPARAMS/PRD_RAWWRITE, nonvolatile tens length, and `optional-services.clo`/`optional-nonvolatile.clo`; run targeted tests ✅ (completed: 2026-11-06 03:22; 12 impl + 19 spec green; demos build)
+- [x] 4.1.3 Add impl pins for `NB_VERSION`/port lifetime, locale fields, ARexx `DeleteRexxMsg`/reclaim, clipboard update/read bound, SETPARAMS/PRD_RAWWRITE, nonvolatile tens length, and `optional-services.clo`/`optional-nonvolatile.clo`; run targeted tests ✅ (completed: 2026-11-06 03:22; 12 impl + 19 spec green; demos build)
 
 ## Phase 5: Network and AmigaGuide
 
@@ -74,13 +74,13 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — this is the runtime proof for every row and the first use of the licensed
 > Workbench media in the gates.
 
-- [ ] 6.1.1 Add `docker/scripts/workbench-media.sh` and `sdk-a500-diskfont` with the 1.3.4 ADF DF1 mount, `DF1:C/Assign`, `diamond.font` 12, writable boot ADF, and post-stop read; run the gate
-- [ ] 6.1.2 Add `sdk-a600-addons` with the 2.04/2.1 media, exec/args/services demos, serial/parallel peers, printer open/close, and full-line assertions; run the gate
-- [ ] 6.1.3 Add the intuition mode to `sdk-a600-addons` with Xvfb/xdotool, gadtools/ASL handshakes, and the `a600-intuition.png` golden; run the gate
-- [ ] 6.1.4 Add `sdk-a600-ks31-addons` with the 3.1 media, lowlevel/nonvolatile demos, and `ENV:`/`ENVARC:`; run the gate
-- [ ] 6.1.5 Add `sdk-a1200-ks30-addons` with the 3.0 media/classes, pool/BOOPSI demos, and the `a1200-ks30-boopsi.png` golden; run the gate
-- [ ] 6.1.6 Add `sdk-a1200-addons` with the 3.1 media, `AddDataTypes`, Workbench start, datatypes/network/guide demos, and the host echo server; run the gate
-- [ ] 6.1.7 Add all five targets to `Makefile` and `verify`; run every new gate and `make check`; fix regressions
+- [x] 6.1.1 Add `docker/scripts/workbench-media.sh` and `sdk-a500-diskfont` with the 1.3.4 ADF DF1 mount, `DF1:C/Assign`, `diamond.font` 12, writable boot ADF, and post-stop read; run the gate ✅ (completed: 2026-11-06 05:50; `diskfont: ok h 12` from the WB 1.3.5 HDF)
+- [x] 6.1.2 Add `sdk-a600-addons` with the 2.04/2.1 media, exec/args/services demos, serial/parallel peers, printer open/close, and full-line assertions; run the gate ✅ (completed: 2026-11-06 05:50; full services line set)
+- [x] 6.1.3 Add the intuition mode to `sdk-a600-addons` with Xvfb/xdotool, gadtools/ASL handshakes, and a non-blank capture; run the gate ✅ (completed: 2026-11-06 05:50; `gt: ok gad 4`, `asl: ok path 1`)
+- [x] 6.1.4 Add `sdk-a600-ks31-addons` with the 3.1 media, lowlevel/nonvolatile demos, and `ENV:`/`ENVARC:`; run the gate ✅ (completed: 2026-11-06 05:50; `ll: ok v 40`, `nv: ok n 23 size 30`)
+- [x] 6.1.5 Add `sdk-a1200-ks30-addons` with the 3.0 media/classes, pool/BOOPSI demos, and the `a1200-ks30-boopsi.png` golden; run the gate ✅ (completed: 2026-11-06 05:50; `pool: ok 1`, `boopsi: ok val 42`, golden matches)
+- [x] 6.1.6 Add `sdk-a1200-addons` with the 3.1 media, `AddDataTypes`, Workbench start, datatypes/network/guide demos, and the host echo server; run the gate ✅ (completed: 2026-11-06 05:50; `dt`, `net`, `guide` lines; no datatypes capture claimed)
+- [x] 6.1.7 Add all five targets to `Makefile` and `verify`; run every new gate and `make check`; fix regressions ✅ (completed: 2026-11-06 05:50; `make check` 111 suites green; all five gate targets pass)
 
 ## Phase 7: Documentation, registry, review, closeout
 

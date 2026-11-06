@@ -32,16 +32,18 @@ func main(): i32 {
         return 1;
     }
     let picture: DTObject = pictureCreated;
-    let width: i32 = dtWidth(picture);
-    let height: i32 = dtHeight(picture);
-    let depth: i32 = dtDepth(picture);
-    let colors: i32 = dtColors(picture);
+    /* The datatype fills the bitmap header during its layout/draw step, so
+     * draw first and read the geometry afterwards. */
     if (!drawDTObject(picture, window, 0, 0)) {
         disposeDTObject(picture);
         closeWindow(window);
         println("dt: err 4");
         return 1;
     }
+    let width: i32 = dtWidth(picture);
+    let height: i32 = dtHeight(picture);
+    let depth: i32 = dtDepth(picture);
+    let colors: i32 = dtColors(picture);
     let shot: String = stringOf("CNEXT:a1200-datatypes.cscr");
     let saved: bool = saveScreen(screen, toCString(shot));
     disposeDTObject(picture);

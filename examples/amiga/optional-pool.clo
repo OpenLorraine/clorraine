@@ -16,7 +16,7 @@ func main(): i32 {
         return 1;
     }
     let pool: UtilityPool = poolCreated;
-    let blockCreated: UtilityBlock? = allocUtilityBlock(pool, 8);
+    let blockCreated: UtilityBlock? = allocUtilityBlock(pool, 4);
     if (blockCreated == null) {
         freeUtilityPool(pool);
         println("pool: err 2");
@@ -30,8 +30,8 @@ func main(): i32 {
         println("pool: err 3");
         return 1;
     }
-    let out: u8[8] = [0; 8];
-    let read: i32 = readUtilityBlock(block, slice(out, 0, 8));
+    let out: u8[4] = [0; 4];
+    let read: i32 = readUtilityBlock(block, slice(out, 0, 4));
     /* Drop the pool first; the refcount keeps it alive until the block. */
     freeUtilityPool(pool);
     freeUtilityBlock(block);

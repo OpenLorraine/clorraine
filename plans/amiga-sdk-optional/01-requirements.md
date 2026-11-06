@@ -27,7 +27,7 @@ evidence at the row’s baseline.
   tag lists and date-stamp handles in `std.amiga.utility`; OS memory pools in a distinct
   `std.amiga.pool` module (3.0+). [AR-11, AR-12, AR-13]
 - **R3 — Intuition advanced.** A gadtools gadget builder with the native `GT_GetIMsg` event path,
-  an ASL file requester, and a BOOPSI `colorwheel.gadget` object. [AR-14, AR-15, AR-16]
+  an ASL file requester, and a native Intuition BOOPSI string gadget. [AR-14, AR-15, AR-16]
 - **R4 — DOS and data.** ReadArgs parsing with template-derived slot kinds and a deterministic
   `readArgsFrom` input path; picture datatype objects at 3.1. [AR-17, AR-18]
 - **R5 — Graphics and input.** Region objects with layer clipping and the existing damage protocol;
@@ -66,7 +66,7 @@ evidence at the row’s baseline.
 - RTG, Picasso96, CyberGraphX, third-party graphics cards.
 - A real third-party TCP/IP stack for the gate; Roadshow/Miami/AmiTCP are documented only.
 - Full commodities input-event/custom-hook routing; only broker lifecycle and uniqueness.
-- ClassAct/custom BOOPSI classes; only native `colorwheel.gadget`.
+- ClassAct/custom BOOPSI classes; only native Intuition classes.
 - Full printer output; the typed printer surface is gated on open/close and documented
   `PRD_RAWWRITE` limits.
 - Language-level memory pools/arenas (`E90004`); only the OS `utility.library` pool wrapper.
@@ -112,7 +112,7 @@ evidence at the row’s baseline.
 | Module split | grab bag / per library | per library | matches existing SDK style | AR-8 |
 | Hooks | defer / capture-less | capture-less scalar | row is in scope; interrupt precedent | AR-11 |
 | Pools | skip / OS wrapper | distinct pool module | row includes pools; V39 | AR-12, AR-39 |
-| BOOPSI | custom class / native colorwheel | native colorwheel | no stored class dispatcher | AR-16 |
+| BOOPSI | custom class / native Intuition class | native `strgclass` | set/get readback proven; no stored class dispatcher | AR-16 |
 | Datatypes | 3.0 varargs / 3.1 object API | 3.1 object API | V40 API is the documented object surface | AR-18, AR-39 |
 | Printer | full driver / typed open-close | typed open-close | driver/prefs not reliably gateable | AR-26 |
 | Appendices | none / additive | additive | documented APIs need appendix text | AR-34, AR-35 |
