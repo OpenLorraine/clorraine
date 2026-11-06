@@ -3,7 +3,7 @@
 > **Feature**: Add a capability-complete, headless-tested Picasso96 RTG surface for the Amiga SDK, gated on an A1200/KS3.1 with FS-UAE's UAEGFX card and an A4000/KS3.1 with the emulated Picasso IV Zorro III card.
 > **Status**: Done — 26/26; Bundle 10 2/2; both gates green
 > **Created**: 2026-11-06 13:30
-> **Last Updated**: 2026-11-06 21:50
+> **Last Updated**: 2026-11-06 22:35
 > **Implements**: R1–R18
 > **CodeOps Artifact Schema**: 1
 

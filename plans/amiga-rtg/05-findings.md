@@ -125,4 +125,4 @@ symbol) reproduces on both refs and is pre-existing; it is not fixed here.
 - `make sdk-a1200-rtg`: 32-bit report/PPM unchanged.
 - `make sdk-a4000-rtg-piv`: 24-bit report/PPM green; staged ROM removed by
   cleanup.
-- `make verify`: all legs pass.
+- `make verify`: all legs pass; feature commit `7501fca`.

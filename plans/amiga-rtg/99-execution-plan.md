@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Progress**: 26/26 tasks (100%) — Done
 > **Created**: 2026-11-06 13:30
-> **Last Updated**: 2026-11-06 21:50
+> **Last Updated**: 2026-11-06 22:35
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -74,7 +74,9 @@ headlessly on a private Xvfb display and must not commit P96 or ROM media.
   table, RTG index, and roadmap PLAN-17 ✅ (completed: 2026-11-06 21:50)
 - [x] 6.1.7 Run `make check`, both RTG gates, `make asan`, `make corpus-amiga`,
   and the review pass; fix every critical/major finding and commit locally
-  ✅ (completed: 2026-11-06 21:55)
+  ✅ (completed: 2026-11-06 22:35; correctness/memory/emission reviews,
+  113 check suites, 25 ASan suites, corpus GCC+vbcc, `make verify`;
+  commit `7501fca`)
 
 ## Acceptance
 
