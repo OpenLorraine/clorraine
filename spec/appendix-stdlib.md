@@ -704,6 +704,65 @@ func probe(): i32 {
 }
 ```
 
+### 14.4 Signal semaphores (`std.amiga.semaphore`)
+
+`createSemaphore` allocates a private `SignalSemaphore`; `obtainSemaphore` blocks,
+`attemptSemaphore` is non-blocking, and `releaseSemaphore` releases one obtain.
+The handle drop frees the semaphore; the caller must release it first.
+
+| API | Returns | Rules |
+|---|---|---|
+| `createSemaphore()` | `Semaphore?` | null on allocation failure |
+| `freeSemaphore(take s)` | — | caller must release every obtain first |
+| `obtainSemaphore(borrow s)` | — | blocking |
+| `releaseSemaphore(borrow s)` | — | one release per obtain |
+| `attemptSemaphore(borrow s)` | `bool` | true when this call obtained it |
+
+### 14.5 Tags, dates, and hooks (`std.amiga.utility`)
+
+`newTagList` builds a terminated `TagItem` array; `tagSet`/`tagGet`/`tagPresent`
+operate on it and `tagCount` excludes the terminator; `freeTagList` releases it.
+`currentDateStamp` takes one `DateStamp` snapshot; the `dateStamp*` accessors
+read it and `freeDateStamp` releases it. `newHook` stores a capture-less
+`func(u32): u32` callback plus a scalar payload; the callback must not allocate,
+drop, or trap. `callHook` invokes it, `hookData` returns the payload, and
+`freeHook` releases it.
+
+| API | Returns | Rules |
+|---|---|---|
+| `newTagList(capacity)` | `TagList?` | capacity 1..63 |
+| `tagSet(borrow, tag, data)` | `bool` | false for `TAG_DONE` or full |
+| `tagGet(borrow, tag)` | `u32` | use `tagPresent` to distinguish absent |
+| `tagPresent(borrow, tag)` | `bool` | |
+| `tagCount(borrow)` | `i32` | active tags, excluding terminator |
+| `currentDateStamp()` | `DateStamp?` | one snapshot |
+| `dateStampDays(borrow)` | `i32` | day field |
+| `dateStampMinute(borrow)` | `i32` | minute field |
+| `dateStampTick(borrow)` | `i32` | tick field |
+| `newHook(entry: func(u32): u32, data)` | `Hook?` | capture-less |
+| `callHook(borrow)` | `u32` | callback result |
+| `hookData(borrow)` | `i32` | stored payload |
+| `hookCurrentData()` | `i32` | payload of the hook being called |
+| `hookSetResult(value)` | — | sets the result `callHook` returns |
+
+### 14.6 Utility memory pools (`std.amiga.pool`)
+
+`createUtilityPool` wraps `utility.library` `CreatePool` (Kickstart 3.0+).
+`allocUtilityBlock` returns a block that borrows the pool; `writeUtilityBlock`
+and `readUtilityBlock` copy bounded byte slices. The pool is refcounted by its
+live blocks: dropping the pool handle with live blocks defers `DeletePool` until
+the last block is freed.
+
+| API | Returns | Rules |
+|---|---|---|
+| `createUtilityPool(memFlags, puddle, thresh)` | `UtilityPool?` | null before V39 |
+| `allocUtilityBlock(borrow pool, size)` | `UtilityBlock?` | block borrows pool |
+| `utilityBlockSize(borrow block)` | `u32` | allocation size |
+| `writeUtilityBlock(borrow block, data)` | `bool` | copies min(size, data) |
+| `readUtilityBlock(borrow block, buf)` | `i32` | copies min(size, buf) |
+| `freeUtilityBlock(take block)` | — | `FreePooled`; decrements pool |
+| `freeUtilityPool(take pool)` | — | deletes when live blocks reach zero |
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

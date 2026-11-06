@@ -12,10 +12,13 @@ const HOST_SHIM: &str = include_str!("../runtime/shim_host.c");
 /// The C runtime shim source of the hosted-amiga profile.
 const HOSTED_AMIGA_SHIM: &str = include_str!("../runtime/shim_hosted_amiga.c");
 
-/// The 2.0+ Workbench/icon/expansion suffix, appended after the generated
-/// program only for `hosted-amiga`. Keeping it after the user code prevents
-/// the 2.0 headers' macros from rewriting user identifiers.
-const HOSTED_AMIGA_20_SHIM: &str = include_str!("../runtime/shim_hosted_amiga_20.c");
+/// The hosted-amiga 2.0+ and optional suffixes, appended after the generated
+/// program. Keeping them after the user code prevents the OS headers' macros
+/// from rewriting user identifiers.
+const HOSTED_AMIGA_SUFFIX: &str = concat!(
+    include_str!("../runtime/shim_hosted_amiga_20.c"),
+    include_str!("../runtime/shim_hosted_amiga_optional.c"),
+);
 
 /// The C runtime shim source of the freestanding profile.
 const FREESTANDING_SHIM: &str = include_str!("../runtime/shim_freestanding.c");
@@ -133,7 +136,7 @@ impl Profile {
     /// sees the 2.0 headers or symbols.
     pub fn shim_suffix(self) -> &'static str {
         match self {
-            Profile::HostedAmiga => HOSTED_AMIGA_20_SHIM,
+            Profile::HostedAmiga => HOSTED_AMIGA_SUFFIX,
             Profile::Host | Profile::HostedAmiga13 | Profile::Freestanding => "",
         }
     }

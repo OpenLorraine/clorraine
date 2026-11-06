@@ -2942,6 +2942,7 @@ static int cl_device_is_extended(const char *name)
         "timer.device",
         "serial.device",
         "parallel.device",
+        "clipboard.device",
     };
     unsigned int index;
 

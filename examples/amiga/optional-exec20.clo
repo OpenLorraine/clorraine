@@ -1,0 +1,70 @@
+//! Bundle 9 Exec/utility acceptance: semaphore, hook, tag list, and date.
+//!
+//! The gate redirects standard output; the program prints one report line.
+
+module examples.amiga.optional_exec20;
+
+import { Semaphore, createSemaphore, freeSemaphore, obtainSemaphore,
+         releaseSemaphore } from std.amiga.semaphore;
+import { TagList, DateStamp, Hook, newTagList, freeTagList, tagSet,
+         tagGet, currentDateStamp, freeDateStamp, dateStampDays,
+         newHook, callHook, hookCurrentData, hookSetResult, freeHook }
+    from std.amiga.utility;
+import { println } from std.io;
+
+func note(): void {
+    if (hookCurrentData() == 7) {
+        hookSetResult(42);
+    }
+}
+
+func main(): i32 {
+    let semCreated: Semaphore? = createSemaphore();
+    if (semCreated == null) {
+        println("exec: err 1");
+        return 1;
+    }
+    let sem: Semaphore = semCreated;
+    obtainSemaphore(sem);
+    releaseSemaphore(sem);
+    freeSemaphore(sem);
+
+    let tagsCreated: TagList? = newTagList(2);
+    if (tagsCreated == null) {
+        println("exec: err 2");
+        return 1;
+    }
+    let tags: TagList = tagsCreated;
+    if (!tagSet(tags, 1, 7)) {
+        freeTagList(tags);
+        println("exec: err 3");
+        return 1;
+    }
+    let tagValue: u32 = tagGet(tags, 1);
+    freeTagList(tags);
+
+    let stampCreated: DateStamp? = currentDateStamp();
+    if (stampCreated == null) {
+        println("exec: err 4");
+        return 1;
+    }
+    let stamp: DateStamp = stampCreated;
+    let days: i32 = dateStampDays(stamp);
+    freeDateStamp(stamp);
+
+    let hookCreated: Hook? = newHook(note, 7);
+    if (hookCreated == null) {
+        println("exec: err 5");
+        return 1;
+    }
+    let hook: Hook = hookCreated;
+    let result: i32 = callHook(hook);
+    freeHook(hook);
+
+    if (days < 0 || tagValue != 7 || result != 42) {
+        println("exec: err 6");
+        return 1;
+    }
+    println("exec: ok sem 1 hook 1 tag 1 date 1");
+    return 0;
+}

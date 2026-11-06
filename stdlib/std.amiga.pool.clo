@@ -1,0 +1,86 @@
+//! Amiga utility.library memory pools (Kickstart 3.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. The pool is refcounted by
+//! its live blocks: dropping the pool handle with live blocks defers
+//! `DeletePool` until the last block is freed. A `UtilityBlock` borrows its
+//! pool but may be dropped after the pool handle.
+//!
+//! These are OS `utility.library` pools, not the language-level pools that the
+//! v1 memory model defers.
+
+module std.amiga.pool;
+
+/// A utility.library memory pool.
+export handle UtilityPool freedBy cl_free_utility_pool;
+
+/// One allocation from a `UtilityPool`.
+export handle UtilityBlock freedBy cl_free_utility_block;
+
+ffi stdpool {
+    func cl_create_utility_pool(mem_flags: u32, puddle_size: u32,
+                                thresh_size: u32): UtilityPool?;
+    func cl_alloc_utility_block(borrow pool: UtilityPool,
+                                size: u32): UtilityBlock?;
+    func cl_utility_block_size(borrow block: UtilityBlock): u32;
+    func cl_write_utility_block(borrow block: UtilityBlock, data: raw u8,
+                                length: u32): bool;
+    func cl_read_utility_block(borrow block: UtilityBlock, data: raw u8,
+                               length: u32): i32;
+    func cl_free_utility_block(take block: UtilityBlock): void;
+    func cl_free_utility_pool(take pool: UtilityPool): void;
+}
+
+/// Creates a utility memory pool, or returns null on allocation failure.
+///
+/// The pool requires Kickstart 3.0; on an older ROM it returns null.
+export func createUtilityPool(memFlags: u32, puddleSize: u32,
+                              threshSize: u32): UtilityPool? {
+    return cl_create_utility_pool(memFlags, puddleSize, threshSize);
+}
+
+/// Allocates an owned block of `size` bytes from `pool`, or returns null.
+///
+/// The block borrows the pool; it may outlive the pool handle. The generated
+/// drop frees the block.
+export func allocUtilityBlock(borrow pool: UtilityPool,
+                              size: u32): UtilityBlock? {
+    return cl_alloc_utility_block(pool, size);
+}
+
+/// Returns the block's allocation size.
+export func utilityBlockSize(borrow block: UtilityBlock): u32 {
+    return cl_utility_block_size(block);
+}
+
+/// Copies `data` into the block, up to the block size.
+///
+/// A short block is filled; the function returns true unless the handle is
+/// null.
+export func writeUtilityBlock(borrow block: UtilityBlock,
+                              const data: u8[]): bool {
+    unsafe {
+        return cl_write_utility_block(block, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Copies up to `len(buf)` bytes from the block and returns the count.
+export func readUtilityBlock(borrow block: UtilityBlock,
+                             borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_read_utility_block(block, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Frees a block exactly once.
+export func freeUtilityBlock(take block: UtilityBlock): void {
+    cl_free_utility_block(block);
+}
+
+/// Drops the caller's pool reference.
+///
+/// When live blocks remain, `DeletePool` is deferred until the last block is
+/// freed. The block handles stay valid.
+export func freeUtilityPool(take pool: UtilityPool): void {
+    cl_free_utility_pool(pool);
+}

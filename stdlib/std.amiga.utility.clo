@@ -1,0 +1,134 @@
+//! Amiga utility.library helpers: tag lists, date stamps, and hooks.
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. The tag list and date stamp
+//! are ordinary owned handles. A `Hook` stores a capture-less Clorraine
+//! callback and a scalar `u32` payload; the callback must not allocate, drop,
+//! or trap. The module uses `utility.library` V37.
+
+module std.amiga.utility;
+
+/// A builder for a terminated `TagItem` array.
+export handle TagList freedBy cl_free_tag_list;
+
+/// A snapshot of `utility.library`'s `DateStamp`.
+export handle DateStamp freedBy cl_free_date_stamp;
+
+/// A capture-less utility callback with a scalar payload.
+export handle Hook freedBy cl_free_hook;
+
+ffi stdutility {
+    func cl_new_tag_list(capacity: i32): TagList?;
+    func cl_free_tag_list(take list: TagList): void;
+    func cl_tag_set(borrow list: TagList, tag: u32, data: u32): bool;
+    func cl_tag_get(borrow list: TagList, tag: u32): u32;
+    func cl_tag_present(borrow list: TagList, tag: u32): bool;
+    func cl_tag_count(borrow list: TagList): i32;
+    func cl_date_stamp_new(): DateStamp?;
+    func cl_free_date_stamp(take stamp: DateStamp): void;
+    func cl_date_stamp_days(borrow stamp: DateStamp): i32;
+    func cl_date_stamp_minute(borrow stamp: DateStamp): i32;
+    func cl_date_stamp_tick(borrow stamp: DateStamp): i32;
+    func cl_new_hook(entry: func(): void, data: i32): Hook?;
+    func cl_call_hook(borrow hook: Hook): i32;
+    func cl_hook_data(borrow hook: Hook): i32;
+    func cl_hook_current_data(): i32;
+    func cl_hook_set_result(value: i32): void;
+    func cl_free_hook(take hook: Hook): void;
+}
+
+/// Creates an empty tag list with room for `capacity` active tags.
+///
+/// `capacity` must be in 1..63; the list stores a `TAG_DONE` terminator.
+export func newTagList(capacity: i32): TagList? {
+    return cl_new_tag_list(capacity);
+}
+
+/// Frees a tag list exactly once.
+export func freeTagList(take list: TagList): void {
+    cl_free_tag_list(list);
+}
+
+/// Sets `tag` to `data`, replacing the first match or appending.
+///
+/// Returns false for the `TAG_DONE` sentinel or when the list is full.
+export func tagSet(borrow list: TagList, tag: u32, data: u32): bool {
+    return cl_tag_set(list, tag, data);
+}
+
+/// Returns the value for `tag`; use `tagPresent` to distinguish absent.
+export func tagGet(borrow list: TagList, tag: u32): u32 {
+    return cl_tag_get(list, tag);
+}
+
+/// Returns true when `tag` is present.
+export func tagPresent(borrow list: TagList, tag: u32): bool {
+    return cl_tag_present(list, tag);
+}
+
+/// Returns the number of active tags, excluding the terminator.
+export func tagCount(borrow list: TagList): i32 {
+    return cl_tag_count(list);
+}
+
+/// Takes one `DateStamp` snapshot, or returns null on allocation failure.
+export func currentDateStamp(): DateStamp? {
+    return cl_date_stamp_new();
+}
+
+/// Frees a date-stamp snapshot.
+export func freeDateStamp(take stamp: DateStamp): void {
+    cl_free_date_stamp(stamp);
+}
+
+/// Returns the snapshot's day count.
+export func dateStampDays(borrow stamp: DateStamp): i32 {
+    return cl_date_stamp_days(stamp);
+}
+
+/// Returns the snapshot's minute count.
+export func dateStampMinute(borrow stamp: DateStamp): i32 {
+    return cl_date_stamp_minute(stamp);
+}
+
+/// Returns the snapshot's tick count.
+export func dateStampTick(borrow stamp: DateStamp): i32 {
+    return cl_date_stamp_tick(stamp);
+}
+
+/// Creates a hook with a capture-less `func(): void` callback and an `i32`
+/// payload. The callback is allocation-free, drop-free, and trap-free. It can
+/// read the payload with `hookCurrentData` and set the result with
+/// `hookSetResult`. The hook is released with `freeHook` or the generated drop.
+export func newHook(entry: func(): void, data: i32): Hook? {
+    return cl_new_hook(entry, data);
+}
+
+/// Calls the callback and returns the result it set with `hookSetResult`.
+export func callHook(borrow hook: Hook): i32 {
+    return cl_call_hook(hook);
+}
+
+/// Returns the `i32` payload stored with the hook.
+export func hookData(borrow hook: Hook): i32 {
+    return cl_hook_data(hook);
+}
+
+/// Returns the payload of the hook currently being called.
+///
+/// Call this only from inside a hook callback; outside a call it returns 0.
+export func hookCurrentData(): i32 {
+    return cl_hook_current_data();
+}
+
+/// Stores the result that `callHook` returns.
+///
+/// Call this only from inside a hook callback.
+export func hookSetResult(value: i32): void {
+    cl_hook_set_result(value);
+}
+
+/// Frees a hook exactly once.
+export func freeHook(take hook: Hook): void {
+    cl_free_hook(hook);
+}

@@ -1,0 +1,49 @@
+//! Amiga Exec signal semaphores (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Semaphore` owns one
+//! private `SignalSemaphore`; the caller obtains and releases it, and must
+//! release it before the handle is dropped.
+
+module std.amiga.semaphore;
+
+/// A private signal semaphore. The generated drop frees it.
+export handle Semaphore freedBy cl_free_semaphore;
+
+ffi stdsemaphore {
+    func cl_create_semaphore(): Semaphore?;
+    func cl_free_semaphore(take semaphore: Semaphore): void;
+    func cl_obtain_semaphore(borrow semaphore: Semaphore): void;
+    func cl_release_semaphore(borrow semaphore: Semaphore): void;
+    func cl_attempt_semaphore(borrow semaphore: Semaphore): bool;
+}
+
+/// Creates a private signal semaphore, or returns null on allocation failure.
+export func createSemaphore(): Semaphore? {
+    return cl_create_semaphore();
+}
+
+/// Frees a semaphore exactly once.
+///
+/// The caller must have released every obtain before this call.
+export func freeSemaphore(take semaphore: Semaphore): void {
+    cl_free_semaphore(semaphore);
+}
+
+/// Blocks until the semaphore is available, then obtains it.
+export func obtainSemaphore(borrow semaphore: Semaphore): void {
+    cl_obtain_semaphore(semaphore);
+}
+
+/// Releases one obtain.
+export func releaseSemaphore(borrow semaphore: Semaphore): void {
+    cl_release_semaphore(semaphore);
+}
+
+/// Tries to obtain the semaphore without blocking.
+///
+/// Returns true when this call obtained it; release it with
+/// `releaseSemaphore`.
+export func attemptSemaphore(borrow semaphore: Semaphore): bool {
+    return cl_attempt_semaphore(semaphore);
+}

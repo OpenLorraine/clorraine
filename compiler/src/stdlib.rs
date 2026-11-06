@@ -125,6 +125,18 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.expansion",
         source: include_str!("../../stdlib/std.amiga.expansion.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.semaphore",
+        source: include_str!("../../stdlib/std.amiga.semaphore.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.utility",
+        source: include_str!("../../stdlib/std.amiga.utility.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.pool",
+        source: include_str!("../../stdlib/std.amiga.pool.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -566,6 +578,56 @@ pub const MODULES: &[StdlibModule] = &[
             "mapRawKey",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.semaphore",
+        exports: &[
+            "Semaphore",
+            "createSemaphore",
+            "freeSemaphore",
+            "obtainSemaphore",
+            "releaseSemaphore",
+            "attemptSemaphore",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.utility",
+        exports: &[
+            "TagList",
+            "DateStamp",
+            "Hook",
+            "newTagList",
+            "freeTagList",
+            "tagSet",
+            "tagGet",
+            "tagPresent",
+            "tagCount",
+            "currentDateStamp",
+            "freeDateStamp",
+            "dateStampDays",
+            "dateStampMinute",
+            "dateStampTick",
+            "newHook",
+            "callHook",
+            "hookData",
+            "hookCurrentData",
+            "hookSetResult",
+            "freeHook",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.pool",
+        exports: &[
+            "UtilityPool",
+            "UtilityBlock",
+            "createUtilityPool",
+            "allocUtilityBlock",
+            "utilityBlockSize",
+            "writeUtilityBlock",
+            "readUtilityBlock",
+            "freeUtilityBlock",
+            "freeUtilityPool",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -796,6 +858,37 @@ mod tests {
             "mapRawKey",
         ] {
             assert!(exports("std.amiga.expansion", name), "missing export {name}");
+        }
+    }
+
+    #[test]
+    fn the_semaphore_utility_pool_modules_are_registered() {
+        for (module, names) in [
+            (
+                "std.amiga.semaphore",
+                &["Semaphore", "createSemaphore", "freeSemaphore",
+                  "obtainSemaphore", "releaseSemaphore", "attemptSemaphore"][..],
+            ),
+            (
+                "std.amiga.utility",
+                &["TagList", "DateStamp", "Hook", "newTagList", "freeTagList",
+                  "tagSet", "tagGet", "tagPresent", "tagCount",
+                  "currentDateStamp", "freeDateStamp", "dateStampDays",
+                  "dateStampMinute", "dateStampTick", "newHook", "callHook",
+                  "hookData", "hookCurrentData", "hookSetResult", "freeHook"][..],
+            ),
+            (
+                "std.amiga.pool",
+                &["UtilityPool", "UtilityBlock", "createUtilityPool",
+                  "allocUtilityBlock", "utilityBlockSize", "writeUtilityBlock",
+                  "readUtilityBlock", "freeUtilityBlock", "freeUtilityPool"][..],
+            ),
+        ] {
+            assert!(lookup(module).is_some(), "missing module {module}");
+            assert!(source(module).is_some(), "missing source {module}");
+            for name in names {
+                assert!(exports(module, name), "missing export {module}.{name}");
+            }
         }
     }
 

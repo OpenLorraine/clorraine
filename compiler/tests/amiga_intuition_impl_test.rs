@@ -619,7 +619,12 @@ fn the_requester_alert_and_pointer_calls_are_pinned() {
 /// The 1.3 shim contains no 2.0+ requester, palette, or window call.
 #[test]
 fn the_intuition_shim_has_no_20_plus_calls() {
-    let c = emit("requester-forbidden", "hosted-amiga", REQUESTER_SOURCE);
+    // The optional suffix is appended after the program, so the 1.3-clean
+    // check must inspect the shared shim rather than the whole emission.
+    let shim = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/shim_hosted_amiga.c"),
+    )
+    .expect("the shared shim is readable");
     for forbidden in [
         "OpenWindowTags",
         "OpenWindowTagList",
@@ -635,8 +640,8 @@ fn the_intuition_shim_has_no_20_plus_calls() {
         "OpenScreenTagList",
     ] {
         assert!(
-            !c.contains(forbidden),
-            "requester-forbidden: emitted C must not contain {forbidden:?}"
+            !shim.contains(forbidden),
+            "requester-forbidden: the shared shim must not contain {forbidden:?}"
         );
     }
 }
