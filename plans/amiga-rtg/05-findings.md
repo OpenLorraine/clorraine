@@ -48,6 +48,16 @@ A1200/UAEGFX gate, and the strict m68k/vbcc builds.
 | EI-RTG-001 | MINOR | New file-scope P96 spellings (`RGBFB_*`, `RGBFF_*`, `BMF_USERPRIVATE`, `P96BMA_*`, `P96IDA_*`, `P96BIDTAG_*`, `P96SA_*`, `P96RD_*`) could collide with legal user enum macros. | Every internal header spelling is now `CL_P96_*`/`CL_P96_BMA_*`/etc.; `struct RenderInfo` is `CL_P96_RenderInfo`. The public module has no such names. A spec test defines `enum RGBFB` and `enum P96BMA` and cross-builds. |
 | EI-RTG-002 | MINOR | The vbcc `#pragma libcall` block was inert; vbcc linked through `amiga.lib` P96 stubs, while docs claimed the pragma was the mechanism. | Removed the inert pragmas. GCC uses fixed-argument `LP*` macros; vbcc uses plain prototypes and the SDK `amiga.lib` P96 stubs (build-only; the runtime gate is GCC). Requirements/plan/notices/corpus comments updated. |
 
+### Final Correctness Notes
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| CRIT3-001 | MINOR | Fill docs still described only the (300,300) blue fill after the top-left red fill was added. | Demo header, R6, gate step 3, and this ledger now describe both the (20,20)-(30,30) top-left fill and the (300,300) blue fill. |
+| CRIT3-002 | MINOR | Status files were still mid-flight at 15/19. | Final state is plan 19/19 Done, PLAN-17 Done, Bundle 9 20/20, Bundle 10 1/1. |
+| CRIT3-003 | OBSERVATION | `03-02-runtime.md` still used some unqualified P96 spellings and omitted the actual-target readback caps. | Updated to `CL_P96_*` names, bare-RastPort fill/blit, actual-mode DClip, and target caps. |
+| CRIT3-004 | OBSERVATION | Top-left write/read was not runtime-checked. | The demo writes and reads (20,20) before the fill checks; a failure reports `err 5b`. |
+| CRIT4-001 | OBSERVATION | A few legacy `RGB*` spellings remained in the runtime doc. | Replaced with `CL_P96_*` spellings. |
+
 ## Final Review Passes
 
 | Review | Final verdict | Notes |
