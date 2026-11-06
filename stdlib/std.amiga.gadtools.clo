@@ -40,7 +40,8 @@ ffi stdgadtools {
 
 /// Creates a gadget list on `window`, or returns null.
 ///
-/// `fontSize` is 1..255. The list must be freed before the window closes.
+/// `fontSize` is 1..255. The list retains the window, so it may be freed
+/// before or after `closeWindow`.
 export func newGadgetList(borrow window: Window, fontName: cstring,
                           fontSize: u16): GadgetList? {
     return cl_gt_new(window, fontName, fontSize);

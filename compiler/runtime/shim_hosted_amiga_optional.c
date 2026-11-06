@@ -492,9 +492,11 @@ extern void __stdargs FreeDosObject(ULONG type, APTR object);
 
 typedef struct cl_args {
     struct RDArgs *rdargs;
+    int owns_rdargs;            /* From reads allocate the RDArgs record */
     LONG *slots;
     UBYTE *kinds;               /* 0 string, 1 number, 2 switch */
     UBYTE *source;
+    ULONG source_size;          /* exact allocation size of `source` */
     LONG count;
 } cl_args;
 
@@ -558,6 +560,9 @@ static void cl_args_discard(cl_args *args)
     }
     if (args->rdargs != NULL) {
         FreeArgs(args->rdargs);
+        if (args->owns_rdargs) {
+            FreeDosObject(DOS_RDARGS, args->rdargs);
+        }
     }
     if (args->slots != NULL) {
         FreeMem(args->slots, (ULONG)args->count * (ULONG)sizeof(LONG));
@@ -566,7 +571,7 @@ static void cl_args_discard(cl_args *args)
         FreeMem(args->kinds, (ULONG)args->count);
     }
     if (args->source != NULL) {
-        FreeMem(args->source, 0);
+        FreeMem(args->source, args->source_size);
     }
     FreeMem(args, (ULONG)sizeof *args);
 }
@@ -617,9 +622,11 @@ void *cl_read_args_from(char *template, LONG slots, APTR source,
     cl_args *args;
     UBYTE *kinds;
     UBYTE *buffer;
+    ULONG source_size;
     LONG count;
 
-    if (template == NULL || source == NULL || slots < 1 || slots > 32) {
+    if (template == NULL || source == NULL || slots < 1 || slots > 32 ||
+        length >= 0xFFFFFFF0UL) {
         return NULL;
     }
     kinds = (UBYTE *)AllocMem((ULONG)slots, MEMF_ANY | MEMF_CLEAR);
@@ -638,13 +645,14 @@ void *cl_read_args_from(char *template, LONG slots, APTR source,
     }
     args->slots = (LONG *)AllocMem(
         (ULONG)slots * (ULONG)sizeof(LONG), MEMF_ANY | MEMF_CLEAR);
-    buffer = (UBYTE *)AllocMem(length + 1UL, MEMF_ANY | MEMF_CLEAR);
+    source_size = length + 1UL;
+    buffer = (UBYTE *)AllocMem(source_size, MEMF_ANY | MEMF_CLEAR);
     if (args->slots == NULL || buffer == NULL) {
         if (args->slots != NULL) {
             FreeMem(args->slots, (ULONG)slots * (ULONG)sizeof(LONG));
         }
         if (buffer != NULL) {
-            FreeMem(buffer, length + 1UL);
+            FreeMem(buffer, source_size);
         }
         FreeMem(kinds, (ULONG)slots);
         FreeMem(args, (ULONG)sizeof *args);
@@ -658,14 +666,16 @@ void *cl_read_args_from(char *template, LONG slots, APTR source,
     args->kinds = kinds;
     args->count = slots;
     args->source = buffer;
+    args->source_size = source_size;
     args->rdargs = AllocDosObject(DOS_RDARGS, NULL);
     if (args->rdargs == NULL) {
-        FreeMem(buffer, length + 1UL);
+        FreeMem(buffer, source_size);
         FreeMem(args->slots, (ULONG)slots * (ULONG)sizeof(LONG));
         FreeMem(kinds, (ULONG)slots);
         FreeMem(args, (ULONG)sizeof *args);
         return NULL;
     }
+    args->owns_rdargs = 1;
     args->rdargs->RDA_Source.CS_Buffer = (STRPTR)buffer;
     args->rdargs->RDA_Source.CS_Length = (LONG)length;
     args->rdargs->RDA_Source.CS_CurChr = 0;
@@ -1098,23 +1108,34 @@ void *cl_dt_open_picture(char *path)
     Delay(25);
     handle->object = NewDTObjectA((STRPTR)path_copy, tags);
     if (handle->object == NULL) {
+        if (handle->template_object != NULL) {
+            DisposeDTObject(handle->template_object);
+        }
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
     {
-        struct TagItem a[2];
+        struct TagItem a[3];
         struct BitMapHeader *h = NULL;
+        /* PDTA_NumColors is documented as a UWORD value, but GetDTAttrsA
+         * writes tag data through a ULONG slot. A UWORD destination corrupts
+         * the adjacent stack on the licensed 3.1 class. */
+        ULONG colors = 0;
+
         a[0].ti_Tag = PDTA_BitMapHeader; a[0].ti_Data = (ULONG)&h;
-        a[1].ti_Tag = TAG_DONE; a[1].ti_Data = 0;
+        a[1].ti_Tag = PDTA_NumColors; a[1].ti_Data = (ULONG)&colors;
+        a[2].ti_Tag = TAG_DONE; a[2].ti_Data = 0;
         (void)GetDTAttrsA(handle->object, a);
         if (h != NULL) {
             handle->width = h->bmh_Width;
             handle->height = h->bmh_Height;
             handle->depth = h->bmh_Depth;
-            if (handle->colors == 0 && handle->depth > 0 &&
-                handle->depth <= 8) {
-                handle->colors = 1L << handle->depth;
-            }
+        }
+        if (colors != 0) {
+            handle->colors = (LONG)colors;
+        } else if (handle->depth > 0 && handle->depth <= 8) {
+            /* The 3.1 ilbm.datatype may leave PDTA_NumColors zero. */
+            handle->colors = 1L << handle->depth;
         }
     }
     return handle;

@@ -25,24 +25,27 @@ if [ ! -f "${bin}" ]; then
     echo "a500-diskfont-smoke: build it with make sdk-a500-diskfont" >&2
     exit 2
 fi
-if [ ! -f /home/gevik/amiga/hdf/workbench-135.hdf ]; then
-    echo "a500-diskfont-smoke: missing Workbench 1.3.5 HDF" >&2
-    exit 2
-fi
 if [ ! -f "${docker_dir}/.env" ]; then
     echo "a500-diskfont-smoke: docker/.env is missing; run 'make -C docker init'" >&2
+    exit 2
+fi
+set -a
+# shellcheck disable=SC1090
+. "${docker_dir}/.env"
+set +a
+image="${IMAGE:-clorraine-sdk:dev}"
+if [ -z "${AMIGA_DATA:-}" ]; then
+    echo "a500-diskfont-smoke: AMIGA_DATA is not set in docker/.env" >&2
+    exit 2
+fi
+if [ ! -f "${AMIGA_DATA}/hdf/workbench-135.hdf" ]; then
+    echo "a500-diskfont-smoke: missing Workbench 1.3.5 HDF under ${AMIGA_DATA}/hdf" >&2
     exit 2
 fi
 for tool in Xvfb sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-diskfont-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
-
-set -a
-# shellcheck disable=SC1090
-. "${docker_dir}/.env"
-set +a
-image="${IMAGE:-clorraine-sdk:dev}"
 
 xvfb_num=$(( ($$ % 50) + 60 ))
 while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
@@ -63,7 +66,7 @@ trap cleanup EXIT
 
 rm -rf "${work}"
 mkdir -p "${work}"
-cp /home/gevik/amiga/hdf/workbench-135.hdf "${hdf}"
+cp "${AMIGA_DATA}/hdf/workbench-135.hdf" "${hdf}"
 chmod u+w "${hdf}"
 cp "${bin}" "${work}/diskfont"
 cat > "${work}/startup-sequence" <<'EOF'

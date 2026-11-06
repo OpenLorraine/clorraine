@@ -16,13 +16,13 @@ Kickstart 1.3). It provides the pre-2.0 subset documented here: screens,
 windows, gadgets, menus, IDCMP events, requesters, the pointer, drawing, DOS
 delay, VBlank interrupts, and custom registers. The same classic Intuition
 surface compiles on `hosted-amiga`; the 2.0+ additions (gadtools, ASL
-requesters, and BOOPSI) are not part of this surface and are deferred. The host
-profile has no AmigaOS Intuition and rejects the module with `E11200`. The
-KS1.3 A500 gate is the runtime proof; the `hosted-amiga` profile is
-compile-verified. The classic Exec surface (private ports, worker tasks,
-libraries, and generic devices) is available on both hosted profiles; the
-KS1.3 A500 Exec gate is its runtime proof. The 2.0+ Exec additions (signal
-semaphores, hooks, and the utility library) are deferred.
+requesters, and BOOPSI) are separate modules covered in §1.6. The host profile
+has no AmigaOS Intuition and rejects the module with `E11200`. The KS1.3 A500
+gate is the runtime proof; the `hosted-amiga` profile is compile-verified. The
+classic Exec surface (private ports, worker tasks, libraries, and generic
+devices) is available on both hosted profiles; the KS1.3 A500 Exec gate is its
+runtime proof. The 2.0+ Exec additions (signal semaphores, hooks, and the
+utility library) are covered in §1.6.
 
 The `hosted-amiga` profile also provides the Kickstart 2.0+ Workbench surface:
 `std.amiga.workbench` (AppIcon, AppWindow, AppMenuItem, and AppMessage),
@@ -30,10 +30,10 @@ The `hosted-amiga` profile also provides the Kickstart 2.0+ Workbench surface:
 `std.amiga.expansion` (expansion boards, the PCMCIA card resource, and a raw-key
 keymap call). The A1200/KS3.1 and A600/KS2.05 gates are the runtime proof; the
 KS1.3 profile rejects the modules with `E11200`. The Workbench-disk services
-(commodities, locale, ARexx, clipboard, and serial/parallel/printer) and
-`nonvolatile.library` are not part of this surface because the acceptance
-baseline has licensed Kickstart ROMs but no Workbench media. The ROM
-default keymap maps the raw keys the services demo checks.
+(commodities, locale, ARexx, clipboard, serial/parallel/printer, and
+`nonvolatile.library`) are covered in §1.6; their gates install the licensed
+Workbench media. The ROM default keymap maps the raw keys the services demo
+checks.
 
 ## 1. API surface for v1
 
@@ -250,7 +250,7 @@ OS structs in application code. The detailed API tables are in
 | `std.amiga.devices` | Serial, parallel, and printer devices | 2.0 |
 | `std.amiga.nonvolatile` | Nonvolatile byte storage | 3.1 |
 | `std.amiga.bsdsocket` | IPv4 TCP client subset | 3.1 |
-| `std.amiga.amigaguide` | Async AmigaGuide context | 3.1 |
+| `std.amiga.amigaguide` | Async AmigaGuide context | 3.0 (gate at 3.1) |
 
 The optional services are loaded from the licensed Workbench media by the
 acceptance gates; nothing in this appendix makes them part of the 1.3 profile.

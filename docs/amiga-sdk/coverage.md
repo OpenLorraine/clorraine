@@ -152,7 +152,7 @@ Tier: optional; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-DOS-006 | datatypes.library (3.1+) | could | done | datatypes |
 | SDK-INT-006 | gadtools (2.0+) | should | done | gadtools |
 | SDK-INT-007 | asl requesters (2.0+) | should | done | asl |
-| SDK-INT-008 | BOOPSI (3.0+) | could | done | boopsi |
+| SDK-INT-008 | BOOPSI string gadget (2.0+) | could | done | boopsi |
 | SDK-EXE-011 | Signal semaphores (2.0+) | should | done | semaphores |
 | SDK-EXE-010 | Hooks (2.0+) | should | done | hooks_20 |
 | SDK-EXE-007 | Tags/hooks/date/memory pools (3.0+) | should | done | utility_pool |
@@ -163,5 +163,5 @@ Tier: optional; min OS: 1.3; min hardware: OCS/68000/512K.
 | SDK-WBK-007 | Serial/parallel/printer | could | done | serial |
 | SDK-WBK-010 | nonvolatile.library | could | done | nonvolatile |
 | SDK-OPT-002 | bsdsocket.library | could | done | bsdsocket |
-| SDK-OPT-003 | AmigaGuide library | could | done | amigaguide |
+| SDK-OPT-003 | AmigaGuide library (3.0+) | could | done | amigaguide |
 | SDK-OPT-004 | RTG/Picasso96/CyberGraphix | wont | out-of-scope | rtg |

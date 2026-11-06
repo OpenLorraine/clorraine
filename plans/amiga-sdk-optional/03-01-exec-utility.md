@@ -44,14 +44,15 @@ obtain → attempt(false while held) → release → attempt(true).
 | `dateStampTick` | `(borrow stamp): i32` | `ds_Tick` |
 | `freeDateStamp` | `(take stamp): void` | Frees the record |
 | `Hook` | `handle freedBy cl_free_hook` | Owns a `struct Hook` record |
-| `newHook` | `(entry: func(i32): i32, data: u32): Hook?` | Capture-less callback; `h_Data` stores the scalar |
-| `callHook` | `(borrow hook): u32` | Calls the trampoline with the stored data |
-| `hookData` | `(borrow hook): u32` | Returns the scalar |
+| `newHook` | `(entry: func(): void, data: i32): Hook?` | Capture-less callback; `h_Data` stores the `i32` payload |
+| `callHook` | `(borrow hook): i32` | Returns the value set by `hookSetResult` |
+| `hookData` | `(borrow hook): i32` | Returns the `i32` payload |
 | `freeHook` | `(take hook): void` | Frees the record; no callback at drop |
 
-The hook trampoline ignores the OS object/message and calls the Clorraine callback with
-`(u32)(IPTR)h_Data`. This is a capture-less, allocation-free callback, audited like the interrupt
-dispatcher. No `raw` pointer is exposed. [AR-11]
+The hook trampoline ignores the OS object/message and calls the Clorraine callback with no
+arguments. The callback reads the `i32` payload with `hookCurrentData` and sets the result with
+`hookSetResult`; `callHook` returns that value. This is a capture-less, allocation-free callback,
+audited like the interrupt dispatcher. No `raw` pointer is exposed. [AR-11]
 
 ### `std.amiga.pool` — OS utility pools (3.0+)
 

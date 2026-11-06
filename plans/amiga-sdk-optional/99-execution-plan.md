@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 25/30 tasks (83%) — Executing
+> **Progress**: 30/30 tasks (100%) — Done
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 05:50
+> **Last Updated**: 2026-11-06 07:30
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -74,8 +74,8 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — this is the runtime proof for every row and the first use of the licensed
 > Workbench media in the gates.
 
-- [x] 6.1.1 Add `docker/scripts/workbench-media.sh` and `sdk-a500-diskfont` with the 1.3.4 ADF DF1 mount, `DF1:C/Assign`, `diamond.font` 12, writable boot ADF, and post-stop read; run the gate ✅ (completed: 2026-11-06 05:50; `diskfont: ok h 12` from the WB 1.3.5 HDF)
-- [x] 6.1.2 Add `sdk-a600-addons` with the 2.04/2.1 media, exec/args/services demos, serial/parallel peers, printer open/close, and full-line assertions; run the gate ✅ (completed: 2026-11-06 05:50; full services line set)
+- [x] 6.1.1 Add `docker/scripts/workbench-media.sh` and `sdk-a500-diskfont` with the licensed 1.3.5 HDF, `Assign FONTS: SYS:Fonts`, `diamond.font` 12, writable HDF copy, and post-stop read; run the gate ✅ (completed: 2026-11-06 05:50; `diskfont: ok h 12` from the WB 1.3.5 HDF)
+- [x] 6.1.2 Add `sdk-a600-addons` with the 2.04/2.1 media, exec/args/services demos, typed serial/parallel/printer open/close, and full-line assertions; run the gate ✅ (completed: 2026-11-06 05:50; full services line set)
 - [x] 6.1.3 Add the intuition mode to `sdk-a600-addons` with Xvfb/xdotool, gadtools/ASL handshakes, and a non-blank capture; run the gate ✅ (completed: 2026-11-06 05:50; `gt: ok gad 4`, `asl: ok path 1`)
 - [x] 6.1.4 Add `sdk-a600-ks31-addons` with the 3.1 media, lowlevel/nonvolatile demos, and `ENV:`/`ENVARC:`; run the gate ✅ (completed: 2026-11-06 05:50; `ll: ok v 40`, `nv: ok n 23 size 30`)
 - [x] 6.1.5 Add `sdk-a1200-ks30-addons` with the 3.0 media/classes, pool/BOOPSI demos, and the `a1200-ks30-boopsi.png` golden; run the gate ✅ (completed: 2026-11-06 05:50; `pool: ok 1`, `boopsi: ok val 42`, golden matches)
@@ -87,11 +87,11 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — registry truth, frozen appendix additions, independent review, and the
 > final full acceptance gate.
 
-- [ ] 7.1.1 Update `spec/appendix-stdlib.md`, `spec/appendix-amiga.md`, `docs/known-limitations.md`, and `AGENTS.md`; leave `spec/15-profiles.md` untouched; run the appendix section checks
-- [ ] 7.1.2 Reassign the 20 open rows to `9-optional`; correct `SDK-EXE-007` 3.0, `SDK-DOS-006` 3.1, `SDK-AUD-006`/`SDK-WBK-010` 3.1, and `SDK-WBK-003` depends; set Bundle 9 floor 1.3/OCS; update `bundles.tsv`/issue #10/coverage/programme index/roadmap; run `make sdk-registry`
-- [ ] 7.1.3 Run `make check`, `make verify`, and `make sdk-registry`; fix every regression
-- [ ] 7.1.4 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding; re-run the affected gates
-- [ ] 7.1.5 Clean temporary artifacts and decrypted ROMs, commit with the git-commit skill, mark the plan Done, and close issue #10
+- [x] 7.1.1 Update `spec/appendix-stdlib.md`, `spec/appendix-amiga.md`, `docs/known-limitations.md`, and `AGENTS.md`; leave `spec/15-profiles.md` untouched; run the appendix section checks ✅ (completed: 2026-11-06 06:45; hook/BOOPSI/AmigaGuide/min-OS text reconciled)
+- [x] 7.1.2 Reassign the 20 open rows to `9-optional`; correct `SDK-EXE-007` 3.0, `SDK-DOS-006` 3.1, `SDK-AUD-006`/`SDK-WBK-010` 3.1, `SDK-INT-008` 2.0, `SDK-OPT-003` 3.0, and `SDK-WBK-003` depends; set Bundle 9 floor 1.3/OCS; update `bundles.tsv`/issue #10/coverage/programme index/roadmap; run `make sdk-registry` ✅ (completed: 2026-11-06 06:45; 80 capabilities, 20/21)
+- [x] 7.1.3 Run `make check`, `make verify`, and `make sdk-registry`; fix every regression ✅ (completed: 2026-11-06 06:45; check 111 suites, verify all legs)
+- [x] 7.1.4 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding; re-run the affected gates ✅ (completed: 2026-11-06 07:00; RV/MS/EI findings fixed; runtime-symbol collision accepted as documented limitation §6 + issue #12 per user ruling)
+- [x] 7.1.5 Clean temporary artifacts and decrypted ROMs, commit with the git-commit skill, mark the plan Done, and close issue #10 ✅ (completed: 2026-11-06 07:30; local commit, issue #10 closed; follow-up #12 open)
 
 ## Verification
 

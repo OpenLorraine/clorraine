@@ -3,7 +3,7 @@
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. The tag list and date stamp
 //! are ordinary owned handles. A `Hook` stores a capture-less Clorraine
-//! callback and a scalar `u32` payload; the callback must not allocate, drop,
+//! callback and a scalar `i32` payload; the callback must not allocate, drop,
 //! or trap. The module uses `utility.library` V37.
 
 module std.amiga.utility;

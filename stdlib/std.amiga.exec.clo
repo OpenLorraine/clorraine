@@ -268,8 +268,10 @@ export func libraryRevision(borrow library: Library): u16 {
 /// Opens an Exec device with one owned `IOStdReq`, or returns `null`.
 ///
 /// `unit` is 0..255; `flags` is passed to `OpenDevice`. The generic request is
-/// the standard `IOStdReq`. Use `openConsole` for `console.device`, which needs
-/// a caller-supplied Intuition window.
+/// the standard `IOStdReq`. `audio.device`, `timer.device`, `serial.device`,
+/// `parallel.device`, and `clipboard.device` are rejected because they need a
+/// larger request; use their typed modules. Use `openConsole` for
+/// `console.device`, which needs a caller-supplied Intuition window.
 export func openDevice(name: cstring, unit: i32, flags: u32): Device? {
     return cl_open_device(name, unit, flags);
 }

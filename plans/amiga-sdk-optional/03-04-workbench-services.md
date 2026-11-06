@@ -43,23 +43,24 @@ fields are present (`name 1 cc 1 gmt 1 fmt 1`). [AR-23]
 
 | Export | Signature | Ownership / behavior |
 |---|---|---|
-| `RexxMessage` | `handle freedBy cl_delete_rexx_message` | Wraps `struct RexxMsg *`; tracks created/received |
+| `RexxMessage` | `handle freedBy cl_rexx_delete` | Wraps `struct RexxMsg *`; tracks created/received |
 | `createRexxMessage` | `(borrow reply: MsgPort, extension: cstring, host: cstring): RexxMessage?` | `CreateRexxMsg`; copies extension/host |
-| `deleteRexxMessage` | `(take message): void` | Created: `DeleteRexxMsg`; received: reply only |
-| `setRexxAction` | `(borrow message, action: u32): bool` | Sets `rm_Action` |
+| `deleteRexxMessage` | `(take message): void` | Shim-created: release args/result/copies then `DeleteRexxMsg`; foreign: reply only |
+| `setRexxAction` | `(borrow message, action: i32): bool` | Sets `rm_Action` |
 | `setRexxArg` | `(borrow message, index: i32, value: cstring): bool` | Copies an argument; index 0..15 |
 | `sendRexxMessage` | `(borrow port: MsgPort, take message): void` | `PutMsg`; consumes |
-| `receiveRexxMessage` | `(borrow port: MsgPort): RexxMessage?` | `GetMsg`; received handle |
+| `receiveRexxMessage` | `(borrow port: MsgPort): RexxMessage?` | `GetMsg`; full packet length, then `IsRexxMsg` or shim record; short/foreign messages are replied |
 | `replyRexxMessage` | `(take message): void` | `ReplyMsg`; consumes |
-| `reclaimRexxMessage` | `(take message): void` | `DeleteRexxMsg` for a created message returned to its reply port |
-| `rexxMessageAction` | `(borrow message): u32` | `rm_Action` |
+| `reclaimRexxMessage` | `(take message): void` | Shim-created: release args/result/copies then `DeleteRexxMsg`; foreign: reply |
+| `rexxMessageAction` | `(borrow message): i32` | `rm_Action` |
 | `rexxMessageResult1` | `(borrow message): i32` | `rm_Result1` |
 | `rexxMessageResult2` | `(borrow message): i32` | `rm_Result2` |
 | `rexxMessageArg` | `(borrow message, index: i32, borrow buf: u8[]): i32` | Copies an argument; -1 for absent |
 
 The gate creates a message with a private reply port, sends it to the application port, receives,
-inspects, replies, receives the reply, and reclaims it. `DeleteRexxMsg` releases the packet; the
-shim does not call `ClearRexxMsg` because that call crashed after the reply on the licensed 2.05
+inspects, replies, receives the reply, and reclaims it. The reply port stays open until reclaim.
+`DeleteRexxMsg` does not release argument strings, so the shim deletes each owned argstring
+directly; it does not call `ClearRexxMsg`, which crashed after the reply on the licensed 2.05
 library. [AR-24]
 
 ### `std.amiga.clipboard` (2.0+)
@@ -87,17 +88,18 @@ and asserts the byte count and value. [AR-25]
 | `closeSerial` | `(take serial): void` | Abort/close/free |
 | `Parallel` | `handle freedBy cl_close_parallel` | Owns `IOExtPar` and reply port |
 | `openParallel` | `(unit: i32, flags: u32): Parallel?` | Sets `io_ParFlags`, opens, issues `PDCMD_SETPARAMS` |
-| `parallelWrite` | `(borrow parallel, borrow data: u8[]): i32` | `CMD_WRITE`; host sink |
+| `parallelWrite` | `(borrow parallel, borrow data: u8[]): i32` | `CMD_WRITE`; device write |
 | `closeParallel` | `(take parallel): void` | Close/free |
 | `Printer` | `handle freedBy cl_close_printer` | Owns a `union printerIO` and reply port |
 | `openPrinter` | `(unit: i32): Printer?` | `OpenDevice("printer.device", unit, ...)` |
 | `printerWrite` | `(borrow printer, borrow data: u8[]): i32` | `PRD_RAWWRITE`; result or -1 |
 | `closePrinter` | `(take printer): void` | Close/free |
 
-Serial is a bidirectional FS-UAE TCP loopback. Parallel is a host output sink (write-only).
-Printer open/close and `PRD_RAWWRITE` are proven; printer output is not claimed. The generic
-`openDevice` rejects only `clipboard.device`; the typed printer handle uses `union printerIO`.
-[AR-26, AR-31]
+Serial and parallel are typed handles; the runtime gate proves open/close and the
+data paths are implementation-tested. Printer open/close is gate-proven;
+`PRD_RAWWRITE` is impl-tested and printer output is not claimed. The generic
+`openDevice` rejects audio, timer, serial, parallel, and clipboard; the typed
+printer handle uses `union printerIO`. [AR-26, AR-31]
 
 ### `std.amiga.nonvolatile` (3.1)
 
@@ -127,11 +129,11 @@ Printer open/close and `PRD_RAWWRITE` are proven; printer output is not claimed.
 - Compile all six surfaces on `hosted-amiga`; reject host/1.3/freestanding with `E11200`.
 - Cross-build `nix20`; pin base globals (`CxBase`, `LocaleBase`, `RexxSysBase`, `NVBase`).
 - Pin `NewBroker`/`CxBroker`/`DeleteCxObjAll`, `OpenLocale`/`CloseLocale`,
-  `CreateRexxMsg`/`DeleteRexxMsg`/`PutMsg`/`GetMsg`/`ReplyMsg`,
+  `CreateRexxMsg`/`DeleteRexxMsg`/`IsRexxMsg`/`PutMsg`/`GetMsg`/`ReplyMsg`,
   `OpenDevice`/`CMD_READ`/`CMD_WRITE`/`CMD_UPDATE`/`CBD_CURRENTREADID`/`SDCMD_SETPARAMS`/`PDCMD_SETPARAMS`/
   `PRD_RAWWRITE`, `GetCopyNV`/`FreeNVData`/`SizeNVData`/`StoreNV`/`DeleteNV`.
 - Runtime: A600/KS2.05 for commodities/locale/ARexx/clipboard/serial/parallel/printer;
   A600/KS3.1 for nonvolatile.
 - Gate lines: `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`;
-  `rexx: ok action 1`; `clip: ok n 4`; `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1`;
+  `rexx: ok action 1`; `clip: ok n 4`; `ser: ok open 1`; `par: ok open 1`; `prt: ok open 1`;
   `nv: ok n 23 size 30`.

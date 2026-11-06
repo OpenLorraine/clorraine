@@ -3,9 +3,12 @@
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. A created `RexxMessage`
 //! owns a `CreateRexxMsg` packet; `sendRexxMessage` puts it and releases the
-//! wrapper. A received message is replied with `replyRexxMessage`; the sender
-//! reclaims the reply with `reclaimRexxMessage`. `deleteRexxMessage` clears
-//! argument strings before deleting a created packet.
+//! wrapper. The extension and host strings are copied for the packet lifetime.
+//! A received message must be a full `RexxMsg` packet and either come from a
+//! real ARexx host (`IsRexxMsg`) or match a packet this process created; a
+//! short or foreign message is replied and not exposed. The sender reclaims the reply with
+//! `reclaimRexxMessage`. `deleteRexxMessage` deletes a shim-created packet
+//! (including a received reply) and replies a foreign message.
 
 module std.amiga.arexx;
 
@@ -36,7 +39,8 @@ ffi stdarexx {
 
 /// Creates an ARexx message with a reply port, or returns null.
 ///
-/// `extension` and `host` must stay valid until the packet is deleted.
+/// `extension` and `host` are copied for the packet lifetime. The reply port
+/// must stay open until the sender receives and reclaims the reply.
 export func createRexxMessage(borrow reply: MsgPort, extension: cstring,
                               host: cstring): RexxMessage? {
     return cl_rexx_create(reply, extension, host);

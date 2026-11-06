@@ -235,6 +235,18 @@ typedef struct cl_rexx_message {
     int owns;
 } cl_rexx_message;
 
+/* CreateRexxMsg stores the extension and host pointers without copying them,
+ * but cl_rexx_send releases the wrapper before the reply arrives. Keep the
+ * copies in a packet-lifetime record keyed by the message pointer. */
+typedef struct cl_rexx_lifetime {
+    struct RexxMsg *message;
+    char *extension;
+    char *host;
+    struct cl_rexx_lifetime *next;
+} cl_rexx_lifetime;
+
+static cl_rexx_lifetime *cl_rexx_lifetimes;
+
 static int cl_rexx_open(void)
 {
     if (RexxSysBase == NULL) {
@@ -244,9 +256,119 @@ static int cl_rexx_open(void)
     return RexxSysBase != NULL;
 }
 
+/* Returns a received message when it has a reply port. A message without one
+ * cannot be replied to; dropping it is safer than dereferencing a null port. */
+static void cl_rexx_return(struct RexxMsg *message)
+{
+    if (message != NULL && message->rm_Node.mn_ReplyPort != NULL) {
+        ReplyMsg((struct Message *)message);
+    }
+}
+
+/* True when this process created the packet and still holds its lifetime
+ * record. The record is the ownership truth: a received reply that is not
+ * ours must never be passed to DeleteRexxMsg or have its arguments freed. */
+static int cl_rexx_has_lifetime(const struct RexxMsg *message)
+{
+    cl_rexx_lifetime *record = cl_rexx_lifetimes;
+
+    while (record != NULL) {
+        if (record->message == message) {
+            return 1;
+        }
+        record = record->next;
+    }
+    return 0;
+}
+
+/* True when the message is safe to read as a RexxMsg. IsRexxMsg accepts a
+ * packet from a real ARexx host; a packet created by CreateRexxMsg round-trips
+ * through this process's own ports and is identified by its lifetime record.
+ * The packet length is checked first: a generic Message is 20-24 bytes, while
+ * RexxMsg is 128, so a short foreign message is rejected before any field
+ * beyond the standard Message is read. */
+static int cl_rexx_is_packet(const struct RexxMsg *message)
+{
+    if (message == NULL ||
+        message->rm_Node.mn_Length < sizeof(struct RexxMsg)) {
+        return 0;
+    }
+    return IsRexxMsg(message) || cl_rexx_has_lifetime(message);
+}
+
+/* Releases every argument string owned by a created packet. DeleteRexxMsg
+ * does not release arguments. rm_Result2 is a string only when the request
+ * asked for RXFF_RESULT and the call succeeded; otherwise it is a numeric
+ * result or error code and must be left alone. */
+static void cl_rexx_free_args(struct RexxMsg *message)
+{
+    int index;
+
+    if (message == NULL) {
+        return;
+    }
+    for (index = 0; index < 16; index++) {
+        if (message->rm_Args[index] != NULL) {
+            DeleteArgstring((UBYTE *)message->rm_Args[index]);
+            message->rm_Args[index] = NULL;
+        }
+    }
+    if (message->rm_Result1 == 0 &&
+        (message->rm_Action & RXFF_RESULT) != 0 &&
+        message->rm_Result2 != 0) {
+        DeleteArgstring((UBYTE *)message->rm_Result2);
+        message->rm_Result2 = 0;
+    }
+}
+
+static cl_rexx_lifetime *cl_rexx_take_lifetime(struct RexxMsg *message)
+{
+    cl_rexx_lifetime **link = &cl_rexx_lifetimes;
+
+    while (*link != NULL) {
+        if ((*link)->message == message) {
+            cl_rexx_lifetime *record = *link;
+            *link = record->next;
+            return record;
+        }
+        link = &(*link)->next;
+    }
+    return NULL;
+}
+
+static void cl_rexx_free_lifetime(cl_rexx_lifetime *record)
+{
+    if (record == NULL) {
+        return;
+    }
+    if (record->extension != NULL) {
+        FreeMem(record->extension, (ULONG)strlen(record->extension) + 1UL);
+    }
+    if (record->host != NULL) {
+        FreeMem(record->host, (ULONG)strlen(record->host) + 1UL);
+    }
+    FreeMem(record, (ULONG)sizeof *record);
+}
+
+/* Releases a packet this process created. The lifetime record must be the one
+ * taken from the list by the caller; it is freed after DeleteRexxMsg so the
+ * extension/host copies outlive the packet as CreateRexxMsg requires. */
+static void cl_rexx_release_packet(struct RexxMsg *message,
+                                   cl_rexx_lifetime *record)
+{
+    if (message == NULL) {
+        cl_rexx_free_lifetime(record);
+        return;
+    }
+    cl_rexx_free_args(message);
+    DeleteRexxMsg(message);
+    cl_rexx_free_lifetime(record);
+}
+
 void *cl_rexx_create(void *reply_port, char *extension, char *host)
 {
     cl_rexx_message *handle;
+    cl_rexx_lifetime *lifetime;
 
     if (reply_port == NULL || !cl_rexx_open()) {
         return NULL;
@@ -256,13 +378,31 @@ void *cl_rexx_create(void *reply_port, char *extension, char *host)
     if (handle == NULL) {
         return NULL;
     }
-    handle->message = CreateRexxMsg((struct MsgPort *)reply_port,
-                                    (STRPTR)extension, (STRPTR)host);
-    if (handle->message == NULL) {
+    lifetime = (cl_rexx_lifetime *)AllocMem(
+        (ULONG)sizeof *lifetime, MEMF_ANY | MEMF_CLEAR);
+    if (lifetime == NULL) {
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
-    (void)FillRexxMsg(handle->message, 16, 0);
+    lifetime->extension = cl_service_strdup(extension);
+    lifetime->host = cl_service_strdup(host);
+    if ((extension != NULL && lifetime->extension == NULL) ||
+        (host != NULL && lifetime->host == NULL)) {
+        cl_rexx_free_lifetime(lifetime);
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    lifetime->message = CreateRexxMsg((struct MsgPort *)reply_port,
+                                      (STRPTR)lifetime->extension,
+                                      (STRPTR)lifetime->host);
+    if (lifetime->message == NULL) {
+        cl_rexx_free_lifetime(lifetime);
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    lifetime->next = cl_rexx_lifetimes;
+    cl_rexx_lifetimes = lifetime;
+    handle->message = lifetime->message;
     handle->owns = 1;
     return handle;
 }
@@ -275,10 +415,14 @@ void cl_rexx_delete(void *handle_void)
         return;
     }
     if (handle->message != NULL) {
-        if (handle->owns) {
+        cl_rexx_lifetime *record = cl_rexx_take_lifetime(handle->message);
+        if (record != NULL) {
+            cl_rexx_release_packet(handle->message, record);
+        } else if (handle->owns) {
+            cl_rexx_free_args(handle->message);
             DeleteRexxMsg(handle->message);
         } else {
-            ReplyMsg((struct Message *)handle->message);
+            cl_rexx_return(handle->message);
         }
     }
     FreeMem(handle, (ULONG)sizeof *handle);
@@ -324,6 +468,19 @@ void cl_rexx_send(void *port, void *handle_void)
     }
     if (handle->message != NULL && port != NULL) {
         PutMsg((struct MsgPort *)port, (struct Message *)handle->message);
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return;
+    }
+    if (handle->message != NULL) {
+        cl_rexx_lifetime *record = cl_rexx_take_lifetime(handle->message);
+        if (record != NULL) {
+            cl_rexx_release_packet(handle->message, record);
+        } else if (handle->owns) {
+            cl_rexx_free_args(handle->message);
+            DeleteRexxMsg(handle->message);
+        } else {
+            cl_rexx_return(handle->message);
+        }
     }
     FreeMem(handle, (ULONG)sizeof *handle);
 }
@@ -333,16 +490,23 @@ void *cl_rexx_receive(void *port)
     cl_rexx_message *handle;
     struct RexxMsg *message;
 
-    if (port == NULL) {
+    if (port == NULL || !cl_rexx_open()) {
         return NULL;
     }
     message = (struct RexxMsg *)GetMsg((struct MsgPort *)port);
     if (message == NULL) {
         return NULL;
     }
+    if (!cl_rexx_is_packet(message)) {
+        /* A foreign message must be returned to its sender, not inspected as
+         * a RexxMsg (whose argument fields start at byte 40). */
+        cl_rexx_return(message);
+        return NULL;
+    }
     handle = (cl_rexx_message *)AllocMem(
         (ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
     if (handle == NULL) {
+        cl_rexx_return(message);
         return NULL;
     }
     handle->message = message;
@@ -358,7 +522,7 @@ void cl_rexx_reply(void *handle_void)
         return;
     }
     if (handle->message != NULL) {
-        ReplyMsg((struct Message *)handle->message);
+        cl_rexx_return(handle->message);
     }
     FreeMem(handle, (ULONG)sizeof *handle);
 }
@@ -371,7 +535,14 @@ void cl_rexx_reclaim(void *handle_void)
         return;
     }
     if (handle->message != NULL) {
-        DeleteRexxMsg(handle->message);
+        cl_rexx_lifetime *record = cl_rexx_take_lifetime(handle->message);
+        if (record != NULL) {
+            cl_rexx_release_packet(handle->message, record);
+        } else {
+            /* Not a packet this process created; never delete or free the
+             * sender's arguments. Return it to its reply port instead. */
+            cl_rexx_return(handle->message);
+        }
     }
     FreeMem(handle, (ULONG)sizeof *handle);
 }
@@ -412,7 +583,7 @@ LONG cl_rexx_arg(void *handle_void, LONG index, APTR buffer, ULONG length)
         return -1;
     }
     text = (const char *)handle->message->rm_Args[index];
-    count = (ULONG)strlen(text);
+    count = (ULONG)LengthArgstring((STRPTR)text);
     if (count >= length) {
         count = length - 1UL;
     }

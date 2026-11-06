@@ -7,8 +7,8 @@
 
 This component adds `SDK-INT-006` gadtools, `SDK-INT-007` ASL requesters, and `SDK-INT-008`
 BOOPSI. The classic `std.amiga.intuition` module stays 1.3-safe; the new modules are
-`hosted-amiga` only. gadtools/ASL are 2.0+; BOOPSI is 3.0+ and uses the native
-a native Intuition BOOPSI string gadget. [AR-8, AR-10, AR-14–AR-16]
+`hosted-amiga` only. gadtools/ASL are 2.0+; BOOPSI is a 2.0+ `strgclass` API
+gated on A1200/KS3.0. [AR-8, AR-10, AR-14–AR-16]
 
 ## Architecture
 

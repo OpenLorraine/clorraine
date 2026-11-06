@@ -85,6 +85,28 @@ else
     echo "corpus-amiga: file-copier: vbcc build is warning-free"
 fi
 
+# AmigaGuide is toolchain-neutral and must also compile under vbcc. The socket
+# half of the same suffix is GCC-only because vbcc cannot parse the NDK
+# bsdsocket headers; that limit is recorded in docs/known-limitations.md.
+guide_src="${GUIDE_SRC:-examples/amiga/optional-guide.clo}"
+guide_c="${OUTDIR}/amigaguide-vbcc.c"
+guide_log="${OUTDIR}/amigaguide-vbcc.log"
+echo "corpus-amiga: amigaguide: vbcc build-only"
+"${CLC}" --profile hosted-amiga -o "${guide_c}" "${guide_src}"
+if "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/amigaguide-vbcc" \
+    "${guide_c}" -lamiga -lmieee > "${guide_log}" 2>&1; then
+    if grep -i 'warning' "${guide_log}" | grep -q 'amigaguide-vbcc\.c'; then
+        echo "corpus-amiga: amigaguide: vbcc emitted warnings in the emitted C" >&2
+        status=1
+    else
+        echo "corpus-amiga: amigaguide: vbcc build is warning-free"
+    fi
+else
+    echo "corpus-amiga: amigaguide: vbcc build failed" >&2
+    cat "${guide_log}" >&2
+    status=1
+fi
+
 # The interrupt-counter is hosted-amiga only and needs the real interrupt
 # dispatcher, so it cannot run under `vamos`. It is built here because the
 # FS-UAE leg consumes the binary; that leg boots the emulator separately.

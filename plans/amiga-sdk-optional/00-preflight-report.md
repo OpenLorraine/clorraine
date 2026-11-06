@@ -26,7 +26,7 @@ accepted. Iteration 2 re-checked the corrected documents against the code and me
 | PF-003 | 🔴 | `gradientslider` tags were wrong; `colorwheel` lacked `WHEEL_Screen`. | BOOPSI scoped to a native Intuition class; runtime probes later selected `strgclass` because `colorwheel` color readback did not round-trip. |
 | PF-004 | 🟠 | `GT_GetGadgetAttrsA` is V39, not 2.0. | Removed gadget readback; capture + count. |
 | PF-005 | 🟠 | ASL path/save-mode/input handshake were underspecified. | Drawer/file split, V38 save mode, `asl-ready`/`asl-done`, retries. |
-| PF-006 | 🟠 | Hooks exposed unsafe `raw` data and public `h_SubEntry` hack. | `func(i32): i32`, scalar `h_Data`, documented trampoline. |
+| PF-006 | 🟠 | Hooks exposed unsafe `raw` data and public `h_SubEntry` hack. | Capture-less `func(): void`, `i32` payload, `hookSetResult`, documented trampoline. |
 | PF-007 | 🔴 | `UtilityBlock` was undefined; pool could free live blocks. | Separate `std.amiga.pool`, declared handles, refcounted pool. |
 | PF-008 | 🟠 | `DateStamp` static snapshot was not reentrant. | `DateStamp` handle with one snapshot and getters. |
 | PF-009 | 🔴 | ReadArgs had no length parameter; slots could overflow; `/N`/`/S` misread as strings. | Template parsing, count match, per-slot kinds, `readArgsFrom`, bounded copy. |
@@ -35,12 +35,12 @@ accepted. Iteration 2 re-checked the corrected documents against the code and me
 | PF-012 | 🟠 | EXE-007 pools are V39; AUD-006/WBK-010 are 3.1; DOS-006 is 3.1. | Baselines corrected; 3.0/3.1 gates added. |
 | PF-013 | 🔴 | `10.0.2.2` is not the FS-UAE bsdsocket host alias. | `127.0.0.1` + `--network host` + host echo server. |
 | PF-014 | 🔴 | Media helper copied `S/`, used lowercase paths, omitted `Classes`/`AddDataTypes`. | Stage, named-tree copy, exact case, `LIBS ... ADD Classes`, `AddDataTypes`. |
-| PF-015 | 🔴 | A500 diskfont gate lacked `C/Assign`, writable ADF, and safe read timing. | `DF1:C/Assign`, `--writable-floppy-images=1`, stop before read, size 12. |
+| PF-015 | 🔴 | A500 diskfont gate lacked `C/Assign`, writable media, and safe read timing. | Workbench 1.3.5 HDF copy, `Assign FONTS: SYS:Fonts`, stop before read, size 12. |
 | PF-016 | 🟠 | Gate handshakes/lines were inconsistent (`asl-ready`, `services.txt`, booleans). | One handshake table; full lines with measured values. |
-| PF-017 | 🔴 | ARexx message ownership was undefined. | Created/received/reclaim ownership; runtime probes later showed `ClearRexxMsg` after the reply crashes, so `DeleteRexxMsg` alone releases the packet. |
+| PF-017 | 🔴 | ARexx message ownership was undefined. | Created/received/reclaim ownership; runtime probes later showed `ClearRexxMsg` after the reply crashes, so the shim deletes each owned argstring directly before `DeleteRexxMsg`. |
 | PF-018 | 🟠 | Clipboard write omitted `CMD_UPDATE`; `CLIPS:` was unnecessary. | Fresh clip ID (`io_ClipID=0`), write, update, read ID; no `CLIPS:`. |
-| PF-019 | 🔴 | `IOPrtCmdReq` has no write fields; printer guard was over-broad. | `union printerIO` + `PRD_RAWWRITE`; guard only clipboard. |
-| PF-020 | 🟠 | Serial/parallel parameters were inert; parallel is output-only. | SETPARAMS; serial loopback; parallel host sink. |
+| PF-019 | 🔴 | `IOPrtCmdReq` has no write fields; the printer guard was over-broad. | `union printerIO` + `PRD_RAWWRITE`; the generic guard rejects every extended-request device. |
+| PF-020 | 🟠 | Serial/parallel parameters were inert; parallel is output-only. | SETPARAMS; typed handles; data paths impl-tested, gate open/close only. |
 | PF-021 | 🔴 | `StoreNV` length is in tens of bytes. | Round up; 23-byte round-trip. |
 | PF-022 | 🟠 | Plan edited frozen `spec/15-profiles.md`. | Chapter 15 untouched; appendices only. |
 | PF-023 | 🟠 | New m68k shim cannot use host ASan. | Static review + host models + m68k runtime gates; no false ASan claim. |

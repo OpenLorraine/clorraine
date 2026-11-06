@@ -5,6 +5,9 @@
 //! descriptor. `connectSocket` accepts a dotted IPv4 address; `sendSocket` and
 //! `recvSocket` may return short counts, so callers loop. Real hardware needs
 //! a third-party stack; the acceptance gate uses FS-UAE’s emulated library.
+//! The socket shim is built only with m68k GCC: vbcc cannot parse the NDK
+//! bsdsocket headers, so a vbcc build of a program importing this module fails
+//! at link. Use the GCC toolchain for socket programs.
 
 module std.amiga.bsdsocket;
 

@@ -84,23 +84,30 @@ func main(): i32 {
         println("gt: err 7");
         return 1;
     }
-    if (!buildGadgets(list)) {
+    /* Rejected bounds must not leave a half-initialized item in the list. */
+    if (addString(list, 9, toCString(initial), 0, 8, 8, 160, 20) ||
+        addInteger(list, 10, 42, 0, 8, 112, 80, 20)) {
         freeGadgetList(list);
         println("gt: err 8");
+        return 1;
+    }
+    if (!buildGadgets(list)) {
+        freeGadgetList(list);
+        println("gt: err 9");
         return 1;
     }
     delayTicks(u32(10));
     let shotPath: String = stringOf("CNEXT:a600-intuition.cscr");
     if (!saveScreen(screen, toCString(shotPath))) {
         freeGadgetList(list);
-        println("gt: err 9");
+        println("gt: err 10");
         return 1;
     }
     let readyPath: String = stringOf("CNEXT:gt-ready.txt");
     let readyLine: String = stringOf("ready\n");
     if (!writeText(toCString(readyPath), readyLine)) {
         freeGadgetList(list);
-        println("gt: err 10");
+        println("gt: err 11");
         return 1;
     }
     println("gt: ok gad 4");
@@ -142,8 +149,10 @@ func main(): i32 {
         println("asl: err 4");
         return 1;
     }
-    freeGadgetList(list);
+    /* Close first: the list retains the window, so freeing it after the
+     * Window handle drops still owns a live native window. */
     closeWindow(window);
+    freeGadgetList(list);
     if (!requested || pathLength <= 0) {
         println("asl: err 5");
         return 1;

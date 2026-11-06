@@ -56,7 +56,7 @@ The Amiga Forever disc contains the full Workbench media sets. The following wer
 
 | Media | Files | Use |
 |---|---|---|
-| Workbench 1.3.4 | Workbench + Extras ADF | `diskfont.library`, `diamond.font` |
+| Workbench 1.3.5 | Installed HDF + 1.3.4 ADFs | `diskfont.library`, `diamond.font`; the gate uses the HDF |
 | Workbench 2.04 | Workbench/Extras/Fonts/Install ADFs | ASL, commodities, ARexx, clipboard, serial/parallel/printer |
 | Workbench 2.1 | Workbench/Extras/Fonts/Install/Locale ADFs | `locale.library`, 2.1 baseline |
 | Workbench 3.0 | Workbench/Extras/Fonts/Install/Locale/Storage ADFs | BOOPSI classes, pool/datatypes-era support |
@@ -135,7 +135,7 @@ reassigns all 20 open rows and regenerates the issue. [AR-3]
 | Extended device request overrun | Low | High | Reject clipboard only; printer uses `union printerIO`; typed handles |
 | Hook callback lifetime | Medium | High | Capture-less scalar callback; no state beyond `h_Data`; audited exception |
 | Pool block/pool lifetime | Medium | High | Refcounted pool record; safe `u8[]` read/write; gate both free orders |
-| Printer gate cannot prove raw output | Medium | Medium | Gate open/close and `PRD_RAWWRITE` result; do not overclaim |
+| Printer gate cannot prove raw output | Medium | Medium | Gate open/close; `PRD_RAWWRITE` is impl-tested; do not overclaim |
 | BOOPSI object/window lifetime | Medium | Medium | Attach/detach + docs: object before window; gate follows |
 | ASL modal input is flaky headlessly | Medium | Medium | `asl-ready`/`asl-done` handshakes; xdotool focus/retry like A500 GUI |
 | Network host is not reachable | Low | High | `--network host` + host `127.0.0.1` echo; probe before gate |

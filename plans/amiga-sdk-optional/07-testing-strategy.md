@@ -30,7 +30,7 @@ directories. [AR-33, AR-34]
 | `SDK-WBK-004` | `locale` | `sdk-a600-addons` | `locale: ok name 1 cc 1 gmt 1 fmt 1` |
 | `SDK-WBK-005` | `arexx` | `sdk-a600-addons` | `rexx: ok action 1` |
 | `SDK-WBK-006` | `clipboard` | `sdk-a600-addons` | `clip: ok n 4` |
-| `SDK-WBK-007` | `devices` | `sdk-a600-addons` | `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1` |
+| `SDK-WBK-007` | `devices` | `sdk-a600-addons` | `ser: ok open 1`; `par: ok open 1`; `prt: ok open 1` |
 | `SDK-WBK-010` | `nonvolatile` | `sdk-a600-ks31-addons` | `nv: ok n 23 size 30` |
 | `SDK-OPT-002` | `bsdsocket` | `sdk-a1200-addons` | `net: ok send 5 recv 5` |
 | `SDK-OPT-003` | `amigaguide` | `sdk-a1200-addons` | `guide: ok msg 1 result 0` |
@@ -46,7 +46,7 @@ directories. [AR-33, AR-34]
 | ST-3 | Compile each surface for `hosted-amiga`, cross-build `nix20 -Werror` | Exit 0, zero diagnostics, binary | R1–R7; AR-10 |
 | ST-4 | Scan each module’s appendix section | Every export appears in its own section | R14; AR-34 |
 | ST-5 | Semaphore source | Routes to `cl_*_semaphore`; obtain/attempt/release/free | R2; AR-8 |
-| ST-6 | Hook source with `func(i32): i32` | Routes to `cl_*_hook`; no capturing lambda | R2; AR-11 |
+| ST-6 | Hook source with `func(): void` | Routes to `cl_*_hook`; `hookSetResult`; no capturing lambda | R2; AR-11 |
 | ST-7 | Tag/date source | `tagPresent`/`DateStamp` handle; no `u64` | R2; AR-12, AR-13 |
 | ST-8 | Pool source | `cl_pool_*`; `write`/`read`; refcounted pool | R2; AR-12, AR-39 |
 | ST-9 | gadtools source | `CreateContext`/`CreateGadgetA`/`RefreshGList`/`GT_*`; no readback | R3; AR-14 |
@@ -61,7 +61,7 @@ directories. [AR-33, AR-34]
 | ST-18 | Locale source | `cl_locale_*`; all four fields | R6; AR-23 |
 | ST-19 | ARexx source | `DeleteRexxMsg`; reply/reclaim | R6; AR-24 |
 | ST-20 | Clipboard source | `CMD_WRITE` with `io_ClipID=0`, `CMD_UPDATE`, current-read ID | R6; AR-25 |
-| ST-21 | Devices source | serial/parallel SETPARAMS; printer `union printerIO`/`PRD_RAWWRITE`; guard only clipboard | R6, R10; AR-26, AR-31 |
+| ST-21 | Devices source | serial/parallel SETPARAMS; printer `union printerIO`/`PRD_RAWWRITE`; guard rejects extended devices | R6, R10; AR-26, AR-31 |
 | ST-22 | Nonvolatile source | `StoreNV` tens length; `SizeNVData`; value/delete | R6; AR-27, AR-39 |
 | ST-23 | bsdsocket source | `127.0.0.1`, typed send/recv/close, `tcpEcho` | R7; AR-28 |
 | ST-24 | AmigaGuide source | keep `NewAmigaGuide`; message result; Workbench start | R7; AR-29 |
@@ -83,22 +83,22 @@ directories. [AR-33, AR-34]
 | IT-5 | Tag `TAG_DONE`, `tagPresent`, date handle, pool refcount and read/write bounds |
 | IT-6 | gadtools `CreateContext`/`CreateGadgetA`, label/TextAttr copies, list-before-window |
 | IT-7 | ASL drawer/file split, path join, cancel, `FreeAslRequest` |
-| IT-8 | BOOPSI `WHEEL_Screen`, geometry, attach/refresh, hue set/get, dispose |
-| IT-9 | ReadArgs template count/kinds, `DOS_RDARGS`, `FreeArgs`/array order |
+| IT-8 | BOOPSI `strgclass`, geometry, attach/refresh, `STRINGA_LongVal` set/get, dispose |
+| IT-9 | ReadArgs template count/kinds, `DOS_RDARGS`, `FreeArgs`+`FreeDosObject`, exact source size |
 | IT-10 | Datatypes `PDTA_BitMapHeader`/`PDTA_NumColors`, `dtDraw`, fixture path |
 | IT-11 | Region bounds/clip borrow, clear-before-free, no double free |
 | IT-12 | EClock `UNIT_ECLOCK`, hi/lo, frequency, close |
 | IT-13 | Lowlevel type mask, port range, library version |
 | IT-14 | Commodities `NB_VERSION`, port lifetime, duplicate |
 | IT-15 | Locale fields/copies, default name |
-| IT-16 | ARexx `DeleteRexxMsg`, created/received/reclaim, reply exactly once |
+| IT-16 | ARexx `IsRexxMsg`, argstring cleanup, extension/host copies, reply exactly once |
 | IT-17 | Clipboard current IDs, `CMD_UPDATE`, read bound, retry |
 | IT-18 | Serial/parallel SETPARAMS, printer union/PRD_RAWWRITE, close/reap |
 | IT-19 | Nonvolatile tens length, 23-byte round-trip, free/size |
-| IT-20 | Socket fd ownership, loop send/recv, close |
+| IT-20 | Socket fd ownership, caller-data send forwarding, loop recv, close |
 | IT-21 | AmigaGuide struct/copies lifetime, message reply, close |
-| IT-22 | Diskfont gate uses `DF1:C/Assign`, `diamond.font` 12, writable ADF |
-| IT-23 | Clipboard-only generic guard; shared shim has no 2.0 symbols; the existing 1.3 forbidden-call scan is scoped to the shared shim |
+| IT-22 | Diskfont gate uses the 1.3.5 HDF, `Assign FONTS: SYS:Fonts`, `diamond.font` 12 |
+| IT-23 | Generic guard rejects audio/timer/serial/parallel/clipboard; shared shim has no 2.0 symbols; the existing 1.3 forbidden-call scan is scoped to the shared shim |
 | IT-24 | Gate scripts pin media, ROM SHA-1, model/memory, handshakes, capture, cleanup |
 | IT-25 | Registry acceptance/evidence values and coverage count |
 

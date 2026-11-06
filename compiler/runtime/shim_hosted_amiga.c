@@ -1264,7 +1264,8 @@ typedef struct cl_window {
     cl_menu_node *menus;
     cl_window_event last_event;
     int console_refs;   /* open console.device handles on this window */
-    int close_pending;  /* the Window handle closed while a console was open */
+    int ui_refs;        /* gadtools/BOOPSI handles on this window */
+    int close_pending;  /* the Window handle closed while a child was open */
 } cl_window;
 
 static void cl_window_free_gadgets(cl_window *handle);
@@ -1398,8 +1399,8 @@ static void cl_window_destroy(cl_window *handle)
 }
 
 /* Close a window. Null-safe. A window still referenced by an open console
- * device defers the actual close until the last console reference is
- * released. */
+ * device or a gadtools/BOOPSI handle defers the actual close until the last
+ * child reference is released. */
 void cl_close_window(void *window_handle)
 {
     cl_window *handle = (cl_window *)window_handle;
@@ -1407,14 +1408,15 @@ void cl_close_window(void *window_handle)
     if (handle == NULL) {
         return;
     }
-    if (handle->console_refs > 0) {
+    if (handle->console_refs > 0 || handle->ui_refs > 0) {
         handle->close_pending = 1;
         return;
     }
     cl_window_destroy(handle);
 }
 
-/* Drop one console reference; the last reference performs a deferred close. */
+/* Drop one console reference; the last child reference performs a deferred
+ * close. */
 void cl_window_release(cl_window *handle)
 {
     if (handle == NULL) {
@@ -1423,7 +1425,31 @@ void cl_window_release(cl_window *handle)
     if (handle->console_refs > 0) {
         handle->console_refs--;
     }
-    if (handle->console_refs == 0 && handle->close_pending) {
+    if (handle->console_refs == 0 && handle->ui_refs == 0 &&
+        handle->close_pending) {
+        cl_window_destroy(handle);
+    }
+}
+
+/* Keep a gadtools list or BOOPSI object's window alive until the handle is
+ * dropped, so RemoveGList/SetGadgetAttrsA cannot touch freed memory. */
+void cl_window_retain_ui(cl_window *handle)
+{
+    if (handle != NULL) {
+        handle->ui_refs++;
+    }
+}
+
+void cl_window_release_ui(cl_window *handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+    if (handle->ui_refs > 0) {
+        handle->ui_refs--;
+    }
+    if (handle->ui_refs == 0 && handle->console_refs == 0 &&
+        handle->close_pending) {
         cl_window_destroy(handle);
     }
 }

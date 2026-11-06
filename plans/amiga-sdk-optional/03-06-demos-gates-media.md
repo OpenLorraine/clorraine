@@ -29,7 +29,7 @@ stays read-only under `/amiga`; the helper copies only named trees into `build/`
 
 | Gate | Base media | Installed |
 |---|---|---|
-| `sdk-a500-diskfont` | Workbench 1.3.4 | `DF1:C/Assign`; `LIBS:`/`FONTS:` from DF1; `diamond.font` size 12 |
+| `sdk-a500-diskfont` | Workbench 1.3.5 HDF | `Assign FONTS: SYS:Fonts`; `diamond.font` size 12 |
 | `sdk-a600-addons` | Workbench 2.04 + 2.1 | `asl`, `commodities`, `rexxsyslib`, `locale`; clipboard/serial/parallel/printer devices; `LOCALE:` |
 | `sdk-a600-ks31-addons` | Workbench 3.1 | `lowlevel`, `nonvolatile`; `ENV:`/`ENVARC:` |
 | `sdk-a1200-ks30-addons` | Workbench 3.0 | pool module; built-in `strgclass` BOOPSI gadget |
@@ -43,7 +43,7 @@ stays read-only under `/amiga`; the helper copies only named trees into `build/`
 | `examples/amiga/optional-pool.clo` | utility pool | `pool: ok 1` |
 | `examples/amiga/optional-args.clo` | ReadArgs, EClock, regions | `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20`; `eclock: ok 709379` |
 | `examples/amiga/optional-intuition.clo` | gadtools + ASL | `gt: ok gad 4`; `asl: ok path 1` |
-| `examples/amiga/optional-services.clo` | commodities, locale, ARexx, clipboard, devices | `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`; `rexx: ok action 1`; `clip: ok n 4`; `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1` |
+| `examples/amiga/optional-services.clo` | commodities, locale, ARexx, clipboard, devices | `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`; `rexx: ok action 1`; `clip: ok n 4`; `ser: ok open 1`; `par: ok open 1`; `prt: ok open 1` |
 | `examples/amiga/optional-boopsi.clo` | BOOPSI string gadget | `boopsi: ok val 42` |
 | `examples/amiga/optional-datatypes.clo` | datatypes ILBM | `dt: ok w 320 h 200 depth 4 colors 16` |
 | `examples/amiga/optional-lowlevel.clo` | ReadJoyPort | `ll: ok v 40` |
@@ -54,25 +54,26 @@ stays read-only under `/amiga`; the helper copies only named trees into `build/`
 
 The intuition demo writes `gt-ready.txt` after the capture, then `asl-ready.txt` before
 `AslRequest`, and `asl-done.txt` after it returns. The gate uses those names. The network demo
-loops send/recv until 5 bytes. [AR-15, AR-28]
+uses the one-shot `tcpEcho` helper for five bytes. [AR-15, AR-28]
 
 ## Gates
 
 ### `sdk-a500-diskfont`
 
-1. Build a boot ADF with `CNEXT:diskfont` and `DF1:C/Assign LIBS: DF1:Libs` /
-   `DF1:C/Assign FONTS: DF1:Fonts`; boot with `--writable-floppy-images=1`.
-2. Boot A500/KS1.3 with `amiga-os-134-workbench.adf` as DF1.
-3. Run `CNEXT:diskfont`; it opens `diamond.font` size 12 and writes `diskfont: ok h 12`.
-4. Stop FS-UAE, then `xdftool read` the report; assert the height.
+1. Copy the licensed Workbench 1.3.5 HDF to `build/` and make it writable.
+2. Write `CNEXT:diskfont` and an `S/startup-sequence` that assigns `FONTS: SYS:Fonts`.
+3. Boot A500/KS1.3; `CNEXT:diskfont` opens `diamond.font` size 12 and writes
+   `diskfont: ok h 12`.
+4. Stop FS-UAE, then read the report from the HDF; assert the height.
 
 ### `sdk-a600-addons`
 
 1. Stage Workbench 2.04/2.1; copy libs/devs; write assigns; boot A600/KS2.05.
 2. Run `optional-exec20`, `optional-args`, `optional-services`.
-3. Poll `exec.txt`, `args.txt`, `regions.txt`, `eclock.txt`, `services.txt`; assert full lines.
-4. Serial: FS-UAE `serial_port=tcp://127.0.0.1:PORT/wait`; host echo peer. Parallel: output sink;
-   assert the host received the bytes. Printer: open/close/`PRD_RAWWRITE` result.
+3. Poll `exec.txt`, `args.txt`, and the `svc-*.txt` reports; assert the full lines.
+4. Serial/parallel/printer: the runtime gate proves typed open/close. The data paths are
+   implementation-tested; printer `PRD_RAWWRITE` is not gate-proven because no driver sink is
+   configured.
 
 ### Intuition mode of `sdk-a600-addons`
 

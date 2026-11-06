@@ -38,12 +38,13 @@ evidence at the row’s baseline.
   `bsdsocket.library` with a host `127.0.0.1` echo server, and an AmigaGuide async context. [AR-6,
   AR-28, AR-29]
 - **R8 — Diskfont proof.** Exercise the existing `openDiskFont` on A500/KS1.3 with the Workbench
-  1.3.4 ADF and a disk-only font. [AR-30]
+  1.3.5 HDF and a disk-only font. [AR-30]
 - **R9 — Media installation.** Stage licensed ADFs read-only, copy named trees (never `S/`), normalize
   case, add `LIBS: CNEXT:Classes`, run `C:AddDataTypes`, and assign `DEVS:`, `FONTS:`, `LOCALE:`,
   `ENV:`, `ENVARC:`, `REXX:` as needed; never commit media. [AR-7, AR-36]
-- **R10 — Safety fix.** The generic `openDevice` must reject `clipboard.device` because
-  `IOClipReq` exceeds `IOStdReq`; printer uses a `union printerIO` typed handle. [AR-31]
+- **R10 — Safety fix.** The generic `openDevice` must reject audio, timer, serial,
+  parallel, and clipboard because each request exceeds `IOStdReq`; printer uses a
+  `union printerIO` typed handle. [AR-31]
 
 ### Should Have
 
@@ -53,7 +54,8 @@ evidence at the row’s baseline.
   the implementation; every runtime gate has a full-line or non-blank assertion; every gate clears
   its work directory first. [AR-33]
 - **R13 — Registry truth.** Reassign the 20 open rows to `9-optional`, keep IDs, correct
-  `SDK-EXE-007` to 3.0, `SDK-DOS-006` to 3.1, `SDK-AUD-006`/`SDK-WBK-010` to 3.1, change
+  `SDK-EXE-007` to 3.0, `SDK-DOS-006` to 3.1, `SDK-AUD-006`/`SDK-WBK-010` to 3.1,
+  `SDK-INT-008` to 2.0, `SDK-OPT-003` to 3.0, change
   `SDK-WBK-003` depends to `SDK-EXE-003`, and regenerate `coverage.md` and issue #10. [AR-3, AR-4,
   AR-38, AR-39]
 - **R14 — Documentation.** Additive appendix sections, known-limitations update, `AGENTS.md`,

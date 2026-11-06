@@ -158,11 +158,11 @@ before the window), while struct fields drop in declaration order (declare the
 window field before the screen field). Do not return a window from a function
 whose locals own the screen.
 
-The surface is the classic Kickstart 1.3 Intuition API. The same source
-compiles on `hosted-amiga-13` and `hosted-amiga`; the 2.0+ additions (gadtools,
-ASL requesters, and BOOPSI) are deferred and are not exposed. The host profile
-rejects the module with `E11200`. The KS1.3 A500 gate is the runtime proof; the
-`hosted-amiga` profile is compile-verified.
+The `std.amiga.intuition` surface is the classic Kickstart 1.3 Intuition API.
+The same source compiles on `hosted-amiga-13` and `hosted-amiga`. The 2.0+
+additions live in separate modules: gadtools (§14.12), ASL (§14.13), and
+BOOPSI (§14.14). The host profile rejects the module with `E11200`. The KS1.3
+A500 gate is the runtime proof; the `hosted-amiga` profile is compile-verified.
 
 ### 8.1 Screen and window lifecycle
 
@@ -724,9 +724,10 @@ The handle drop frees the semaphore; the caller must release it first.
 operate on it and `tagCount` excludes the terminator; `freeTagList` releases it.
 `currentDateStamp` takes one `DateStamp` snapshot; the `dateStamp*` accessors
 read it and `freeDateStamp` releases it. `newHook` stores a capture-less
-`func(u32): u32` callback plus a scalar payload; the callback must not allocate,
+`func(): void` callback plus an `i32` payload; the callback must not allocate,
 drop, or trap. `callHook` invokes it, `hookData` returns the payload, and
-`freeHook` releases it.
+`freeHook` releases it. The callback reads the payload with `hookCurrentData`
+and sets the value `callHook` returns with `hookSetResult`.
 
 | API | Returns | Rules |
 |---|---|---|
@@ -739,11 +740,11 @@ drop, or trap. `callHook` invokes it, `hookData` returns the payload, and
 | `dateStampDays(borrow)` | `i32` | day field |
 | `dateStampMinute(borrow)` | `i32` | minute field |
 | `dateStampTick(borrow)` | `i32` | tick field |
-| `newHook(entry: func(u32): u32, data)` | `Hook?` | capture-less |
-| `callHook(borrow)` | `u32` | callback result |
+| `newHook(entry: func(): void, data)` | `Hook?` | capture-less |
+| `callHook(borrow)` | `i32` | value set by `hookSetResult` |
 | `hookData(borrow)` | `i32` | stored payload |
-| `hookCurrentData()` | `i32` | payload of the hook being called |
-| `hookSetResult(value)` | — | sets the result `callHook` returns |
+| `hookCurrentData()` | `i32` | payload of the hook being called; 0 outside a callback |
+| `hookSetResult(value)` | — | sets the value `callHook` returns |
 
 ### 14.6 Utility memory pools (`std.amiga.pool`)
 
@@ -852,13 +853,14 @@ any available type. `readJoyPortDecoded` combines both calls.
 window. `addButton`, `addText`, `addString`, and `addInteger` append typed
 `NewGadget` specs with copied labels/initial text; ids are 1..65535 and unique
 within the window. `buildGadgets` runs `CreateContext` plus one `CreateGadgetA`
-per spec, `AddGList`, `RefreshGList`, and `GT_RefreshWindow`. `freeGadgetList`
-removes and frees the list before the window closes. `gadgetWaitEvent` and
+per spec, `AddGList`, `RefreshGList`, and `GT_RefreshWindow`. The list retains
+the window, so `freeGadgetList` may run before or after `closeWindow`.
+`gadgetWaitEvent` and
 `gadgetPollEvent` use `GT_GetIMsg`/`GT_ReplyIMsg` and the gadtools refresh path.
 
 | API | Returns | Rules |
 |---|---|---|
-| `newGadgetList(window, font, size)` | `GadgetList?` | window must outlive |
+| `newGadgetList(window, font, size)` | `GadgetList?` | retains the window |
 | `addButton/addText/addString/addInteger` | `bool` | id 1..65535; copied text |
 | `buildGadgets(borrow)` | `bool` | one batch; idempotent |
 | `freeGadgetList(take)` | — | `RemoveGList`/`FreeGadgets`/`FreeVisualInfo` |
@@ -887,7 +889,8 @@ geometry and an initial `STRINGA_LongVal`. `attachObject` uses
 `AddGList`/`RefreshGList`; `detachObject` removes and refreshes;
 `setStringValue`/`stringValue` use `SetGadgetAttrsA`/`GetAttr` on
 `STRINGA_LongVal`. `disposeObject` detaches if needed and calls
-`DisposeObject`. The object must be disposed before the window closes.
+`DisposeObject`. The shim retains the window while the object exists, so
+closing the window first defers its teardown until the object is disposed.
 
 | API | Returns | Rules |
 |---|---|---|
@@ -927,21 +930,25 @@ return the country code and GMT offset. `closeLocale` releases it.
 
 ### 14.17 ARexx messages (`std.amiga.arexx`)
 
-`createRexxMessage` owns a `CreateRexxMsg` packet and fills its argument
-slots. `setRexxAction`/`setRexxArg` set the action and copied arguments.
-`sendRexxMessage` puts the packet and releases the wrapper; the receiver uses
-`receiveRexxMessage` and `replyRexxMessage`. The sender reclaims the reply with
-`reclaimRexxMessage`, which calls `DeleteRexxMsg`. `deleteRexxMessage` deletes a
-created packet or replies a received one.
+`createRexxMessage` owns a `CreateRexxMsg` packet and copies the extension and
+host strings for the packet lifetime. `setRexxAction`/`setRexxArg` set the
+action and copied arguments. `sendRexxMessage` puts the packet and releases the
+wrapper; the receiver uses `receiveRexxMessage` (which requires a full `RexxMsg` packet and
+either `IsRexxMsg` or a shim lifetime record) and `replyRexxMessage`. The reply
+port must stay open until the sender receives and reclaims the reply.
+`reclaimRexxMessage` releases the argument strings, a requested result string,
+the extension/host copies, and the packet when the reply belongs to this shim;
+a foreign message is replied instead. `deleteRexxMessage` applies the same
+ownership rule to a created packet or a received reply.
 
 | API | Returns | Rules |
 |---|---|---|
-| `createRexxMessage(reply, ext, host)` | `RexxMessage?` | `CreateRexxMsg`/`FillRexxMsg` |
+| `createRexxMessage(reply, ext, host)` | `RexxMessage?` | `CreateRexxMsg`; copies ext/host; reply port stays open |
 | `setRexxAction` / `setRexxArg` | `bool` | arg 0..15; copied |
 | `sendRexxMessage(port, take)` | — | `PutMsg`; consumes wrapper |
-| `receiveRexxMessage(port)` | `RexxMessage?` | `GetMsg`/`IsRexxMsg` |
+| `receiveRexxMessage(port)` | `RexxMessage?` | `GetMsg`; full packet length, then `IsRexxMsg` or shim record |
 | `replyRexxMessage(take)` | — | `ReplyMsg` |
-| `reclaimRexxMessage(take)` | — | `DeleteRexxMsg` |
+| `reclaimRexxMessage(take)` | — | shim-created: release args/result/copies then `DeleteRexxMsg`; otherwise reply |
 | `rexxMessageAction` | `i32` | `rm_Action` |
 | `rexxMessageResult1` | `i32` | `rm_Result1` |
 | `rexxMessageResult2` | `i32` | `rm_Result2` |
@@ -968,9 +975,10 @@ buffer. Both retry `CBERR_OBSOLETEID` a bounded number of times.
 `openSerial` owns `IOExtSer`, sets `io_Baud`, opens, and sends
 `SDCMD_SETPARAMS`; `serialWrite`/`serialRead` use `CMD_WRITE`/`CMD_READ`.
 `openParallel` owns `IOExtPar`, sets `io_ParFlags`, and sends
-`PDCMD_SETPARAMS`; `parallelWrite` writes to the host sink. `openPrinter`
-owns an `IOStdReq`; `printerWrite` uses `PRD_RAWWRITE`. Each close aborts and
-frees its request and port.
+`PDCMD_SETPARAMS`; `parallelWrite` uses `CMD_WRITE`. `openPrinter` owns an
+`IOStdReq`; `printerWrite` uses `PRD_RAWWRITE`. Each close aborts and frees its
+request and port. The runtime gate proves open/close; the data paths are
+implementation-tested.
 
 | API | Returns | Rules |
 |---|---|---|
@@ -1007,7 +1015,9 @@ application.
 `connectSocket` accepts a dotted address and port, builds `sockaddr_in`, and
 calls `connect`. `sendSocket`/`recvSocket` return the OS byte count; short
 counts are normal. `closeSocket` releases the descriptor. Real hardware needs
-a third-party stack; the gate uses FS-UAE’s emulated library.
+a third-party stack; the gate uses FS-UAE’s emulated library. The socket shim
+is GCC-only because vbcc cannot parse the NDK bsdsocket headers; AmigaGuide
+remains toolchain-neutral.
 
 | API | Returns | Rules |
 |---|---|---|
@@ -1212,9 +1222,9 @@ never closed. The ROM `topaz.font` opens with `openFont` and measures
 The text bytes are the Amiga 8-bit glyph codes; there is no Unicode translation
 in v1. `drawText`, `windowText`, and `layerText` restore the RastPort's previous
 font after the draw, so the font handle may be freed before the screen, window,
-or layer is released. The acceptance ADF has no `LIBS:diskfont.library` or
-`FONTS:` volume; the demo's `openDiskFont` call returns `null` and the
-disk-font row is deferred.
+or layer is released. The A500/KS1.3 gate boots the licensed Workbench 1.3.5
+HDF, assigns `FONTS: SYS:Fonts`, opens `diamond.font` size 12, and asserts
+`diskfont: ok h 12`.
 
 ## 22. Layers (`std.amiga.layers`)
 
@@ -1265,8 +1275,8 @@ path/volume information use `dos.library`.
 | `currentDirName(borrow buf)` / `parentDirName(borrow buf)` | `i32` | bounded copies through `Lock("")` and `ParentDir` |
 
 Assigns are resolved by DOS inside `Lock`/`Open`; enumerating the assign list
-needs `LockDosList` (2.0+) and is outside the 1.3 row. `ReadArgs` and
-`datatypes.library` are likewise 2.0+/3.0+ and are deferred.
+needs `LockDosList` (2.0+) and is outside the 1.3 row. `ReadArgs` is covered in
+§14.7 and `datatypes.library` in §14.8.
 
 ## 24. IFF/ILBM (`std.iff`)
 

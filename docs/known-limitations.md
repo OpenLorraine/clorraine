@@ -49,37 +49,72 @@ The Bundle 9 services are runtime-proven at these baselines:
 | Locale | A600/KS2.05 | Default locale language, country, GMT, format |
 | ARexx | A600/KS2.05 | Typed message create/send/receive/reply/reclaim |
 | Clipboard | A600/KS2.05 | Whole-clip write and `CMD_UPDATE` |
-| Serial/parallel/printer | A600/KS2.05 | Typed open and close; printer raw-write result |
+| Serial/parallel/printer | A600/KS2.05 | Typed open and close; data paths are impl-tested |
 | Nonvolatile | A600/KS3.1 | 23-byte store/get/delete round-trip |
 
 ## 5. Optional-service limits
 
 These are deliberate boundaries, not hidden gaps:
 
-- **BOOPSI** uses the native Intuition `strgclass`. The licensed 3.0/3.1
+- **BOOPSI** uses the native Intuition `strgclass` (2.0+). The licensed 3.0/3.1
   `colorwheel.gadget` loads but its color attributes did not round-trip in
-  probes, so the module does not claim them.
+  probes, so the module does not claim them. The runtime gate runs on A1200/KS3.0.
 - **Clipboard read** is implemented and pinned, but the gate proves only the
   write/update path; the 2.05 clipboard device returned no data on read in the
   probe environment.
 - **Serial and parallel I/O** are typed and bounded, but the runtime gate proves
-  open/close only. **Printer** proves open/close and the raw-write result; it
-  does not claim printer output because no driver/prefs sink is configured.
+  open/close only; their data paths are implementation-tested. **Printer**
+  proves open/close only and does not claim output or a `PRD_RAWWRITE` result
+  because no driver/prefs sink is configured.
 - **Datatypes** proves the V40 object opens and parses the 320x200x4 ILBM
   (width, height, depth, colors). Its `DTM_DRAW` did not render visibly on the
-  custom screen, so no visual capture is claimed.
+  custom screen, so no visual capture is claimed. The licensed 3.1
+  `ilbm.datatype` leaves `PDTA_NumColors` at zero, so the shim falls back to
+  `1 << depth`; the gate cannot distinguish a 16-color palette from the
+  depth-derived fallback. `GetDTAttrsA` writes through a `ULONG` slot even
+  though the attribute is documented as a `UWORD` value; a `UWORD` destination
+  corrupts the adjacent stack on this class.
 - **Network** proves a TCP echo through `tcpEcho`. The typed split
-  `openSocket`/`connectSocket`/`sendSocket` path is compile- and impl-tested but
-  the FS-UAE emulated library's split descriptor path did not reach the host
-  peer in probes. Real hardware needs a third-party TCP/IP stack.
+  `openSocket`/`connectSocket`/`sendSocket` path is compile- and impl-tested and
+  forwards caller data, but the FS-UAE emulated library's split descriptor path
+  did not reach the host peer in probes. Real hardware needs a third-party
+  TCP/IP stack. `std.amiga.bsdsocket` is GCC-only: vbcc cannot parse the NDK
+  socket headers, so the socket half of the shim is omitted from vbcc builds.
+- **AmigaGuide** is a 3.0+ disk library; the runtime gate runs on A1200/KS3.1.
+  It compiles under both m68k GCC and vbcc.
 - **Nonvolatile** uses an `nv_location` file pointing at `CNEXT:nonvolatile`.
   `StoreNV` length is in ten-byte units, so a 23-byte payload reads back as a
   padded 30-byte record.
+- **ARexx** copies the extension and host strings for the packet lifetime and
+  deletes each owned argument string directly; it does not call
+  `ClearRexxMsg`, which crashed after the reply on the licensed 2.05 library.
+  The reply port must stay open until the reply is reclaimed.
 - **m68k shim memory safety** cannot use host AddressSanitizer. The optional
   shim is reviewed statically, with host record models and m68k runtime gates;
   `make asan` does not instrument the new m68k-only code.
 
-## 6. CI is host-only
+## 6. Reserved runtime and generated C symbol collisions
+
+The compiler mangles a user definition to `cl_<module>_<name>`. The runtime
+shim and some generated helpers use the same `cl_` namespace, so a legal source
+name can emit two conflicting C definitions. The front end accepts the source;
+the strict m68k C build then fails. This is a known limitation accepted for the
+Bundle 9 closeout and tracked by [issue #12](https://github.com/OpenLorraine/clorraine/issues/12).
+
+| Source shape | Colliding C symbol | Origin |
+|---|---|---|
+| `module socket; func open` | `cl_socket_open` | `std.amiga.bsdsocket` FFI |
+| `module zero; func ClSlice_u8` | `cl_zero_ClSlice_u8` | generated empty-slice helper |
+| `module init; func foo` | `cl_init_foo` | generated module initializer |
+| user `ffi` declaration of a runtime name | the literal C name | runtime shim |
+
+No source-name rule is added in v1.1: the existing `E20006` diagnostic is frozen
+for the fixed reserved-builtin list, so rejecting these names would be an
+unauthorized language change. A follow-up release can reserve the runtime
+namespace, move runtime symbols to a disjoint prefix, or rename user symbols on
+collision.
+
+## 7. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip

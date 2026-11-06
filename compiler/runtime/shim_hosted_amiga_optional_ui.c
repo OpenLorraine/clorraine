@@ -62,6 +62,7 @@ typedef struct cl_gt_item {
 
 typedef struct cl_gt_list {
     struct Window *window;
+    cl_window *owner;
     struct VisualInfo *visual;
     struct Gadget *glist;
     cl_gt_item *items;
@@ -87,10 +88,13 @@ void *cl_gt_new(void *window_handle, char *font_name, UWORD font_size)
     if (list == NULL) {
         return NULL;
     }
+    list->owner = window;
+    cl_window_retain_ui(window);
     list->window = window->window;
     list->visual = (struct VisualInfo *)GetVisualInfoA(
         window->window->WScreen, NULL);
     if (list->visual == NULL) {
+        cl_window_release_ui(list->owner);
         FreeMem(list, (ULONG)sizeof *list);
         return NULL;
     }
@@ -108,6 +112,7 @@ void *cl_gt_new(void *window_handle, char *font_name, UWORD font_size)
                     (ULONG)strlen(list->font_name) + 1UL);
         }
         FreeVisualInfo(list->visual);
+        cl_window_release_ui(list->owner);
         FreeMem(list, (ULONG)sizeof *list);
         return NULL;
     }
@@ -178,9 +183,14 @@ BOOL cl_gt_add_text(void *handle, LONG id, char *text, LONG x, LONG y,
 BOOL cl_gt_add_string(void *handle, LONG id, char *initial, LONG max_chars,
                       LONG x, LONG y, LONG width, LONG height)
 {
-    cl_gt_item *item = cl_gt_add((cl_gt_list *)handle, STRING_KIND, id,
-                                 initial, x, y, width, height);
-    if (item == NULL || max_chars < 1 || max_chars > 255) {
+    cl_gt_item *item;
+
+    if (max_chars < 1 || max_chars > 255) {
+        return FALSE;
+    }
+    item = cl_gt_add((cl_gt_list *)handle, STRING_KIND, id,
+                     initial, x, y, width, height);
+    if (item == NULL) {
         return FALSE;
     }
     item->tags[0].ti_Tag = GTST_String;
@@ -195,9 +205,14 @@ BOOL cl_gt_add_string(void *handle, LONG id, char *initial, LONG max_chars,
 BOOL cl_gt_add_integer(void *handle, LONG id, LONG value, LONG max_chars,
                        LONG x, LONG y, LONG width, LONG height)
 {
-    cl_gt_item *item = cl_gt_add((cl_gt_list *)handle, INTEGER_KIND, id,
-                                 NULL, x, y, width, height);
-    if (item == NULL || max_chars < 1 || max_chars > 9) {
+    cl_gt_item *item;
+
+    if (max_chars < 1 || max_chars > 9) {
+        return FALSE;
+    }
+    item = cl_gt_add((cl_gt_list *)handle, INTEGER_KIND, id,
+                     NULL, x, y, width, height);
+    if (item == NULL) {
         return FALSE;
     }
     item->tags[0].ti_Tag = GTIN_Number;
@@ -270,6 +285,7 @@ void cl_gt_free(void *handle)
     if (list->font_name != NULL) {
         FreeMem(list->font_name, (ULONG)strlen(list->font_name) + 1UL);
     }
+    cl_window_release_ui(list->owner);
     FreeMem(list, (ULONG)sizeof *list);
 }
 
@@ -313,8 +329,20 @@ typedef struct cl_asl {
     struct FileRequester *request;
     char *title;
     char *initial;
+    ULONG title_size;
+    ULONG initial_size;
     int last_ok;
 } cl_asl;
+
+/* Releases a copied requester string with the size it was allocated with.
+ * `cl_asl_split` may insert a NUL into `initial`, so `strlen` cannot be used
+ * to recover the allocation size after the split. */
+static void cl_asl_free_text(char *text, ULONG size)
+{
+    if (text != NULL) {
+        FreeMem(text, size);
+    }
+}
 
 static void cl_asl_split(char *initial, char **drawer, char **file)
 {
@@ -362,14 +390,12 @@ void *cl_asl_new(char *title, char *initial, BOOL save)
     }
     handle->title = cl_ui_strdup(title);
     handle->initial = cl_ui_strdup(initial);
+    handle->title_size = title == NULL ? 0 : (ULONG)strlen(title) + 1UL;
+    handle->initial_size = initial == NULL ? 0 : (ULONG)strlen(initial) + 1UL;
     if ((title != NULL && handle->title == NULL) ||
         (initial != NULL && handle->initial == NULL)) {
-        if (handle->title != NULL) {
-            FreeMem(handle->title, (ULONG)strlen(handle->title) + 1UL);
-        }
-        if (handle->initial != NULL) {
-            FreeMem(handle->initial, (ULONG)strlen(handle->initial) + 1UL);
-        }
+        cl_asl_free_text(handle->title, handle->title_size);
+        cl_asl_free_text(handle->initial, handle->initial_size);
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
@@ -397,8 +423,8 @@ void *cl_asl_new(char *title, char *initial, BOOL save)
     handle->request = (struct FileRequester *)AllocAslRequest(
         ASL_FileRequest, tags);
     if (handle->request == NULL) {
-        FreeMem(handle->title, (ULONG)strlen(handle->title) + 1UL);
-        FreeMem(handle->initial, (ULONG)strlen(handle->initial) + 1UL);
+        cl_asl_free_text(handle->title, handle->title_size);
+        cl_asl_free_text(handle->initial, handle->initial_size);
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
@@ -469,12 +495,8 @@ void cl_asl_free(void *handle_void)
     if (handle->request != NULL) {
         FreeAslRequest(handle->request);
     }
-    if (handle->title != NULL) {
-        FreeMem(handle->title, (ULONG)strlen(handle->title) + 1UL);
-    }
-    if (handle->initial != NULL) {
-        FreeMem(handle->initial, (ULONG)strlen(handle->initial) + 1UL);
-    }
+    cl_asl_free_text(handle->title, handle->title_size);
+    cl_asl_free_text(handle->initial, handle->initial_size);
     FreeMem(handle, (ULONG)sizeof *handle);
 }
 
@@ -485,6 +507,7 @@ void cl_asl_free(void *handle_void)
 typedef struct cl_boopsi {
     Object *object;
     struct Window *window;
+    cl_window *owner;
     int attached;
 } cl_boopsi;
 
@@ -516,8 +539,11 @@ void *cl_boopsi_new_string(void *window_handle, LONG id, LONG x, LONG y,
     if (handle == NULL) {
         return NULL;
     }
+    handle->owner = window;
+    cl_window_retain_ui(window);
     handle->object = (Object *)NewObjectA(NULL, (STRPTR)"strgclass", tags);
     if (handle->object == NULL) {
+        cl_window_release_ui(handle->owner);
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
@@ -537,6 +563,11 @@ BOOL cl_boopsi_attach(void *handle_void, void *window_handle)
                  NULL) == 0) {
         return FALSE;
     }
+    if (handle->owner != window) {
+        cl_window_retain_ui(window);
+        cl_window_release_ui(handle->owner);
+        handle->owner = window;
+    }
     RefreshGList((struct Gadget *)handle->object, window->window, NULL, 1);
     handle->window = window->window;
     handle->attached = 1;
@@ -547,11 +578,13 @@ void cl_boopsi_detach(void *handle_void)
 {
     cl_boopsi *handle = (cl_boopsi *)handle_void;
 
-    if (handle == NULL || !handle->attached || handle->window == NULL) {
+    if (handle == NULL || !handle->attached || handle->owner == NULL ||
+        handle->owner->window == NULL) {
         return;
     }
-    RemoveGList(handle->window, (struct Gadget *)handle->object, 1);
-    RefreshGList(handle->window->FirstGadget, handle->window, NULL, -1);
+    RemoveGList(handle->owner->window, (struct Gadget *)handle->object, 1);
+    RefreshGList(handle->owner->window->FirstGadget,
+                 handle->owner->window, NULL, -1);
     handle->attached = 0;
     handle->window = NULL;
 }
@@ -562,15 +595,15 @@ BOOL cl_boopsi_set_value(void *handle_void, LONG value)
     struct TagItem tags[2];
 
     if (handle == NULL || handle->object == NULL || !handle->attached ||
-        handle->window == NULL) {
+        handle->owner == NULL || handle->owner->window == NULL) {
         return FALSE;
     }
     tags[0].ti_Tag = STRINGA_LongVal;
     tags[0].ti_Data = (ULONG)value;
     tags[1].ti_Tag = TAG_DONE;
     tags[1].ti_Data = 0;
-    (void)SetGadgetAttrsA((struct Gadget *)handle->object, handle->window,
-                          NULL, tags);
+    (void)SetGadgetAttrsA((struct Gadget *)handle->object,
+                          handle->owner->window, NULL, tags);
     return TRUE;
 }
 
@@ -597,5 +630,6 @@ void cl_boopsi_dispose(void *handle_void)
     if (handle->object != NULL) {
         DisposeObject(handle->object);
     }
+    cl_window_release_ui(handle->owner);
     FreeMem(handle, (ULONG)sizeof *handle);
 }

@@ -52,9 +52,11 @@ func main(): i32 {
     delayTicks(u32(10));
     let shotPath: String = stringOf("CNEXT:a1200-ks30-boopsi.cscr");
     let saved: bool = saveScreen(screen, toCString(shotPath));
+    /* Close first: the object retains the window, so detach/dispose after the
+     * Window handle drops still owns a live native window. */
+    closeWindow(window);
     detachObject(object);
     disposeObject(object);
-    closeWindow(window);
     if (!saved || value != 42) {
         println("boopsi: err 6");
         return 1;

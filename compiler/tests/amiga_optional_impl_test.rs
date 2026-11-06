@@ -303,9 +303,15 @@ fn the_dos_graphics_input_shim_pins_the_native_calls() {
     for needle in [
         "ReadArgs((STRPTR)template, args->slots, NULL)",
         "FreeArgs(args->rdargs)",
+        "FreeDosObject(DOS_RDARGS, args->rdargs)",
+        "args->owns_rdargs = 1",
+        "FreeMem(args->source, args->source_size)",
         "args->kinds[index] != 1",
         "PDTA_BitMapHeader",
-        "PDTA_NumColors",
+        "ULONG colors = 0;",
+        "a[1].ti_Tag = PDTA_NumColors; a[1].ti_Data = (ULONG)&colors;",
+        "handle->colors = (LONG)colors;",
+        "DisposeDTObject(handle->template_object);",
         "DoDTMethodA(object->object, window->window, NULL, (Msg)&draw)",
         "AndRectRegion(region->region, &rect)",
         "InstallClipRegion(layer->layer, region->region)",
@@ -392,6 +398,12 @@ fn the_intuition_advanced_shim_pins_the_native_calls() {
         "GT_ReplyIMsg(",
         "AllocAslRequest(",
         "AslRequest(handle->request, tags)",
+        "handle->initial_size",
+        "cl_asl_free_text(handle->initial, handle->initial_size)",
+        "cl_window_retain_ui(window)",
+        "cl_window_release_ui(list->owner)",
+        "if (max_chars < 1 || max_chars > 255) {\n        return FALSE;\n    }\n    item = cl_gt_add((cl_gt_list *)handle, STRING_KIND",
+        "if (max_chars < 1 || max_chars > 9) {\n        return FALSE;\n    }\n    item = cl_gt_add((cl_gt_list *)handle, INTEGER_KIND",
         "NewObjectA(NULL,",
         "\"strgclass\"",
         "STRINGA_LongVal",
@@ -413,6 +425,9 @@ fn the_shared_gadget_lookup_uses_the_public_list() {
         "handle->window->FirstGadget",
         "gadget->GadgetID",
         "ActivateGadget(gadget, handle->window, NULL)",
+        "handle->ui_refs",
+        "cl_window_retain_ui",
+        "cl_window_release_ui",
     ] {
         assert_contains("shared-gadget", &shim, needle);
     }
@@ -565,9 +580,18 @@ fn the_workbench_services_shim_pins_the_native_calls() {
         "OpenLocale(",
         "CloseLocale(locale->locale)",
         "CreateRexxMsg((struct MsgPort *)reply_port,",
-        "FillRexxMsg(handle->message, 16, 0)",
+        "IsRexxMsg(message)",
+        "message->rm_Node.mn_Length < sizeof(struct RexxMsg)",
+        "cl_rexx_has_lifetime",
+        "cl_rexx_release_packet",
+        "RXFF_RESULT",
+        "message->rm_Result1 == 0 &&\n        (message->rm_Action & RXFF_RESULT) != 0 &&\n        message->rm_Result2 != 0",
         "CreateArgstring((STRPTR)value,",
-        "DeleteRexxMsg(handle->message)",
+        "DeleteArgstring((UBYTE *)message->rm_Args[index])",
+        "LengthArgstring((STRPTR)text)",
+        "cl_rexx_lifetimes",
+        "cl_rexx_return(message)",
+        "DeleteRexxMsg(message)",
         "clipboard->request->io_ClipID = 0;",
         "CMD_UPDATE",
         "CBERR_OBSOLETEID",
@@ -638,6 +662,7 @@ fn the_network_guide_shim_pins_the_native_calls() {
     for needle in [
         "socket(AF_INET, kind, protocol)",
         "cl_socket_connect_raw",
+        "cl_socket_send_raw(descriptor, data, (LONG)length)",
         "send(descriptor, data, (LONG)length, 0)",
         "recv(descriptor, out, (LONG)outlen, 0)",
         "CloseSocket(descriptor)",
@@ -653,4 +678,8 @@ fn the_network_guide_shim_pins_the_native_calls() {
     ] {
         assert_contains("network-shim", &shim, needle);
     }
+    assert!(
+        !shim.contains("(APTR)\"ping\\n\""),
+        "cl_socket_send must forward the caller's data, not a fixed payload"
+    );
 }

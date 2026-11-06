@@ -280,6 +280,15 @@ fn the_optional_exec_exports_match_the_stdlib_appendix() {
             );
         }
     }
+    let hooks = appendix_section("### 14.5");
+    assert!(
+        hooks.contains("newHook(entry: func(): void"),
+        "the hook appendix must document the implemented callback shape"
+    );
+    assert!(
+        !hooks.contains("func(u32): u32"),
+        "the hook appendix must not document an unimplemented callback"
+    );
 }
 
 fn repo_text(path: &str) -> String {

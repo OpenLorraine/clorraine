@@ -3,8 +3,9 @@
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. A `BoopsiObject` owns one
 //! native Intuition `strgclass` object: create it, attach it to a window, set
-//! and read its integer value, then detach and dispose it before the window
-//! closes. The class is built into Intuition, so no disk class file is loaded.
+//! and read its integer value, then detach and dispose it. The object retains
+//! the window, so either drop order is safe. The class is built into Intuition,
+//! so no disk class file is loaded.
 
 module std.amiga.boopsi;
 

@@ -1,9 +1,9 @@
 # Amiga SDK Bundle 9: Optional Add-ons and Advanced Closeout
 
 > **Feature**: Close the remaining 20 Amiga SDK capabilities: advanced Exec/utility, Intuition, DOS, graphics, input, Workbench services, networking, and AmigaGuide, using the licensed Amiga Forever Workbench media.
-> **Status**: Plan Preflighted
+> **Status**: Done — 30/30; 20/21 capabilities; RTG #11 and symbol-collision #12 tracked
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 02:09
+> **Last Updated**: 2026-11-06 07:30
 > **Implements**: —
 > **CodeOps Artifact Schema**: 1
 
@@ -12,13 +12,13 @@
 Bundle 9 is the closeout bundle for the Amiga SDK programme. It implements the 12 capabilities
 whose registry notes already point at Bundle 9, the two `9-optional` rows, and the six Workbench
 services deferred from Bundle 8. The licensed Amiga Forever disc supplied the missing Workbench
-1.3.4, 2.04, 2.1, 3.0, and 3.1 media; the media is mounted read-only at `/amiga` and is never
+1.3.5, 2.04, 2.1, 3.0, and 3.1 media; the media is mounted read-only at `/amiga` and is never
 committed.
 
 The bundle follows the established stdlib pattern: one module per library/domain, opaque handles
 with exactly-once `freedBy` cleanup, typed wrappers over a new optional C shim suffix, and headless
 FS-UAE gates. Network uses FS-UAE’s built-in `bsdsocket.library`; real hardware still needs a
-third-party stack. RTG remains out of scope and is tracked by issue #11.
+third-party stack. RTG remains out of scope and is tracked by issue #11. Runtime/generated C symbol collisions are a documented limitation (issue #12), not a source-name rule.
 
 ## Minimum-Sufficient Baseline
 
@@ -75,9 +75,11 @@ func guarded(): i32 {
 
 ```clorraine
 import { Args, readArgsFrom, argNumber, argText, freeArgs } from std.amiga.args;
+import { String, stringOf, bytes } from std.text;
 
 func parsed(): i32 {
-    let args: Args? = readArgsFrom("FILE/A,NUM/N,VERBOSE/S", 3, "FILE=x NUM=7 VERBOSE");
+    let args: Args? = readArgsFrom("FILE/A,NUM/N,VERBOSE/S", 3,
+        bytes(stringOf("FILE=x NUM=7 VERBOSE")));
     if (args == null) { return 1; }
     let a: Args = args;
     let n: i32 = argNumber(a, 1);
@@ -98,7 +100,7 @@ func parsed(): i32 {
 | Module split | 19 modules, one per library/domain | AR-8 |
 | Shim | New optional suffix after the 2.0 suffix | AR-9 |
 | Profiles | New modules on `hosted-amiga` only; no chapter-15 edit | AR-10, AR-34 |
-| Hooks | Capture-less `func(i32): i32`, scalar `h_Data` | AR-11 |
+| Hooks | Capture-less `func(): void`, `i32` payload, `hookSetResult` | AR-11 |
 | Pools | Distinct `std.amiga.pool`, refcounted, safe `u8[]` access | AR-12 |
 | Gate matrix | A500 1.3, A600 2.05, A600 3.1, A1200 3.0, A1200 3.1 | AR-33 |
 | Coverage | 20 in-scope done / 21 total including RTG out-of-scope | AR-39 |

@@ -4,8 +4,9 @@
 //! freestanding profiles reject it with `E11200`. Each handle owns its typed
 //! request structure and private reply port. Serial applies `SDCMD_SETPARAMS`
 //! after opening; parallel applies `PDCMD_SETPARAMS`; printer exposes
-//! `PRD_RAWWRITE`. The generic `openDevice` rejects only clipboard because its
-//! request is larger than `IOStdReq`.
+//! `PRD_RAWWRITE`. The generic `openDevice` rejects audio, timer, serial,
+//! parallel, and clipboard: each needs a request larger than `IOStdReq`, so
+//! use the typed module that owns the correct request instead.
 
 module std.amiga.devices;
 

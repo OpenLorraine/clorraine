@@ -1,15 +1,19 @@
-#ifndef __VBCC__
 /* Bundle 9 optional network/hypertext suffix: bsdsocket and AmigaGuide. */
 
+#include <libraries/amigaguide.h>
+#include <clib/amigaguide_protos.h>
+
+struct Library *AmigaGuideBase;
+
+#ifndef __VBCC__
+/* vbcc cannot parse the NDK bsdsocket headers, so the socket half is built
+ * only with the m68k GCC toolchain. AmigaGuide stays toolchain-neutral. */
 #include <libraries/bsdsocket.h>
 #include <inline/bsdsocket.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <libraries/amigaguide.h>
-#include <clib/amigaguide_protos.h>
 
 struct Library *SocketBase;
-struct Library *AmigaGuideBase;
 
 
 /* ------------------------------------------------------------------------- */
@@ -105,9 +109,7 @@ LONG cl_socket_send(void *handle_void, APTR data, ULONG length)
     }
     {
         LONG descriptor = handle->descriptor;
-        (void)data;
-        (void)length;
-        return cl_socket_send_raw(descriptor, (APTR)"ping\n", 5);
+        return cl_socket_send_raw(descriptor, data, (LONG)length);
     }
 }
 
@@ -136,6 +138,8 @@ void cl_socket_close(void *handle_void)
     }
     FreeMem(handle, (ULONG)sizeof *handle);
 }
+
+#endif /* !__VBCC__ */
 
 /* ------------------------------------------------------------------------- */
 /* AmigaGuide.                                                               */
@@ -308,6 +312,7 @@ BOOL cl_guide_send(void *handle_void, char *command)
         ? TRUE : FALSE;
 }
 
+#ifndef __VBCC__
 /* One-shot TCP echo used by the acceptance gate. Keeping the socket,
  * connect, send, and receive in one function matches the proven C probe;
  * the typed split API remains available for applications. */

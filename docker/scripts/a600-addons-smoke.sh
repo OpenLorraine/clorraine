@@ -2,8 +2,9 @@
 # A600/Kickstart 2.05 Workbench services and intuition smoke.
 #
 # Boots a clean directory HD with the licensed Workbench 2.04/2.1 libraries,
-# runs the Exec/args/services demos with serial/parallel host peers, then runs
-# the gadtools/ASL demo under a private Xvfb. No host window is shown.
+# runs the Exec/args/services demos with typed serial/parallel/printer
+# open/close, then runs the gadtools/ASL demo under a private Xvfb. No host
+# window is shown.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
