@@ -1,8 +1,9 @@
 //! Picasso96 RTG acceptance: screen, bitmap, pixels, blit, and PPM capture.
 //!
-//! The gate redirects standard output to `CNEXT:rtg.txt` and reads
-//! `CNEXT:rtg.ppm`. The screen is 640x480x32; the capture is the 64x64 region
-//! at (200,200), which contains the red/green/blue probe pixels and the bitmap
+//! The gates redirect standard output to `CNEXT:rtg.txt` and read
+//! `CNEXT:rtg.ppm`. The screen is 640x480 at depth 32 when the card supports
+//! true alpha, otherwise 640x480x24; the capture is the 64x64 region at
+//! (200,200), which contains the red/green/blue probe pixels and the bitmap
 //! blitted at (210,210). A top-left write and fill at (20,20)-(30,30) prove
 //! the clip-free path; the larger blue fill at (300,300) stays outside the
 //! capture.
@@ -45,25 +46,33 @@ func channel(data: u8[], pixel: i32, offset: i32): i32 {
 
 func main(): i32 {
     let boardCount: i32 = rtgBoards();
-    let mode: u32 = rtgMode(640, 480, 32);
+    // Prefer 32-bit true alpha; real cards such as the Picasso IV expose
+    // 24-bit truecolor only.
+    let depth: i32 = 32;
+    let mode: u32 = rtgMode(640, 480, depth);
+    if (mode == 0) {
+        depth = 24;
+        mode = rtgMode(640, 480, depth);
+    }
     if (boardCount != 1 || mode == 0) {
         println("rtg: err 1");
         return 1;
     }
     if (rtgModeWidth(mode) != 640 || rtgModeHeight(mode) != 480 ||
-        rtgModeDepth(mode) != 32 || rtgModeFormat(mode) == 0) {
+        rtgModeDepth(mode) != depth || rtgModeFormat(mode) == 0) {
         println("rtg: err 2");
         return 1;
     }
 
-    let screenCreated: RtgScreen? = openRtgScreen(640, 480, 32, "Clorraine RTG");
+    let screenCreated: RtgScreen? =
+        openRtgScreen(640, 480, depth, "Clorraine RTG");
     if (screenCreated == null) {
         println("rtg: err 3");
         return 1;
     }
     let screen: RtgScreen = screenCreated;
     if (rtgScreenWidth(screen) != 640 || rtgScreenHeight(screen) != 480 ||
-        rtgScreenDepth(screen) != 32 || rtgScreenFormat(screen) == 0 ||
+        rtgScreenDepth(screen) != depth || rtgScreenFormat(screen) == 0 ||
         rtgScreenMode(screen) == 0) {
         closeRtgScreen(screen);
         println("rtg: err 4");
@@ -96,7 +105,7 @@ func main(): i32 {
         return 1;
     }
 
-    let bitmapCreated: RtgBitmap? = allocRtgBitmap(32, 32, 32);
+    let bitmapCreated: RtgBitmap? = allocRtgBitmap(32, 32, depth);
     if (bitmapCreated == null) {
         closeRtgScreen(screen);
         println("rtg: err 7");
@@ -104,7 +113,7 @@ func main(): i32 {
     }
     let bitmap: RtgBitmap = bitmapCreated;
     if (rtgBitmapWidth(bitmap) != 32 || rtgBitmapHeight(bitmap) != 32 ||
-        rtgBitmapDepth(bitmap) != 32 || rtgBitmapFormat(bitmap) == 0 ||
+        rtgBitmapDepth(bitmap) != depth || rtgBitmapFormat(bitmap) == 0 ||
         rtgBitmapBytesPerRow(bitmap) <= 0) {
         freeRtgBitmap(bitmap);
         closeRtgScreen(screen);
@@ -212,9 +221,9 @@ func main(): i32 {
     let screenFormat: i32 = rtgScreenFormat(screen);
     let bitmapFormat: i32 = rtgBitmapFormat(bitmap);
     let bitmapRow: i32 = rtgBitmapBytesPerRow(bitmap);
-    println($"rtg: accessors boards {boardCount} mode 640x480x32 screen 640 480 32 {screenFormat} bmp 32 32 32 {bitmapFormat} {bitmapRow} fill 1 bmpread {bitmapReadFlag}");
+    println($"rtg: accessors boards {boardCount} mode 640x480x{depth} screen 640 480 {depth} {screenFormat} bmp 32 32 {depth} {bitmapFormat} {bitmapRow} fill 1 bmpread {bitmapReadFlag}");
     if (red == 0x00FF0000 && green == 0x0000FF00 && blue == 0x000000FF) {
-        println("rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1");
+        println($"rtg: ok boards 1 mode 640x480x{depth} red 1 green 1 blue 1 blit 1");
     } else {
         println("rtg: err 16");
         freeRtgBitmap(bitmap);

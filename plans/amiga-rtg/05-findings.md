@@ -79,3 +79,50 @@ emission-integrity reviewers. The final evidence is:
 - `make corpus-amiga`: portable programs plus RTG GCC and vbcc warning-free.
 - `make sdk-a1200-rtg`: report and PPM checks pass; `docs/amiga-sdk/a1200-rtg.png`.
 - `make verify`: all legs pass.
+
+## Follow-up Review: Emulated Picasso IV and 24-bit
+
+The 24-bit extension and the second gate were reviewed independently by the
+correctness, memory-safety, and emission-integrity reviewers.
+
+### Correctness
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| RV-001 | MINOR | `compiler/src/stdlib.rs` export table omitted the two new 24-bit constants, so the appendix export check did not cover them. | Added `RTG_FORMAT_R8G8B8` and `RTG_FORMAT_B8G8R8`. |
+| RV-002 | MINOR | The new spec case is compile-only and the impl pins named header constants that already existed, so a wrong 24-bit format mapping could pass `cargo test`. | Added exact pins for the mode-format ternary and both bitmap-format arms. |
+| RV-003 | MINOR | The module header and demo header still described only the 32-bit UAEGFX gate. | Updated both to describe 24/32-bit and both gates. |
+| RV-004 | MINOR | `SDK-RTG-002` did not state the A4000/Zorro III baseline requirement. | Added `A4000/Zorro III required` to the row notes. |
+| RV-005 | MINOR | The plan marked 6.1.7 complete before review and commit; the four new files were untracked. | 6.1.7 is closed only after the review, commit, and final gate re-run; all new files are staged. |
+| RV-006 | MINOR | The plan attributed the Z2 failure to an invalid `picasso-iv-z2` spelling that FS-UAE 3.1.66 silently ignores. | Retested with `picasso-iv` (auto/Z2) on A1200: the 24-bit demo passes. The gate keeps A4000/Z3 as the native path; the docs now describe both. |
+
+### Memory safety
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| MS-001 | MINOR | The gate cleanup removed the decrypted Kickstart but left the staged Picasso IV flash ROM in `build/`. | `cleanup` now removes `${work}/Kickstarts` (the only staged copy). |
+
+The independent host model ran 24- and 32-bit screen/bitmap scenarios under
+ASan/LSan/UBSan, including exact-size and short-buffer readback, allocation
+failures, close failures, and the demo fallback; no critical/major finding.
+The m68k shim is still not host-ASan-instrumented; the runtime gate is the
+24-bit proof.
+
+### Emission integrity
+
+No finding attributable to the change. Base/head emission across 155 sources
+and four profiles showed no diff outside `hosted-amiga`; all 51 hosted-amiga
+units share the same intended shim hunk, the header still precedes the shim,
+and 124 emitted units plus the demo built with strict host/m68k/vbcc flags.
+`EI-PRE-001` (a user module named `std.amiga` can collide with a stdlib C
+symbol) reproduces on both refs and is pre-existing; it is not fixed here.
+
+### Follow-up verification
+
+- `make check`: 113 suites, 0 failures.
+- `make asan`: 25 host suites, 0 failures.
+- `make corpus-amiga`: RTG GCC and vbcc builds warning-free.
+- `make sdk-a1200-rtg`: 32-bit report/PPM unchanged.
+- `make sdk-a4000-rtg-piv`: 24-bit report/PPM green; staged ROM removed by
+  cleanup.
+- `make verify`: all legs pass.

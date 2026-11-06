@@ -1,10 +1,10 @@
-# Amiga RTG: Picasso96 on UAEGFX
+# Amiga RTG: Picasso96 on UAEGFX and emulated Picasso IV
 
-> **Feature**: Add a capability-complete, headless-tested Picasso96 RTG surface for the Amiga SDK, gated on an A1200/KS3.1 with FS-UAE's UAEGFX card.
-> **Status**: Done — 19/19; Bundle 10 1/1; A1200/KS3.1 UAEGFX gate green
+> **Feature**: Add a capability-complete, headless-tested Picasso96 RTG surface for the Amiga SDK, gated on an A1200/KS3.1 with FS-UAE's UAEGFX card and an A4000/KS3.1 with the emulated Picasso IV Zorro III card.
+> **Status**: Done — 26/26; Bundle 10 2/2; both gates green
 > **Created**: 2026-11-06 13:30
-> **Last Updated**: 2026-11-06 15:45
-> **Implements**: R1–R13
+> **Last Updated**: 2026-11-06 21:50
+> **Implements**: R1–R18
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -16,13 +16,15 @@ gate. The user has now approved a focused implementation:
 
 - **Stack:** Picasso96 2.0 from Aminet (`driver/video/Picasso96.lha`), with the
   P96 developer definitions from `dev/misc/P96Develop.lha`.
-- **Card:** FS-UAE's `uaegfx` Zorro III card.
-- **Baseline:** A1200/KS3.1, 68020, 2 MB chip + fast memory.
-- **Surface:** open an RTG screen, discover modes, allocate an offscreen
-  bitmap, draw and read pixels, blit a bitmap to the screen, read RGB pixels
-  for a capture, and close everything exactly once.
-- **Gate:** headless FS-UAE, a report line, and a PPM capture whose header and
-  pixels are checked on the host.
+- **Cards:** FS-UAE's `uaegfx` Zorro III card (32-bit true alpha) and the
+  emulated Picasso IV Zorro III card (24-bit truecolor).
+- **Baselines:** A1200/KS3.1, 68020, 2 MB chip + fast memory; A4000/KS3.1,
+  68040, 2 MB chip + 8 MB fast.
+- **Surface:** open a 24- or 32-bit RTG screen, discover modes, allocate an
+  offscreen bitmap, draw and read pixels, blit a bitmap to the screen, read RGB
+  pixels for a capture, and close everything exactly once.
+- **Gates:** headless FS-UAE, a report line, and a PPM capture whose header
+  and pixels are checked on the host for both cards.
 
 The implementation follows the existing Amiga SDK pattern: one stdlib module
 (`std.amiga.picasso96`), a separate C shim suffix, opaque handles with exactly
@@ -57,6 +59,7 @@ definition file so the compiler build does not depend on an SDK include path.
 | 03-01 | [API and Ownership](03-01-api.md) | Public module, handles, functions, and error rules |
 | 03-02 | [Runtime Shim](03-02-runtime.md) | P96 calls, formats, bounds, and teardown |
 | 03-03 | [Gate and Media](03-03-gate-media.md) | A1200/UAEGFX staging, demo, report, and PPM check |
+| 04 | [Picasso IV Gate](04-picasso-iv-gate.md) | A4000/emulated Picasso IV staging, 24-bit path, and shared gate script |
 | 07 | [Testing Strategy](07-testing-strategy.md) | Spec cases, implementation pins, and verification matrix |
 | 00a | [Requirements Preflight](00-preflight-report-requirements.md) | Preflight report for the requirements set |
 | 99 | [Execution Plan](99-execution-plan.md) | Phases and task checklist |

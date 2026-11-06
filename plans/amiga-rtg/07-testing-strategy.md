@@ -8,8 +8,8 @@
 The specification suite derives from [Requirements](01-requirements.md) and
 [API and Ownership](03-01-api.md), not from the shim. A failing spec test means
 the implementation is wrong. The implementation suite pins the P96 calls,
-ownership, bounds, and emitted C. The runtime gate is the only proof of the
-actual A1200/UAEGFX stack.
+ownership, bounds, and emitted C. The runtime gates are the only proof of the
+actual A1200/UAEGFX and A4000/Picasso IV stacks.
 
 ## Specification Test Cases
 
@@ -22,6 +22,7 @@ actual A1200/UAEGFX stack.
 | ST-5 | Compile the source for `hosted-amiga` with vbcc | warning-free build; corpus RTG leg is explicit | R11 |
 | ST-6 | Appendix §14.23 exports | every module export appears in the section | R10, R13 |
 | ST-7 | Drop order: screen/bitmap lexical binding | generated cleanup calls the exact `cl_rtg_*` drop once | R4, R5, R13 |
+| ST-8 | Compile a 24-bit screen/bitmap source for `hosted-amiga` | exit 0; the 24-bit surface participates in the same drop/FFI checks | R14 |
 
 ## Implementation Test Cases
 
@@ -39,6 +40,7 @@ actual A1200/UAEGFX stack.
 | IT-10 | `p96ReadPixelArray` with `RGBFB_R8G8B8` and `width * 3` row | R7 |
 | IT-11 | bounds checks: null handle, inverted rectangle, buffer too small, width > 4096 | R6, R12 |
 | IT-12 | drop exactly once for screen and bitmap | R4, R5 |
+| IT-13 | depth 24/32 guard, `RGBFF_TRUECOLOR`/`RGBFF_TRUEALPHA`, `B8G8R8`/`A8R8G8B8` bitmap formats | R14 |
 
 ## Runtime Gate
 
@@ -47,10 +49,15 @@ actual A1200/UAEGFX stack.
 | `SDK-RTG-001` | `sdk-a1200-rtg` | `build/amiga-sdk/a1200-rtg/hd/rtg.txt` | `rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1` |
 | `SDK-RTG-001` | `sdk-a1200-rtg` | `build/amiga-sdk/a1200-rtg/hd/rtg.ppm` | P6, 64x64, 255; relative red (0,0), green (1,0), blue (2,0), yellow (10,10), blue (11,11), blue (20,20) |
 | `SDK-RTG-001` | `sdk-a1200-rtg` | `docs/amiga-sdk/a1200-rtg.png` | converted capture for inspection |
+| `SDK-RTG-002` | `sdk-a4000-rtg-piv` | `build/amiga-sdk/a4000-rtg-piv/hd/rtg.txt` | `rtg: ok boards 1 mode 640x480x24 red 1 green 1 blue 1 blit 1` |
+| `SDK-RTG-002` | `sdk-a4000-rtg-piv` | `build/amiga-sdk/a4000-rtg-piv/hd/rtg.ppm` | same P6 64x64 checks as UAEGFX |
+| `SDK-RTG-002` | `sdk-a4000-rtg-piv` | `docs/amiga-sdk/a4000-rtg-piv.png` | converted capture for inspection |
 
-The gate uses a clean `build/amiga-sdk/a1200-rtg` directory, a private Xvfb
+Each gate uses a clean `build/amiga-sdk/<gate>` directory, a private Xvfb
 display, and a bounded 90-second wait. The host PPM parser validates the
-header, payload length, and named pixels before indexing.
+header, payload length, and named pixels before indexing. The shared
+`docker/scripts/rtg-smoke.sh` owns the common staging and checks; the card
+scripts are thin entry points.
 
 ## Verification Matrix
 
@@ -60,5 +67,6 @@ header, payload length, and named pixels before indexing.
 | `cargo test --test amiga_rtg_impl_test` | shim calls, bounds, drop |
 | `make check` | whole workspace, including the new suites |
 | `make sdk-a1200-rtg` | actual P96 A1200/UAEGFX gate |
+| `make sdk-a4000-rtg-piv` | actual P96 A4000/emulated Picasso IV gate |
 | `make corpus-amiga` | both toolchains plus the explicit RTG build-only leg |
 | `make verify` | the full acceptance gate with the new leg |

@@ -255,8 +255,8 @@ OS structs in application code. The detailed API tables are in
 
 The optional services are loaded from the licensed Workbench media by the
 acceptance gates, except `std.amiga.picasso96`, which uses the user-provided
-Aminet Picasso96 archive. Nothing in this appendix makes them part of the 1.3
-profile.
+Aminet Picasso96 archive and, for the Picasso IV gate, the user-provided 7.4
+flash ROM. Nothing in this appendix makes them part of the 1.3 profile.
 
 ## 2. Amiga boundary types
 

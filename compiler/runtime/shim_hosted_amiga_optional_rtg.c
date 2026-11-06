@@ -43,7 +43,13 @@ static int cl_rtg_open(void)
 static int cl_rtg_valid_size(LONG width, LONG height, LONG depth)
 {
     return width >= 1 && width <= 4096 && height >= 1 && height <= 4096 &&
-           depth == 32;
+           (depth == 24 || depth == 32);
+}
+
+/* 24-bit modes use a packed truecolor format; 32-bit modes use true alpha. */
+static ULONG cl_rtg_mode_formats(LONG depth)
+{
+    return depth == 32 ? CL_P96_RGBFF_TRUEALPHA : CL_P96_RGBFF_TRUECOLOR;
 }
 
 LONG cl_rtg_boards(void)
@@ -77,7 +83,7 @@ ULONG cl_rtg_mode(LONG width, LONG height, LONG depth)
     tags[2].ti_Tag = CL_P96_BIDTAG_Depth;
     tags[2].ti_Data = (ULONG)depth;
     tags[3].ti_Tag = CL_P96_BIDTAG_FormatsAllowed;
-    tags[3].ti_Data = CL_P96_RGBFF_TRUEALPHA;
+    tags[3].ti_Data = cl_rtg_mode_formats(depth);
     tags[4].ti_Tag = TAG_DONE;
     tags[4].ti_Data = 0;
     mode = p96BestModeIDTagList(tags);
@@ -265,8 +271,10 @@ void *cl_rtg_alloc_bitmap(LONG width, LONG height, LONG depth)
     if (!cl_rtg_valid_size(width, height, depth) || !cl_rtg_open()) {
             return NULL;
     }
-    bitmap = p96AllocBitMap((ULONG)width, (ULONG)height, 32,
-                            CL_P96_BMF_USERPRIVATE, NULL, CL_P96_RGBFB_A8R8G8B8);
+    bitmap = p96AllocBitMap((ULONG)width, (ULONG)height, (ULONG)depth,
+                            CL_P96_BMF_USERPRIVATE, NULL,
+                            depth == 32 ? CL_P96_RGBFB_A8R8G8B8
+                                        : CL_P96_RGBFB_B8G8R8);
     if (bitmap == NULL) {
         return NULL;
     }

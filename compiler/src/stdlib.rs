@@ -907,6 +907,8 @@ pub const MODULES: &[StdlibModule] = &[
         exports: &[
             "RtgScreen",
             "RtgBitmap",
+            "RTG_FORMAT_R8G8B8",
+            "RTG_FORMAT_B8G8R8",
             "RTG_FORMAT_A8R8G8B8",
             "RTG_FORMAT_A8B8G8R8",
             "RTG_FORMAT_R8G8B8A8",

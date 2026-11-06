@@ -51,7 +51,9 @@ Picasso96Install/Devs/Picasso96Settings.31  (default settings; uaegfx may ignore
 
 The approved archive has SHA-256
 `0146d4a2aaadb82ec454dde6ca4fb33a3f646ca4c0daa46e569c025f4d9728af`. The
-surface supports 32-bit truecolor only, matching the proven spike.
+original surface supported 32-bit truecolor, matching the UAEGFX spike; the
+follow-up adds the 24-bit truecolor path proven on the emulated Picasso IV
+(`04-picasso-iv-gate.md`).
 
 The P96 developer archive (`P96Develop.lha`) supplied the API facts used to
 write the vendored header. It is not needed at gate time. Neither archive is

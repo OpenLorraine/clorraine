@@ -2,6 +2,7 @@
 
 > **Document**: 03-03-gate-media.md
 > **Parent**: [Index](00-index.md)
+> **Second gate**: [Picasso IV](04-picasso-iv-gate.md)
 
 ## Media Contract
 

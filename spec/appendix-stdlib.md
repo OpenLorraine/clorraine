@@ -1053,40 +1053,44 @@ command string.
 
 ### 14.23 Picasso96 RTG (`std.amiga.picasso96`)
 
-`std.amiga.picasso96` is a small 32-bit truecolor RTG surface for an
-A1200/KS3.1 with Picasso96 and FS-UAE’s `uaegfx` card. `rtgBoards` opens
-`Picasso96API.library` v2 and returns the P96 board count; `rtgMode` returns
-the best 32-bit display ID for a width/height, or 0. `openRtgScreen` opens a
-quiet P96 screen; `RtgScreen` owns it and `closeRtgScreen` closes it exactly
-once. `allocRtgBitmap` creates a user-private P96 bitmap; `RtgBitmap` owns it
-and `freeRtgBitmap` frees it exactly once. Screen and bitmap accessors query
-P96 attributes; pixel calls use ARGB colors; bitmap fills use a bounded pixel
+`std.amiga.picasso96` is a small 24- or 32-bit truecolor RTG surface for
+Kickstart 3.x with Picasso96. `rtgBoards` opens `Picasso96API.library` v2 and
+returns the P96 board count; `rtgMode` returns the best display ID for a
+width/height and depth, or 0. `openRtgScreen` opens a quiet P96 screen;
+`RtgScreen` owns it and `closeRtgScreen` closes it exactly once.
+`allocRtgBitmap` creates a user-private P96 bitmap; `RtgBitmap` owns it and
+`freeRtgBitmap` frees it exactly once. Screen and bitmap accessors query P96
+attributes; pixel calls use ARGB colors; bitmap fills use a bounded pixel
 loop. `rtgScreenBlitBitmap` copies a bitmap to a screen, and
 `rtgScreenReadPixels`/`rtgBitmapReadPixels` fill a caller buffer with top-down
-RGB bytes for a P6 PPM. The gate checks a 64x64 capture and the report
-`rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1`.
+RGB bytes for a P6 PPM. The UAEGFX gate checks a 64x64 capture and the report
+`rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1`; the emulated
+Picasso IV gate checks the same capture and
+`rtg: ok boards 1 mode 640x480x24 red 1 green 1 blue 1 blit 1`.
 
 | API | Returns | Rules |
 |---|---|---|
+| `RTG_FORMAT_R8G8B8` | `i32` | 2 |
+| `RTG_FORMAT_B8G8R8` | `i32` | 3 |
 | `RTG_FORMAT_A8R8G8B8` | `i32` | 6 |
 | `RTG_FORMAT_A8B8G8R8` | `i32` | 7 |
 | `RTG_FORMAT_R8G8B8A8` | `i32` | 8 |
 | `RTG_FORMAT_B8G8R8A8` | `i32` | 9 |
 | `RtgScreen` / `RtgBitmap` | handles | generated drop; exact-once close/free |
 | `rtgBoards()` | `i32` | 0 when P96 is absent |
-| `rtgMode(width, height, depth)` | `u32` | depth 32; 0 when absent |
+| `rtgMode(width, height, depth)` | `u32` | depth 24 or 32; 0 when absent |
 | `rtgModeWidth(mode)` | `i32` | 0 for an unknown mode |
 | `rtgModeHeight(mode)` | `i32` | 0 for an unknown mode |
 | `rtgModeDepth(mode)` | `i32` | 0 for an unknown mode |
 | `rtgModeFormat(mode)` | `i32` | 0 for an unknown mode |
-| `openRtgScreen(width, height, depth, title)` | `RtgScreen?` | 1..4096; depth 32; title copied; quiet |
+| `openRtgScreen(width, height, depth, title)` | `RtgScreen?` | 1..4096; depth 24 or 32; title copied; quiet |
 | `closeRtgScreen(take)` | — | `p96CloseScreen` |
 | `rtgScreenWidth(borrow)` | `i32` | live screen |
 | `rtgScreenHeight(borrow)` | `i32` | live screen |
 | `rtgScreenDepth(borrow)` | `i32` | live screen |
 | `rtgScreenFormat(borrow)` | `i32` | live screen |
 | `rtgScreenMode(borrow)` | `u32` | live screen |
-| `allocRtgBitmap(width, height, depth)` | `RtgBitmap?` | 1..4096; depth 32; user-private |
+| `allocRtgBitmap(width, height, depth)` | `RtgBitmap?` | 1..4096; depth 24 or 32; user-private |
 | `freeRtgBitmap(take)` | — | `p96FreeBitMap` |
 | `rtgBitmapWidth(borrow)` | `i32` | P96 attribute |
 | `rtgBitmapHeight(borrow)` | `i32` | P96 attribute |
@@ -1102,9 +1106,10 @@ RGB bytes for a P6 PPM. The gate checks a 64x64 capture and the report
 | `rtgScreenBlitBitmap(screen, bitmap, dx, dy, sx, sy, w, h)` | `bool` | `BltBitMapRastPort`, minterm `0xC0` |
 | `rtgScreenReadPixels` / `rtgBitmapReadPixels` | `i32` | RGB bytes; `w*h*3`, or -1 |
 
-The gate uses Picasso96 2.0 from Aminet with the UAEGFX card. CyberGraphX,
-real-card drivers, PIP/video overlay, CLUT palette editing, and text/font
-rendering are not part of this surface.
+The gates use Picasso96 2.0 from Aminet with FS-UAE’s UAEGFX card and the
+emulated Picasso IV Zorro III card. CyberGraphX, physical-card drivers,
+PIP/video overlay, CLUT palette editing, and text/font rendering are not part
+of this surface.
 
 ## 15. Native video (`std.amiga.video`)
 

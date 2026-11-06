@@ -15,7 +15,7 @@
 | 7-exec-devices | core | 1.3 | 8 | 8 | 0 | #8 |
 | 8-workbench | advanced | 2.0 | 4 | 4 | 0 | #9 |
 | 9-optional | optional | 1.3 | 20 | 20 | 0 | #10 |
-| 10-rtg | optional | 3.0 | 1 | 1 | 0 | #11 |
+| 10-rtg | optional | 3.0 | 2 | 2 | 0 | #11 |
 
 ## 0-baseline — Baseline and registry
 
@@ -173,3 +173,4 @@ Tier: optional; min OS: 3.0; min hardware: AGA/68020/2M.
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
 | SDK-RTG-001 | Picasso96 RTG (UAEGFX) | should | done | a1200-rtg |
+| SDK-RTG-002 | Picasso96 RTG (emulated Picasso IV) | should | done | a4000-rtg-piv |

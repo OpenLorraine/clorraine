@@ -48,8 +48,9 @@ the process lifetime; there is no per-call open/close race.
 
 `cl_rtg_mode(width, height, depth)`:
 
-1. Rejects dimensions outside 1..4096 and depths outside 15/16/24/32.
-2. Requires depth 32 and maps it to `CL_P96_RGBFF_TRUEALPHA`.
+1. Rejects dimensions outside 1..4096 and depths other than 24 or 32.
+2. Maps depth 24 to `CL_P96_RGBFF_TRUECOLOR` and depth 32 to
+   `CL_P96_RGBFF_TRUEALPHA`.
 3. Calls `p96BestModeIDTagList` with `CL_P96_BIDTAG_NominalWidth`,
    `NominalHeight`, `Depth`, and `FormatsAllowed`.
 4. Returns 0 for `0xFFFFFFFF` (P96's `INVALID_ID`).
@@ -81,11 +82,12 @@ the `BitMap` plane pointers.
 
 ## Offscreen Bitmap
 
-`cl_rtg_alloc_bitmap` requires depth 32 and calls:
+`cl_rtg_alloc_bitmap` accepts depth 24 or 32 and calls:
 
 ```c
-bitmap = p96AllocBitMap(width, height, 32, CL_P96_BMF_USERPRIVATE, NULL,
-                        CL_P96_RGBFB_A8R8G8B8);
+bitmap = p96AllocBitMap(width, height, depth, CL_P96_BMF_USERPRIVATE, NULL,
+                        depth == 32 ? CL_P96_RGBFB_A8R8G8B8
+                                    : CL_P96_RGBFB_B8G8R8);
 ```
 
 The handle owns a `struct RastPort`, initialized with `InitRastPort` and

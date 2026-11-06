@@ -186,6 +186,22 @@ func main(): i32 {
 }
 "#;
 
+const RTG_24_SOURCE: &str = r#"module tests.rtg.surface24;
+
+import { RtgScreen, RtgBitmap, openRtgScreen, allocRtgBitmap }
+    from std.amiga.picasso96;
+
+func main(): i32 {
+    let screenCreated: RtgScreen? = openRtgScreen(640, 480, 24, "rtg");
+    if (screenCreated == null) { return 1; }
+    let screen: RtgScreen = screenCreated;
+    let bitmapCreated: RtgBitmap? = allocRtgBitmap(32, 32, 24);
+    if (bitmapCreated == null) { return 2; }
+    let bitmap: RtgBitmap = bitmapCreated;
+    return 0;
+}
+"#;
+
 const HEADER_NAME_SOURCE: &str = r#"module tests.rtg.names;
 
 enum RGBFB : u8 {
@@ -318,6 +334,11 @@ fn the_rtg_drops_are_generated_once() {
     let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
     assert!(c.contains("cl_rtg_close_screen(screen)"));
     assert!(c.contains("cl_rtg_free_bitmap(bitmap)"));
+}
+
+#[test]
+fn the_rtg_surface_accepts_24_bit_surfaces() {
+    cross_build("rtg-build24", "hosted-amiga", "nix20", RTG_24_SOURCE);
 }
 
 #[test]

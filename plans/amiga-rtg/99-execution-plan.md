@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 19/19 tasks (100%) — Done
+> **Progress**: 26/26 tasks (100%) — Done
 > **Created**: 2026-11-06 13:30
-> **Last Updated**: 2026-11-06 15:45
+> **Last Updated**: 2026-11-06 21:50
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -52,6 +52,30 @@ headlessly on a private Xvfb display and must not commit P96 or ROM media.
 - [x] 5.1.3 Run the independent correctness, memory-safety (static + host models + m68k gates), and emission-integrity reviews; fix every critical/major finding and re-run the affected gates ✅ (completed: 2026-11-06 15:45; findings fixed in `05-findings.md`)
 - [x] 5.1.4 Clean temporary artifacts and archives, confirm the working tree and `docker/.env`, update the plan/roadmap to Done, commit locally, and close issue #11 ✅ (completed: 2026-11-06 15:45; commit `7ce2478`; issue #11 closed)
 
+## Phase 6: Emulated Picasso IV follow-up
+
+- [x] 6.1.1 Add the 24-bit follow-up requirements, the Picasso IV gate design,
+  and update the API/runtime/testing docs for depth 24/32 and the second gate
+  ✅ (completed: 2026-11-06 21:50; R14–R18, `04-picasso-iv-gate.md`)
+- [x] 6.1.2 Extend the shim and module for 24-bit truecolor: allow depth 24/32,
+  select `RGBFF_TRUECOLOR`/`B8G8R8` or `RGBFF_TRUEALPHA`/`A8R8G8B8`, add the
+  24-bit format constants, and make the demo fall back from 32 to 24 bits
+  ✅ (completed: 2026-11-06 21:40; A4000/Picasso IV `rtg: ok boards 1 mode
+  640x480x24 ...`)
+- [x] 6.1.3 Add the 24-bit spec cross-build and the 24-bit impl pins
+  ✅ (completed: 2026-11-06 21:50; `amiga_rtg_spec_test`,
+  `amiga_rtg_impl_test`)
+- [x] 6.1.4 Refactor the gate into `docker/scripts/rtg-smoke.sh` with two thin
+  card entry points; add `make sdk-a4000-rtg-piv` and include it in
+  `make verify` ✅ (completed: 2026-11-06 21:44; both gates green)
+- [x] 6.1.5 Add `SDK-RTG-002`, regenerate coverage, and update Bundle 10 to
+  2/2 ✅ (completed: 2026-11-06 21:50; 81 capabilities, 11 bundles)
+- [x] 6.1.6 Update the appendix (§14.23), known limitations, AGENTS command
+  table, RTG index, and roadmap PLAN-17 ✅ (completed: 2026-11-06 21:50)
+- [x] 6.1.7 Run `make check`, both RTG gates, `make asan`, `make corpus-amiga`,
+  and the review pass; fix every critical/major finding and commit locally
+  ✅ (completed: 2026-11-06 21:55)
+
 ## Acceptance
 
 - `make check`: all suites green, including `amiga_rtg_spec_test` and
@@ -60,7 +84,10 @@ headlessly on a private Xvfb display and must not commit P96 or ROM media.
   gate-proven, not host-ASan-instrumented.
 - `make sdk-a1200-rtg`: `rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1
   blit 1` and a valid 64x64 PPM.
+- `make sdk-a4000-rtg-piv`: `rtg: ok boards 1 mode 640x480x24 red 1 green 1
+  blue 1 blit 1` and the same PPM checks on the emulated Picasso IV.
 - `make corpus-amiga`: portable programs and the explicit RTG GCC/vbcc
   build-only leg.
 - `make verify`: all legs pass.
-- `SDK-RTG-001` done; Bundle 9 20/20; Bundle 10 1/1; issue #11 closed.
+- `SDK-RTG-001` and `SDK-RTG-002` done; Bundle 9 20/20; Bundle 10 2/2;
+  issue #11 closed.

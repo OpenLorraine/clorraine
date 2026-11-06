@@ -2,13 +2,16 @@
 //!
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. The surface is a deliberately
-//! small Picasso96 subset: query boards and modes, open a 32-bit truecolor
-//! screen, allocate a 32-bit user-private bitmap, draw and read ARGB pixels,
-//! blit a bitmap to the screen, and read RGB bytes for a PPM capture.
+//! small Picasso96 subset: query boards and modes, open a 24- or 32-bit
+//! truecolor screen, allocate a user-private bitmap, draw and read ARGB
+//! pixels, blit a bitmap to the screen, and read RGB bytes for a PPM
+//! capture.
 //!
-//! The gate runs on an A1200/KS3.1 with FS-UAE's `uaegfx` card and the Aminet
-//! Picasso96 2.0 runtime. CyberGraphX, real-card drivers, PIP/video overlay,
-//! CLUT palette editing, and text/font rendering are not part of this module.
+//! The gates run on A1200/KS3.1 with FS-UAE's `uaegfx` card (32-bit true
+//! alpha) and A4000/KS3.1 with the emulated Picasso IV (24-bit truecolor),
+//! using the Aminet Picasso96 2.0 runtime. CyberGraphX, physical-card
+//! drivers, PIP/video overlay, CLUT palette editing, and text/font rendering
+//! are not part of this module.
 
 module std.amiga.picasso96;
 
@@ -18,6 +21,10 @@ export handle RtgScreen freedBy cl_rtg_close_screen;
 /// A user-private Picasso96 bitmap. The generated drop frees it.
 export handle RtgBitmap freedBy cl_rtg_free_bitmap;
 
+/// 24-bit RGB byte order.
+export const RTG_FORMAT_R8G8B8: i32 = 2;
+/// 24-bit BGR byte order.
+export const RTG_FORMAT_B8G8R8: i32 = 3;
 /// 32-bit ARGB byte order.
 export const RTG_FORMAT_A8R8G8B8: i32 = 6;
 /// 32-bit ABGR byte order.
@@ -78,9 +85,9 @@ export func rtgBoards(): i32 {
     return cl_rtg_boards();
 }
 
-/// Returns the best 32-bit display ID for the requested size, or 0.
+/// Returns the best 24- or 32-bit display ID for the requested size, or 0.
 ///
-/// `depth` must be 32; other depths return 0.
+/// `depth` must be 24 or 32; other depths return 0.
 export func rtgMode(width: i32, height: i32, depth: i32): u32 {
     return cl_rtg_mode(width, height, depth);
 }
@@ -105,11 +112,11 @@ export func rtgModeFormat(mode: u32): i32 {
     return cl_rtg_mode_format(mode);
 }
 
-/// Opens a 32-bit Picasso96 screen, or returns null.
+/// Opens a 24- or 32-bit Picasso96 screen, or returns null.
 ///
-/// `width` and `height` are 1..4096. `title` is copied into the handle for
-/// the screen lifetime; an empty string means no title. The screen opens
-/// quietly so the gate never shows a mode requester.
+/// `width` and `height` are 1..4096; `depth` must be 24 or 32. `title` is
+/// copied into the handle for the screen lifetime; an empty string means no
+/// title. The screen opens quietly so the gate never shows a mode requester.
 export func openRtgScreen(width: i32, height: i32, depth: i32,
                           title: cstring): RtgScreen? {
     return cl_rtg_open_screen(width, height, depth, title);
@@ -145,10 +152,11 @@ export func rtgScreenMode(borrow screen: RtgScreen): u32 {
     return cl_rtg_screen_mode(screen);
 }
 
-/// Allocates a 32-bit user-private bitmap, or returns null.
+/// Allocates a 24- or 32-bit user-private bitmap, or returns null.
 ///
-/// `width` and `height` are 1..4096. The bitmap is not displayable directly;
-/// use `rtgScreenBlitBitmap` to copy it to a screen.
+/// `width` and `height` are 1..4096; `depth` must be 24 or 32. The bitmap is
+/// not displayable directly; use `rtgScreenBlitBitmap` to copy it to a
+/// screen.
 export func allocRtgBitmap(width: i32, height: i32,
                            depth: i32): RtgBitmap? {
     return cl_rtg_alloc_bitmap(width, height, depth);

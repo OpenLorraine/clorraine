@@ -49,8 +49,24 @@ the screen's top-left clip. The shim reads pixels through a 1x1
 `p96ReadPixelArray` and converts RGB back to ARGB, so the top-left blit and the
 capture at (200,200) both read correctly. The gate checks both blits.
 
+## Emulated Picasso IV
+
+The same surface also runs on FS-UAE's emulated Picasso IV Zorro III card,
+which exposes 24-bit `B8G8R8` only. The A4000/KS3.1 gate stages
+`PicassoIV.card` plus `CirrusGD5446.chip`, attaches the supplied
+`Village-31` settings with `AttachSettings PicassoIV 0`, and stages the 7.4
+flash ROM as `picasso_iv_flash.rom` in the emulator's Kickstarts directory.
+The demo prefers 32-bit and falls back to 24-bit; the gate reports
+`rtg: ok boards 1 mode 640x480x24 red 1 green 1 blue 1 blit 1` and verifies
+the same PPM pixels. The Zorro II variant (`--graphics-card=picasso-iv` on A1200) also runs the
+24-bit demo after the same staging. The committed gate uses the card's native
+Z3 path on an A4000, which exercises the 32-bit aperture a real Picasso IV
+normally uses. The `picasso-iv-z2` spelling is not a valid FS-UAE 3.1.66 value
+and is silently ignored.
+
 ## Re-run
 
-The committed gate is `make sdk-a1200-rtg`; it repeats the stack with the
-compiled `std.amiga.picasso96` surface and checks both the report line and a
-64x64 PPM capture.
+The committed gates are `make sdk-a1200-rtg` (32-bit UAEGFX) and
+`make sdk-a4000-rtg-piv` (24-bit emulated Picasso IV). Both use the shared
+`docker/scripts/rtg-smoke.sh`, check the report line, and verify a 64x64 PPM
+capture.

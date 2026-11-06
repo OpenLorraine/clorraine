@@ -93,19 +93,24 @@ These are deliberate boundaries, not hidden gaps:
   shim is reviewed statically, with host record models and m68k runtime gates;
   `make asan` does not instrument the new m68k-only code.
 
-## 6. RTG is Picasso96 on UAEGFX only
+## 6. RTG is Picasso96 on UAEGFX and emulated Picasso IV
 
-`std.amiga.picasso96` is a 32-bit truecolor PC-RTG surface for Picasso96 2.0
-on FS-UAE’s `uaegfx` card. It is not a generic RTG abstraction:
-CyberGraphX/CGX4, physical Picasso II/IV or CyberVision drivers, PIP/video
-overlay, CLUT palette editing, hardware sprites, and RTG text/font rendering
-are out of scope. CGX4 is explicitly dropped as a product row because it is
-commercial, end-of-life, and requires media that is not part of this project. The runtime gate runs on A1200/KS3.1 with the Aminet Picasso96 archive
-and checks a PPM capture rather than a native CSCR, because an RTG screen is
-chunky/truecolor. The P96 archive is user-provided and verified by SHA-256; it
-is not committed. The bitmap fill uses a bounded pixel loop because
-`p96RectFill` did not round-trip pure blue on a user-private bitmap in the
-spike; screen fills still use `p96RectFill`.
+`std.amiga.picasso96` is a 24- or 32-bit truecolor PC-RTG surface for
+Picasso96 2.0. Two gates prove it: A1200/KS3.1 with FS-UAE’s `uaegfx` card
+(32-bit true alpha) and A4000/KS3.1 with the emulated Picasso IV Zorro III
+card (24-bit truecolor, the format the real card exposes). It is not a generic
+RTG abstraction: CyberGraphX/CGX4, physical Picasso II/IV or CyberVision
+drivers, PIP/video overlay, CLUT palette editing, hardware sprites, and RTG
+text/font rendering are out of scope. CGX4 is explicitly dropped as a product
+row because it is commercial, end-of-life, and requires media that is not part
+of this project. Both gates check a PPM capture rather than a native CSCR,
+because an RTG screen is chunky/truecolor. The P96 archive is user-provided
+and verified by SHA-256; it is not committed. The emulated Picasso IV gate
+also needs the user-provided 7.4 flash ROM (SHA-1 verified, not committed) and
+attaches the supplied monitor settings to the board before the monitor starts.
+The bitmap fill uses a bounded pixel loop because `p96RectFill` did not
+round-trip pure blue on a user-private bitmap in the spike; screen fills still
+use `p96RectFill`.
 
 ## 7. Runtime and generated C symbol collisions
 

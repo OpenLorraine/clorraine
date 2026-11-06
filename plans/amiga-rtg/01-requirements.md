@@ -9,12 +9,15 @@ This feature adds the last optional Amiga graphics capability: a small,
 documented Picasso96 surface for opening an RTG screen, discovering modes,
 allocating an offscreen bitmap, drawing and reading pixels, and blitting a
 bitmap to the screen. It is gated headlessly on an A1200/KS3.1 with FS-UAE's
-`uaegfx` card and the Aminet Picasso96 2.0 runtime.
+`uaegfx` card and on an A4000/KS3.1 with the emulated Picasso IV Zorro III
+card, using the Aminet Picasso96 2.0 runtime.
 
 The design is deliberately narrower than the Picasso96 API. It exposes the
-operations the gate can prove and leaves PIP/overlay, CLUT palette editing,
-CyberGraphX, real-card drivers, and text/font rendering out of scope. This is a
-capability row, not a header dump.
+operations the gates can prove and leaves PIP/overlay, CLUT palette editing,
+CyberGraphX, physical-card drivers, and text/font rendering out of scope. The
+emulated Picasso IV gate is included because it proves the same surface on a
+real-card driver and exposes the card's native 24-bit truecolor format. This
+is a capability row, not a header dump.
 
 ## Functional Requirements
 
@@ -29,20 +32,22 @@ capability row, not a header dump.
   the library or board is absent. The shim must not trap on a missing library.
   [AR-1, AR-2, AR-10]
 - **R3 — Mode discovery.** `rtgMode(width, height, depth)` returns a P96
-  display ID for the best matching 32-bit truecolor mode, or 0 when no mode
-  matches; `depth` must be 32. `rtgModeWidth`, `rtgModeHeight`,
-  `rtgModeDepth`, and `rtgModeFormat` query the selected mode through P96
-  attributes. [AR-6, AR-7]
+  display ID for the best matching 24- or 32-bit truecolor mode, or 0 when no
+  mode matches; `depth` must be 24 or 32. A 24-bit request allows the
+  truecolor formats; a 32-bit request allows the true-alpha formats.
+  `rtgModeWidth`, `rtgModeHeight`, `rtgModeDepth`, and `rtgModeFormat` query
+  the selected mode through P96 attributes. [AR-6, AR-7]
 - **R4 — Screen lifecycle.** `openRtgScreen(width, height, depth, title)`
-  opens a P96 screen with `P96SA_Quiet` and `P96SA_ShowTitle = FALSE`, stores
-  the screen and selected mode in an opaque handle, and returns `null` on
-  failure. `closeRtgScreen(take)`
+  opens a 24- or 32-bit P96 screen with `P96SA_Quiet` and
+  `P96SA_ShowTitle = FALSE`, stores the screen and selected mode in an opaque
+  handle, and returns `null` on failure. `closeRtgScreen(take)`
   closes exactly once and is also the generated drop;
   `rtgScreenWidth/Height/Depth/Format/Mode` query a live screen. [AR-10,
   AR-14]
 - **R5 — Offscreen bitmap lifecycle.** `allocRtgBitmap(width, height, depth)`
-  allocates a P96 user-private 32-bit bitmap with `BMF_USERPRIVATE`, owns its
-  `RastPort`, and returns `null` on failure. `freeRtgBitmap(take)` frees
+  allocates a P96 user-private 24- or 32-bit bitmap with `BMF_USERPRIVATE`,
+  owns its `RastPort`, and returns `null` on failure. A 24-bit bitmap uses
+  `B8G8R8`; a 32-bit bitmap uses `A8R8G8B8`. `freeRtgBitmap(take)` frees
   exactly once and is also the generated drop;
   width/height/depth/format/bytes-per-row query the bitmap through
   `p96GetBitMapAttr`. [AR-6, AR-14]
@@ -96,7 +101,7 @@ capability row, not a header dump.
   runtime gate is GCC). `corpus-amiga` gets an explicit RTG build-only leg for
   both toolchains. [AR-12]
 - **R12 — Deterministic failures.** Every shim entry checks null handles,
-  dimensions (1..4096), depth (32), buffer sizes, and rectangle ordering
+  dimensions (1..4096), depth (24 or 32), buffer sizes, and rectangle ordering
   before touching P96. Width 4096 x 3 bytes stays within the signed `WORD`
   `RenderInfo.BytesPerRow`; no wider row is accepted. No unbounded loops or
   allocations are driven by caller input. [AR-10]
@@ -104,6 +109,36 @@ capability row, not a header dump.
   the profile-rejection test fails without the profile gate; the shim pins
   fail without the named P96 calls; the runtime gate fails if the report or
   any checked PPM pixel is wrong. [AR-13]
+
+### Follow-up: emulated Picasso IV (2026-11-06)
+
+- **R14 — 24-bit truecolor.** `rtgMode`, `openRtgScreen`, and
+  `allocRtgBitmap` accept depth 24 as well as 32. A 24-bit request allows the
+  P96 `RGBFF_TRUECOLOR` formats and allocates a `B8G8R8` bitmap; a 32-bit
+  request keeps `RGBFF_TRUEALPHA` and `A8R8G8B8`. The module exports
+  `RTG_FORMAT_R8G8B8` (2) and `RTG_FORMAT_B8G8R8` (3) in addition to the
+  four 32-bit constants. Other depths remain 0/null/false.
+- **R15 — Emulated Picasso IV gate.** Add `make sdk-a4000-rtg-piv`: stage
+  Workbench 3.1, P96 2.0, `PicassoIV.card`, `CirrusGD5446.chip`, the
+  `Picasso96.info` monitor icon, and the user-provided Picasso IV 7.4 flash
+  ROM (SHA-1 `cafafb916f16b9f3ec9b49aa4b40eb4eeceb5b5b`); attach the supplied
+  monitor settings; boot A4000/KS3.1 under FS-UAE with
+  `--graphics-card=picasso-iv-z3`; run the demo; assert
+  `rtg: ok boards 1 mode 640x480x24 red 1 green 1 blue 1 blit 1` and the PPM
+  pixels; write `docs/amiga-sdk/a4000-rtg-piv.png`. The gate is headless and
+  commits no ROM or P96 media.
+- **R16 — Shared gate implementation.** One parameterized
+  `docker/scripts/rtg-smoke.sh` owns staging, emulator launch, report checks,
+  PPM checks, and artifact conversion for both cards. The two gate scripts
+  are thin entry points; the UAEGFX gate keeps its existing report, pixels,
+  and A1200 media.
+- **R17 — Registry truth for the second gate.** Add `SDK-RTG-002` in Bundle
+  `10-rtg` (capability `Picasso96 RTG (emulated Picasso IV)`, acceptance
+  `a4000-rtg-piv`, status `done`, depends `SDK-RTG-001`) and regenerate
+  coverage. Bundle 10 becomes 2/2; the capability total becomes 81.
+- **R18 — Compatibility.** The 32-bit UAEGFX report and PPM stay unchanged.
+  Both depths cross-build with m68k GCC and vbcc, and the full host suite,
+  ASan, corpus, and `make verify` remain green.
 
 ## Acceptance Criteria and Review
 
@@ -114,20 +149,26 @@ capability row, not a header dump.
 - **AC-3:** `make sdk-a1200-rtg` reports
   `rtg: ok boards 1 mode 640x480x32 red 1 green 1 blue 1 blit 1` and the PPM
   contains the red/green/blue pixels and the yellow/blue blit.
-- **AC-4:** `SDK-RTG-001` is `done`; Bundle 9 remains 20/20; Bundle 10 is 1/1;
-  coverage and issue #11 are regenerated.
+- **AC-4:** `SDK-RTG-001` and `SDK-RTG-002` are `done`; Bundle 9 remains
+  20/20; Bundle 10 is 2/2; coverage is regenerated (81 capabilities).
 - **AC-5:** `make check`, `make asan` (host suites), `make corpus-amiga`, and
   full `make verify` pass.
 - **AC-6:** Independent correctness, memory-safety, and emission-integrity
   reviews are run; every critical/major finding is fixed and the affected
   gate re-run.
+- **AC-7:** `make sdk-a4000-rtg-piv` reports
+  `rtg: ok boards 1 mode 640x480x24 red 1 green 1 blue 1 blit 1` and the PPM
+  contains the same probe pixels and blit checks.
+- **AC-8:** `make check` includes the 24-bit spec and impl pins; both gates
+  pass after the shared-script refactor; `make verify` includes the new leg.
 
 ### Won't Have (Out of Scope)
 
 - CyberGraphX/CGX4 or a dual-stack abstraction (explicitly dropped 2026-11-06).
-- Real Picasso II/IV, CyberVision, or other physical card drivers.
-- PIP/video overlay, hardware sprites, CLUT palette editing, or screen-mode
-  preference editing.
+- Physical Picasso II/IV, CyberVision, or other real hardware; only the
+  emulated Picasso IV is in scope.
+- PIP/overlay on any card, hardware sprites, CLUT palette editing, or
+  screen-mode preference editing.
 - Font/text rendering, windowed RTG UI, or a Workbench replacement screen.
 - Direct VRAM locking or a public `RenderInfo`/`BitMap` struct.
 - Any language, grammar, diagnostic, golden, or ABI change.
@@ -170,10 +211,10 @@ capability row, not a header dump.
 | Decision | Options Considered | Chosen | Rationale | AR Ref |
 |---|---|---|---|---|
 | Stack | P96 / CyberGraphX / both | P96 | user-approved Aminet package; one honest stack | AR-1 |
-| Card | UAEGFX / real card | UAEGFX | reproducible headless gate; spike proven | AR-2 |
+| Card | UAEGFX / emulated Picasso IV / both | both | reproducible headless gates; UAEGFX proves 32-bit true alpha, emulated Picasso IV proves a real-card 24-bit driver | AR-2 |
 | Registry | keep in Bundle 9 / new bundle | new `10-rtg` | Bundle 9 stays 20/20; RTG gets its own plan and evidence | AR-3 |
 | Module name | `rtg` / `picasso96` | `picasso96` | library-specific contract | AR-4 |
-| Depths | 32-bit / multi-depth / CLUT | 32-bit truecolor | gate-proven and no unproven mode claims | AR-7 |
+| Depths | 24/32-bit truecolor / multi-depth / CLUT | 24- and 32-bit truecolor | both gate-proven; no unproven mode claims | AR-7 |
 | Bitmap fill | p96RectFill / pixel loop | pixel loop | spike showed a pure-blue fill mismatch on user bitmaps | AR-8 |
 | Capture | CSCR / PPM | PPM | chunky RTG screen; RGB readback is the honest artifact | AR-9 |
 | Header | external SDK / vendored | vendored | deterministic build; attributed CC-BY definitions | AR-11 |
