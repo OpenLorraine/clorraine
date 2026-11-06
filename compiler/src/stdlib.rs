@@ -193,6 +193,14 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.nonvolatile",
         source: include_str!("../../stdlib/std.amiga.nonvolatile.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.bsdsocket",
+        source: include_str!("../../stdlib/std.amiga.bsdsocket.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.amigaguide",
+        source: include_str!("../../stdlib/std.amiga.amigaguide.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -860,6 +868,35 @@ pub const MODULES: &[StdlibModule] = &[
             "deleteNonvolatile",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.bsdsocket",
+        exports: &[
+            "Socket",
+            "AF_INET",
+            "SOCK_STREAM",
+            "openSocket",
+            "connectSocket",
+            "sendSocket",
+            "recvSocket",
+            "closeSocket",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.amigaguide",
+        exports: &[
+            "AmigaGuide",
+            "GuideMessage",
+            "openAmigaGuide",
+            "closeAmigaGuide",
+            "amigaGuideSignal",
+            "waitAmigaGuideMessage",
+            "guideMessageType",
+            "guideMessagePrimary",
+            "guideMessageSecondary",
+            "replyGuideMessage",
+            "sendAmigaGuideCommand",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -1195,6 +1232,20 @@ mod tests {
                 &["NonvolatileData", "getNonvolatile", "freeNonvolatileData",
                   "nonvolatileSize", "nonvolatileRead", "storeNonvolatile",
                   "deleteNonvolatile"][..],
+            ),
+            (
+                "std.amiga.bsdsocket",
+                &["Socket", "AF_INET", "SOCK_STREAM", "openSocket",
+                  "connectSocket", "sendSocket", "recvSocket",
+                  "closeSocket"][..],
+            ),
+            (
+                "std.amiga.amigaguide",
+                &["AmigaGuide", "GuideMessage", "openAmigaGuide",
+                  "closeAmigaGuide", "amigaGuideSignal",
+                  "waitAmigaGuideMessage", "guideMessageType",
+                  "guideMessagePrimary", "guideMessageSecondary",
+                  "replyGuideMessage", "sendAmigaGuideCommand"][..],
             ),
         ] {
             assert!(lookup(module).is_some(), "missing module {module}");

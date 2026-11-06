@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 15/30 tasks (50%) — Executing
+> **Progress**: 18/30 tasks (60%) — Executing
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 03:22
+> **Last Updated**: 2026-11-06 03:35
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -65,9 +65,9 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — socket fd ownership and async AmigaGuide messages add external and
 > callback-style lifetimes.
 
-- [ ] 5.1.1 [spec-author] Add the bsdsocket/amigaguide surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red
-- [ ] 5.1.2 Add the two modules with their optional-suffix C and module/export tables; run the spec green
-- [ ] 5.1.3 Add impl pins for socket close/`127.0.0.1`, guide struct/copies/message result, the committed `.guide`, and `optional-network.clo`/`optional-guide.clo`; run targeted tests
+- [x] 5.1.1 [spec-author] Add the bsdsocket/amigaguide surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:35; §14.21–§14.22 added)
+- [x] 5.1.2 Add the two modules with their optional-suffix C and module/export tables; run the spec green ✅ (completed: 2026-11-06 03:35; bsdsocket inline stubs, AmigaGuide context)
+- [x] 5.1.3 Add impl pins for socket close/`127.0.0.1`, guide struct/copies/message result, the committed `.guide`, and `optional-network.clo`/`optional-guide.clo`; run targeted tests ✅ (completed: 2026-11-06 03:35; 14 impl + 23 spec green; demos build)
 
 ## Phase 6: Demos, media, and gates
 

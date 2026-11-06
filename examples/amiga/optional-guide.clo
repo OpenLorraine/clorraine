@@ -1,0 +1,42 @@
+//! Bundle 9 AmigaGuide acceptance: open a committed guide on the public
+//! Workbench screen, wait for one async message, reply, and close.
+
+module examples.amiga.optional_guide;
+
+import { AmigaGuide, GuideMessage, openAmigaGuide, closeAmigaGuide,
+         amigaGuideSignal, waitAmigaGuideMessage, guideMessageType,
+         guideMessagePrimary, guideMessageSecondary, replyGuideMessage }
+    from std.amiga.amigaguide;
+import { String, stringOf, toCString } from std.text;
+import { println } from std.io;
+
+func main(): i32 {
+    let path: String = stringOf("CNEXT:hello.guide");
+    let screen: String = stringOf("Workbench");
+    let guideCreated: AmigaGuide? =
+        openAmigaGuide(toCString(path), toCString(screen));
+    if (guideCreated == null) {
+        println("guide: err 1");
+        return 1;
+    }
+    let guide: AmigaGuide = guideCreated;
+    let signal: u32 = amigaGuideSignal(guide);
+    let messageCreated: GuideMessage? = waitAmigaGuideMessage(guide);
+    if (messageCreated == null) {
+        closeAmigaGuide(guide);
+        println("guide: err 2");
+        return 1;
+    }
+    let message: GuideMessage = messageCreated;
+    let kind: u32 = guideMessageType(message);
+    let primary: u32 = guideMessagePrimary(message);
+    let secondary: u32 = guideMessageSecondary(message);
+    replyGuideMessage(message);
+    closeAmigaGuide(guide);
+    if (signal == 0 || kind == 0 || primary != 0 || secondary > 1000) {
+        println("guide: err 3");
+        return 1;
+    }
+    println("guide: ok msg 1 result 0");
+    return 0;
+}

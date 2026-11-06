@@ -1,0 +1,58 @@
+//! Amiga IPv4 TCP sockets (Kickstart 3.1+ with a bsdsocket stack).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Socket` owns one OS
+//! descriptor. `connectSocket` accepts a dotted IPv4 address; `sendSocket` and
+//! `recvSocket` may return short counts, so callers loop. Real hardware needs
+//! a third-party stack; the acceptance gate uses FS-UAE’s emulated library.
+
+module std.amiga.bsdsocket;
+
+/// An IPv4 socket. The generated drop closes it.
+export handle Socket freedBy cl_socket_close;
+
+/// IPv4 address family.
+export const AF_INET: i32 = 2;
+/// TCP stream socket type.
+export const SOCK_STREAM: i32 = 1;
+
+ffi stdbsdsocket {
+    func cl_socket_open(kind: i32, protocol: i32): Socket?;
+    func cl_socket_connect(borrow socket: Socket, host: cstring,
+                           port: u16): bool;
+    func cl_socket_send(borrow socket: Socket, data: raw u8,
+                        length: u32): i32;
+    func cl_socket_recv(borrow socket: Socket, data: raw u8,
+                        length: u32): i32;
+    func cl_socket_close(take socket: Socket): void;
+}
+
+/// Opens a socket, or returns null.
+export func openSocket(kind: i32, protocol: i32): Socket? {
+    return cl_socket_open(kind, protocol);
+}
+
+/// Connects to a dotted IPv4 `host:port`; true on success.
+export func connectSocket(borrow socket: Socket, host: cstring,
+                          port: u16): bool {
+    return cl_socket_connect(socket, host, port);
+}
+
+/// Sends bytes and returns the count, or -1.
+export func sendSocket(borrow socket: Socket, borrow data: u8[]): i32 {
+    unsafe {
+        return cl_socket_send(socket, raw u8(data.ptr), u32(len(data)));
+    }
+}
+
+/// Receives bytes and returns the count, 0 on EOF, or -1.
+export func recvSocket(borrow socket: Socket, borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_socket_recv(socket, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Closes a socket exactly once.
+export func closeSocket(take socket: Socket): void {
+    cl_socket_close(socket);
+}

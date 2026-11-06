@@ -1000,6 +1000,45 @@ application.
 | `storeNonvolatile(app, item, data)` | `bool` | `(len+9)/10` units |
 | `deleteNonvolatile(app, item)` | `bool` | `DeleteNV` |
 
+### 14.21 IPv4 sockets (`std.amiga.bsdsocket`)
+
+`openSocket` opens `bsdsocket.library` v4 and creates an IPv4 socket.
+`connectSocket` accepts a dotted address and port, builds `sockaddr_in`, and
+calls `connect`. `sendSocket`/`recvSocket` return the OS byte count; short
+counts are normal. `closeSocket` releases the descriptor. Real hardware needs
+a third-party stack; the gate uses FS-UAE’s emulated library.
+
+| API | Returns | Rules |
+|---|---|---|
+| `AF_INET` / `SOCK_STREAM` | `i32` | 2 / 1 |
+| `openSocket(kind, protocol)` | `Socket?` | `socket()` |
+| `connectSocket(borrow, host, port)` | `bool` | dotted IPv4 |
+| `sendSocket(borrow, data)` | `i32` | bytes or -1 |
+| `recvSocket(borrow, buf)` | `i32` | bytes, 0 EOF, -1 |
+| `closeSocket(take)` | — | `CloseSocket` |
+
+### 14.22 AmigaGuide (`std.amiga.amigaguide`)
+
+`openAmigaGuide` keeps a `NewAmigaGuide` and copied path/public-screen strings
+alive until `closeAmigaGuide`; `HTF_NOACTIVATE` avoids focus changes. A missing
+document is reported as an async message, not a null context.
+`amigaGuideSignal` returns the wait mask; `waitAmigaGuideMessage` waits and
+returns a message; `guideMessageType`/`Primary`/`Secondary` read it;
+`replyGuideMessage` replies exactly once. `sendAmigaGuideCommand` sends a
+command string.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openAmigaGuide(path, screen)` | `AmigaGuide?` | async context |
+| `closeAmigaGuide(take)` | — | `CloseAmigaGuide` |
+| `amigaGuideSignal(borrow)` | `u32` | wait mask |
+| `waitAmigaGuideMessage(borrow)` | `GuideMessage?` | `Wait`+`Get` |
+| `guideMessageType` | `u32` | `agm_Type` |
+| `guideMessagePrimary` | `u32` | `agm_Pri_Ret` |
+| `guideMessageSecondary` | `u32` | `agm_Sec_Ret` |
+| `replyGuideMessage(take)` | — | reply once |
+| `sendAmigaGuideCommand(borrow, cmd)` | `bool` | command |
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

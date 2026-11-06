@@ -20,6 +20,7 @@ const HOSTED_AMIGA_SUFFIX: &str = concat!(
     include_str!("../runtime/shim_hosted_amiga_optional.c"),
     include_str!("../runtime/shim_hosted_amiga_optional_ui.c"),
     include_str!("../runtime/shim_hosted_amiga_optional_services.c"),
+    include_str!("../runtime/shim_hosted_amiga_optional_net.c"),
 );
 
 /// The C runtime shim source of the freestanding profile.

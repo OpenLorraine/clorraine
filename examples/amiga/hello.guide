@@ -1,0 +1,6 @@
+@database "Hello"
+@$VER: hello.guide 1.0
+@NODE "Main"
+@TITLE "Hello"
+This is the Clorraine AmigaGuide acceptance document.
+@ENDNODE

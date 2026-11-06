@@ -106,6 +106,7 @@ fn cross_build(tag: &str, profile: &str, crt: &str, source: &str) {
             c_path.to_str().expect("the C path is UTF-8"),
             "-lamiga",
             "-lm",
+            "-lsocket",
         ])
         .output()
         .expect("run m68k-amigaos-gcc");
@@ -798,6 +799,120 @@ fn the_workbench_services_exports_match_the_stdlib_appendix() {
         ("### 14.18", "std.amiga.clipboard"),
         ("### 14.19", "std.amiga.devices"),
         ("### 14.20", "std.amiga.nonvolatile"),
+    ] {
+        let text = appendix_section(section);
+        let module = clc::stdlib::lookup(module).expect("the module is registered");
+        for name in module.exports {
+            assert!(
+                text.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|word| word == *name),
+                "the appendix section {section} is missing {name}"
+            );
+        }
+    }
+}
+
+const NETWORK_SOURCE: &str = r#"module tests.opt.network;
+
+import { Socket, AF_INET, SOCK_STREAM, openSocket, connectSocket,
+         sendSocket, recvSocket, closeSocket } from std.amiga.bsdsocket;
+import { AmigaGuide, GuideMessage, openAmigaGuide, closeAmigaGuide,
+         amigaGuideSignal, waitAmigaGuideMessage, guideMessageType,
+         guideMessagePrimary, guideMessageSecondary, replyGuideMessage,
+         sendAmigaGuideCommand } from std.amiga.amigaguide;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let socketCreated: Socket? = openSocket(AF_INET, SOCK_STREAM);
+    if (socketCreated == null) { return 1; }
+    let socket: Socket = socketCreated;
+    let host: String = stringOf("127.0.0.1");
+    if (!connectSocket(socket, toCString(host), 1234)) { return 2; }
+    let payload: String = stringOf("ping");
+    let sent: i32 = sendSocket(socket, bytes(payload));
+    let buffer: u8[16] = [0; 16];
+    let received: i32 = recvSocket(socket, slice(buffer, 0, 16));
+    closeSocket(socket);
+
+    let path: String = stringOf("CNEXT:hello.guide");
+    let screen: String = stringOf("Workbench");
+    let guideCreated: AmigaGuide? = openAmigaGuide(toCString(path), toCString(screen));
+    if (guideCreated == null) { return 3; }
+    let guide: AmigaGuide = guideCreated;
+    let signal: u32 = amigaGuideSignal(guide);
+    let messageCreated: GuideMessage? = waitAmigaGuideMessage(guide);
+    if (messageCreated == null) { return 4; }
+    let message: GuideMessage = messageCreated;
+    let kind: u32 = guideMessageType(message);
+    let primary: u32 = guideMessagePrimary(message);
+    let secondary: u32 = guideMessageSecondary(message);
+    replyGuideMessage(message);
+    let command: String = stringOf("NODE Main");
+    let sentCommand: bool = sendAmigaGuideCommand(guide, toCString(command));
+    closeAmigaGuide(guide);
+    return sent + received + i32(signal) + i32(kind) + i32(primary) +
+           i32(secondary) + (sentCommand ? 1 : 0);
+}
+"#;
+
+#[test]
+fn the_network_guide_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("network-surface");
+    let source_path = write_fixture(&scratch, "main.clo", NETWORK_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("network-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the network/guide surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in ["cl_socket_open", "cl_guide_open"] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+#[test]
+fn the_a500_profile_rejects_the_network_guide_surface() {
+    let scratch = ScratchDir::new("network-a500");
+    let source_path = write_fixture(&scratch, "main.clo", NETWORK_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("network-a500", &output, 1);
+    assert!(stderr(&output).contains("E11200"), "expected E11200, got:\n{}", stderr(&output));
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+#[test]
+fn the_network_guide_surface_cross_builds_with_nix20() {
+    cross_build("network-build20", "hosted-amiga", "nix20", NETWORK_SOURCE);
+}
+
+#[test]
+fn the_network_guide_exports_match_the_stdlib_appendix() {
+    for (section, module) in [
+        ("### 14.21", "std.amiga.bsdsocket"),
+        ("### 14.22", "std.amiga.amigaguide"),
     ] {
         let text = appendix_section(section);
         let module = clc::stdlib::lookup(module).expect("the module is registered");

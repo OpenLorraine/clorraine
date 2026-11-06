@@ -582,3 +582,72 @@ fn the_workbench_services_shim_pins_the_native_calls() {
         assert_contains("services-shim", &shim, needle);
     }
 }
+
+const NETWORK_SOURCE: &str = r#"module tests.opt.netimpl;
+
+import { Socket, AF_INET, SOCK_STREAM, openSocket, connectSocket,
+         sendSocket, recvSocket, closeSocket } from std.amiga.bsdsocket;
+import { AmigaGuide, GuideMessage, openAmigaGuide, closeAmigaGuide,
+         amigaGuideSignal, waitAmigaGuideMessage, guideMessageType,
+         guideMessagePrimary, guideMessageSecondary, replyGuideMessage }
+    from std.amiga.amigaguide;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let socketCreated: Socket? = openSocket(AF_INET, SOCK_STREAM);
+    if (socketCreated == null) { return 1; }
+    let socket: Socket = socketCreated;
+    let host: String = stringOf("127.0.0.1");
+    if (!connectSocket(socket, toCString(host), 1234)) { return 2; }
+    let payload: String = stringOf("ping");
+    let sent: i32 = sendSocket(socket, bytes(payload));
+    let buffer: u8[16] = [0; 16];
+    let received: i32 = recvSocket(socket, slice(buffer, 0, 16));
+    closeSocket(socket);
+    let guideCreated: AmigaGuide? = openAmigaGuide(toCString(stringOf("x.guide")), toCString(stringOf("Workbench")));
+    if (guideCreated == null) { return 3; }
+    let guide: AmigaGuide = guideCreated;
+    let signal: u32 = amigaGuideSignal(guide);
+    let messageCreated: GuideMessage? = waitAmigaGuideMessage(guide);
+    if (messageCreated == null) { return 4; }
+    let message: GuideMessage = messageCreated;
+    let kind: u32 = guideMessageType(message);
+    let primary: u32 = guideMessagePrimary(message);
+    let secondary: u32 = guideMessageSecondary(message);
+    replyGuideMessage(message);
+    closeAmigaGuide(guide);
+    return sent + received + i32(signal) + i32(kind) + i32(primary) + i32(secondary);
+}
+"#;
+
+#[test]
+fn the_network_guide_wrappers_route_to_the_shim() {
+    let c = emit("network-routing", "hosted-amiga", NETWORK_SOURCE);
+    for call in ["cl_socket_open", "cl_socket_connect", "cl_guide_open", "cl_guide_wait"] {
+        assert_contains("network-routing", &c, call);
+    }
+}
+
+#[test]
+fn the_network_guide_shim_pins_the_native_calls() {
+    let shim = shim();
+    for needle in [
+        "socket(AF_INET, kind, protocol)",
+        "connect(handle->descriptor,",
+        "send(handle->descriptor,",
+        "recv(handle->descriptor,",
+        "CloseSocket(handle->descriptor)",
+        "inet_addr((STRPTR)host)",
+        "address.sin_family = AF_INET",
+        "OpenAmigaGuideAsyncA(&guide->guide, NULL)",
+        "HTF_NOACTIVATE",
+        "AmigaGuideSignal(guide->context)",
+        "Wait(signal_mask)",
+        "GetAmigaGuideMsg(guide->context)",
+        "ReplyAmigaGuideMsg(message->message)",
+        "CloseAmigaGuide(guide->context)",
+    ] {
+        assert_contains("network-shim", &shim, needle);
+    }
+}

@@ -1,0 +1,76 @@
+//! AmigaGuide async hypertext (Kickstart 3.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. An `AmigaGuide` owns the
+//! async context and the `NewAmigaGuide`/path copies for its lifetime. The
+//! gate opens a committed `.guide` on the public `Workbench` screen, waits for
+//! one async message, replies, and closes.
+
+module std.amiga.amigaguide;
+
+/// An async AmigaGuide context. The generated drop closes it.
+export handle AmigaGuide freedBy cl_guide_close;
+
+/// One pending AmigaGuide message. The generated drop replies it.
+export handle GuideMessage freedBy cl_guide_reply;
+
+ffi stdamigaguide {
+    func cl_guide_open(path: cstring, public_screen: cstring): AmigaGuide?;
+    func cl_guide_close(take guide: AmigaGuide): void;
+    func cl_guide_signal(borrow guide: AmigaGuide): u32;
+    func cl_guide_wait(borrow guide: AmigaGuide): GuideMessage?;
+    func cl_guide_message_type(borrow message: GuideMessage): u32;
+    func cl_guide_message_primary(borrow message: GuideMessage): u32;
+    func cl_guide_message_secondary(borrow message: GuideMessage): u32;
+    func cl_guide_reply(take message: GuideMessage): void;
+    func cl_guide_send(borrow guide: AmigaGuide, command: cstring): bool;
+}
+
+/// Opens an async guide context, or returns null on an immediate failure.
+///
+/// A missing document is reported as an async message, not a null context.
+export func openAmigaGuide(path: cstring,
+                           publicScreen: cstring): AmigaGuide? {
+    return cl_guide_open(path, publicScreen);
+}
+
+/// Closes a guide context exactly once.
+export func closeAmigaGuide(take guide: AmigaGuide): void {
+    cl_guide_close(guide);
+}
+
+/// Returns the context signal mask.
+export func amigaGuideSignal(borrow guide: AmigaGuide): u32 {
+    return cl_guide_signal(guide);
+}
+
+/// Waits for and returns one message, or null.
+export func waitAmigaGuideMessage(borrow guide: AmigaGuide): GuideMessage? {
+    return cl_guide_wait(guide);
+}
+
+/// Returns the message type.
+export func guideMessageType(borrow message: GuideMessage): u32 {
+    return cl_guide_message_type(message);
+}
+
+/// Returns the primary result.
+export func guideMessagePrimary(borrow message: GuideMessage): u32 {
+    return cl_guide_message_primary(message);
+}
+
+/// Returns the secondary result.
+export func guideMessageSecondary(borrow message: GuideMessage): u32 {
+    return cl_guide_message_secondary(message);
+}
+
+/// Replies a message exactly once.
+export func replyGuideMessage(take message: GuideMessage): void {
+    cl_guide_reply(message);
+}
+
+/// Sends a command to the guide context.
+export func sendAmigaGuideCommand(borrow guide: AmigaGuide,
+                                  command: cstring): bool {
+    return cl_guide_send(guide, command);
+}
