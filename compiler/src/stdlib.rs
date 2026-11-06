@@ -157,6 +157,18 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.lowlevel",
         source: include_str!("../../stdlib/std.amiga.lowlevel.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.gadtools",
+        source: include_str!("../../stdlib/std.amiga.gadtools.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.asl",
+        source: include_str!("../../stdlib/std.amiga.asl.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.boopsi",
+        source: include_str!("../../stdlib/std.amiga.boopsi.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -712,6 +724,43 @@ pub const MODULES: &[StdlibModule] = &[
             "lowlevelVersion",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.gadtools",
+        exports: &[
+            "GadgetList",
+            "newGadgetList",
+            "addButton",
+            "addText",
+            "addString",
+            "addInteger",
+            "buildGadgets",
+            "freeGadgetList",
+            "gadgetWaitEvent",
+            "gadgetPollEvent",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.asl",
+        exports: &[
+            "FileRequester",
+            "newFileRequester",
+            "requestFile",
+            "fileRequesterPath",
+            "freeFileRequester",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.boopsi",
+        exports: &[
+            "BoopsiObject",
+            "newColorWheel",
+            "attachObject",
+            "detachObject",
+            "setColorWheelHue",
+            "colorWheelHue",
+            "disposeObject",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -993,6 +1042,23 @@ mod tests {
                 "std.amiga.lowlevel",
                 &["readJoyPort", "joyPortType", "decodeJoyPort",
                   "readJoyPortDecoded", "lowlevelVersion"][..],
+            ),
+            (
+                "std.amiga.gadtools",
+                &["GadgetList", "newGadgetList", "addButton", "addText",
+                  "addString", "addInteger", "buildGadgets", "freeGadgetList",
+                  "gadgetWaitEvent", "gadgetPollEvent"][..],
+            ),
+            (
+                "std.amiga.asl",
+                &["FileRequester", "newFileRequester", "requestFile",
+                  "fileRequesterPath", "freeFileRequester"][..],
+            ),
+            (
+                "std.amiga.boopsi",
+                &["BoopsiObject", "newColorWheel", "attachObject",
+                  "detachObject", "setColorWheelHue", "colorWheelHue",
+                  "disposeObject"][..],
             ),
         ] {
             assert!(lookup(module).is_some(), "missing module {module}");

@@ -846,6 +846,57 @@ any available type. `readJoyPortDecoded` combines both calls.
 | `readJoyPortDecoded(port)` | `u8` | read + decode |
 | `lowlevelVersion()` | `u32` | library version, or 0 |
 
+### 14.12 gadtools (`std.amiga.gadtools`)
+
+`newGadgetList` creates a `VisualInfo` and copied `TextAttr`/font name on a
+window. `addButton`, `addText`, `addString`, and `addInteger` append typed
+`NewGadget` specs with copied labels/initial text; ids are 1..65535 and unique
+within the window. `buildGadgets` runs `CreateContext` plus one `CreateGadgetA`
+per spec, `AddGList`, `RefreshGList`, and `GT_RefreshWindow`. `freeGadgetList`
+removes and frees the list before the window closes. `gadgetWaitEvent` and
+`gadgetPollEvent` use `GT_GetIMsg`/`GT_ReplyIMsg` and the gadtools refresh path.
+
+| API | Returns | Rules |
+|---|---|---|
+| `newGadgetList(window, font, size)` | `GadgetList?` | window must outlive |
+| `addButton/addText/addString/addInteger` | `bool` | id 1..65535; copied text |
+| `buildGadgets(borrow)` | `bool` | one batch; idempotent |
+| `freeGadgetList(take)` | — | `RemoveGList`/`FreeGadgets`/`FreeVisualInfo` |
+| `gadgetWaitEvent(window)` | `WindowEvent` | `GT_GetIMsg` + refresh |
+| `gadgetPollEvent(window)` | `WindowEvent` | non-blocking |
+
+### 14.13 ASL file requester (`std.amiga.asl`)
+
+`newFileRequester` allocates an `ASL_FileRequest`; `title` and `initialPath`
+are copied and the path is split into `ASLFR_InitialDrawer`/`InitialFile`.
+`requestFile` is modal on the parent window; `fileRequesterPath` returns the
+accepted drawer/file path (an absolute file wins), or -1 on cancel.
+`freeFileRequester` releases it. Save mode is V38/2.04+.
+
+| API | Returns | Rules |
+|---|---|---|
+| `newFileRequester(title, path, save)` | `FileRequester?` | copies/splits path |
+| `requestFile(borrow, window)` | `bool` | modal |
+| `fileRequesterPath(borrow, buf)` | `i32` | bounded; -1 cancel |
+| `freeFileRequester(take)` | — | `FreeAslRequest` |
+
+### 14.14 BOOPSI colorwheel (`std.amiga.boopsi`)
+
+`newColorWheel` creates a native `colorwheel.gadget` with `GA_*` geometry and
+`WHEEL_Screen` from the window. `attachObject` uses `AddGList`/`RefreshGList`;
+`detachObject` removes and refreshes; `setColorWheelHue`/`colorWheelHue` use
+`SetGadgetAttrsA`/`GetAttr`. `disposeObject` detaches if needed and calls
+`DisposeObject`. The object must be disposed before the window closes.
+
+| API | Returns | Rules |
+|---|---|---|
+| `newColorWheel(window, id, geometry)` | `BoopsiObject?` | native 3.0+ class |
+| `attachObject(window, object)` | `bool` | `AddGList` + refresh |
+| `detachObject(borrow)` | — | `RemoveGList` + refresh |
+| `setColorWheelHue(borrow, hue)` | `bool` | `WHEEL_Hue` |
+| `colorWheelHue(borrow)` | `u32` | `GetAttr` |
+| `disposeObject(take)` | — | detach + dispose |
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

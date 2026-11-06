@@ -318,3 +318,99 @@ fn the_dos_graphics_input_shim_pins_the_native_calls() {
         assert_contains("dos-shim", &shim, needle);
     }
 }
+
+const UI_SOURCE: &str = r#"module tests.opt.uiimpl;
+
+import { Screen, Window, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { GadgetList, newGadgetList, addButton, buildGadgets, freeGadgetList }
+    from std.amiga.gadtools;
+import { FileRequester, newFileRequester, requestFile, freeFileRequester }
+    from std.amiga.asl;
+import { BoopsiObject, newColorWheel, attachObject, detachObject,
+         disposeObject } from std.amiga.boopsi;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let title: String = stringOf("Bundle9");
+    let screenCreated: Screen? = openScreen(320, 200, 4, toCString(title));
+    if (screenCreated == null) { return 1; }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? = openWindow(screen, 0, 0, 320, 200, toCString(title));
+    if (windowCreated == null) { return 2; }
+    let window: Window = windowCreated;
+    let listCreated: GadgetList? = newGadgetList(window, toCString(stringOf("topaz.font")), 8);
+    if (listCreated == null) { return 3; }
+    let list: GadgetList = listCreated;
+    if (!addButton(list, 1, toCString(stringOf("OK")), 8, 8, 80, 20)) { return 4; }
+    if (!buildGadgets(list)) { return 5; }
+    freeGadgetList(list);
+    let requesterCreated: FileRequester? =
+        newFileRequester(toCString(stringOf("Open")), toCString(stringOf("CNEXT:x")), false);
+    if (requesterCreated == null) { return 6; }
+    let requester: FileRequester = requesterCreated;
+    if (requestFile(requester, window)) { }
+    freeFileRequester(requester);
+    let objectCreated: BoopsiObject? = newColorWheel(window, 10, 8, 8, 100, 60);
+    if (objectCreated == null) { return 7; }
+    let object: BoopsiObject = objectCreated;
+    if (!attachObject(window, object)) { return 8; }
+    detachObject(object);
+    disposeObject(object);
+    closeWindow(window);
+    return 0;
+}
+"#;
+
+#[test]
+fn the_intuition_advanced_wrappers_route_to_the_shim() {
+    let c = emit("ui-routing", "hosted-amiga", UI_SOURCE);
+    for call in [
+        "cl_gt_new",
+        "cl_gt_add_button",
+        "cl_gt_build",
+        "cl_asl_new",
+        "cl_asl_request",
+        "cl_boopsi_new_colorwheel",
+        "cl_boopsi_attach",
+    ] {
+        assert_contains("ui-routing", &c, call);
+    }
+}
+
+#[test]
+fn the_intuition_advanced_shim_pins_the_native_calls() {
+    let shim = shim();
+    for needle in [
+        "CreateContext(&list->glist)",
+        "CreateGadgetA(item->kind, previous, &item->ng,",
+        "RefreshGList(list->glist",
+        "GT_RefreshWindow(list->window, NULL)",
+        "GT_GetIMsg(",
+        "GT_ReplyIMsg(",
+        "AllocAslRequest(",
+        "AslRequest(handle->request, tags)",
+        "NewObjectA(NULL,",
+        "WHEEL_Screen",
+        "SetGadgetAttrsA((struct Gadget *)handle->object",
+        "GetAttr(WHEEL_Hue",
+        "DisposeObject(",
+    ] {
+        assert_contains("ui-shim", &shim, needle);
+    }
+}
+
+#[test]
+fn the_shared_gadget_lookup_uses_the_public_list() {
+    let shim = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/shim_hosted_amiga.c"),
+    )
+    .expect("the shared shim is readable");
+    for needle in [
+        "handle->window->FirstGadget",
+        "gadget->GadgetID",
+        "ActivateGadget(gadget, handle->window, NULL)",
+    ] {
+        assert_contains("shared-gadget", &shim, needle);
+    }
+}

@@ -18,7 +18,7 @@ directories. [AR-33, AR-34]
 | `SDK-EXE-010` | `utility` hooks | `sdk-a600-addons` | `exec: ok ... hook 1` |
 | `SDK-EXE-011` | `semaphore` | `sdk-a600-addons` | `exec: ok sem 1 ...` |
 | `SDK-INT-006` | `gadtools` | `sdk-a600-addons` (intuition mode) | `gt: ok gad 4` |
-| `SDK-INT-007` | `asl` | `sdk-a600-addons` (intuition mode) | `asl: ok path asl.txt` |
+| `SDK-INT-007` | `asl` | `sdk-a600-addons` (intuition mode) | `asl: ok path 1` |
 | `SDK-INT-008` | `boopsi` | `sdk-a1200-ks30-addons` | `boopsi: ok hue 42` |
 | `SDK-DOS-004` | `args` | `sdk-a600-addons` | `args: ok n 3 file 1 num 7 sw 1` |
 | `SDK-DOS-006` | `datatypes` | `sdk-a1200-addons` | `dt: ok w 320 h 200 depth 4 colors 16` |

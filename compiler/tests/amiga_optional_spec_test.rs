@@ -475,3 +475,133 @@ fn the_dos_graphics_input_exports_match_the_stdlib_appendix() {
         }
     }
 }
+
+const INTUITION_SOURCE: &str = r#"module tests.opt.intuition;
+
+import { Screen, Window, WindowEvent, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { GadgetList, newGadgetList, addButton, addText, addString,
+         addInteger, buildGadgets, freeGadgetList, gadgetPollEvent }
+    from std.amiga.gadtools;
+import { FileRequester, newFileRequester, requestFile, fileRequesterPath,
+         freeFileRequester } from std.amiga.asl;
+import { BoopsiObject, newColorWheel, attachObject, detachObject,
+         setColorWheelHue, colorWheelHue, disposeObject } from std.amiga.boopsi;
+import { String, stringOf, toCString } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let title: String = stringOf("Bundle9 Intuition");
+    let screenCreated: Screen? = openScreen(320, 200, 4, toCString(title));
+    if (screenCreated == null) { return 1; }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? = openWindow(screen, 0, 0, 320, 200, toCString(title));
+    if (windowCreated == null) { return 2; }
+    let window: Window = windowCreated;
+
+    let listCreated: GadgetList? =
+        newGadgetList(window, toCString(stringOf("topaz.font")), 8);
+    if (listCreated == null) { return 3; }
+    let list: GadgetList = listCreated;
+    if (!addButton(list, 1, toCString(stringOf("OK")), 8, 8, 80, 20)) { return 4; }
+    if (!addText(list, 2, toCString(stringOf("Text")), 8, 32, 80, 20)) { return 5; }
+    if (!addString(list, 3, toCString(stringOf("abc")), 8, 8, 56, 120, 20)) { return 6; }
+    if (!addInteger(list, 4, 42, 4, 8, 88, 80, 20)) { return 7; }
+    if (!buildGadgets(list)) { return 8; }
+    let event: WindowEvent = gadgetPollEvent(window);
+    freeGadgetList(list);
+
+    let requesterCreated: FileRequester? =
+        newFileRequester(toCString(stringOf("Open")), toCString(stringOf("CNEXT:asl.txt")), false);
+    if (requesterCreated == null) { return 9; }
+    let requester: FileRequester = requesterCreated;
+    let requested: bool = requestFile(requester, window);
+    let path: u8[64] = [0; 64];
+    let pathLength: i32 = fileRequesterPath(requester, slice(path, 0, 64));
+    freeFileRequester(requester);
+
+    let objectCreated: BoopsiObject? = newColorWheel(window, 10, 8, 120, 100, 60);
+    if (objectCreated == null) { return 10; }
+    let object: BoopsiObject = objectCreated;
+    if (!attachObject(window, object)) { return 11; }
+    if (!setColorWheelHue(object, 42)) { return 12; }
+    let hue: u32 = colorWheelHue(object);
+    detachObject(object);
+    disposeObject(object);
+
+    closeWindow(window);
+    return i32(event.kind) + (requested ? 1 : 0) + pathLength +
+           i32(hue);
+}
+"#;
+
+#[test]
+fn the_intuition_advanced_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("intuition-surface");
+    let source_path = write_fixture(&scratch, "main.clo", INTUITION_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("intuition-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the intuition surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in ["cl_gt_new", "cl_asl_new", "cl_boopsi_new_colorwheel"] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+#[test]
+fn the_a500_profile_rejects_the_intuition_advanced_surface() {
+    let scratch = ScratchDir::new("intuition-a500");
+    let source_path = write_fixture(&scratch, "main.clo", INTUITION_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("intuition-a500", &output, 1);
+    assert!(stderr(&output).contains("E11200"), "expected E11200, got:\n{}", stderr(&output));
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+#[test]
+fn the_intuition_advanced_surface_cross_builds_with_nix20() {
+    cross_build("intuition-build20", "hosted-amiga", "nix20", INTUITION_SOURCE);
+}
+
+#[test]
+fn the_intuition_advanced_exports_match_the_stdlib_appendix() {
+    for (section, module) in [
+        ("### 14.12", "std.amiga.gadtools"),
+        ("### 14.13", "std.amiga.asl"),
+        ("### 14.14", "std.amiga.boopsi"),
+    ] {
+        let text = appendix_section(section);
+        let module = clc::stdlib::lookup(module).expect("the module is registered");
+        for name in module.exports {
+            assert!(
+                text.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|word| word == *name),
+                "the appendix section {section} is missing {name}"
+            );
+        }
+    }
+}

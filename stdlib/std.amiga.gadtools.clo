@@ -1,0 +1,123 @@
+//! Amiga gadtools gadget builder (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `GadgetList` owns the
+//! `VisualInfo`, `NewGadget`/`TextAttr` copies, and the public `Gadget` list.
+//! The window must outlive the list. `gadgetWaitEvent`/`gadgetPollEvent` use
+//! the gadtools `GT_*` message and refresh path.
+
+module std.amiga.gadtools;
+
+import { Window, WindowEvent } from std.amiga.intuition;
+
+/// A gadtools gadget batch. The generated drop removes and frees it.
+export handle GadgetList freedBy cl_gt_free;
+
+ffi stdgadtools {
+    func cl_gt_new(borrow window: Window, font_name: cstring,
+                   font_size: u16): GadgetList?;
+    func cl_gt_add_button(borrow list: GadgetList, id: i32, text: cstring,
+                          x: i32, y: i32, width: i32, height: i32): bool;
+    func cl_gt_add_text(borrow list: GadgetList, id: i32, text: cstring,
+                        x: i32, y: i32, width: i32, height: i32): bool;
+    func cl_gt_add_string(borrow list: GadgetList, id: i32, initial: cstring,
+                          max_chars: i32, x: i32, y: i32, width: i32,
+                          height: i32): bool;
+    func cl_gt_add_integer(borrow list: GadgetList, id: i32, value: i32,
+                           max_chars: i32, x: i32, y: i32, width: i32,
+                           height: i32): bool;
+    func cl_gt_build(borrow list: GadgetList): bool;
+    func cl_gt_free(take list: GadgetList): void;
+    func cl_gt_next_event(borrow window: Window, wait: bool): bool;
+    func cl_window_event_kind(borrow window: Window): i32;
+    func cl_window_event_code(borrow window: Window): i32;
+    func cl_window_event_qualifier(borrow window: Window): u16;
+    func cl_window_event_mouse_x(borrow window: Window): i32;
+    func cl_window_event_mouse_y(borrow window: Window): i32;
+    func cl_window_event_gadget(borrow window: Window): i32;
+    func cl_window_event_menu(borrow window: Window): i32;
+}
+
+/// Creates a gadget list on `window`, or returns null.
+///
+/// `fontSize` is 1..255. The list must be freed before the window closes.
+export func newGadgetList(borrow window: Window, fontName: cstring,
+                          fontSize: u16): GadgetList? {
+    return cl_gt_new(window, fontName, fontSize);
+}
+
+/// Adds a button gadget with a unique id and copied label.
+export func addButton(borrow list: GadgetList, id: i32, text: cstring,
+                      x: i32, y: i32, width: i32, height: i32): bool {
+    return cl_gt_add_button(list, id, text, x, y, width, height);
+}
+
+/// Adds a text gadget with a unique id and copied text.
+export func addText(borrow list: GadgetList, id: i32, text: cstring,
+                    x: i32, y: i32, width: i32, height: i32): bool {
+    return cl_gt_add_text(list, id, text, x, y, width, height);
+}
+
+/// Adds a string gadget with a unique id and copied initial text.
+export func addString(borrow list: GadgetList, id: i32, initial: cstring,
+                      maxChars: i32, x: i32, y: i32, width: i32,
+                      height: i32): bool {
+    return cl_gt_add_string(list, id, initial, maxChars, x, y, width, height);
+}
+
+/// Adds an integer gadget with a unique id.
+export func addInteger(borrow list: GadgetList, id: i32, value: i32,
+                       maxChars: i32, x: i32, y: i32, width: i32,
+                       height: i32): bool {
+    return cl_gt_add_integer(list, id, value, maxChars, x, y, width, height);
+}
+
+/// Creates the gadgets, adds them to the window, and refreshes.
+///
+/// Returns false on a null/empty/already-built list or a creation failure.
+export func buildGadgets(borrow list: GadgetList): bool {
+    return cl_gt_build(list);
+}
+
+/// Removes and frees the gadget batch.
+export func freeGadgetList(take list: GadgetList): void {
+    cl_gt_free(list);
+}
+
+/// Waits for the next gadtools event and returns the shared event value.
+export func gadgetWaitEvent(borrow window: Window): WindowEvent {
+    if (!cl_gt_next_event(window, true)) {
+        return WindowEvent {
+            kind: 0, code: 0, qualifier: 0,
+            mouse_x: 0, mouse_y: 0, gadget: 0, menu: 0,
+        };
+    }
+    return WindowEvent {
+        kind: cl_window_event_kind(window),
+        code: cl_window_event_code(window),
+        qualifier: cl_window_event_qualifier(window),
+        mouse_x: cl_window_event_mouse_x(window),
+        mouse_y: cl_window_event_mouse_y(window),
+        gadget: cl_window_event_gadget(window),
+        menu: cl_window_event_menu(window),
+    };
+}
+
+/// Returns the next gadtools event without blocking, or `EVENT_NONE`.
+export func gadgetPollEvent(borrow window: Window): WindowEvent {
+    if (!cl_gt_next_event(window, false)) {
+        return WindowEvent {
+            kind: 0, code: 0, qualifier: 0,
+            mouse_x: 0, mouse_y: 0, gadget: 0, menu: 0,
+        };
+    }
+    return WindowEvent {
+        kind: cl_window_event_kind(window),
+        code: cl_window_event_code(window),
+        qualifier: cl_window_event_qualifier(window),
+        mouse_x: cl_window_event_mouse_x(window),
+        mouse_y: cl_window_event_mouse_y(window),
+        gadget: cl_window_event_gadget(window),
+        menu: cl_window_event_menu(window),
+    };
+}

@@ -1,0 +1,153 @@
+//! Bundle 9 Intuition acceptance: a gadtools batch, a native capture, and a
+//! modal ASL file requester.
+//!
+//! Handshakes: `gt-ready.txt` after the capture, `asl-ready.txt` before the
+//! requester, `asl-path.txt` with the accepted path, and `asl-done.txt` after
+//! the requester returns.
+
+module examples.amiga.optional_intuition;
+
+import { Screen, Window, openScreen, openWindow, closeWindow, saveScreen }
+    from std.amiga.intuition;
+import { GadgetList, newGadgetList, addButton, addText, addString,
+         addInteger, buildGadgets, freeGadgetList } from std.amiga.gadtools;
+import { FileRequester, newFileRequester, requestFile, fileRequesterPath,
+         freeFileRequester } from std.amiga.asl;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+import { File, createFile, writeBytes } from std.io;
+import { println } from std.io;
+import { delayTicks } from std.amiga.dos;
+
+func writeText(path: cstring, text: String): bool {
+    let file: File? = createFile(path);
+    if (file == null) {
+        return false;
+    }
+    let written: i32 = writeBytes(file, bytes(text));
+    return written == i32(len(bytes(text)));
+}
+
+func writeBytesFile(path: cstring, data: u8[]): bool {
+    let file: File? = createFile(path);
+    if (file == null) {
+        return false;
+    }
+    let written: i32 = writeBytes(file, data);
+    return written == i32(len(data));
+}
+
+func main(): i32 {
+    let title: String = stringOf("Bundle9 Intuition");
+    let screenCreated: Screen? = openScreen(320, 200, 4, toCString(title));
+    if (screenCreated == null) {
+        println("gt: err 1");
+        return 1;
+    }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? =
+        openWindow(screen, 0, 0, 320, 200, toCString(title));
+    if (windowCreated == null) {
+        println("gt: err 2");
+        return 1;
+    }
+    let window: Window = windowCreated;
+
+    let fontName: String = stringOf("topaz.font");
+    let listCreated: GadgetList? =
+        newGadgetList(window, toCString(fontName), 8);
+    if (listCreated == null) {
+        println("gt: err 3");
+        return 1;
+    }
+    let list: GadgetList = listCreated;
+    let okText: String = stringOf("OK");
+    let labelText: String = stringOf("Gadgets");
+    let initial: String = stringOf("abc");
+    if (!addButton(list, 1, toCString(okText), 8, 8, 80, 20)) {
+        freeGadgetList(list);
+        println("gt: err 4");
+        return 1;
+    }
+    if (!addText(list, 2, toCString(labelText), 8, 32, 120, 20)) {
+        freeGadgetList(list);
+        println("gt: err 5");
+        return 1;
+    }
+    if (!addString(list, 3, toCString(initial), 8, 8, 56, 160, 20)) {
+        freeGadgetList(list);
+        println("gt: err 6");
+        return 1;
+    }
+    if (!addInteger(list, 4, 42, 4, 8, 88, 80, 20)) {
+        freeGadgetList(list);
+        println("gt: err 7");
+        return 1;
+    }
+    if (!buildGadgets(list)) {
+        freeGadgetList(list);
+        println("gt: err 8");
+        return 1;
+    }
+    delayTicks(u32(10));
+    let shotPath: String = stringOf("CNEXT:a600-intuition.cscr");
+    if (!saveScreen(screen, toCString(shotPath))) {
+        freeGadgetList(list);
+        println("gt: err 9");
+        return 1;
+    }
+    let readyPath: String = stringOf("CNEXT:gt-ready.txt");
+    let readyLine: String = stringOf("ready\n");
+    if (!writeText(toCString(readyPath), readyLine)) {
+        freeGadgetList(list);
+        println("gt: err 10");
+        return 1;
+    }
+    println("gt: ok gad 4");
+
+    let requesterTitle: String = stringOf("Open");
+    let initialPath: String = stringOf("CNEXT:asl.txt");
+    let requesterCreated: FileRequester? =
+        newFileRequester(toCString(requesterTitle), toCString(initialPath), false);
+    if (requesterCreated == null) {
+        freeGadgetList(list);
+        println("asl: err 1");
+        return 1;
+    }
+    let requester: FileRequester = requesterCreated;
+    let aslReadyPath: String = stringOf("CNEXT:asl-ready.txt");
+    if (!writeText(toCString(aslReadyPath), readyLine)) {
+        freeFileRequester(requester);
+        freeGadgetList(list);
+        println("asl: err 2");
+        return 1;
+    }
+    let requested: bool = requestFile(requester, window);
+    let path: u8[64] = [0; 64];
+    let pathLength: i32 = fileRequesterPath(requester, slice(path, 0, 64));
+    let aslPathPath: String = stringOf("CNEXT:asl-path.txt");
+    if (pathLength > 0) {
+        let used: u8[] = slice(path, 0, u32(pathLength));
+        if (!writeBytesFile(toCString(aslPathPath), used)) {
+            freeFileRequester(requester);
+            freeGadgetList(list);
+            println("asl: err 3");
+            return 1;
+        }
+    }
+    freeFileRequester(requester);
+    let aslDonePath: String = stringOf("CNEXT:asl-done.txt");
+    if (!writeText(toCString(aslDonePath), readyLine)) {
+        freeGadgetList(list);
+        println("asl: err 4");
+        return 1;
+    }
+    freeGadgetList(list);
+    closeWindow(window);
+    if (!requested || pathLength <= 0) {
+        println("asl: err 5");
+        return 1;
+    }
+    println("asl: ok path 1");
+    return 0;
+}

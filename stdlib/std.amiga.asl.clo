@@ -1,0 +1,52 @@
+//! Amiga ASL file requester (Kickstart 2.0+; save mode 2.04+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `FileRequester` owns one
+//! `struct FileRequester` and copied title/path strings. `requestFile` is
+//! modal; the caller supplies the parent window.
+
+module std.amiga.asl;
+
+import { Window } from std.amiga.intuition;
+
+/// An ASL file requester. The generated drop frees it.
+export handle FileRequester freedBy cl_asl_free;
+
+ffi stdasl {
+    func cl_asl_new(title: cstring, initial: cstring, save: bool): FileRequester?;
+    func cl_asl_request(borrow request: FileRequester,
+                        borrow window: Window): bool;
+    func cl_asl_path(borrow request: FileRequester, buffer: raw u8,
+                     length: u32): i32;
+    func cl_asl_free(take request: FileRequester): void;
+}
+
+/// Creates a file requester, or returns null.
+///
+/// `initialPath` may be a file name, a drawer, or `drawer/file`; it is split
+/// into the initial drawer and file tags. `save` selects save mode (V38).
+export func newFileRequester(title: cstring, initialPath: cstring,
+                             save: bool): FileRequester? {
+    return cl_asl_new(title, initialPath, save);
+}
+
+/// Shows the modal requester on `window`; true when the user accepted.
+export func requestFile(borrow request: FileRequester,
+                        borrow window: Window): bool {
+    return cl_asl_request(request, window);
+}
+
+/// Copies the accepted path and returns its length, or -1 on cancel.
+///
+/// The path is `fr_Drawer` + `/` + `fr_File`; an absolute `fr_File` wins.
+export func fileRequesterPath(borrow request: FileRequester,
+                              borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_asl_path(request, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Frees a requester exactly once.
+export func freeFileRequester(take request: FileRequester): void {
+    cl_asl_free(request);
+}

@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 9/30 tasks (30%) — Executing
+> **Progress**: 12/30 tasks (40%) — Executing
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 03:05
+> **Last Updated**: 2026-11-06 03:12
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -47,9 +47,9 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — gadtools/ASL/BOOPSI add object trees, modal input, and native class
 > attributes, plus a shared event-id fallback.
 
-- [ ] 3.1.1 [spec-author] Add the gadtools/asl/boopsi surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red
-- [ ] 3.1.2 Add the three modules with their optional-suffix C; add the shared `FirstGadget`/`GadgetID` fallback; run the spec green
-- [ ] 3.1.3 Add impl pins for `CreateContext`/`CreateGadgetA`, ASL drawer/file split, colorwheel screen/hue, and `optional-intuition.clo`/`optional-boopsi.clo`; run targeted tests
+- [x] 3.1.1 [spec-author] Add the gadtools/asl/boopsi surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:12; §14.12–§14.14 added)
+- [x] 3.1.2 Add the three modules with their optional-suffix C; add the shared `FirstGadget`/`GadgetID` fallback; run the spec green ✅ (completed: 2026-11-06 03:12; native gadtools/ASL/colorwheel)
+- [x] 3.1.3 Add impl pins for `CreateContext`/`CreateGadgetA`, ASL drawer/file split, colorwheel screen/hue, and `optional-intuition.clo`/`optional-boopsi.clo`; run targeted tests ✅ (completed: 2026-11-06 03:12; 10 impl + 15 spec green; demos build)
 
 ## Phase 4: Workbench services
 

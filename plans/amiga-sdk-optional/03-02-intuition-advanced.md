@@ -102,4 +102,4 @@ Both use only 1.3-era structures and remain in the shared shim.
   `FreeVisualInfo`, `AllocAslRequest`, `AslRequest`, `FreeAslRequest`, `NewObjectA`,
   `SetGadgetAttrsA`, `GetAttr`, `AddGList`, `RemoveGList`, `DisposeObject`.
 - Runtime: A600/KS2.05 for gadtools/ASL; A1200/KS3.0 for BOOPSI.
-- Gate lines: `gt: ok gad 4`; `asl: ok path asl.txt`; `boopsi: ok hue 42`.
+- Gate lines: `gt: ok gad 4`; `asl: ok path 1`; `boopsi: ok hue 42`.

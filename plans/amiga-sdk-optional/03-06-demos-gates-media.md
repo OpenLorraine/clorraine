@@ -42,7 +42,7 @@ stays read-only under `/amiga`; the helper copies only named trees into `build/`
 | `examples/amiga/optional-exec20.clo` | semaphore, hook, tag list, date | `exec: ok sem 1 hook 1 tag 1 date 1` |
 | `examples/amiga/optional-pool.clo` | utility pool | `pool: ok 1` |
 | `examples/amiga/optional-args.clo` | ReadArgs, EClock, regions | `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20`; `eclock: ok 709379` |
-| `examples/amiga/optional-intuition.clo` | gadtools + ASL | `gt: ok gad 4`; `asl: ok path asl.txt` |
+| `examples/amiga/optional-intuition.clo` | gadtools + ASL | `gt: ok gad 4`; `asl: ok path 1` |
 | `examples/amiga/optional-services.clo` | commodities, locale, ARexx, clipboard, devices | `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`; `rexx: ok action 1`; `clip: ok n 4`; `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1` |
 | `examples/amiga/optional-boopsi.clo` | BOOPSI colorwheel | `boopsi: ok hue 42` |
 | `examples/amiga/optional-datatypes.clo` | datatypes ILBM | `dt: ok w 320 h 200 depth 4 colors 16` |
@@ -80,7 +80,7 @@ loops send/recv until 5 bytes. [AR-15, AR-28]
 2. Run `optional-intuition`; poll `gt-ready.txt`; capture `a600-intuition.cscr`; compare
    `docs/amiga-sdk/a600-intuition.png`.
 3. On `asl-ready.txt`, focus the FS-UAE window and type `asl.txt` + Return with retries; poll
-   `asl-done.txt`; assert `gt: ok gad 4`, `asl: ok path asl.txt`.
+   `asl-done.txt`; assert `gt: ok gad 4`, `asl: ok path 1`, and `asl-path.txt` contains `asl.txt`.
 
 ### `sdk-a600-ks31-addons`
 

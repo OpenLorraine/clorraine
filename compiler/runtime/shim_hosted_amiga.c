@@ -2220,10 +2220,19 @@ BOOL cl_window_activate_gadget(void *window_handle, LONG id)
         return FALSE;
     }
     node = cl_window_find_gadget(handle, id);
-    if (node == NULL || node->gadget == NULL) {
-        return FALSE;
+    if (node != NULL && node->gadget != NULL) {
+        return ActivateGadget(node->gadget, handle->window, NULL);
     }
-    return ActivateGadget(node->gadget, handle->window, NULL);
+    if (handle->window != NULL) {
+        struct Gadget *gadget;
+        for (gadget = handle->window->FirstGadget; gadget != NULL;
+             gadget = gadget->NextGadget) {
+            if ((LONG)gadget->GadgetID == id) {
+                return ActivateGadget(gadget, handle->window, NULL);
+            }
+        }
+    }
+    return FALSE;
 }
 
 /* --- Intuition requesters, alerts, and the built-in pointer. ------------- */
@@ -2480,6 +2489,7 @@ BOOL cl_screen_save_native(void *screen_handle, char *path)
 static LONG cl_window_gadget_id(cl_window *handle, APTR address)
 {
     cl_gadget_node *node;
+    struct Gadget *gadget;
 
     if (handle == NULL) {
         return 0;
@@ -2487,6 +2497,15 @@ static LONG cl_window_gadget_id(cl_window *handle, APTR address)
     for (node = handle->gadgets; node != NULL; node = node->next) {
         if ((APTR)node->gadget == address) {
             return node->id;
+        }
+    }
+    /* gadtools and BOOPSI gadgets are ordinary public Gadget nodes. Compare
+     * the address before reading GadgetID so a removed node is never
+     * dereferenced. */
+    for (gadget = handle->window == NULL ? NULL : handle->window->FirstGadget;
+         gadget != NULL; gadget = gadget->NextGadget) {
+        if ((APTR)gadget == address) {
+            return (LONG)gadget->GadgetID;
         }
     }
     return 0;

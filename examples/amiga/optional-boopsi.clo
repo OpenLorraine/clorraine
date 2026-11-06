@@ -1,0 +1,62 @@
+//! Bundle 9 BOOPSI acceptance: native colorwheel create, attach, hue, and
+//! dispose with a native screen capture.
+
+module examples.amiga.optional_boopsi;
+
+import { Screen, Window, openScreen, openWindow, closeWindow, saveScreen }
+    from std.amiga.intuition;
+import { BoopsiObject, newColorWheel, attachObject, detachObject,
+         setColorWheelHue, colorWheelHue, disposeObject } from std.amiga.boopsi;
+import { String, stringOf, toCString } from std.text;
+import { delayTicks } from std.amiga.dos;
+import { println } from std.io;
+
+func main(): i32 {
+    let title: String = stringOf("Bundle9 BOOPSI");
+    let screenCreated: Screen? = openScreen(320, 200, 4, toCString(title));
+    if (screenCreated == null) {
+        println("boopsi: err 1");
+        return 1;
+    }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? =
+        openWindow(screen, 0, 0, 320, 200, toCString(title));
+    if (windowCreated == null) {
+        println("boopsi: err 2");
+        return 1;
+    }
+    let window: Window = windowCreated;
+    let objectCreated: BoopsiObject? = newColorWheel(window, 10, 8, 8, 160, 120);
+    if (objectCreated == null) {
+        closeWindow(window);
+        println("boopsi: err 3");
+        return 1;
+    }
+    let object: BoopsiObject = objectCreated;
+    if (!attachObject(window, object)) {
+        disposeObject(object);
+        closeWindow(window);
+        println("boopsi: err 4");
+        return 1;
+    }
+    if (!setColorWheelHue(object, 42)) {
+        detachObject(object);
+        disposeObject(object);
+        closeWindow(window);
+        println("boopsi: err 5");
+        return 1;
+    }
+    let hue: u32 = colorWheelHue(object);
+    delayTicks(u32(10));
+    let shotPath: String = stringOf("CNEXT:a1200-ks30-boopsi.cscr");
+    let saved: bool = saveScreen(screen, toCString(shotPath));
+    detachObject(object);
+    disposeObject(object);
+    closeWindow(window);
+    if (!saved || hue != 42) {
+        println("boopsi: err 6");
+        return 1;
+    }
+    println("boopsi: ok hue 42");
+    return 0;
+}
