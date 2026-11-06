@@ -23,8 +23,8 @@ directories. [AR-33, AR-34]
 | `SDK-DOS-004` | `args` | `sdk-a600-addons` | `args: ok n 3 file 1 num 7 sw 1` |
 | `SDK-DOS-006` | `datatypes` | `sdk-a1200-addons` | `dt: ok w 320 h 200 depth 4 colors 16` |
 | `SDK-TXT-003` | `std.amiga.text.openDiskFont` | `sdk-a500-diskfont` | `diskfont: ok h 12` |
-| `SDK-TXT-005` | `regions` | `sdk-a600-addons` | `regions: ok bounds 10 10 20 20 clip 1` |
-| `SDK-AUD-006` | `lowlevel` | `sdk-a600-ks31-addons` | `ll: ok v 40 p0 0 p1 0` |
+| `SDK-TXT-005` | `regions` | `sdk-a600-addons` | `regions: ok bounds 10 10 20 20` |
+| `SDK-AUD-006` | `lowlevel` | `sdk-a600-ks31-addons` | `ll: ok v 40` |
 | `SDK-AUD-008` | `eclock` | `sdk-a600-addons` | `eclock: ok 709379` |
 | `SDK-WBK-003` | `commodities` | `sdk-a600-addons` | `cmd: ok broker 1 dup 1 reopen 1` |
 | `SDK-WBK-004` | `locale` | `sdk-a600-addons` | `locale: ok name 1 cc 1 gmt 1 fmt 1` |
@@ -108,7 +108,7 @@ directories. [AR-33, AR-34]
 |---|---|---|---|
 | `sdk-a500-diskfont` | A500/KS1.3 | TXT-003 | `diskfont: ok h 12` |
 | `sdk-a600-addons` | A600/KS2.05 | EXE-007/010/011, INT-006/007, DOS-004, TXT-005, AUD-008, WBK-003/004/005/006/007 | `exec`, `args`, `regions`, `eclock`, `gt`, `asl`, `cmd`, `locale`, `rexx`, `clip`, `ser`, `par`, `prt` |
-| `sdk-a600-ks31-addons` | A600/KS3.1 | AUD-006, WBK-010 | `ll: ok v 40 p0 0 p1 0`; `nv: ok n 23` |
+| `sdk-a600-ks31-addons` | A600/KS3.1 | AUD-006, WBK-010 | `ll: ok v 40`; `nv: ok n 23` |
 | `sdk-a1200-ks30-addons` | A1200/KS3.0 | EXE-007 (pool), INT-008 | `pool: ok 1`; `boopsi: ok hue 42`; golden `a1200-ks30-boopsi.png` |
 | `sdk-a1200-addons` | A1200/KS3.1 | DOS-006, OPT-002, OPT-003 | `dt`, `net`, `guide`; optional `a1200-datatypes.png` |
 

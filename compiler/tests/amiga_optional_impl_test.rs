@@ -210,3 +210,111 @@ fn the_optional_suffix_follows_the_generated_program() {
         .expect("the optional suffix");
     assert!(main < suffix, "the optional suffix must follow main");
 }
+
+const DOS_SOURCE: &str = r#"module tests.opt.dosimpl;
+
+import { Args, readArgsFrom, freeArgs, argCount, argPresent, argNumber,
+         argText, argSwitch } from std.amiga.args;
+import { DTObject, openPicture, disposeDTObject, dtWidth, dtHeight,
+         dtDepth, dtColors } from std.amiga.datatypes;
+import { Region, RegionBounds, newRegion, freeRegion, regionOrRect,
+         regionAndRect, regionClearRect, regionBounds, regionIsEmpty }
+    from std.amiga.regions;
+import { EClock, EClockTicks, openEClock, readEClock, eclockFrequency,
+         freeEClock } from std.amiga.eclock;
+import { readJoyPort, joyPortType, decodeJoyPort, readJoyPortDecoded }
+    from std.amiga.lowlevel;
+import { String, stringOf, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let text: String = stringOf("FILE=x NUM=7 VERBOSE");
+    let parsed: Args? = readArgsFrom("FILE/A,NUM/N,VERBOSE/S", 3, bytes(text));
+    if (parsed == null) { return 1; }
+    let args: Args = parsed;
+    let count: i32 = argCount(args);
+    let present: bool = argPresent(args, 0);
+    let number: i32 = argNumber(args, 1);
+    let switchValue: bool = argSwitch(args, 2);
+    let buffer: u8[16] = [0; 16];
+    let textLength: i32 = argText(args, 0, slice(buffer, 0, 16));
+    freeArgs(args);
+
+    let pictureCreated: DTObject? = openPicture("CNEXT:image.ilbm");
+    if (pictureCreated == null) { return 2; }
+    let picture: DTObject = pictureCreated;
+    let width: i32 = dtWidth(picture);
+    let height: i32 = dtHeight(picture);
+    let depth: i32 = dtDepth(picture);
+    let colors: i32 = dtColors(picture);
+    disposeDTObject(picture);
+
+    let regionCreated: Region? = newRegion();
+    if (regionCreated == null) { return 3; }
+    let region: Region = regionCreated;
+    if (!regionOrRect(region, 10, 10, 20, 20)) { return 4; }
+    regionAndRect(region, 12, 12, 18, 18);
+    if (!regionClearRect(region, 13, 13, 14, 14)) { return 5; }
+    let bounds: RegionBounds = regionBounds(region);
+    let empty: bool = regionIsEmpty(region);
+    freeRegion(region);
+
+    let clockCreated: EClock? = openEClock();
+    if (clockCreated == null) { return 6; }
+    let clock: EClock = clockCreated;
+    let ticks: EClockTicks = readEClock(clock);
+    let rate: u32 = eclockFrequency(clock);
+    freeEClock(clock);
+
+    let rawValue: u32 = readJoyPort(0);
+    let kind: u32 = joyPortType(rawValue);
+    let bits: u8 = decodeJoyPort(rawValue);
+    let direct: u8 = readJoyPortDecoded(1);
+
+    return count + (present ? 1 : 0) + number + (switchValue ? 1 : 0) +
+           textLength + width + height + depth + colors + i32(bounds.x1) +
+           (empty ? 1 : 0) + i32(rate) + i32(kind) + i32(bits) +
+           i32(direct) + i32(ticks.hi) + i32(ticks.lo);
+}
+"#;
+
+#[test]
+fn the_dos_graphics_input_wrappers_route_to_the_shim() {
+    let c = emit("dos-routing", "hosted-amiga", DOS_SOURCE);
+    for call in [
+        "cl_read_args_from",
+        "cl_arg_text",
+        "cl_dt_open_picture",
+        "cl_dt_width",
+        "cl_region_new",
+        "cl_region_or_rect",
+        "cl_eclock_open",
+        "cl_eclock_read",
+        "cl_lowlevel_read",
+        "cl_lowlevel_decode",
+    ] {
+        assert_contains("dos-routing", &c, call);
+    }
+}
+
+#[test]
+fn the_dos_graphics_input_shim_pins_the_native_calls() {
+    let shim = shim();
+    for needle in [
+        "ReadArgs((STRPTR)template, args->slots, NULL)",
+        "FreeArgs(args->rdargs)",
+        "args->kinds[index] != 1",
+        "PDTA_BitMapHeader",
+        "PDTA_NumColors",
+        "DoDTMethodA(object->object, window->window, NULL, (Msg)&draw)",
+        "AndRectRegion(region->region, &rect)",
+        "InstallClipRegion(layer->layer, region->region)",
+        "UNIT_ECLOCK",
+        "ReadEClock(&clock->last)",
+        "JP_TYPE_GAMECTLR",
+        "JP_TYPE_JOYSTK",
+        "ReadJoyPort(port)",
+    ] {
+        assert_contains("dos-shim", &shim, needle);
+    }
+}

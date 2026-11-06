@@ -763,6 +763,89 @@ the last block is freed.
 | `freeUtilityBlock(take block)` | — | `FreePooled`; decrements pool |
 | `freeUtilityPool(take pool)` | — | deletes when live blocks reach zero |
 
+### 14.7 ReadArgs (`std.amiga.args`)
+
+`readArgs` parses the process command line; `readArgsFrom` parses an explicit
+buffer and appends a newline when missing. The shim parses the template, requires
+the caller’s slot count to match, and records each slot’s kind. `/A` and `/K` are
+strings, `/N` is numeric, and `/S` is a switch; `/M`, `/T`, and `/F` are rejected.
+`argText` copies only string slots; `argNumber` reads only numeric slots;
+`argSwitch` reads only switches. `freeArgs` frees the `RDArgs`, slots, and copies.
+
+| API | Returns | Rules |
+|---|---|---|
+| `readArgs(template, slots)` | `Args?` | command line; count must match |
+| `readArgsFrom(template, slots, text)` | `Args?` | deterministic buffer source |
+| `freeArgs(take args)` | — | `FreeArgs` then arrays |
+| `argCount(borrow)` | `i32` | parsed template count |
+| `argPresent(borrow, index)` | `bool` | raw slot non-zero |
+| `argNumber(borrow, index)` | `i32` | `/N` only |
+| `argText(borrow, index, buf)` | `i32` | `/A`/`/K` only; bounded |
+| `argSwitch(borrow, index)` | `bool` | `/S` only |
+
+### 14.8 Picture datatypes (`std.amiga.datatypes`)
+
+`openPicture` creates a `NewDTObjectA` picture object at datatypes V40 (Kickstart
+3.1). `dtWidth`/`dtHeight`/`dtDepth`/`dtColors` read the bitmap header and color
+count; `drawDTObject` sends `DTM_DRAW` with a `dtDraw` message. `disposeDTObject`
+releases the object.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openPicture(path)` | `DTObject?` | `DTA_GroupID=GID_PICTURE` |
+| `disposeDTObject(take)` | — | `DisposeDTObject` |
+| `dtWidth/Height/Depth(borrow)` | `i32` | `PDTA_BitMapHeader` |
+| `dtColors(borrow)` | `i32` | `PDTA_NumColors` |
+| `drawDTObject(borrow, window, x, y)` | `bool` | `dtDraw`/`DTM_DRAW` |
+
+### 14.9 Regions (`std.amiga.regions`)
+
+`newRegion` creates a graphics region; `regionOrRect`, `regionAndRect`, and
+`regionClearRect` edit it; `regionBounds` returns a `RegionBounds` value and
+`regionIsEmpty` reports an empty region. `layerSetClipRegion` borrows the region;
+clear the clip before freeing the region or closing the layer. `freeRegion`
+disposes the region.
+
+| API | Returns | Rules |
+|---|---|---|
+| `newRegion()` | `Region?` | graphics.library V37 |
+| `freeRegion(take)` | — | `DisposeRegion` |
+| `regionOrRect` / `regionClearRect` | `bool` | rectangle edit |
+| `regionAndRect` | — | `AndRectRegion` is void |
+| `regionBounds` | `RegionBounds` | `region->bounds` |
+| `regionIsEmpty` | `bool` | empty bounds |
+| `layerSetClipRegion(borrow layer, borrow region)` | — | layer borrows region |
+| `layerClearClipRegion(borrow layer)` | — | installs NULL |
+
+### 14.10 EClock (`std.amiga.eclock`)
+
+`openEClock` opens `timer.device` `UNIT_ECLOCK`; `readEClock` returns an
+`EClockTicks { hi, lo }` value and `eclockFrequency` returns the PAL/NTSC
+ticks-per-second rate. v1 has no 64-bit integer type. `freeEClock` closes the
+device.
+
+| API | Returns | Rules |
+|---|---|---|
+| `openEClock()` | `EClock?` | `UNIT_ECLOCK` |
+| `readEClock(borrow)` | `EClockTicks` | hi/lo words |
+| `eclockFrequency(borrow)` | `u32` | 709379 PAL / 715909 NTSC |
+| `freeEClock(take)` | — | close/free |
+
+### 14.11 Lowlevel joyports (`std.amiga.lowlevel`)
+
+`readJoyPort` returns the raw `ReadJoyPort` word for port 0 or 1.
+`joyPortType` extracts the controller type nibble; `decodeJoyPort` maps
+directions only for a game controller or joystick and maps the red button for
+any available type. `readJoyPortDecoded` combines both calls.
+
+| API | Returns | Rules |
+|---|---|---|
+| `readJoyPort(port)` | `u32` | port 0/1; 0 when absent |
+| `joyPortType(value)` | `u32` | type nibble |
+| `decodeJoyPort(value)` | `u8` | type-aware `JOY_*` bits |
+| `readJoyPortDecoded(port)` | `u8` | read + decode |
+| `lowlevelVersion()` | `u32` | library version, or 0 |
+
 ## 15. Native video (`std.amiga.video`)
 
 The module owns chip memory, displayable bitmaps, a copper builder, and a

@@ -1,0 +1,55 @@
+//! Bundle 9 datatypes acceptance: open the committed ILBM, draw it, and save
+//! a native screen capture.
+
+module examples.amiga.optional_datatypes;
+
+import { DTObject, openPicture, disposeDTObject, dtWidth, dtHeight,
+         dtDepth, dtColors, drawDTObject } from std.amiga.datatypes;
+import { Screen, Window, openScreen, openWindow, closeWindow, saveScreen }
+    from std.amiga.intuition;
+import { String, stringOf, toCString } from std.text;
+import { println } from std.io;
+
+func main(): i32 {
+    let title: String = stringOf("Bundle9 DataTypes");
+    let screenCreated: Screen? = openScreen(320, 200, 4, toCString(title));
+    if (screenCreated == null) {
+        println("dt: err 1");
+        return 1;
+    }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? =
+        openWindow(screen, 0, 0, 320, 200, toCString(title));
+    if (windowCreated == null) {
+        println("dt: err 2");
+        return 1;
+    }
+    let window: Window = windowCreated;
+    let pictureCreated: DTObject? = openPicture("CNEXT:image.ilbm");
+    if (pictureCreated == null) {
+        closeWindow(window);
+        println("dt: err 3");
+        return 1;
+    }
+    let picture: DTObject = pictureCreated;
+    let width: i32 = dtWidth(picture);
+    let height: i32 = dtHeight(picture);
+    let depth: i32 = dtDepth(picture);
+    let colors: i32 = dtColors(picture);
+    if (!drawDTObject(picture, window, 0, 0)) {
+        disposeDTObject(picture);
+        closeWindow(window);
+        println("dt: err 4");
+        return 1;
+    }
+    let shot: String = stringOf("CNEXT:a1200-datatypes.cscr");
+    let saved: bool = saveScreen(screen, toCString(shot));
+    disposeDTObject(picture);
+    closeWindow(window);
+    if (!saved) {
+        println("dt: err 5");
+        return 1;
+    }
+    println($"dt: ok w {width} h {height} depth {depth} colors {colors}");
+    return 0;
+}

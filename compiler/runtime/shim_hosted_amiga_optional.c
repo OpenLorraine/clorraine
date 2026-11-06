@@ -13,7 +13,6 @@
 #include <utility/hooks.h>
 #include <utility/tagitem.h>
 #include <clib/exec_protos.h>
-#include <clib/utility_protos.h>
 
 /* utility.library base used by the DateStamp clib stub. libnix/amiga.lib
  * already provides the symbol; the shim only opens and assigns it. */
@@ -469,4 +468,694 @@ void cl_free_utility_pool(void *handle)
     }
     pool->released = 1;
     cl_utility_pool_release(pool);
+}
+
+/* ------------------------------------------------------------------------- */
+/* ReadArgs.                                                                 */
+/* ------------------------------------------------------------------------- */
+
+#include <dos/rdargs.h>
+
+/* The DOS prototypes cannot be included wholesale: they conflict with the
+ * generated file functions. Declare only the argument helpers. */
+extern struct RDArgs * __stdargs ReadArgs(STRPTR template, LONG *array,
+                                          struct RDArgs *args);
+extern void __stdargs FreeArgs(struct RDArgs *args);
+extern APTR __stdargs AllocDosObject(ULONG type, struct TagItem *tags);
+extern void __stdargs FreeDosObject(ULONG type, APTR object);
+
+typedef struct cl_args {
+    struct RDArgs *rdargs;
+    LONG *slots;
+    UBYTE *kinds;               /* 0 string, 1 number, 2 switch */
+    UBYTE *source;
+    LONG count;
+} cl_args;
+
+/* Count and classify a simple comma-separated ReadArgs template. */
+static LONG cl_args_parse(const char *template, UBYTE *kinds, LONG max)
+{
+    const char *cursor = template;
+    LONG count = 0;
+
+    if (template == NULL) {
+        return -1;
+    }
+    while (*cursor != '\0') {
+        UBYTE kind = 0;
+
+        while (*cursor == ' ' || *cursor == '\t') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        if (count >= max) {
+            return -1;
+        }
+        while (*cursor != '\0' && *cursor != '/' && *cursor != ',') {
+            cursor++;
+        }
+        if (*cursor == '/') {
+            cursor++;
+            switch (*cursor) {
+            case 'A':
+            case 'K':
+                kind = 0;
+                break;
+            case 'N':
+                kind = 1;
+                break;
+            case 'S':
+                kind = 2;
+                break;
+            default:
+                return -1;
+            }
+            cursor++;
+        }
+        kinds[count] = kind;
+        count++;
+        if (*cursor == ',') {
+            cursor++;
+        } else if (*cursor != '\0') {
+            return -1;
+        }
+    }
+    return count;
+}
+
+static void cl_args_discard(cl_args *args)
+{
+    if (args == NULL) {
+        return;
+    }
+    if (args->rdargs != NULL) {
+        FreeArgs(args->rdargs);
+    }
+    if (args->slots != NULL) {
+        FreeMem(args->slots, (ULONG)args->count * (ULONG)sizeof(LONG));
+    }
+    if (args->kinds != NULL) {
+        FreeMem(args->kinds, (ULONG)args->count);
+    }
+    if (args->source != NULL) {
+        FreeMem(args->source, 0);
+    }
+    FreeMem(args, (ULONG)sizeof *args);
+}
+
+void *cl_read_args(char *template, LONG slots)
+{
+    cl_args *args;
+    UBYTE *kinds;
+    LONG count;
+
+    if (template == NULL || slots < 1 || slots > 32) {
+        return NULL;
+    }
+    kinds = (UBYTE *)AllocMem((ULONG)slots, MEMF_ANY | MEMF_CLEAR);
+    if (kinds == NULL) {
+        return NULL;
+    }
+    count = cl_args_parse(template, kinds, slots);
+    if (count != slots) {
+        FreeMem(kinds, (ULONG)slots);
+        return NULL;
+    }
+    args = (cl_args *)AllocMem((ULONG)sizeof *args, MEMF_ANY | MEMF_CLEAR);
+    if (args == NULL) {
+        FreeMem(kinds, (ULONG)slots);
+        return NULL;
+    }
+    args->slots = (LONG *)AllocMem(
+        (ULONG)slots * (ULONG)sizeof(LONG), MEMF_ANY | MEMF_CLEAR);
+    if (args->slots == NULL) {
+        FreeMem(kinds, (ULONG)slots);
+        FreeMem(args, (ULONG)sizeof *args);
+        return NULL;
+    }
+    args->kinds = kinds;
+    args->count = slots;
+    args->rdargs = ReadArgs((STRPTR)template, args->slots, NULL);
+    if (args->rdargs == NULL) {
+        cl_args_discard(args);
+        return NULL;
+    }
+    return args;
+}
+
+void *cl_read_args_from(char *template, LONG slots, APTR source,
+                        ULONG length)
+{
+    cl_args *args;
+    UBYTE *kinds;
+    UBYTE *buffer;
+    LONG count;
+
+    if (template == NULL || source == NULL || slots < 1 || slots > 32) {
+        return NULL;
+    }
+    kinds = (UBYTE *)AllocMem((ULONG)slots, MEMF_ANY | MEMF_CLEAR);
+    if (kinds == NULL) {
+        return NULL;
+    }
+    count = cl_args_parse(template, kinds, slots);
+    if (count != slots) {
+        FreeMem(kinds, (ULONG)slots);
+        return NULL;
+    }
+    args = (cl_args *)AllocMem((ULONG)sizeof *args, MEMF_ANY | MEMF_CLEAR);
+    if (args == NULL) {
+        FreeMem(kinds, (ULONG)slots);
+        return NULL;
+    }
+    args->slots = (LONG *)AllocMem(
+        (ULONG)slots * (ULONG)sizeof(LONG), MEMF_ANY | MEMF_CLEAR);
+    buffer = (UBYTE *)AllocMem(length + 1UL, MEMF_ANY | MEMF_CLEAR);
+    if (args->slots == NULL || buffer == NULL) {
+        if (args->slots != NULL) {
+            FreeMem(args->slots, (ULONG)slots * (ULONG)sizeof(LONG));
+        }
+        if (buffer != NULL) {
+            FreeMem(buffer, length + 1UL);
+        }
+        FreeMem(kinds, (ULONG)slots);
+        FreeMem(args, (ULONG)sizeof *args);
+        return NULL;
+    }
+    memcpy(buffer, source, (size_t)length);
+    if (length == 0 || buffer[length - 1] != '\n') {
+        buffer[length] = '\n';
+        length++;
+    }
+    args->kinds = kinds;
+    args->count = slots;
+    args->source = buffer;
+    args->rdargs = AllocDosObject(DOS_RDARGS, NULL);
+    if (args->rdargs == NULL) {
+        FreeMem(buffer, length + 1UL);
+        FreeMem(args->slots, (ULONG)slots * (ULONG)sizeof(LONG));
+        FreeMem(kinds, (ULONG)slots);
+        FreeMem(args, (ULONG)sizeof *args);
+        return NULL;
+    }
+    args->rdargs->RDA_Source.CS_Buffer = (STRPTR)buffer;
+    args->rdargs->RDA_Source.CS_Length = (LONG)length;
+    args->rdargs->RDA_Source.CS_CurChr = 0;
+    args->rdargs->RDA_Flags = RDAF_NOPROMPT;
+    if (ReadArgs((STRPTR)template, args->slots, args->rdargs) == NULL) {
+        cl_args_discard(args);
+        return NULL;
+    }
+    return args;
+}
+
+void cl_free_args(void *handle)
+{
+    cl_args_discard((cl_args *)handle);
+}
+
+LONG cl_arg_count(void *handle)
+{
+    const cl_args *args = (const cl_args *)handle;
+
+    return args == NULL ? 0 : args->count;
+}
+
+BOOL cl_arg_present(void *handle, LONG index)
+{
+    const cl_args *args = (const cl_args *)handle;
+
+    if (args == NULL || index < 0 || index >= args->count) {
+        return FALSE;
+    }
+    return args->slots[index] != 0 ? TRUE : FALSE;
+}
+
+LONG cl_arg_number(void *handle, LONG index)
+{
+    const cl_args *args = (const cl_args *)handle;
+
+    if (args == NULL || index < 0 || index >= args->count ||
+        args->kinds[index] != 1 || args->slots[index] == 0) {
+        return 0;
+    }
+    return *(LONG *)args->slots[index];
+}
+
+LONG cl_arg_text(void *handle, LONG index, APTR buffer, ULONG length)
+{
+    const cl_args *args = (const cl_args *)handle;
+    const char *text;
+    ULONG count;
+
+    if (args == NULL || buffer == NULL || length == 0 || index < 0 ||
+        index >= args->count || args->kinds[index] != 0 ||
+        args->slots[index] == 0) {
+        return -1;
+    }
+    text = (const char *)args->slots[index];
+    count = (ULONG)strlen(text);
+    if (count >= length) {
+        count = length - 1UL;
+    }
+    memcpy(buffer, text, (size_t)count);
+    ((char *)buffer)[count] = '\0';
+    return (LONG)count;
+}
+
+BOOL cl_arg_switch(void *handle, LONG index)
+{
+    const cl_args *args = (const cl_args *)handle;
+
+    if (args == NULL || index < 0 || index >= args->count ||
+        args->kinds[index] != 2) {
+        return FALSE;
+    }
+    return args->slots[index] != 0 ? TRUE : FALSE;
+}
+
+/* ------------------------------------------------------------------------- */
+/* EClock.                                                                   */
+/* ------------------------------------------------------------------------- */
+
+#include <devices/timer.h>
+#include <clib/timer_protos.h>
+
+/* libnix/amiga.lib does not provide TimerBase; the shim owns it. */
+struct Device *TimerBase;
+
+typedef struct cl_eclock {
+    struct TimeRequest *request;
+    struct EClockVal last;
+    ULONG frequency;
+} cl_eclock;
+
+void *cl_eclock_open(void)
+{
+    cl_eclock *clock = (cl_eclock *)AllocMem(
+        (ULONG)sizeof *clock, MEMF_ANY | MEMF_CLEAR);
+
+    if (clock == NULL) {
+        return NULL;
+    }
+    clock->request = (struct TimeRequest *)AllocMem(
+        (ULONG)sizeof(struct TimeRequest), MEMF_PUBLIC | MEMF_CLEAR);
+    if (clock->request == NULL) {
+        FreeMem(clock, (ULONG)sizeof *clock);
+        return NULL;
+    }
+    if (OpenDevice((STRPTR)"timer.device", UNIT_ECLOCK,
+                   &clock->request->tr_node, 0) != 0) {
+        FreeMem(clock->request, (ULONG)sizeof(struct TimeRequest));
+        FreeMem(clock, (ULONG)sizeof *clock);
+        return NULL;
+    }
+    return clock;
+}
+
+ULONG cl_eclock_read(void *handle)
+{
+    cl_eclock *clock = (cl_eclock *)handle;
+
+    if (clock == NULL) {
+        return 0;
+    }
+    TimerBase = clock->request->tr_node.io_Device;
+    clock->frequency = ReadEClock(&clock->last);
+    return clock->frequency;
+}
+
+ULONG cl_eclock_hi(void *handle)
+{
+    const cl_eclock *clock = (const cl_eclock *)handle;
+
+    return clock == NULL ? 0 : clock->last.ev_hi;
+}
+
+ULONG cl_eclock_lo(void *handle)
+{
+    const cl_eclock *clock = (const cl_eclock *)handle;
+
+    return clock == NULL ? 0 : clock->last.ev_lo;
+}
+
+ULONG cl_eclock_frequency(void *handle)
+{
+    const cl_eclock *clock = (const cl_eclock *)handle;
+
+    return clock == NULL ? 0 : clock->frequency;
+}
+
+void cl_free_eclock(void *handle)
+{
+    cl_eclock *clock = (cl_eclock *)handle;
+
+    if (clock == NULL) {
+        return;
+    }
+    if (clock->request != NULL) {
+        CloseDevice(&clock->request->tr_node);
+        FreeMem(clock->request, (ULONG)sizeof(struct TimeRequest));
+    }
+    FreeMem(clock, (ULONG)sizeof *clock);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Lowlevel ReadJoyPort.                                                     */
+/* ------------------------------------------------------------------------- */
+
+#include <libraries/lowlevel.h>
+#include <clib/lowlevel_protos.h>
+
+struct Library *LowLevelBase;
+
+static int cl_lowlevel_open(void)
+{
+    if (LowLevelBase == NULL) {
+        LowLevelBase = OpenLibrary((STRPTR)"lowlevel.library", 40);
+    }
+    return LowLevelBase != NULL;
+}
+
+ULONG cl_lowlevel_read(ULONG port)
+{
+    if (!cl_lowlevel_open() || port > 1) {
+        return 0;
+    }
+    return ReadJoyPort(port);
+}
+
+ULONG cl_lowlevel_version(void)
+{
+    if (!cl_lowlevel_open()) {
+        return 0;
+    }
+    return LowLevelBase->lib_Version;
+}
+
+ULONG cl_lowlevel_type(ULONG raw)
+{
+    return (raw & JP_TYPE_MASK) >> 28;
+}
+
+UBYTE cl_lowlevel_decode(ULONG raw)
+{
+    ULONG type = raw & JP_TYPE_MASK;
+    UBYTE bits = 0;
+
+    if (type == JP_TYPE_GAMECTLR || type == JP_TYPE_JOYSTK) {
+        if ((raw & JPF_JOY_UP) != 0) { bits |= 1; }
+        if ((raw & JPF_JOY_DOWN) != 0) { bits |= 2; }
+        if ((raw & JPF_JOY_LEFT) != 0) { bits |= 4; }
+        if ((raw & JPF_JOY_RIGHT) != 0) { bits |= 8; }
+    }
+    if (type != JP_TYPE_NOTAVAIL && (raw & JPF_BUTTON_RED) != 0) {
+        bits |= 16;
+    }
+    return bits;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Regions and layer clipping.                                               */
+/* ------------------------------------------------------------------------- */
+
+#include <graphics/regions.h>
+#include <clib/graphics_protos.h>
+#include <clib/layers_protos.h>
+
+typedef struct cl_region {
+    struct Region *region;
+} cl_region;
+
+static int cl_region_open(void)
+{
+    if (GfxBase == NULL) {
+        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
+    }
+    if (LayersBase == NULL) {
+        LayersBase = OpenLibrary((STRPTR)"layers.library", 37);
+    }
+    return GfxBase != NULL && LayersBase != NULL;
+}
+
+void *cl_region_new(void)
+{
+    cl_region *handle;
+
+    if (!cl_region_open()) {
+        return NULL;
+    }
+    handle = (cl_region *)AllocMem((ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
+    if (handle == NULL) {
+        return NULL;
+    }
+    handle->region = NewRegion();
+    if (handle->region == NULL) {
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    return handle;
+}
+
+void cl_free_region(void *handle)
+{
+    cl_region *region = (cl_region *)handle;
+
+    if (region == NULL) {
+        return;
+    }
+    if (region->region != NULL) {
+        DisposeRegion(region->region);
+    }
+    FreeMem(region, (ULONG)sizeof *region);
+}
+
+static void cl_region_rect(struct Rectangle *rect, LONG x1, LONG y1,
+                           LONG x2, LONG y2)
+{
+    rect->MinX = (WORD)x1;
+    rect->MinY = (WORD)y1;
+    rect->MaxX = (WORD)x2;
+    rect->MaxY = (WORD)y2;
+}
+
+BOOL cl_region_or_rect(void *handle, LONG x1, LONG y1, LONG x2, LONG y2)
+{
+    cl_region *region = (cl_region *)handle;
+    struct Rectangle rect;
+
+    if (region == NULL || region->region == NULL) {
+        return FALSE;
+    }
+    cl_region_rect(&rect, x1, y1, x2, y2);
+    return OrRectRegion(region->region, &rect) ? TRUE : FALSE;
+}
+
+void cl_region_and_rect(void *handle, LONG x1, LONG y1, LONG x2, LONG y2)
+{
+    cl_region *region = (cl_region *)handle;
+    struct Rectangle rect;
+
+    if (region == NULL || region->region == NULL) {
+        return;
+    }
+    cl_region_rect(&rect, x1, y1, x2, y2);
+    AndRectRegion(region->region, &rect);
+}
+
+BOOL cl_region_clear_rect(void *handle, LONG x1, LONG y1, LONG x2, LONG y2)
+{
+    cl_region *region = (cl_region *)handle;
+    struct Rectangle rect;
+
+    if (region == NULL || region->region == NULL) {
+        return FALSE;
+    }
+    cl_region_rect(&rect, x1, y1, x2, y2);
+    return ClearRectRegion(region->region, &rect) ? TRUE : FALSE;
+}
+
+LONG cl_region_x1(void *handle)
+{
+    const cl_region *region = (const cl_region *)handle;
+    return region == NULL ? 0 : region->region->bounds.MinX;
+}
+
+LONG cl_region_y1(void *handle)
+{
+    const cl_region *region = (const cl_region *)handle;
+    return region == NULL ? 0 : region->region->bounds.MinY;
+}
+
+LONG cl_region_x2(void *handle)
+{
+    const cl_region *region = (const cl_region *)handle;
+    return region == NULL ? 0 : region->region->bounds.MaxX;
+}
+
+LONG cl_region_y2(void *handle)
+{
+    const cl_region *region = (const cl_region *)handle;
+    return region == NULL ? 0 : region->region->bounds.MaxY;
+}
+
+BOOL cl_region_empty(void *handle)
+{
+    const cl_region *region = (const cl_region *)handle;
+
+    if (region == NULL || region->region == NULL) {
+        return TRUE;
+    }
+    return region->region->bounds.MaxX < region->region->bounds.MinX ||
+           region->region->bounds.MaxY < region->region->bounds.MinY;
+}
+
+void cl_layer_set_clip(void *layer_handle, void *region_handle)
+{
+    cl_layer *layer = (cl_layer *)layer_handle;
+    cl_region *region = (cl_region *)region_handle;
+
+    if (layer == NULL || layer->layer == NULL || region == NULL ||
+        region->region == NULL) {
+        return;
+    }
+    (void)InstallClipRegion(layer->layer, region->region);
+}
+
+void cl_layer_clear_clip(void *layer_handle)
+{
+    cl_layer *layer = (cl_layer *)layer_handle;
+
+    if (layer == NULL || layer->layer == NULL) {
+        return;
+    }
+    (void)InstallClipRegion(layer->layer, NULL);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Datatypes picture objects (V40).                                          */
+/* ------------------------------------------------------------------------- */
+
+#include <datatypes/datatypes.h>
+#include <datatypes/datatypesclass.h>
+#include <datatypes/pictureclass.h>
+#include <clib/datatypes_protos.h>
+
+struct Library *DataTypesBase;
+
+typedef struct cl_dt {
+    Object *object;
+    LONG width;
+    LONG height;
+    LONG depth;
+    LONG colors;
+} cl_dt;
+
+static int cl_datatypes_open(void)
+{
+    if (DataTypesBase == NULL) {
+        DataTypesBase = OpenLibrary((STRPTR)"datatypes.library", 40);
+    }
+    return DataTypesBase != NULL;
+}
+
+void *cl_dt_open_picture(char *path)
+{
+    cl_dt *handle;
+    struct TagItem tags[2];
+    struct TagItem attrs[3];
+    struct BitMapHeader *header = NULL;
+    UWORD colors = 0;
+
+    if (path == NULL || !cl_datatypes_open()) {
+        return NULL;
+    }
+    tags[0].ti_Tag = DTA_GroupID;
+    tags[0].ti_Data = GID_PICTURE;
+    tags[1].ti_Tag = TAG_DONE;
+    tags[1].ti_Data = 0;
+    handle = (cl_dt *)AllocMem((ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
+    if (handle == NULL) {
+        return NULL;
+    }
+    handle->object = NewDTObjectA((STRPTR)path, tags);
+    if (handle->object == NULL) {
+        FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    attrs[0].ti_Tag = PDTA_BitMapHeader;
+    attrs[0].ti_Data = (ULONG)&header;
+    attrs[1].ti_Tag = PDTA_NumColors;
+    attrs[1].ti_Data = (ULONG)&colors;
+    attrs[2].ti_Tag = TAG_DONE;
+    attrs[2].ti_Data = 0;
+    (void)GetDTAttrsA(handle->object, attrs);
+    if (header != NULL) {
+        handle->width = header->bmh_Width;
+        handle->height = header->bmh_Height;
+        handle->depth = header->bmh_Depth;
+    }
+    handle->colors = colors;
+    return handle;
+}
+
+void cl_dispose_dt_object(void *handle)
+{
+    cl_dt *object = (cl_dt *)handle;
+
+    if (object == NULL) {
+        return;
+    }
+    if (object->object != NULL) {
+        DisposeDTObject(object->object);
+    }
+    FreeMem(object, (ULONG)sizeof *object);
+}
+
+LONG cl_dt_width(void *handle)
+{
+    const cl_dt *object = (const cl_dt *)handle;
+    return object == NULL ? 0 : object->width;
+}
+
+LONG cl_dt_height(void *handle)
+{
+    const cl_dt *object = (const cl_dt *)handle;
+    return object == NULL ? 0 : object->height;
+}
+
+LONG cl_dt_depth(void *handle)
+{
+    const cl_dt *object = (const cl_dt *)handle;
+    return object == NULL ? 0 : object->depth;
+}
+
+LONG cl_dt_colors(void *handle)
+{
+    const cl_dt *object = (const cl_dt *)handle;
+    return object == NULL ? 0 : object->colors;
+}
+
+BOOL cl_dt_draw(void *handle, void *window_handle, LONG x, LONG y)
+{
+    cl_dt *object = (cl_dt *)handle;
+    cl_window *window = (cl_window *)window_handle;
+    struct dtDraw draw;
+
+    if (object == NULL || object->object == NULL || window == NULL ||
+        window->window == NULL) {
+        return FALSE;
+    }
+    memset(&draw, 0, sizeof draw);
+    draw.MethodID = DTM_DRAW;
+    draw.dtd_RPort = window->window->RPort;
+    draw.dtd_Left = x;
+    draw.dtd_Top = y;
+    draw.dtd_Width = object->width;
+    draw.dtd_Height = object->height;
+    draw.dtd_AttrList = NULL;
+    (void)DoDTMethodA(object->object, window->window, NULL, (Msg)&draw);
+    return TRUE;
 }

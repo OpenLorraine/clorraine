@@ -1,0 +1,97 @@
+//! Amiga graphics regions and layer clipping (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `Region` owns a
+//! graphics.library region. `layerSetClipRegion` borrows the region: clear the
+//! clip before freeing the region or closing the layer. `layerBeginUpdate` /
+//! `layerEndUpdate` in `std.amiga.layers` remain the damage protocol.
+
+module std.amiga.regions;
+
+import { Layer } from std.amiga.layers;
+
+/// A graphics region. The generated drop disposes it.
+export handle Region freedBy cl_free_region;
+
+/// The integer bounds of a region.
+export struct RegionBounds {
+    x1: i32;
+    y1: i32;
+    x2: i32;
+    y2: i32;
+}
+
+ffi stdregions {
+    func cl_region_new(): Region?;
+    func cl_free_region(take region: Region): void;
+    func cl_region_or_rect(borrow region: Region, x1: i32, y1: i32,
+                           x2: i32, y2: i32): bool;
+    func cl_region_and_rect(borrow region: Region, x1: i32, y1: i32,
+                            x2: i32, y2: i32): void;
+    func cl_region_clear_rect(borrow region: Region, x1: i32, y1: i32,
+                              x2: i32, y2: i32): bool;
+    func cl_region_x1(borrow region: Region): i32;
+    func cl_region_y1(borrow region: Region): i32;
+    func cl_region_x2(borrow region: Region): i32;
+    func cl_region_y2(borrow region: Region): i32;
+    func cl_region_empty(borrow region: Region): bool;
+    func cl_layer_set_clip(borrow layer: Layer, borrow region: Region): void;
+    func cl_layer_clear_clip(borrow layer: Layer): void;
+}
+
+/// Creates an empty region, or returns null.
+export func newRegion(): Region? {
+    return cl_region_new();
+}
+
+/// Disposes a region exactly once.
+export func freeRegion(take region: Region): void {
+    cl_free_region(region);
+}
+
+/// Adds a rectangle to the region; returns false for a null region.
+export func regionOrRect(borrow region: Region, x1: i32, y1: i32,
+                         x2: i32, y2: i32): bool {
+    return cl_region_or_rect(region, x1, y1, x2, y2);
+}
+
+/// Intersects the region with a rectangle.
+export func regionAndRect(borrow region: Region, x1: i32, y1: i32,
+                          x2: i32, y2: i32): void {
+    cl_region_and_rect(region, x1, y1, x2, y2);
+}
+
+/// Removes a rectangle from the region; returns false for a null region.
+export func regionClearRect(borrow region: Region, x1: i32, y1: i32,
+                            x2: i32, y2: i32): bool {
+    return cl_region_clear_rect(region, x1, y1, x2, y2);
+}
+
+/// Returns the region's bounds; a null region reads as zero.
+export func regionBounds(borrow region: Region): RegionBounds {
+    return RegionBounds {
+        x1: cl_region_x1(region),
+        y1: cl_region_y1(region),
+        x2: cl_region_x2(region),
+        y2: cl_region_y2(region),
+    };
+}
+
+/// Returns true for a null or empty region.
+export func regionIsEmpty(borrow region: Region): bool {
+    return cl_region_empty(region);
+}
+
+/// Installs `region` as the layer's clip region.
+///
+/// The layer borrows the region. Clear the clip before freeing the region or
+/// closing the layer.
+export func layerSetClipRegion(borrow layer: Layer,
+                               borrow region: Region): void {
+    cl_layer_set_clip(layer, region);
+}
+
+/// Removes the layer's clip region.
+export func layerClearClipRegion(borrow layer: Layer): void {
+    cl_layer_clear_clip(layer);
+}

@@ -1,0 +1,64 @@
+//! Amiga datatypes picture objects (Kickstart 3.1 / datatypes V40).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. A `DTObject` owns one
+//! picture object created by `NewDTObjectA`; the picture header supplies the
+//! dimensions and color count. The caller keeps the target window alive for
+//! `drawDTObject`.
+
+module std.amiga.datatypes;
+
+import { Window } from std.amiga.intuition;
+
+/// A datatypes picture object. The generated drop disposes it.
+export handle DTObject freedBy cl_dispose_dt_object;
+
+ffi stddatatypes {
+    func cl_dt_open_picture(path: cstring): DTObject?;
+    func cl_dispose_dt_object(take object: DTObject): void;
+    func cl_dt_width(borrow object: DTObject): i32;
+    func cl_dt_height(borrow object: DTObject): i32;
+    func cl_dt_depth(borrow object: DTObject): i32;
+    func cl_dt_colors(borrow object: DTObject): i32;
+    func cl_dt_draw(borrow object: DTObject, borrow window: Window,
+                    x: i32, y: i32): bool;
+}
+
+/// Opens a picture file as a datatypes object, or returns null.
+export func openPicture(path: cstring): DTObject? {
+    return cl_dt_open_picture(path);
+}
+
+/// Disposes a picture object exactly once.
+export func disposeDTObject(take object: DTObject): void {
+    cl_dispose_dt_object(object);
+}
+
+/// Returns the picture width, or 0 for a null object.
+export func dtWidth(borrow object: DTObject): i32 {
+    return cl_dt_width(object);
+}
+
+/// Returns the picture height, or 0 for a null object.
+export func dtHeight(borrow object: DTObject): i32 {
+    return cl_dt_height(object);
+}
+
+/// Returns the picture depth, or 0 for a null object.
+export func dtDepth(borrow object: DTObject): i32 {
+    return cl_dt_depth(object);
+}
+
+/// Returns the picture color count, or 0 for a null object.
+export func dtColors(borrow object: DTObject): i32 {
+    return cl_dt_colors(object);
+}
+
+/// Draws the picture into `window` at `(x, y)`.
+///
+/// The window must stay open for the call. Returns false for a null object
+/// or window.
+export func drawDTObject(borrow object: DTObject, borrow window: Window,
+                         x: i32, y: i32): bool {
+    return cl_dt_draw(object, window, x, y);
+}

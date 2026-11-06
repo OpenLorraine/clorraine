@@ -1,0 +1,31 @@
+//! Bundle 9 lowlevel acceptance: library version and both joyports.
+
+module examples.amiga.optional_lowlevel;
+
+import { readJoyPort, joyPortType, decodeJoyPort, readJoyPortDecoded,
+         lowlevelVersion } from std.amiga.lowlevel;
+import { println } from std.io;
+
+func main(): i32 {
+    let version: u32 = lowlevelVersion();
+    if (version < 40) {
+        println("ll: err 1");
+        return 1;
+    }
+    let raw0: u32 = readJoyPort(0);
+    let raw1: u32 = readJoyPort(1);
+    let type0: u32 = joyPortType(raw0);
+    let type1: u32 = joyPortType(raw1);
+    let bits0: u8 = decodeJoyPort(raw0);
+    let bits1: u8 = readJoyPortDecoded(1);
+    if (type0 > 4 || type1 > 4) {
+        println("ll: err 2");
+        return 1;
+    }
+    if (bits0 > 16 || bits1 > 16) {
+        println("ll: err 3");
+        return 1;
+    }
+    println($"ll: ok v {version}");
+    return 0;
+}

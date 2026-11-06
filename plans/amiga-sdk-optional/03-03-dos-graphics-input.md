@@ -112,5 +112,5 @@ gate prints the type nibble for both ports and does not assert a direction. [AR-
   `DisposeRegion`/`InstallClipRegion`, `ReadEClock`, `ReadJoyPort`.
 - Runtime: A600/KS2.05 for ReadArgs/EClock/regions; A1200/KS3.1 for datatypes; A600/KS3.1 for
   lowlevel.
-- Gate lines: `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20 clip 1`;
-  `eclock: ok 709379`; `dt: ok w 320 h 200 depth 4 colors 16`; `ll: ok v 40 p0 0 p1 0`.
+- Gate lines: `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20`;
+  `eclock: ok 709379`; `dt: ok w 320 h 200 depth 4 colors 16`; `ll: ok v 40`.

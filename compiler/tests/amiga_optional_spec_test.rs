@@ -318,3 +318,160 @@ fn the_generic_device_rejects_clipboard() {
     assert!(block.contains("\"parallel.device\""));
     assert!(!block.contains("\"printer.device\""));
 }
+
+const DOS_SOURCE: &str = r#"module tests.opt.dos;
+
+import { Args, readArgsFrom, freeArgs, argCount, argPresent, argNumber,
+         argText, argSwitch } from std.amiga.args;
+import { DTObject, openPicture, disposeDTObject, dtWidth, dtHeight,
+         dtDepth, dtColors, drawDTObject } from std.amiga.datatypes;
+import { Region, RegionBounds, newRegion, freeRegion, regionOrRect,
+         regionAndRect, regionClearRect, regionBounds, regionIsEmpty }
+    from std.amiga.regions;
+import { EClock, EClockTicks, openEClock, readEClock, eclockFrequency,
+         freeEClock } from std.amiga.eclock;
+import { readJoyPort, joyPortType, decodeJoyPort, readJoyPortDecoded }
+    from std.amiga.lowlevel;
+import { Screen, Window, openScreen, openWindow, closeWindow }
+    from std.amiga.intuition;
+import { String, stringOf, toCString, bytes } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let text: String = stringOf("FILE=x NUM=7 VERBOSE");
+    let parsed: Args? = readArgsFrom("FILE/A,NUM/N,VERBOSE/S", 3, bytes(text));
+    if (parsed == null) { return 1; }
+    let args: Args = parsed;
+    let count: i32 = argCount(args);
+    let present: bool = argPresent(args, 0);
+    let number: i32 = argNumber(args, 1);
+    let switchValue: bool = argSwitch(args, 2);
+    let buffer: u8[16] = [0; 16];
+    let textLength: i32 = argText(args, 0, slice(buffer, 0, 16));
+    freeArgs(args);
+
+    let screenTitle: String = stringOf("Bundle9");
+    let screenCreated: Screen? = openScreen(320, 80, 3, toCString(screenTitle));
+    if (screenCreated == null) { return 2; }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? = openWindow(screen, 0, 0, 300, 64, toCString(screenTitle));
+    if (windowCreated == null) { return 3; }
+    let window: Window = windowCreated;
+    let pictureCreated: DTObject? = openPicture("CNEXT:image.ilbm");
+    if (pictureCreated == null) { return 4; }
+    let picture: DTObject = pictureCreated;
+    let width: i32 = dtWidth(picture);
+    let height: i32 = dtHeight(picture);
+    let depth: i32 = dtDepth(picture);
+    let colors: i32 = dtColors(picture);
+    if (!drawDTObject(picture, window, 0, 0)) { return 5; }
+    disposeDTObject(picture);
+    closeWindow(window);
+
+    let regionCreated: Region? = newRegion();
+    if (regionCreated == null) { return 6; }
+    let region: Region = regionCreated;
+    if (!regionOrRect(region, 10, 10, 20, 20)) { return 7; }
+    regionAndRect(region, 12, 12, 18, 18);
+    if (!regionClearRect(region, 13, 13, 14, 14)) { return 8; }
+    let bounds: RegionBounds = regionBounds(region);
+    let empty: bool = regionIsEmpty(region);
+    freeRegion(region);
+
+    let clockCreated: EClock? = openEClock();
+    if (clockCreated == null) { return 9; }
+    let clock: EClock = clockCreated;
+    let ticks: EClockTicks = readEClock(clock);
+    let rate: u32 = eclockFrequency(clock);
+    freeEClock(clock);
+
+    let rawValue: u32 = readJoyPort(0);
+    let kind: u32 = joyPortType(rawValue);
+    let bits: u8 = decodeJoyPort(rawValue);
+    let direct: u8 = readJoyPortDecoded(1);
+
+    return count + (present ? 1 : 0) + number + (switchValue ? 1 : 0) +
+           textLength + width + height + depth + colors +
+           i32(bounds.x1) + (empty ? 1 : 0) + i32(rate) + i32(kind) +
+           i32(bits) + i32(direct) + i32(ticks.hi) + i32(ticks.lo);
+}
+"#;
+
+#[test]
+fn the_dos_graphics_input_surface_builds_on_hosted_amiga() {
+    let scratch = ScratchDir::new("dos-surface");
+    let source_path = write_fixture(&scratch, "main.clo", DOS_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("dos-surface", &output, 0);
+    assert!(
+        stderr(&output).is_empty(),
+        "the DOS/graphics/input surface must compile with zero diagnostics; stderr:\n{}",
+        stderr(&output)
+    );
+    let c = std::fs::read_to_string(&output_path).expect("the emitted C is readable");
+    for call in [
+        "cl_read_args_from",
+        "cl_dt_open_picture",
+        "cl_region_new",
+        "cl_eclock_open",
+        "cl_lowlevel_read",
+    ] {
+        assert!(c.contains(call), "the emitted C is missing {call}");
+    }
+}
+
+#[test]
+fn the_a500_profile_rejects_the_dos_graphics_input_surface() {
+    let scratch = ScratchDir::new("dos-a500");
+    let source_path = write_fixture(&scratch, "main.clo", DOS_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "hosted-amiga-13",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("dos-a500", &output, 1);
+    assert!(stderr(&output).contains("E11200"), "expected E11200, got:\n{}", stderr(&output));
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
+#[test]
+fn the_dos_graphics_input_surface_cross_builds_with_nix20() {
+    cross_build("dos-build20", "hosted-amiga", "nix20", DOS_SOURCE);
+}
+
+#[test]
+fn the_dos_graphics_input_exports_match_the_stdlib_appendix() {
+    for (section, module) in [
+        ("### 14.7", "std.amiga.args"),
+        ("### 14.8", "std.amiga.datatypes"),
+        ("### 14.9", "std.amiga.regions"),
+        ("### 14.10", "std.amiga.eclock"),
+        ("### 14.11", "std.amiga.lowlevel"),
+    ] {
+        let text = appendix_section(section);
+        let module = clc::stdlib::lookup(module).expect("the module is registered");
+        for name in module.exports {
+            assert!(
+                text.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|word| word == *name),
+                "the appendix section {section} is missing {name}"
+            );
+        }
+    }
+}

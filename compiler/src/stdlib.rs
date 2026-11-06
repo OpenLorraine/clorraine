@@ -137,6 +137,26 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.pool",
         source: include_str!("../../stdlib/std.amiga.pool.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.args",
+        source: include_str!("../../stdlib/std.amiga.args.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.datatypes",
+        source: include_str!("../../stdlib/std.amiga.datatypes.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.regions",
+        source: include_str!("../../stdlib/std.amiga.regions.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.eclock",
+        source: include_str!("../../stdlib/std.amiga.eclock.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.lowlevel",
+        source: include_str!("../../stdlib/std.amiga.lowlevel.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -628,6 +648,70 @@ pub const MODULES: &[StdlibModule] = &[
             "freeUtilityPool",
         ],
     },
+    StdlibModule {
+        name: "std.amiga.args",
+        exports: &[
+            "Args",
+            "readArgs",
+            "readArgsFrom",
+            "freeArgs",
+            "argCount",
+            "argPresent",
+            "argNumber",
+            "argText",
+            "argSwitch",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.datatypes",
+        exports: &[
+            "DTObject",
+            "openPicture",
+            "disposeDTObject",
+            "dtWidth",
+            "dtHeight",
+            "dtDepth",
+            "dtColors",
+            "drawDTObject",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.regions",
+        exports: &[
+            "Region",
+            "RegionBounds",
+            "newRegion",
+            "freeRegion",
+            "regionOrRect",
+            "regionAndRect",
+            "regionClearRect",
+            "regionBounds",
+            "regionIsEmpty",
+            "layerSetClipRegion",
+            "layerClearClipRegion",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.eclock",
+        exports: &[
+            "EClock",
+            "EClockTicks",
+            "openEClock",
+            "readEClock",
+            "eclockFrequency",
+            "freeEClock",
+        ],
+    },
+    StdlibModule {
+        name: "std.amiga.lowlevel",
+        exports: &[
+            "readJoyPort",
+            "joyPortType",
+            "decodeJoyPort",
+            "readJoyPortDecoded",
+            "lowlevelVersion",
+        ],
+    },
 ];
 
 /// Looks up a standard-library module by its dotted name.
@@ -882,6 +966,33 @@ mod tests {
                 &["UtilityPool", "UtilityBlock", "createUtilityPool",
                   "allocUtilityBlock", "utilityBlockSize", "writeUtilityBlock",
                   "readUtilityBlock", "freeUtilityBlock", "freeUtilityPool"][..],
+            ),
+            (
+                "std.amiga.args",
+                &["Args", "readArgs", "readArgsFrom", "freeArgs", "argCount",
+                  "argPresent", "argNumber", "argText", "argSwitch"][..],
+            ),
+            (
+                "std.amiga.datatypes",
+                &["DTObject", "openPicture", "disposeDTObject", "dtWidth",
+                  "dtHeight", "dtDepth", "dtColors", "drawDTObject"][..],
+            ),
+            (
+                "std.amiga.regions",
+                &["Region", "RegionBounds", "newRegion", "freeRegion",
+                  "regionOrRect", "regionAndRect", "regionClearRect",
+                  "regionBounds", "regionIsEmpty", "layerSetClipRegion",
+                  "layerClearClipRegion"][..],
+            ),
+            (
+                "std.amiga.eclock",
+                &["EClock", "EClockTicks", "openEClock", "readEClock",
+                  "eclockFrequency", "freeEClock"][..],
+            ),
+            (
+                "std.amiga.lowlevel",
+                &["readJoyPort", "joyPortType", "decodeJoyPort",
+                  "readJoyPortDecoded", "lowlevelVersion"][..],
             ),
         ] {
             assert!(lookup(module).is_some(), "missing module {module}");

@@ -1,0 +1,81 @@
+//! Amiga `ReadArgs` command-line parsing (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. The template is parsed by
+//! the shim: the caller supplies the exact slot count and the shim records
+//! each slot's kind, so a switch or numeric slot is never read as a string.
+//! `readArgsFrom` provides a deterministic buffer source for tests and
+//! library callers; the input must end with a newline.
+
+module std.amiga.args;
+
+/// Parsed `ReadArgs` slots. The generated drop frees the `RDArgs` and array.
+export handle Args freedBy cl_free_args;
+
+ffi stdargs {
+    func cl_read_args(template: cstring, slots: i32): Args?;
+    func cl_read_args_from(template: cstring, slots: i32, source: raw u8,
+                           length: u32): Args?;
+    func cl_free_args(take args: Args): void;
+    func cl_arg_count(borrow args: Args): i32;
+    func cl_arg_present(borrow args: Args, index: i32): bool;
+    func cl_arg_number(borrow args: Args, index: i32): i32;
+    func cl_arg_text(borrow args: Args, index: i32, buffer: raw u8,
+                     length: u32): i32;
+    func cl_arg_switch(borrow args: Args, index: i32): bool;
+}
+
+/// Parses the process command line with `template`.
+///
+/// `slots` must equal the number of top-level template options; the shim
+/// rejects `/M`, `/T`, `/F`, and a count mismatch. Returns null on failure.
+export func readArgs(template: cstring, slots: i32): Args? {
+    return cl_read_args(template, slots);
+}
+
+/// Parses `text` with `template`, without reading the process command line.
+///
+/// The shim appends a newline when one is missing. This is the deterministic
+/// path for tests and applications that already have an argument string.
+export func readArgsFrom(template: cstring, slots: i32,
+                         const text: u8[]): Args? {
+    unsafe {
+        return cl_read_args_from(template, slots, raw u8(text.ptr),
+                                 u32(len(text)));
+    }
+}
+
+/// Frees parsed arguments exactly once.
+export func freeArgs(take args: Args): void {
+    cl_free_args(args);
+}
+
+/// Returns the parsed template count.
+export func argCount(borrow args: Args): i32 {
+    return cl_arg_count(args);
+}
+
+/// Returns true when the slot has a value.
+export func argPresent(borrow args: Args, index: i32): bool {
+    return cl_arg_present(args, index);
+}
+
+/// Returns a `/N` numeric value, or 0 for another kind/out-of-range slot.
+export func argNumber(borrow args: Args, index: i32): i32 {
+    return cl_arg_number(args, index);
+}
+
+/// Copies an `/A` or `/K` string slot and returns its length.
+///
+/// Returns -1 for a `/N`, `/S`, absent, or out-of-range slot. The copy is
+/// NUL-terminated and never exceeds `len(buf)`.
+export func argText(borrow args: Args, index: i32, borrow buf: u8[]): i32 {
+    unsafe {
+        return cl_arg_text(args, index, raw u8(buf.ptr), u32(len(buf)));
+    }
+}
+
+/// Returns a `/S` switch value.
+export func argSwitch(borrow args: Args, index: i32): bool {
+    return cl_arg_switch(args, index);
+}

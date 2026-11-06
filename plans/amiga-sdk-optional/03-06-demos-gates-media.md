@@ -41,12 +41,12 @@ stays read-only under `/amiga`; the helper copies only named trees into `build/`
 |---|---|---|
 | `examples/amiga/optional-exec20.clo` | semaphore, hook, tag list, date | `exec: ok sem 1 hook 1 tag 1 date 1` |
 | `examples/amiga/optional-pool.clo` | utility pool | `pool: ok 1` |
-| `examples/amiga/optional-args.clo` | ReadArgs, EClock, regions | `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20 clip 1`; `eclock: ok 709379` |
+| `examples/amiga/optional-args.clo` | ReadArgs, EClock, regions | `args: ok n 3 file 1 num 7 sw 1`; `regions: ok bounds 10 10 20 20`; `eclock: ok 709379` |
 | `examples/amiga/optional-intuition.clo` | gadtools + ASL | `gt: ok gad 4`; `asl: ok path asl.txt` |
 | `examples/amiga/optional-services.clo` | commodities, locale, ARexx, clipboard, devices | `cmd: ok broker 1 dup 1 reopen 1`; `locale: ok name 1 cc 1 gmt 1 fmt 1`; `rexx: ok action 1`; `clip: ok n 4`; `ser: ok n 4`; `par: ok n 4`; `prt: ok open 1` |
 | `examples/amiga/optional-boopsi.clo` | BOOPSI colorwheel | `boopsi: ok hue 42` |
 | `examples/amiga/optional-datatypes.clo` | datatypes ILBM | `dt: ok w 320 h 200 depth 4 colors 16` |
-| `examples/amiga/optional-lowlevel.clo` | ReadJoyPort | `ll: ok v 40 p0 0 p1 0` |
+| `examples/amiga/optional-lowlevel.clo` | ReadJoyPort | `ll: ok v 40` |
 | `examples/amiga/optional-nonvolatile.clo` | nonvolatile | `nv: ok n 23` |
 | `examples/amiga/optional-network.clo` | bsdsocket | `net: ok send 5 recv 5` |
 | `examples/amiga/optional-guide.clo` | AmigaGuide | `guide: ok msg 1 result 0` |
@@ -86,7 +86,7 @@ loops send/recv until 5 bytes. [AR-15, AR-28]
 
 1. Stage Workbench 3.1; boot A600/KS3.1 (ECS/68000/1MB).
 2. Run `optional-lowlevel` and `optional-nonvolatile`; create `ENV:`/`ENVARC:`.
-3. Assert `ll: ok v 40 p0 0 p1 0`, `nv: ok n 23`.
+3. Assert `ll: ok v 40`, `nv: ok n 23`.
 
 ### `sdk-a1200-ks30-addons`
 

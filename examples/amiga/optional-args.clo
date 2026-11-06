@@ -1,0 +1,80 @@
+//! Bundle 9 DOS/graphics/input acceptance: ReadArgs, regions, and EClock.
+//!
+//! The gate redirects standard output; the program prints one line per
+//! surface.
+
+module examples.amiga.optional_args;
+
+import { Args, readArgsFrom, freeArgs, argCount, argPresent, argNumber,
+         argText, argSwitch } from std.amiga.args;
+import { Region, RegionBounds, newRegion, freeRegion, regionOrRect,
+         regionAndRect, regionClearRect, regionBounds } from std.amiga.regions;
+import { EClock, EClockTicks, openEClock, readEClock, eclockFrequency,
+         freeEClock } from std.amiga.eclock;
+import { String, stringOf, bytes } from std.text;
+import { slice } from std.mem;
+import { println } from std.io;
+
+func main(): i32 {
+    let text: String = stringOf("FILE=x NUM=7 VERBOSE");
+    let parsed: Args? = readArgsFrom("FILE/A,NUM/N,VERBOSE/S", 3, bytes(text));
+    if (parsed == null) {
+        println("args: err 1");
+        return 1;
+    }
+    let args: Args = parsed;
+    let count: i32 = argCount(args);
+    let present: bool = argPresent(args, 0);
+    let number: i32 = argNumber(args, 1);
+    let switchValue: bool = argSwitch(args, 2);
+    let buffer: u8[16] = [0; 16];
+    let textLength: i32 = argText(args, 0, slice(buffer, 0, 16));
+    freeArgs(args);
+    if (count != 3 || !present || number != 7 || !switchValue || textLength != 1) {
+        println("args: err 2");
+        return 1;
+    }
+    println("args: ok n 3 file 1 num 7 sw 1");
+
+    let regionCreated: Region? = newRegion();
+    if (regionCreated == null) {
+        println("regions: err 1");
+        return 1;
+    }
+    let region: Region = regionCreated;
+    if (!regionOrRect(region, 10, 10, 20, 20)) {
+        freeRegion(region);
+        println("regions: err 2");
+        return 1;
+    }
+    regionAndRect(region, 10, 10, 20, 20);
+    if (!regionClearRect(region, 30, 30, 40, 40)) {
+        freeRegion(region);
+        println("regions: err 3");
+        return 1;
+    }
+    let bounds: RegionBounds = regionBounds(region);
+    freeRegion(region);
+    if (bounds.x1 != 10 || bounds.y1 != 10 ||
+        bounds.x2 != 20 || bounds.y2 != 20) {
+        println("regions: err 4");
+        return 1;
+    }
+    println("regions: ok bounds 10 10 20 20");
+
+    let clockCreated: EClock? = openEClock();
+    if (clockCreated == null) {
+        println("eclock: err 1");
+        return 1;
+    }
+    let clock: EClock = clockCreated;
+    let ticks: EClockTicks = readEClock(clock);
+    let rate: u32 = eclockFrequency(clock);
+    freeEClock(clock);
+    if (rate == 0 || (ticks.hi == 0 && ticks.lo == 0)) {
+        println("eclock: err 2");
+        return 1;
+    }
+    println($"eclock: ok {rate}");
+    return 0;
+}

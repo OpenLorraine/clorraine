@@ -1,0 +1,48 @@
+//! Amiga lowlevel.library ReadJoyPort (Kickstart 3.1+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. `readJoyPort` returns the
+//! raw port word; `joyPortType` extracts the controller type nibble and
+//! `decodeJoyPort` maps only game-controller/joystick directions, leaving
+//! mouse position bits alone.
+
+module std.amiga.lowlevel;
+
+ffi stdlowlevel {
+    func cl_lowlevel_read(port: u32): u32;
+    func cl_lowlevel_type(value: u32): u32;
+    func cl_lowlevel_decode(value: u32): u8;
+    func cl_lowlevel_version(): u32;
+}
+
+/// Reads the raw `ReadJoyPort` word for port 0 or 1.
+///
+/// Returns 0 when lowlevel.library is absent or the port is out of range.
+export func readJoyPort(port: u8): u32 {
+    return cl_lowlevel_read(u32(port));
+}
+
+/// Returns the controller type nibble (0 unavailable, 1 game controller,
+/// 2 mouse, 3 joystick, 4 unknown).
+export func joyPortType(value: u32): u32 {
+    return cl_lowlevel_type(value);
+}
+
+/// Maps a raw port word to the `JOY_*` bits.
+///
+/// Directions are decoded only for a game controller or joystick; the red
+/// button is decoded for every available type. Mouse position bits are not
+/// treated as directions.
+export func decodeJoyPort(value: u32): u8 {
+    return cl_lowlevel_decode(value);
+}
+
+/// Reads and decodes one port.
+export func readJoyPortDecoded(port: u8): u8 {
+    return decodeJoyPort(readJoyPort(port));
+}
+
+/// Returns the lowlevel.library version, or 0 when it is absent.
+export func lowlevelVersion(): u32 {
+    return cl_lowlevel_version();
+}

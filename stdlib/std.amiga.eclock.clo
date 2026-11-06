@@ -1,0 +1,57 @@
+//! Amiga EClock ticks (Kickstart 2.0+).
+//!
+//! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
+//! freestanding profiles reject it with `E11200`. `EClock` owns a
+//! `timer.device` `UNIT_ECLOCK` request. `readEClock` returns the 32-bit hi/lo
+//! words and `eclockFrequency` returns the ticks-per-second value; v1 has no
+//! 64-bit integer type.
+
+module std.amiga.eclock;
+
+/// An open timer.device EClock unit. The generated drop closes it.
+export handle EClock freedBy cl_free_eclock;
+
+/// One EClock reading.
+export struct EClockTicks {
+    hi: u32;
+    lo: u32;
+}
+
+ffi stdeclock {
+    func cl_eclock_open(): EClock?;
+    func cl_eclock_read(borrow clock: EClock): u32;
+    func cl_eclock_hi(borrow clock: EClock): u32;
+    func cl_eclock_lo(borrow clock: EClock): u32;
+    func cl_eclock_frequency(borrow clock: EClock): u32;
+    func cl_free_eclock(take clock: EClock): void;
+}
+
+/// Opens timer.device UNIT_ECLOCK, or returns null.
+export func openEClock(): EClock? {
+    return cl_eclock_open();
+}
+
+/// Reads the current EClock value.
+///
+/// The returned hi/lo words are the device value; `eclockFrequency` reports
+/// the PAL/NTSC ticks-per-second rate from the same read.
+export func readEClock(borrow clock: EClock): EClockTicks {
+    let rate: u32 = cl_eclock_read(clock);
+    if (rate == 0) {
+        return EClockTicks { hi: 0, lo: 0 };
+    }
+    return EClockTicks {
+        hi: cl_eclock_hi(clock),
+        lo: cl_eclock_lo(clock),
+    };
+}
+
+/// Returns the last read's ticks-per-second rate, or 0 before a read.
+export func eclockFrequency(borrow clock: EClock): u32 {
+    return cl_eclock_frequency(clock);
+}
+
+/// Closes an EClock unit exactly once.
+export func freeEClock(take clock: EClock): void {
+    cl_free_eclock(clock);
+}

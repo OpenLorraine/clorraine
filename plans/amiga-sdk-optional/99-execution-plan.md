@@ -2,9 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Progress**: 6/30 tasks (20%) — Executing
+> **Progress**: 9/30 tasks (30%) — Executing
 > **Created**: 2026-11-06 02:09
-> **Last Updated**: 2026-11-06 02:51
+> **Last Updated**: 2026-11-06 03:05
 > **CodeOps Artifact Schema**: 1
 
 ## How to Execute
@@ -38,9 +38,9 @@ spec test or weaken a gate pin.
 > **Reasoning**: high — ReadArgs, datatypes, regions, EClock, and lowlevel add five new FFI
 > surfaces, including template parsing and a dedicated EClock unit.
 
-- [ ] 2.1.1 [spec-author] Add the args/datatypes/regions/eclock/lowlevel surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red
-- [ ] 2.1.2 Add the five modules with their optional-suffix C and module/export tables; run the spec green
-- [ ] 2.1.3 Add impl pins for template kinds, `PDTA_*`/`dtDraw`, region borrow/bounds, EClock hi/lo/frequency, lowlevel type decode, and `optional-args.clo`/`optional-lowlevel.clo`; run targeted tests
+- [x] 2.1.1 [spec-author] Add the args/datatypes/regions/eclock/lowlevel surfaces, rejection cases, `nix20` cross-builds, and appendix sections; run red ✅ (completed: 2026-11-06 03:05; §14.7–§14.11 added)
+- [x] 2.1.2 Add the five modules with their optional-suffix C and module/export tables; run the spec green ✅ (completed: 2026-11-06 03:05; args, datatypes, regions, eclock, lowlevel)
+- [x] 2.1.3 Add impl pins for template kinds, `PDTA_*`/`dtDraw`, region borrow/bounds, EClock hi/lo/frequency, lowlevel type decode, and `optional-args.clo`/`optional-lowlevel.clo`; run targeted tests ✅ (completed: 2026-11-06 03:05; 7 impl + 11 spec green; demos build)
 
 ## Phase 3: Intuition advanced
 
