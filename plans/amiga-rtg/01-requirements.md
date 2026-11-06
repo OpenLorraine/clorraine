@@ -124,7 +124,7 @@ capability row, not a header dump.
 
 ### Won't Have (Out of Scope)
 
-- CyberGraphX or a dual-stack abstraction.
+- CyberGraphX/CGX4 or a dual-stack abstraction (explicitly dropped 2026-11-06).
 - Real Picasso II/IV, CyberVision, or other physical card drivers.
 - PIP/video overlay, hardware sprites, CLUT palette editing, or screen-mode
   preference editing.

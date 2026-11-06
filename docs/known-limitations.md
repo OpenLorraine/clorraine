@@ -97,9 +97,10 @@ These are deliberate boundaries, not hidden gaps:
 
 `std.amiga.picasso96` is a 32-bit truecolor PC-RTG surface for Picasso96 2.0
 on FS-UAE’s `uaegfx` card. It is not a generic RTG abstraction:
-CyberGraphX, physical Picasso II/IV or CyberVision drivers, PIP/video overlay,
-CLUT palette editing, hardware sprites, and RTG text/font rendering are out of
-scope. The runtime gate runs on A1200/KS3.1 with the Aminet Picasso96 archive
+CyberGraphX/CGX4, physical Picasso II/IV or CyberVision drivers, PIP/video
+overlay, CLUT palette editing, hardware sprites, and RTG text/font rendering
+are out of scope. CGX4 is explicitly dropped as a product row because it is
+commercial, end-of-life, and requires media that is not part of this project. The runtime gate runs on A1200/KS3.1 with the Aminet Picasso96 archive
 and checks a PPM capture rather than a native CSCR, because an RTG screen is
 chunky/truecolor. The P96 archive is user-provided and verified by SHA-256; it
 is not committed. The bitmap fill uses a bounded pixel loop because
