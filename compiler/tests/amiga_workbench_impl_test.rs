@@ -1,8 +1,9 @@
 //! Implementation tests for the Bundle 8 Workbench, icon, and expansion
 //! surface.
 //!
-//! Phase 1 pins the public message port and the `CL_HOSTED_AMIGA_20` profile
-//! define. The module-specific cases are added by their phases.
+//! The suite pins the public message port, the separate 2.0 shim suffix,
+//! the icon and Workbench ownership, the expansion/card/keymap calls,
+//! the demos, the fixtures, and the two gates.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -73,12 +74,34 @@ fn assert_contains(tag: &str, haystack: &str, needle: &str) {
     );
 }
 
-/// The shim source, read directly so the C contract is pinned where it is
-/// implemented rather than through a compiled target.
-fn shim() -> String {
+/// Asserts a labeled caller cleanup block for `var` calls `call(var)`.
+fn assert_caller_cleanup(tag: &str, c: &str, var: &str, call: &str) {
+    let block = format!("    if ({var}) {{ {call}({var}); }}");
+    let mut previous = "";
+    for line in c.lines() {
+        if line == block && previous.trim_start().starts_with("__cl_c") {
+            return;
+        }
+        previous = line;
+    }
+    panic!("{tag}: missing labeled caller cleanup for {var}");
+}
+
+/// The shared (1.3-safe) shim source.
+fn shared_shim() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/shim_hosted_amiga.c");
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+}
+
+/// The shared shim plus the 2.0+ suffix, which is what a `hosted-amiga`
+/// translation unit contains.
+fn shim() -> String {
+    format!(
+        "{}{}",
+        shared_shim(),
+        clc::profile::Profile::HostedAmiga.shim_suffix()
+    )
 }
 
 const PUBLIC_PORT_SOURCE: &str = r#"module tests.wb.publicportimpl;
@@ -125,30 +148,62 @@ fn the_public_port_shim_validates_the_name() {
     }
 }
 
-/// The 2.0-only shim section is enabled by the profile define, and the 1.3
-/// emit does not define it.
+/// The 2.0+ suffix is appended only for `hosted-amiga`; the 1.3 emit has no
+/// 2.0 function or header macro.
 #[test]
-fn the_20_shim_define_is_emitted_only_for_hosted_amiga() {
+fn the_2_0_shim_suffix_is_hosted_amiga_only() {
     let source = "module tests.wb.define;\n\nfunc main(): i32 {\n    return 0;\n}\n";
     let modern = emit("define-20", "hosted-amiga", source);
-    assert_contains(
-        "define-20",
-        &modern,
-        "#define CL_HOSTED_AMIGA_20 1",
+    assert_contains("define-20", &modern, "cl_add_app_icon");
+    assert_contains("define-20", &modern, "cl_save_public_screen");
+    let main_at = modern.find("int main(void)").expect("the generated main");
+    let suffix_at = modern.find("cl_add_app_icon").expect("the 2.0 suffix");
+    assert!(
+        main_at < suffix_at,
+        "the 2.0 suffix must follow the generated program"
+    );
+    assert!(
+        !modern.contains("#define CL_HOSTED_AMIGA_20"),
+        "the suffix is selected by the emitter, not a macro"
     );
     let a500 = emit("define-13", "hosted-amiga-13", source);
     assert!(
-        !a500.contains("#define CL_HOSTED_AMIGA_20 1"),
-        "the 1.3 emit must not define CL_HOSTED_AMIGA_20"
+        !a500.contains("cl_add_app_icon"),
+        "the 1.3 emit must not contain the 2.0 icon shim"
+    );
+    assert!(
+        !a500.contains("cl_save_public_screen"),
+        "the 1.3 emit must not contain the 2.0 Workbench shim"
+    );
+    assert!(
+        !a500.contains("#define CL_HOSTED_AMIGA_20"),
+        "the 1.3 emit must not define the profile macro"
     );
 }
 
-/// The shim guards its 2.0-only section with the profile define.
+/// The shared shim is 1.3-clean; the 2.0 functions live only in the suffix.
 #[test]
-fn the_shim_guards_the_20_section() {
-    let shim = shim();
-    assert_contains("shim-guard", &shim, "#if defined(CL_HOSTED_AMIGA_20)");
-    assert_contains("shim-guard", &shim, "#endif");
+fn the_2_0_shim_suffix_is_separate_from_the_shared_shim() {
+    let shared = shared_shim();
+    assert!(
+        !shared.contains("cl_add_app_icon"),
+        "the shared shim must not contain the 2.0 icon code"
+    );
+    assert!(
+        !shared.contains("cl_save_public_screen"),
+        "the shared shim must not contain the 2.0 Workbench code"
+    );
+    let suffix = clc::profile::Profile::HostedAmiga.shim_suffix();
+    assert_contains("shim-suffix", suffix, "cl_add_app_icon");
+    assert_contains("shim-suffix", suffix, "cl_expansion_board_count");
+    assert_contains("shim-suffix", suffix, "cl_add_app_window");
+    assert_contains("shim-suffix", suffix, "cl_save_public_screen");
+    assert!(
+        clc::profile::Profile::HostedAmiga13
+            .shim_suffix()
+            .is_empty(),
+        "the 1.3 profile has no 2.0 suffix"
+    );
 }
 
 const ICON_SOURCE: &str = r#"module tests.wb.iconimpl;
@@ -203,11 +258,7 @@ fn the_icon_wrappers_lower_to_the_shim() {
     }
 
     let drop = emit("icon-drop", "hosted-amiga", ICON_DROP_SOURCE);
-    assert_contains(
-        "icon-drop",
-        &drop,
-        "__cl_c1:\n    if (icon) { cl_free_disk_object(icon); }",
-    );
+    assert_caller_cleanup("icon-drop", &drop, "icon", "cl_free_disk_object");
 }
 
 /// The icon shim pins the library base, the library calls, and the type guard.
@@ -364,7 +415,8 @@ fn the_app_window_and_menu_item_are_pinned() {
         "RemoveAppWindow((struct AppWindow *)handle)",
         "typedef struct cl_app_menu_item",
         "AddAppMenuItemA(id, user_data, (STRPTR)title_copy, port,",
-        "RemoveAppMenuItem(record->item);",
+        "if (record->item != NULL)",
+        "(void)RemoveAppMenuItem(record->item);",
     ] {
         assert_contains("appwindow-shim", &shim, needle);
     }
@@ -487,6 +539,9 @@ fn the_keymap_call_is_pinned() {
         "struct Library *KeymapBase;",
         "OpenLibrary((STRPTR)\"keymap.library\", 37)",
         "keymap = AskKeyMapDefault();",
+        "memset(&event, 0, sizeof event);",
+        "event.ie_Class = IECLASS_RAWKEY;",
+        "event.ie_SubClass = 0;",
         "event.ie_Code = code;",
         "event.ie_Qualifier = qualifier;",
         "MapRawKey(&event, (STRPTR)buffer, (LONG)sizeof buffer, keymap)",
@@ -528,6 +583,7 @@ fn the_workbench_demo_pins_the_sequence() {
         "removeAppIcon(icon)",
         "closeWindow(window)",
         "deleteMsgPort(port)",
+        "CNEXT:wb-done.txt",
     ] {
         assert!(
             demo.contains(needle),
@@ -604,12 +660,16 @@ fn the_gates_pin_the_handshakes_and_reports() {
         "--amiga-model=A1200",
         "--chip-memory=2048 --fast-memory=0 --slow-memory=0",
         "e21545723fe8374e91342617604f1b3d703094f1",
-        "grep -aq '^startwb 1 screen '",
+        "grep -aq '^startwb 1 screen [1-9a-f]'",
         "grep -aq '^ready$'",
         "grep -aq '^posted$'",
-        "wb: ok icon 1 win 1 menu 1 types 8 7 9",
-        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0",
+        "grep -aq '^done$'",
+        "wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0",
+        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1",
         "cscr2png.py",
+        "a1200-workbench-icon.png",
+        "160x120+800+280",
+        "identify -format '%k'",
         "compare -metric AE",
     ] {
         assert!(a1200.contains(needle), "the A1200 gate is missing {needle:?}");
@@ -620,12 +680,127 @@ fn the_gates_pin_the_handshakes_and_reports() {
         "--amiga-model=A600",
         "--chip-memory=1024 --fast-memory=0 --slow-memory=0",
         "02843c4253bbd29aba535b0aa3bd9a85034ecde4",
-        "grep -aq '^startwb 1 screen '",
+        "grep -aq '^startwb 1 screen [1-9a-f]'",
         "grep -aq '^ready$'",
         "grep -aq '^posted$'",
-        "wb: ok icon 1 win 1 menu 1 types 8 7 9",
-        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0",
+        "grep -aq '^done$'",
+        "wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0",
+        "svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1",
     ] {
         assert!(a600.contains(needle), "the A600 gate is missing {needle:?}");
     }
+}
+
+const APP_WINDOW_DROP_SOURCE: &str = r#"module tests.wb.appwindowdrop;
+
+import { MsgPort, createPublicPort } from std.amiga.exec;
+import { Screen, Window, openScreen, openWindow } from std.amiga.intuition;
+import { AppWindow, addAppWindow } from std.amiga.workbench;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let title: String = stringOf("W");
+    let screenCreated: Screen? = openScreen(320, 80, 3, toCString(title));
+    if (screenCreated == null) { return 1; }
+    let screen: Screen = screenCreated;
+    let windowCreated: Window? = openWindow(screen, 0, 0, 300, 64, toCString(title));
+    if (windowCreated == null) { return 2; }
+    let window: Window = windowCreated;
+    let name: String = stringOf("ClorraineWbTest");
+    let portCreated: MsgPort? = createPublicPort(toCString(name));
+    if (portCreated == null) { return 3; }
+    let port: MsgPort = portCreated;
+    let appCreated: AppWindow? = addAppWindow(window, port, 1, 0);
+    if (appCreated == null) { return 4; }
+    let appWindow: AppWindow = appCreated;
+    return 0;
+}
+"#;
+
+const APP_MENU_DROP_SOURCE: &str = r#"module tests.wb.appmenudrop;
+
+import { MsgPort, createPublicPort } from std.amiga.exec;
+import { AppMenuItem, addAppMenuItem } from std.amiga.workbench;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("ClorraineWbTest");
+    let portCreated: MsgPort? = createPublicPort(toCString(name));
+    if (portCreated == null) { return 1; }
+    let port: MsgPort = portCreated;
+    let itemCreated: AppMenuItem? =
+        addAppMenuItem(port, toCString(stringOf("Clorraine")), 2, 0);
+    if (itemCreated == null) { return 2; }
+    let item: AppMenuItem = itemCreated;
+    return 0;
+}
+"#;
+
+const APP_MESSAGE_DROP_SOURCE: &str = r#"module tests.wb.appmessagedrop;
+
+import { MsgPort, createPublicPort } from std.amiga.exec;
+import { AppMessage, waitAppMessage } from std.amiga.workbench;
+import { String, stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let name: String = stringOf("ClorraineWbTest");
+    let portCreated: MsgPort? = createPublicPort(toCString(name));
+    if (portCreated == null) { return 1; }
+    let port: MsgPort = portCreated;
+    let messageCreated: AppMessage? = waitAppMessage(port);
+    if (messageCreated == null) { return 2; }
+    let message: AppMessage = messageCreated;
+    return 0;
+}
+"#;
+
+/// An unremoved AppWindow, AppMenuItem, or AppMessage goes through the
+/// generated caller cleanup. The helper checks the labeled caller block; the
+/// wrapper's own dead-parameter drop is unlabeled.
+#[test]
+fn the_other_workbench_handles_drop_through_the_caller_cleanup() {
+    let window = emit("appwindow-drop", "hosted-amiga", APP_WINDOW_DROP_SOURCE);
+    assert_caller_cleanup(
+        "appwindow-drop",
+        &window,
+        "appWindow",
+        "cl_remove_app_window",
+    );
+    let menu = emit("appmenu-drop", "hosted-amiga", APP_MENU_DROP_SOURCE);
+    assert_caller_cleanup("appmenu-drop", &menu, "item", "cl_remove_app_menu_item");
+    let message = emit("appmessage-drop", "hosted-amiga", APP_MESSAGE_DROP_SOURCE);
+    assert_caller_cleanup(
+        "appmessage-drop",
+        &message,
+        "message",
+        "cl_reply_app_message",
+    );
+}
+
+/// The AppIcon failure paths and the removal order are pinned, including the
+/// V44 position tag.
+#[test]
+fn the_app_icon_failure_and_removal_paths_are_pinned() {
+    let shim = shim();
+    assert_contains("appicon-failure", &shim, "FreeDiskObject(object);");
+    assert_contains("appicon-failure", &shim, "FreeMem(title_copy, title_size);");
+    assert_contains("appicon-failure", &shim, "tags[0].ti_Tag = WBAPPICONA_PropagatePosition;");
+    assert_contains("appicon-failure", &shim, "tags[0].ti_Data = TRUE;");
+    assert_contains("appicon-failure", &shim, "tags[1].ti_Tag = TAG_DONE;");
+    let remove = shim
+        .find("(void)RemoveAppIcon(record->icon);")
+        .expect("the AppIcon removal guard");
+    let free_object = shim
+        .find("FreeDiskObject(record->object);")
+        .expect("the DiskObject free");
+    assert!(
+        remove < free_object,
+        "RemoveAppIcon must run before FreeDiskObject"
+    );
+    assert_contains("appicon-failure", &shim, "if (record->item != NULL)");
+    assert_contains(
+        "appicon-failure",
+        &shim,
+        "(void)RemoveAppMenuItem(record->item);",
+    );
 }

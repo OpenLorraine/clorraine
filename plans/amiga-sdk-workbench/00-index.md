@@ -120,23 +120,25 @@ func writeIcon(name: cstring): bool {
 | Live Workbench proof | Native `CSCR` capture of the Workbench screen with the AppIcon, plus an AppIcon crop golden (AR-5) |
 | Icon library | `DiskObject` get/put/default/free/type round-trip on both ROMs (AR-6) |
 | Expansion/card | Board enumeration and `card.resource` status on both ROMs (AR-7) |
-| Keymap | Library open plus `MapRawKey`; the bare ROM has no loaded keymap, so the demo reports 0 (AR-8) |
+| Keymap | `MapRawKey` with `IECLASS_RAWKEY`; the ROM default keymap maps the raw key, so the demo reports `key 1` (AR-8) |
 | Gate | A1200/KS3.1 Workbench gate plus A600/KS2.05 services gate (AR-9) |
 
 ## Specialist Agents
 
 **None** — the capability-gap check found no gap a standing specialist would
-close beyond the existing phase review. The bundle adds C shim code, Workbench ownership wrappers, and one profile
-`#define` in `compiler/src/codegen.rs`; there is no IR, symbol-name, or
-compiler semantic change. The phase review uses the correctness reviewer, the
-read-only memory-safety auditor, and the read-only emission-integrity auditor
-(the codegen define changes every `hosted-amiga` translation unit).
+close beyond the existing phase review. The bundle adds C shim code, Workbench
+ownership wrappers, and a 2.0+ shim suffix appended by
+`compiler/src/codegen.rs`; there is no IR, symbol-name, or compiler semantic
+change. The phase review uses the correctness reviewer, the read-only
+memory-safety auditor, and the read-only emission-integrity auditor (the suffix
+changes every `hosted-amiga` translation unit).
 
-_Detection evidence: `compiler/runtime/shim_hosted_amiga.c` owns the C
-resources; `stdlib/std.amiga.workbench.clo`, `stdlib/std.amiga.icon.clo`, and
+_Detection evidence: `compiler/runtime/shim_hosted_amiga.c` owns the shared C
+resources and `compiler/runtime/shim_hosted_amiga_20.c` owns the 2.0+ suffix;
+`stdlib/std.amiga.workbench.clo`, `stdlib/std.amiga.icon.clo`, and
 `stdlib/std.amiga.expansion.clo` are the wrappers; `compiler/src/profile.rs` gates the modules;
-`compiler/src/codegen.rs` adds the `CL_HOSTED_AMIGA_20` profile define; no
-`compiler/src/ir` file is touched._
+`compiler/src/codegen.rs` appends the separate 2.0+ shim suffix after the
+generated program; no `compiler/src/ir` file is touched._
 
 ## Related Files
 
@@ -144,9 +146,10 @@ resources; `stdlib/std.amiga.workbench.clo`, `stdlib/std.amiga.icon.clo`, and
 - `stdlib/std.amiga.icon.clo` — icon library `DiskObject` surface
 - `stdlib/std.amiga.expansion.clo` — expansion, card, keymap surface
 - `stdlib/std.amiga.exec.clo` — public port constructor
-- `compiler/runtime/shim_hosted_amiga.c` — C shim implementations
+- `compiler/runtime/shim_hosted_amiga.c` — shared C shim implementations
+- `compiler/runtime/shim_hosted_amiga_20.c` — 2.0+ Workbench/icon/expansion suffix
 - `compiler/src/profile.rs`, `compiler/src/stdlib.rs` — profile gates and exports
-- `compiler/src/codegen.rs` — the `CL_HOSTED_AMIGA_20` profile define
+- `compiler/src/codegen.rs` — appends the 2.0+ shim suffix
 - `compiler/tests/amiga_workbench_spec_test.rs` — specification suite
 - `compiler/tests/amiga_workbench_impl_test.rs` — implementation suite
 - `examples/amiga/workbench.clo`, `examples/amiga/services.clo` — acceptance programs

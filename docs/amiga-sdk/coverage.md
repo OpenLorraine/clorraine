@@ -13,7 +13,7 @@
 | 5-dos-assets | core | 1.3 | 5 | 7 | 0 | #6 |
 | 6-intuition | core | 1.3 | 6 | 9 | 0 | #7 |
 | 7-exec-devices | core | 1.3 | 8 | 11 | 0 | #8 |
-| 8-workbench | advanced | 2.0 | 0 | 9 | 0 | #9 |
+| 8-workbench | advanced | 2.0 | 4 | 10 | 0 | #9 |
 | 9-optional | optional | 3.1 | 0 | 3 | 0 | #10 |
 
 ## 0-baseline — Baseline and registry
@@ -145,15 +145,16 @@ Tier: advanced; min OS: 2.0; min hardware: ECS/68000/1M.
 
 | ID | Capability | Priority | Status | Acceptance |
 |---|---|---|---|---|
-| SDK-WBK-001 | AppIcon/AppWindow and messages | should | missing | workbench_app |
-| SDK-WBK-002 | Icon library | should | missing | icon_lib |
-| SDK-WBK-003 | Commodity broker | could | missing | commodities |
-| SDK-WBK-004 | locale.library | could | missing | locale |
-| SDK-WBK-005 | ARexx message port | could | missing | arexx |
-| SDK-WBK-006 | Clipboard device | should | missing | clipboard |
-| SDK-WBK-007 | Serial/parallel/printer | could | missing | serial |
-| SDK-WBK-008 | Expansion/keymap/card/nonvolatile | could | missing | expansion |
-| SDK-WBK-009 | Workbench integration demo | should | missing | workbench_demo |
+| SDK-WBK-001 | AppIcon/AppWindow and messages | should | done | workbench_app |
+| SDK-WBK-002 | Icon library | should | done | icon_lib |
+| SDK-WBK-003 | Commodity broker | could | deferred | commodities |
+| SDK-WBK-004 | locale.library | could | deferred | locale |
+| SDK-WBK-005 | ARexx message port | could | deferred | arexx |
+| SDK-WBK-006 | Clipboard device | should | deferred | clipboard |
+| SDK-WBK-007 | Serial/parallel/printer | could | deferred | serial |
+| SDK-WBK-008 | Expansion/keymap/card | could | done | expansion |
+| SDK-WBK-010 | nonvolatile.library | could | deferred | nonvolatile |
+| SDK-WBK-009 | Workbench integration demo | should | done | workbench_demo |
 
 ## 9-optional — Optional add-ons
 

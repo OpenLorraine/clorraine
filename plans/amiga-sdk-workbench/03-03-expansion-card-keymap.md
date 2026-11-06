@@ -66,20 +66,17 @@ the `svc` line records both the presence and the status.
 5. A non-positive length returns `NULL`; otherwise allocate a `String` with
    `cl_string_new`/`cl_string_append` and return it.
 
-The bare ROM has a default keymap object but no loaded `DEVS:keymaps` layout:
-the probe mapped none of the raw codes 0..127. The API is therefore
-library-call verified, not layout verified; the demo reports `key 0`. A real
-Workbench installation with `DEVS:keymaps` would return text. This limitation
-is recorded in `05-findings.md` and the registry note.
+The `InputEvent` is zeroed and its class set to `IECLASS_RAWKEY`; the ROM
+default keymap maps the demo's raw key, so the demo reports `key 1` on both
+baselines. A Workbench installation with additional keymaps can map more.
 
 ## Shim Guards
 
 The expansion/icon/Workbench shim code is compiled only for `hosted-amiga`:
-the emitted C defines `CL_HOSTED_AMIGA_20` before the shim, and the 2.0-only
-section is under `#if defined(CL_HOSTED_AMIGA_20)`. The `hosted-amiga-13` build
-preprocesses the section out, so the 1.3 NDK does not need the 2.0-only
-prototypes or the 2.0 library symbols. The shared shim still compiles for both
-profiles.
+the emitter appends `compiler/runtime/shim_hosted_amiga_20.c` **after** the
+generated program. The 1.3 build never sees the suffix, so the 1.3 NDK does not
+need the 2.0-only headers or symbols, and the 2.0 headers' macros cannot rewrite
+user identifiers. The shared shim still compiles for both profiles.
 
 ## Failure Values
 
@@ -98,4 +95,4 @@ it with `nix20`. The implementation test pins the `FindConfigDev` loop, the
 field reads, the card-resource open/close, the `MapRawKey` call, and the
 bounds checks. The A600 and A1200 gates print the board count, the first board's
 manufacturer/product, the card presence and status, and the keymap result:
-`svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0`.
+`svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1`.

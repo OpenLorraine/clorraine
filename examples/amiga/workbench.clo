@@ -149,5 +149,13 @@ func main(): i32 {
     removeAppIcon(icon);
     closeWindow(window);
     deleteMsgPort(port);
+
+    // The gate waits for this after the report so a crash in the cleanup
+    // path cannot pass on the report alone.
+    let donePath: String = stringOf("CNEXT:wb-done.txt");
+    let doneLine: String = stringOf("done\n");
+    if (!writeText(toCString(donePath), doneLine)) {
+        return 1;
+    }
     return 0;
 }

@@ -71,6 +71,12 @@ int main(void)
     messages[1] = make_message(reply, AMTYPE_APPWINDOW, 8, 43);
     messages[2] = make_message(reply, AMTYPE_APPMENUITEM, 9, 44);
     if (messages[0] == NULL || messages[1] == NULL || messages[2] == NULL) {
+        for (index = 0; index < 3; index++) {
+            if (messages[index] != NULL) {
+                FreeMem(messages[index], (ULONG)sizeof(struct AppMessage));
+            }
+        }
+        DeletePort(reply);
         printf("error no message\n");
         fflush(stdout);
         return 1;

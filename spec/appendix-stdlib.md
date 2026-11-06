@@ -670,9 +670,9 @@ func announce(name: cstring): i32 {
 accessors return the `ExpansionRom` fields; an out-of-range index returns 0.
 `cardPresent`/`cardStatus` treat the optional `card.resource` as absent without
 failing. `mapRawKey` maps a raw key and qualifier to text, or `null` when the
-keymap library is absent or the key is unmapped. The bare ROM has a default
-keymap object but no loaded `DEVS:keymaps` layout, so an acceptance machine
-without Workbench media reports no mapped text.
+keymap library is absent or the key is unmapped. The ROM default keymap maps
+the raw key the services demo checks; a Workbench installation with additional
+keymaps can map more.
 
 | API | Returns | Rules |
 |---|---|---|

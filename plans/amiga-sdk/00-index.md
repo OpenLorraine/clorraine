@@ -1,6 +1,6 @@
 # Amiga SDK Programme
 
-> **Status**: Executing — Bundles 0–7 done; Bundle 8 (Workbench and services) next
+> **Status**: Executing — Bundles 0–8 done; Bundle 9 (Optional add-ons) next
 > **Created**: 2026-11-04
 > **Coverage**: [docs/amiga-sdk/coverage.md](../../docs/amiga-sdk/coverage.md)
 > **Registry**: [docs/amiga-sdk/registry.tsv](../../docs/amiga-sdk/registry.tsv)
@@ -78,4 +78,13 @@ the console-window helper, the VBlank and ports interrupt servers, and the
 input/keyboard/console device coverage. The A500 Exec gate reports
 `exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1` with the 620x22
 `docs/amiga-sdk/a500-exec.png`; issue #8 is closed. Bundle 8 (Workbench and
-services) follows.
+services) is `plans/amiga-sdk-workbench/`: the Workbench AppIcon, AppWindow,
+AppMenuItem, and AppMessage surface, the icon library, expansion-board
+enumeration, the card resource, and a keymap call. The A1200/KS3.1 gate reports
+`wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0`
+and `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1`, with the
+native `docs/amiga-sdk/a1200-workbench.png` and
+`docs/amiga-sdk/a1200-workbench-icon.png`; the A600/KS2.05 gate asserts the
+same lines. The Workbench-disk services and nonvolatile are deferred because
+the baseline has no Workbench media; issue #9 is closed. Bundle 9 (Optional
+add-ons) follows.

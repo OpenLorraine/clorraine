@@ -57,13 +57,13 @@ A1200/KS3.1.
 | 2 | `expansionBoardCount`, `expansionBoardManufacturer(0)`, `expansionBoardProduct(0)` |
 | 3 | `cardPresent`, `cardStatus` |
 | 4 | `mapRawKey(0x20, 0)` |
-| 5 | print `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0` |
+| 5 | print `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1` |
 
 `icon 3` is the loaded `WBTOOL` type. `exp 2` is the board count and
 `man 2011 prod 82` is the first Commodore board (pinned on the A600/KS2.05 and
 A1200/KS3.1 models). `card 1` means the resource is present; `status 0` is the
-`ReadCardStatus` value. `key 0` means the keymap call returned no text because
-the bare ROM has no loaded keymap layout. The gate redirects the printed line
+`ReadCardStatus` value. `key 1` means the ROM default keymap mapped the raw
+key the demo checks. The gate redirects the printed line
 to `CNEXT:svc.txt`; the program does not also write the file.
 
 ## Test Fixtures
@@ -117,8 +117,9 @@ Workbench disk. The public SDK never exposes the private vector.
    HD, a 640x256 borderless window, scale 1, crop 1, and a private Xvfb
    display.
 5. Poll `CNEXT:wb-start.txt` for `startwb 1`, `CNEXT:wb-ready.txt` for
-   `ready`, `CNEXT:wb.txt` for `wb: ok`, `CNEXT:wb-post.txt` for `posted`, and
-   `CNEXT:svc.txt` for `svc: ok`, up to 60 s.
+   `ready`, `CNEXT:wb.txt` for `wb: ok`, `CNEXT:wb-post.txt` for `posted`,
+   `CNEXT:wb-done.txt` for `done`, and `CNEXT:svc.txt` for `svc: ok`, up to
+   60 s.
 6. Stop the emulator; assert the full `wb:` and `svc:` lines and `posted`.
 7. Convert `workbench.cscr` with `cscr2png.py ... --scale 2`; compare the full
    image to `docs/amiga-sdk/a1200-workbench.png` byte-exact; assert the image
@@ -141,8 +142,8 @@ Workbench disk. The public SDK never exposes the private vector.
    and the four programs.
 4. Boot FS-UAE as A600 with KS2.05, 1 MB chip, no fast/slow memory, the HD, and
    a private Xvfb display.
-5. Poll `wb-start.txt`, `wb-ready.txt`, `wb.txt`, `wb-post.txt`, and `svc.txt`
-   as above.
+5. Poll `wb-start.txt`, `wb-ready.txt`, `wb.txt`, `wb-post.txt`, `wb-done.txt`,
+   and `svc.txt` as above.
 6. Stop and assert `startwb 1`, `ready`, the full `wb:` line, `posted`, and the
    full `svc:` line. No capture comparison is made on 2.05.
 
@@ -161,8 +162,9 @@ run, so a stale report, capture, or icon file cannot satisfy a poll.
   demo waits for exactly three. There is no scheduling-dependent count.
 - The expansion-board count/fields and the card status are hardware constants
   on the A600/A1200 models; the `svc` line pins them.
-- The keymap result is 0 on the bare ROM; a Workbench installation with
-  `DEVS:keymaps` would change it, so the gate records the limitation.
+- The keymap result is 1 on both baselines: the ROM default keymap maps raw key
+  0x20 through the `IECLASS_RAWKEY` event. A Workbench installation with
+  additional keymaps can map more.
 
 ## Evidence
 
@@ -172,6 +174,7 @@ run, so a stale report, capture, or icon file cannot satisfy a poll.
 | Workbench ready | `CNEXT:wb-ready.txt`; asserted `ready` |
 | Workbench report | `CNEXT:wb.txt`; asserted |
 | Fixture report | `CNEXT:wb-post.txt`; asserted `posted` |
+| Cleanup report | `CNEXT:wb-done.txt`; asserted `done` |
 | Workbench native capture | `CNEXT:workbench.cscr`; converted and compared |
 | Workbench golden | `docs/amiga-sdk/a1200-workbench.png` |
 | AppIcon crop | `docs/amiga-sdk/a1200-workbench-icon.png` |

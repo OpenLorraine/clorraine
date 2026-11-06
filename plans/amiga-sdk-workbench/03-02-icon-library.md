@@ -62,7 +62,7 @@ failed write is reported but the original file is not guaranteed untouched.
 - `cl_disk_object_type` reads `((struct DiskObject *)icon)->do_Type`.
 - `cl_set_disk_object_type` writes the field after the range check.
 
-The icon functions live in the 2.0+ shim section; the 1.3 build never compiles
+The icon functions live in the 2.0+ shim suffix; the 1.3 build never compiles
 or links them.
 
 ## Failure Values

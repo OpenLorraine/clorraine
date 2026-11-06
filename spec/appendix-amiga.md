@@ -24,6 +24,17 @@ libraries, and generic devices) is available on both hosted profiles; the
 KS1.3 A500 Exec gate is its runtime proof. The 2.0+ Exec additions (signal
 semaphores, hooks, and the utility library) are deferred.
 
+The `hosted-amiga` profile also provides the Kickstart 2.0+ Workbench surface:
+`std.amiga.workbench` (AppIcon, AppWindow, AppMenuItem, and AppMessage),
+`std.amiga.icon` (DiskObject read/write/default/type), and
+`std.amiga.expansion` (expansion boards, the PCMCIA card resource, and a raw-key
+keymap call). The A1200/KS3.1 and A600/KS2.05 gates are the runtime proof; the
+KS1.3 profile rejects the modules with `E11200`. The Workbench-disk services
+(commodities, locale, ARexx, clipboard, and serial/parallel/printer) and
+`nonvolatile.library` are not part of this surface because the acceptance
+baseline has licensed Kickstart ROMs but no Workbench media. The ROM
+default keymap maps the raw keys the services demo checks.
+
 ## 1. API surface for v1
 
 The v1 library wraps the AmigaOS libraries the profiles provide. Each area
@@ -35,7 +46,7 @@ wrapper, not the caller, holds the FFI declaration.
 | `exec.library` | memory | allocate and free (`AllocVec`/`FreeVec`); pools later | `Buffer`, `Array<T>` |
 | `exec.library` | tasks | create, join, and remove a worker task (`CreateTask`/`RemTask`) | `handle Task` |
 | `exec.library` | libraries | open, close, and read the version (`OpenLibrary`/`CloseLibrary`) | `handle Library` |
-| `exec.library` | ports | create and delete private message ports | `handle MsgPort` |
+| `exec.library` | ports | create and delete private and public message ports | `handle MsgPort` |
 | `exec.library` | signals | wait for and set signals (`Wait`/`SetSignal`) | event loop (§6) |
 | `exec.library` | devices | open, close, and run `IOStdReq` requests (`DoIO`/`SendIO`/`WaitIO`) | `handle Device` |
 | `dos.library` | files | open, close, read, write, seek, position, and length | `handle File` |
@@ -50,6 +61,10 @@ wrapper, not the caller, holds the FFI declaration.
 | `graphics` | hardware sprites | eight OCS channels, pixels/move/show/hide, attached pairs, collision, animation | `Sprite`, `SpriteAnimation` |
 | `graphics/text` | fonts and text | ROM and disk fonts, measurement, screen and window drawing | `Font` |
 | `layers` | clipped layers | front layers, clipping, move/size, damage updates | `Layer` |
+| `workbench.library` | application objects | AppIcon, AppWindow, AppMenuItem, AppMessage, public-screen capture | `AppIcon`, `AppWindow`, `AppMenuItem`, `AppMessage` |
+| `icon.library` | icons | read, write, default, and type an `.info` icon | `DiskObject` |
+| `expansion.library` | hardware | enumerate `ConfigDev` boards | board accessors |
+| `card.resource`, `keymap.library` | services | PCMCIA card status and raw-key mapping | `cardStatus`, `mapRawKey` |
 
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).

@@ -40,9 +40,9 @@ scripts, the registry, and the frozen appendices.
 | PF-003 | `SDK-WBK-008` bundled nonvolatile and a library-call-only keymap while the plan marked it done. | Split nonvolatile into deferred `SDK-WBK-010`; 008 is expansion/keymap/card with the keymap limitation recorded; 4 done / 6 deferred. |
 | PF-004 | The A1200 gate did not prove the services, and the A600 gate did not prove Workbench, so the 2.0 minimum for 001 was unproven. | Both gates run the Workbench and services sequence; the A1200 adds the capture/crop. |
 | PF-005 | The AppWindow was created on a custom screen, and only the AppIcon message type was tested. | Scoped the AppWindow proof to lifecycle; the fixture posts icon/window/menu AppMessages and the demo asserts all three types. |
-| PF-006 | The `svc` line did not report the board fields or card status. | `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0`. |
+| PF-006 | The `svc` line did not report the board fields or card status. | `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1`. |
 | PF-007 | A stale HD file could satisfy a poll. | Both gates clear/rebuild the HD and assert start/ready/report/fixture lines. |
-| PF-008 | The plan claimed no codegen change while adding `CL_HOSTED_AMIGA_20`. | Disclosed the define and added the emission-integrity auditor to the review. |
+| PF-008 | The plan claimed no codegen change while adding the 2.0 shim section. | Disclosed the codegen suffix hook and added the emission-integrity auditor to the review. |
 
 ### Minor (🟡)
 

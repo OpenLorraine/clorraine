@@ -29,7 +29,8 @@
 | `stdlib/std.amiga.workbench.clo` | New Workbench module |
 | `stdlib/std.amiga.icon.clo` | New icon module |
 | `stdlib/std.amiga.expansion.clo` | New expansion/card/keymap module |
-| `compiler/runtime/shim_hosted_amiga.c` | New C shim implementations |
+| `compiler/runtime/shim_hosted_amiga.c` | Shared C shim implementations |
+| `compiler/runtime/shim_hosted_amiga_20.c` | 2.0+ Workbench/icon/expansion suffix |
 | `compiler/src/stdlib.rs` | Module source and export tables |
 | `compiler/src/profile.rs` | `hosted-amiga`-only gating |
 | `compiler/tests/amiga_workbench_spec_test.rs` | New specification suite |
@@ -92,13 +93,14 @@ on both baselines.
 | `OpenResource("card.resource")` | non-null | non-null |
 | `ReadCardStatus()` | 0 | 0 |
 | `AskKeyMapDefault()` | non-null | non-null |
-| `MapRawKey` over codes 0..127 | 0 mapped | 0 mapped |
+| `MapRawKey(0x20, 0)` after the `IECLASS_RAWKEY` fix | 1 mapped | 1 mapped |
 | `AddAppWindowA` on a custom-screen window | non-null (`objects205`) | non-null (`objects31`) |
 | `AddAppMenuItemA` | non-null (`objects205`) | non-null (`objects31`) |
 
-The keymap result means the bare ROM has a default keymap object but no loaded
-`DEVS:keymaps` layout. The keymap call is therefore library-call verified, not
-layout verified; the demo reports `key 0`.
+The keymap call maps raw key 0x20 through the ROM default keymap once the
+`InputEvent` is zeroed and its class is set to `IECLASS_RAWKEY`; the initial
+probe left the event uninitialized and returned 0. The demo reports `key 1` on
+both baselines.
 
 ### Toolchain and ABI facts
 

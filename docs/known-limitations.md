@@ -34,7 +34,18 @@ for work that needs those services; the language has no process wrapper in v1.
 The compiler cannot enforce this convention, so it is audited and documented in
 `spec/appendix-stdlib.md` §13.1.
 
-## 4. CI is host-only
+## 4. Advanced Workbench services need Workbench media
+
+The advanced-tier acceptance baseline has licensed Kickstart ROMs but no
+Workbench ADF/HDF. `commodities.library`, `locale.library`,
+`rexxsyslib.library`, `clipboard.device`, `serial.device`, `parallel.device`,
+`printer.device`, and `nonvolatile.library` are on Workbench media, not in the
+ROMs, so Bundle 8 defers those capabilities. The ROM-resident Workbench, icon,
+expansion, card, and keymap services are implemented and gated on A1200/KS3.1
+and A600/KS2.05. The ROM default keymap maps the raw keys the services demo
+checks; a Workbench installation with additional keymaps can map more.
+
+## 5. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip

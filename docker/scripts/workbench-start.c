@@ -45,7 +45,7 @@ int main(void)
     started = call_start_workbench(0, 0);
     Delay(100);
     screen = LockPubScreen((STRPTR)"Workbench");
-    printf("startwb %ld screen %lx\n", (long)started, (unsigned long)screen);
+    printf("startwb %ld screen %lx\n", (long)(started != 0), (unsigned long)screen);
     fflush(stdout);
     if (screen != NULL) {
         UnlockPubScreen(NULL, screen);

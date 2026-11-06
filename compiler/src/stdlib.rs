@@ -985,7 +985,7 @@ mod tests {
             Profile::HostedAmiga13,
             Profile::Freestanding,
         ] {
-            let shim = profile.shim();
+            let shim = format!("{}{}", profile.shim(), profile.shim_suffix());
             let mut checked = 0usize;
             for module in SOURCES {
                 if !profile.supports_module(module.name) {

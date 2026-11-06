@@ -495,12 +495,6 @@ impl<'a> Emitter<'a> {
     fn run(mut self) -> String {
         self.report_generic_collisions();
         self.emit_header();
-        // The hosted-amiga profile provides the 2.0+ library surface; the
-        // 1.3 shim compiles the same source without this macro, so the
-        // Workbench/icon/expansion section is preprocessed out.
-        if matches!(self.profile, Profile::HostedAmiga) {
-            self.out.push_str("#define CL_HOSTED_AMIGA_20 1\n");
-        }
         self.out.push_str(self.profile.shim());
         self.emit_typedefs();
         self.emit_enum_typedefs();
@@ -514,6 +508,9 @@ impl<'a> Emitter<'a> {
         self.emit_init_functions();
         self.emit_bodies();
         self.emit_entry_stub();
+        // The 2.0+ Workbench/icon/expansion shim follows the user program so
+        // its headers' macros cannot rewrite user identifiers.
+        self.out.push_str(self.profile.shim_suffix());
         self.out
     }
 

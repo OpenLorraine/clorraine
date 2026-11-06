@@ -25,7 +25,7 @@ post_bin="${POST_BIN:-build/amiga-sdk/workbench-post}"
 golden="${repo_dir}/docs/amiga-sdk/a1200-workbench.png"
 icon_golden="${repo_dir}/docs/amiga-sdk/a1200-workbench-icon.png"
 expected_wb="wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0"
-expected_svc="svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0"
+expected_svc="svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1"
 work="${repo_dir}/build/amiga-sdk/a1200-workbench"
 hd="${work}/hd"
 work_rel="${work#"${repo_dir}/"}"
@@ -72,7 +72,7 @@ cleanup() {
         kill "${xvfb_pid}" >/dev/null 2>&1 || true
         wait "${xvfb_pid}" 2>/dev/null || true
     fi
-    rm -f "${repo_dir}/${rom}"
+    rm -f "${rom}"
 }
 trap cleanup EXIT
 
@@ -134,10 +134,11 @@ ready=0
 for _ in $(seq 1 90); do
     sleep 1
     if [ -f "${hd}/svc.txt" ] &&
-       grep -aq '^startwb 1 screen ' "${hd}/wb-start.txt" 2>/dev/null &&
+       grep -aq '^startwb 1 screen [1-9a-f]' "${hd}/wb-start.txt" 2>/dev/null &&
        grep -aq '^ready$' "${hd}/wb-ready.txt" 2>/dev/null &&
        grep -aq '^wb: ok ' "${hd}/wb.txt" 2>/dev/null &&
        grep -aq '^posted$' "${hd}/wb-post.txt" 2>/dev/null &&
+       grep -aq '^done$' "${hd}/wb-done.txt" 2>/dev/null &&
        grep -aq '^svc: ok ' "${hd}/svc.txt" 2>/dev/null; then
         ready=1
         break
@@ -150,7 +151,7 @@ wait "${runner}" 2>/dev/null || true
 
 if [ "${ready}" -ne 1 ]; then
     echo "a1200-workbench-smoke: the run did not finish" >&2
-    for file in wb-start.txt wb-ready.txt wb.txt wb-post.txt svc.txt; do
+    for file in wb-start.txt wb-ready.txt wb.txt wb-post.txt wb-done.txt svc.txt; do
         if [ -f "${hd}/${file}" ]; then
             echo "--- ${file}" >&2
             cat "${hd}/${file}" >&2
@@ -163,6 +164,7 @@ fi
 actual_wb="$(tr -d '\r' < "${hd}/wb.txt")"
 actual_svc="$(tr -d '\r' < "${hd}/svc.txt")"
 posted="$(tr -d '\r' < "${hd}/wb-post.txt")"
+done="$(tr -d '\r' < "${hd}/wb-done.txt")"
 if [ "${actual_wb}" != "${expected_wb}" ]; then
     echo "a1200-workbench-smoke: Workbench report mismatch" >&2
     echo "  expected: ${expected_wb}" >&2
@@ -173,6 +175,10 @@ if [ "${actual_svc}" != "${expected_svc}" ]; then
     echo "a1200-workbench-smoke: services report mismatch" >&2
     echo "  expected: ${expected_svc}" >&2
     echo "  actual:   ${actual_svc}" >&2
+    exit 1
+fi
+if [ "${done}" != "done" ]; then
+    echo "a1200-smoke: demo did not finish cleanup" >&2
     exit 1
 fi
 if [ "${posted}" != "posted" ]; then

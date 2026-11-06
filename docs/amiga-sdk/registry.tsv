@@ -66,15 +66,16 @@ SDK-EXE-010	7-exec-devices	exec/hooks	Hooks (2.0+)	should	advanced	2.0	ECS/68000
 SDK-EXE-007	7-exec-devices	utility	Tags/hooks/date/memory pools (2.0+)	should	advanced	2.0	ECS/68000/1M	deferred	SDK-EXE-010	utility	-	-	2.0+ advanced; Bundle 9
 SDK-EXE-008	7-exec-devices	devices	input/keyboard/console devices	should	core	1.3	OCS/68000/512K	done	SDK-EXE-005	input_devices	stdlib/std.amiga.exec.clo; amiga_exec_spec_test; make sdk-a500-exec	spec/appendix-stdlib.md	Bundle 7; input/keyboard open/close; console read abort
 SDK-EXE-009	7-exec-devices	demo	Worker task + async IO demo	must	core	1.3	OCS/68000/512K	done	SDK-EXE-003,SDK-EXE-005	task_io_demo	docs/amiga-sdk/a500-exec.png; exec: ok task 464 lib 34 dev 512 io 13 key -2 in 1; make sdk-a500-exec	spec/appendix-amiga.md	A500 real KS1.3; worker stress loop
-SDK-WBK-001	8-workbench	workbench	AppIcon/AppWindow and messages	should	advanced	2.0	ECS/68000/1M	missing	SDK-INT-001	workbench_app	-	-	-
-SDK-WBK-002	8-workbench	icon	Icon library	should	advanced	2.0	ECS/68000/1M	missing	SDK-VID-002	icon_lib	-	-	-
-SDK-WBK-003	8-workbench	commodities	Commodity broker	could	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-010	commodities	-	-	-
-SDK-WBK-004	8-workbench	locale	locale.library	could	advanced	2.1	ECS/68000/1M	missing	SDK-EXE-004	locale	-	-	-
-SDK-WBK-005	8-workbench	rexx	ARexx message port	could	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-003	arexx	-	-	-
-SDK-WBK-006	8-workbench	clipboard	Clipboard device	should	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-005	clipboard	-	-	-
-SDK-WBK-007	8-workbench	devices	Serial/parallel/printer	could	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-005	serial	-	-	-
-SDK-WBK-008	8-workbench	system	Expansion/keymap/card/nonvolatile	could	advanced	2.0	ECS/68000/1M	missing	SDK-EXE-004	expansion	-	-	-
-SDK-WBK-009	8-workbench	demo	Workbench integration demo	should	advanced	3.1	AGA/68020/2M	missing	SDK-WBK-001,SDK-WBK-006	workbench_demo	-	-	-
+SDK-WBK-001	8-workbench	workbench	AppIcon/AppWindow and messages	should	advanced	2.0	ECS/68000/1M	done	SDK-INT-001	workbench_app	stdlib/std.amiga.workbench.clo; amiga_workbench_spec_test; amiga_workbench_impl_test; make sdk-a600-services; make sdk-a1200-workbench	spec/appendix-stdlib.md	Bundle 8; live AppIcon + three AppMessage types; A1200 capture
+SDK-WBK-002	8-workbench	icon	Icon library	should	advanced	2.0	ECS/68000/1M	done	SDK-VID-002	icon_lib	stdlib/std.amiga.icon.clo; amiga_workbench_spec_test; amiga_workbench_impl_test; make sdk-a600-services; make sdk-a1200-workbench	spec/appendix-stdlib.md	Bundle 8; DiskObject get/put/default/type
+SDK-WBK-003	8-workbench	commodities	Commodity broker	could	advanced	2.0	ECS/68000/1M	deferred	SDK-EXE-010	commodities	-	-	Not ROM-resident; Workbench media absent
+SDK-WBK-004	8-workbench	locale	locale.library	could	advanced	2.1	ECS/68000/1M	deferred	SDK-EXE-004	locale	-	-	Not ROM-resident; Workbench media absent
+SDK-WBK-005	8-workbench	rexx	ARexx message port	could	advanced	2.0	ECS/68000/1M	deferred	SDK-EXE-003	arexx	-	-	Not ROM-resident; Workbench media absent
+SDK-WBK-006	8-workbench	clipboard	Clipboard device	should	advanced	2.0	ECS/68000/1M	deferred	SDK-EXE-005	clipboard	-	-	Not ROM-resident; Workbench media absent
+SDK-WBK-007	8-workbench	devices	Serial/parallel/printer	could	advanced	2.0	ECS/68000/1M	deferred	SDK-EXE-005	serial	-	-	Not ROM-resident; Workbench media absent
+SDK-WBK-008	8-workbench	system	Expansion/keymap/card	could	advanced	2.0	ECS/68000/1M	done	SDK-EXE-004	expansion	stdlib/std.amiga.expansion.clo; amiga_workbench_spec_test; amiga_workbench_impl_test; make sdk-a600-services; make sdk-a1200-workbench	spec/appendix-stdlib.md	Bundle 8; keymap runtime-proven (key 1); nonvolatile split to SDK-WBK-010
+SDK-WBK-010	8-workbench	system	nonvolatile.library	could	advanced	2.0	ECS/68000/1M	deferred	SDK-WBK-008	nonvolatile	-	-	Split from SDK-WBK-008; not ROM-resident; Workbench media absent
+SDK-WBK-009	8-workbench	demo	Workbench integration demo	should	advanced	2.0	ECS/68000/1M	done	SDK-WBK-001,SDK-WBK-002,SDK-WBK-008	workbench_demo	docs/amiga-sdk/a1200-workbench.png; docs/amiga-sdk/a1200-workbench-icon.png; wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0; svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1; make sdk-a1200-workbench; make sdk-a600-services	spec/appendix-amiga.md	A1200/KS3.1 + A600/KS2.05; native Workbench capture
 SDK-OPT-002	9-optional	network	bsdsocket.library	could	optional	3.1	AGA/68020/2M	missing	SDK-EXE-005	bsdsocket	-	-	third-party stack
 SDK-OPT-003	9-optional	amigaguide	AmigaGuide library	could	optional	3.1	AGA/68020/2M	missing	SDK-DOS-001	amigaguide	-	-	-
 SDK-OPT-004	9-optional	rtg	RTG/Picasso96/CyberGraphix	wont	optional	3.1	AGA/68020/2M	out-of-scope	-	rtg	-	-	third-party; excluded

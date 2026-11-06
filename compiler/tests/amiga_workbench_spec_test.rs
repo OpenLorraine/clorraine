@@ -1,9 +1,9 @@
 //! Specification tests for the Workbench, icon, and expansion surface.
 //!
-//! Phase 1 covers the public message port that the Workbench AppMessage
-//! fixture needs. The icon, Workbench, and expansion cases are added by their
-//! phases; the host cases always run, and the cross-build cases skip themselves
-//! when the m68k toolchain is absent.
+//! The suite covers the public message port, the icon library, the Workbench
+//! application objects and messages, and the expansion/card/keymap surface.
+//! The host cases always run; the cross-build cases skip themselves when the
+//! m68k toolchain is absent.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -325,10 +325,10 @@ fn the_icon_exports_match_the_stdlib_appendix() {
     let appendix = std::fs::read_to_string(repo_root().join("spec/appendix-stdlib.md"))
         .expect("the stdlib appendix is readable");
     let start = appendix
-        .find("## 14. Icon")
-        .expect("the appendix has the section 14 heading");
+        .find("### 14.1")
+        .expect("the appendix has the section 14.1 heading");
     let section = &appendix[start..];
-    let end = section.find("## 15.").unwrap_or(section.len());
+    let end = section.find("### 14.2").unwrap_or(section.len());
     let section = &section[..end];
     let module = clc::stdlib::lookup("std.amiga.icon").expect("the icon module is registered");
     for name in module.exports {
@@ -472,6 +472,31 @@ fn the_a500_profile_rejects_the_workbench_surface() {
     assert!(!output_path.exists(), "a rejected program must not emit C");
 }
 
+// The freestanding profile has no AmigaOS libraries; it rejects the module.
+#[test]
+fn the_freestanding_profile_rejects_the_workbench_surface() {
+    let scratch = ScratchDir::new("workbench-freestanding");
+    let source_path = write_fixture(&scratch, "main.clo", WORKBENCH_SOURCE);
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(
+        scratch.path(),
+        &[
+            "--profile",
+            "freestanding",
+            "-o",
+            output_path.to_str().expect("the output path is UTF-8"),
+            source_path.to_str().expect("the source path is UTF-8"),
+        ],
+    );
+    assert_exit("workbench-freestanding", &output, 1);
+    assert!(
+        stderr(&output).contains("E11200"),
+        "expected E11200, got:\n{}",
+        stderr(&output)
+    );
+    assert!(!output_path.exists(), "a rejected program must not emit C");
+}
+
 // The Workbench surface cross-builds with the 2.0 runtime.
 #[test]
 fn the_workbench_surface_cross_builds_with_nix20() {
@@ -487,7 +512,7 @@ fn the_workbench_exports_match_the_stdlib_appendix() {
         .find("### 14.2 Workbench")
         .expect("the appendix has the section 14.2 heading");
     let section = &appendix[start..];
-    let end = section.find("## 15.").unwrap_or(section.len());
+    let end = section.find("### 14.3").unwrap_or(section.len());
     let section = &section[..end];
     let module =
         clc::stdlib::lookup("std.amiga.workbench").expect("the Workbench module is registered");

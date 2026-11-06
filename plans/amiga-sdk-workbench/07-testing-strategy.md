@@ -36,8 +36,8 @@ The existing A500 gates and the Bundle 7 exec suite are immutable.
 | ST-5 | A1200/KS3.1 and A600/KS2.05 | The Workbench demo declares the port/screen names, adds an AppIcon, AppWindow, and AppMenuItem, captures the Workbench screen, waits for three AppMessages, and removes the objects | `CNEXT:wb.txt` is `wb: ok icon 1 win 1 menu 1 types 8 7 9 ids 7 8 9 users 42 43 44 classes 0 0 0 args 0 0 0` | R1, R6 |
 | ST-6 | A1200/KS3.1 and A600/KS2.05 | The fixture posts three `struct AppMessage`s (icon, window, menu) to `ClorraineWbTest` | `CNEXT:wb-post.txt` is `posted`; the demo replies all three and exits | R1, R5 |
 | ST-7 | A1200/KS3.1 | The native Workbench capture is converted and compared | `a1200-workbench.png` matches `docs/amiga-sdk/a1200-workbench.png` byte-exact, is non-blank, and its AppIcon crop matches `docs/amiga-sdk/a1200-workbench-icon.png` | R1, R6 |
-| ST-8 | A600/KS2.05 and A1200/KS3.1 | The services demo reads a default icon, writes and reloads it, enumerates boards, queries the card resource, and calls `mapRawKey` | `CNEXT:svc.txt` is `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0` | R2, R3, R6 |
-| ST-9 | A600/KS2.05 | `mapRawKey(0x20, 0)` on the bare ROM | Returns null/zero length; the report records `key 0`; the library call is reached | R3, AR-8 |
+| ST-8 | A600/KS2.05 and A1200/KS3.1 | The services demo reads a default icon, writes and reloads it, enumerates boards, queries the card resource, and calls `mapRawKey` | `CNEXT:svc.txt` is `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1` | R2, R3, R6 |
+| ST-9 | A600/KS2.05 and A1200/KS3.1 | `mapRawKey(0x20, 0)` with `IECLASS_RAWKEY` on the ROM default keymap | Returns one mapped character; the report records `key 1` | R3, AR-8 |
 | ST-10 | A1200/KS3.1 and A600/KS2.05 | `createPublicPort("ClorraineWbTest")` returns a port and the fixture finds it with `FindPort`; the name `String` outlives the port | Non-null port; `FindPort` succeeds; the drop deletes it | R4 |
 
 ## Implementation Test Cases
@@ -53,7 +53,7 @@ The existing A500 gates and the Bundle 7 exec suite are immutable.
 | IT-7 | Shim | `cl_save_public_screen` uses `LockPubScreen`/`cl_screen_save_native`/`UnlockPubScreen` and is null-safe |
 | IT-8 | Shim | The icon functions call `GetDiskObject`, `PutDiskObject`, `FreeDiskObject`, `GetDefDiskObject`; the type range check is 1..8; the drop frees |
 | IT-9 | Shim | `cl_expansion_board_*` walks `FindConfigDev` and assigns `ExpansionBase`; the card assigns `CardResource`, calls open/read/`RemResource`; `cl_map_raw_key` assigns `KeymapBase` and uses `AskKeyMapDefault`/`MapRawKey` and builds a `String`; indexes are bounds-checked |
-| IT-10 | Shim guard | The 2.0-only section is under `CL_HOSTED_AMIGA_20`; the 1.3 build preprocesses it out; the shared public-port function remains; the emitted `hosted-amiga` C defines the macro and the `hosted-amiga-13` C does not |
+| IT-10 | Shim split | The shared shim has no 2.0 functions; the 2.0 suffix is appended only for `hosted-amiga`; the 1.3 emit lacks the 2.0 functions; the shared public-port function remains |
 | IT-11 | Demo shape | `examples/amiga/workbench.clo` has the ten stages, the port/screen name strings, the pinned line, the public port, the capture, and the removes; `examples/amiga/services.clo` has the icon round-trip, board/card/keymap calls, and the pinned line |
 | IT-12 | Test integrity | The existing exec/intuition/A500 suites still run; no golden or test is weakened; the new tests fail without the implementation |
 | IT-13 | Fixtures | `workbench-start.c` uses the private `-42` vector and checks the `Workbench` screen; `workbench-post.c` sets the AppMessage header/reply/version/three types and links `-lamiga -lm` |
@@ -70,8 +70,8 @@ The existing A500 gates and the Bundle 7 exec suite are immutable.
 | `stdlib/std.amiga.icon.clo` | New module |
 | `stdlib/std.amiga.expansion.clo` | New module |
 | `stdlib/std.amiga.exec.clo` | Public port |
-| `compiler/runtime/shim_hosted_amiga.c` | 2.0+ shim section and public port |
-| `compiler/src/codegen.rs` | Emit `CL_HOSTED_AMIGA_20` for `hosted-amiga`; IT-10 pins it |
+| `compiler/runtime/shim_hosted_amiga.c` / `_20.c` | Shared shim and public port; 2.0+ suffix |
+| `compiler/src/codegen.rs` | Append the 2.0 shim suffix for `hosted-amiga`; IT-10 pins it |
 | `examples/amiga/workbench.clo`, `services.clo` | New demos |
 | `docker/scripts/workbench-start.c`, `workbench-post.c` | Test fixtures |
 | `docker/scripts/a1200-workbench-smoke.sh`, `a600-services-smoke.sh` | Gates |
@@ -107,6 +107,7 @@ bash -n docker/scripts/a1200-workbench-smoke.sh docker/scripts/a600-services-smo
 |---|---|
 | Workbench report | `CNEXT:wb.txt` asserted on both gates |
 | Fixture report | `CNEXT:wb-post.txt` asserted on both gates |
+| Cleanup report | `CNEXT:wb-done.txt` asserted on both gates |
 | Workbench capture/golden | `CNEXT:workbench.cscr` -> `docs/amiga-sdk/a1200-workbench.png` and `docs/amiga-sdk/a1200-workbench-icon.png` |
 | Services report | `CNEXT:svc.txt` asserted on both gates |
 | Emitted shapes | `amiga_workbench_impl_test` assertions |

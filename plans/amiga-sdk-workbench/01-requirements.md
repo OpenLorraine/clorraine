@@ -18,8 +18,8 @@ native Workbench capture.
 The Workbench-disk services (commodities, locale, ARexx, clipboard,
 serial/parallel/printer) and `nonvolatile.library` are deferred with the
 empirical ROM evidence in [02-current-state](02-current-state.md) and
-[05-findings](05-findings.md). The keymap call is library-call verified; the
-bare ROM has no loaded `DEVS:keymaps` layout.
+[05-findings](05-findings.md). The raw-key mapping is runtime-proven with the
+ROM default keymap (`key 1`).
 
 ## Functional Requirements
 
@@ -106,12 +106,12 @@ bare ROM has no loaded `DEVS:keymaps` layout.
      window and screen. The demo writes files only; it does not print, so the
      fixture's redirected stdout stays clean.
   `examples/amiga/services.clo` prints `svc: ok icon 3 exp 2 man 2011 prod 82
-  card 1 status 0 key 0`; the gate redirects the output to `CNEXT:svc.txt`.
+  card 1 status 0 key 1`; the gate redirects the output to `CNEXT:svc.txt`.
 - **R7 — Gates.** `make sdk-a1200-workbench` builds the Workbench and services
   demos and the two C fixtures, boots an A1200/KS3.1 directory HD, runs
   `workbench-start`, `workbench-post` (which starts the Workbench demo), and
   `services`, polls `wb-start.txt`, `wb-ready.txt`, `wb.txt`, `wb-post.txt`,
-  and `svc.txt`, converts the native capture with
+  `wb-done.txt`, and `svc.txt`, converts the native capture with
   `docker/scripts/cscr2png.py`, and compares it to
   `docs/amiga-sdk/a1200-workbench.png`; it also compares the pinned AppIcon
   crop to `docs/amiga-sdk/a1200-workbench-icon.png`.
@@ -137,12 +137,14 @@ bare ROM has no loaded `DEVS:keymaps` layout.
   unwritable path. The AppWindow must be removed before its window closes.
 - **R9 — Compatibility and gating.** The new modules compile on
   `hosted-amiga` only; the host, `hosted-amiga-13`, and freestanding profiles
-  reject them with `E11200` and emit no C. The 2.0 baseline uses only V37 API
-  (`OpenLibrary`, `GetDefDiskObject`, `AddAppIconA`, `AddAppWindowA`,
+  reject them with `E11200` and emit no C. The 2.0 baseline uses the V37
+  functions (`OpenLibrary`, `GetDefDiskObject`, `AddAppIconA`, `AddAppWindowA`,
   `AddAppMenuItemA`, `MapRawKey`, `FindConfigDev`); `card.resource` is opened
-  defensively because it is optional. The 1.3 A500 gates stay green; no
-  language, grammar, diagnostic, or ABI change. The 2.0-only shim section is
-  compiled only when `CL_HOSTED_AMIGA_20` is defined.
+  defensively because it is optional. The `WBAPPICONA_PropagatePosition` tag is
+  V44 and is ignored on V37/V40, where `do_CurrentX`/`do_CurrentY` position the
+  icon. The 1.3 A500 gates stay green; no language, grammar, diagnostic, or ABI
+  change. The 2.0+ shim suffix is appended only for `hosted-amiga`; the 1.3
+  emit does not contain it.
 - **R10 — Documentation and tracking.** Add `spec/appendix-stdlib.md` §13.2
   (public port) and §14 (icon/Workbench/expansion); update
   `spec/appendix-amiga.md` with the advanced-tier surface and the media

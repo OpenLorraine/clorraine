@@ -84,6 +84,8 @@ before the AppWindow, so the AppWindow drops first.
 4. `GetDefDiskObject(WBTOOL)`; a null result frees the copy and returns `NULL`.
 5. Set `object->do_Type = 0`, `object->do_CurrentX = 400`, and
    `object->do_CurrentY = 140` so the icon is visible at a pinned position.
+   The V44 `WBAPPICONA_PropagatePosition` tag is forwarded for V44+ and ignored
+   on V37/V40; the `do_CurrentX`/`do_CurrentY` fields position the icon there.
 6. Allocate the `cl_app_icon` record; on failure free the object and title.
 7. `AddAppIconA(id, user_data, title_copy, port, 0, object, tags)` with
    `WBAPPICONA_PropagatePosition, TRUE` and `TAG_DONE`. A null result frees the
@@ -106,9 +108,12 @@ not a Workbench-screen drop zone or a drop message.
 `workbench.library`, and calls `AddAppMenuItemA(id, user_data, title_copy,
 port, NULL)`. The record owns the title copy.
 
-`RemoveAppWindow`/`RemoveAppMenuItem` return a BOOL with unspecified high bits
-on the 3.1 ROM; the wrappers are `void` and do not inspect it. The object
-pointer is the ownership token.
+The Workbench removal calls return pointer residue rather than a usable BOOL
+on the tested ROMs (a duplicate removal still returns the object's low word).
+The shim follows the Workbench example: call `RemoveAppIcon`/
+`RemoveAppMenuItem`, ignore the return, and free the owned image/title. A
+removal failure is an exceptional Workbench state; the caller's handle is still
+consumed. `AppWindow` has no owned resources.
 
 ## AppMessage
 

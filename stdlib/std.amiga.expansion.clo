@@ -10,7 +10,8 @@
 //! `expansion.library` and are never freed here. `cardPresent`/`cardStatus`
 //! treat the optional `card.resource` as absent without failing. `mapRawKey`
 //! returns the text for a raw key, or `null` when the keymap library is absent
-//! or the key is unmapped; the bare ROM has no loaded `DEVS:keymaps` layout.
+//! or the key is unmapped. The ROM default keymap maps the raw keys the
+//! acceptance demo checks.
 
 module std.amiga.expansion;
 
@@ -69,10 +70,9 @@ export func cardStatus(): u32 {
 
 /// Maps a raw key code and qualifier to text, or returns `null`.
 ///
-/// `qualifier` uses the `IEQUALIFIER_*` bits. The bare ROM has a default
-/// keymap object but no loaded `DEVS:keymaps` layout, so the call returns
-/// `null` there; a Workbench installation with a keymap returns the mapped
-/// characters.
+/// `qualifier` uses the `IEQUALIFIER_*` bits. The ROM default keymap maps the
+/// raw keys the acceptance demo checks; a Workbench installation with
+/// additional keymaps can map more.
 export func mapRawKey(code: u16, qualifier: u16): String? {
     return cl_map_raw_key(code, qualifier);
 }

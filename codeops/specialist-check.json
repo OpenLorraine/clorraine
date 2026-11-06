@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-05T19:49:04+01:00",
+  "checkedAt": "2026-11-05T22:54:46+01:00",
   "plans": [
     "amiga-library-surface",
     "amiga-sdk",
@@ -11,6 +11,7 @@
     "amiga-sdk-native-video",
     "amiga-sdk-sprites",
     "amiga-sdk-text-layers",
+    "amiga-sdk-workbench",
     "array-value-integrity",
     "borrow-generic-integrity",
     "borrow-store-integrity",

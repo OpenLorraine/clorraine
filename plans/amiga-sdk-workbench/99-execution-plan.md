@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-05 22:53
-> **Progress**: 22/26 tasks (85%) — Executing
+> **Last Updated**: 2026-11-06 01:05
+> **Progress**: 26/26 tasks (100%) — Done
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -52,16 +52,16 @@ implementation in every phase.
 
 ---
 
-## Phase 1: Foundation — 2.0 shim guard and public port
+## Phase 1: Foundation — 2.0 shim suffix and public port
 
-> **Reasoning**: high — a codegen macro gate and a new Exec ownership surface
+> **Reasoning**: high — a codegen suffix hook and a new Exec ownership surface
 > affect both hosted profiles.
 
 ### Step 1.1: Shared foundation
 
 **Reference**: [03-03](03-03-expansion-card-keymap.md) · AR-10, R4, R9
 
-- [x] 1.1.1 Add the `CL_HOSTED_AMIGA_20` define to `compiler/src/codegen.rs` and guard the 2.0-only shim section; add a unit test that the define is emitted only for `hosted-amiga`, and verify a 1.3 and a 2.0 emit still cross-build ✅ (completed: 2026-11-05 22:29; the 2.0 emit defines the macro, the 1.3 emit does not, and both cross-build through the workbench spec cases)
+- [x] 1.1.1 Add the 2.0+ shim suffix to `compiler/runtime/shim_hosted_amiga_20.c` and append it after the generated program for `hosted-amiga`; add a unit test that the suffix is emitted only for `hosted-amiga`, and verify a 1.3 and a 2.0 emit still cross-build ✅ (completed: 2026-11-06 00:05; the shared shim is 1.3-clean, the 2.0 emit appends the suffix, and both cross-build through the workbench spec cases)
 - [x] 1.1.2 Add `createPublicPort(name)` to `stdlib/std.amiga.exec.clo`, `cl_create_public_port` to the shared shim, the export table, and `spec/appendix-stdlib.md` §13.2; update the exec module doc; add the specification case (both hosted profiles) and the drop/delete case ✅ (completed: 2026-11-05 22:29; both hosted profiles compile, the host rejects E11200, and the 1.3/2.0 cross-builds pass)
 - [x] 1.1.3 Add the Phase 1 implementation cases (public-port shim, delete routing, null/empty-name guards) to `compiler/tests/amiga_workbench_impl_test.rs`; run them green ✅ (completed: 2026-11-05 22:29; 4/4 impl tests green)
 - [x] 1.1.4 Add the Phase 1 `amiga_workbench_spec_test.rs` public-port case and the IT-1/IT-2 unit-test scaffolding (module tables and profile gates); run the small suite green ✅ (completed: 2026-11-05 22:29; 4/4 spec tests green)
@@ -150,10 +150,10 @@ implementation in every phase.
 
 **Reference**: [03-04](03-04-demo-and-gates.md) · AR-15, AR-16, AR-18, R10
 
-- [ ] 6.1.1 Update `spec/appendix-stdlib.md` §13.2/§14, `spec/appendix-amiga.md`, `spec/15-profiles.md`, `docs/known-limitations.md`, and `AGENTS.md`
-- [ ] 6.1.2 Update the registry (split `SDK-WBK-008` into expansion/keymap/card and the deferred `SDK-WBK-010` nonvolatile; set `SDK-WBK-009` depends to `SDK-WBK-001`; 4 done/6 deferred), `bundles.tsv`, `coverage.md` via `make sdk-registry`, issue #9, the programme index, the roadmap, and `codeops/specialist-check.json`
-- [ ] 6.1.3 Run `make check`, `make verify`, and `make sdk-registry`; fix regressions
-- [ ] 6.1.4 Run the independent correctness, memory-safety, and emission-integrity review; fix every critical/major finding; re-run the affected gates; commit; mark the plan Done
+- [x] 6.1.1 Update `spec/appendix-stdlib.md` §13.2/§14, `spec/appendix-amiga.md`, `spec/15-profiles.md`, `docs/known-limitations.md`, and `AGENTS.md` ✅ (completed: 2026-11-06 01:05; the 2.0 surface, media limit, and suffix are documented)
+- [x] 6.1.2 Update the registry (split `SDK-WBK-008` into expansion/keymap/card and the deferred `SDK-WBK-010` nonvolatile; set `SDK-WBK-009` depends to `SDK-WBK-001`; 4 done/6 deferred), `bundles.tsv`, `coverage.md` via `make sdk-registry`, issue #9, the programme index, the roadmap, and `codeops/specialist-check.json` ✅ (completed: 2026-11-06 01:05; registry 80 capabilities/10 bundles; Bundle 8 4 done/6 deferred; 63 plan folders)
+- [x] 6.1.3 Run `make check`, `make verify`, and `make sdk-registry`; fix regressions ✅ (completed: 2026-11-06 01:05; `make check` 109 suites; `make verify` all legs headlessly, including A600/A1200; `make sdk-registry` OK)
+- [x] 6.1.4 Run the independent correctness, memory-safety, and emission-integrity review; fix every critical/major finding; re-run the affected gates; commit; mark the plan Done ✅ (completed: 2026-11-06 01:05; fixed RV-C1–C16, MS-1–MS-3, EI-1–EI-4; the 2.0 shim is a suffix after the program; both gates report `key 1`; issue #9 closed)
 
 **Verify**: `make check && make verify && make sdk-registry`
 
@@ -168,7 +168,7 @@ implementation in every phase.
    the fixture reports `posted`, and the native Workbench capture and AppIcon
    crop match their goldens.
 3. `make sdk-a600-services` reports the same `wb:`/`posted` lines and
-   `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 0`.
+   `svc: ok icon 3 exp 2 man 2011 prod 82 card 1 status 0 key 1`.
 4. The earlier A500 gates and the full `make verify` stay green.
 5. Registry Bundle 8 is 4 done / 6 deferred with the media evidence; issue #9
    is closed; the programme index and roadmap show Bundle 8 done and Bundle 9

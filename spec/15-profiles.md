@@ -92,10 +92,11 @@ Kickstart 1.3.
 
 The profile provides the Kickstart 1.3-safe standard-library subset:
 `std.io`, `std.mem`, `std.text`, `std.fmt`, `std.amiga.custom`,
-`std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`, and
-`std.amiga.interrupt`. `std.amiga.exec` stays gated on 1.3 with `E11200` until
-the Exec bundle validates the module on the A500; the shared shim already uses
-the 1.3-safe port and message calls.
+`std.amiga.dos`, `std.amiga.graphics`, `std.amiga.intuition`,
+`std.amiga.interrupt`, and `std.amiga.exec`. The classic Exec surface is
+available on both hosted profiles. The 2.0+ modules (`std.amiga.workbench`,
+`std.amiga.icon`, and `std.amiga.expansion`) are available only on
+`hosted-amiga`; the 1.3 profile rejects them with `E11200`.
 
 ## 3. Build matrix
 

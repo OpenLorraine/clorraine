@@ -12,6 +12,11 @@ const HOST_SHIM: &str = include_str!("../runtime/shim_host.c");
 /// The C runtime shim source of the hosted-amiga profile.
 const HOSTED_AMIGA_SHIM: &str = include_str!("../runtime/shim_hosted_amiga.c");
 
+/// The 2.0+ Workbench/icon/expansion suffix, appended after the generated
+/// program only for `hosted-amiga`. Keeping it after the user code prevents
+/// the 2.0 headers' macros from rewriting user identifiers.
+const HOSTED_AMIGA_20_SHIM: &str = include_str!("../runtime/shim_hosted_amiga_20.c");
+
 /// The C runtime shim source of the freestanding profile.
 const FREESTANDING_SHIM: &str = include_str!("../runtime/shim_freestanding.c");
 
@@ -118,6 +123,18 @@ impl Profile {
             Profile::Host => HOST_SHIM,
             Profile::HostedAmiga | Profile::HostedAmiga13 => HOSTED_AMIGA_SHIM,
             Profile::Freestanding => FREESTANDING_SHIM,
+        }
+    }
+
+    /// The 2.0+ shim suffix appended after the generated program.
+    ///
+    /// Only `hosted-amiga` provides the Workbench/icon/expansion surface; every
+    /// other profile returns an empty string, so the 1.3 translation unit never
+    /// sees the 2.0 headers or symbols.
+    pub fn shim_suffix(self) -> &'static str {
+        match self {
+            Profile::HostedAmiga => HOSTED_AMIGA_20_SHIM,
+            Profile::Host | Profile::HostedAmiga13 | Profile::Freestanding => "",
         }
     }
 
@@ -255,6 +272,11 @@ mod tests {
     #[test]
     fn the_a500_profile_uses_the_shared_hosted_amiga_shim() {
         assert_eq!(Profile::HostedAmiga13.shim(), Profile::HostedAmiga.shim());
+        assert!(!Profile::HostedAmiga.shim_suffix().is_empty());
+        assert!(Profile::HostedAmiga.shim_suffix().contains("cl_add_app_icon"));
+        assert!(Profile::HostedAmiga13.shim_suffix().is_empty());
+        assert!(Profile::Host.shim_suffix().is_empty());
+        assert!(Profile::Freestanding.shim_suffix().is_empty());
     }
 
     #[test]
