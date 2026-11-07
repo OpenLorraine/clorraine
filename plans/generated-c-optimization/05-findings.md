@@ -94,8 +94,8 @@ not asked to run the new impl suite (its tests use `CARGO_BIN_EXE_clc`), so the
 red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
-**After the change:** `generated_c_optimization_spec_test` has 40 passing
-cases and `generated_c_optimization_impl_test` has 46 passing pins. The
+**After the change:** `generated_c_optimization_spec_test` has 43 passing
+cases and `generated_c_optimization_impl_test` has 49 passing pins. The
 fix-pass cases cover volatile targets on every fill path, integer consts
 through float casts, unsigned unary divisors, binary/float zero divisors,
 the 63/64 non-byte threshold, and the materialized conditional.
@@ -169,7 +169,8 @@ pinned by the expanded suites:
 | Third fix pass residual: the divisor placeholder leaked into a compacted byte fill (`[; i8(f32(300))]` became `memset(...,0,...)`) | MAJOR | `constant_integer` returns `None` for an out-of-range float cast, so the fill takes the per-element loop; only `constant_zero_value` applies the dead placeholder. Pinned by the float-fill and impl loop-store case |
 | Third fix pass residual: bool/`!`/conditional/float-comparison divisors still failed the strict build | MINOR | `constant_integer` now handles `Not`, bool casts, constant conditionals, and float comparisons; the zero/one divisor decisions are correct. Pinned by the bool/comparison spec/impl cases |
 | Fourth fix pass: a dead conditional arm or short-circuited operand with an out-of-range float cast produced a false E11210 trap | MAJOR | `contains_dead_float_cast` now follows the evaluated path: a constant conditional selects one arm, a run-time conditional walks only its condition, and `&&`/`||` walk the right side only when the constant left forces it. Pinned by the dead-arm and short-circuit spec cases |
-| Fourth fix pass: a bool-derived divisor still emitted the `== -1` guard and tripped `-Werror=bool-compare` | MAJOR | `division_guard_condition` returns no guard when `constant_zero_value` already forces the renderer's static trap; `constant_integer` short-circuits logical operators. Pinned by the short-circuit impl case |
+| Fourth fix pass: a bool-derived divisor still emitted the `== -1` guard and tripped `-Werror=bool-compare` | MAJOR | `division_guard_condition` returns no guard when `constant_zero_value` already forces the renderer's static trap; a runtime boolean divisor emits only `d == 0`. Pinned by the short-circuit and runtime-bool impl cases |
+| Fifth fix pass: a live out-of-range float cast in a selected constant conditional arm or forced short-circuit operand reported E11210 instead of E11212 | MAJOR | The static-trap spelling now evaluates the divisor's own guarded path before the E11210 placeholder, so the E11212 guard runs first. Pinned by the live-arm/live-operand spec and impl cases |
 
 ## Pre-existing Defects (outside this change)
 

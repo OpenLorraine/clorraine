@@ -976,9 +976,13 @@ impl<'a> Emitter<'a> {
             // The dividend still evaluates first: a call in it must run once
             // before the fault. The comma expression keeps that order and
             // never spells the division the strict build rejects.
+            // The divisor still evaluates after the dividend; its own guard
+            // (an out-of-range float cast, for example) must run first so the
+            // reported fault is E11212, not E11210.
             return format!(
-                "((void)({}), cl_trap(\"E11210\", \"integer division by zero\"), 0)",
-                self.value(left)
+                "((void)({}), (void)({}), cl_trap(\"E11210\", \"integer division by zero\"), 0)",
+                self.value(left),
+                self.guarded_value(right)
             );
         }
         if let Some(test) = self.view_null_test(op, left, right) {
@@ -1732,8 +1736,6 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
             return constant_zero_value(inner);
         }
         _ => {}
-    }
-    if matches!(value.kind, ValueKind::Conditional { .. }) {
     }
     // A nested out-of-range float cast makes the whole always-evaluated
     // integer expression a dead placeholder: the E11212 guard runs first.

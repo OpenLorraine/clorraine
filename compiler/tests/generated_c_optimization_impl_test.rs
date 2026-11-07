@@ -1219,3 +1219,68 @@ func main(): i32 {
         "cl_trap(\"E11210\", \"integer division by zero\")",
     );
 }
+
+#[test]
+fn should_report_e11212_for_a_live_out_of_range_conditional_arm() {
+    let emitted = emit(
+        "live-conditional-arm",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplLiveConditional;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / (true ? i8(f32(300)) : i8(1));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    let e11212 = emitted.find("E11212").expect("E11212 guard");
+    let e11210 = emitted.find("E11210").expect("E11210 placeholder");
+    assert!(e11212 < e11210, "the E11212 guard must run first");
+}
+
+#[test]
+fn should_report_e11212_for_a_live_short_circuit_operand() {
+    let emitted = emit(
+        "live-and-operand",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplLiveAnd;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(true && (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    let e11212 = emitted.find("E11212").expect("E11212 guard");
+    let e11210 = emitted.find("E11210").expect("E11210 placeholder");
+    assert!(e11212 < e11210, "the E11212 guard must run first");
+}
+
+#[test]
+fn should_not_emit_the_minus_one_branch_for_a_runtime_boolean_divisor() {
+    let emitted = emit(
+        "runtime-bool-divisor",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplRuntimeBool;
+func main(): i32 {
+    let x: i32 = 7;
+    let flag: bool = true;
+    let q: i32 = x / i32(flag);
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("runtime-bool-divisor", &emitted, "== -1)");
+}

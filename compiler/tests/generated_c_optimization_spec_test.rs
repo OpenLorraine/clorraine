@@ -1233,3 +1233,69 @@ func main(): i32 {
         "error E11212: float-to-integer conversion out of range",
     );
 }
+
+#[test]
+fn should_report_e11212_for_a_live_out_of_range_conditional_arm() {
+    assert_trap(
+        "live-conditional-arm",
+        r#"
+module bench.LiveConditionalArm;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / (true ? i8(f32(300)) : i8(1));
+    return q;
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+}
+
+#[test]
+fn should_report_e11212_for_a_live_short_circuit_operand() {
+    assert_trap(
+        "live-and-operand",
+        r#"
+module bench.LiveAndOperand;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(true && (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+    assert_trap(
+        "live-or-operand",
+        r#"
+module bench.LiveOrOperand;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(false || (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+}
+
+#[test]
+fn should_build_a_runtime_boolean_divisor() {
+    assert_output(
+        "runtime-bool-divisor",
+        r#"
+module bench.RuntimeBoolDivisor;
+import { println } from std.io;
+func main(): i32 {
+    let x: i32 = 7;
+    let flag: bool = true;
+    let a: i32 = x / i32(flag);
+    let a8: i8 = 3;
+    let b8: i8 = 1;
+    let b: i32 = x / i32(a8 > b8);
+    println($"runtime-bool: {a} {b}");
+    return 0;
+}
+"#,
+        "runtime-bool: 7 7\n",
+    );
+}

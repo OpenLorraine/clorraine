@@ -2154,6 +2154,22 @@ impl<'a> Emitter<'a> {
         }
         let dividend = self.value(left);
         let divisor = self.value(right);
+        // A boolean divisor is 0 or 1; the signed MIN/-1 branch is impossible
+        // and would trip `-Werror=bool-compare`.
+        let boolean_divisor = matches!(
+            self.resolved_value_ty(right).kind,
+            TyKind::Scalar(crate::ast::ScalarType::Bool)
+        ) || matches!(
+            &right.kind,
+            ValueKind::Cast { value, .. }
+                if matches!(
+                    self.resolved_value_ty(value).kind,
+                    TyKind::Scalar(crate::ast::ScalarType::Bool)
+                )
+        );
+        if boolean_divisor {
+            return Some(format!("{divisor} == 0"));
+        }
         Some(match scalar_of(&ty) {
             Some(scalar) if is_signed_scalar(scalar) => {
                 let min = signed_min(scalar);
