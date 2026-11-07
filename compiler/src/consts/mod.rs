@@ -23,14 +23,14 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::span::Span;
 use crate::types::{
-    int_literal_value, integer_scalar, is_float_scalar, is_integer_scalar, resolve_ty_with, Ty,
-    TyKind, TypeTable,
+    int_literal_value, integer_scalar, is_float_scalar, is_integer_scalar, is_signed_scalar,
+    resolve_ty_with, scalar_bits, Ty, TyKind, TypeTable,
 };
 
 mod arithmetic;
 use arithmetic::{
-    binary_operand_scalar, fold_float, fold_integer, result_scalar, usize_value, wrap_int,
-    FoldValue,
+    binary_operand_scalar, float_result_scalar, fold_float, fold_integer, result_scalar,
+    round_float, usize_value, wrap_int, FoldValue,
 };
 
 /// A value a constant expression folds to.
@@ -54,6 +54,9 @@ pub enum ConstError {
     /// Integer division or remainder by zero, including the minimum signed
     /// value over `-1`.
     DivisionByZero(Span),
+    /// A constant float-to-integer conversion that is NaN or outside the
+    /// target type's range. The target scalar supplies the E10202 message.
+    FloatOutOfRange(Span, ScalarType),
 }
 
 /// Folds the constant expressions of one module.
@@ -269,7 +272,15 @@ impl<'a> ConstFolder<'a> {
             }
             (ConstValue::Float(a), ConstValue::Float(b)) => {
                 let value = fold_float(op, a, b, span)?;
-                Ok(FoldValue { scalar: None, value })
+                let scalar = match value {
+                    ConstValue::Bool(_) => None,
+                    _ => float_result_scalar(left.scalar, right.scalar),
+                };
+                let value = match value {
+                    ConstValue::Float(v) => ConstValue::Float(round_float(v, scalar)),
+                    other => other,
+                };
+                Ok(FoldValue { scalar, value })
             }
             (ConstValue::Bool(a), ConstValue::Bool(b)) => {
                 let value = match op {
@@ -305,25 +316,50 @@ impl<'a> ConstFolder<'a> {
                 })
             }
             (TyKind::Scalar(scalar), ConstValue::Float(v)) if is_integer_scalar(*scalar) => {
+                let value = Self::float_to_int(v, *scalar, span)?;
                 Ok(FoldValue {
                     scalar: Some(*scalar),
-                    value: ConstValue::Int(v as i128),
+                    value: ConstValue::Int(value),
                 })
             }
             (TyKind::Scalar(scalar), ConstValue::Int(v)) if is_float_scalar(*scalar) => {
+                let rounded = round_float(v as f64, Some(*scalar));
                 Ok(FoldValue {
                     scalar: Some(*scalar),
-                    value: ConstValue::Float(v as f64),
+                    value: ConstValue::Float(rounded),
                 })
             }
             (TyKind::Scalar(scalar), ConstValue::Float(v)) if is_float_scalar(*scalar) => {
                 Ok(FoldValue {
                     scalar: Some(*scalar),
-                    value: ConstValue::Float(v),
+                    value: ConstValue::Float(round_float(v, Some(*scalar))),
                 })
             }
             _ => Err(ConstError::NotConstant(span)),
         }
+    }
+
+    /// Converts a folded float to an integer at the cast's target type.
+    ///
+    /// The conversion truncates toward zero, exactly as the runtime cast does.
+    /// A NaN or an infinity, and a truncated value outside the target range,
+    /// is E10202: the frozen rule treats a constant float-to-integer overflow
+    /// as a constant-context fit error, not a runtime trap.
+    fn float_to_int(value: f64, scalar: ScalarType, span: Span) -> Result<i128, ConstError> {
+        if !value.is_finite() {
+            return Err(ConstError::FloatOutOfRange(span, scalar));
+        }
+        let bits = scalar_bits(scalar);
+        let (low, high) = if is_signed_scalar(scalar) {
+            (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1)
+        } else {
+            (0, (1i128 << bits) - 1)
+        };
+        let truncated = value.trunc();
+        if truncated < low as f64 || truncated > high as f64 {
+            return Err(ConstError::FloatOutOfRange(span, scalar));
+        }
+        Ok(truncated as i128)
     }
 
     /// Folds a constant `raw` cast of an integer address.
@@ -429,13 +465,26 @@ impl<'a> ConstFolder<'a> {
             Item::GlobalConst(decl) if decl.name == name => Some(&decl.value),
             _ => None,
         });
-        let context = self
-            .table
-            .global(module_name, name)
-            .and_then(integer_scalar);
+        let declared = self.table.global(module_name, name).cloned();
+        let context = declared.as_ref().and_then(integer_scalar);
         let folded = initializer.and_then(|expr| {
             self.fold_value(expr, context).ok().map(|mut folded| {
-                if context.is_some() {
+                if let Some(TyKind::Scalar(scalar)) = declared.as_ref().map(|ty| &ty.kind) {
+                    if is_float_scalar(*scalar) {
+                        folded.value = match folded.value {
+                            ConstValue::Float(value) => {
+                                ConstValue::Float(round_float(value, Some(*scalar)))
+                            }
+                            ConstValue::Int(value) => {
+                                ConstValue::Float(round_float(value as f64, Some(*scalar)))
+                            }
+                            other => other,
+                        };
+                        folded.scalar = Some(*scalar);
+                    } else if context.is_some() {
+                        folded.scalar = context;
+                    }
+                } else if context.is_some() {
                     folded.scalar = context;
                 }
                 folded
@@ -597,6 +646,17 @@ fn report(error: Option<ConstError>, diagnostics: &mut Diagnostics) {
                 "remove the zero divisor or the MIN/-1 operation, or use a non-constant operand",
             ),
         ),
+        Some(ConstError::FloatOutOfRange(span, scalar)) => {
+            let target = Ty::scalar(scalar);
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10202",
+                    format!("literal does not fit '{}'", target.display()),
+                    span,
+                )
+                .with_help("use a wider type or a hex/binary form"),
+            );
+        }
     }
 }
 

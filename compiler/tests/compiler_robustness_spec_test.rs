@@ -173,6 +173,39 @@ fn assert_output(tag: &str, source: &str, expected: &str) {
     assert_eq!(stdout, expected, "{tag}: unexpected stdout");
 }
 
+/// Compiles a program that must be rejected and returns its stderr.
+fn compile_error(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|error| panic!("{tag}: write the source: {error}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert!(
+        !output.status.success(),
+        "{tag}: the program was accepted but must be rejected"
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// Asserts a compile error carries the registered E10202 text.
+fn assert_e10202(tag: &str, stderr: &str, target: &str) {
+    assert!(
+        stderr.contains(&format!("error E10202: literal does not fit '{target}'")),
+        "{tag}: expected the registered E10202 message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("help: use a wider type or a hex/binary form"),
+        "{tag}: expected the registered E10202 help; stderr:\n{stderr}"
+    );
+}
+
 fn assert_trap(tag: &str, source: &str, first_line: &str) {
     let (code, _stdout, stderr) = run_program(tag, source);
     assert_ne!(code, 0, "{tag}: a trap must exit nonzero");
@@ -587,6 +620,126 @@ func main(): i32 {
 "#,
         "v: -2147483648 0 -2147483648\n",
     );
+}
+
+// ---------------------------------------------------------------------------
+// D5 — f32 rounding and constant float-to-integer overflow
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_round_an_f32_cast_in_a_constant_context() {
+    assert_output(
+        "f32-cast-round",
+        r#"
+module fuzz.F32CastRound;
+import { println } from std.io;
+const N: usize = usize(f32(16777217)) - 16777100;
+func main(): i32 {
+    println($"n: {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+        "n: 116 116\n",
+    );
+}
+
+#[test]
+fn should_round_a_declared_f32_const_reference() {
+    assert_output(
+        "f32-declared-round",
+        r#"
+module fuzz.F32DeclaredRound;
+import { println } from std.io;
+const A: f32 = 16777217.0;
+const N: usize = usize(f64(A)) - 16777100;
+func main(): i32 {
+    println($"n: {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+        "n: 116 116\n",
+    );
+}
+
+#[test]
+fn should_keep_a_finite_f32_conversion() {
+    assert_output(
+        "f32-finite",
+        r#"
+module fuzz.F32Finite;
+import { println } from std.io;
+const N: usize = usize(f32(42.9)) + 1;
+func main(): i32 {
+    println($"n: {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+        "n: 43 43\n",
+    );
+}
+
+#[test]
+fn should_keep_a_negative_zero_float_conversion() {
+    assert_output(
+        "f32-negative-zero",
+        r#"
+module fuzz.F32NegativeZero;
+import { println } from std.io;
+const Z: i32 = i32(f32(-0.0));
+func main(): i32 {
+    println($"z: {Z}");
+    return 0;
+}
+"#,
+        "z: 0\n",
+    );
+}
+
+#[test]
+fn should_reject_a_constant_nan_float_conversion() {
+    let stderr = compile_error(
+        "f32-nan",
+        r#"
+module fuzz.F32Nan;
+const B: f32 = f32(0.0) / f32(0.0);
+enum E: i32 { A = i32(B) }
+func main(): i32 {
+    return i32(E.A);
+}
+"#,
+    );
+    assert_e10202("f32-nan", &stderr, "i32");
+}
+
+#[test]
+fn should_reject_a_constant_out_of_range_float_conversion() {
+    let stderr = compile_error(
+        "f32-range",
+        r#"
+module fuzz.F32Range;
+const N: i8 = i8(f32(127.9999999));
+func main(): i32 {
+    return i32(N);
+}
+"#,
+    );
+    assert_e10202("f32-range", &stderr, "i8");
+}
+
+#[test]
+fn should_reject_a_constant_infinity_float_conversion() {
+    let stderr = compile_error(
+        "f32-infinity",
+        r#"
+module fuzz.F32Infinity;
+const P: f32 = f32(1.0) / f32(0.0);
+enum E: i32 { A = i32(P) }
+func main(): i32 {
+    return i32(E.A);
+}
+"#,
+    );
+    assert_e10202("f32-infinity", &stderr, "i32");
 }
 
 // ---------------------------------------------------------------------------

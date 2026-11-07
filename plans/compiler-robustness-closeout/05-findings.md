@@ -61,11 +61,13 @@
 
 | Item | Evidence |
 |---|---|
-| Red (cast) | `117 116` |
-| Red (declared) | `117 116` |
-| Red (NaN) | `#define E_A 0` |
-| Fix | `round_float`, range/NaN `E10202`, float result scalar, declared width |
-| Green | pending |
+| Red (cast) | base: `117 116` |
+| Red (declared) | base: `117 116` |
+| Red (NaN) | base: accepted, `#define E_A 0` |
+| Red (range) | base: accepted |
+| Fix | `round_float`, range/NaN `E10202` with the registered message, float result scalar, declared width, per-op rounding |
+| Green | spec 30/30, consts unit 35/35, `make check` green |
+| Review | pending with D6 (semantics lens) |
 
 ### D6 — Enum values and conversion
 

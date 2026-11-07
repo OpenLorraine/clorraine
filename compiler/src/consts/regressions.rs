@@ -79,6 +79,68 @@ func main(): i32 { return 0; }
 }
 
 #[test]
+fn an_f32_cast_rounds_at_binary32() {
+    let source = "module test;
+const A: f32 = f32(16777217);
+func main(): i32 { return 0; }
+";
+    with_folder(source, |folder| {
+        assert_eq!(
+            folder.fold(&name("A")),
+            Ok(ConstValue::Float(16777216.0))
+        );
+    });
+}
+
+#[test]
+fn a_declared_f32_const_carries_its_rounded_value() {
+    let source = "module test;
+const A: f32 = 16777217.0;
+const B: f32 = A;
+func main(): i32 { return 0; }
+";
+    with_folder(source, |folder| {
+        assert_eq!(
+            folder.fold(&name("B")),
+            Ok(ConstValue::Float(16777216.0))
+        );
+    });
+}
+
+#[test]
+fn an_f32_operation_rounds_each_result() {
+    // At binary32, 16777216.0 + 1.0 rounds back to 16777216.0, so the
+    // cancellation is zero. At f64 it would be one.
+    let source = "module test;
+const A: f32 = (f32(16777216.0) + f32(1.0)) - f32(16777216.0);
+func main(): i32 { return 0; }
+";
+    with_folder(source, |folder| {
+        assert_eq!(folder.fold(&name("A")), Ok(ConstValue::Float(0.0)));
+    });
+}
+
+#[test]
+fn a_constant_float_to_integer_overflow_is_not_representable() {
+    let value = op(
+        BinaryOp::Div,
+        cast(ScalarType::F32, int(0)),
+        cast(ScalarType::F32, int(0)),
+    );
+    let conversion = cast(ScalarType::I32, value);
+    let codes = with_folder(BASELINE, |folder| {
+        let mut diagnostics = Diagnostics::new(false, None);
+        folder.require_at(&conversion, Some(ScalarType::I32), &mut diagnostics);
+        diagnostics
+            .items()
+            .iter()
+            .map(|item| item.code)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(codes, ["E10202"]);
+}
+
+#[test]
 fn a_struct_field_extent_folds_a_constant_name() {
     let source = "module test;
 const W: usize = 4;

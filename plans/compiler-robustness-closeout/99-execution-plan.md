@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 15/38 tasks (39%)
+> **Progress**: 18/38 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -200,17 +200,18 @@ pre-PLAN-14 red evidence.
 width, and reject a NaN or out-of-range constant conversion with the registered
 E10202 message.
 
-- [ ] 3.1.1 [spec-author] Add the D5 spec cases, the per-operation unit case,
-  and the registered-message assertion; run red
-- [ ] 3.1.2 Implement `round_float`, the range/NaN error payload, the float
-  result scalar, and the declared-const width
-- [ ] 3.1.3 Verify the focused cases and `make check`; commit
+- [x] 3.1.1 [spec-author] Add the D5 spec cases, the per-operation unit case,
+  and the registered-message assertion; run red ✅ (completed: 2026-11-07 23:25)
+- [x] 3.1.2 Implement `round_float`, the range/NaN error payload, the float
+  result scalar, and the declared-const width ✅ (completed: 2026-11-07 23:30)
+- [x] 3.1.3 Verify the focused cases and `make check`; commit
   `fix(compiler): round f32 constants and reject constant float overflow`
+  ✅ (completed: 2026-11-07 23:35)
 
 **Deliverables**:
-- [ ] Green D5 cases including the cancellation and message tests
-- [ ] Floats still stay places
-- [ ] One verified commit with red evidence
+- [x] Green D5 cases including the cancellation and message tests
+- [x] Floats still stay places
+- [x] One verified commit with red evidence
 
 ---
 

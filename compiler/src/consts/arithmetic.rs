@@ -67,6 +67,33 @@ fn signed_min(scalar: ScalarType) -> Option<i128> {
     }
 }
 
+/// Rounds a folded float to the width its result type carries.
+///
+/// `f32` rounds through the host's IEEE-754 binary32 cast, which uses
+/// round-to-nearest-even; `f64` and an untyped result are unchanged.
+pub(super) fn round_float(value: f64, scalar: Option<ScalarType>) -> f64 {
+    match scalar {
+        Some(ScalarType::F32) => value as f32 as f64,
+        _ => value,
+    }
+}
+
+/// The width a float binary operation evaluates at.
+///
+/// An `f64` operand makes the operation `f64`; otherwise an `f32` operand
+/// makes it `f32`. Two untyped operands stay untyped. A bare float literal is
+/// typed `f64` by `fold_value`, matching the emitted C's double literal.
+pub(super) fn float_result_scalar(
+    left: Option<ScalarType>,
+    right: Option<ScalarType>,
+) -> Option<ScalarType> {
+    match (left, right) {
+        (Some(ScalarType::F64), _) | (_, Some(ScalarType::F64)) => Some(ScalarType::F64),
+        (Some(ScalarType::F32), _) | (_, Some(ScalarType::F32)) => Some(ScalarType::F32),
+        _ => None,
+    }
+}
+
 /// The scalar type an integer binary operation is evaluated at.
 ///
 /// A shift has the left operand's type, because it keeps that type and masks
