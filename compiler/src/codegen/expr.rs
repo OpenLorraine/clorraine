@@ -1648,11 +1648,24 @@ fn guard_constant_shape(value: &Value) -> bool {
         ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) | ValueKind::Float(_) => true,
         ValueKind::Cast { value, .. } => guard_constant_shape(value),
         ValueKind::Unary { op, operand } => {
-            matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
-                && guard_constant_shape(operand)
+            matches!(
+                op,
+                crate::ast::UnaryOp::Neg
+                    | crate::ast::UnaryOp::BitNot
+                    | crate::ast::UnaryOp::Not
+            ) && guard_constant_shape(operand)
         }
         ValueKind::Binary { left, right, .. } => {
             guard_constant_shape(left) && guard_constant_shape(right)
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            guard_constant_shape(condition)
+                && guard_constant_shape(then_value)
+                && guard_constant_shape(else_value)
         }
         ValueKind::Materialize { value, .. } => guard_constant_shape(value),
         _ => false,
@@ -1720,7 +1733,66 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
         }
         _ => {}
     }
-    false
+    // A nested out-of-range float cast makes the whole always-evaluated
+    // integer expression a dead placeholder: the E11212 guard runs first.
+    contains_dead_float_cast(value)
+}
+
+/// True when an always-evaluated expression contains an out-of-range float cast.
+fn contains_dead_float_cast(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Cast { value: inner, .. } => {
+            if matches!(
+                inner.ty.kind,
+                TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+            ) {
+                if let Some(number) = float_constant(inner) {
+                    if float_cast_is_out_of_range(&value.ty, number) {
+                        return true;
+                    }
+                }
+            }
+            contains_dead_float_cast(inner)
+        }
+        ValueKind::Unary { operand, .. } => contains_dead_float_cast(operand),
+        ValueKind::Binary { left, right, .. } => {
+            contains_dead_float_cast(left) || contains_dead_float_cast(right)
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            contains_dead_float_cast(condition)
+                || contains_dead_float_cast(then_value)
+                || contains_dead_float_cast(else_value)
+        }
+        ValueKind::Materialize { value: inner, .. } => contains_dead_float_cast(inner),
+        _ => false,
+    }
+}
+
+/// True when a float value is outside an integer cast's C range.
+fn float_cast_is_out_of_range(ty: &Ty, number: f64) -> bool {
+    let TyKind::Scalar(scalar) = ty.kind else {
+        return false;
+    };
+    if !crate::types::is_integer_scalar(scalar) {
+        return false;
+    }
+    if !number.is_finite() {
+        return true;
+    }
+    let bits = crate::types::scalar_bits(scalar);
+    let (low, high) = if crate::types::is_signed_scalar(scalar) {
+        (
+            -(1i128 << (bits - 1)) as f64,
+            ((1i128 << (bits - 1)) - 1) as f64,
+        )
+    } else {
+        (0.0, ((1i128 << bits) - 1) as f64)
+    };
+    number < low || number > high
 }
 
 /// True when an integer cast of a float expression truncates to zero.
@@ -1756,6 +1828,30 @@ fn float_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
 
 /// Evaluates a parameter-free float expression at its own width.
 fn float_constant(value: &Value) -> Option<f64> {
+    if let ValueKind::Binary { op, left, right } = &value.kind {
+        if matches!(
+            op,
+            BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+        ) {
+            let left = float_constant(left)?;
+            let right = float_constant(right)?;
+            let result = match op {
+                BinaryOp::Eq => left == right,
+                BinaryOp::Ne => left != right,
+                BinaryOp::Lt => left < right,
+                BinaryOp::Le => left <= right,
+                BinaryOp::Gt => left > right,
+                BinaryOp::Ge => left >= right,
+                _ => return None,
+            };
+            return Some(if result { 1.0 } else { 0.0 });
+        }
+    }
     if let TyKind::Scalar(scalar) = value.ty.kind {
         if !crate::types::is_float_scalar(scalar) {
             return Some(constant_integer(value)? as f64);
@@ -1832,6 +1928,7 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             let result = match op {
                 crate::ast::UnaryOp::Neg => number.checked_neg()?,
                 crate::ast::UnaryOp::BitNot => !number,
+                crate::ast::UnaryOp::Not => i128::from(number == 0),
                 _ => return None,
             };
             // The unary result is evaluated at its own C type: `-u8(1)` is
@@ -1850,6 +1947,15 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             let crate::types::TyKind::Scalar(scalar) = target.kind else {
                 return None;
             };
+            if matches!(scalar, crate::ast::ScalarType::Bool) {
+                if matches!(
+                    inner.ty.kind,
+                    TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+                ) {
+                    return Some(i128::from(float_constant(inner)? != 0.0));
+                }
+                return Some(i128::from(constant_integer(inner)? != 0));
+            }
             if !crate::types::is_integer_scalar(scalar) {
                 return None;
             }
@@ -1859,12 +1965,8 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             ) {
                 // A float-to-integer cast truncates at the destination type.
                 let number = float_constant(inner)?;
-                // The runtime E11212 guard runs before this value is used, so
-                // a non-finite or out-of-range cast is a dead zero placeholder
-                // that keeps the strict C build from spelling the bad cast in
-                // a division.
                 if !number.is_finite() {
-                    return Some(0);
+                    return None;
                 }
                 let bits = crate::types::scalar_bits(scalar);
                 let (low, high) = if crate::types::is_signed_scalar(scalar) {
@@ -1876,14 +1978,58 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
                     (0.0, ((1i128 << bits) - 1) as f64)
                 };
                 if number < low || number > high {
-                    return Some(0);
+                    return None;
                 }
                 return Some(cast_integer(number.trunc() as i128, target));
             }
             let number = constant_integer(inner)?;
             Some(cast_integer(number, target))
         }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            let branch = if constant_integer(condition)? != 0 {
+                then_value
+            } else {
+                else_value
+            };
+            Some(constant_integer(branch)?)
+        }
         ValueKind::Binary { op, left, right } => {
+            let left_float = matches!(
+                left.ty.kind,
+                TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+            );
+            let right_float = matches!(
+                right.ty.kind,
+                TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+            );
+            if (left_float || right_float)
+                && matches!(
+                    op,
+                    BinaryOp::Eq
+                        | BinaryOp::Ne
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge
+                )
+            {
+                let left_value = float_constant(left)?;
+                let right_value = float_constant(right)?;
+                let result = match op {
+                    BinaryOp::Eq => left_value == right_value,
+                    BinaryOp::Ne => left_value != right_value,
+                    BinaryOp::Lt => left_value < right_value,
+                    BinaryOp::Le => left_value <= right_value,
+                    BinaryOp::Gt => left_value > right_value,
+                    BinaryOp::Ge => left_value >= right_value,
+                    _ => return None,
+                };
+                return Some(cast_integer(i128::from(result), &value.ty));
+            }
             let left_value = constant_integer(left)?;
             let right_value = constant_integer(right)?;
             let result = match op {

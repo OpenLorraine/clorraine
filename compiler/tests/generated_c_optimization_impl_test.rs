@@ -1126,3 +1126,50 @@ func main(): i32 {
     );
     assert_absent("div-float-bool-expr", &emitted, "q = (x /");
 }
+
+
+#[test]
+fn should_not_fold_an_out_of_range_float_fill_to_the_divisor_placeholder() {
+    let emitted = emit(
+        "fill-out-of-range-float",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFillOutOfRange;
+func main(): i32 {
+    let a: i8[64] = [; i8(f32(300))];
+    return i32(a[63]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("fill-out-of-range-float", &emitted, "a[__cl_fill_");
+    assert_contains("fill-out-of-range-float", &emitted, "] = (i8)((float)(300));");
+    assert_absent("fill-out-of-range-float", &emitted, "memset(&(a[0]), 0, 64)");
+}
+
+#[test]
+fn should_trap_a_bool_or_comparison_float_divisor() {
+    let emitted = emit(
+        "div-float-bool-comparison",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatBoolComparison;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(f32(0.5 < 0.25));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-bool-comparison",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+    assert_absent("div-float-bool-comparison", &emitted, "bool-compare");
+}

@@ -1015,6 +1015,10 @@ func main(): i32 {
         ("div-float-char-expr", "i32(f32('\0'))"),
         ("div-float-bitand", "i32(f32(1 & 0))"),
         ("div-float-int-arith", "i32(f32(1 / 2 + 1 / 2))"),
+        ("div-float-not", "i32(f32(!true))"),
+        ("div-float-bool-cast", "i32(f32(bool(i32(0))))"),
+        ("div-float-conditional", "i32(f32(true ? false : false))"),
+        ("div-float-comparison", "i32(f32(0.5 < 0.25))"),
     ] {
         assert_trap(
             tag,
@@ -1070,6 +1074,20 @@ func main(): i32 {
         "int-cast: 0\n",
     );
     assert_output(
+        "div-float-comparison-one",
+        r#"
+module bench.FloatComparisonOne;
+import { println } from std.io;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(f32(0.5 > 0.25));
+    println($"comparison-one: {q}");
+    return 0;
+}
+"#,
+        "comparison-one: 7\n",
+    );
+    assert_output(
         "div-float-one",
         r#"
 module bench.FloatOne;
@@ -1084,6 +1102,23 @@ func main(): i32 {
 "#,
         "float-one: 7 7
 ",
+    );
+}
+
+#[test]
+fn should_keep_a_float_fill_on_the_store_path() {
+    assert_output(
+        "fill-float",
+        r#"
+module bench.FillFloat;
+import { println } from std.io;
+func main(): i32 {
+    let a: i8[64] = [; i8(f32(44.0))];
+    println($"fill-float: {i32(a[63])}");
+    return 0;
+}
+"#,
+        "fill-float: 44\n",
     );
 }
 

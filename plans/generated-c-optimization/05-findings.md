@@ -94,8 +94,8 @@ not asked to run the new impl suite (its tests use `CARGO_BIN_EXE_clc`), so the
 red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
-**After the change:** `generated_c_optimization_spec_test` has 36 passing
-cases and `generated_c_optimization_impl_test` has 42 passing pins. The
+**After the change:** `generated_c_optimization_spec_test` has 37 passing
+cases and `generated_c_optimization_impl_test` has 44 passing pins. The
 fix-pass cases cover volatile targets on every fill path, integer consts
 through float casts, unsigned unary divisors, binary/float zero divisors,
 the 63/64 non-byte threshold, and the materialized conditional.
@@ -165,7 +165,9 @@ pinned by the expanded suites:
 | Third fix pass follow-up: an integer expression containing a float cast (`i32(f32(2)) - 2`), an extra integer cast (`i32(u8(0.5))`), and an out-of-range unsigned cast (`u32(-0.5)`) still missed the static trap | MAJOR | The constant evaluator now handles a float-to-integer cast with C truncation and range checks inside an integer expression; an out-of-range cast leaves the E11212 guard first and uses the dead E11210 placeholder so the strict build passes. Pinned by the three new spec/impl cases |
 | Third fix pass residual: the float-cast zero helper fired on integer-to-integer casts (`x / i8(200)`) | MAJOR | `constant_zero_value` only applies the float evaluator when the cast source is float; integer casts use the C-faithful integer evaluator. Pinned by the `i8(200)` case |
 | Third fix pass residual: `float_constant` evaluated integer-typed subexpressions in floating point (`i32(f32(1/2+1/2))`) | MAJOR | `float_constant` delegates any non-float scalar node to `constant_integer`, so the inner integer arithmetic is 0 as C says. Pinned by the bool/char/bit-and/int-arith cases |
-| Third fix pass residual: a nested out-of-range float cast (`u32(f32(-0.5)) + u32(0)`) still spelled a constant zero division | MAJOR | The out-of-range cast returns a dead 0 placeholder and the E11212 guard runs first; the strict build passes and reports E11212. Pinned by the nested-unsigned case |
+| Third fix pass residual: a nested out-of-range float cast (`u32(f32(-0.5)) + u32(0)`) still spelled a constant zero division | MAJOR | The out-of-range cast returns a dead 0 placeholder only on the divisor path; the E11212 guard runs first and the strict build reports E11212. Pinned by the nested-unsigned case |
+| Third fix pass residual: the divisor placeholder leaked into a compacted byte fill (`[; i8(f32(300))]` became `memset(...,0,...)`) | MAJOR | `constant_integer` returns `None` for an out-of-range float cast, so the fill takes the per-element loop; only `constant_zero_value` applies the dead placeholder. Pinned by the float-fill and impl loop-store case |
+| Third fix pass residual: bool/`!`/conditional/float-comparison divisors still failed the strict build | MINOR | `constant_integer` now handles `Not`, bool casts, constant conditionals, and float comparisons; the zero/one divisor decisions are correct. Pinned by the bool/comparison spec/impl cases |
 
 ## Pre-existing Defects (outside this change)
 
