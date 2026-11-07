@@ -320,6 +320,13 @@ def trace_vamos(binary: Path) -> tuple[str, int]:
         process.wait(timeout=TRACE_TIMEOUT)
     except subprocess.TimeoutExpired as error:
         process.kill()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
         trace_reader.join(timeout=5)
         stdout_reader.join(timeout=5)
         raise HarnessError(
@@ -629,7 +636,7 @@ def command_compare(args: argparse.Namespace) -> int:
             f"{b_t if b_t is not None else 'n/a':>12}"
             f"{h_t if h_t is not None else 'n/a':>12}{format_delta(b_t, h_t):>9}"
         )
-    print("\n            host base ms  host head ms   C base   C head   C delta")
+    print("\n        host base ms  host head ms   C base   C head   C delta  (host advisory)")
     for name, _, _, _, _, base_host, head_host in rows:
         base_c = metric(base, name, "c_bytes")
         head_c = metric(head, name, "c_bytes")

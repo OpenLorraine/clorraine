@@ -94,8 +94,11 @@ not asked to run the new impl suite (its tests use `CARGO_BIN_EXE_clc`), so the
 red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
-**After the change:** `generated_c_optimization_impl_test` has 19 passing
-tests covering the 20 pins (the 15/16 threshold is one test with two emits).
+**After the change:** `generated_c_optimization_spec_test` has 36 passing
+cases and `generated_c_optimization_impl_test` has 34 passing pins. The
+fix-pass cases cover volatile targets on every fill path, integer consts
+through float casts, unsigned unary divisors, binary/float zero divisors,
+the 63/64 non-byte threshold, and the materialized conditional.
 
 ## Accepted Limits
 
@@ -105,8 +108,8 @@ tests covering the 20 pins (the 15/16 threshold is one test with two emits).
 | All `f32`/`f64` consts stay places | The folder evaluates floats in `f64` and does not round an `f32` cast at each operation; a folded float could differ from its storage. The measured need is integer constants | R4.1, R4.5 |
 | Narrow arithmetic initializers stay places | C promotes a sub-32-bit operation to `int`, while the typed folder wraps at the operand width; folding would disagree with the stored value. A direct narrow literal or cast still folds | R4.5 |
 | Enum-derived and unresolved-name initializers stay places | The folder's enum auto-increment wraps at the backing type while the emitter writes the C sequence value | R4.1, R4.5 |
-| Field, volatile-target, nested-row, struct-literal, and deferred fills keep their spelling | A field may name a volatile member and a volatile array cannot be passed to `memset`; the other forms are outside the measured statement-fill scope | R5.1 |
-| A non-byte fill below 64 slots stays unrolled | The loop saves code size but is slower than unrolled stores at 16–63 slots; the byte `memset` threshold remains 16 | R5.1, AR-6 |
+| Field, volatile-target, `DerefTemp`-alias, nested-row, struct-literal, deferred, and self-read fills keep their spelling | A field may name a volatile member, a volatile array cannot be passed to `memset`, and the shared self-read path preserves the old target bytes; the measured fill is a literal local | R5.1 |
+| A non-byte fill below 64 slots stays unrolled | The loop saves code size but is slower than unrolled stores at 16–63 slots; a byte **constant** keeps the 16-slot `memset` threshold, while a byte non-constant uses 64 | R5.1, AR-6 |
 | Nested-row, struct-literal, array-copy, and deferred expression fills keep their spelling | No measured need; the measured fill is a one-extent scalar statement fill | R5.1 |
 | The upper index bound is not eliminated by the compiler front end | Manual elimination measured slower on m68k; the C compiler removes it after const folding | R6.4 |
 | Host time is advisory | run-to-run spread is often tens of percent; the target metric is the m68k instruction count | R1.5, AR-2 |
@@ -150,6 +153,14 @@ pinned by the expanded suites:
 | PE-001: a non-byte fill loop was slower than unrolled stores at 16–63 slots | MINOR | The non-byte loop threshold is 64; the byte memset threshold stays 16. The trade-off is recorded above |
 | PE-003: `head.json` was taken from a dirty tree | MINOR | `make bench` is rerun from the clean fix commit; the harness records a dirty flag and the compiler SHA-256 |
 | PE-004: host time was not displayed and the noise text was too narrow | MINOR | The compare prints an advisory host/C-byte table; the docs say host noise is tens of percent, not 6–10% |
+| Second fix pass: volatile targets on the reads/conditional/field paths still compacted | CRITICAL | `emit_array_assign_to` now takes an explicit `compact` flag; only the plain statement target compacts, every bypass path passes false. Pinned by the volatile-path spec and three impl cases |
+| Second fix pass: integer consts through an `f32` cast folded unrounded | MAJOR | `value_initializer_is_stable` rejects every float-typed subexpression and every float const reference. Pinned by the f32-cast spec/impl case |
+| Second fix pass: an unsigned sub-int unary divisor lost the `MIN/-1` guard | MAJOR | The unary renderer and constant evaluator both wrap unsigned unaries at the operand type. Pinned by the unsigned-unary spec/impl case |
+| Second fix pass: a binary or float-cast zero divisor lost the static trap | MAJOR | The constant evaluator reproduces C wrap/shift semantics and the renderer's zero helper recognizes a finite float cast to zero. Pinned by the binary/float-zero spec and impl cases |
+| Second fix pass: a materialized conditional fill still compacted | MINOR | The explicit flag is false on that path. Pinned by the materialized-conditional spec/impl case |
+| Second fix pass: the 63/64 non-byte threshold and byte non-constant threshold were unpinned | MINOR | Added the 63/64 impl case; a byte non-constant uses the 64 loop threshold |
+| Second fix pass: the `DerefTemp` volatile alias could compact | MINOR | `fill_target_compactable` rejects a `DerefTemp` target; the shape is not strict-valid today and remains recorded as a conservative gate |
+| Second fix pass: trace timeout left the child unreaped | MINOR | The timeout path kills, waits, and closes both streams; the stub-`vamos` test covers it |
 
 ## Pre-existing Defects (outside this change)
 
@@ -168,8 +179,8 @@ pinned by the expanded suites:
 |---|---|---|---|
 | Requirements preflight | PF-REQ-001–027 | Resolved; see [Requirements Preflight](00-preflight-report-requirements.md) | All critical/major closed |
 | Plan preflight | PF-PLAN-001–031 | Resolved; see [Plan Preflight](00-preflight-report.md) | All critical/major closed |
-| Correctness review | RV-001/RV-002/RV-003/RV-004 resolved; fix-diff re-review pending | `build/perf/verify.log` |
-| Memory-safety review | MS-001/MS-002/MS-003/MS-004 resolved; fix-diff re-review pending | probes under `build/` |
-| Emission-integrity review | F1–F8 resolved; fix-diff re-review pending | base/head emission diff |
-| Performance review | PE-001–PE-004 resolved; threshold 64 recorded | base/head JSON |
-| Semantics review | SR-001–SR-005 resolved; fix-diff re-review pending | probes under `build/` |
+| Correctness review | RV-001/RV-002 resolved; second-round volatile/f32/unsigned/zero findings resolved; final focused re-review pending | `build/perf/verify.log` |
+| Memory-safety review | MS-001–MS-004 resolved; second-round unsigned-divisor and DerefTemp findings resolved; final focused re-review pending | probes under `build/` |
+| Emission-integrity review | F1–F8 resolved; second-round zero-divisor/volatile/f32 findings resolved; final focused re-review pending | base/head emission diff |
+| Performance review | PE-001–PE-006 resolved; the byte non-constant loop uses 64 | base/head JSON |
+| Semantics review | SR-001–SR-007 resolved; unsigned unary and binary/float zero fixed; final focused re-review pending | probes under `build/` |

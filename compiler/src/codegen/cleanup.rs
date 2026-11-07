@@ -777,7 +777,7 @@ impl<'a> Emitter<'a> {
                     "__cl_ret",
                     self.array_param_bytes("__cl_ret", &ty),
                 );
-                self.emit_array_assign_to(&destination, &ty, elements, fill);
+                self.emit_array_assign_to(&destination, &ty, elements, fill, true);
             }
             ValueKind::Place(_)
             | ValueKind::Member { .. }

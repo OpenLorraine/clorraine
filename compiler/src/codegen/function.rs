@@ -1910,7 +1910,7 @@ impl<'a> Emitter<'a> {
                         self.empty_state(ty)
                     ));
                     let rhs_target = ArrayTarget::object(&rhs);
-                    self.emit_array_assign_to(&rhs_target, ty, elements, fill);
+                    self.emit_array_assign_to(&rhs_target, ty, elements, fill, false);
                     let save = self.unique_local("__cl_save");
                     self.push(&format!(
                         "        {} = {};",
@@ -1937,7 +1937,7 @@ impl<'a> Emitter<'a> {
                     self.push("    }");
                 } else {
                     self.emit_drop_expr(&target.text, ty);
-                    self.emit_array_assign_to(target, ty, elements, fill);
+                    self.emit_array_assign_to(target, ty, elements, fill, false);
                 }
             } else {
                 if literal_self_read {
@@ -1955,14 +1955,14 @@ impl<'a> Emitter<'a> {
                         self.empty_state(ty)
                     ));
                     let rhs_target = ArrayTarget::object(&rhs);
-                    self.emit_array_assign_to(&rhs_target, ty, elements, fill);
+                    self.emit_array_assign_to(&rhs_target, ty, elements, fill, false);
                     self.push(&format!(
                         "        memcpy({}, &({rhs}), {});",
                         target.address, target.bytes
                     ));
                     self.push("    }");
                 } else {
-                    self.emit_array_assign_to(target, ty, elements, fill);
+                    self.emit_array_assign_to(target, ty, elements, fill, false);
                 }
             }
             return;
@@ -2584,7 +2584,7 @@ impl<'a> Emitter<'a> {
                         self.empty_state(ty)
                     ));
                     let rhs_target = ArrayTarget::object(&rhs);
-                    self.emit_array_assign_to(&rhs_target, ty, elements, fill);
+                    self.emit_array_assign_to(&rhs_target, ty, elements, fill, false);
                     self.push(&format!(
                         "                memcpy({}, &({rhs}), {});",
                         target.address, target.bytes
@@ -2594,7 +2594,7 @@ impl<'a> Emitter<'a> {
                         target.bytes
                     ));
                 } else {
-                    self.emit_array_assign_to(target, ty, elements, fill);
+                    self.emit_array_assign_to(target, ty, elements, fill, false);
                 }
             }
             ValueKind::Call {
@@ -3961,13 +3961,10 @@ impl<'a> Emitter<'a> {
         elements: &[ir::Value],
         fill: &Option<Box<ir::Value>>,
     ) {
-        let saved = self.compact_fills;
-        let compact = saved && self.fill_target_compactable(target);
+        let compact = self.fill_target_compactable(target);
         let target_c = self.place(target);
         let target = self.array_target(target, &target_c);
-        self.compact_fills = compact;
-        self.emit_array_assign_to(&target, ty, elements, fill);
-        self.compact_fills = saved;
+        self.emit_array_assign_to(&target, ty, elements, fill, compact);
     }
 
     /// True when a fill target can use the compact form.
@@ -3983,6 +3980,9 @@ impl<'a> Emitter<'a> {
         {
             return false;
         }
+        if matches!(place.base, PlaceBase::DerefTemp { .. }) {
+            return false;
+        }
         if let PlaceBase::Global(id) = &place.base {
             if self.globals.get(id).is_some_and(|global| global.volatile) {
                 return false;
@@ -3992,14 +3992,24 @@ impl<'a> Emitter<'a> {
     }
 
     /// True when a covered scalar fill should use the compact form.
-    fn should_compact_fill(&self, element: &Ty, covered: usize) -> bool {
-        if !self.compact_fills || !matches!(element.kind, TyKind::Scalar(_)) {
+    fn should_compact_fill(
+        &self,
+        element: &Ty,
+        covered: usize,
+        constant: Option<i128>,
+    ) -> bool {
+        if !matches!(element.kind, TyKind::Scalar(_)) {
             return false;
         }
-        let threshold = if matches!(
-            element.kind,
-            TyKind::Scalar(crate::ast::ScalarType::U8 | crate::ast::ScalarType::I8)
-        ) {
+        // A byte constant is a memset and is cheap at 16 slots. A byte fill
+        // that is not constant falls to the loop form, which is slower than
+        // the unrolled stores until the loop threshold, so use 64 for it.
+        let threshold = if constant.is_some()
+            && matches!(
+                element.kind,
+                TyKind::Scalar(crate::ast::ScalarType::U8 | crate::ast::ScalarType::I8)
+            )
+        {
             FILL_COMPACT_THRESHOLD
         } else {
             FILL_LOOP_THRESHOLD
@@ -4022,6 +4032,7 @@ impl<'a> Emitter<'a> {
         ty: &Ty,
         elements: &[ir::Value],
         fill: &Option<Box<ir::Value>>,
+        compact: bool,
     ) {
         let TyKind::Array { element, extents } = &ty.kind else {
             return;
@@ -4037,7 +4048,7 @@ impl<'a> Emitter<'a> {
             if let Some(element_ty) = &nested_ty {
                 match &value.kind {
                     ValueKind::ArrayLit { elements, fill } => {
-                        self.emit_array_assign_to(&sub, element_ty, elements, fill);
+                        self.emit_array_assign_to(&sub, element_ty, elements, fill, compact);
                     }
                     // A whole row that is not a literal has no scalar form; it
                     // travels through the fixed-array store core, one dimension
@@ -4121,7 +4132,7 @@ impl<'a> Emitter<'a> {
             let row_target = ArrayTarget::object(&row);
             match &fill.kind {
                 ValueKind::ArrayLit { elements, fill } => {
-                    self.emit_array_assign_to(&row_target, element_ty, elements, fill);
+                    self.emit_array_assign_to(&row_target, element_ty, elements, fill, compact);
                 }
                 _ => {
                     self.emit_fixed_array_assign_to(
@@ -4209,8 +4220,8 @@ impl<'a> Emitter<'a> {
         // direct per-element spelling and the existing emission pins.
         if super::program::init_operand_is_pure(fill) {
             let lowered = self.store_text(fill, element);
-            if self.should_compact_fill(element, extent.saturating_sub(prefix)) {
-                let constant = super::expr::constant_guard_integer(fill);
+            let constant = super::expr::constant_fill_integer(fill);
+            if compact && self.should_compact_fill(element, extent.saturating_sub(prefix), constant) {
                 self.emit_compact_scalar_fill(target, element, &lowered, prefix, extent, constant);
             } else {
                 for index in prefix..extent {
@@ -4234,7 +4245,9 @@ impl<'a> Emitter<'a> {
         self.push(&format!("    {local} = {lowered};"));
         if prefix >= extent {
             self.push(&format!("    if (sizeof({local})) {{ }}"));
-        } else if self.should_compact_fill(element, extent.saturating_sub(prefix)) {
+        } else if compact
+            && self.should_compact_fill(element, extent.saturating_sub(prefix), None)
+        {
             self.emit_compact_scalar_fill(target, element, &local, prefix, extent, None);
         } else {
             for index in prefix..extent {

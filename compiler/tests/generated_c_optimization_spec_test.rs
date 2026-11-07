@@ -190,7 +190,7 @@ func main(): i32 {
 }
 
 #[test]
-fn should_fold_finite_float_consts_at_their_declared_precision() {
+fn should_keep_finite_float_consts_as_places() {
     assert_output(
         "const-float",
         r#"
@@ -945,5 +945,118 @@ func main(): i32 {
 }
 "#,
         "error E11210: integer division by zero",
+    );
+}
+
+#[test]
+fn should_keep_an_integer_const_from_an_f32_cast_as_a_place() {
+    assert_output(
+        "const-f32-cast",
+        r#"
+module bench.F32CastConst;
+import { println } from std.io;
+const A: i32 = i32(f32(16777217.0));
+const B: i32 = i32(f32(0.99999999));
+func main(): i32 {
+    let a: i32 = i32(f32(16777217.0));
+    let b: i32 = i32(f32(0.99999999));
+    println($"f32-cast: {A} {a} {B} {b}");
+    return 0;
+}
+"#,
+        "f32-cast: 16777216 16777216 1 1\n",
+    );
+}
+
+#[test]
+fn should_wrap_an_unsigned_unary_divisor_at_its_type() {
+    assert_output(
+        "unsigned-unary-div",
+        r#"
+module bench.UnsignedUnaryDiv;
+import { println } from std.io;
+func main(): i32 {
+    let m: i32 = -2147483648;
+    let a: i32 = m / i32(-u8(1));
+    let b: i32 = m / i32(~u8(0));
+    println($"unsigned-div: {a} {b}");
+    return 0;
+}
+"#,
+        "unsigned-div: -8421504 -8421504\n",
+    );
+}
+
+#[test]
+fn should_trap_on_a_constant_binary_or_float_zero_divisor() {
+    assert_trap(
+        "div-binary-zero",
+        r#"
+module bench.BinaryZero;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x % (u32(0) + u32(0));
+    return i32(q);
+}
+"#,
+        "error E11210: integer division by zero",
+    );
+    assert_trap(
+        "div-float-zero",
+        r#"
+module bench.FloatZero;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(0.0);
+    return q;
+}
+"#,
+        "error E11210: integer division by zero",
+    );
+}
+
+#[test]
+fn should_keep_a_volatile_target_unrolled_on_every_fill_path() {
+    assert_output(
+        "volatile-paths",
+        r#"
+module bench.VolatilePaths;
+import { println } from std.io;
+struct S { tag: i32; xs: u8[16]; }
+volatile let G: u8[20] = [; 0];
+volatile let H: S = S { tag: 0, xs: [; 0] };
+func main(): i32 {
+    let x: u8 = 7;
+    G = [x; 1];
+    let flag: bool = true;
+    G = flag ? [x; 1] : [; 2];
+    H = S { xs: [; 1], tag: 2 };
+    println($"volatile-paths: {i32(G[0])} {i32(H.xs[0])}");
+    return 0;
+}
+"#,
+        "volatile-paths: 7 1\n",
+    );
+}
+
+#[test]
+fn should_keep_a_materialized_conditional_fill_unrolled() {
+    assert_output(
+        "materialized-conditional",
+        r#"
+module bench.MaterializedConditional;
+import { println } from std.io;
+func eat(a: u8[4096]): i32 { return i32(a[0]); }
+func main(): i32 {
+    let c: bool = true;
+    let ok: bool = true;
+    while (ok && eat(c ? [; 1] : [; 2]) == 1) {
+        println("materialized-conditional: ok");
+        return 0;
+    }
+    return 1;
+}
+"#,
+        "materialized-conditional: ok\n",
     );
 }

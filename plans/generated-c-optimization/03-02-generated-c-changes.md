@@ -82,6 +82,8 @@ The fold runs only when all of these hold:
    32 bits. A narrower operation is promoted to `int` in C but wrapped at the
    operand width by the folder, so folding it would disagree with the stored
    value. A direct narrow literal or cast is still eligible.
+9. No subexpression has type `f32`/`f64`. An integer const through an `f32`
+   cast is not stable because the folder does not round that cast.
 
 A local or parameter that shadows the name resolves to a `Local` target and is
 not folded. A field read resolves to a projection and is not folded.
@@ -168,14 +170,16 @@ statement form), emit one of:
   higher threshold keeps a 16–63-slot non-byte fill unrolled, because the
   loop is slower than the unrolled stores at that size.
 
-The emitter's `compact_fills` flag is set by `emit_array_assign`: it is true
-for a plain local, adjusted parameter, or return slot, and false for a field
-projection (which may name a `volatile` member) or a `volatile` module array.
-The materialized fixed-array fill in `guards.rs` clears the flag around its
-call, so the deferred/masked form keeps its current spelling. A non-scalar
-element (including a simple struct literal that falls through to the generic
-fill) never uses the compact path. Below the threshold, the existing spelling
-is unchanged.
+`emit_array_assign_to` takes an explicit `compact` flag. `emit_array_assign`
+sets it true only for a plain local, adjusted parameter, or return slot; it is
+false for a field projection (which may name a `volatile` member), a
+`volatile` module array, and a `DerefTemp` loop alias. The materialized
+fixed-array fills, conditional arms, struct-literal fields, and the shared
+self-read path pass false, so those forms keep their current spelling. A fill
+whose expression reads a named binding takes the shared self-read path and
+stays unrolled. A non-scalar element (including a simple struct literal that
+falls through to the generic fill) never uses the compact path. Below the
+threshold, the existing spelling is unchanged.
 
 ### Invariants
 
@@ -220,13 +224,11 @@ In `compiler/src/codegen/guards.rs::bounds_guard_condition`, when the index is
 signed, call a shared `constant_guard_integer(index)`. If it is `Some(n)` with
 `n >= 0`, build the unsigned condition for that index. The upper-bound
 comparison remains. `constant_guard_integer` accepts a literal, `bool`,
-character, cast, or unary form; it deliberately rejects a binary expression,
-because the existing `constant_integer` evaluates binary operations in a
-128-bit accumulator and does not reproduce the operand type's C wrapping. A
-wrapping binary index must keep the signed guard; the measured need is a bare
-literal. `constant_integer` currently lives in `codegen/expr.rs` as a private
-helper; expose the shared subset as `pub(super)` (or move it to a shared
-codegen helper) so `guards.rs` can use it.
+character, cast, unary, materialized constant, or binary form evaluated with
+the C semantics: the constant evaluator wraps each operation at its result
+type and masks shift counts at the left operand's width, so a wrapping binary
+index is classified correctly. A non-constant expression keeps the full
+guard.
 
 ### Invariants
 
@@ -259,17 +261,18 @@ After the integer check, call `constant_guard_integer(right)`:
 
 | Constant divisor | Emitted guard |
 |---|---|
-| `0` | none; the value renderer's trap expression is unchanged |
+| `0` | none; the value renderer's trap expression is unchanged, including a binary or finite-float-cast zero |
 | `-1`, signed dividend | `dividend == MIN` only |
 | `-1`, unsigned dividend | none |
 | any other non-zero | none |
-| non-constant, or a binary expression | the existing full guard |
+| non-constant | the existing full guard |
 
-The helper sees through `Unary(Neg)`, casts, and a folded const, so `-(1)` and
-a folded `const D = -1;` are recognized. It rejects a binary divisor such as
-`i32(2147483647) + i32(2147483647) + i32(1)`, whose C value wraps to `-1`;
-removing the guard there would lose the `MIN / -1` trap. A binary divisor keeps
-the full guard.
+The helper sees through `Unary(Neg)`, casts, a folded const, and a binary
+expression evaluated with C semantics. A binary divisor such as
+`i32(2147483647) + i32(2147483647) + i32(1)` evaluates to the C `-1`, so the
+`MIN / -1` check is emitted; a shift divisor masks its count, so `V >> 8` is
+not mistaken for zero. The value renderer uses the same zero classification
+for its trap expression.
 
 ### Invariants
 

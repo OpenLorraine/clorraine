@@ -181,6 +181,8 @@ general optimizer.
   - `bool` is `ValueKind::Bool`;
   - a `f32`/`f64` const stays a place; float folding waits for a folder that
     rounds at every `f32` operation;
+  - an integer const whose initializer contains an `f32`/`f64` subexpression
+    stays a place, because the folder does not round that cast;
   - a narrow arithmetic initializer (an operation whose operand type is below
     32 bits) stays a place, because C promotes the operation to `int` while
     the typed folder wraps at the operand width; a direct narrow literal or
@@ -206,9 +208,11 @@ general optimizer.
   least 16 for a `u8`/`i8` element (the `memset` form) or at least 64 for any
   other scalar (the loop form; the loop saves code size but is slower than
   unrolled stores). A smaller fill keeps the per-element spelling. Nested-row
-  fills, struct-literal fills, array copies, the deferred expression form, and
-  a field or volatile target are excluded; a field target may name a volatile
-  member, and a volatile array cannot be passed to `memset`.
+  fills, struct-literal fills, array copies, the deferred expression form, a
+  field or volatile target, a `DerefTemp` loop alias, and a fill whose
+  expression reads a named binding through the shared self-read path are
+  excluded; a field target may name a volatile member, and a volatile array
+  cannot be passed to `memset`.
 - **R5.2 Forms.** A `u8` or `i8` fill with a constant integer value is emitted
   as one `memset` over the covered slots. Any other scalar element type,
   including `bool`, uses one `for` loop over the covered indices. `bool` is
@@ -238,9 +242,9 @@ general optimizer.
 - **R6.1 Dead half removed.** For a non-negative constant index into a
   slice or `str` view (a dynamic extent), the emitted bounds condition omits
   its `< 0` half. The upper-bound comparison remains. "Constant" means a
-  literal, a `bool`/character value, a cast, or a unary form; a binary
-  expression is not treated as a constant for the guard because its C
-  evaluation wraps at the operand type. The upper-bound comparison remains.
+  literal, a `bool`/character value, a cast, a unary form, or a binary
+  expression evaluated with the C semantics (wrap at the result type and mask
+  shift counts); a non-constant expression keeps the full guard.
   This is the only new case: an unsigned index already omits the lower half,
   and a constant index into a fixed array in range is already unguarded.
 - **R6.2 Signed and negative retained.** A non-constant signed index keeps the
@@ -265,14 +269,16 @@ general optimizer.
 
 - **R7.1 Non-zero constant divisor.** When the divisor is a constant integer
   other than `0` and `-1` (including a negative representation such as
-  `-(1)`, a cast, or a folded const), the emitted zero-and-overflow guard is
-  omitted. "Constant" uses the same restricted form as R6.1: a binary
-  expression whose C evaluation wraps at the operand type keeps the full
-  guard. The operation still runs behind the language's wrapping rules.
+  `-(1)`, a cast, a folded const, or a binary expression), the emitted
+  zero-and-overflow guard is omitted. The constant value is evaluated with the
+  C semantics (wrap at the result type and mask shift counts); a non-constant
+  expression keeps the full guard. The operation still runs behind the
+  language's wrapping rules.
 - **R7.2 Minus one.** When the divisor is constant `-1`, only the
   `MIN / -1` overflow check is emitted; the zero check is omitted.
-- **R7.3 Zero.** When the divisor is constant `0`, the existing behavior is
-  unchanged: the value renderer emits the trap expression and
+- **R7.3 Zero.** When the divisor is constant `0` — a literal, a binary
+  expression, or a finite float cast that evaluates to zero — the existing
+  behavior is unchanged: the value renderer emits the trap expression and
   `division_guard_condition` returns no separate `if` guard. The constant
   folder's `E10223` remains the compile-time diagnostic in a constant context.
 - **R7.4 Non-literal divisor.** A run-time divisor keeps the full

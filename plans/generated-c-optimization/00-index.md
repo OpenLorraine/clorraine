@@ -107,10 +107,10 @@ system, provider, or regulated domain. The negative check is recorded in
 | `tools/perf/tests/test_bench.py` | Harness unit tests |
 | `benchmarks/` | Scored programs and calibration |
 | `docker/scripts/bench-base.sh` | Base compiler build/run |
-| `compiler/src/own/program.rs`, `own/lower.rs`, `own/place.rs` | Const fold and address-taken pass |
-| `compiler/src/consts/mod.rs` | Constant folder |
-| `compiler/src/codegen/function.rs` | Fill compaction |
-| `compiler/src/codegen/guards.rs`, `expr.rs`, `render.rs` | Guard and literal rendering |
+| `compiler/src/own/program.rs`, `own/lower.rs` | Const fold and address-taken pass |
+| `compiler/src/consts/mod.rs` | Constant folder (dependency) |
+| `compiler/src/codegen/function.rs` | Fill compaction and target gating |
+| `compiler/src/codegen/guards.rs`, `expr.rs` | Guard and constant rendering |
 | `compiler/tests/generated_c_optimization_spec_test.rs` | Behavior oracle |
 | `compiler/tests/generated_c_optimization_impl_test.rs` | Emission pins |
 | `Makefile` | `bench*` targets and `check` |

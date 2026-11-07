@@ -7104,6 +7104,12 @@ fn value_initializer_is_stable(
     module: &crate::load::Module,
     visited: &mut BTreeSet<ir::GlobalId>,
 ) -> bool {
+    if matches!(
+        checker.ty(expr).kind,
+        TyKind::Scalar(ScalarType::F32 | ScalarType::F64)
+    ) {
+        return false;
+    }
     match &expr.kind {
         ExprKind::Int(_)
         | ExprKind::Float(_)
@@ -7175,6 +7181,12 @@ fn stable_const_initializer(
     };
     if !info.is_const {
         return true;
+    }
+    if matches!(
+        info.ty.kind,
+        TyKind::Scalar(ScalarType::F32 | ScalarType::F64)
+    ) {
+        return false;
     }
     let Some(initializer) = info.const_init else {
         return true;

@@ -453,8 +453,8 @@ func main(): i32 {
         )],
         "main.clo",
     );
-    assert_contains("fill-volatile", &emitted, "for (__cl_fill_1 = 0;");
-    assert_contains("fill-volatile", &emitted, "a[__cl_fill_1] = cl_bench_ImplVolatile_seed;");
+    assert_absent("fill-volatile", &emitted, "for (__cl_fill_");
+    assert_contains("fill-volatile", &emitted, "a[4095] = cl_bench_ImplVolatile_seed;");
     assert_absent("fill-volatile", &emitted, "memset(&(a[0])");
 }
 
@@ -567,10 +567,9 @@ func main(): i32 {
     assert_eq!(
         count(&emitted, "= (*(volatile u8 *)"),
         1,
-        "fill-intrinsic: the volatile read happens once before the loop"
+        "fill-intrinsic: the volatile read happens once before the stores"
     );
-    assert_contains("fill-intrinsic", &emitted, "for (__cl_fill_3 = 0;");
-    assert_contains("fill-intrinsic", &emitted, "a[__cl_fill_3] = __cl_fill_2;");
+    assert_contains("fill-intrinsic", &emitted, "a[4095] = __cl_fill_1;");
 }
 
 #[test]
@@ -598,7 +597,7 @@ func main(): i32 {
 }
 
 #[test]
-fn should_keep_a_shifting_fill_on_the_loop_path() {
+fn should_keep_a_shifting_fill_on_the_unrolled_path() {
     let emitted = emit(
         "fill-shift",
         &[(
@@ -614,7 +613,8 @@ func main(): i32 {
         "main.clo",
     );
     assert_absent("fill-shift", &emitted, "memset(&(a[0])");
-    assert_contains("fill-shift", &emitted, "for (__cl_fill_");
+    assert_absent("fill-shift", &emitted, "for (__cl_fill_");
+    assert_contains("fill-shift", &emitted, "a[31] = ((u8)(1) << (8 & 7));");
 }
 
 #[test]
@@ -757,4 +757,165 @@ func main(): i32 {
     );
     assert_contains("fill-struct", &emitted, "p[15] = (ClPair){ 2, 3 };");
     assert_absent("fill-struct", &emitted, "for (__cl_fill");
+}
+
+#[test]
+fn should_not_memset_a_volatile_target_on_the_reads_or_conditional_path() {
+    let emitted = emit(
+        "fill-volatile-paths",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplVolatilePaths;
+volatile let G: u8[20] = [; 0];
+func main(): i32 {
+    let x: u8 = 7;
+    G = [x; 1];
+    let flag: bool = true;
+    G = flag ? [x; 1] : [; 2];
+    return i32(G[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-volatile-paths", &emitted, "memset(&(cl_bench_ImplVolatilePaths_G");
+}
+
+#[test]
+fn should_not_memset_a_volatile_struct_field_fill() {
+    let emitted = emit(
+        "fill-volatile-field",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplVolatileField;
+struct S { tag: i32; xs: u8[16]; }
+volatile let H: S = S { tag: 0, xs: [; 0] };
+func main(): i32 {
+    H = S { xs: [; 1], tag: 2 };
+    return i32(H.xs[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-volatile-field", &emitted, "memset(&(cl_bench_ImplVolatileField_H");
+}
+
+#[test]
+fn should_not_compact_a_materialized_conditional_fill() {
+    let emitted = emit(
+        "fill-materialized-conditional",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplMaterializedConditional;
+func eat(a: u8[4096]): i32 { return i32(a[0]); }
+func main(): i32 {
+    let c: bool = true;
+    let ok: bool = true;
+    while (ok && eat(c ? [; 1] : [; 2]) == 1) { return 0; }
+    return 1;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-materialized-conditional", &emitted, "memset(&(__cl_owned");
+}
+
+#[test]
+fn should_keep_an_integer_const_from_an_f32_cast_as_a_place() {
+    let emitted = emit(
+        "const-f32-cast",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplF32Cast;
+const A: i32 = i32(f32(16777217.0));
+func main(): i32 { return A; }
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("const-f32-cast", &emitted, "return cl_bench_ImplF32Cast_A;");
+}
+
+#[test]
+fn should_render_unsigned_unary_at_its_type() {
+    let emitted = emit(
+        "unsigned-unary",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplUnsignedUnary;
+func main(): i32 {
+    let m: i32 = -2147483648;
+    let a: i32 = m / i32(-u8(1));
+    let b: i32 = m / i32(~u8(0));
+    return a + b;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("unsigned-unary", &emitted, "(u8)(-(u8)((u8)(1)))");
+    assert_contains("unsigned-unary", &emitted, "(u8)(~(u8)((u8)(0)))");
+}
+
+#[test]
+fn should_trap_a_binary_zero_divisor_without_spelling_the_division() {
+    let emitted = emit(
+        "div-binary-zero",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplBinaryZero;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x % (u32(0) + u32(0));
+    return i32(q);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("div-binary-zero", &emitted, "cl_trap(\"E11210\", \"integer division by zero\")");
+    assert_absent("div-binary-zero", &emitted, "q = (x %");
+}
+
+#[test]
+fn should_keep_a_non_byte_fill_unrolled_below_64_and_compact_at_64() {
+    let small = emit(
+        "fill-int-small",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplIntSmall;
+func main(): i32 {
+    let a: i32[63] = [; 7];
+    return a[0];
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-int-small", &small, "for (__cl_fill_");
+    assert_eq!(count(&small, "] = 7;"), 63);
+    let threshold = emit(
+        "fill-int-threshold",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplIntThreshold;
+func main(): i32 {
+    let a: i32[64] = [; 7];
+    return a[0];
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("fill-int-threshold", &threshold, "for (__cl_fill_");
 }

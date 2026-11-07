@@ -151,5 +151,5 @@ count. This measures guest CPU instructions, not bus cycles, memory stalls, or
 Amiga library internals that `vamos` emulates in Python. FS-UAE 3.1.66 has no
 stable headless cycle counter, so a cycle-accurate comparison is not part of
 the gate. Host wall time is recorded and displayed but is advisory: its
-run-to-run spread is several percent, while the instruction and section-size
-metrics are deterministic.
+run-to-run spread is often tens of percent, while the instruction and
+section-size metrics are deterministic.

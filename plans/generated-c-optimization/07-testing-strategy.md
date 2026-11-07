@@ -138,6 +138,24 @@ The impl suite pins the emitted text and the threshold boundaries. The
 | IP-19 | `&N` nested in a call argument, a lambda, and a `defer` | the reads stay places; the C contains `&(cl_..._N)` | 🟢 green |
 | IP-20 | A bare `m.N` read and a projected `obj.N` read | `m.N` is a literal; `obj.N` keeps the field read | 🔴 red (bare-qualified fold) |
 
+## Fix-Pass Additions
+
+The independent reviews and the fix pass added these oracle cases:
+
+| # | Input / scenario | Expected behavior | Source |
+|---|---|---|---|
+| ST-43 | `const A: i32 = i32(f32(16777217.0));` and a `f32(0.99999999)` twin; compare read to storage | both read `16777216`/`1`; the const stays a place | R4.5 |
+| ST-44 | `let m: i32 = -2147483648; m / i32(-u8(1)); m / i32(~u8(0));` | `-8421504` both; the unsigned unary renders at `u8` | R4.5, R7 |
+| ST-45 | `x % (u32(0) + u32(0));` and `x / i32(0.0);` | strict C build; runtime `E11210` trap | R7.3 |
+| ST-46 | `volatile let G: u8[20]` filled by a named prefix, a conditional, and a volatile struct field | compiles strict; no `memset` on the volatile target; values correct | R5.1 |
+| ST-47 | A materialized conditional `eat(c ? [;1] : [;2])` in a `while` | compiles and runs; the fill stays unrolled | R5.1 |
+| ST-48 | `i32[63]` and `i32[64]` fills | 63 unrolled; 64 one loop | R5.1 |
+| ST-49 | `u8[32] = [; u8(1) << 8]` | unrolled (non-constant byte), value 1 per element | R5.2 |
+| ST-50 | `const B = A` where `&A` is taken; a lambda address; a huge negative slice; a bitnot divisor | place reads, trap codes preserved | R4.3, R6.2 |
+
+The spec suite now has 36 cases; the impl suite has 34 pins. The red/green
+record is in `05-findings.md`.
+
 ## The Harness Self-Tests
 
 `tools/perf/tests/test_bench.py` covers:
@@ -183,6 +201,7 @@ proof is `make bench` itself.
 
 - [ ] Every ST case traces to R4–R7 or a cross-cutting requirement.
 - [ ] The spec suite passes on the base compiler before implementation.
+- [ ] The fix-pass additions (ST-43–ST-50) are green; the impl suite has 34 pins.
 - [ ] The impl suite's red pins (IP-1, IP-2, IP-3, IP-5, IP-6, IP-7, IP-9,
       IP-10, IP-14, IP-15, IP-17, IP-20) fail on the base compiler.
 - [ ] The green pins (IP-4, IP-8, IP-11, IP-12, IP-13, IP-16, IP-18, IP-19)

@@ -740,14 +740,44 @@ impl<'a> Emitter<'a> {
         let operand_c = self.value(operand);
         match op {
             UnaryOp::Not => format!("!({operand_c})"),
-            UnaryOp::BitNot => format!("~({operand_c})"),
+            UnaryOp::BitNot => {
+                let ty = self.substitute(&whole.ty);
+                let ty = if scalar_of(&ty).is_none() {
+                    self.resolved_value_ty(operand)
+                } else {
+                    ty
+                };
+                match scalar_of(&ty) {
+                    Some(scalar)
+                        if !is_signed_scalar(scalar)
+                            && !matches!(scalar, ScalarType::Bool) =>
+                    {
+                        format!(
+                            "({})(~({})({operand_c}))",
+                            c_type(&ty, &self.sema.table),
+                            unsigned_c(scalar)
+                        )
+                    }
+                    _ => format!("~({operand_c})"),
+                }
+            }
             UnaryOp::Neg => {
                 let ty = self.substitute(&whole.ty);
+                let ty = if scalar_of(&ty).is_none() {
+                    self.resolved_value_ty(operand)
+                } else {
+                    ty
+                };
                 match scalar_of(&ty) {
                     Some(scalar) if is_signed_scalar(scalar) => {
                         let unsigned = unsigned_scalar(scalar);
                         format!("({})(-({}){operand_c})", c_type(&ty, &self.sema.table), unsigned_c(unsigned))
                     }
+                    Some(scalar) => format!(
+                        "({})(-({})({operand_c}))",
+                        c_type(&ty, &self.sema.table),
+                        unsigned_c(scalar)
+                    ),
                     _ => format!("-({operand_c})"),
                 }
             }
@@ -941,7 +971,7 @@ impl<'a> Emitter<'a> {
         // first, so the expression becomes the trap and a zero placeholder.
         if matches!(op, BinaryOp::Div | BinaryOp::Rem)
             && self.substitute(&whole.ty).is_integer()
-            && constant_guard_integer(right) == Some(0)
+            && constant_zero_value(right)
         {
             // The dividend still evaluates first: a call in it must run once
             // before the fault. The comma expression keeps that order and
@@ -1626,17 +1656,69 @@ fn guard_constant_shape(value: &Value) -> bool {
             matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
                 && guard_constant_shape(operand)
         }
+        ValueKind::Binary { left, right, .. } => {
+            guard_constant_shape(left) && guard_constant_shape(right)
+        }
+        ValueKind::Materialize { value, .. } => guard_constant_shape(value),
         _ => false,
     }
 }
 
-/// The constant value a guard may use, excluding binary expressions.
+/// The constant value a guard may use.
 pub(super) fn constant_guard_integer(value: &Value) -> Option<i128> {
     if guard_constant_shape(value) {
         constant_integer(value)
     } else {
         None
     }
+}
+
+/// The constant value a byte fill may use.
+///
+/// A fill is emitted as one `memset` only for a literal, cast, unary, or
+/// materialized constant; a binary expression keeps the per-element loop so
+/// the emitted store's own wrapping and shift masking decide the byte.
+pub(super) fn constant_fill_integer(value: &Value) -> Option<i128> {
+    fn fill_constant_shape(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) => true,
+            ValueKind::Cast { value, .. } => fill_constant_shape(value),
+            ValueKind::Unary { op, operand } => {
+                matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
+                    && fill_constant_shape(operand)
+            }
+            ValueKind::Materialize { value, .. } => fill_constant_shape(value),
+            _ => false,
+        }
+    }
+    if fill_constant_shape(value) {
+        constant_integer(value)
+    } else {
+        None
+    }
+}
+
+/// True when a divisor is a constant zero the renderer must trap.
+///
+/// A literal float cast to an integer (`i32(0.0)`) is a constant zero even
+/// though the generic constant shape excludes float values; the C cast is
+/// exact for zero.
+pub(super) fn constant_zero_value(value: &Value) -> bool {
+    if constant_guard_integer(value) == Some(0) {
+        return true;
+    }
+    match &value.kind {
+        ValueKind::Cast { value: inner, .. } => {
+            if let ValueKind::Float(number) = inner.kind {
+                return number == 0.0;
+            }
+        }
+        ValueKind::Materialize { value: inner, .. } => {
+            return constant_zero_value(inner);
+        }
+        _ => {}
+    }
+    false
 }
 
 pub(super) fn constant_integer(value: &Value) -> Option<i128> {
@@ -1659,29 +1741,66 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
                 _ => return None,
             };
             // The unary result is evaluated at its own C type: `-u8(1)` is
-            // 255 and `~u32(4294967295)` is 0, not a wide negative value.
-            Some(cast_integer(result, &value.ty))
+            // 255 and `~u32(4294967295)` is 0, not a wide negative value. A
+            // generic or otherwise opaque unary falls back to the operand's
+            // type, which is the width its C operand promotes at.
+            let ty = if value.ty.is_unknown() {
+                operand.ty.clone()
+            } else {
+                value.ty.clone()
+            };
+            Some(cast_integer(result, &ty))
         }
         ValueKind::Cast { value: inner, .. } => {
             let number = constant_integer(inner)?;
             Some(cast_integer(number, &value.ty))
         }
         ValueKind::Binary { op, left, right } => {
-            let left = constant_integer(left)?;
-            let right = constant_integer(right)?;
-            match op {
-                BinaryOp::Add => left.checked_add(right),
-                BinaryOp::Sub => left.checked_sub(right),
-                BinaryOp::Mul => left.checked_mul(right),
-                BinaryOp::Div => left.checked_div(right),
-                BinaryOp::Rem => left.checked_rem(right),
-                BinaryOp::BitAnd => Some(left & right),
-                BinaryOp::BitOr => Some(left | right),
-                BinaryOp::BitXor => Some(left ^ right),
-                BinaryOp::Shl => u32::try_from(right).ok().and_then(|shift| left.checked_shl(shift)),
-                BinaryOp::Shr => u32::try_from(right).ok().and_then(|shift| left.checked_shr(shift)),
-                _ => None,
-            }
+            let left_value = constant_integer(left)?;
+            let right_value = constant_integer(right)?;
+            let result = match op {
+                BinaryOp::Add => left_value.checked_add(right_value)?,
+                BinaryOp::Sub => left_value.checked_sub(right_value)?,
+                BinaryOp::Mul => left_value.checked_mul(right_value)?,
+                BinaryOp::Div => {
+                    if right_value == 0 {
+                        return None;
+                    }
+                    left_value.checked_div(right_value)?
+                }
+                BinaryOp::Rem => {
+                    if right_value == 0 {
+                        return None;
+                    }
+                    left_value.checked_rem(right_value)?
+                }
+                BinaryOp::BitAnd => left_value & right_value,
+                BinaryOp::BitOr => left_value | right_value,
+                BinaryOp::BitXor => left_value ^ right_value,
+                BinaryOp::Shl => {
+                    let bits = scalar_of(&left.ty)
+                        .map(crate::types::scalar_bits)
+                        .unwrap_or(32);
+                    let shift = (right_value as u32) & (bits - 1);
+                    left_value.wrapping_shl(shift)
+                }
+                BinaryOp::Shr => {
+                    let bits = scalar_of(&left.ty)
+                        .map(crate::types::scalar_bits)
+                        .unwrap_or(32);
+                    let shift = (right_value as u32) & (bits - 1);
+                    left_value.wrapping_shr(shift)
+                }
+                BinaryOp::Eq => i128::from(left_value == right_value),
+                BinaryOp::Ne => i128::from(left_value != right_value),
+                BinaryOp::Lt => i128::from(left_value < right_value),
+                BinaryOp::Le => i128::from(left_value <= right_value),
+                BinaryOp::Gt => i128::from(left_value > right_value),
+                BinaryOp::Ge => i128::from(left_value >= right_value),
+                BinaryOp::LogicalAnd => i128::from(left_value != 0 && right_value != 0),
+                BinaryOp::LogicalOr => i128::from(left_value != 0 || right_value != 0),
+            };
+            Some(cast_integer(result, &value.ty))
         }
         _ => None,
     }
