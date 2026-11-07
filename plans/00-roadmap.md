@@ -3,13 +3,13 @@
 > **Feature-Set**: Clorraine
 > **Status**: Done
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-11-06
-> **Progress**: 559/563 rows done; 3 open (1 Backlog: 0 critical + 0 major + 0 minor); 2 Deferred
+> **Last Updated**: 2026-11-07
+> **Progress**: 561/563 rows done; 0 open; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
 
-⬜ Backlog · ✏️ RD Drafted · 🔎 RD Preflighted · 📋 Plan Created · 🔬 Plan Preflighted · 🔄 Executing · ✅ Done · ⛔ Blocked · ⏸️ Deferred
+⬜ Backlog · ✏️ RD Drafted · 🔎 RD Preflighted · 📋 Plan Created · 🔬 Plan Preflighted · 🔄 Executing · ✅ Done · ⛔ Blocked · ⏸️ Deferred/Parked (inactive; reopen only on explicit request)
 
 ## Tracker
 
@@ -20,8 +20,8 @@
 | PLAN-03 | Freestanding (LorraineOS) profile | — | [clorraine-freestanding-profile](clorraine-freestanding-profile/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-04 | Clorraine v1 language completion | — | [clorraine-v1-language-completion](clorraine-v1-language-completion/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-05 | Developer experience and delivery | — | [clorraine-dx](clorraine-dx/00-index.md) | Done | ✅ | 2026-11-03 22:22 | 28/28; `--explain` on both CLIs, `--diagnostics=json` NDJSON on stderr, canonical `editors/clorraine.tmLanguage.json`; the fetch/detect SDK installer, LSP, and VSCode extension packaging remain backlog |
-| PLAN-06 | LorraineOS bring-up (downstream) | — | — | Deferred | ⏸️ | 2026-09-26 | external repository; the OS does not exist; Clorraine's freestanding ABI (PLAN-03) is done |
-| PLAN-07 | ARM64 target port | — | — | Deferred | ⏸️ | 2026-09-26 | not planned; the v1 target is m68k/AmigaOS-compatible; aarch64 host builds stay supported |
+| PLAN-06 | LorraineOS bring-up (downstream) | — | — | Parked | ⏸️ | 2026-11-07 | parked by user ruling 2026-11-07; external repository does not exist; Clorraine's freestanding ABI (PLAN-03) is done; reopen only on explicit request |
+| PLAN-07 | ARM64 target port | — | — | Parked | ⏸️ | 2026-11-07 | parked by user ruling 2026-11-07; the v1 target is m68k/AmigaOS-compatible; aarch64 host builds stay supported; reopen only on explicit request |
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Done | ✅ | 2026-09-26 | DEF-06–DEF-10 fixed |
@@ -594,7 +594,7 @@ The completion program targets a **v1.0 core**: a rule-complete language and a b
 | ---- | --------- | -------- |
 | Borrow/ownership | Ownership-model features (PLAN-11), then **NLL** (PLAN-12) | Polonius (v3) — only if NLL proves insufficient |
 | Language | Every non-staged rule and the standard-library surface the corpus needs | `comptime` (E90001), pools/arenas (E90004), `stores`/`transfers` (E90003), nested templates (E90005), user contract tables (W10005), C-hook trampolines (v1.1) |
-| Targets | m68k/AmigaOS-compatible (`hosted-amiga`, `freestanding`) and the `host` test profile | ARM64 target (PLAN-07); 64-bit `usize`/`isize`; LorraineOS (PLAN-06) |
+| Targets | m68k/AmigaOS-compatible (`hosted-amiga`, `freestanding`) and the `host` test profile | ARM64 target (PLAN-07, parked); 64-bit `usize`/`isize`; LorraineOS (PLAN-06, parked) |
 | Amiga surface | `std.amiga.*` growth, including `std.amiga.exec`, wider custom-chip, and intuition/graphics extras (PLAN-13) | — |
 | Delivery (PLAN-05) | Amiga-developer-first DX; VSCode first (TextMate grammar, then LSP staged); `--explain` and machine-readable diagnostics; a fetch/detect SDK installer | Project manifest / package manager; watch mode, deep LSP, debugger |
 
