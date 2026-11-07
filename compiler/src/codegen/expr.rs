@@ -966,7 +966,7 @@ impl<'a> Emitter<'a> {
 
     /// Renders a binary operator with the wrapping and masking strategy.
     fn binary(&self, op: BinaryOp, left: &Value, right: &Value, whole: &Value) -> String {
-        // A literal zero divisor is a guaranteed runtime fault. Emitting the
+            // A literal zero divisor is a guaranteed runtime fault. Emitting the
         // division would fail the strict C build even though the trap runs
         // first, so the expression becomes the trap and a zero placeholder.
         if matches!(op, BinaryOp::Div | BinaryOp::Rem)
@@ -984,7 +984,7 @@ impl<'a> Emitter<'a> {
         if let Some(test) = self.view_null_test(op, left, right) {
             return test;
         }
-        let left_c = self.value(left);
+            let left_c = self.value(left);
         let right_c = self.value(right);
         let ty = self.substitute(&whole.ty);
         // A compound store recorded in a generic body carries the opaque
@@ -1636,28 +1636,34 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
     }
 }
 
-/// Evaluates an integer constant value, including casts and arithmetic.
+/// True when a value is a constant shape the guard may evaluate.
 ///
-/// The division trap must recognize a zero the C compiler sees as zero even
-/// when it is spelled through a cast or a folded expression (`u8(256)`,
-/// `i32(0.0)`, `2 - 2`). A non-constant value returns `None`, and a float
-/// operand is evaluated by its C truncation to the integer destination.
-/// True when a value's constant shape has no binary operation.
-///
-/// The shared `constant_integer` evaluates binary operations in a 128-bit
-/// accumulator, which does not reproduce the operand type's C wrapping. The
-/// guard rules only fold a literal, a cast, or a unary form, so a wrapping
-/// binary divisor or index keeps its full guard.
+/// The shape admits literals, casts, unary forms, binary expressions, and
+/// materialized constants. `constant_integer` evaluates every operation with
+/// the C wrap and shift-mask rules, so a binary expression is safe here; a
+/// place, call, or other runtime value is not.
 fn guard_constant_shape(value: &Value) -> bool {
+    fn float_ty(ty: &Ty) -> bool {
+        matches!(
+            ty.kind,
+            TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+        )
+    }
     match &value.kind {
         ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) => true,
-        ValueKind::Cast { value, .. } => guard_constant_shape(value),
+        ValueKind::Cast { value, .. } => {
+            !float_ty(&value.ty) && guard_constant_shape(value)
+        }
         ValueKind::Unary { op, operand } => {
-            matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
+            !float_ty(&operand.ty)
+                && matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
                 && guard_constant_shape(operand)
         }
         ValueKind::Binary { left, right, .. } => {
-            guard_constant_shape(left) && guard_constant_shape(right)
+            !float_ty(&left.ty)
+                && !float_ty(&right.ty)
+                && guard_constant_shape(left)
+                && guard_constant_shape(right)
         }
         ValueKind::Materialize { value, .. } => guard_constant_shape(value),
         _ => false,
@@ -1709,9 +1715,13 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
     }
     match &value.kind {
         ValueKind::Cast { value: inner, .. } => {
-            if let ValueKind::Float(number) = inner.kind {
-                return number == 0.0;
-            }
+            // A finite float expression cast to an integer is zero when its
+            // C truncation is zero. Evaluate the float at its own width so a
+            // half-plus-half pair is 1, not a pair of truncated zeros.
+            let Some(cast) = integer_cast_zero(value, inner) else {
+                return false;
+            };
+            return cast;
         }
         ValueKind::Materialize { value: inner, .. } => {
             return constant_zero_value(inner);
@@ -1721,6 +1731,78 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
     false
 }
 
+/// Evaluates a parameter-free float expression at its own width.
+fn float_constant(value: &Value) -> Option<f64> {
+    match &value.kind {
+        ValueKind::Float(number) => Some(*number),
+        ValueKind::Int(number) => Some(*number as f64),
+        ValueKind::Unary {
+            op: crate::ast::UnaryOp::Neg,
+            operand,
+        } => Some(-float_constant(operand)?),
+        ValueKind::Cast { value: inner, .. } => {
+            let number = float_constant(inner)?;
+            match &value.ty.kind {
+                TyKind::Scalar(crate::ast::ScalarType::F32) => Some(number as f32 as f64),
+                TyKind::Scalar(crate::ast::ScalarType::F64) => Some(number),
+                _ => None,
+            }
+        }
+        ValueKind::Binary { op, left, right } => {
+            let left = float_constant(left)?;
+            let right = float_constant(right)?;
+            let result = match op {
+                BinaryOp::Add => left + right,
+                BinaryOp::Sub => left - right,
+                BinaryOp::Mul => left * right,
+                BinaryOp::Div => left / right,
+                _ => return None,
+            };
+            match &value.ty.kind {
+                TyKind::Scalar(crate::ast::ScalarType::F32) => Some(result as f32 as f64),
+                TyKind::Scalar(crate::ast::ScalarType::F64) => Some(result),
+                _ => Some(result),
+            }
+        }
+        ValueKind::Materialize { value: inner, .. } => float_constant(inner),
+        _ => None,
+    }
+}
+
+/// True when an integer cast of a float expression truncates to zero.
+fn integer_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
+    let crate::types::TyKind::Scalar(scalar) = value.ty.kind else {
+        return None;
+    };
+    if !crate::types::is_integer_scalar(scalar) {
+        return None;
+    }
+    let number = float_constant(inner)?;
+    if !number.is_finite() {
+        return Some(false);
+    }
+    let bits = crate::types::scalar_bits(scalar);
+    let (low, high) = if crate::types::is_signed_scalar(scalar) {
+        (
+            -(1i128 << (bits - 1)) as f64,
+            ((1i128 << (bits - 1)) - 1) as f64,
+        )
+    } else {
+        (0.0, ((1i128 << bits) - 1) as f64)
+    };
+    if number < low || number > high {
+        return Some(false);
+    }
+    let result = number.trunc() == 0.0;
+    Some(result)
+}
+
+/// Evaluates an integer constant with the C wrap and shift-mask rules.
+///
+/// The guard, fill, and renderer decisions must recognize the value the C
+/// compiler sees: casts truncate, unary negation and bitwise not wrap at their
+/// type, binary arithmetic wraps at its result type, and a shift count masks
+/// at the left operand's width. A non-constant value returns `None`.
 pub(super) fn constant_integer(value: &Value) -> Option<i128> {
     match &value.kind {
         ValueKind::Int(number) => Some(*number),

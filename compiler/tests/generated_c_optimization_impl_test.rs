@@ -919,3 +919,89 @@ func main(): i32 {
     );
     assert_contains("fill-int-threshold", &threshold, "for (__cl_fill_");
 }
+
+
+#[test]
+fn should_trap_a_float_zero_divisor_with_a_truncating_or_nested_cast() {
+    let emitted = emit(
+        "div-float-cast-zero",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatCastZero;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(f32(0.0));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-cast-zero",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+    assert_absent("div-float-cast-zero", &emitted, "q = (x /");
+}
+
+#[test]
+fn should_not_trap_a_float_divisor_that_truncates_to_one() {
+    let emitted = emit(
+        "div-float-cast-one",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatCastOne;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(f32(0.5) + f32(0.5));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent(
+        "div-float-cast-one",
+        &emitted,
+        "((void)(x), cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+}
+
+#[test]
+fn should_keep_a_byte_non_constant_fill_unrolled_below_64_and_compact_at_64() {
+    let small = emit(
+        "fill-byte-nonconst-small",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplByteNonconstSmall;
+volatile let seed: u8 = 3;
+func main(): i32 {
+    let a: u8[63] = [; seed];
+    return i32(a[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-byte-nonconst-small", &small, "for (__cl_fill_");
+    let threshold = emit(
+        "fill-byte-nonconst-threshold",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplByteNonconstThreshold;
+volatile let seed: u8 = 3;
+func main(): i32 {
+    let a: u8[64] = [; seed];
+    return i32(a[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("fill-byte-nonconst-threshold", &threshold, "a[63] = cl_bench_ImplByteNonconstThreshold_seed;");
+}

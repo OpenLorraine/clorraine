@@ -95,7 +95,7 @@ red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
 **After the change:** `generated_c_optimization_spec_test` has 36 passing
-cases and `generated_c_optimization_impl_test` has 34 passing pins. The
+cases and `generated_c_optimization_impl_test` has 37 passing pins. The
 fix-pass cases cover volatile targets on every fill path, integer consts
 through float casts, unsigned unary divisors, binary/float zero divisors,
 the 63/64 non-byte threshold, and the materialized conditional.
@@ -161,6 +161,7 @@ pinned by the expanded suites:
 | Second fix pass: the 63/64 non-byte threshold and byte non-constant threshold were unpinned | MINOR | Added the 63/64 impl case; a byte non-constant uses the 64 loop threshold |
 | Second fix pass: the `DerefTemp` volatile alias could compact | MINOR | `fill_target_compactable` rejects a `DerefTemp` target; the shape is not strict-valid today and remains recorded as a conservative gate |
 | Second fix pass: trace timeout left the child unreaped | MINOR | The timeout path kills, waits, and closes both streams; the stub-`vamos` test covers it |
+| Third fix pass: only a direct `i32(0.0)` float zero was recognized; `i32(0.5)`, nested casts, `-0.0`, and float arithmetic zeros failed the strict build | MAJOR | `constant_zero_value` now evaluates the float expression at its own width, rounds `f32` at every cast/operation, applies the integer cast, and compares the truncated value to zero. Pinned by the truncating/nested-cast and float-to-one spec/impl cases |
 
 ## Pre-existing Defects (outside this change)
 

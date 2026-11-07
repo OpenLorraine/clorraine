@@ -4025,7 +4025,8 @@ impl<'a> Emitter<'a> {
     /// assign an array in one statement, so a multi-extent type is filled one
     /// dimension deeper: an element that is itself an array literal recurses
     /// against the indexed sub-target instead of writing a rejected brace
-    /// list.
+    /// list. `compact` selects the loop or `memset` form for a covered scalar
+    /// fill; a field, volatile, alias, or materialized target passes `false`.
     pub(super) fn emit_array_assign_to(
         &mut self,
         target: &ArrayTarget,

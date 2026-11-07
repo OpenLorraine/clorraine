@@ -1001,17 +1001,43 @@ func main(): i32 {
 "#,
         "error E11210: integer division by zero",
     );
-    assert_trap(
-        "div-float-zero",
-        r#"
+    for (tag, divisor) in [
+        ("div-float-zero", "i32(0.0)"),
+        ("div-float-half", "i32(0.5)"),
+        ("div-float-nested", "i32(f32(0.0))"),
+        ("div-float-negative-zero", "i32(-0.0)"),
+        ("div-float-sum", "i32(0.0 + 0.0)"),
+    ] {
+        assert_trap(
+            tag,
+            &format!(
+                r#"
 module bench.FloatZero;
+func main(): i32 {{
+    let x: i32 = 7;
+    let q: i32 = x / {divisor};
+    return q;
+}}
+"#
+            ),
+            "error E11210: integer division by zero",
+        );
+    }
+    assert_output(
+        "div-float-one",
+        r#"
+module bench.FloatOne;
+import { println } from std.io;
 func main(): i32 {
     let x: i32 = 7;
-    let q: i32 = x / i32(0.0);
-    return q;
+    let a: i32 = x / i32(f32(0.5) + f32(0.5));
+    let b: i32 = x / i32(f32(0.99999999));
+    println($"float-one: {a} {b}");
+    return 0;
 }
 "#,
-        "error E11210: integer division by zero",
+        "float-one: 7 7
+",
     );
 }
 
