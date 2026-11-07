@@ -1,0 +1,11 @@
+// A runtime fault from a pure fill's bounds guard. The host suite covers the
+// same shape under AddressSanitizer; this program is the target-side parity
+// probe for `run-fault-amiga.sh`.
+module robustness.FillBounds;
+
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[8] = [; src[i]];
+    return i32(a[0]);
+}

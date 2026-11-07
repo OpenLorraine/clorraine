@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the six runtime-fault programs on the hosted-amiga profile under vamos.
+# Run the eight runtime-fault programs on the hosted-amiga profile under vamos.
 #
 # Each program must compile with zero diagnostics on the hosted-amiga profile,
 # build warning-free with the m68k GCC toolchain, print the exact fault line as
@@ -16,14 +16,12 @@
 #   GCC      m68k GCC command       (default: m68k-amigaos-gcc)
 #   VAMOS    emulator command       (default: vamos)
 #   OUTDIR   build output directory (default: build/corpus/run-fault)
-#   RUN_DIR  run-suite directory    (default: spec/tests/run)
 set -euo pipefail
 
 CLC="${CLC:-./target/debug/clc}"
 GCC="${GCC:-m68k-amigaos-gcc}"
 VAMOS="${VAMOS:-vamos}"
 OUTDIR="${OUTDIR:-build/corpus/run-fault}"
-RUN_DIR="${RUN_DIR:-spec/tests/run}"
 
 GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror)
 
@@ -32,14 +30,18 @@ GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror)
 # the program did not reach its fault and must fail the leg.
 TRAP_EXIT=20
 
-# Each entry is `<program>|<expected first output line>`.
+# Each entry is `<program>|<source path>|<expected first output line>`.
+# The six frozen faults stay under spec/tests/run; the two closeout probes live
+# under examples/robustness and share the same fault contract.
 CASES=(
-    "E11210_division_by_zero|error E11210: integer division by zero"
-    "E11210_min_neg_one|error E11210: integer division by zero"
-    "E11211_index_out_of_range|error E11211: index out of range"
-    "E11212_float_to_int_range|error E11212: float-to-integer conversion out of range"
-    "E11212_nan_float_to_int|error E11212: float-to-integer conversion out of range"
-    "E11213_assertion_failed|error E11213: assertion failed"
+    "E11210_division_by_zero|spec/tests/run/E11210_division_by_zero.clo|error E11210: integer division by zero"
+    "E11210_min_neg_one|spec/tests/run/E11210_min_neg_one.clo|error E11210: integer division by zero"
+    "E11211_index_out_of_range|spec/tests/run/E11211_index_out_of_range.clo|error E11211: index out of range"
+    "E11212_float_to_int_range|spec/tests/run/E11212_float_to_int_range.clo|error E11212: float-to-integer conversion out of range"
+    "E11212_nan_float_to_int|spec/tests/run/E11212_nan_float_to_int.clo|error E11212: float-to-integer conversion out of range"
+    "E11213_assertion_failed|spec/tests/run/E11213_assertion_failed.clo|error E11213: assertion failed"
+    "fill-bounds|examples/robustness/fill-bounds.clo|error E11211: index out of range"
+    "fill-divisor|examples/robustness/fill-divisor.clo|error E11210: integer division by zero"
 )
 
 if [ ! -x "${CLC}" ]; then
@@ -50,14 +52,16 @@ fi
 status=0
 for entry in "${CASES[@]}"; do
     name="${entry%%|*}"
-    want="${entry#*|}"
+    rest="${entry#*|}"
+    source="${rest%%|*}"
+    want="${rest#*|}"
     work="${OUTDIR}/${name}"
     rm -rf "${work}"
     mkdir -p "${work}"
 
     echo "run-fault-amiga: ${name}: emit and build"
 
-    "${CLC}" --profile hosted-amiga -o "${work}/program.c" "${RUN_DIR}/${name}.clo"
+    "${CLC}" --profile hosted-amiga -o "${work}/program.c" "${source}"
     "${GCC}" "${GCC_FLAGS[@]}" -o "${work}/program" "${work}/program.c" -lamiga -lm
 
     abs_program="$(cd "${work}" && pwd)/program"
@@ -87,6 +91,6 @@ done
 if [ "${status}" -ne 0 ]; then
     echo "run-fault-amiga: FAILED" >&2
 else
-    echo "run-fault-amiga: all six faults match on hosted-amiga"
+    echo "run-fault-amiga: all eight faults match on hosted-amiga"
 fi
 exit "${status}"

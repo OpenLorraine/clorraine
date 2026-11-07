@@ -1,9 +1,17 @@
 // A build-only fixture for the generated-C shapes: a folded const in a loop,
 // a byte fill, an integer fill, a slice constant index, an adjusted-parameter
-// fill, a hidden-return fill, and a constant division.
+// fill, a hidden-return fill, a constant division, and the robustness
+// closeout shapes (narrow consts, a narrow fill, an f32 const, an enum, and a
+// guarded slice fill).
 module bench.Shapes;
 
 const N: i32 = 64;
+const U8W: u8 = u8(200) + u8(100);
+const U16W: u16 = u16(65535) * u16(65535);
+const F: f32 = (f32(16777216.0) + f32(1.0)) - f32(16777216.0);
+
+enum Mode: u8 { Off, On = 4, Ready }
+const M: i32 = i32(Mode.Ready);
 
 func fill(borrow a: u8[N]): void {
     a = [; 1];
@@ -13,10 +21,16 @@ func make(): u8[N] {
     return [; 1];
 }
 
+func pick(src: i32[], i: i32): i32 {
+    let a: i32[4] = [; src[i]];
+    return a[0];
+}
+
 func main(): i32 {
     let a: u8[N] = [; 1];
     let b: i32[N] = [; 7];
     let d: u8[20] = [2, 3; 4];
+    let nf: u8[4] = [; u8(200) + u8(100)];
     let s: str = "abcd";
     let x: u8 = s[1];
     let r: i32 = 10 % 2;
@@ -28,5 +42,5 @@ func main(): i32 {
         total = total + b[i];
         i = i + 1;
     }
-    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]);
+    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M;
 }
