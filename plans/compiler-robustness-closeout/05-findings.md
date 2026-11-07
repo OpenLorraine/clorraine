@@ -26,9 +26,9 @@
 | Red (float) | `f: 44` |
 | Red (struct) | `s: 0` |
 | Red (module count) | two guards before `[0]`, five for four elements |
-| Fix | `init_fill_guards_emitted`; pure branch; module dedup; conditional arm |
-| Green | pending |
-| Review | pending |
+| Fix | `init_fill_guards_emitted`; pure branch; module array dedup; struct-literal walk; conditional arm re-enable |
+| Green | spec 13/13, impl 11/11; focused `RDC_ASAN` 13/13; `make check` green |
+| Review | correctness RV-001 (module struct duplicate) fixed and re-reviewed clean; memory-safety MS-001/MS-002 fixed, 87 probes, 0 ASan/LSan reports |
 
 ### D2/D4 — Narrow wrapping
 
@@ -96,7 +96,7 @@
 |---|---|---|
 | Requirements | 2 independent auditors | 36 findings resolved; user E10202 ruling |
 | Plan | 2 independent auditors + focused re-scan | 45 + 14 findings resolved |
-| D1 | pending | |
+| D1 | correctness reviewer + memory-safety auditor | RV-001 fixed; MS-001/MS-002 fixed; re-review clean; 87 ASan/LSan probes, no report |
 | D2/D3 | pending | |
 | D4/D6 | pending | |
 | Fuzzer | pending | |
@@ -107,6 +107,8 @@
 | Limitation | Reason |
 |---|---|
 | A statement pure conditional fill repeats its condition expression per element | Pre-existing evaluation-order shape; the guard fix does not hoist it. The module path hoists the condition. Recorded in `docs/known-limitations.md`. |
+| A module fill that covers no slot with an impure or struct value emits an unused prepared local | Pre-existing strict-build limitation found during the D1 review (base and head); outside the guard fix. Recorded in `docs/known-limitations.md`. |
+| A fixed-array row-place field emits the row bounds guard twice | Pre-existing duplicate guard in the row-copy path (base and head); no memory-safety impact. Recorded as a code-size limit. |
 | The fuzzer's differential cannot detect a shared host/m68k wrong value | The committed seed goldens and the spec suites are the value oracle. |
 | The fuzzer is a bounded template grammar, not coverage-guided | No new dependency; determinism is required for the gate. |
 

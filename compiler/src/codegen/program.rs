@@ -1752,7 +1752,13 @@ impl<'a> Emitter<'a> {
         let prepared = self.prepare_fill_value(value, None);
         let prepared = self.retain_view_array_fill_root(&prepared);
         let (prepared, move_outs) = self.retain_view_array_roots(&prepared);
+        // The preparation emitted the fill operand guards at its source
+        // position. The element stores must not repeat them once per element;
+        // the flag is restored so a later statement fill still guards itself.
+        let saved_fill_guards = self.init_fill_guards_emitted;
+        self.init_fill_guards_emitted = true;
         self.emit_filled_array(target, ty, &prepared);
+        self.init_fill_guards_emitted = saved_fill_guards;
         for move_out in move_outs {
             self.push(&format!("    {move_out};"));
         }
@@ -1839,7 +1845,9 @@ impl<'a> Emitter<'a> {
                 self.emit_filled_array(&sub_target, &row_ty, &element_value);
                 continue;
             }
-            self.emit_guards(&element_value);
+            if !self.init_fill_guards_emitted {
+                self.emit_guards(&element_value);
+            }
             let text = self.store_text(&element_value, &row_ty);
             self.push(&format!("    {sub_target} = {text};"));
         }
@@ -2217,10 +2225,14 @@ impl<'a> Emitter<'a> {
         };
         let target_c = self.place(&target);
         let saved_walked_guards = self.init_walked_guards;
+        let saved_fill_guards = self.init_fill_guards_emitted;
         // Under a branch guard the walk leaves operand guards to the store
         // core, which runs them inside the arm. Only the unguarded path has
-        // already emitted them.
+        // already emitted them. The fill-guard flag follows the same rule so a
+        // module struct literal's fixed-array field is guarded once, while a
+        // conditional arm (never walked) still gets its own guard.
         self.init_walked_guards = guard.is_none();
+        self.init_fill_guards_emitted = guard.is_none();
         let mut stored_fields = fields;
         let mut guarded_move_outs = Vec::new();
         if let Some(enclosing) = guard {
@@ -2257,6 +2269,7 @@ impl<'a> Emitter<'a> {
             }
         }
         self.init_walked_guards = saved_walked_guards;
+        self.init_fill_guards_emitted = saved_fill_guards;
         if !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(&ty) {
             // The literal owns fields, so the release pass frees them at the
             // init function's end; a view destination registers the local

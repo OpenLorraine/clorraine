@@ -1,0 +1,335 @@
+//! Emission pins for the compiler robustness closeout.
+//!
+//! The red pins fail on the starting compiler; the green pins are regression
+//! guards for forms the change must leave alone. Guard counts are scoped to the
+//! generated function or initializer body, so the runtime shim's own `cl_trap`
+//! definition and helpers do not pollute them.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    fn new(tag: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "clc-robustness-impl-{}-{tag}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path)
+            .unwrap_or_else(|error| panic!("cannot create {}: {error}", path.display()));
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn run_clc(args: &[String]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(args)
+        .output()
+        .expect("failed to spawn the compiler binary")
+}
+
+fn emit(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|error| panic!("{tag}: write the source: {error}"));
+    let output_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&output_path).expect("read the emitted C")
+}
+
+/// Returns the text of one generated function or initializer body.
+///
+/// The emitted C also carries a prototype for each function, so the search
+/// matches the definition's header followed by an opening brace, never the
+/// prototype's semicolon.
+fn body<'a>(tag: &str, emitted: &'a str, header: &str) -> &'a str {
+    let definition = format!("{header}\n{{");
+    let start = emitted
+        .find(&definition)
+        .unwrap_or_else(|| panic!("{tag}: emitted C has no definition for {header:?}"));
+    let rest = &emitted[start..];
+    let end = rest.find("\n}").map(|index| index + 2).unwrap_or(rest.len());
+    &rest[..end]
+}
+
+fn count(haystack: &str, needle: &str) -> usize {
+    haystack.match_indices(needle).count()
+}
+
+fn trap_count(body: &str) -> usize {
+    count(body, "cl_trap(\"E1121")
+}
+
+fn assert_absent(tag: &str, haystack: &str, needle: &str) {
+    assert!(
+        !haystack.contains(needle),
+        "{tag}: emitted C unexpectedly contains {needle:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D1 — fill guard counts
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_emit_one_guard_per_pure_statement_fill() {
+    let emitted = emit(
+        "fill-guard-count",
+        r#"
+module fuzz.FillGuardCount;
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[4] = [; src[i]];
+    return i32(a[0]);
+}
+"#,
+    );
+    let main = body("fill-guard-count", &emitted, "static i32 cl_fuzz_FillGuardCount_main(void)");
+    assert_eq!(trap_count(main), 1, "fill-guard-count: expected one bounds guard");
+}
+
+#[test]
+fn should_emit_one_guard_for_a_module_array() {
+    let emitted = emit(
+        "module-fill-count",
+        r#"
+module fuzz.ModuleFillCount;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let plain: u8[4] = [; src[i]];
+func main(): i32 {
+    return i32(plain[0]);
+}
+"#,
+    );
+    let init = body("module-fill-count", &emitted, "static void cl_init_fuzz_ModuleFillCount(void)");
+    assert_eq!(trap_count(init), 1, "module-fill-count: expected one fill guard");
+}
+
+#[test]
+fn should_emit_one_guard_per_prefix_element_and_fill() {
+    let emitted = emit(
+        "module-prefix-count",
+        r#"
+module fuzz.ModulePrefixCount;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let j: i32 = 10;
+let plain: u8[4] = [src[i], 7; src[j]];
+func main(): i32 {
+    return i32(plain[0]);
+}
+"#,
+    );
+    let init = body("module-prefix-count", &emitted, "static void cl_init_fuzz_ModulePrefixCount(void)");
+    assert_eq!(
+        trap_count(init),
+        2,
+        "module-prefix-count: one guard for the prefix element and one for the fill"
+    );
+}
+
+#[test]
+fn should_restore_the_fill_guard_flag_after_a_module_fill() {
+    let emitted = emit(
+        "module-flag-restore",
+        r#"
+module fuzz.ModuleFlagRestore;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let j: i32 = 10;
+let first: u8[4] = [; src[i]];
+let second: u8[4] = [; src[j]];
+func main(): i32 {
+    let a: u8[4] = [; src[i]];
+    return i32(a[0]) + i32(first[0]) + i32(second[0]);
+}
+"#,
+    );
+    let init = body("module-flag-restore", &emitted, "static void cl_init_fuzz_ModuleFlagRestore(void)");
+    let main = body("module-flag-restore", &emitted, "static i32 cl_fuzz_ModuleFlagRestore_main(void)");
+    assert_eq!(
+        trap_count(init),
+        2,
+        "module-flag-restore: each module fill keeps its own guard"
+    );
+    assert_eq!(trap_count(main), 1, "module-flag-restore: the statement fill keeps its guard");
+}
+
+#[test]
+fn should_emit_one_guard_for_a_struct_literal_field() {
+    let emitted = emit(
+        "struct-fill-count",
+        r#"
+module fuzz.StructFillCount;
+struct S { a: u8[4]; }
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let s: S = S { a: [; src[i]] };
+    return i32(s.a[0]);
+}
+"#,
+    );
+    let main = body("struct-fill-count", &emitted, "static i32 cl_fuzz_StructFillCount_main(void)");
+    assert_eq!(trap_count(main), 1, "struct-fill-count: expected one field guard");
+}
+
+#[test]
+fn should_emit_one_guard_for_a_module_struct_literal_field() {
+    let emitted = emit(
+        "module-struct-count",
+        r#"
+module fuzz.ModuleStructCount;
+struct S { a: u8[4]; }
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S = S { a: [; src[i]] };
+func main(): i32 {
+    return i32(s.a[0]);
+}
+"#,
+    );
+    let init = body("module-struct-count", &emitted, "static void cl_init_fuzz_ModuleStructCount(void)");
+    assert_eq!(trap_count(init), 1, "module-struct-count: the walk guard is the only copy");
+}
+
+#[test]
+fn should_emit_two_guards_for_a_module_struct_prefix_and_fill() {
+    let emitted = emit(
+        "module-struct-prefix-count",
+        r#"
+module fuzz.ModuleStructPrefixCount;
+struct S { a: u8[4]; }
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let j: i32 = 10;
+let s: S = S { a: [src[i], 7; src[j]] };
+func main(): i32 {
+    return i32(s.a[0]);
+}
+"#,
+    );
+    let init = body("module-struct-prefix-count", &emitted, "static void cl_init_fuzz_ModuleStructPrefixCount(void)");
+    assert_eq!(
+        trap_count(init),
+        2,
+        "module-struct-prefix-count: one prefix guard and one fill guard"
+    );
+}
+
+#[test]
+fn should_emit_one_guard_for_a_module_array_of_structs_conditional_field() {
+    let emitted = emit(
+        "module-struct-array-count",
+        r#"
+module fuzz.ModuleStructArrayCount;
+struct S { a: u8[4]; }
+let flag: i32 = 1;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S[2] = [; S { a: flag != 0 ? [; src[i]] : [; src[0]] }];
+func main(): i32 {
+    return i32(s[0].a[0]);
+}
+"#,
+    );
+    let init = body("module-struct-array-count", &emitted, "static void cl_init_fuzz_ModuleStructArrayCount(void)");
+    assert_eq!(
+        trap_count(init),
+        1,
+        "module-struct-array-count: the selected arm carries one guard"
+    );
+}
+
+#[test]
+fn should_emit_one_guard_for_a_guarded_fill_condition() {
+    let emitted = emit(
+        "fill-condition-count",
+        r#"
+module fuzz.FillConditionCount;
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[4] = [; src[i] != 0 ? 1 : 2];
+    return i32(a[0]);
+}
+"#,
+    );
+    let main = body("fill-condition-count", &emitted, "static i32 cl_fuzz_FillConditionCount_main(void)");
+    assert_eq!(
+        trap_count(main),
+        1,
+        "fill-condition-count: the condition guard runs once"
+    );
+}
+
+#[test]
+fn should_emit_one_guard_for_a_module_struct_guarded_condition() {
+    let emitted = emit(
+        "module-struct-cond-count",
+        r#"
+module fuzz.ModuleStructCondCount;
+struct S { a: u8[4]; }
+let src: u8[4] = [1, 2, 3, 4];
+let j: i32 = 10;
+let s: S = S { a: src[j] != 0 ? [; 1] : [; 2] };
+func main(): i32 {
+    return i32(s.a[0]);
+}
+"#,
+    );
+    let init = body("module-struct-cond-count", &emitted, "static void cl_init_fuzz_ModuleStructCondCount(void)");
+    assert_eq!(
+        trap_count(init),
+        1,
+        "module-struct-cond-count: the walk condition guard is the only copy"
+    );
+}
+
+#[test]
+fn should_emit_no_guard_for_a_guard_free_fill() {
+    let emitted = emit(
+        "guard-free-count",
+        r#"
+module fuzz.GuardFreeCount;
+func main(): i32 {
+    let a: u8[4] = [; 7];
+    return i32(a[0]);
+}
+"#,
+    );
+    let main = body("guard-free-count", &emitted, "static i32 cl_fuzz_GuardFreeCount_main(void)");
+    assert_eq!(trap_count(main), 0, "guard-free-count: no guard is expected");
+    assert_absent("guard-free-count", main, "E11211");
+}

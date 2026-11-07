@@ -1044,8 +1044,8 @@ func main(): i32 {
     let emitted = emit_host("pin-fill-element", source);
     assert_eq!(
         count_occurrences(&emitted, "if ((__cl_itmp0 < 0)"),
-        2,
-        "pin-fill-element: the walk's guard and the element store's guard are the only copies"
+        1,
+        "pin-fill-element: the initializer walk guards the element once; the element store must not repeat it"
     );
     assert_run_exit("pin-fill-element-run", source, 17);
 }

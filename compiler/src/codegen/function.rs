@@ -2127,9 +2127,13 @@ impl<'a> Emitter<'a> {
         literal_self_read: bool,
     ) {
         if !self.needs_drop(ty) {
-            self.emit_guards(condition);
+            if !self.init_fill_guards_emitted {
+                self.emit_guards(condition);
+            }
             let condition_c = self.value(condition);
             self.push(&format!("    if ({condition_c}) {{"));
+            let saved_fill_guards = self.init_fill_guards_emitted;
+            self.init_fill_guards_emitted = false;
             self.emit_fixed_array_assign_arm(
                 target,
                 ty,
@@ -2146,6 +2150,7 @@ impl<'a> Emitter<'a> {
                 literal_self_read,
             );
             self.push("    }");
+            self.init_fill_guards_emitted = saved_fill_guards;
             return;
         }
         // The old target must survive until the chosen arm has been stored,
@@ -2203,7 +2208,9 @@ impl<'a> Emitter<'a> {
             live_captures.push(capture);
         }
         let saved_capture = std::mem::replace(&mut self.take_capture, live_captures);
-        self.emit_guards(condition);
+        if !self.init_fill_guards_emitted {
+            self.emit_guards(condition);
+        }
         let condition_c = self.value(condition);
         if has_capture {
             // Settle the take range before either arm runs, exactly as the
@@ -2223,6 +2230,8 @@ impl<'a> Emitter<'a> {
         } else {
             self.push(&format!("        if ({condition_c}) {{"));
         }
+        let saved_fill_guards = self.init_fill_guards_emitted;
+        self.init_fill_guards_emitted = false;
         self.emit_fixed_array_assign_arm(
             target,
             ty,
@@ -2239,6 +2248,7 @@ impl<'a> Emitter<'a> {
             literal_self_read,
         );
         self.push("        }");
+        self.init_fill_guards_emitted = saved_fill_guards;
         // An arm-time take records the flag only while the chosen arm runs;
         // clear the consumed save subrange after the branch as the scalar
         // conditional store does.
@@ -2731,13 +2741,18 @@ impl<'a> Emitter<'a> {
         then_value: &Value,
         else_value: &Value,
     ) {
-        self.emit_guards(condition);
+        if !self.init_fill_guards_emitted {
+            self.emit_guards(condition);
+        }
         let condition_c = self.value(condition);
         self.push(&format!("    if ({condition_c}) {{"));
+        let saved_fill_guards = self.init_fill_guards_emitted;
+        self.init_fill_guards_emitted = false;
         self.emit_struct_value_store_arm(target_c, ty, then_value);
         self.push("    } else {");
         self.emit_struct_value_store_arm(target_c, ty, else_value);
         self.push("    }");
+        self.init_fill_guards_emitted = saved_fill_guards;
     }
 
     /// Stores one arm of a duplicable struct conditional into the target.
@@ -4218,8 +4233,14 @@ impl<'a> Emitter<'a> {
             }
         }
         // A pure fill has no effect to repeat, so its expression keeps the
-        // direct per-element spelling and the existing emission pins.
+        // direct per-element spelling and the existing emission pins. Its
+        // operand guards still run once, before the first store: the pure
+        // branch used to return before the guard step and dropped bounds,
+        // division, and float-to-integer checks.
         if super::program::init_operand_is_pure(fill) {
+            if !self.init_fill_guards_emitted {
+                self.emit_guards(fill);
+            }
             let lowered = self.store_text(fill, element);
             let constant = super::expr::constant_fill_integer(fill);
             if compact && self.should_compact_fill(element, extent.saturating_sub(prefix), constant) {
@@ -4234,8 +4255,11 @@ impl<'a> Emitter<'a> {
         // An impure fill evaluates once into a temporary and the temporary is
         // copied to each covered element. Rendering the expression per element
         // would re-run a call or conditional; the literal check already rejects
-        // a non-duplicable fill value, so the copy is safe.
-        self.emit_guards(fill);
+        // a non-duplicable fill value, so the copy is safe. The preparation
+        // may have guarded this operand already on the module path.
+        if !self.init_fill_guards_emitted {
+            self.emit_guards(fill);
+        }
         let local = self.unique_local("__cl_fill");
         self.push(&format!(
             "    {} = {};",

@@ -195,6 +195,16 @@ pub(super) struct Emitter<'a> {
     /// the operand's source position. The fixed-array store core would emit
     /// them again, so this flag suppresses the second copy for that path.
     pub(super) init_walked_guards: bool,
+    /// True while the stores about to run may reuse guards the walk already
+    /// emitted.
+    ///
+    /// The module initializer walk emits each operand's runtime guards at the
+    /// operand's source position. The store core would emit them again, so this
+    /// flag suppresses the second copy for a whole module array fill and for a
+    /// module struct-literal field. A conditional arm is never walked, so the
+    /// store core clears the flag for arm stores; every set is saved and
+    /// restored around its walk.
+    pub(super) init_fill_guards_emitted: bool,
     /// Materializations whose fill was already emitted as a statement.
     ///
     /// A loop condition whose right `&&` operand carries a conditional
@@ -396,6 +406,7 @@ impl<'a> Emitter<'a> {
             init_select: program::ViewSelect::Whole,
             init_skip_owner_binding: false,
             init_walked_guards: false,
+            init_fill_guards_emitted: false,
             prefilled_materializations: BTreeSet::new(),
             value_aliases: BTreeMap::new(),
             prefill_branch_depth: 0,

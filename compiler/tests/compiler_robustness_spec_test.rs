@@ -1,0 +1,403 @@
+//! Behavior oracle for the compiler robustness closeout.
+//!
+//! The cases derive from the requirements: fill operand guards, narrow
+//! arithmetic wrapping, the inline shift divisor, `f32` folding, and enum
+//! member values and conversions. The emitted shapes are pinned separately in
+//! the implementation suite.
+//!
+//! The suite opts into both sanitizer legs. `RDC_ASAN` adds AddressSanitizer to
+//! every child build; `RDC_UBSAN` adds UndefinedBehaviorSanitizer. The
+//! `-no-pie` link is supplied by the sanitizer runner's `cc` wrapper.
+
+const _ASAN_SUITE: &str = "RDC_ASAN";
+const _UBSAN_SUITE: &str = "RDC_UBSAN";
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Temporary directory that removes itself when the test finishes.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    fn new(tag: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "clc-robustness-{}-{tag}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path)
+            .unwrap_or_else(|error| panic!("cannot create {}: {error}", path.display()));
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// The compiler under test. `RDC_CLC` lets a recorded base binary run the same
+/// case; the built binary is the default.
+fn clc_path() -> String {
+    std::env::var("RDC_CLC").unwrap_or_else(|_| env!("CARGO_BIN_EXE_clc").to_owned())
+}
+
+fn run_clc(args: &[String]) -> Output {
+    Command::new(clc_path())
+        .args(args)
+        .output()
+        .expect("failed to spawn the compiler binary")
+}
+
+/// Emits a host program and returns its C and the scratch directory.
+fn emit_host(tag: &str, source: &str) -> (ScratchDir, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|error| panic!("{tag}: write the source: {error}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).expect("read the emitted C");
+    assert!(!emitted.trim().is_empty(), "{tag}: the emitted C is empty");
+    (scratch, emitted)
+}
+
+/// Adds the active sanitizer flags to a host C build command.
+fn sanitizer_flags() -> Vec<&'static str> {
+    let mut flags = Vec::new();
+    if std::env::var_os("RDC_ASAN").is_some() {
+        flags.extend(["-fsanitize=address", "-fno-omit-frame-pointer"]);
+    }
+    if std::env::var_os("RDC_UBSAN").is_some() {
+        flags.extend(["-fsanitize=undefined", "-fno-sanitize-recover=all"]);
+    }
+    flags
+}
+
+/// Builds emitted C with the strict host flags and the active sanitizers.
+fn build_host(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let mut command = Command::new("cc");
+    command.args(["-std=c99", "-O0", "-g", "-Wall", "-Wextra", "-Werror"]);
+    command.args(sanitizer_flags());
+    command.args([
+        "-o",
+        program.to_str().expect("program path"),
+        c_path.to_str().expect("C path"),
+    ]);
+    let built = command.output().expect("spawn cc");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    program
+}
+
+/// Runs a program and returns its exit code, stdout, and stderr.
+fn run_program(tag: &str, source: &str) -> (i32, String, String) {
+    let (scratch, emitted) = emit_host(tag, source);
+    let program = build_host(tag, &scratch, &emitted);
+    let output = Command::new(&program).output().expect("run the program");
+    let code = output
+        .status
+        .code()
+        .unwrap_or_else(|| signal_code(output.status));
+    (
+        code,
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// A signal death is reported as a negative number, matching the shell's
+/// negative-signal convention without depending on the platform's signal
+/// values.
+fn signal_code(status: std::process::ExitStatus) -> i32 {
+    if status.success() {
+        0
+    } else {
+        -1
+    }
+}
+
+fn assert_output(tag: &str, source: &str, expected: &str) {
+    let (code, stdout, stderr) = run_program(tag, source);
+    assert_eq!(code, 0, "{tag}: exit {code}; stderr:\n{stderr}");
+    assert_eq!(stdout, expected, "{tag}: unexpected stdout");
+}
+
+fn assert_trap(tag: &str, source: &str, first_line: &str) {
+    let (code, _stdout, stderr) = run_program(tag, source);
+    assert_ne!(code, 0, "{tag}: a trap must exit nonzero");
+    let first = stderr.lines().next().unwrap_or_default();
+    assert_eq!(first, first_line, "{tag}: unexpected first stderr line");
+    assert!(
+        !stderr.contains("AddressSanitizer"),
+        "{tag}: the run reported a memory error; stderr:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D1 — fill operand guards
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_guard_a_runtime_index_in_a_pure_fill() {
+    assert_trap(
+        "fill-bounds",
+        r#"
+module fuzz.FillBounds;
+import { println } from std.io;
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[8] = [; src[i]];
+    println($"a: {i32(a[0])}");
+    return 0;
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_trap_on_a_runtime_zero_divisor_in_a_pure_fill() {
+    assert_trap(
+        "fill-divisor",
+        r#"
+module fuzz.FillDivisor;
+func main(): i32 {
+    let d: u8 = 0;
+    let a: u8[4] = [; u8(10) / d];
+    return i32(a[0]);
+}
+"#,
+        "error E11210: integer division by zero",
+    );
+}
+
+#[test]
+fn should_trap_on_an_out_of_range_float_fill() {
+    assert_trap(
+        "fill-float",
+        r#"
+module fuzz.FillFloat;
+func main(): i32 {
+    let f: f32 = f32(300.0);
+    let a: i8[4] = [; i8(f)];
+    return i32(a[0]);
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_struct_literal_array_field() {
+    assert_trap(
+        "struct-fill-bounds",
+        r#"
+module fuzz.StructFillBounds;
+struct S { a: u8[4]; }
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let s: S = S { a: [; src[i]] };
+    return i32(s.a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_module_conditional_struct_array_field() {
+    assert_trap(
+        "module-cond-struct",
+        r#"
+module fuzz.ModuleCondStruct;
+struct S { a: u8[4]; }
+let flag: i32 = 1;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S = S { a: flag != 0 ? [; src[i]] : [; src[0]] };
+func main(): i32 {
+    return i32(s.a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_keep_the_scalar_conditional_fill_guard() {
+    // The scalar conditional arm is already guarded by the value renderer; this
+    // is a control that the fill lowering does not move the guard across the
+    // condition.
+    assert_trap(
+        "scalar-cond-fill",
+        r#"
+module fuzz.ScalarCondFill;
+let flag: i32 = 1;
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[4] = [; flag != 0 ? src[i] : src[0]];
+    return i32(a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_conditional_struct_array_field() {
+    assert_trap(
+        "local-cond-struct",
+        r#"
+module fuzz.LocalCondStruct;
+struct S { a: u8[4]; }
+func main(): i32 {
+    let flag: i32 = 1;
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let s: S = S { a: flag != 0 ? [; src[i]] : [; src[0]] };
+    return i32(s.a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_module_array_fill() {
+    assert_trap(
+        "module-array-bounds",
+        r#"
+module fuzz.ModuleArrayBounds;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let a: u8[8] = [; src[i]];
+func main(): i32 {
+    return i32(a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_module_array_of_structs_conditional_field() {
+    assert_trap(
+        "module-struct-array",
+        r#"
+module fuzz.ModuleStructArray;
+struct S { a: u8[4]; }
+let flag: i32 = 1;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S[2] = [; S { a: flag != 0 ? [; src[i]] : [; src[0]] }];
+func main(): i32 {
+    return i32(s[0].a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_fill_condition() {
+    assert_trap(
+        "fill-condition",
+        r#"
+module fuzz.FillCondition;
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[4] = [; src[i] != 0 ? 1 : 2];
+    return i32(a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_guard_a_module_struct_literal_array_field() {
+    assert_trap(
+        "module-struct-field",
+        r#"
+module fuzz.ModuleStructField;
+struct S { a: u8[4]; }
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S = S { a: [; src[i]] };
+func main(): i32 {
+    return i32(s.a[0]);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_keep_an_unselected_conditional_arm_lazy() {
+    assert_output(
+        "module-struct-lazy",
+        r#"
+module fuzz.ModuleStructLazy;
+import { println } from std.io;
+struct S { a: u8[4]; }
+let flag: i32 = 0;
+let src: u8[4] = [1, 2, 3, 4];
+let i: i32 = 10;
+let s: S = S { a: flag != 0 ? [; src[i]] : [; src[0]] };
+func main(): i32 {
+    println($"v: {i32(s.a[0])}");
+    return 0;
+}
+"#,
+        "v: 1\n",
+    );
+}
+
+#[test]
+fn should_keep_a_guard_free_fill_unchanged() {
+    assert_output(
+        "fill-guard-free",
+        r#"
+module fuzz.FillGuardFree;
+import { println } from std.io;
+func main(): i32 {
+    let a: u8[4] = [; 7];
+    println($"v: {i32(a[0])} {i32(a[3])}");
+    return 0;
+}
+"#,
+        "v: 7 7\n",
+    );
+}

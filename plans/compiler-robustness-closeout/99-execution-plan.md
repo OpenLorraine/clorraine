@@ -98,26 +98,27 @@ tasks are committed together with the fix they prove, so no commit is red.
 **Objective**: Emit the operand guards a pure fill lost, on every path that
 reaches it, with the documented once-per-site rule.
 
-- [ ] 1.1.1 [spec-author] Add the D1 spec cases (bounds, division, float,
+- [x] 1.1.1 [spec-author] Add the D1 spec cases (bounds, division, float,
   struct, scalar conditional, conditional struct, module conditional, module
-  count, prefix count) with the expected fault lines and ASan opt-in; run red
-  against the starting compiler
-- [ ] 1.1.2 [impl-author] Add the D1 guard-count pins scoped to the
-  function/init body; run red
-- [ ] 1.1.3 Implement `init_fill_guards_emitted`, the pure-branch emission,
-  the module dedup including prefix elements, and the module conditional arm
-  handling
-- [ ] 1.1.4 Verify the focused cases, `RDC_ASAN=1 cargo test --test
+  count, prefix count, laziness) with the expected fault lines and ASan
+  opt-in; run red against the starting compiler ✅ (completed: 2026-11-07 21:20)
+- [x] 1.1.2 [impl-author] Add the D1 guard-count pins scoped to the
+  function/init body; run red ✅ (completed: 2026-11-07 21:20)
+- [x] 1.1.3 Implement `init_fill_guards_emitted`, the pure-branch emission,
+  the module dedup including prefix elements, the struct-literal walk, and the
+  conditional arm handling ✅ (completed: 2026-11-07 21:30)
+- [x] 1.1.4 Verify the focused cases, `RDC_ASAN=1 cargo test --test
   compiler_robustness_spec_test`, and `make check`; commit
-  `fix(compiler): emit pure-fill operand guards`
-- [ ] 1.1.5 Independent review: correctness reviewer + memory-safety auditor
-  (ASan probes). Resolve every critical/major finding and record the verdict
+  `fix(compiler): emit pure-fill operand guards` ✅ (completed: 2026-11-07 21:45)
+- [x] 1.1.5 Independent review: correctness reviewer + memory-safety auditor
+  (ASan probes). RV-001 (module struct duplicate) and MS-001/MS-002 fixed;
+  re-review clean; 87 probes, 0 ASan/LSan reports ✅ (completed: 2026-11-07 21:55)
 
 **Deliverables**:
-- [ ] Green D1 spec and impl cases
-- [ ] ASan-clean guard cases
-- [ ] One verified commit with red evidence in `05-findings.md`
-- [ ] A clean D1 review verdict
+- [x] Green D1 spec (13) and impl (11) cases
+- [x] ASan-clean guard cases
+- [x] One verified commit with red evidence in `05-findings.md`
+- [x] A clean D1 review verdict
 
 ---
 
