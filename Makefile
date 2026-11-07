@@ -54,13 +54,15 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 	$(MAKE) bench-test
+	$(MAKE) fuzz-test
+	$(MAKE) fuzz-smoke
 
 # Benchmark harness (generated C: emitted size, section size, host time, m68k
 # instruction count). `bench` traces; `bench-fast` skips the trace for
@@ -82,6 +84,21 @@ bench-compare:
 
 bench-test:
 	$(DOCKER_MAKE) exec CMD="python3 -m unittest discover -s tools/perf/tests -t tools/perf -v"
+
+# Deterministic differential fuzzer. `fuzz-test` runs the harness unit tests;
+# `fuzz-smoke` is the bounded default-gate matrix; `fuzz-smoke-host` is its
+# host-only fallback; `fuzz` is the longer local run.
+fuzz-test:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 -m unittest discover -s tools/fuzz/tests -t tools/fuzz -v"
+
+fuzz-smoke:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/fuzz/fuzz.py run --mode smoke"
+
+fuzz-smoke-host:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/fuzz/fuzz.py run --mode smoke-host"
+
+fuzz:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/fuzz/fuzz.py run --mode full"
 
 bench-shape:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && docker/scripts/bench-shape.sh"

@@ -1,0 +1,7 @@
+module fuzz.SeedFillDivisor;
+
+func main(): i32 {
+    let d: u8 = 0;
+    let a: u8[4] = [; u8(10) / d];
+    return i32(a[0]);
+}

@@ -1,0 +1,8 @@
+module fuzz.SeedFillBounds;
+
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let a: u8[4] = [; src[i]];
+    return i32(a[0]);
+}

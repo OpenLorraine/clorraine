@@ -1,0 +1,9 @@
+module fuzz.SeedF32Round;
+import { println } from std.io;
+
+const N: usize = usize(f32(16777217)) - 16777100;
+
+func main(): i32 {
+    println($"v: {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}

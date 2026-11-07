@@ -1,0 +1,1 @@
+error E11212: float-to-integer conversion out of range

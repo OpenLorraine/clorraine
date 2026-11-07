@@ -1,0 +1,11 @@
+module fuzz.SeedEnumExtent;
+import { println } from std.io;
+
+enum E: u8 { A = u8(2) + u8(3), B }
+const N: usize = usize(i32(E.A)) + 1;
+
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    println($"v: {i32(E.A)} {i32(E.B)} {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}

@@ -1,0 +1,7 @@
+module fuzz.SeedFillFloat;
+
+func main(): i32 {
+    let f: f32 = f32(300.0);
+    let a: i8[4] = [; i8(f)];
+    return i32(a[0]);
+}

@@ -1,0 +1,10 @@
+module fuzz.SeedStructValue;
+import { println } from std.io;
+
+struct S { a: u8; b: i32; }
+
+func main(): i32 {
+    let s: S = S { a: 7, b: 9 };
+    println($"v: {i32(s.a)} {s.b}");
+    return 0;
+}

@@ -1,0 +1,10 @@
+module fuzz.SeedEnumValues;
+import { println } from std.io;
+
+enum E: u8 { A = 5, B }
+
+func main(): i32 {
+    let x: E = E.B;
+    println($"v: {i32(E.A)} {i32(E.B)} {i32(x)}");
+    return 0;
+}

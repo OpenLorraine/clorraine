@@ -1,0 +1,8 @@
+module fuzz.SeedNarrowFill;
+import { println } from std.io;
+
+func main(): i32 {
+    let a: u8[8] = [; u8(200) + u8(100)];
+    println($"v: {i32(a[0])} {i32(a[7])}");
+    return 0;
+}

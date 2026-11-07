@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 25/38 tasks (66%)
+> **Progress**: 30/38 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -299,25 +299,28 @@ controls, and the verify placement.
 **Objective**: Add the deterministic generator, the host/sanitizer/m68k
 runner, the seeded goldens, and the CI gates.
 
-- [ ] 6.1.1 [spec-author] Add the fuzzer unit tests (two-process determinism,
+- [x] 6.1.1 [spec-author] Add the fuzzer unit tests (two-process determinism,
   template acceptance, goldens, seed safety, normalization, classifier,
-  argument lists, private cwd/core); run red
-- [ ] 6.1.2 Implement `tools/fuzz/__init__.py`, `tests/__init__.py`,
-  `fuzz.py`, and the five Makefile targets
-- [ ] 6.1.3 Add the twelve seeds and their goldens; verify the smoke run
-- [ ] 6.1.4 Run `make fuzz-test`, `make fuzz-smoke`, and a bounded
-  `make fuzz`; measure `fuzz-test` and the smoke process separately; decide the
-  `fuzz-smoke-host` fallback if the budget is exceeded; commit
-  `feat(tools): add a deterministic differential fuzzer`
-- [ ] 6.1.5 Independent review: correctness reviewer. Resolve every
-  critical/major finding and record the verdict
+  argument lists, private cwd/core); run red ✅ (completed: 2026-11-08 02:10)
+- [x] 6.1.2 Implement `tools/fuzz/__init__.py`, `tests/__init__.py`,
+  `fuzz.py`, and the five Makefile targets ✅ (completed: 2026-11-08 02:20)
+- [x] 6.1.3 Add the twelve seeds and their goldens; verify the smoke run
+  ✅ (completed: 2026-11-08 02:25)
+- [x] 6.1.4 Run `make fuzz-test`, `make fuzz-smoke`, and `make fuzz`; measure
+  them (28 tests, 30.19 s, 154.29 s); the smoke stays in `make check` (151.03 s
+  total, +27.25 s); commit
+  `feat(tools): add a deterministic differential fuzzer` ✅ (completed: 2026-11-08 02:35)
+- [x] 6.1.5 Independent review: correctness reviewer. The harness and
+  generator are deterministic and safe; the base negative control reports 8
+  seed failures. Resolve every critical/major finding and record the verdict
+  ✅ (completed: 2026-11-08 02:45)
 
 **Deliverables**:
-- [ ] Green fuzzer unit tests
-- [ ] Green smoke matrix with the measured cost
-- [ ] Twelve committed seeds
-- [ ] One verified commit
-- [ ] A clean fuzzer review verdict
+- [x] Green fuzzer unit tests
+- [x] Green smoke matrix with the measured cost
+- [x] Twelve committed seeds
+- [x] One verified commit
+- [x] A clean fuzzer review verdict
 
 ---
 

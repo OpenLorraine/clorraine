@@ -1,0 +1,14 @@
+module fuzz.SeedLoopStrings;
+import { println } from std.io;
+
+func main(): i32 {
+    let s: str = "abcd";
+    let n: i32 = 0;
+    let sum: i32 = 0;
+    while (n < 4) {
+        sum = sum + i32(s[n]);
+        n = n + 1;
+    }
+    println($"v: {sum} {n}");
+    return 0;
+}

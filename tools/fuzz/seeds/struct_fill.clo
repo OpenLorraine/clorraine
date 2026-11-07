@@ -1,0 +1,10 @@
+module fuzz.SeedStructFill;
+
+struct S { a: u8[4]; }
+
+func main(): i32 {
+    let src: u8[4] = [1, 2, 3, 4];
+    let i: i32 = 10;
+    let s: S = S { a: [; src[i]] };
+    return i32(s.a[0]);
+}

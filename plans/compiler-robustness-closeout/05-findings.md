@@ -94,6 +94,18 @@
 | `make bench-shape` | pending | |
 | `make verify` | pending | |
 
+## Fuzzer Evidence
+
+| Item | Result |
+|---|---|
+| `make fuzz-test` | 28 unit tests green (determinism across processes, SHA-256 vector, family distribution, extents, fill shapes, seeds/goldens, classifier, sanitizer leak, safety) |
+| `make fuzz-smoke` | 28 cases: host 28, sanitizer 16, target 16, 0 failures, 30.19 s |
+| `make check` with the smoke | green; 151.03 s total in the measured run (+27.25 s over the 123.78 s baseline); within the 60 s budget |
+| `make fuzz` (full) | 268 cases: host 268, sanitizer 268, target 44, 0 failures, 154.29 s |
+| Base negative control | `--clc base-96ae0d4-clc` seed run: 8 failures covering D1 (4 seeds), D2 (invalid-C), D5 (`117 116`), D6 (`v: 0 1 6 1`); D3 passes because that base already has the D3 fix |
+| Matrix | smoke: all seeds host+sanitizer+m68k, generated 16 host / 4 sanitizer / 4 m68k; full: all seeds + 256 generated host+sanitizer, every 8th m68k |
+| Artifacts | successes removed; failures retained under `build/fuzz/failures/<class>-<case>/` with source, C, per-leg logs (`command:`, exit, streams), and `case.json` |
+
 `make ubsan` measured 9.91 seconds on the reference container (warm build)
 including the activation probe and two suites. It is kept verify-only per
 R6.5/AR-16: the fast gate is already dominated by the Rust suite, and the

@@ -1,0 +1,8 @@
+module fuzz.SeedShiftDivisor;
+import { println } from std.io;
+
+func main(): i32 {
+    let q: u8 = u8(10) / (u8(128) >> 8);
+    println($"v: {i32(q)}");
+    return 0;
+}
