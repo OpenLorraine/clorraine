@@ -10,6 +10,38 @@ use super::place::deref_rooted;
 use super::*;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
+    /// Lowers a call the checker resolved as an enum or handle conversion.
+    ///
+    /// The checker records the exact call nodes it typed as a cast after
+    /// applying its value-shadow rule, so a local, module function, global, or
+    /// import with the same written name keeps the call path. The argument
+    /// takes the same float-guard materialization a scalar cast uses, so a
+    /// later `E11212` check reads a stored operand once.
+    fn lower_type_name_cast(
+        &mut self,
+        site: usize,
+        args: &'a [crate::ast::Arg],
+        ty: &Ty,
+    ) -> Option<ValueKind> {
+        if !self.sema.type_casts.contains(&site) || ty.is_unknown() {
+            return None;
+        }
+        if args.len() != 1 {
+            return None;
+        }
+        let inner = self.lower_value(&args[0].value);
+        let inner_ty = self.ty(&args[0].value);
+        let inner = if ty.is_integer() && inner_ty.is_numeric() && !inner_ty.is_integer() {
+            self.materialize_guard_operand(inner)
+        } else {
+            inner
+        };
+        Some(ValueKind::Cast {
+            to: ty.display(),
+            value: Box::new(inner),
+        })
+    }
+
     /// Lowers an expression to a typed IR value.
     ///
     /// Every value records the type the type stage computed for its expression,
@@ -110,13 +142,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
-                // A callee that lowers to a closure value is the ephemeral
-                // two-word callable, not a named function: it is called through
-                // its function pointer with the environment as the first
-                // argument. A generic body's `f(x)` is typed by a parameter and
-                // reaches the same shape only after instantiation, so the
-                // emitter handles that case instead.
-                if self.is_closure_callee(callee) {
+                // A callee that names a type is a conversion, not a function
+                // call. The sema stage typed it as a cast; the lowering spells
+                // the same C cast a scalar conversion uses. A local or
+                // parameter with the same name shadows the type and keeps the
+                // call path.
+                if let Some(cast) =
+                    self.lower_type_name_cast(expr as *const Expr as usize, args, &ty)
+                {
+                    cast
+                } else if self.is_closure_callee(callee) {
                     let callable = self.lower_value(callee);
                     // A closure's parameters are unmarked, so they are
                     // read-only lends exactly like a module function's: an
@@ -754,10 +789,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => return None,
         };
         match scalar {
-            // The constant folder evaluates floats in f64 and does not round
-            // an f32 cast, so a folded float read can differ from its stored
-            // value. Float constants stay places until the folder rounds at
-            // the declared width; the measured need is integer constants.
+            // A folded float read may differ from its stored value in the last
+            // bit, and materializing floats is a storage decision outside this
+            // closeout. Float constants stay places; the folder now rounds at
+            // the declared width for the constant contexts that consume them.
             ScalarType::F32 | ScalarType::F64 => None,
             ScalarType::Bool => match folder.fold(initializer).ok()? {
                 crate::consts::ConstValue::Bool(value) => {

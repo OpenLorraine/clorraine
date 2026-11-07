@@ -64,9 +64,9 @@
 | Red (cast) | base: `117 116` |
 | Red (declared) | base: `117 116` |
 | Red (NaN) | base: accepted, `#define E_A 0` |
-| Red (range) | base: accepted |
-| Fix | `round_float`, range/NaN `E10202` with the registered message, float result scalar, declared width, per-op rounding |
-| Green | spec 30/30, consts unit 35/35, `make check` green |
+| Red (range) | base: accepted; fractional boundary accepted |
+| Fix | `round_float`, untruncated range/NaN `E10202` with the registered message, float result scalar, declared width, per-op rounding |
+| Green | spec 54/54, impl 22/22, consts unit 35/35, `make check` green |
 | Review | pending with D6 (semantics lens) |
 
 ### D6 — Enum values and conversion
@@ -76,9 +76,11 @@
 | User ruling | E10202 for an auto-increment beyond the backing type (AR-11) |
 | Red (explicit) | `#define E_A 0` |
 | Red (overflow) | accepted with `E_B 256` / folder 0 |
-| Red (conversion) | `Direction(2)` C build error; `Buffer(0)` same |
-| Fix | shared `enum_member_values`, sema fit check, conversion lowering |
-| Green | pending |
+| Red (conversion) | `Direction(2)` C build error |
+| Red (cross-module) | consumer module folds the declaring const |
+| Red (ABI sizeof) | the macro and the runtime `sizeof` disagree; a cached value-context `sizeof` hides the overflow |
+| Fix | shared `enum_member_values` (declaring module, cached prefix, ABI sizeof, layout-keyed const cache), sema fit check, checker-recorded cast sites, conversion lowering |
+| Green | spec 54/54, impl 22/22, `make check` green |
 
 ## Gate Evidence
 
@@ -111,6 +113,12 @@
 | A statement pure conditional fill repeats its condition expression per element | Pre-existing evaluation-order shape; the guard fix does not hoist it. The module path hoists the condition. Recorded in `docs/known-limitations.md`. |
 | A module fill that covers no slot with an impure or struct value emits an unused prepared local | Pre-existing strict-build limitation found during the D1 review (base and head); outside the guard fix. Recorded in `docs/known-limitations.md`. |
 | A fixed-array row-place field emits the row bounds guard twice | Pre-existing duplicate guard in the row-copy path (base and head); no memory-safety impact. Recorded as a code-size limit. |
+| Imported enum and handle type names are not recognized as casts (`Buffer(0)`, imported `E(2)`) | Pre-existing sema name-resolution limit; the enum conversion path is fixed for a name the sema types as a cast. Recorded in `docs/known-limitations.md`. |
+| Type-name calls with zero, multiple, or explicit type arguments are accepted (`E()`, `E(1,2)`, `E<T>(2)`) | Pre-existing cast-arity validation gap; recorded in `docs/known-limitations.md`. |
+| A non-integer explicit enum member (`A = true`, `A = 1.5`) is accepted and emitted as its ordinal | Pre-existing EN-3 validation gap; recorded in `docs/known-limitations.md`. |
+| A runtime integer converted to a handle fails the host strict build | Pre-existing host `int-to-pointer-cast` limit; recorded in `docs/known-limitations.md`. |
+| A computed module `const` used as a `case` label emits the mangled symbol | Pre-existing constant-label limit; recorded in `docs/known-limitations.md`. |
+| A constant `MIN / -1` leaves the undefined operation after the guard | Pre-existing emission limit; the guard traps first. Recorded in `docs/known-limitations.md`. |
 | The fuzzer's differential cannot detect a shared host/m68k wrong value | The committed seed goldens and the spec suites are the value oracle. |
 | The fuzzer is a bounded template grammar, not coverage-guided | No new dependency; determinism is required for the gate. |
 

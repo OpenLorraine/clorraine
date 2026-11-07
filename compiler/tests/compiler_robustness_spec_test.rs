@@ -173,6 +173,60 @@ fn assert_output(tag: &str, source: &str, expected: &str) {
     assert_eq!(stdout, expected, "{tag}: unexpected stdout");
 }
 
+/// Emits several source files and returns the C for the root file.
+fn emit_files(tag: &str, files: &[(&str, &str)], root_name: &str) -> (ScratchDir, String) {
+    let scratch = ScratchDir::new(tag);
+    let mut paths = Vec::new();
+    for (name, source) in files {
+        let path = scratch.path().join(name);
+        std::fs::write(&path, source).unwrap_or_else(|error| panic!("{tag}: write {name}: {error}"));
+        paths.push(path);
+    }
+    let c_path = scratch.path().join("out.c");
+    let root = paths
+        .iter()
+        .find(|path| path.file_name().and_then(|name| name.to_str()) == Some(root_name))
+        .unwrap_or_else(|| panic!("{tag}: root file {root_name} is missing"));
+    let mut args = vec![
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        root.display().to_string(),
+    ];
+    for path in &paths {
+        if path != root {
+            args.push(path.display().to_string());
+        }
+    }
+    let output = run_clc(&args);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).expect("read the emitted C");
+    (scratch, emitted)
+}
+
+fn assert_output_files(tag: &str, files: &[(&str, &str)], root: &str, expected: &str) {
+    let (scratch, emitted) = emit_files(tag, files, root);
+    let program = build_host(tag, &scratch, &emitted);
+    let output = Command::new(&program).output().expect("run the program");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected,
+        "{tag}: unexpected stdout"
+    );
+}
+
 /// Compiles a program that must be rejected and returns its stderr.
 fn compile_error(tag: &str, source: &str) -> String {
     let scratch = ScratchDir::new(tag);
@@ -421,6 +475,323 @@ func main(): i32 {
 }
 
 #[test]
+fn should_keep_a_module_function_named_like_a_type() {
+    assert_output(
+        "enum-func-shadow",
+        r#"
+module fuzz.EnumFuncShadow;
+import { println } from std.io;
+func String(x: i32): i32 {
+    return x + 5;
+}
+func main(): i32 {
+    let n: i32 = String(2);
+    println($"v: {n}");
+    return 0;
+}
+"#,
+        "v: 7\n",
+    );
+}
+
+#[test]
+fn should_keep_an_imported_function_call_before_an_enum_type() {
+    assert_output_files(
+        "enum-import-shadow",
+        &[
+            (
+                "type_holder.clo",
+                r#"
+module fuzz.EnumTypeHolder;
+export enum E: u8 { A }
+"#,
+            ),
+            (
+                "fn_holder.clo",
+                r#"
+module fuzz.EnumFnHolder;
+export func E(x: i32): i32 { return x + 40; }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumImportShadow;
+import { println } from std.io;
+import { E } from fuzz.EnumFnHolder;
+func main(): i32 {
+    println($"v: {E(2)}");
+    return 0;
+}
+"#,
+            ),
+        ],
+        "main.clo",
+        "v: 42\n",
+    );
+}
+
+#[test]
+fn should_accept_a_backward_enum_member_reference() {
+    assert_output(
+        "enum-backward",
+        r#"
+module fuzz.EnumBackward;
+import { println } from std.io;
+enum Flags: u8 { A = 1, B = 2, C = Flags.A | Flags.B }
+func main(): i32 {
+    println($"v: {i32(Flags.C)}");
+    return 0;
+}
+"#,
+        "v: 3\n",
+    );
+}
+
+#[test]
+fn should_fold_a_cross_module_enum_member_with_a_declaring_const() {
+    assert_output_files(
+        "enum-cross-const",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumConstHolder;
+export const BASE: u8 = 4;
+export enum E: u8 { A = BASE + 1, B }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumCrossConst;
+import { println } from std.io;
+import { E } from fuzz.EnumConstHolder;
+const N: usize = usize(i32(E.A)) + 1;
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    println($"n: {i32(E.A)} {i32(E.B)} {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+            ),
+        ],
+        "main.clo",
+        "n: 5 6 6 6\n",
+    );
+}
+
+#[test]
+fn should_keep_the_abi_sizeof_for_an_enum_member() {
+    assert_output(
+        "enum-sizeof",
+        r#"
+module fuzz.EnumSizeof;
+import { println } from std.io;
+struct S { a: u8; b: u16; }
+enum E: u8 { A = u8(sizeof(S)) }
+const N: usize = usize(i32(E.A));
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    println($"n: {i32(E.A)} {sizeof(u8[N])} {i32(N)} {sizeof(S)} {i32(a[0])}");
+    return 0;
+}
+"#,
+        "n: 4 4 4 4 0\n",
+    );
+}
+
+#[test]
+fn should_reject_an_enum_member_that_overflows_through_sizeof() {
+    let stderr = compile_error(
+        "enum-sizeof-overflow",
+        r#"
+module fuzz.EnumSizeofOverflow;
+struct S { a: u8; b: u16; }
+enum E: u8 { A = u8(251 + sizeof(S)), B }
+func main(): i32 {
+    return i32(E.B);
+}
+"#,
+    );
+    assert_e10202("enum-sizeof-overflow", &stderr, "u8");
+}
+
+#[test]
+fn should_fold_a_cross_module_const_chain() {
+    assert_output_files(
+        "enum-cross-chain",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumChainHolder;
+export const BASE: u8 = 4;
+export const NEXT: u8 = BASE + 1;
+export enum E: u8 { A = NEXT + 1, B }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumChain;
+import { println } from std.io;
+import { E } from fuzz.EnumChainHolder;
+const N: usize = usize(i32(E.A)) + 1;
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    println($"n: {i32(E.A)} {i32(E.B)} {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+            ),
+        ],
+        "main.clo",
+        "n: 6 7 7 7\n",
+    );
+}
+
+#[test]
+fn should_keep_a_module_global_named_like_a_type() {
+    assert_output_files(
+        "enum-global-shadow",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumGlobalHolder;
+export enum E: u8 { A }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumGlobalShadow;
+import { println } from std.io;
+func twice(x: i32): i32 {
+    return x * 2;
+}
+let E: func(i32): i32 = twice;
+func main(): i32 {
+    println($"v: {E(2)}");
+    return 0;
+}
+"#,
+            ),
+        ],
+        "main.clo",
+        "v: 4\n",
+    );
+}
+
+#[test]
+fn should_convert_an_enum_in_a_module_initializer() {
+    assert_output(
+        "enum-module-init-cast",
+        r#"
+module fuzz.EnumModuleInitCast;
+import { println } from std.io;
+enum Direction: u8 { UP, DOWN, LEFT = 10, RIGHT }
+let V: Direction = Direction(2);
+func main(): i32 {
+    println($"v: {i32(V)}");
+    return 0;
+}
+"#,
+        "v: 2\n",
+    );
+}
+
+#[test]
+fn should_reject_a_constant_enum_conversion() {
+    let stderr = compile_error(
+        "enum-constant-cast",
+        r#"
+module fuzz.EnumConstantCast;
+enum E: u8 { A = 2 }
+const N: usize = usize(E(2)) + 1;
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    return i32(a[0]);
+}
+"#,
+    );
+    assert!(
+        stderr.contains("error E10224: expression is not constant"),
+        "enum-constant-cast: expected E10224; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn should_reject_a_forward_enum_reference() {
+    let stderr = compile_error(
+        "enum-forward",
+        r#"
+module fuzz.EnumForward;
+enum E: u8 { A = E.B, B = 2 }
+func main(): i32 {
+    return i32(E.A);
+}
+"#,
+    );
+    assert!(
+        stderr.contains("error E10224: expression is not constant"),
+        "enum-forward: expected E10224; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn should_reject_a_const_mediated_sizeof_enum_overflow() {
+    let stderr = compile_error(
+        "enum-sizeof-const",
+        r#"
+module fuzz.EnumSizeofConst;
+struct S { a: u8; b: u16; }
+const K: usize = sizeof(S);
+enum E: u8 { A = 252 + K }
+func main(): i32 {
+    return i32(E.A);
+}
+"#,
+    );
+    assert_e10202("enum-sizeof-const", &stderr, "u8");
+}
+
+#[test]
+fn should_check_an_explicit_member_before_a_later_non_integer_member() {
+    let stderr = compile_error(
+        "enum-explicit-before-bool",
+        r#"
+module fuzz.EnumExplicitBeforeBool;
+enum E: u8 { A = 300, B = true }
+func main(): i32 {
+    return i32(E.A);
+}
+"#,
+    );
+    assert_e10202("enum-explicit-before-bool", &stderr, "u8");
+}
+
+#[test]
+fn should_report_an_out_of_range_backward_enum_reference() {
+    let stderr = compile_error(
+        "enum-backward-overflow",
+        r#"
+module fuzz.EnumBackwardOverflow;
+enum E: u8 { A = 300, B = E.A + 1 }
+func main(): i32 {
+    return i32(E.B);
+}
+"#,
+    );
+    assert_e10202("enum-backward-overflow", &stderr, "u8");
+    assert!(
+        !stderr.contains("E10224"),
+        "enum-backward-overflow: an out-of-range prefix must not cascade as not-constant; stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn should_keep_an_unselected_conditional_arm_lazy() {
     assert_output(
         "module-struct-lazy",
@@ -623,6 +994,170 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
+// D6 — enum member values and conversion
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_fold_an_explicit_enum_member_expression() {
+    assert_output(
+        "enum-explicit",
+        r#"
+module fuzz.EnumExplicit;
+import { println } from std.io;
+enum E: u8 { A = u8(2) + u8(3), B }
+func main(): i32 {
+    println($"e: {i32(E.A)} {i32(E.B)}");
+    return 0;
+}
+"#,
+        "e: 5 6\n",
+    );
+}
+
+#[test]
+fn should_reject_an_enum_auto_increment_that_does_not_fit() {
+    let stderr = compile_error(
+        "enum-overflow",
+        r#"
+module fuzz.EnumOverflow;
+enum E: u8 { A = 255, B }
+func main(): i32 {
+    return i32(E.B);
+}
+"#,
+    );
+    assert_e10202("enum-overflow", &stderr, "u8");
+}
+
+#[test]
+fn should_keep_an_in_range_enum_auto_increment() {
+    assert_output(
+        "enum-in-range",
+        r#"
+module fuzz.EnumInRange;
+import { println } from std.io;
+enum E: u8 { A = 254, B }
+func main(): i32 {
+    println($"e: {i32(E.A)} {i32(E.B)}");
+    return 0;
+}
+"#,
+        "e: 254 255\n",
+    );
+}
+
+#[test]
+fn should_store_an_enum_member_in_its_enum() {
+    assert_output(
+        "enum-store",
+        r#"
+module fuzz.EnumStore;
+import { println } from std.io;
+enum E: u8 { A = 254, B }
+func main(): i32 {
+    let x: E = E.B;
+    let y: u8 = u8(x);
+    println($"v: {i32(x)} {i32(y)}");
+    return 0;
+}
+"#,
+        "v: 255 255\n",
+    );
+}
+
+#[test]
+fn should_emit_an_enum_conversion_as_a_cast() {
+    assert_output(
+        "enum-cast",
+        r#"
+module fuzz.EnumCast;
+import { println } from std.io;
+enum Direction: u8 { UP, DOWN, LEFT = 10, RIGHT }
+func main(): i32 {
+    let d: Direction = Direction(2);
+    println($"d: {i32(d)}");
+    return 0;
+}
+"#,
+        "d: 2\n",
+    );
+}
+
+#[test]
+fn should_convert_a_runtime_value_to_an_enum() {
+    assert_output(
+        "enum-cast-runtime",
+        r#"
+module fuzz.EnumCastRuntime;
+import { println } from std.io;
+enum Direction: u8 { UP, DOWN, LEFT = 10, RIGHT }
+func main(): i32 {
+    let n: u8 = 2;
+    let d: Direction = Direction(n);
+    println($"d: {i32(d)}");
+    return 0;
+}
+"#,
+        "d: 2\n",
+    );
+}
+
+#[test]
+fn should_keep_a_shadowing_binding_a_call() {
+    assert_output(
+        "enum-shadow",
+        r#"
+module fuzz.EnumShadow;
+import { println } from std.io;
+enum E: u8 { A }
+func apply(E: func(i32): i32): i32 {
+    return E(2);
+}
+func twice(x: i32): i32 {
+    return x * 2;
+}
+func main(): i32 {
+    println($"v: {apply(twice)}");
+    return 0;
+}
+"#,
+        "v: 4\n",
+    );
+}
+
+#[test]
+fn should_agree_on_a_cross_module_enum_member() {
+    assert_output_files(
+        "enum-cross-module",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumHolder;
+export enum E: u8 { A = u8(1) + u8(2), B }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumCrossModule;
+import { println } from std.io;
+import { E } from fuzz.EnumHolder;
+const N: usize = usize(i32(E.B)) + 1;
+func main(): i32 {
+    let a: u8[N] = [; 0];
+    println($"n: {i32(E.A)} {i32(E.B)} {sizeof(u8[N])} {i32(N)}");
+    return 0;
+}
+"#,
+            ),
+        ],
+        "main.clo",
+        "n: 3 4 5 5\n",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // D5 — f32 rounding and constant float-to-integer overflow
 // ---------------------------------------------------------------------------
 
@@ -692,6 +1227,58 @@ func main(): i32 {
 }
 "#,
         "z: 0\n",
+    );
+}
+
+#[test]
+fn should_reject_a_fractional_boundary_float_conversion() {
+    for (tag, source, target) in [
+        (
+            "f32-frac-i8-high",
+            "const N: i8 = i8(f32(127.5));\nfunc main(): i32 { return i32(N); }\n",
+            "i8",
+        ),
+        (
+            "f32-frac-u8-high",
+            "const N: u8 = u8(f32(255.9));\nfunc main(): i32 { return i32(N); }\n",
+            "u8",
+        ),
+        (
+            "f32-frac-u8-low",
+            "const N: u8 = u8(f32(-0.5));\nfunc main(): i32 { return i32(N); }\n",
+            "u8",
+        ),
+        (
+            "f32-frac-i8-low",
+            "const N: i8 = i8(f32(-128.5));\nfunc main(): i32 { return i32(N); }\n",
+            "i8",
+        ),
+    ] {
+        let stderr = compile_error(
+            tag,
+            &format!("module fuzz.F32Frac;\n{source}"),
+        );
+        assert_e10202(tag, &stderr, target);
+    }
+}
+
+#[test]
+fn should_keep_a_fractional_in_range_float_conversion() {
+    assert_output(
+        "f32-frac-in-range",
+        r#"
+module fuzz.F32FracInRange;
+import { println } from std.io;
+const A: i8 = i8(f32(127.0));
+const B: u8 = u8(f32(255.0));
+const C: i8 = i8(f32(-128.0));
+const D: i8 = i8(f32(-1.9));
+func main(): i32 {
+    println($"n: {i32(A)} {i32(B)} {i32(C)} {i32(D)}");
+    return 0;
+}
+"#,
+        "n: 127 255 -128 -1\n",
     );
 }
 

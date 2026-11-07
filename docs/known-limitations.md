@@ -136,14 +136,37 @@ shape, or a binding to an internal shim helper, is rejected with `E11101` at
 the declaration. The regression tests emit and cross-build the `socket.open`
 and `zero.ClSlice_u8` shapes, and a unit test pins the `init.foo` rename.
 
-## 8. CI is host-only
+## 8. Compiler edge cases outside the robustness closeout
+
+The robustness closeout fixed the six recorded latent defects and the enum
+conversion path. The following accepted-source edge cases remain. They are
+pre-existing, are not regressions from the closeout, and have no shared
+workaround beyond the notes here.
+
+| Edge case | Current behavior | Guidance |
+|---|---|---|
+| An imported enum or handle type name used as a cast (`import { E }`; `E(2)`, `Buffer(0)`) | The resolver treats the import as a value, so the call is emitted as a C function call. It can fail the strict C build with an implicit declaration. | Convert the value explicitly to the backing scalar, or declare the conversion in the same module. |
+| A type-name call with zero or more than one argument, or with type arguments (`E()`, `E(1, 2)`, `E<T>(2)`) | The cast checks only the first argument; the emitted C is a call and fails the strict build. | Pass exactly one expression and no type arguments. |
+| A non-integer explicit enum member (`A = true`, `A = 1.5`, `A = "x"`) | The declaration is accepted and the member is emitted as its ordinal. | Use an integer constant expression; cast a bool with `u8(...)` and reject a float or string at the source level. |
+| A runtime integer converted to a handle (`Box(n)`) | The host 64-bit strict build reports `-Werror=int-to-pointer-cast`; the m68k build accepts it. | Use the handle's constructor or a constant address; the host strict build is the acceptance signal. |
+| A computed module `const` used as a `case` label | The label emits the mangled symbol and the strict build rejects it as a non-constant case label. | Use a literal, a simple `const` that folds to a literal, or a chain of `if` tests. |
+| A constant `MIN / -1` or `MIN % -1` | The guard traps first, but the C still contains the undefined operation and the strict build may reject it. | Use a non-constant dividend or a guard that the compiler can fold; the runtime trap is the defined behavior. |
+| A statement pure conditional fill | The value expression, including its condition, is repeated for each element; a volatile condition is read once per element. | Use a temporary condition or a loop when the condition has a side effect. |
+| A module fill that covers no slot with an impure or struct value | The prepared local is not read; the strict build reports an unused variable. | Ensure the prefix covers at least one slot, or use a statement fill. |
+| A fixed-array row-place field | The row bounds guard is emitted twice. | No action; the first guard traps before the access. |
+
+The enum member policy uses the target ABI layout for `sizeof`, so an enum
+macro agrees with the runtime C `sizeof`. A value-position `const` that reads
+`sizeof` still stays a runtime place; only a constant context folds it.
+
+## 9. CI is host-only
 
 The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` on an Ubuntu
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip
 themselves when the toolchain is absent. `make verify` remains the local acceptance gate that
 exercises the Amiga and freestanding legs.
 
-## 9. Benchmark instruction counts are guest CPU counts, not cycle counts
+## 10. Benchmark instruction counts are guest CPU counts, not cycle counts
 
 `make bench` measures the m68k dynamic instruction count with a streamed
 `vamos --instr-trace` run and subtracts a calibration program's fixed startup

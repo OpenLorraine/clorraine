@@ -72,6 +72,8 @@ pub struct ConstFolder<'a> {
     active: BTreeSet<String>,
     /// Folded values, cached under a module- or enum-qualified key.
     values: BTreeMap<String, FoldValue>,
+    /// Enum member sequences, cached by enum name.
+    enum_values: BTreeMap<String, Vec<(String, i128)>>,
     /// True when array extents are being folded.
     ///
     /// An extent must equal the C type the emitter spells, so `sizeof` here
@@ -89,6 +91,7 @@ impl<'a> ConstFolder<'a> {
             loaded,
             active: BTreeSet::new(),
             values: BTreeMap::new(),
+            enum_values: BTreeMap::new(),
             extents: false,
         }
     }
@@ -341,10 +344,12 @@ impl<'a> ConstFolder<'a> {
 
     /// Converts a folded float to an integer at the cast's target type.
     ///
-    /// The conversion truncates toward zero, exactly as the runtime cast does.
-    /// A NaN or an infinity, and a truncated value outside the target range,
-    /// is E10202: the frozen rule treats a constant float-to-integer overflow
-    /// as a constant-context fit error, not a runtime trap.
+    /// The runtime guard rejects a value outside the target range before the
+    /// C truncation, so the folder applies the same rule: `127.5` to `i8` is
+    /// out of range even though `trunc` would be 127. A NaN or an infinity,
+    /// and an out-of-range value, is E10202: the frozen rule treats a constant
+    /// float-to-integer overflow as a constant-context fit error, not a
+    /// runtime trap.
     fn float_to_int(value: f64, scalar: ScalarType, span: Span) -> Result<i128, ConstError> {
         if !value.is_finite() {
             return Err(ConstError::FloatOutOfRange(span, scalar));
@@ -355,11 +360,10 @@ impl<'a> ConstFolder<'a> {
         } else {
             (0, (1i128 << bits) - 1)
         };
-        let truncated = value.trunc();
-        if truncated < low as f64 || truncated > high as f64 {
+        if value < low as f64 || value > high as f64 {
             return Err(ConstError::FloatOutOfRange(span, scalar));
         }
-        Ok(truncated as i128)
+        Ok(value.trunc() as i128)
     }
 
     /// Folds a constant `raw` cast of an integer address.
@@ -448,7 +452,11 @@ impl<'a> ConstFolder<'a> {
     /// value cache both use a module-qualified key, so two modules may declare
     /// the same constant name and a cycle is caught.
     fn fold_module_const(&mut self, module_name: &str, name: &str) -> Option<FoldValue> {
-        let key = format!("@{module_name}::{name}");
+        // The cache key carries the `sizeof` layout policy: a value-position
+        // fold and an enum-member or extent fold can see different sizes for
+        // the same constant, and the cached result must not cross between them.
+        let layout = if self.extents { "abi" } else { "decl" };
+        let key = format!("@{layout}@{module_name}::{name}");
         if let Some(value) = self.values.get(&key) {
             return Some(*value);
         }
@@ -458,9 +466,19 @@ impl<'a> ConstFolder<'a> {
         let loaded: &'a Loaded = self.loaded;
         let module: &'a Module = if module_name == self.module.name {
             self.module
+        } else if let Some(module) = loaded.module(module_name) {
+            module
         } else {
-            loaded.module(module_name)?
+            // Remove the cycle key before the early return, or a failed lookup
+            // would poison every later reference to the same constant.
+            self.active.remove(&key);
+            return None;
         };
+        // The initializer folds in its declaring module, so a chain such as
+        // `NEXT = BASE + 1` resolves `BASE` where it is declared even when the
+        // reference comes from another module.
+        let saved_module = self.module;
+        self.module = module;
         let initializer = module.items.iter().find_map(|item| match item {
             Item::GlobalConst(decl) if decl.name == name => Some(&decl.value),
             _ => None,
@@ -490,6 +508,7 @@ impl<'a> ConstFolder<'a> {
                 folded
             })
         });
+        self.module = saved_module;
         self.active.remove(&key);
         if let Some(value) = folded {
             self.values.insert(key, value);
@@ -497,61 +516,117 @@ impl<'a> ConstFolder<'a> {
         folded
     }
 
-    /// Folds an enum member by walking the members in declaration order.
+    /// Returns every member value of an enum in declaration order.
     ///
-    /// A member with no explicit value continues from the previous value plus
-    /// one, wrapped at the backing type; an explicit value folds in the backing
-    /// type's width.
-    fn fold_enum_member(&mut self, enum_name: &str, member: &str) -> Option<FoldValue> {
-        let key = format!("#{enum_name}::{member}");
-        if let Some(value) = self.values.get(&key) {
-            return match value.value {
-                ConstValue::Int(_) => Some(*value),
-                _ => None,
-            };
+    /// The values are held in the wide accumulator. An explicit value folds at
+    /// the backing type; a member with no explicit value continues from the
+    /// previous value plus one. No wrap is applied here: a value that does not
+    /// fit the backing type is returned so the declaration check can report
+    /// E10202, and an accepted program never reaches emission with one. A
+    /// non-constant explicit value returns `None`; the checker has already
+    /// reported it.
+    pub fn enum_member_values(&mut self, enum_name: &str) -> Option<Vec<(String, i128)>> {
+        if let Some(values) = self.enum_values.get(enum_name) {
+            return Some(values.clone());
         }
+        let key = format!("#{enum_name}::@values");
         if !self.active.insert(key.clone()) {
             return None;
         }
         let context = self.table.enum_backing(enum_name).and_then(integer_scalar);
         let mut result = None;
-        if let Some(declaration) = self.find_enum(enum_name) {
-            let mut current: i128 = 0;
-            for declared in &declaration.members {
-                let value = match &declared.value {
-                    Some(expr) => match self.fold_value(expr, context) {
-                        Ok(FoldValue {
+        if let Some((module_name, declaration)) = Self::find_enum(self.loaded, enum_name) {
+            if let Some(declaring) = self.loaded.module(module_name) {
+                // A member expression is evaluated in the enum's declaring
+                // module and with the target ABI layout, because the emitted
+                // macro must agree with the runtime `sizeof` the C compiler
+                // spells. The emitter uses the same rule.
+                let saved_module = self.module;
+                let saved_extents = self.extents;
+                self.module = declaring;
+                self.extents = true;
+                let mut current: i128 = 0;
+                let mut values = Vec::with_capacity(declaration.members.len());
+                let mut complete = true;
+                for declared in &declaration.members {
+                    let value = match &declared.value {
+                        Some(expr) => match self.fold_value(expr, context) {
+                            Ok(FoldValue {
+                                value: ConstValue::Int(value),
+                                ..
+                            }) => value,
+                            _ => {
+                                complete = false;
+                                break;
+                            }
+                        },
+                        None => current,
+                    };
+                    values.push((declared.name.clone(), value));
+                    // Cache the computed prefix so a later member can read an
+                    // earlier member (`C = A | B`) without re-entering the
+                    // walk. A forward or self reference has no entry and still
+                    // hits the active guard.
+                    self.values.insert(
+                        format!("#{enum_name}::{}", declared.name),
+                        FoldValue {
+                            scalar: context,
                             value: ConstValue::Int(value),
-                            ..
-                        }) => value,
-                        _ => break,
-                    },
-                    None => current,
-                };
-                let folded = FoldValue {
-                    scalar: context,
-                    value: ConstValue::Int(value),
-                };
-                self.values
-                    .insert(format!("#{enum_name}::{}", declared.name), folded);
-                current = wrap_int(value.wrapping_add(1), context);
-                if declared.name == member {
-                    result = Some(folded);
-                    break;
+                        },
+                    );
+                    current = value.wrapping_add(1);
+                }
+                self.extents = saved_extents;
+                self.module = saved_module;
+                if complete {
+                    result = Some(values);
                 }
             }
         }
         self.active.remove(&key);
+        if let Some(values) = &result {
+            self.enum_values.insert(enum_name.to_owned(), values.clone());
+        }
         result
     }
 
-    /// Finds an enum declaration by name in any loaded module.
-    fn find_enum(&self, enum_name: &str) -> Option<&'a crate::ast::EnumDecl> {
-        for module in self.loaded.modules.values() {
+    /// Folds one enum member through the shared member walk.
+    ///
+    /// A computed member is read from the walk's cache, so a backward
+    /// reference does not start a nested walk. The value is returned even when
+    /// it is outside the backing type: the declaration's own fit check is the
+    /// only place that reports E10202, and returning the raw value lets a
+    /// later member read an earlier out-of-range member without a false
+    /// "not constant" cascade.
+    fn fold_enum_member(&mut self, enum_name: &str, member: &str) -> Option<FoldValue> {
+        if let Some(cached) = self.values.get(&format!("#{enum_name}::{member}")).copied() {
+            if let ConstValue::Int(value) = cached.value {
+                let context = self.table.enum_backing(enum_name).and_then(integer_scalar);
+                return Some(FoldValue {
+                    scalar: context,
+                    value: ConstValue::Int(value),
+                });
+            }
+        }
+        let values = self.enum_member_values(enum_name)?;
+        let value = values.iter().find(|(name, _)| name == member)?.1;
+        let context = self.table.enum_backing(enum_name).and_then(integer_scalar);
+        Some(FoldValue {
+            scalar: context,
+            value: ConstValue::Int(value),
+        })
+    }
+
+    /// Finds an enum declaration and its declaring module by name.
+    fn find_enum(
+        loaded: &'a Loaded,
+        enum_name: &str,
+    ) -> Option<(&'a str, &'a crate::ast::EnumDecl)> {
+        for module in loaded.modules.values() {
             for item in &module.items {
                 if let Item::Enum(decl) = item {
                     if decl.name == enum_name {
-                        return Some(decl);
+                        return Some((module.name.as_str(), decl));
                     }
                 }
             }

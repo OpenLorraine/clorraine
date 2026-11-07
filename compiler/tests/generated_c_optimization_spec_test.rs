@@ -880,14 +880,14 @@ fn should_keep_an_enum_member_const_consistent_with_the_emitter() {
         r#"
 module bench.EnumConst;
 import { println } from std.io;
-enum E: u8 { A = 255, B }
+enum E: u8 { A = 254, B }
 const X: i32 = i32(E.B);
 func main(): i32 {
     println($"enum: {X} {i32(E.B)}");
     return 0;
 }
 "#,
-        "enum: 256 256\n",
+        "enum: 255 255\n",
     );
 }
 

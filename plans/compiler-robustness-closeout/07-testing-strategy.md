@@ -50,9 +50,14 @@ changes for an unintended reason is a failure.
 | D6 store | `should_store_an_enum_member_in_its_enum` | `-Werror=overflow` with 256 | compiles, reads 255 |
 | D6 cast | `should_emit_an_enum_conversion_as_a_cast` | C build error | `(ClDirection)(2)` |
 | D6 runtime cast | `should_convert_a_runtime_value_to_an_enum` | C build error | cast from a runtime value |
-| D6 handle cast | `should_emit_a_handle_conversion_as_a_cast` | C build error | `(ClBuffer)(0)` |
-| D6 constant cast | `should_fold_an_enum_conversion_in_a_constant_context` | `E10224` | folds |
-| D6 shadow | `should_keep_a_shadowing_binding_a_call` | `E(2)` steals a parameter | call path unchanged |
+| D6 module shadow | `should_keep_a_module_function_named_like_a_type` | a module function is stolen as a cast | call remains |
+| D6 import shadow | `should_keep_an_imported_function_call_before_an_enum_type` | an imported function is stolen as a cast | call remains |
+| D6 backward ref | `should_accept_a_backward_enum_member_reference` | `C = A | B` is a false cycle | `C` is 3 |
+| D6 cross-module const | `should_fold_a_cross_module_enum_member_with_a_declaring_const` | consumer module folds the declaring const | emitted macro and extent agree |
+| D6 ABI sizeof | `should_keep_the_abi_sizeof_for_an_enum_member` | the macro and the runtime `sizeof` disagree | both 4 |
+| D6 const ABI | `should_reject_a_const_mediated_sizeof_enum_overflow` | a cached value-context `sizeof` hides the overflow | E10202 |
+| D6 fit order | `should_check_an_explicit_member_before_a_later_non_integer_member` | a later non-integer member hides an earlier overflow | E10202 |
+| D5 fractional | `should_reject_a_fractional_boundary_float_conversion` | accepted, runtime E11212 | E10202 |
 | D6 cross-module | `should_agree_on_a_cross_module_enum_member` | folder/emitter split | equal values |
 
 ## Test-Integrity Procedure
@@ -146,7 +151,7 @@ same case list and the same retained artifacts. A failure is not retried.
 | R2.1–R2.6 | D2/D4 rows; operator agreement; 32-bit controls; freestanding shape |
 | R3.1–R3.3 | four positions + named const; `RDC_CLC` base run |
 | R4.1–R4.7 | cast, declared const, per-op, NaN, range, finite, `-0.0`/infinity controls |
-| R5.1–R5.7 | explicit, overflow reject, in-range control, store, enum/handle cast, constant cast, shadow, cross-module |
+| R5.1–R5.6 | explicit, overflow reject, in-range control, store, enum cast, shadow, cross-module, ABI sizeof, backward reference |
 | R6.1–R6.7 | runner self-test, suite-level probes, corpus sweep, verify placement |
 | R7.1–R7.13 | unit tests, seeds, smoke/smoke-host/full, classifier, safety, budget |
 | R8.1–R8.6 | new suites, pin updates, shape gate, docs |

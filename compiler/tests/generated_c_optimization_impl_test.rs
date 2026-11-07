@@ -663,7 +663,7 @@ fn should_keep_an_enum_member_const_as_a_place() {
             "main.clo",
             r#"
 module bench.ImplEnum;
-enum E: u8 { A = 255, B }
+enum E: u8 { A = 254, B }
 const X: i32 = i32(E.B);
 func main(): i32 { return X; }
 "#,

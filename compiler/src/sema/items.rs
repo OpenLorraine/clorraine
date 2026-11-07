@@ -91,14 +91,39 @@ impl Checker<'_, '_> {
                 continue;
             };
             self.require_constant(value, integer_scalar(&backing));
+            // An explicit value is checked here independently of later
+            // members: a later non-integer member must not hide an earlier
+            // out-of-range value. The enum member policy is the target ABI,
+            // so the extent folder supplies the same `sizeof` layout the
+            // emitted macro and the walk use.
             if let TyKind::Scalar(scalar) = backing.kind {
-                if let Some(folded) = self.folder.integer_in(value, &backing) {
+                if let Some(folded) = self.extent_folder.integer_in(value, &backing) {
                     if !int_fits(folded, scalar) {
                         self.error(
                             "E10202",
                             format!("literal does not fit '{}'", backing.display()),
                             "use a wider type or a hex/binary form",
                             value.span,
+                        );
+                    }
+                }
+            }
+        }
+        // Every auto-incremented member must also fit the backing type. The
+        // shared walk computes the sequence once; explicit members were
+        // checked above, so only the implicit values are checked here.
+        if let Some(values) = self.folder.enum_member_values(&decl.name) {
+            if let TyKind::Scalar(scalar) = backing.kind {
+                for (member, (_, value)) in decl.members.iter().zip(values.iter()) {
+                    if member.value.is_some() {
+                        continue;
+                    }
+                    if !int_fits(*value, scalar) {
+                        self.error(
+                            "E10202",
+                            format!("literal does not fit '{}'", backing.display()),
+                            "use a wider type or a hex/binary form",
+                            member.name_span,
                         );
                     }
                 }

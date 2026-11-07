@@ -301,8 +301,10 @@ paths disagree. `sema::check_enum` only applies the fit check to explicit
 values, so the auto-increment case is accepted.
 
 Separately, `lower_value` emits every `Call` as `ValueKind::Call`, so the sema
-stage's type-cast resolution for `Direction(2)` or `Buffer(0)` is lost and the
-emitter spells a C function call.
+stage's type-cast resolution for `Direction(2)` is lost and the emitter spells
+a C function call. A handle type import is a separate pre-existing limit: the
+current sema resolver treats the import as a value, so `Buffer(0)` is not typed
+as a cast.
 
 ### Fix
 
@@ -315,14 +317,19 @@ emitter spells a C function call.
    declaration already reported E10202).
 2. **One shared value walk.** Add
    `ConstFolder::enum_member_values(enum_name) -> Option<Vec<(String, i128)>>`
-   that walks the members once: an explicit value folds at the backing type, an
-   auto value is `previous + 1`, and the value is returned even when it does
-   not fit (the declaration check reports that). `fold_enum_member` caches from
-   this walk and returns `None` for an out-of-range member, so a later constant
-   context does not use it. `sema::check_enum` consumes the same walk, zips it
-   with `decl.members`, and applies `int_fits` at each `member.name_span`.
-   `emit_enum` consumes the same walk and emits the pairs. There is exactly one
-   value sequence.
+   that walks the members once: it binds the folder to the enum's declaring
+   module, computes explicit values there, continues each auto member from the
+   previous value plus one, caches the computed prefix so a later member can
+   read an earlier one (`C = A | B`), and uses the target ABI `sizeof`
+   policy so an extent and the emitted macro agree with the runtime C
+   `sizeof`. It returns a value even when it
+   does not fit; the declaration check reports E10202. `fold_enum_member`
+   reads the cached prefix, returns `None` for an out-of-range member, and only
+   starts the walk when no cached value exists (a forward or self reference is
+   therefore a cycle). `sema::check_enum` consumes the same walk, zips it with
+   `decl.members`, and applies `int_fits` at each member span. `emit_enum`
+   consumes the same walk and emits the pairs. There is exactly one value
+   sequence.
 3. `EnumInfo` gains the declaring module name. `emit_enum_typedefs` passes it
    to `emit_enum`.
 4. `emit_enum` calls `enum_member_values(decl.name)`; it does not re-fold a
@@ -330,28 +337,30 @@ emitter spells a C function call.
    diagnosed), emission falls back to the declaration's literal values so it
    cannot crash. An out-of-range member never reaches emission because sema
    rejected it.
-5. **Conversions.** In `lower_value`'s `ExprKind::Call` branch, when the callee
-   resolves to a type name (enum or handle) and no local/parameter binding
-   shadows it, lower the first argument with the same float-guard
-   materialization a cast uses and build `ValueKind::Cast { to, value }`. Use
-   the same binding checks as `lower_call`; a shadowing local keeps the call
-   path. The call path is used only when the callee is not a type name.
-6. **Constant enum cast.** In `fold_value`, an `ExprKind::Call` whose callee
-   names an enum type and has one argument folds the argument at the backing
-   width and returns the integer value with the backing scalar. This lets
-   `E(2)` feed an extent, `case`, or const initializer.
+5. **Conversions.** The checker records every call node it resolves through
+   `callee_type` in `SemaOutput::type_casts`. In `lower_value`'s
+   `ExprKind::Call` branch and in `lower_global`'s Call branch, a call in that
+   set lowers to `ValueKind::Cast`; the first argument takes the same
+   float-guard materialization a scalar cast uses. Every other call keeps the
+   call path. This is precise for a local, module function, global, or import
+   that shadows the type name, because the checker already applied its
+   `name_is_value` rule before recording the site. An imported enum or handle
+   type name is not recorded as a cast and remains the pre-existing limitation.
 
 ### Invariants
 
 - For an accepted enum, the folder and emitter produce the same value for
-  every member.
+  every member, including a member that reads an earlier member and a member
+  declared in another module.
 - An auto-incremented member that does not fit the backing type is E10202; an
   accepted member is representable and storable.
-- An enum or handle conversion emits the same C cast a scalar conversion does.
-- A local/parameter with the same name as a type shadows the type; the call
-  path is unchanged.
-- A constant context that reads a member or a conversion agrees with the
-  run-time value.
+- An enum conversion emits the same C cast a scalar conversion does. A local,
+  module function, global, or import with the same written name keeps the call
+  path.
+- A constant context that reads a member agrees with the emitted macro,
+  including the `sizeof` policy.
+- A constant-context enum conversion stays E10224; the frozen expression list
+  is not extended.
 
 ### Tests
 
@@ -360,13 +369,18 @@ emitter spells a C function call.
 | `should_fold_an_explicit_enum_member_expression` | spec + impl | `#define E_A 0` before the fix |
 | `should_reject_an_enum_auto_increment_that_does_not_fit` | compile-fail spec | accepted with `E_B 256` / folder 0 before the fix |
 | `should_keep_an_in_range_enum_auto_increment` | spec | control |
-| `should_store_an_enum_member_in_its_enum` | spec | `-Werror=overflow` with 256 before the fix |
+| `should_store_an_enum_member_in_its_enum` | spec | control after the rejection rule |
 | `should_emit_an_enum_conversion_as_a_cast` | spec + impl | `Direction(2)` C build error before the fix |
 | `should_convert_a_runtime_value_to_an_enum` | spec + impl | a runtime argument takes the same cast path |
-| `should_emit_a_handle_conversion_as_a_cast` | spec + impl | `Buffer(0)` C build error before the fix |
-| `should_fold_an_enum_conversion_in_a_constant_context` | spec | `E10224` before the fix |
-| `should_keep_a_shadowing_binding_a_call` | spec + impl | `E(2)` must not steal a func-typed parameter named `E` |
-| `should_agree_on_a_cross_module_enum_member` | spec | cross-module coverage |
+| `should_keep_a_shadowing_binding_a_call` | spec | a func-typed parameter named `E` keeps the call |
+| `should_keep_a_module_function_named_like_a_type` | spec | a module function named `String` keeps the call |
+| `should_keep_an_imported_function_call_before_an_enum_type` | spec | an imported function named `E` keeps the call (the pre-fix lowering stole it) |
+| `should_accept_a_backward_enum_member_reference` | spec | `C = A | B` folds; the first shared walk broke it |
+| `should_fold_a_cross_module_enum_member_with_a_declaring_const` | spec | the consumer module folded the declaring module's const |
+| `should_keep_the_abi_sizeof_for_an_enum_member` | spec | the macro and the runtime `sizeof` disagreed |
+| `should_reject_a_const_mediated_sizeof_enum_overflow` | spec | a cached value-context `sizeof` hid the ABI overflow |
+| `should_check_an_explicit_member_before_a_later_non_integer_member` | spec | a later non-integer member hid an earlier overflow |
+| `should_agree_on_a_cross_module_enum_member` | spec | cross-module literal coverage |
 
 ### Rejected Alternatives
 

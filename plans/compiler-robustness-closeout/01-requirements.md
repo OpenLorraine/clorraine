@@ -182,7 +182,9 @@ const N: usize = usize(f64(A)) - 16777100;
 **R4.4 Constant float-to-integer overflow.** A constant float-to-integer
 conversion that is NaN or outside the target's range is `E10202` in every
 constant context (array extent, enum member, `case`, module `const`
-initializer). The diagnostic uses the registered E10202 message and help
+initializer). The range check uses the untruncated value, matching the runtime
+`E11212` guard, so `i8(127.5)` is rejected even though its truncation is 127.
+The diagnostic uses the registered E10202 message and help
 (`literal does not fit '{type}'`, `use a wider type or a hex/binary form`) with
 the target type; this is an existing code with a new trigger, not a new
 diagnostic. `ConstError` carries the target scalar so the message is complete.
@@ -240,21 +242,28 @@ both are `5`.
 **R5.5 Conversion emission.** A call whose callee names an enum type is a
 conversion, not a C function call. `Direction(2)` lowers to the same C cast a
 scalar conversion emits; the spec example compiles and runs under the strict
-flags. The same lowering covers a handle type name (`Buffer(0)`), which the
-sema stage already types as a cast. This is the codegen form of the existing
-sema rule, not a language change.
+flags. The checker records the exact call site it resolved as a cast after its
+value-shadow rule, and the body and module-initializer lowerings read that
+record; a local, module function, global, or import with the same written name
+keeps the call path. A handle or enum type import is not recognized as a cast
+by the current sema resolver (the import is treated as a value), so `Buffer(0)`
+and imported enum conversions remain pre-existing limitations recorded in
+`docs/known-limitations.md`.
 
-**R5.6 Enum casts in constant contexts.** `E(2)` folds in a constant context:
-the folder recognizes a call whose callee names an enum type, folds the
-argument at the backing width, and yields the member value. This matches the
-runtime conversion and lets an enum conversion feed an extent, `case`, or
-`const` initializer.
-
-**R5.7 Cross-module members.** The emitter folds a member declared in another
+**R5.6 Cross-module members.** The emitter folds a member declared in another
 loaded module with that module's constants; the folder and emitter agree there
-too. Enum names are resolved by the language's existing bare-name rule; a
-same-name enum in two modules keeps that rule and is recorded as a collision
-scope, not newly supported.
+too. A member may read an earlier member of the same enum (`C = A | B`); a
+forward or self reference is still a cycle. The walk uses the enum's declared
+`sizeof` policy, not the array-extent ABI policy, so an extent that reads a
+member agrees with the emitted macro. Enum names are resolved by the language's
+existing bare-name rule; a same-name enum in two modules keeps that rule and is
+recorded as a collision scope, not newly supported.
+
+A constant-context enum conversion (`E(2)` in an extent or `case`) remains
+`E10224`: the frozen constant-expression list does not include enum casts, and
+this closeout does not extend it. An imported enum or handle name is not
+recognized as a cast by the current sema resolver; both are recorded as
+pre-existing limitations in `docs/known-limitations.md`.
 
 ### R6 — Host UBSan leg
 

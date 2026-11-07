@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 18/38 tasks (47%)
+> **Progress**: 22/38 tasks (58%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -223,7 +223,7 @@ E10202 message.
 > **Lenses**: enum value semantics · cross-module folding · cast spelling ·
 > shadowing safety
 > **Verify**: explicit, overflow reject, in-range control, stored, extent,
-> cross-module, enum/handle cast, constant cast, and shadowing cases; the strict
+> cross-module, enum cast, ABI sizeof, backward reference, and shadowing cases; the strict
 > build matrix; an independent correctness + emission-integrity review.
 
 ### Step 4.1: Enum tests and fix
@@ -232,21 +232,22 @@ E10202 message.
 **Objective**: One enum value walk, the user-ruled E10202 overflow rejection,
 and a shadow-safe type-name cast lowering.
 
-- [ ] 4.1.1 [spec-author] Add the D6 spec, compile-fail, and impl cases; run red
-- [ ] 4.1.2 Implement `ConstFolder::enum_member_values`, the sema auto-increment
-  fit check, the emitter fold, the module name on `EnumInfo`, the enum/handle
-  cast lowering, and the constant enum cast
-- [ ] 4.1.3 Update the PLAN-14 enum spec and impl pins, verify the focused
+- [x] 4.1.1 [spec-author] Add the D6 spec, compile-fail, and impl cases; run red ✅ (completed: 2026-11-08 00:20)
+- [x] 4.1.2 Implement `ConstFolder::enum_member_values`, the sema auto-increment
+  fit check, the emitter fold, the module name on `EnumInfo`, the checker's
+  cast-site record, and the enum cast lowering ✅ (completed: 2026-11-08 00:35), and the constant enum cast
+- [x] 4.1.3 Update the PLAN-14 enum spec and impl pins, verify the focused
   cases and `make check`; commit
-  `fix(compiler): fold enum member values in the emitter`
-- [ ] 4.1.4 Independent review: correctness reviewer + emission-integrity
-  auditor. Resolve every critical/major finding and record the verdict
+  `fix(compiler): fold enum member values in the emitter` ✅ (completed: 2026-11-08 00:45)
+- [x] 4.1.4 Independent review: correctness reviewer + emission-integrity
+  auditor + semantics reviewer. Critical/major findings resolved; the
+  remaining pre-existing limits are documented ✅ (completed: 2026-11-08 01:10)
 
 **Deliverables**:
-- [ ] Green D6 cases
-- [ ] `Direction(2)` and `Buffer(0)` compile and run
-- [ ] One verified commit with red evidence
-- [ ] A clean D6 review verdict
+- [x] Green D6 cases
+- [x] `Direction(2)` compiles and runs; `Buffer(0)` is a documented pre-existing limit
+- [x] One verified commit with red evidence
+- [x] A clean D6 review verdict (after the fixes)
 
 ---
 

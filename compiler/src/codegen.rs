@@ -59,6 +59,8 @@ pub(super) struct GlobalInfo {
 
 /// A user enum with its declaration.
 pub(super) struct EnumInfo<'a> {
+    /// The module that declares the enum.
+    pub(super) module: String,
     /// The declaration.
     pub(super) decl: &'a EnumDecl,
 }
@@ -465,7 +467,10 @@ impl<'a> Emitter<'a> {
                         self.structs.entry(decl.name.clone()).or_insert(decl);
                     }
                     Item::Enum(decl) => {
-                        self.enums.entry(decl.name.clone()).or_insert(EnumInfo { decl });
+                        self.enums.entry(decl.name.clone()).or_insert(EnumInfo {
+                            module: module.name.clone(),
+                            decl,
+                        });
                     }
                     Item::GlobalLet(decl) => {
                         self.record_global(

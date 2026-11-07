@@ -799,9 +799,13 @@ impl<'a> Emitter<'a> {
     /// enum), every slice typedef (an element may be an enum), and every
     /// function body that reads an enum value.
     pub(super) fn emit_enum_typedefs(&mut self) {
-        let enums: Vec<&'a EnumDecl> = self.enums.values().map(|info| info.decl).collect();
-        for decl in enums {
-            self.emit_enum(decl);
+        let enums: Vec<(String, &'a EnumDecl)> = self
+            .enums
+            .values()
+            .map(|info| (info.module.clone(), info.decl))
+            .collect();
+        for (module, decl) in enums {
+            self.emit_enum(&module, decl);
         }
     }
 
@@ -908,27 +912,40 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes the enum constants as macros over the backing integer type.
-    pub(super) fn emit_enum(&mut self, decl: &EnumDecl) {
+    pub(super) fn emit_enum(&mut self, module: &str, decl: &EnumDecl) {
         let backing = resolve_ty(&decl.backing, &[], &self.sema.table);
         self.push(&format!(
             "typedef {} Cl{};",
             c_type(&backing, &self.sema.table),
             crate::types::type_component(&decl.name)
         ));
-        let mut next: i128 = 0;
-        let members: Vec<(String, i128)> = decl
-            .members
-            .iter()
-            .map(|member| {
-                let value = member
-                    .value
-                    .as_ref()
-                    .and_then(crate::types::int_literal_value)
-                    .unwrap_or(next);
-                next = value + 1;
-                (member.name.clone(), value)
-            })
-            .collect();
+        // Fold the member sequence with the declaring module's folder. The
+        // checker already rejected a non-constant or out-of-range member; the
+        // literal fallback keeps emission total if it is reached through a
+        // diagnostic path.
+        let folded = self.loaded.module(module).and_then(|declaring| {
+            let mut folder =
+                crate::consts::ConstFolder::new(&self.sema.table, declaring, self.loaded);
+            folder.enum_member_values(&decl.name)
+        });
+        let members: Vec<(String, i128)> = match folded {
+            Some(values) => values,
+            None => {
+                let mut next: i128 = 0;
+                decl.members
+                    .iter()
+                    .map(|member| {
+                        let value = member
+                            .value
+                            .as_ref()
+                            .and_then(crate::types::int_literal_value)
+                            .unwrap_or(next);
+                        next = value + 1;
+                        (member.name.clone(), value)
+                    })
+                    .collect()
+            }
+        };
         for (member, value) in members {
             self.push(&format!("#define {}_{member} {value}", decl.name));
         }
@@ -3380,6 +3397,32 @@ impl<'a> Emitter<'a> {
         name
     }
 
+    /// Lowers a module-initializer call the checker resolved as a conversion.
+    ///
+    /// The body lowering reads the checker's recorded cast set; a module
+    /// initializer has its own AST walk, so it reads the same set. A module
+    /// function, global, or import with the same written name was not recorded
+    /// as a cast and keeps the call path.
+    fn lower_global_type_cast(
+        &mut self,
+        site: usize,
+        module: &Module,
+        args: &[crate::ast::Arg],
+        ty: &Ty,
+    ) -> Option<ValueKind> {
+        if !self.sema.type_casts.contains(&site) || ty.is_unknown() {
+            return None;
+        }
+        if args.len() != 1 {
+            return None;
+        }
+        let inner = self.lower_global(module, &args[0].value);
+        Some(ValueKind::Cast {
+            to: ty.display(),
+            value: Box::new(inner),
+        })
+    }
+
     /// Lowers a module-level initializer expression to a typed IR value.
     ///
     /// Module initialization is a program-level phase, so it reuses the IR
@@ -3536,6 +3579,11 @@ impl<'a> Emitter<'a> {
                 type_args,
                 args,
             } => {
+                if let Some(cast) =
+                    self.lower_global_type_cast(expr as *const Expr as usize, module, args, &ty)
+                {
+                    return Value::new(ty, cast);
+                }
                 if let Some(intrinsic) =
                     self.lower_global_intrinsic(module, callee, type_args, args)
                 {

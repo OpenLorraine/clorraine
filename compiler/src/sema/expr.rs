@@ -58,7 +58,13 @@ impl Checker<'_, '_> {
                 callee,
                 type_args,
                 args,
-            } => self.check_call(callee, type_args, args, expr.span),
+            } => {
+                let ty = self.check_call(callee, type_args, args, expr.span);
+                if self.callee_type(callee).is_some() {
+                    self.type_casts.insert(expr as *const Expr as usize);
+                }
+                ty
+            }
             ExprKind::Index { base, index } => self.check_index(base, index),
             ExprKind::Member { base, name } => self.check_member(expr, base, name),
             ExprKind::Unary { op, operand } => self.check_unary(expr, *op, operand, expected),

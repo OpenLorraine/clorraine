@@ -37,8 +37,14 @@ impl Drop for ScratchDir {
     }
 }
 
+/// The compiler under test. `RDC_CLC` lets a recorded base binary run the same
+/// pin; the built binary is the default.
+fn clc_path() -> String {
+    std::env::var("RDC_CLC").unwrap_or_else(|_| env!("CARGO_BIN_EXE_clc").to_owned())
+}
+
 fn run_clc(args: &[String]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_clc"))
+    Command::new(clc_path())
         .args(args)
         .output()
         .expect("failed to spawn the compiler binary")
@@ -57,6 +63,43 @@ fn emit(tag: &str, source: &str) -> String {
         output_path.display().to_string(),
         source_path.display().to_string(),
     ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&output_path).expect("read the emitted C")
+}
+
+/// Emits several source files and returns the C for the root file.
+fn emit_files(tag: &str, files: &[(&str, &str)], root_name: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let mut paths = Vec::new();
+    for (name, source) in files {
+        let path = scratch.path().join(name);
+        std::fs::write(&path, source)
+            .unwrap_or_else(|error| panic!("{tag}: write {name}: {error}"));
+        paths.push(path);
+    }
+    let output_path = scratch.path().join("out.c");
+    let root = paths
+        .iter()
+        .find(|path| path.file_name().and_then(|name| name.to_str()) == Some(root_name))
+        .unwrap_or_else(|| panic!("{tag}: root file {root_name} is missing"));
+    let mut args = vec![
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        root.display().to_string(),
+    ];
+    for path in &paths {
+        if path != root {
+            args.push(path.display().to_string());
+        }
+    }
+    let output = run_clc(&args);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -385,6 +428,133 @@ func main(): i32 {
         &emitted,
         "(u16)((unsigned int)(u16)(65535) * (unsigned int)(u16)(65535))",
     );
+}
+
+// ---------------------------------------------------------------------------
+// D6 — enum member values and conversion
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_emit_folded_enum_members() {
+    let emitted = emit(
+        "enum-macro-pin",
+        r#"
+module fuzz.EnumMacroPin;
+enum E: u8 { A = u8(2) + u8(3), B }
+func main(): i32 {
+    return i32(E.A) + i32(E.B);
+}
+"#,
+    );
+    assert_contains("enum-macro-pin", &emitted, "#define E_A 5");
+    assert_contains("enum-macro-pin", &emitted, "#define E_B 6");
+}
+
+#[test]
+fn should_emit_in_range_enum_macros() {
+    let emitted = emit(
+        "enum-in-range-pin",
+        r#"
+module fuzz.EnumInRangePin;
+enum E: u8 { A = 254, B }
+func main(): i32 {
+    return i32(E.B);
+}
+"#,
+    );
+    assert_contains("enum-in-range-pin", &emitted, "#define E_A 254");
+    assert_contains("enum-in-range-pin", &emitted, "#define E_B 255");
+}
+
+#[test]
+fn should_emit_an_enum_conversion_as_a_cast() {
+    let emitted = emit(
+        "enum-cast-pin",
+        r#"
+module fuzz.EnumCastPin;
+enum Direction: u8 { UP, DOWN, LEFT = 10, RIGHT }
+func main(): i32 {
+    let d: Direction = Direction(2);
+    return i32(d);
+}
+"#,
+    );
+    assert_contains("enum-cast-pin", &emitted, "(ClDirection)(2)");
+}
+
+#[test]
+fn should_emit_a_runtime_enum_conversion_as_a_cast() {
+    let emitted = emit(
+        "enum-cast-runtime-pin",
+        r#"
+module fuzz.EnumCastRuntimePin;
+enum Direction: u8 { UP, DOWN, LEFT = 10, RIGHT }
+func main(): i32 {
+    let n: u8 = 2;
+    let d: Direction = Direction(n);
+    return i32(d);
+}
+"#,
+    );
+    assert_contains("enum-cast-runtime-pin", &emitted, "(ClDirection)(n)");
+}
+
+#[test]
+fn should_keep_an_ffi_function_call_before_an_enum_type() {
+    let emitted = emit_files(
+        "enum-ffi-shadow-pin",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumFfiHolder;
+export enum E: u8 { A }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumFfiShadowPin;
+ffi probe { func E(x: i32): i32; }
+func main(): i32 {
+    return E(2);
+}
+"#,
+            ),
+        ],
+        "main.clo",
+    );
+    assert_contains("enum-ffi-shadow-pin", &emitted, "return E(2);");
+    assert_absent("enum-ffi-shadow-pin", &emitted, "(ClE)(2)");
+}
+
+#[test]
+fn should_emit_a_cross_module_enum_member() {
+    let emitted = emit_files(
+        "enum-cross-module-pin",
+        &[
+            (
+                "holder.clo",
+                r#"
+module fuzz.EnumHolderPin;
+export enum E: u8 { A = u8(1) + u8(2), B }
+"#,
+            ),
+            (
+                "main.clo",
+                r#"
+module fuzz.EnumCrossModulePin;
+import { E } from fuzz.EnumHolderPin;
+func main(): i32 {
+    return i32(E.A) + i32(E.B);
+}
+"#,
+            ),
+        ],
+        "main.clo",
+    );
+    assert_contains("enum-cross-module-pin", &emitted, "#define E_A 3");
+    assert_contains("enum-cross-module-pin", &emitted, "#define E_B 4");
 }
 
 // ---------------------------------------------------------------------------

@@ -53,6 +53,14 @@ pub struct SemaOutput {
     pub table: TypeTable,
     /// The type of each expression node, keyed by the node's address.
     pub expr_types: HashMap<usize, Ty>,
+    /// Call nodes the checker resolved as a type conversion, keyed by the
+    /// node's address.
+    ///
+    /// The ownership stage must not re-derive whether `Direction(2)` is a cast
+    /// or a call from the written name alone: a local, a module function, a
+    /// global, or an import can shadow the type. The checker already applied
+    /// that rule, so the lowering reads this set instead.
+    pub type_casts: BTreeSet<usize>,
     /// The captured bindings of each capturing lambda, keyed by its site id.
     ///
     /// The ownership and emission stages read this instead of re-deriving the
@@ -351,6 +359,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
+    let mut type_casts: BTreeSet<usize> = BTreeSet::new();
     let mut closures: BTreeMap<usize, ClosureSite> = BTreeMap::new();
     let mut capture_moves: Vec<CaptureMoveRequirement> = Vec::new();
     let mut opaque_projections: Vec<OpaqueProjection> = Vec::new();
@@ -374,10 +383,12 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_conversions.extend(checker.opaque_conversions.drain(..));
         opaque_conditionals.extend(checker.opaque_conditionals.drain(..));
         expr_types.extend(checker.recorded.drain(..));
+        type_casts.extend(std::mem::take(&mut checker.type_casts));
     }
     SemaOutput {
         table,
         expr_types,
+        type_casts,
         closures,
         capture_moves,
         opaque_projections,
@@ -434,6 +445,8 @@ struct Checker<'a, 'd> {
     /// `(node address, type)` for every checked expression, handed to the
     /// ownership stage.
     recorded: Vec<(usize, Ty)>,
+    /// Call nodes resolved as type conversions, keyed by node address.
+    type_casts: BTreeSet<usize>,
     /// The next free lambda-site id, shared across the program's modules.
     next_closure_id: usize,
     /// The captured bindings of each capturing lambda, in site order.
@@ -530,6 +543,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             unsafe_depth: 0,
             returns: Ty::void(),
             recorded: Vec::new(),
+            type_casts: BTreeSet::new(),
             next_closure_id,
             closures: Vec::new(),
             capture_moves: Vec::new(),
@@ -1024,7 +1038,11 @@ impl<'a, 'd> Checker<'a, 'd> {
         match self.module.decl(name) {
             Some(decl) => matches!(
                 decl.kind,
-                DeclKind::Func | DeclKind::Global | DeclKind::Const
+                DeclKind::Func
+                    | DeclKind::Global
+                    | DeclKind::Const
+                    | DeclKind::Ffi
+                    | DeclKind::Intrinsic
             ),
             None => self.module.import(name).is_some(),
         }
