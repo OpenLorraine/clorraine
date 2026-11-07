@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 1/38 tasks (3%)
+> **Progress**: 15/38 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -138,15 +138,19 @@ reaches it, with the documented once-per-site rule.
 **Objective**: Wrap `+`, `-`, `*`, and `<<` at the declared result type using a
 defined `unsigned int` intermediate, without `uint32_t` in the generated C.
 
-- [ ] 2.1.1 [spec-author] Add the D2/D4 value matrix, the 16-bit cases, the
-  32-bit controls, the operator agreement matrix, and the
-  const/local/fill/field strict-build cases; run red
-- [ ] 2.1.2 [impl-author] Add the result-cast emission pins and update the
-  `fill-shift` pin; run red
-- [ ] 2.1.3 Implement the width-aware arithmetic and shift result casts
-- [ ] 2.1.4 Update the PLAN-14 `narrow` value pin, verify the focused cases,
-  `make check`, and `make differential`; commit
+- [x] 2.1.1 [spec-author] Add the D2/D4 value matrix, the 16-bit cases, the
+  32-bit controls, the operator agreement matrix, the signed narrow case, the
+  freestanding case, and the const/local/fill/field strict-build cases; run red
+  ✅ (completed: 2026-11-07 22:35)
+- [x] 2.1.2 [impl-author] Add the result-cast emission pins and update the
+  `fill-shift` pin; run red ✅ (completed: 2026-11-07 22:35)
+- [x] 2.1.3 Implement the width-aware arithmetic and shift result casts,
+  including signed narrow results through `unsigned int`
+  ✅ (completed: 2026-11-07 22:40)
+- [x] 2.1.4 Update the PLAN-14 `narrow` value pin, verify the focused cases,
+  `make check`, `make differential`, and the base red evidence; commit
   `fix(compiler): wrap narrow arithmetic at its result type`
+  ✅ (completed: 2026-11-07 22:55)
 
 ### Step 2.2: D3 regression and base evidence
 
@@ -154,24 +158,27 @@ defined `unsigned int` intermediate, without `uint32_t` in the generated C.
 **Objective**: Pin the already-correct inline shift divisor and record the
 pre-PLAN-14 red evidence.
 
-- [ ] 2.2.1 [spec-author] Add the D3 spec case (local, module const, fill, call
+- [x] 2.2.1 [spec-author] Add the D3 spec case (local, module const, fill, call
   argument, named const) and the impl count pin; add the `RDC_CLC` helper
-- [ ] 2.2.2 Run the case against `build/robustness/base-0ac87d3e-clc` (traps)
+  ✅ (completed: 2026-11-07 22:50)
+- [x] 2.2.2 Run the case against `build/robustness/base-0ac87d3e-clc` (traps)
   and the head (prints 0); record both outputs in `05-findings.md`; commit
-  `test(compiler): pin the inline shift divisor`
+  with the D2 arithmetic commit because both extend the same suites
+  ✅ (completed: 2026-11-07 22:55)
 
 ### Step 2.3: Review
 
-- [ ] 2.3.1 Independent review: correctness reviewer, memory-safety auditor,
+- [x] 2.3.1 Independent review: correctness reviewer, memory-safety auditor,
   and emission-integrity auditor (base/head emission diff, strict build hunt).
-  Resolve every critical/major finding and record the verdict
+  RV-001/EI-001 fixed; RV3-001/RV3-002/EI2-001 test gaps closed; re-review
+  clean ✅ (completed: 2026-11-07 23:05)
 
 **Deliverables**:
-- [ ] Green D2/D4 spec and impl cases
-- [ ] `const U8W` builds under the strict matrix
-- [ ] One verified commit with red evidence
-- [ ] Green D3 regression with pre-PLAN-14 base evidence
-- [ ] A clean D2/D3 review verdict
+- [x] Green D2/D4 spec and impl cases
+- [x] `const U8W` builds under the strict matrix
+- [x] One verified commit with red evidence
+- [x] Green D3 regression with pre-PLAN-14 base evidence
+- [x] A clean D2/D3 review verdict
 
 ---
 

@@ -83,6 +83,29 @@ fn emit_host(tag: &str, source: &str) -> (ScratchDir, String) {
     (scratch, emitted)
 }
 
+/// Emits a program for one profile and returns its C.
+fn emit_profile(tag: &str, profile: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|error| panic!("{tag}: write the source: {error}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        profile.to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&c_path).expect("read the emitted C")
+}
+
 /// Adds the active sanitizer flags to a host C build command.
 fn sanitizer_flags() -> Vec<&'static str> {
     let mut flags = Vec::new();
@@ -382,6 +405,236 @@ func main(): i32 {
 }
 "#,
         "v: 1\n",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D2/D4 — narrow arithmetic wrapping
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_wrap_signed_narrow_arithmetic_without_int_overflow() {
+    assert_output(
+        "narrow-signed",
+        r#"
+module fuzz.NarrowSigned;
+import { println } from std.io;
+const SC1: i32 = i32(i16(-1) * i16(-1));
+const SC2: i32 = i32(i16(-24297) * i16(-13051));
+func mul(a: i16, b: i16): i16 {
+    return a * b;
+}
+func main(): i32 {
+    let a: i16 = i16(-1);
+    let b: i16 = i16(-1);
+    let c: i16 = i16(-24297);
+    let d: i16 = i16(-13051);
+    println($"const: {SC1} {SC2}");
+    println($"v: {i32(a * b)} {i32(c * d)} {i32(mul(c, d))} {i32(i16(32767) * i16(2))}");
+    return 0;
+}
+"#,
+        "const: 1 -28557\nv: 1 -28557 -28557 -2\n",
+    );
+}
+
+#[test]
+fn should_wrap_narrow_arithmetic_in_inline_and_const_positions() {
+    assert_output(
+        "narrow-wrap",
+        r#"
+module fuzz.NarrowWrap;
+import { println } from std.io;
+const A: i32 = i32(u8(200) + u8(100));
+const M: i32 = i32(u8(200) * u8(2));
+const Q: i32 = i32(u8(200) * u8(200));
+const S: i32 = i32(u8(1) - u8(2));
+const L: i32 = i32(u8(128) << 1);
+const W: i32 = i32(u16(65535) + u16(2));
+const H: i32 = i32(u16(65535) << 15);
+const I: i32 = i32(i8(127) + i8(1));
+func main(): i32 {
+    println($"const: {A} {M} {Q} {S} {L} {W} {H} {I}");
+    println($"inline: {i32(u8(200) + u8(100))} {i32(u8(200) * u8(2))} {i32(u8(200) * u8(200))} {i32(u8(1) - u8(2))} {i32(u8(128) << 1)} {i32(u16(65535) + u16(2))} {i32(u16(65535) << 15)} {i32(i8(127) + i8(1))}");
+    return 0;
+}
+"#,
+        "const: 44 144 64 255 0 1 32768 -128\ninline: 44 144 64 255 0 1 32768 -128\n",
+    );
+}
+
+#[test]
+fn should_wrap_a_16_bit_multiply_and_shift() {
+    assert_output(
+        "narrow-16",
+        r#"
+module fuzz.Narrow16;
+import { println } from std.io;
+func main(): i32 {
+    println($"v: {i32(u16(65535) * u16(65535))} {i32(u16(65535) << 15)}");
+    return 0;
+}
+"#,
+        "v: 1 32768\n",
+    );
+}
+
+#[test]
+fn should_build_a_narrow_const_under_the_strict_flags() {
+    assert_output(
+        "narrow-const-build",
+        r#"
+module fuzz.NarrowConstBuild;
+import { println } from std.io;
+const U8W: u8 = u8(200) + u8(100);
+const U16W: u16 = u16(65535) * u16(65535);
+func main(): i32 {
+    println($"v: {i32(U8W)} {i32(U16W)}");
+    return 0;
+}
+"#,
+        "v: 44 1\n",
+    );
+}
+
+#[test]
+fn should_build_a_narrow_local_a_fill_and_a_field() {
+    assert_output(
+        "narrow-build-positions",
+        r#"
+module fuzz.NarrowBuildPositions;
+import { println } from std.io;
+struct S { w: u8; }
+func main(): i32 {
+    let local: u8 = u8(200) + u8(100);
+    let fill: u8[64] = [; u8(200) + u8(100)];
+    let s: S = S { w: u8(200) + u8(100) };
+    println($"v: {i32(local)} {i32(fill[0])} {i32(fill[63])} {i32(s.w)}");
+    return 0;
+}
+"#,
+        "v: 44 44 44 44\n",
+    );
+}
+
+#[test]
+fn should_build_under_the_freestanding_profile() {
+    let source = r#"
+module fuzz.NarrowFreestanding;
+func main(): i32 {
+    let a: u8 = u8(200) + u8(100);
+    let b: u16 = u16(65535) * u16(65535);
+    let c: u8 = u8(128) << 1;
+    return i32(a) + i32(b) + i32(c);
+}
+"#;
+    let emitted = emit_profile("narrow-freestanding", "freestanding", source);
+    assert!(
+        !emitted.contains("uint32_t") && !emitted.contains("uint16_t"),
+        "narrow-freestanding: the freestanding C must use its own scalar typedefs"
+    );
+    let scratch = ScratchDir::new("narrow-freestanding-build");
+    let c_path = scratch.path().join("out.c");
+    std::fs::write(&c_path, emitted).expect("write the freestanding C");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsyntax-only",
+            c_path.to_str().expect("C path"),
+        ])
+        .output()
+        .expect("spawn cc");
+    assert!(
+        built.status.success(),
+        "narrow-freestanding: the freestanding C did not compile; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}
+
+#[test]
+fn should_agree_with_the_folder_for_the_other_operators() {
+    assert_output(
+        "narrow-operators",
+        r#"
+module fuzz.NarrowOperators;
+import { println } from std.io;
+func main(): i32 {
+    println($"folder: {i32(sizeof(u8[usize(u8(200) >> 3)]))} {i32(sizeof(u8[usize(u8(200) / u8(3))]))} {i32(sizeof(u8[usize(u8(200) % u8(7))]))} {i32(sizeof(u8[usize(u8(200) & u8(15))]))} {i32(sizeof(u8[usize(u8(200) | u8(1))]))} {i32(sizeof(u8[usize(u8(200) ^ u8(255))]))} {i32(sizeof(u8[usize(~u8(0))]))}");
+    println($"inline: {i32(u8(200) >> 3)} {i32(u8(200) / u8(3))} {i32(u8(200) % u8(7))} {i32(u8(200) & u8(15))} {i32(u8(200) | u8(1))} {i32(u8(200) ^ u8(255))} {i32(~u8(0))}");
+    return 0;
+}
+"#,
+        "folder: 25 66 4 8 201 55 255\ninline: 25 66 4 8 201 55 255\n",
+    );
+}
+
+#[test]
+fn should_keep_the_32_bit_controls() {
+    assert_output(
+        "narrow-32-controls",
+        r#"
+module fuzz.Narrow32Controls;
+import { println } from std.io;
+func main(): i32 {
+    println($"v: {i32(i32(2147483647) + i32(1))} {i32(u32(4294967295) + u32(1))} {i32(i32(1) << 31)}");
+    return 0;
+}
+"#,
+        "v: -2147483648 0 -2147483648\n",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D3 — inline constant shift divisor
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_keep_an_inline_shift_divisor_out_of_the_zero_trap() {
+    assert_output(
+        "shift-divisor",
+        r#"
+module fuzz.ShiftDivisor;
+import { println } from std.io;
+const V: u8 = 128;
+const Q: u8 = u8(10) / (u8(128) >> 8);
+func iden(x: u8): u8 {
+    return x;
+}
+func div(x: u8): u8 {
+    return u8(10) / (x >> 8);
+}
+func main(): i32 {
+    let a: u8 = u8(10) / (u8(128) >> 8);
+    let b: u8[2] = [; u8(10) / (u8(128) >> 8)];
+    let c: u8 = u8(10) / (V >> 8);
+    let d: u8 = div(u8(128));
+    let e: u8 = iden(u8(10) / (u8(128) >> 8));
+    println($"q: {i32(a)} {i32(b[0])} {i32(c)} {i32(d)} {i32(e)} {i32(Q)}");
+    return 0;
+}
+"#,
+        "q: 0 0 0 0 0 0\n",
+    );
+}
+
+#[test]
+fn should_trap_on_a_genuinely_zero_inline_shift_divisor() {
+    assert_trap(
+        "shift-divisor-zero",
+        r#"
+module fuzz.ShiftDivisorZero;
+func main(): i32 {
+    let z: u8 = 0;
+    let q: u8 = u8(10) / (z >> 8);
+    return i32(q);
+}
+"#,
+        "error E11210: integer division by zero",
     );
 }
 

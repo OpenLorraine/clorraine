@@ -89,6 +89,13 @@ fn trap_count(body: &str) -> usize {
     count(body, "cl_trap(\"E1121")
 }
 
+fn assert_contains(tag: &str, haystack: &str, needle: &str) {
+    assert!(
+        haystack.contains(needle),
+        "{tag}: emitted C does not contain {needle:?}"
+    );
+}
+
 fn assert_absent(tag: &str, haystack: &str, needle: &str) {
     assert!(
         !haystack.contains(needle),
@@ -292,6 +299,113 @@ func main(): i32 {
         1,
         "fill-condition-count: the condition guard runs once"
     );
+}
+
+// ---------------------------------------------------------------------------
+// D2/D4 — narrow result wrapping
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_emit_a_result_cast_for_unsigned_arithmetic() {
+    let emitted = emit(
+        "narrow-add-pin",
+        r#"
+module fuzz.NarrowAddPin;
+func main(): i32 {
+    let a: i32 = i32(u8(200) + u8(100));
+    let b: i32 = i32(u8(200) * u8(200));
+    return a + b;
+}
+"#,
+    );
+    assert_contains(
+        "narrow-add-pin",
+        &emitted,
+        "(u8)((unsigned int)(u8)(200) + (unsigned int)(u8)(100))",
+    );
+    assert_contains(
+        "narrow-add-pin",
+        &emitted,
+        "(u8)((unsigned int)(u8)(200) * (unsigned int)(u8)(200))",
+    );
+}
+
+#[test]
+fn should_emit_a_result_cast_for_signed_narrow_arithmetic() {
+    let emitted = emit(
+        "narrow-signed-pin",
+        r#"
+module fuzz.NarrowSignedPin;
+func mul(a: i16, b: i16): i16 {
+    return a * b;
+}
+func main(): i32 {
+    let a: i16 = i16(-1);
+    let b: i16 = i16(-1);
+    return i32(mul(a, b));
+}
+"#,
+    );
+    assert_contains(
+        "narrow-signed-pin",
+        &emitted,
+        "(i16)((unsigned int)a * (unsigned int)b)",
+    );
+}
+
+#[test]
+fn should_emit_a_result_cast_for_an_unsigned_shift() {
+    let emitted = emit(
+        "narrow-shift-pin",
+        r#"
+module fuzz.NarrowShiftPin;
+func main(): i32 {
+    let a: i32 = i32(u8(128) << 1);
+    return a;
+}
+"#,
+    );
+    assert_contains("narrow-shift-pin", &emitted, "(u8)((u8)(128) << (1 & 7))");
+}
+
+#[test]
+fn should_emit_a_result_cast_for_a_16_bit_multiply() {
+    let emitted = emit(
+        "narrow-mul-pin",
+        r#"
+module fuzz.NarrowMulPin;
+func main(): i32 {
+    let a: i32 = i32(u16(65535) * u16(65535));
+    return a;
+}
+"#,
+    );
+    assert_contains(
+        "narrow-mul-pin",
+        &emitted,
+        "(u16)((unsigned int)(u16)(65535) * (unsigned int)(u16)(65535))",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D3 — inline constant shift divisor
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_emit_the_masked_count_for_an_inline_shift_divisor() {
+    let emitted = emit(
+        "shift-divisor-pin",
+        r#"
+module fuzz.ShiftDivisorPin;
+func main(): i32 {
+    let q: u8 = u8(10) / (u8(128) >> 8);
+    return i32(q);
+}
+"#,
+    );
+    let main = body("shift-divisor-pin", &emitted, "static i32 cl_fuzz_ShiftDivisorPin_main(void)");
+    assert_contains("shift-divisor-pin", main, ">> (8 & 7)");
+    assert_absent("shift-divisor-pin", main, "E11210");
 }
 
 #[test]

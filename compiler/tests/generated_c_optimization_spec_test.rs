@@ -869,7 +869,7 @@ func main(): i32 {
     return 0;
 }
 "#,
-        "narrow: 300 300\n",
+        "narrow: 44 44\n",
     );
 }
 

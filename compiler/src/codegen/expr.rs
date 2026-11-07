@@ -1018,24 +1018,63 @@ impl<'a> Emitter<'a> {
                     return format!("({})(({}){left_c} << {count})", c_type(&ty, &self.sema.table), unsigned);
                 }
                 let operator = if matches!(op, BinaryOp::Shl) { "<<" } else { ">>" };
+                // A narrow shift keeps the left operand's type, so the result
+                // wraps at that width. A C shift promotes a `u8`/`u16` left
+                // operand to `int`; the outer cast restores the declared width.
+                // A 32-bit shift already runs at its declared width.
+                if matches!(op, BinaryOp::Shl)
+                    && scalar_bits(scalar) < 32
+                    && !matches!(scalar, crate::ast::ScalarType::Bool)
+                {
+                    return format!(
+                        "({})({left_c} {operator} {count})",
+                        c_type(&ty, &self.sema.table)
+                    );
+                }
                 return format!("({left_c} {operator} {count})");
             }
         }
         if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) {
             if let Some(scalar) = scalar_of(&ty) {
+                let operator = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    BinaryOp::Mul => "*",
+                    _ => unreachable!(),
+                };
                 if is_signed_scalar(scalar) {
+                    // A signed narrow result also runs through `unsigned int`.
+                    // The same-width `u8`/`u16` spelling would promote to
+                    // `int`, and `i16 * i16` can overflow that (for example
+                    // `(-24297) * (-13051)`). `unsigned int` is defined for
+                    // every 8/16-bit product; the outer signed cast restores
+                    // the declared type. A 32-bit result keeps its existing
+                    // `u32` spelling.
+                    if scalar_bits(scalar) < 32 {
+                        return format!(
+                            "({})((unsigned int){left_c} {operator} (unsigned int){right_c})",
+                            c_type(&ty, &self.sema.table)
+                        );
+                    }
                     let unsigned = unsigned_c(unsigned_scalar(scalar));
-                    let operator = match op {
-                        BinaryOp::Add => "+",
-                        BinaryOp::Sub => "-",
-                        BinaryOp::Mul => "*",
-                        _ => unreachable!(),
-                    };
                     return format!(
                         "({})(({}){left_c} {operator} ({}){right_c})",
                         c_type(&ty, &self.sema.table),
                         unsigned,
                         unsigned
+                    );
+                }
+                // An unsigned narrow result also needs the declared-width
+                // wrap: `u8 + u8` promotes to `int`, and `u16 * u16` overflows
+                // `int`. Compute in `unsigned int` (defined for every 16-bit
+                // product) and cast back to the result type. A 32-bit result
+                // already runs in `unsigned int` and keeps its spelling.
+                if scalar_bits(scalar) < 32
+                    && !matches!(scalar, crate::ast::ScalarType::Bool)
+                {
+                    return format!(
+                        "({})((unsigned int){left_c} {operator} (unsigned int){right_c})",
+                        c_type(&ty, &self.sema.table)
                     );
                 }
             }

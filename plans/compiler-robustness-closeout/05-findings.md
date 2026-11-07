@@ -34,20 +34,20 @@
 
 | Item | Evidence |
 |---|---|
-| Red | `300 400 -1 256 65537`; `u16*u16` strict build fails; `u16<<15` is 2147450880 |
-| Fix | width-aware `unsigned int` intermediate; shift result cast |
-| Green | pending |
-| Review | pending |
+| Red | base: `const: 300 400 40000 -1 256 65537`; `u16*u16` strict build fails; `u16<<15` is 2147450880; signed `i16` negative products fail the strict build |
+| Fix | width-aware `unsigned int` intermediate for signed and unsigned narrow `+ - *`; narrow `<<` result cast; 32-bit spelling unchanged |
+| Green | spec 23/23, impl 16/16; `make check` and `make differential` green; corpus diff attributable (string-parser, volatile-mmio, imageviewer, paddle) |
+| Review | RV-001/EI-001 signed `i16` overflow fixed; re-review clean; RV3-001/RV3-002/ EI2-001 test gaps closed with const cases; 3,760-case matrix, host + m68k + vbcc + freestanding clean |
 
 ### D3 — Inline shift divisor
 
 | Item | Evidence |
 |---|---|
-| Red | `build/robustness/base-0ac87d3e-clc` traps `E11210` |
-| Head | `q: 0` |
-| Fix | none; regression test and evidence |
-| Green | pending |
-| Review | pending |
+| Red | `build/robustness/base-0ac87d3e-clc` traps `E11210` for the literal call-argument and local shapes |
+| Head | `q: 0 0 0 0 0 0` |
+| Fix | none; regression test and evidence; `RDC_CLC` helper |
+| Green | spec case green; genuinely-zero divisor still traps |
+| Review | included in the D2/D3 phase review; D3 call-argument case red on base, green on head |
 
 ### D4 — Narrow const strict build
 
@@ -97,7 +97,7 @@
 | Requirements | 2 independent auditors | 36 findings resolved; user E10202 ruling |
 | Plan | 2 independent auditors + focused re-scan | 45 + 14 findings resolved |
 | D1 | correctness reviewer + memory-safety auditor | RV-001 fixed; MS-001/MS-002 fixed; re-review clean; 87 ASan/LSan probes, no report |
-| D2/D3 | pending | |
+| D2/D3 | correctness + memory-safety + emission-integrity | RV-001/EI-001 fixed; re-review clean; 3,760-case matrix, UBSan clean, corpus diff attributable |
 | D4/D6 | pending | |
 | Fuzzer | pending | |
 | Final | pending | |

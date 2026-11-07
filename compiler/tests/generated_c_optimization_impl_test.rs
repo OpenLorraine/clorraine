@@ -613,7 +613,7 @@ func main(): i32 {
     );
     assert_absent("fill-shift", &emitted, "memset(&(a[0])");
     assert_absent("fill-shift", &emitted, "for (__cl_fill_");
-    assert_contains("fill-shift", &emitted, "a[31] = ((u8)(1) << (8 & 7));");
+    assert_contains("fill-shift", &emitted, "a[31] = (u8)((u8)(1) << (8 & 7));");
 }
 
 #[test]
