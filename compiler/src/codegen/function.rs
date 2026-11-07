@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, PlaceBase, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::ast::UnaryOp;
+
+/// A fill covering at least this many slots is emitted as one loop or memset.
+const FILL_COMPACT_THRESHOLD: usize = 16;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
@@ -4161,8 +4164,13 @@ impl<'a> Emitter<'a> {
         // direct per-element spelling and the existing emission pins.
         if super::program::init_operand_is_pure(fill) {
             let lowered = self.store_text(fill, element);
-            for index in prefix..extent {
-                self.push(&format!("    {}[{index}] = {lowered};", target.text));
+            if extent.saturating_sub(prefix) >= FILL_COMPACT_THRESHOLD {
+                let constant = super::expr::constant_integer(fill);
+                self.emit_compact_scalar_fill(target, element, &lowered, prefix, extent, constant);
+            } else {
+                for index in prefix..extent {
+                    self.push(&format!("    {}[{index}] = {lowered};", target.text));
+                }
             }
             return;
         }
@@ -4181,10 +4189,52 @@ impl<'a> Emitter<'a> {
         self.push(&format!("    {local} = {lowered};"));
         if prefix >= extent {
             self.push(&format!("    if (sizeof({local})) {{ }}"));
+        } else if extent - prefix >= FILL_COMPACT_THRESHOLD {
+            self.emit_compact_scalar_fill(target, element, &local, prefix, extent, None);
+        } else {
+            for index in prefix..extent {
+                self.push(&format!("    {}[{index}] = {local};", target.text));
+            }
         }
-        for index in prefix..extent {
-            self.push(&format!("    {}[{index}] = {local};", target.text));
+    }
+
+    /// Emits the compact form of a one-extent scalar fill.
+    ///
+    /// A `u8`/`i8` constant fill is one `memset` from the first covered slot.
+    /// Every other scalar, including `bool`, uses one `for` loop with a
+    /// unique index local. The caller has already evaluated an impure fill
+    /// into `value`; a pure fill's `value` is safe to repeat.
+    fn emit_compact_scalar_fill(
+        &mut self,
+        target: &ArrayTarget,
+        element: &Ty,
+        value: &str,
+        prefix: usize,
+        extent: usize,
+        constant: Option<i128>,
+    ) {
+        let covered = extent - prefix;
+        if let Some(constant) = constant {
+            if matches!(
+                element.kind,
+                TyKind::Scalar(crate::ast::ScalarType::U8 | crate::ast::ScalarType::I8)
+            ) {
+                self.push(&format!(
+                    "    memset(&({}[{prefix}]), {constant}, {covered});",
+                    target.text
+                ));
+                return;
+            }
         }
+        let index = self.unique_local("__cl_fill");
+        self.push("    {");
+        self.push(&format!("        usize {index};"));
+        self.push(&format!(
+            "        for ({index} = {prefix}; {index} < {extent}; {index}++) {{"
+        ));
+        self.push(&format!("            {}[{index}] = {value};", target.text));
+        self.push("        }");
+        self.push("    }");
     }
 
     /// Zeroes a moved-out source: the null literal for a handle, `cl_zero`

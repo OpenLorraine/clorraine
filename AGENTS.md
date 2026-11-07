@@ -67,6 +67,11 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-a1200-rtg` | Boot A1200/KS3.1 with Picasso96 and FS-UAE UAEGFX, assert the 32-bit RTG report and PPM capture, and write `docs/amiga-sdk/a1200-rtg.png` |
 | `make sdk-a4000-rtg-piv` | Boot A4000/KS3.1 with Picasso96, the emulated Picasso IV Zorro III card, and the 7.4 flash ROM, assert the 24-bit RTG report and PPM capture, and write `docs/amiga-sdk/a4000-rtg-piv.png` |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |
+| `make bench` | Trace the benchmark suite in the pinned container and write `build/perf/head.json` |
+| `make bench-fast` | Same suite without the m68k trace; writes `build/perf/head-fast.json` |
+| `make bench-base COMMIT=…` | Build the base `clc` from a commit and write `build/perf/base.json`; retains `build/perf/base-clc` |
+| `make bench-compare` | Enforce the benchmark thresholds between `base.json` and `head.json` |
+| `make bench-test` | Harness unit tests; also part of `make check` |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
 
@@ -79,6 +84,8 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `compiler/src/` | Compiler stages (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph`, and the `clorraine` driver |
 | `compiler/runtime/` | C runtime shims: `shim_host.c`, `shim_hosted_amiga.c` plus the 2.0+ `shim_hosted_amiga_20.c` and optional suffixes, `shim_freestanding.c`, and the vendored `picasso96.h` definitions |
 | `compiler/tests/` | Rust integration test drivers |
+| `benchmarks/` | Generated-C benchmark fixtures (not spec goldens) |
+| `tools/perf/` | Benchmark harness and its unit tests |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
 | `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
@@ -102,6 +109,9 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 - `#[cfg(test)] mod tests` inside `compiler/src/` holds focused unit tests.
 - `tools/demo/test/*.spec.test.ts` and `*.impl.test.ts` follow the same split;
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
+- `tools/perf/bench.py` measures generated-C size, m68k section sizes, host time,
+  and the streamed `vamos` instruction count; `make bench-test` runs its unit
+  tests. Benchmark fixtures live under `benchmarks/` and are not spec goldens.
 - Golden inputs live under `spec/tests/{compile-fail,run,staged,corpus}`; run the
   whole suite with `cargo test --workspace` via `make check`.
 - `make asan` discovers the suites that reference `RDC_ASAN`, runs each in its

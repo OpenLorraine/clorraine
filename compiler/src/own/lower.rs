@@ -24,10 +24,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Bool(value) => ValueKind::Bool(*value),
             ExprKind::Null => ValueKind::Null,
             ExprKind::Str(bytes) => ValueKind::Str(String::from_utf8_lossy(bytes).into_owned()),
-            ExprKind::Name(name) => match self.place_target(expr) {
-                Some(target) => ValueKind::Place(self.target_place(&target)),
-                None => ValueKind::Path(vec![name.clone()]),
-            },
+            ExprKind::Name(name) => {
+                if let Some(folded) = self.fold_global_const_read(expr, &ty) {
+                    return folded;
+                }
+                match self.place_target(expr) {
+                    Some(target) => ValueKind::Place(self.target_place(&target)),
+                    None => ValueKind::Path(vec![name.clone()]),
+                }
+            }
             ExprKind::Qualified(name) => {
                 // A fixed array's `.len` is its structural extent: the length
                 // is a compile-time constant and the base reads no storage,
@@ -37,6 +42,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         ty: Ty::usize_ty(),
                         kind: ValueKind::Int(extent as i128),
                     };
+                }
+                if let Some(folded) = self.fold_global_const_read(expr, &ty) {
+                    return folded;
                 }
                 match self.place_target(expr) {
                     Some(target) => ValueKind::Place(self.target_place(&target)),
@@ -709,6 +717,91 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
         }
         value
+    }
+
+    /// Folds a read of a module-level scalar `const` to a typed literal.
+    ///
+    /// Only a bare global-const place is eligible. The constant is evaluated
+    /// in its declaring module, at its declared integer width, and is skipped
+    /// entirely when the program takes its address: an accepted raw write can
+    /// change the storage between reads, so a literal would be wrong.
+    fn fold_global_const_read(&self, expr: &Expr, ty: &Ty) -> Option<Value> {
+        let PlaceTarget::Global(id, projections) = self.place_target(expr)? else {
+            return None;
+        };
+        if !projections.is_empty() {
+            return None;
+        }
+        let global = self.program.globals.get(&id)?;
+        if !global.is_const || self.program.address_taken_consts.contains(&id) {
+            return None;
+        }
+        let initializer = global.const_init?;
+        let declaring = self.loaded.modules.get(&id.module)?;
+        if !value_initializer_is_stable(
+            initializer,
+            self.program,
+            self.loaded,
+            declaring,
+            &mut BTreeSet::new(),
+        ) {
+            return None;
+        }
+        let mut folder = crate::consts::ConstFolder::new(&self.sema.table, declaring, self.loaded);
+        let scalar = match &ty.kind {
+            TyKind::Scalar(scalar) => *scalar,
+            _ => return None,
+        };
+        match scalar {
+            ScalarType::Bool => match folder.fold(initializer).ok()? {
+                crate::consts::ConstValue::Bool(value) => {
+                    Some(Value::new(ty.clone(), ValueKind::Bool(value)))
+                }
+                _ => None,
+            },
+            ScalarType::F32 | ScalarType::F64 => {
+                if !float_initializer_is_simple(initializer) {
+                    return None;
+                }
+                let crate::consts::ConstValue::Float(value) = folder.fold(initializer).ok()? else {
+                    return None;
+                };
+                if !value.is_finite() {
+                    return None;
+                }
+                if scalar == ScalarType::F32 {
+                    let rounded = value as f32 as f64;
+                    let inner = Value::new(
+                        Ty::scalar(ScalarType::F64),
+                        ValueKind::Float(rounded),
+                    );
+                    Some(Value::new(
+                        ty.clone(),
+                        ValueKind::Cast {
+                            to: "f32".to_owned(),
+                            value: Box::new(inner),
+                        },
+                    ))
+                } else {
+                    Some(Value::new(ty.clone(), ValueKind::Float(value)))
+                }
+            }
+            _ => {
+                let value = folder.integer_in(initializer, ty)?;
+                if value >= 0 {
+                    Some(Value::new(ty.clone(), ValueKind::Int(value)))
+                } else {
+                    let operand = Value::new(ty.clone(), ValueKind::Int(-value));
+                    Some(Value::new(
+                        ty.clone(),
+                        ValueKind::Unary {
+                            op: UnaryOp::Neg,
+                            operand: Box::new(operand),
+                        },
+                    ))
+                }
+            }
+        }
     }
 
     /// True when a projection chain roots at storage that needs a scope owner.
@@ -7013,4 +7106,109 @@ pub(super) fn fixed_array_extent(ty: &Ty) -> Option<usize> {
         }
         _ => None,
     }
+}
+
+/// True when a float initializer is a literal, a name, or a cast chain.
+///
+/// The constant folder evaluates float arithmetic in `f64`; folding an `f32`
+/// expression would not round at each step the way the runtime does. A simple
+/// literal or cast chain is exact after the final `f32` rounding, so only that
+/// form is eligible for the read fold.
+fn float_initializer_is_simple(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Float(_) | ExprKind::Int(_) | ExprKind::Name(_) | ExprKind::Qualified(_) => true,
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            float_initializer_is_simple(value)
+        }
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => float_initializer_is_simple(operand),
+        ExprKind::Unsafe(inner) => float_initializer_is_simple(inner),
+        _ => false,
+    }
+}
+
+/// True when an initializer is a value-stable constant form.
+///
+/// `sizeof`/`offsetof` fold through the type table's layout, while the emitted
+/// C evaluates the host or target C layout. A const read cannot be folded to
+/// one value that is correct on both profiles, so any intrinsic call (and any
+/// const chain that reaches one) is excluded. Calls, lambdas, templates, and
+/// aggregate literals are not scalar constant forms and are excluded too.
+fn value_initializer_is_stable(
+    expr: &Expr,
+    program: &ProgramInfo<'_>,
+    loaded: &Loaded,
+    module: &crate::load::Module,
+    visited: &mut BTreeSet<ir::GlobalId>,
+) -> bool {
+    match &expr.kind {
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Bool(_) => true,
+        ExprKind::Name(name) => {
+            let Some(global) = crate::init_graph::resolve_name_global(loaded, module, name) else {
+                return true;
+            };
+            stable_const_initializer(global, program, loaded, visited)
+        }
+        ExprKind::Qualified(name) => {
+            let Some(global) = crate::init_graph::resolve_global(loaded, module, name) else {
+                return true;
+            };
+            stable_const_initializer(global, program, loaded, visited)
+        }
+        ExprKind::Unary { op, operand } => {
+            !op.is_update()
+                && value_initializer_is_stable(operand, program, loaded, module, visited)
+        }
+        ExprKind::Binary { left, right, .. } => {
+            value_initializer_is_stable(left, program, loaded, module, visited)
+                && value_initializer_is_stable(right, program, loaded, module, visited)
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            value_initializer_is_stable(value, program, loaded, module, visited)
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            value_initializer_is_stable(condition, program, loaded, module, visited)
+                && value_initializer_is_stable(then_value, program, loaded, module, visited)
+                && value_initializer_is_stable(else_value, program, loaded, module, visited)
+        }
+        ExprKind::Unsafe(inner) => {
+            value_initializer_is_stable(inner, program, loaded, module, visited)
+        }
+        _ => false,
+    }
+}
+
+/// Follows a const reference to its initializer and checks it recursively.
+fn stable_const_initializer(
+    global: crate::init_graph::GlobalRef,
+    program: &ProgramInfo<'_>,
+    loaded: &Loaded,
+    visited: &mut BTreeSet<ir::GlobalId>,
+) -> bool {
+    let id = ir::GlobalId::new(global.module, global.name);
+    if !visited.insert(id.clone()) {
+        return true;
+    }
+    let Some(info) = program.globals.get(&id) else {
+        return true;
+    };
+    if !info.is_const {
+        return true;
+    }
+    let Some(initializer) = info.const_init else {
+        return true;
+    };
+    let Some(module) = loaded.modules.get(&id.module) else {
+        return true;
+    };
+    value_initializer_is_stable(initializer, program, loaded, module, visited)
 }

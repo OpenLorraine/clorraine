@@ -51,12 +51,37 @@ export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
 
-.PHONY: check asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
+	$(MAKE) bench-test
+
+# Benchmark harness (generated C: emitted size, section size, host time, m68k
+# instruction count). `bench` traces; `bench-fast` skips the trace for
+# iteration; `bench-base` builds the recorded base compiler; `bench-compare`
+# enforces the plan thresholds.
+bench:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/perf/bench.py run --compiler-git $$(git rev-parse HEAD) --label head --out build/perf/head.json"
+
+bench-fast:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/perf/bench.py run --compiler-git $$(git rev-parse HEAD) --label head-fast --out build/perf/head-fast.json --no-trace"
+
+bench-base:
+	@test -n "$(COMMIT)" || { echo 'usage: make bench-base COMMIT=<ref>'; exit 2; }
+	@sha=$$(git rev-parse --verify --quiet "$(COMMIT)^{commit}") || { echo "bench-base: unknown commit: $(COMMIT)"; exit 2; }; \
+	BASE_COMMIT=$$sha $(DOCKER_MAKE) exec PASSTHROUGH="BASE_COMMIT" CMD="docker/scripts/bench-base.sh"
+
+bench-compare:
+	$(DOCKER_MAKE) exec CMD="python3 tools/perf/bench.py compare build/perf/base.json build/perf/head.json"
+
+bench-test:
+	$(DOCKER_MAKE) exec CMD="python3 -m unittest discover -s tools/perf/tests -t tools/perf -v"
+
+bench-shape:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && docker/scripts/bench-shape.sh"
 
 # Run every suite that references RDC_ASAN under AddressSanitizer. The runner
 # installs a temporary `cc` wrapper that links ASan children with `-no-pie`,
@@ -116,6 +141,7 @@ run-fault-amiga:
 
 verify:
 	$(MAKE) check
+	$(MAKE) bench-shape
 	$(MAKE) sdk-a500-smoke
 	$(MAKE) sdk-a500-boing
 	$(MAKE) sdk-a500-sprites

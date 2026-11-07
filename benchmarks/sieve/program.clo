@@ -1,0 +1,45 @@
+// Exercises a large one-extent fixed-array fill, a scalar module const in the
+// loop bounds, and nested bounds-checked indexing. Ten passes keep the trace
+// short enough for the harness while the fill remains 8,192 slots.
+module bench.Sieve;
+
+import { println } from std.io;
+
+const N: i32 = 8192;
+
+func sieveOnce(): i32 {
+    let flags: u8[N] = [; 1];
+    flags[0] = 0;
+    flags[1] = 0;
+    let i: i32 = 2;
+    while (i * i < N) {
+        if (flags[i] == 1) {
+            let j: i32 = i * i;
+            while (j < N) {
+                flags[j] = 0;
+                j = j + i;
+            }
+        }
+        i = i + 1;
+    }
+    let count: i32 = 0;
+    let k: i32 = 0;
+    while (k < N) {
+        if (flags[k] == 1) {
+            count = count + 1;
+        }
+        k = k + 1;
+    }
+    return count;
+}
+
+func main(): i32 {
+    let total: i32 = 0;
+    let r: i32 = 0;
+    while (r < 10) {
+        total = total + sieveOnce();
+        r = r + 1;
+    }
+    println($"sieve: {total}");
+    return 0;
+}

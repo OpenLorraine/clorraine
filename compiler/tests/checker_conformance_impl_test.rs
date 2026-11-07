@@ -381,7 +381,12 @@ func main(): i32 {
         &emitted,
         "i32 __cl_itmp0 = cl_spec_cc_impl_initdividend_d();",
     );
-    assert_contains("initdividend", &emitted, "(__cl_itmp0 == -2147483648");
+    // A constant non-zero divisor has no zero or overflow hazard, so the
+    // guard is omitted; the impure dividend is still stored once.
+    assert!(
+        !emitted.contains("__cl_itmp0 == -2147483648"),
+        "initdividend: a constant divisor must not emit the MIN guard"
+    );
     assert_contains("initdividend",
         &emitted,
         "cl_spec_cc_impl_initdividend_g = (__cl_itmp0 / 1);",

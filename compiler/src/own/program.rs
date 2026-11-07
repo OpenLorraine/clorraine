@@ -6,11 +6,12 @@
 //! behavior of the standard-library helpers that return views. Gathering them
 //! once keeps the per-function walk free of repeated lookups.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    Arg, Expr, ExprKind, FfiBlock, FuncDecl, FuncSignature, IntrinsicArg, Item, Mode,
-    Param, QualifiedName, StructDecl, TemplatePiece,
+    Arg, Block, Expr, ExprKind, FfiBlock, ForInit, FuncDecl, FuncSignature, IntrinsicArg,
+    Item, LambdaBody, Mode, Param, QualifiedName, Stmt, StructDecl, SwitchLabel,
+    TemplatePiece, UnaryOp,
 };
 use crate::borrow::{is_nullable_capable, LoanKind};
 use crate::diag::{Diagnostic, Diagnostics};
@@ -36,13 +37,15 @@ pub struct HandleInfo<'a> {
 }
 
 /// A module-level binding.
-pub struct GlobalInfo {
+pub struct GlobalInfo<'a> {
     /// The binding's name.
     pub name: String,
     /// Its declared type.
     pub ty: Ty,
     /// True for a `const`, which may not be assigned.
     pub is_const: bool,
+    /// The initializer of a `const`, for the typed read fold.
+    pub const_init: Option<&'a Expr>,
     /// Span of the name.
     pub span: Span,
 }
@@ -83,7 +86,12 @@ pub struct ProgramInfo<'a> {
     /// Struct declarations, for the `freedBy` check.
     pub structs: BTreeMap<String, &'a StructDecl>,
     /// Module-level bindings, keyed by their module and simple name.
-    pub globals: BTreeMap<GlobalId, GlobalInfo>,
+    pub globals: BTreeMap<GlobalId, GlobalInfo<'a>>,
+    /// Module consts whose address is taken anywhere in the program.
+    ///
+    /// A recorded const is never folded: an accepted `unsafe &N` can mutate
+    /// the storage between two reads, so a literal would change the program.
+    pub address_taken_consts: BTreeSet<GlobalId>,
 }
 
 impl<'a> ProgramInfo<'a> {
@@ -97,6 +105,7 @@ impl<'a> ProgramInfo<'a> {
             handles: BTreeMap::new(),
             structs: BTreeMap::new(),
             globals: BTreeMap::new(),
+            address_taken_consts: BTreeSet::new(),
         };
         for module in loaded.modules.values() {
             for item in &module.items {
@@ -136,6 +145,7 @@ impl<'a> ProgramInfo<'a> {
                                     .cloned()
                                     .unwrap_or_else(Ty::unknown),
                                 is_const: false,
+                                const_init: None,
                                 span: decl.name_span,
                             },
                         );
@@ -150,6 +160,7 @@ impl<'a> ProgramInfo<'a> {
                                     .cloned()
                                     .unwrap_or_else(Ty::unknown),
                                 is_const: true,
+                                const_init: Some(&decl.value),
                                 span: decl.name_span,
                             },
                         );
@@ -158,6 +169,7 @@ impl<'a> ProgramInfo<'a> {
                 }
             }
         }
+        info.address_taken_consts = collect_address_taken(loaded, &info);
         info
     }
 
@@ -1126,4 +1138,269 @@ fn report_illegal_nullable(ty: &Ty, span: Span, diagnostics: &mut Diagnostics) {
         )
         .with_help("`?` applies to handles, `raw`, `cstring`, and views"),
     );
+}
+
+/// Collects every module const whose address is taken in the program.
+///
+/// The walk covers every body-bearing item and every expression child. A miss
+/// would let a folded read disagree with an accepted `unsafe &N` write, so the
+/// traversal is exhaustive over the AST rather than a best-effort scan.
+fn collect_address_taken(loaded: &Loaded, info: &ProgramInfo<'_>) -> BTreeSet<GlobalId> {
+    let mut found = BTreeSet::new();
+    for module in loaded.modules.values() {
+        for item in &module.items {
+            match item {
+                Item::Func(decl) | Item::Comptime(decl) => {
+                    walk_block(&decl.body, loaded, module, info, &mut found);
+                }
+                Item::GlobalLet(decl) => {
+                    walk_expr(&decl.value, loaded, module, info, &mut found);
+                }
+                Item::GlobalConst(decl) => {
+                    walk_expr(&decl.value, loaded, module, info, &mut found);
+                }
+                _ => {}
+            }
+        }
+    }
+    found
+}
+
+/// Records one address operand's root when it resolves to a const.
+fn note_addressed_root(
+    operand: &Expr,
+    loaded: &Loaded,
+    module: &Module,
+    info: &ProgramInfo<'_>,
+    found: &mut BTreeSet<GlobalId>,
+) {
+    let global = match &operand.kind {
+        ExprKind::Name(name) => crate::init_graph::resolve_name_global(loaded, module, name),
+        ExprKind::Qualified(name) => crate::init_graph::resolve_global(loaded, module, name),
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+            return note_addressed_root(base, loaded, module, info, found);
+        }
+        ExprKind::Unsafe(inner) => {
+            return note_addressed_root(inner, loaded, module, info, found);
+        }
+        _ => None,
+    };
+    let Some(global) = global else {
+        return;
+    };
+    let id = GlobalId::new(global.module, global.name);
+    if info.globals.get(&id).is_some_and(|global| global.is_const) {
+        found.insert(id);
+    }
+}
+
+/// Walks a block and its statements.
+fn walk_block(
+    block: &Block,
+    loaded: &Loaded,
+    module: &Module,
+    info: &ProgramInfo<'_>,
+    found: &mut BTreeSet<GlobalId>,
+) {
+    for statement in &block.statements {
+        walk_stmt(statement, loaded, module, info, found);
+    }
+}
+
+/// Walks one statement.
+fn walk_stmt(
+    statement: &Stmt,
+    loaded: &Loaded,
+    module: &Module,
+    info: &ProgramInfo<'_>,
+    found: &mut BTreeSet<GlobalId>,
+) {
+    match statement {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                walk_expr(value, loaded, module, info, found);
+            }
+        }
+        Stmt::Const(decl) => walk_expr(&decl.value, loaded, module, info, found),
+        Stmt::Expr(expr) => walk_expr(expr, loaded, module, info, found),
+        Stmt::If(decl) => {
+            walk_expr(&decl.condition, loaded, module, info, found);
+            walk_block(&decl.then_block, loaded, module, info, found);
+            match &decl.else_branch {
+                Some(crate::ast::ElseBranch::If(nested)) => {
+                    walk_if(nested, loaded, module, info, found)
+                }
+                Some(crate::ast::ElseBranch::Block(block)) => {
+                    walk_block(block, loaded, module, info, found)
+                }
+                None => {}
+            }
+        }
+        Stmt::While(decl) => {
+            walk_expr(&decl.condition, loaded, module, info, found);
+            walk_block(&decl.body, loaded, module, info, found);
+        }
+        Stmt::DoWhile(decl) => {
+            walk_block(&decl.body, loaded, module, info, found);
+            walk_expr(&decl.condition, loaded, module, info, found);
+        }
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(ForInit::Let(init)) => {
+                    if let Some(value) = &init.value {
+                        walk_expr(value, loaded, module, info, found);
+                    }
+                }
+                Some(ForInit::Const(init)) => {
+                    walk_expr(&init.value, loaded, module, info, found)
+                }
+                Some(ForInit::Expr(expressions)) => {
+                    for expression in expressions {
+                        walk_expr(expression, loaded, module, info, found);
+                    }
+                }
+                None => {}
+            }
+            if let Some(condition) = &decl.condition {
+                walk_expr(condition, loaded, module, info, found);
+            }
+            for step in &decl.step {
+                walk_expr(step, loaded, module, info, found);
+            }
+            walk_block(&decl.body, loaded, module, info, found);
+        }
+        Stmt::ForIn(decl) => {
+            walk_expr(&decl.iterable, loaded, module, info, found);
+            walk_block(&decl.body, loaded, module, info, found);
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                walk_expr(value, loaded, module, info, found);
+            }
+        }
+        Stmt::Switch(decl) => {
+            walk_expr(&decl.scrutinee, loaded, module, info, found);
+            for clause in &decl.clauses {
+                if let SwitchLabel::Case(value) = &clause.label {
+                    walk_expr(value, loaded, module, info, found);
+                }
+                for statement in &clause.statements {
+                    walk_stmt(statement, loaded, module, info, found);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            walk_block(block, loaded, module, info, found);
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
+    }
+}
+
+/// Walks an `else if` chain.
+fn walk_if(
+    decl: &crate::ast::IfStmt,
+    loaded: &Loaded,
+    module: &Module,
+    info: &ProgramInfo<'_>,
+    found: &mut BTreeSet<GlobalId>,
+) {
+    walk_expr(&decl.condition, loaded, module, info, found);
+    walk_block(&decl.then_block, loaded, module, info, found);
+    match &decl.else_branch {
+        Some(crate::ast::ElseBranch::If(nested)) => walk_if(nested, loaded, module, info, found),
+        Some(crate::ast::ElseBranch::Block(block)) => {
+            walk_block(block, loaded, module, info, found)
+        }
+        None => {}
+    }
+}
+
+/// Walks an expression and every child expression.
+fn walk_expr(
+    expr: &Expr,
+    loaded: &Loaded,
+    module: &Module,
+    info: &ProgramInfo<'_>,
+    found: &mut BTreeSet<GlobalId>,
+) {
+    match &expr.kind {
+        ExprKind::Unary { op, operand } => {
+            if *op == UnaryOp::AddressOf {
+                note_addressed_root(operand, loaded, module, info, found);
+            }
+            walk_expr(operand, loaded, module, info, found);
+        }
+        ExprKind::Call { callee, args, .. } => {
+            walk_expr(callee, loaded, module, info, found);
+            for arg in args {
+                walk_expr(&arg.value, loaded, module, info, found);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            walk_expr(base, loaded, module, info, found);
+            walk_expr(index, loaded, module, info, found);
+        }
+        ExprKind::Member { base, .. } => walk_expr(base, loaded, module, info, found),
+        ExprKind::Binary { left, right, .. } => {
+            walk_expr(left, loaded, module, info, found);
+            walk_expr(right, loaded, module, info, found);
+        }
+        ExprKind::Assign { target, value, .. } => {
+            walk_expr(target, loaded, module, info, found);
+            walk_expr(value, loaded, module, info, found);
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            walk_expr(condition, loaded, module, info, found);
+            walk_expr(then_value, loaded, module, info, found);
+            walk_expr(else_value, loaded, module, info, found);
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            walk_expr(value, loaded, module, info, found)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                walk_expr(&field.value, loaded, module, info, found);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                walk_expr(element, loaded, module, info, found);
+            }
+            if let Some(fill) = fill {
+                walk_expr(fill, loaded, module, info, found);
+            }
+        }
+        ExprKind::Lambda { body, .. } => match body {
+            LambdaBody::Expr(inner) => walk_expr(inner, loaded, module, info, found),
+            LambdaBody::Block(block) => walk_block(block, loaded, module, info, found),
+        },
+        ExprKind::Unsafe(inner) => walk_expr(inner, loaded, module, info, found),
+        ExprKind::IntrinsicCall { args, .. } => {
+            for arg in args {
+                if let IntrinsicArg::Expr(inner) = arg {
+                    walk_expr(inner, loaded, module, info, found);
+                }
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let TemplatePiece::Placeholder(inner) = piece {
+                    walk_expr(inner, loaded, module, info, found);
+                }
+            }
+        }
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Error => {}
+    }
 }

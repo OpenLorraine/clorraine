@@ -1,0 +1,11 @@
+// Startup-only calibration: imports the same console path as the scored
+// programs, prints one fixed line, and exits. The harness subtracts its
+// instruction count from every benchmark.
+module bench.Calibration;
+
+import { println } from std.io;
+
+func main(): i32 {
+    println("calibration: ok");
+    return 0;
+}

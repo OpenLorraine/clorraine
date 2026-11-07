@@ -28,3 +28,7 @@ node_modules/
 /demo/*.mp4
 /demo/*.gif
 /demo/out/
+
+# Python bytecode from the benchmark harness
+__pycache__/
+*.pyc

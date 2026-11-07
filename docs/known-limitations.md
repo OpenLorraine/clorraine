@@ -142,3 +142,14 @@ The GitHub Actions workflow runs `./spec/check.sh` and `cargo test --workspace` 
 runner. Tests that need `m68k-amigaos-gcc`, `vamos`, FS-UAE, an X display, or Kickstart ROMs skip
 themselves when the toolchain is absent. `make verify` remains the local acceptance gate that
 exercises the Amiga and freestanding legs.
+
+## 9. Benchmark instruction counts are guest CPU counts, not cycle counts
+
+`make bench` measures the m68k dynamic instruction count with a streamed
+`vamos --instr-trace` run and subtracts a calibration program's fixed startup
+count. This measures guest CPU instructions, not bus cycles, memory stalls, or
+Amiga library internals that `vamos` emulates in Python. FS-UAE 3.1.66 has no
+stable headless cycle counter, so a cycle-accurate comparison is not part of
+the gate. Host wall time is recorded and displayed but is advisory: its
+run-to-run spread is several percent, while the instruction and section-size
+metrics are deterministic.

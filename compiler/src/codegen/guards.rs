@@ -2127,6 +2127,22 @@ impl<'a> Emitter<'a> {
         if matches!(right.kind, ValueKind::Int(0)) {
             return None;
         }
+        // A constant divisor has no zero hazard; only -1 can overflow a signed
+        // division at the minimum value. A binary divisor stays on the full
+        // guard because its C value can wrap at the operand type.
+        if let Some(constant) = super::expr::constant_guard_integer(right) {
+            if constant == 0 {
+                return None;
+            }
+            if constant == -1 {
+                if let Some(scalar) = scalar_of(&ty).filter(|scalar| is_signed_scalar(*scalar)) {
+                    let dividend = self.value(left);
+                    let min = signed_min(scalar);
+                    return Some(format!("{dividend} == {min}"));
+                }
+            }
+            return None;
+        }
         let dividend = self.value(left);
         let divisor = self.value(right);
         Some(match scalar_of(&ty) {
@@ -2161,7 +2177,13 @@ impl<'a> Emitter<'a> {
         // the access does.
         let ty = self.resolved_value_ty(base);
         let index_c = self.value(index);
-        let signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
+        let mut signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
+        // A non-negative constant index is already in range on the low side;
+        // the upper comparison remains. A binary expression is not treated as
+        // constant because its C value can wrap at the operand type.
+        if signed && super::expr::constant_guard_integer(index).is_some_and(|value| value >= 0) {
+            signed = false;
+        }
         match &ty.kind {
             TyKind::Array { extents, .. } => {
                 if extents.iter().all(Option::is_some) {

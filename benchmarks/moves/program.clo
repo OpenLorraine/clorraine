@@ -1,0 +1,47 @@
+// Exercises struct values with fixed-array fields, a generic identity call,
+// multi-extent values, and one owned String move.
+module bench.Moves;
+
+import { String, stringOf } from std.text;
+import { println } from std.io;
+
+struct Box {
+    values: i32[8];
+    tag: i32;
+}
+
+func makeBox(n: i32): Box {
+    return Box {
+        values: [n, n + 1, n + 2, n + 3, n + 4, n + 5, n + 6, n + 7],
+        tag: n,
+    };
+}
+
+func id<T>(x: T): T {
+    return x;
+}
+
+func sumBox(b: Box): i32 {
+    let total: i32 = 0;
+    let i: usize = 0;
+    while (i < 8) {
+        total = total + b.values[i];
+        i = i + 1;
+    }
+    return total + b.tag;
+}
+
+func main(): i32 {
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 1000) {
+        let b: Box = makeBox(i);
+        let c: Box = id<Box>(b);
+        total = total + sumBox(c);
+        i = i + 1;
+    }
+    let name: String = stringOf("moves");
+    total = total + i32(len(name));
+    println($"moves: {total}");
+    return 0;
+}

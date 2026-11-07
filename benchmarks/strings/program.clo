@@ -1,0 +1,20 @@
+// Exercises template-built Strings, String-to-str widening, byte views, and
+// formatting in a hot loop.
+module bench.Strings;
+
+import { String } from std.text;
+import { toHex } from std.fmt;
+import { println } from std.io;
+
+func main(): i32 {
+    let total: u32 = 0;
+    let i: u32 = 0;
+    while (i < 2000) {
+        let s: String = $"token-{i}-{i * u32(3)}";
+        let v: str = s;
+        total = total + u32(len(v)) + u32(v[0]);
+        i = i + 1;
+    }
+    println($"strings: {toHex(total)}");
+    return 0;
+}

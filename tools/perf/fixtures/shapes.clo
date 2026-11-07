@@ -1,0 +1,31 @@
+// A build-only fixture for the generated-C shapes: a folded const in a loop,
+// a byte fill, an integer fill, a slice constant index, an adjusted-parameter
+// fill, a hidden-return fill, and a constant division.
+module bench.Shapes;
+
+const N: i32 = 64;
+
+func fill(borrow a: u8[N]): void {
+    a = [; 1];
+}
+
+func make(): u8[N] {
+    return [; 1];
+}
+
+func main(): i32 {
+    let a: u8[N] = [; 1];
+    let b: i32[N] = [; 7];
+    let s: str = "abcd";
+    let x: u8 = s[1];
+    let r: i32 = 10 % 2;
+    fill(a);
+    let c: u8[N] = make();
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < N) {
+        total = total + b[i];
+        i = i + 1;
+    }
+    return total + i32(a[0]) + i32(x) + r + i32(c[0]);
+}

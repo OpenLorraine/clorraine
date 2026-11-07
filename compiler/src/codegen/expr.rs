@@ -1612,7 +1612,34 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
 /// when it is spelled through a cast or a folded expression (`u8(256)`,
 /// `i32(0.0)`, `2 - 2`). A non-constant value returns `None`, and a float
 /// operand is evaluated by its C truncation to the integer destination.
-fn constant_integer(value: &Value) -> Option<i128> {
+/// True when a value's constant shape has no binary operation.
+///
+/// The shared `constant_integer` evaluates binary operations in a 128-bit
+/// accumulator, which does not reproduce the operand type's C wrapping. The
+/// guard rules only fold a literal, a cast, or a unary form, so a wrapping
+/// binary divisor or index keeps its full guard.
+fn guard_constant_shape(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) => true,
+        ValueKind::Cast { value, .. } => guard_constant_shape(value),
+        ValueKind::Unary { op, operand } => {
+            matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
+                && guard_constant_shape(operand)
+        }
+        _ => false,
+    }
+}
+
+/// The constant value a guard may use, excluding binary expressions.
+pub(super) fn constant_guard_integer(value: &Value) -> Option<i128> {
+    if guard_constant_shape(value) {
+        constant_integer(value)
+    } else {
+        None
+    }
+}
+
+pub(super) fn constant_integer(value: &Value) -> Option<i128> {
     match &value.kind {
         ValueKind::Int(number) => Some(*number),
         ValueKind::Bool(flag) => Some(if *flag { 1 } else { 0 }),

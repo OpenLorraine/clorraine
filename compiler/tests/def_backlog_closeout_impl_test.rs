@@ -1474,7 +1474,7 @@ func main(): i32 {
     assert_contains(
         "capture-env",
         &emitted,
-        "return (i32)((u32)cl_impl_closeout_captureenv_addTwo(cl_impl_closeout_captureenv_base) + (u32)v);",
+        "return (i32)((u32)cl_impl_closeout_captureenv_addTwo(40) + (u32)v);",
     );
     let output = run_host("capture-env-run", source);
     assert_eq!(
