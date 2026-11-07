@@ -740,6 +740,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let declaring = self.loaded.modules.get(&id.module)?;
         if !value_initializer_is_stable(
             initializer,
+            self,
             self.program,
             self.loaded,
             declaring,
@@ -753,39 +754,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => return None,
         };
         match scalar {
+            // The constant folder evaluates floats in f64 and does not round
+            // an f32 cast, so a folded float read can differ from its stored
+            // value. Float constants stay places until the folder rounds at
+            // the declared width; the measured need is integer constants.
+            ScalarType::F32 | ScalarType::F64 => None,
             ScalarType::Bool => match folder.fold(initializer).ok()? {
                 crate::consts::ConstValue::Bool(value) => {
                     Some(Value::new(ty.clone(), ValueKind::Bool(value)))
                 }
                 _ => None,
             },
-            ScalarType::F32 | ScalarType::F64 => {
-                if !float_initializer_is_simple(initializer) {
-                    return None;
-                }
-                let crate::consts::ConstValue::Float(value) = folder.fold(initializer).ok()? else {
-                    return None;
-                };
-                if !value.is_finite() {
-                    return None;
-                }
-                if scalar == ScalarType::F32 {
-                    let rounded = value as f32 as f64;
-                    let inner = Value::new(
-                        Ty::scalar(ScalarType::F64),
-                        ValueKind::Float(rounded),
-                    );
-                    Some(Value::new(
-                        ty.clone(),
-                        ValueKind::Cast {
-                            to: "f32".to_owned(),
-                            value: Box::new(inner),
-                        },
-                    ))
-                } else {
-                    Some(Value::new(ty.clone(), ValueKind::Float(value)))
-                }
-            }
             _ => {
                 let value = folder.integer_in(initializer, ty)?;
                 if value >= 0 {
@@ -7108,26 +7087,7 @@ pub(super) fn fixed_array_extent(ty: &Ty) -> Option<usize> {
     }
 }
 
-/// True when a float initializer is a literal, a name, or a cast chain.
-///
-/// The constant folder evaluates float arithmetic in `f64`; folding an `f32`
-/// expression would not round at each step the way the runtime does. A simple
-/// literal or cast chain is exact after the final `f32` rounding, so only that
-/// form is eligible for the read fold.
-fn float_initializer_is_simple(expr: &Expr) -> bool {
-    match &expr.kind {
-        ExprKind::Float(_) | ExprKind::Int(_) | ExprKind::Name(_) | ExprKind::Qualified(_) => true,
-        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-            float_initializer_is_simple(value)
-        }
-        ExprKind::Unary {
-            op: UnaryOp::Neg,
-            operand,
-        } => float_initializer_is_simple(operand),
-        ExprKind::Unsafe(inner) => float_initializer_is_simple(inner),
-        _ => false,
-    }
-}
+
 
 /// True when an initializer is a value-stable constant form.
 ///
@@ -7138,6 +7098,7 @@ fn float_initializer_is_simple(expr: &Expr) -> bool {
 /// aggregate literals are not scalar constant forms and are excluded too.
 fn value_initializer_is_stable(
     expr: &Expr,
+    checker: &FunctionChecker<'_, '_>,
     program: &ProgramInfo<'_>,
     loaded: &Loaded,
     module: &crate::load::Module,
@@ -7150,38 +7111,45 @@ fn value_initializer_is_stable(
         | ExprKind::Bool(_) => true,
         ExprKind::Name(name) => {
             let Some(global) = crate::init_graph::resolve_name_global(loaded, module, name) else {
-                return true;
+                return false;
             };
-            stable_const_initializer(global, program, loaded, visited)
+            stable_const_initializer(global, checker, program, loaded, visited)
         }
         ExprKind::Qualified(name) => {
             let Some(global) = crate::init_graph::resolve_global(loaded, module, name) else {
-                return true;
+                return false;
             };
-            stable_const_initializer(global, program, loaded, visited)
+            stable_const_initializer(global, checker, program, loaded, visited)
         }
         ExprKind::Unary { op, operand } => {
             !op.is_update()
-                && value_initializer_is_stable(operand, program, loaded, module, visited)
+                && wide_integer_operand(checker, operand)
+                && value_initializer_is_stable(operand, checker, program, loaded, module, visited)
         }
         ExprKind::Binary { left, right, .. } => {
-            value_initializer_is_stable(left, program, loaded, module, visited)
-                && value_initializer_is_stable(right, program, loaded, module, visited)
+            // A narrow operation promotes to `int` in C, while the typed
+            // folder wraps at the operand width. A const initializer that
+            // uses a narrow operation would fold to a value its own storage
+            // does not hold, so keep it as a place.
+            wide_integer_operand(checker, left)
+                && wide_integer_operand(checker, right)
+                && value_initializer_is_stable(left, checker, program, loaded, module, visited)
+                && value_initializer_is_stable(right, checker, program, loaded, module, visited)
         }
         ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-            value_initializer_is_stable(value, program, loaded, module, visited)
+            value_initializer_is_stable(value, checker, program, loaded, module, visited)
         }
         ExprKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            value_initializer_is_stable(condition, program, loaded, module, visited)
-                && value_initializer_is_stable(then_value, program, loaded, module, visited)
-                && value_initializer_is_stable(else_value, program, loaded, module, visited)
+            value_initializer_is_stable(condition, checker, program, loaded, module, visited)
+                && value_initializer_is_stable(then_value, checker, program, loaded, module, visited)
+                && value_initializer_is_stable(else_value, checker, program, loaded, module, visited)
         }
         ExprKind::Unsafe(inner) => {
-            value_initializer_is_stable(inner, program, loaded, module, visited)
+            value_initializer_is_stable(inner, checker, program, loaded, module, visited)
         }
         _ => false,
     }
@@ -7190,6 +7158,7 @@ fn value_initializer_is_stable(
 /// Follows a const reference to its initializer and checks it recursively.
 fn stable_const_initializer(
     global: crate::init_graph::GlobalRef,
+    checker: &FunctionChecker<'_, '_>,
     program: &ProgramInfo<'_>,
     loaded: &Loaded,
     visited: &mut BTreeSet<ir::GlobalId>,
@@ -7197,6 +7166,9 @@ fn stable_const_initializer(
     let id = ir::GlobalId::new(global.module, global.name);
     if !visited.insert(id.clone()) {
         return true;
+    }
+    if program.address_taken_consts.contains(&id) {
+        return false;
     }
     let Some(info) = program.globals.get(&id) else {
         return true;
@@ -7210,5 +7182,15 @@ fn stable_const_initializer(
     let Some(module) = loaded.modules.get(&id.module) else {
         return true;
     };
-    value_initializer_is_stable(initializer, program, loaded, module, visited)
+    value_initializer_is_stable(initializer, checker, program, loaded, module, visited)
+}
+
+/// True when an operand's integer type is at least 32 bits wide.
+///
+/// A narrow operation is promoted to `int` in C but wrapped at the operand
+/// width by the typed folder. Folding such an initializer would disagree with
+/// the storage value, so the read stays a place.
+fn wide_integer_operand(checker: &FunctionChecker<'_, '_>, expr: &Expr) -> bool {
+    crate::types::integer_scalar(&checker.ty(expr))
+        .is_some_and(|scalar| crate::types::scalar_bits(scalar) >= 32)
 }

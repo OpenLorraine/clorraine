@@ -941,7 +941,7 @@ impl<'a> Emitter<'a> {
         // first, so the expression becomes the trap and a zero placeholder.
         if matches!(op, BinaryOp::Div | BinaryOp::Rem)
             && self.substitute(&whole.ty).is_integer()
-            && constant_integer(right) == Some(0)
+            && constant_guard_integer(right) == Some(0)
         {
             // The dividend still evaluates first: a call in it must run once
             // before the fault. The comma expression keeps that order and
@@ -1653,11 +1653,14 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
         }
         ValueKind::Unary { op, operand } => {
             let number = constant_integer(operand)?;
-            match op {
-                crate::ast::UnaryOp::Neg => number.checked_neg(),
-                crate::ast::UnaryOp::BitNot => Some(!number),
-                _ => None,
-            }
+            let result = match op {
+                crate::ast::UnaryOp::Neg => number.checked_neg()?,
+                crate::ast::UnaryOp::BitNot => !number,
+                _ => return None,
+            };
+            // The unary result is evaluated at its own C type: `-u8(1)` is
+            // 255 and `~u32(4294967295)` is 0, not a wide negative value.
+            Some(cast_integer(result, &value.ty))
         }
         ValueKind::Cast { value: inner, .. } => {
             let number = constant_integer(inner)?;

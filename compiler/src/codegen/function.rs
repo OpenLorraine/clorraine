@@ -16,8 +16,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ir::{self, Place, PlaceBase, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::ast::UnaryOp;
 
-/// A fill covering at least this many slots is emitted as one loop or memset.
+/// A byte fill covering at least this many slots is emitted as one memset.
 const FILL_COMPACT_THRESHOLD: usize = 16;
+/// A non-byte fill covering at least this many slots is emitted as one loop.
+/// The loop saves code size but is slower than unrolled stores, so the
+/// threshold is higher than the memset threshold.
+const FILL_LOOP_THRESHOLD: usize = 64;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
@@ -3957,9 +3961,50 @@ impl<'a> Emitter<'a> {
         elements: &[ir::Value],
         fill: &Option<Box<ir::Value>>,
     ) {
+        let saved = self.compact_fills;
+        let compact = saved && self.fill_target_compactable(target);
         let target_c = self.place(target);
         let target = self.array_target(target, &target_c);
+        self.compact_fills = compact;
         self.emit_array_assign_to(&target, ty, elements, fill);
+        self.compact_fills = saved;
+    }
+
+    /// True when a fill target can use the compact form.
+    ///
+    /// A field projection may name a `volatile` member, and a `volatile`
+    /// module array cannot be passed to `memset`. Both keep the per-element
+    /// spelling; a plain local, adjusted parameter, or return slot is compact.
+    fn fill_target_compactable(&self, place: &Place) -> bool {
+        if place
+            .projections
+            .iter()
+            .any(|projection| matches!(projection, ir::Projection::Field(_)))
+        {
+            return false;
+        }
+        if let PlaceBase::Global(id) = &place.base {
+            if self.globals.get(id).is_some_and(|global| global.volatile) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// True when a covered scalar fill should use the compact form.
+    fn should_compact_fill(&self, element: &Ty, covered: usize) -> bool {
+        if !self.compact_fills || !matches!(element.kind, TyKind::Scalar(_)) {
+            return false;
+        }
+        let threshold = if matches!(
+            element.kind,
+            TyKind::Scalar(crate::ast::ScalarType::U8 | crate::ast::ScalarType::I8)
+        ) {
+            FILL_COMPACT_THRESHOLD
+        } else {
+            FILL_LOOP_THRESHOLD
+        };
+        covered >= threshold
     }
 
     /// Emits an array literal as element-by-element assignments to a target.
@@ -4164,8 +4209,8 @@ impl<'a> Emitter<'a> {
         // direct per-element spelling and the existing emission pins.
         if super::program::init_operand_is_pure(fill) {
             let lowered = self.store_text(fill, element);
-            if extent.saturating_sub(prefix) >= FILL_COMPACT_THRESHOLD {
-                let constant = super::expr::constant_integer(fill);
+            if self.should_compact_fill(element, extent.saturating_sub(prefix)) {
+                let constant = super::expr::constant_guard_integer(fill);
                 self.emit_compact_scalar_fill(target, element, &lowered, prefix, extent, constant);
             } else {
                 for index in prefix..extent {
@@ -4189,7 +4234,7 @@ impl<'a> Emitter<'a> {
         self.push(&format!("    {local} = {lowered};"));
         if prefix >= extent {
             self.push(&format!("    if (sizeof({local})) {{ }}"));
-        } else if extent - prefix >= FILL_COMPACT_THRESHOLD {
+        } else if self.should_compact_fill(element, extent.saturating_sub(prefix)) {
             self.emit_compact_scalar_fill(target, element, &local, prefix, extent, None);
         } else {
             for index in prefix..extent {

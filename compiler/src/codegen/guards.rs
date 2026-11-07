@@ -215,12 +215,17 @@ impl<'a> Emitter<'a> {
                         // A brace list has no C place, so a deferred array
                         // literal is stored element by element into the
                         // temporary, on the path that evaluates the operand.
+                        // This materialized form is outside the statement-fill
+                        // scope, so it keeps the per-element spelling.
+                        let saved = self.compact_fills;
+                        self.compact_fills = false;
                         self.emit_array_assign_to(
                             &super::function::ArrayTarget::object(&destination_c),
                             &inner_ty,
                             elements,
                             fill,
                         );
+                        self.compact_fills = saved;
                     } else {
                         self.push(&format!("    {destination_c} = {};", self.value(inner)));
                     }

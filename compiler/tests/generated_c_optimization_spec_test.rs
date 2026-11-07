@@ -289,9 +289,11 @@ func touch(p: raw i32): void {
     unsafe { *p = 6; }
 }
 func main(): i32 {
+    let f: func(): i32 = () => N;
     touch(unsafe &N);
+    let v: i32 = f();
     defer { println($"defer: {N}"); }
-    return N - 5;
+    return v - 5;
 }
 "#,
     );
@@ -788,4 +790,160 @@ func main(): i32 {
             "{profile}: the emitter produced no C"
         );
     }
+}
+
+#[test]
+fn should_mask_a_fill_shift_at_the_element_width() {
+    assert_output(
+        "fill-shift",
+        r#"
+module bench.FillShift;
+import { println } from std.io;
+func main(): i32 {
+    let a: u8[32] = [; u8(1) << 8];
+    let b: u8[32] = [; u8(1) << 32];
+    let sa: u32 = 0;
+    let sb: u32 = 0;
+    let i: usize = 0;
+    while (i < 32) {
+        sa = sa + u32(a[i]);
+        sb = sb + u32(b[i]);
+        i = i + 1;
+    }
+    println($"shift-fill: {sa} {sb}");
+    return 0;
+}
+"#,
+        "shift-fill: 32 32\n",
+    );
+}
+
+#[test]
+fn should_fill_a_volatile_target_without_memset() {
+    assert_output(
+        "fill-volatile-target",
+        r#"
+module bench.FillVolatileTarget;
+import { println } from std.io;
+volatile let G: u8[16] = [; 0];
+func main(): i32 {
+    G = [; 1];
+    println($"volatile-target: {i32(G[0])}");
+    return 0;
+}
+"#,
+        "volatile-target: 1\n",
+    );
+}
+
+#[test]
+fn should_keep_a_float_const_as_a_place() {
+    assert_output(
+        "const-float-place",
+        r#"
+module bench.FloatPlace;
+import { println } from std.io;
+const A: f32 = f32(1.0e39);
+const B: f64 = 0.1;
+func main(): i32 {
+    println($"float-place: {i32(A > f32(0.0))} {i32(B > 0.0)}");
+    return 0;
+}
+"#,
+        "float-place: 1 1\n",
+    );
+}
+
+#[test]
+fn should_keep_a_narrow_arithmetic_const_and_its_storage_consistent() {
+    assert_output(
+        "const-narrow",
+        r#"
+module bench.NarrowConst;
+import { println } from std.io;
+const G: i32 = i32(u8(200) + u8(100));
+let W: i32 = G;
+func main(): i32 {
+    println($"narrow: {G} {W}");
+    return 0;
+}
+"#,
+        "narrow: 300 300\n",
+    );
+}
+
+#[test]
+fn should_keep_an_enum_member_const_consistent_with_the_emitter() {
+    assert_output(
+        "const-enum",
+        r#"
+module bench.EnumConst;
+import { println } from std.io;
+enum E: u8 { A = 255, B }
+const X: i32 = i32(E.B);
+func main(): i32 {
+    println($"enum: {X} {i32(E.B)}");
+    return 0;
+}
+"#,
+        "enum: 256 256\n",
+    );
+}
+
+#[test]
+fn should_not_fold_an_address_taken_const_through_an_alias() {
+    let (code, stdout, stderr) = run_program(
+        "const-chain-address",
+        r#"
+module bench.ChainAddress;
+import { println } from std.io;
+const A: i32 = 5;
+let Y: i32 = poke();
+const B: i32 = A;
+func poke(): i32 {
+    unsafe { let p: raw i32 = &A; *p = 6; }
+    return 0;
+}
+func main(): i32 {
+    println($"chain: {B} {A} {Y}");
+    return 0;
+}
+"#,
+    );
+    assert_eq!(code, 0, "stderr:\n{stderr}");
+    assert_eq!(stdout, "chain: 6 6 0\n");
+}
+
+#[test]
+fn should_keep_the_lower_guard_for_a_huge_negative_constant_index() {
+    assert_trap(
+        "guard-huge-negative",
+        r#"
+module bench.HugeNegative;
+import { slice } from std.mem;
+func main(): i32 {
+    let a: u8[4] = [1, 2, 3, 4];
+    let s: u8[] = slice(a, 0, 4);
+    let x: u8 = s[-i32(2147483648)];
+    return i32(x);
+}
+"#,
+        "error E11211: index out of range",
+    );
+}
+
+#[test]
+fn should_keep_the_zero_trap_for_a_bitnot_divisor() {
+    assert_trap(
+        "div-bitnot",
+        r#"
+module bench.BitNotDiv;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x / ~u32(4294967295);
+    return i32(q);
+}
+"#,
+        "error E11210: integer division by zero",
+    );
 }

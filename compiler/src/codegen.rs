@@ -141,6 +141,8 @@ pub(super) struct Emitter<'a> {
     pub(super) resolved_temp_types: BTreeMap<ir::TempId, Ty>,
     /// C name assigned to each source local or parameter of the open function.
     pub(super) local_names: BTreeMap<String, String>,
+    /// True while a statement-form array fill may use the compact form.
+    pub(super) compact_fills: bool,
     /// Init locals handed out in the module initializer being emitted.
     ///
     /// A module initializer stores operands it must not re-evaluate into
@@ -396,6 +398,7 @@ impl<'a> Emitter<'a> {
             init_select: program::ViewSelect::Whole,
             init_skip_owner_binding: false,
             init_walked_guards: false,
+            compact_fills: true,
             prefilled_materializations: BTreeSet::new(),
             value_aliases: BTreeMap::new(),
             prefill_branch_depth: 0,

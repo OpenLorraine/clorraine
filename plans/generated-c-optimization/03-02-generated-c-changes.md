@@ -73,12 +73,15 @@ The fold runs only when all of these hold:
 4. `!program.address_taken_consts.contains(id)`.
 5. The global has a recorded const initializer expression.
 6. The expression type is a supported scalar: `i8`, `i16`, `i32`, `u8`, `u16`,
-   `u32`, `usize`, `isize`, `bool`, `f32`, or `f64`. Enums, `raw`, views,
+   `u32`, `usize`, `isize`, or `bool`. Enums, `raw`, views, floats,
    aggregates, and handles are rejected.
 7. The typed fold succeeds: `ConstFolder::integer_in(initializer, &ty)` for an
-   integer or `bool`, or `ConstFolder::fold` for a finite float whose form is
-   a literal, a const name, or a cast chain. A float arithmetic initializer or
-   a non-finite result is not folded.
+   integer or `bool`. A `f32`/`f64` const is not folded; the folder evaluates
+   floats in `f64` and does not round an `f32` cast at each operation.
+8. Every arithmetic operand in the initializer has an integer type of at least
+   32 bits. A narrower operation is promoted to `int` in C but wrapped at the
+   operand width by the folder, so folding it would disagree with the stored
+   value. A direct narrow literal or cast is still eligible.
 
 A local or parameter that shadows the name resolves to a `Local` target and is
 not folded. A field read resolves to a projection and is not folded.
@@ -109,9 +112,8 @@ extent folder behavior; extents are already folded by the sema/type stage.
 | `Int(n)`, `n >= 0` | `ValueKind::Int(n)` with the const type | existing literal suffix/cast |
 | `Int(n)`, `n < 0` | `ValueKind::Unary { Neg, Int(-n) }` with the const type | `(i32)(-(u32)1)` and the other signed-wrap forms |
 | `Bool(b)` | `ValueKind::Bool(b)` | `0`/`1` |
-| `Float(f)` (f64) | `ValueKind::Float(f)` | existing float literal |
-| `Float(f)` (f32) | `ValueKind::Cast { to: "f32", value: Float(rounded) }` | the value is rounded through `f as f32 as f64`, then `(float)(…)`, so it compares at single precision |
-| `Float(f)` non-finite, or float arithmetic | no fold | the place stays; `float_literal` never has to spell `inf`/`NaN` |
+| `Float(f)` (f32/f64) | no fold | the place stays; the folder does not round f32 arithmetic at each step |
+| a narrow arithmetic initializer | no fold | the place stays; its C storage promotes to `int`, the folder wraps at the operand width |
 | `Str` | no fold | the place stays |
 
 The value's `ty` is the expression's checked type; a surrounding cast or
@@ -153,22 +155,27 @@ After the prefix stores, let `covered = extent - prefix`. When
 `covered >= FILL_COMPACT_THRESHOLD` and the element is a scalar (one extent,
 statement form), emit one of:
 
-- **`u8`/`i8` constant fill**:
+- **`u8`/`i8` constant fill** (at least 16 covered slots):
   `memset(&(target.text[prefix]), value, covered);` The indexed address is
   valid for an array object, an adjusted parameter, and a hidden return slot.
   The element is one byte by definition, so no `sizeof` is needed. A prefix
   starts the `memset` at the first covered slot, not at index zero.
-- **any other scalar fill**: a C block with one `usize` index local and one
-  `for` loop from `prefix` to `extent`, storing the existing lowered value.
-  For an impure fill or a store-needing literal, the loop copies the existing
-  once-evaluated temporary; for a pure fill, the loop repeats the pure
-  expression, exactly as the unrolled form did.
+- **any other scalar fill** (at least 64 covered slots): a C block with one
+  `usize` index local and one `for` loop from `prefix` to `extent`, storing
+  the existing lowered value. For an impure fill or a store-needing literal,
+  the loop copies the existing once-evaluated temporary; for a pure fill, the
+  loop repeats the pure expression, exactly as the unrolled form did. The
+  higher threshold keeps a 16–63-slot non-byte fill unrolled, because the
+  loop is slower than the unrolled stores at that size.
 
-`emit_array_assign_to` gains a `compact: bool` parameter (or an equivalent
-target flag). The statement-form callers pass `true`; the materialized
-fixed-array fill in `guards.rs` calls it with `false`, so the deferred/masked
-form keeps its current spelling and R5's scope is exactly the statement form.
-Below the threshold, the existing spelling is unchanged.
+The emitter's `compact_fills` flag is set by `emit_array_assign`: it is true
+for a plain local, adjusted parameter, or return slot, and false for a field
+projection (which may name a `volatile` member) or a `volatile` module array.
+The materialized fixed-array fill in `guards.rs` clears the flag around its
+call, so the deferred/masked form keeps its current spelling. A non-scalar
+element (including a simple struct literal that falls through to the generic
+fill) never uses the compact path. Below the threshold, the existing spelling
+is unchanged.
 
 ### Invariants
 
@@ -307,6 +314,7 @@ the full guard.
 The behavior and emission cases are owned by
 [Testing Strategy](07-testing-strategy.md). The key proof obligations are the
 address-taken const case, the shadowing local, the imported/expression
-initializer, negative and `f32` constants, the 15/16 threshold boundary, the
+initializer, negative and narrow-arithmetic constants, the 15/16 and 16/64
+threshold boundaries, the
 adjusted-parameter byte count, the volatile fill count, the slice/string
 negative trap, and the literal zero/`-1` division traps.

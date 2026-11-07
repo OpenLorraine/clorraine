@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -232,6 +233,22 @@ class FakeCompilerTests(unittest.TestCase):
             slow.chmod(0o755)
             with self.assertRaises(bench.HarnessError):
                 bench.run_host(slow, timeout=0.2)
+
+    def test_trace_timeout_kills_a_hung_vamos(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fake = Path(temporary) / "vamos"
+            fake.write_text("#!/bin/sh\nexec sleep 5\n", encoding="utf-8")
+            fake.chmod(0o755)
+            previous_path = os.environ.get("PATH", "")
+            previous_timeout = bench.TRACE_TIMEOUT
+            os.environ["PATH"] = temporary + os.pathsep + previous_path
+            bench.TRACE_TIMEOUT = 0.2
+            try:
+                with self.assertRaises(bench.HarnessError):
+                    bench.trace_vamos(Path(temporary) / "program")
+            finally:
+                bench.TRACE_TIMEOUT = previous_timeout
+                os.environ["PATH"] = previous_path
 
 
 if __name__ == "__main__":

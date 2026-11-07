@@ -95,7 +95,11 @@ tests covering the 20 pins (the 15/16 threshold is one test with two emits).
 | Limit | Reason | Requirement |
 |---|---|---|
 | Module-level initializer reads do not fold | Separate lowering path; no measured need | R4.7 |
-| Float arithmetic and non-finite float consts do not fold | The folder evaluates floats in `f64`; the measured need is integer constants | R4.1, R4.5 |
+| All `f32`/`f64` consts stay places | The folder evaluates floats in `f64` and does not round an `f32` cast at each operation; a folded float could differ from its storage. The measured need is integer constants | R4.1, R4.5 |
+| Narrow arithmetic initializers stay places | C promotes a sub-32-bit operation to `int`, while the typed folder wraps at the operand width; folding would disagree with the stored value. A direct narrow literal or cast still folds | R4.5 |
+| Enum-derived and unresolved-name initializers stay places | The folder's enum auto-increment wraps at the backing type while the emitter writes the C sequence value | R4.1, R4.5 |
+| Field, volatile-target, nested-row, struct-literal, and deferred fills keep their spelling | A field may name a volatile member and a volatile array cannot be passed to `memset`; the other forms are outside the measured statement-fill scope | R5.1 |
+| A non-byte fill below 64 slots stays unrolled | The loop saves code size but is slower than unrolled stores at 16–63 slots; the byte `memset` threshold remains 16 | R5.1, AR-6 |
 | Nested-row, struct-literal, array-copy, and deferred expression fills keep their spelling | No measured need; the measured fill is a one-extent scalar statement fill | R5.1 |
 | The upper index bound is not eliminated by the compiler front end | Manual elimination measured slower on m68k; the C compiler removes it after const folding | R6.4 |
 | Host time is advisory | 6–10% run-to-run spread; the target metric is the m68k instruction count | R1.5, AR-2 |
@@ -114,14 +118,51 @@ tests covering the 20 pins (the 15/16 threshold is one test with two emits).
 | `memset` for the whole fill when a prefix exists | Must start at `&target[prefix]` | Rejected (design corrected) |
 | Binary constant divisors in the guard fold | A wrapping binary divisor can lose the `MIN / -1` trap | Rejected |
 
+## Review Findings and Resolutions
+
+The five independent phase reviews (correctness, memory safety, emission
+integrity, performance, semantics) found one critical and several major
+defects in the first implementation. All were fixed in the fix pass and are
+pinned by the expanded suites:
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| RV-001 / MS-003 / SR-002: the fill `memset` used the untyped 128-bit constant evaluator, losing operand-width wrap and shift masking | CRITICAL | The fill uses the restricted, width-correct constant helper; a binary fill falls back to the loop. The unary constant evaluator now casts its result to the unary type. Pinned by ST/impl shift and wrapping-divisor cases |
+| MS-001: a huge negative unary slice index could lose the `< 0` guard | CRITICAL | Same width-correct unary fix; the guard sees the negative C value. Pinned by ST/impl `-i32(2147483648)` |
+| MS-002: `~u32(4294967295)` divisor could lose the zero trap | MAJOR | Same unary fix; the zero test now uses the restricted helper. Pinned by ST/impl bitnot divisor |
+| RV-002 / F6: address-taken exclusion was not transitive across const initializers | MAJOR | `stable_const_initializer` rejects an address-taken referenced const. Pinned by the chain-mutation spec case |
+| RV-003 / SR-001 / SR-003 / F3 / F4: float folding could emit `inf.0`, mis-round `f32`, or fold f32 arithmetic | MAJOR | Floats stay places. Pinned by the float-place spec case |
+| SR-004: narrow arithmetic const reads disagreed with their emitted storage | MAJOR | Narrow-arithmetic initializers stay places. Pinned by the narrow-const spec case |
+| SR-005: enum-derived const folded differently from the emitted member | MINOR | Unresolved names and enum-derived initializers stay places. Pinned by the enum-const spec case |
+| RV-004 / F8: the materialized and struct-literal fills compacted although R5 excludes them | MAJOR | The emitter has a `compact_fills` flag, a scalar-element gate, and field/volatile target gating; the materialized caller clears it. Pinned by the while-materialized and struct-fill impl cases |
+| F5: a folded shifting divisor could be misclassified as zero | MAJOR | The value renderer's zero test uses the restricted helper; a binary divisor keeps the full guard. Pinned by the bitnot case |
+| F2: `memset` on a volatile target was invalid C | MAJOR | Field and volatile targets keep the unrolled spelling. Pinned by the volatile-target spec/impl case |
+| RV-005: address-taken pins were weak; the shape fixture lacked a prefixed fill/slice | MINOR | Direct pin counts exactly four occurrences; the nested spec case includes a lambda; the shape fixture adds a prefix and a guarded slice |
+| RV-006 / PE-002: the trace timeout was not enforced while stdout was drained | MINOR | Both streams are drained in threads and `wait(timeout)` is the watchdog; a stub-`vamos` timeout test covers it |
+| RV-007: `bench-shape.sh` deleted an unvalidated `OUTDIR` | MINOR | The script confines `OUTDIR` under `build/perf/` and rejects `..` |
+| PE-001: a non-byte fill loop was slower than unrolled stores at 16–63 slots | MINOR | The non-byte loop threshold is 64; the byte memset threshold stays 16. The trade-off is recorded above |
+| PE-003: `head.json` was taken from a dirty tree | MINOR | `make bench` is rerun from the clean fix commit; the harness records a dirty flag and the compiler SHA-256 |
+| PE-004: host time was not displayed and the noise text was too narrow | MINOR | The compare prints an advisory host/C-byte table; the docs say host noise is tens of percent, not 6–10% |
+
+## Pre-existing Defects (outside this change)
+
+| Defect | Base evidence |
+|---|---|
+| A pure fill's operand guards are not emitted (`[; src[10]]` reads out of bounds) | `build/perf/base-clc` emits the same unguarded fill and the same ASan report; separate backlog item |
+| Narrow arithmetic in a const/inline expression is not wrapped at its result type (`i32(u8(200)+u8(100))` prints 300) | The base compiler prints 300 in both positions; this change deliberately keeps those consts as places |
+| Inline constant shift divisors can be misclassified (`u8(10)/(u8(128)>>8)`) | Both base and head trap; the const-name form was the new regression and is fixed |
+| `const U8W: u8 = u8(200)+u8(100);` fails the strict C build | Both base and head fail the same way; the const stays a place after the fix |
+| `ConstFolder` does not round an `f32` cast | Latent before this change; the reason floats stay places |
+| Enum auto-increment wraps in the folder but not the emitter | Base emits `E_B = 256` while the folder wraps to 0; enum-derived consts stay places |
+
 ## Review Rulings
 
 | Source | Finding | Ruling | Evidence |
 |---|---|---|---|
 | Requirements preflight | PF-REQ-001–027 | Resolved; see [Requirements Preflight](00-preflight-report-requirements.md) | All critical/major closed |
 | Plan preflight | PF-PLAN-001–031 | Resolved; see [Plan Preflight](00-preflight-report.md) | All critical/major closed |
-| Correctness review | pending | — | — |
-| Memory-safety review | pending | — | — |
-| Emission-integrity review | pending | — | — |
-| Performance review | pending | — | — |
-| Semantics review | pending | — | — |
+| Correctness review | RV-001/RV-002/RV-003/RV-004 resolved; fix-diff re-review pending | `build/perf/verify.log` |
+| Memory-safety review | MS-001/MS-002/MS-003/MS-004 resolved; fix-diff re-review pending | probes under `build/` |
+| Emission-integrity review | F1–F8 resolved; fix-diff re-review pending | base/head emission diff |
+| Performance review | PE-001–PE-004 resolved; threshold 64 recorded | base/head JSON |
+| Semantics review | SR-001–SR-005 resolved; fix-diff re-review pending | probes under `build/` |

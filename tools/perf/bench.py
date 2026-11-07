@@ -132,7 +132,18 @@ def compiler_identity(clc: Path, compiler_git: str | None) -> dict[str, str]:
         run_command(["git", "-C", str(ROOT), "rev-parse", "HEAD"], timeout=30)
     )
     version = first_line(run_command([str(clc), "--version"], timeout=30))
-    return {"path": str(clc), "sha256": digest, "git": git, "version": version}
+    dirty = bool(
+        first_line(
+            run_command(["git", "-C", str(ROOT), "status", "--porcelain"], timeout=30)
+        )
+    )
+    return {
+        "path": str(clc),
+        "sha256": digest,
+        "git": git,
+        "version": version,
+        "dirty": dirty,
+    }
 
 
 def harness_git() -> str:
@@ -286,33 +297,41 @@ def trace_vamos(binary: Path) -> tuple[str, int]:
         errors="replace",
     )
     counted: list[int] = [0]
+    chunks: list[str] = []
 
-    def consume() -> None:
+    def consume_trace() -> None:
         assert process.stderr is not None
         for line in process.stderr:
             if INSTRUCTION_RE.search(line):
                 counted[0] += 1
 
+    def consume_stdout() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            chunks.append(line)
+
     import threading
 
-    reader = threading.Thread(target=consume, daemon=True)
-    reader.start()
-    assert process.stdout is not None
-    stdout = process.stdout.read()
+    trace_reader = threading.Thread(target=consume_trace, daemon=True)
+    stdout_reader = threading.Thread(target=consume_stdout, daemon=True)
+    trace_reader.start()
+    stdout_reader.start()
     try:
         process.wait(timeout=TRACE_TIMEOUT)
     except subprocess.TimeoutExpired as error:
         process.kill()
-        reader.join(timeout=5)
+        trace_reader.join(timeout=5)
+        stdout_reader.join(timeout=5)
         raise HarnessError(
             f"trace timed out after {TRACE_TIMEOUT}s: {binary}"
         ) from error
-    reader.join(timeout=10)
+    trace_reader.join(timeout=10)
+    stdout_reader.join(timeout=10)
     if process.returncode != 0:
         raise HarnessError(
             f"trace program failed ({process.returncode}): {binary}"
         )
-    return normalize_output(stdout.encode()), counted[0]
+    return normalize_output("".join(chunks).encode()), counted[0]
 
 
 def time_host(binary: Path, runs: int) -> tuple[int, int]:
@@ -365,7 +384,9 @@ def measure(
     host_release_output = run_host(host_release_bin)
     if host_release_output != expected:
         raise HarnessError(f"{name}: host release output differs")
+    amiga_start = time.perf_counter_ns()
     amiga_output = run_vamos(amiga_release_bin)
+    amiga_duration_ns = time.perf_counter_ns() - amiga_start
     if amiga_output != expected:
         raise HarnessError(f"{name}: m68k output differs")
 
@@ -375,8 +396,11 @@ def measure(
     host_best_ns, host_median_ns = time_host(host_release_bin, runs)
 
     instructions: int | None = None
+    trace_duration_ns: int | None = None
     if trace:
+        trace_start = time.perf_counter_ns()
         traced_output, instructions = trace_vamos(amiga_release_bin)
+        trace_duration_ns = time.perf_counter_ns() - trace_start
         if traced_output != expected:
             raise HarnessError(f"{name}: trace run output differs")
 
@@ -393,6 +417,10 @@ def measure(
         "m68k_debug": size_sections(amiga_debug_bin),
         "m68k_release": size_sections(amiga_release_bin),
         "instructions_raw": instructions,
+        "duration_ms": amiga_duration_ns // 1_000_000,
+        "trace_duration_ms": (
+            trace_duration_ns // 1_000_000 if trace_duration_ns is not None else None
+        ),
         "output_sha256": hashlib.sha256(expected.encode()).hexdigest(),
     }
 
@@ -600,6 +628,16 @@ def command_compare(args: argparse.Namespace) -> int:
             f"{h_i if h_i is not None else 'n/a':>12}{format_delta(b_i, h_i):>9}"
             f"{b_t if b_t is not None else 'n/a':>12}"
             f"{h_t if h_t is not None else 'n/a':>12}{format_delta(b_t, h_t):>9}"
+        )
+    print("\n            host base ms  host head ms   C base   C head   C delta")
+    for name, _, _, _, _, base_host, head_host in rows:
+        base_c = metric(base, name, "c_bytes")
+        head_c = metric(head, name, "c_bytes")
+        print(
+            f"{name:<14}{(base_host or 0) / 1e6:>12.2f}{(head_host or 0) / 1e6:>13.2f}"
+            f"{base_c if base_c is not None else 'n/a':>9}"
+            f"{head_c if head_c is not None else 'n/a':>9}"
+            f"{format_delta(base_c, head_c):>10}"
         )
     if failures:
         print("\ncompare: FAILED")

@@ -15,6 +15,13 @@ CLC="${CLC:-./target/debug/clc}"
 GCC="${GCC:-m68k-amigaos-gcc}"
 VC="${VC:-vc}"
 OUTDIR="${OUTDIR:-build/perf/shapes}"
+case "${OUTDIR}" in
+    build/perf/*) ;;
+    *) echo "bench-shape: OUTDIR must stay under build/perf/" >&2; exit 2 ;;
+esac
+case "${OUTDIR}" in
+    *..*) echo "bench-shape: OUTDIR must not contain '..'" >&2; exit 2 ;;
+esac
 FIXTURE="${FIXTURE:-tools/perf/fixtures/shapes.clo}"
 
 GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2)

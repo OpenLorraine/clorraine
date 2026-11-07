@@ -365,7 +365,11 @@ func main(): i32 {
     );
     assert_contains("address-taken", &emitted, "&(cl_bench_ImplAddress_N)");
     assert_absent("address-taken", &emitted, "&(5)");
-    assert!(count(&emitted, "cl_bench_ImplAddress_N") >= 3);
+    assert_eq!(
+        count(&emitted, "cl_bench_ImplAddress_N"),
+        4,
+        "address-taken: declaration, initializer, address, and the read stay visible"
+    );
 }
 
 #[test]
@@ -591,4 +595,166 @@ func main(): i32 {
     assert_contains("address-nested", &emitted, "&(cl_bench_ImplAddressNested_N)");
     assert_absent("address-nested", &emitted, "&(5)");
     assert!(count(&emitted, "cl_bench_ImplAddressNested_N") >= 3);
+}
+
+#[test]
+fn should_keep_a_shifting_fill_on_the_loop_path() {
+    let emitted = emit(
+        "fill-shift",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFillShift;
+func main(): i32 {
+    let a: u8[32] = [; u8(1) << 8];
+    return i32(a[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-shift", &emitted, "memset(&(a[0])");
+    assert_contains("fill-shift", &emitted, "for (__cl_fill_");
+}
+
+#[test]
+fn should_keep_a_volatile_target_on_the_unrolled_path() {
+    let emitted = emit(
+        "fill-volatile-target",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplVolatileTarget;
+volatile let G: u8[16] = [; 0];
+func main(): i32 {
+    G = [; 1];
+    return i32(G[0]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-volatile-target", &emitted, "memset(&(cl_bench_ImplVolatileTarget_G");
+    assert_contains("fill-volatile-target", &emitted, "cl_bench_ImplVolatileTarget_G[0] = 1u;");
+}
+
+#[test]
+fn should_keep_a_narrow_arithmetic_const_as_a_place() {
+    let emitted = emit(
+        "const-narrow",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplNarrow;
+const G: i32 = i32(u8(200) + u8(100));
+func main(): i32 { return G; }
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("const-narrow", &emitted, "return cl_bench_ImplNarrow_G;");
+    assert_absent("const-narrow", &emitted, "return 44;");
+}
+
+#[test]
+fn should_keep_an_enum_member_const_as_a_place() {
+    let emitted = emit(
+        "const-enum",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplEnum;
+enum E: u8 { A = 255, B }
+const X: i32 = i32(E.B);
+func main(): i32 { return X; }
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("const-enum", &emitted, "return cl_bench_ImplEnum_X;");
+}
+
+#[test]
+fn should_keep_the_lower_guard_for_a_huge_negative_slice_index() {
+    let emitted = emit(
+        "guard-huge",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplGuardHuge;
+import { slice } from std.mem;
+func main(): i32 {
+    let a: u8[4] = [1, 2, 3, 4];
+    let s: u8[] = slice(a, 0, 4);
+    return i32(s[-i32(2147483648)]);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("guard-huge", &emitted, "< 0");
+}
+
+#[test]
+fn should_keep_the_zero_trap_for_a_bitnot_divisor() {
+    let emitted = emit(
+        "div-bitnot",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplBitNotDiv;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x / ~u32(4294967295);
+    return i32(q);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("div-bitnot", &emitted, "cl_trap(\"E11210\", \"integer division by zero\")");
+}
+
+
+#[test]
+fn should_leave_a_while_materialized_fill_unrolled() {
+    let emitted = emit(
+        "fill-materialized-while",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplMaterializedWhile;
+func eat(a: u8[4096]): i32 { return i32(a[0]); }
+func main(): i32 {
+    let ok: bool = true;
+    while (ok && eat([; 1]) == 1) { return 0; }
+    return 1;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("fill-materialized-while", &emitted, "memset(&(__cl_owned");
+    assert_contains("fill-materialized-while", &emitted, "[4095] = 1u");
+}
+
+#[test]
+fn should_leave_a_struct_literal_fill_unrolled() {
+    let emitted = emit(
+        "fill-struct",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplStructFill;
+struct Pair { a: i32; b: i32; }
+func main(): i32 {
+    let p: Pair[16] = [; Pair { a: 2, b: 3 }];
+    return p[0].a;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("fill-struct", &emitted, "p[15] = (ClPair){ 2, 3 };");
+    assert_absent("fill-struct", &emitted, "for (__cl_fill");
 }

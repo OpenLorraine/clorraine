@@ -143,12 +143,13 @@ general optimizer.
   initializer folds to a constant value lowers to a typed literal inside a
   function body, including a local initializer and a lambda body. The scalar
   types are the integer types (`i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `usize`,
-  `isize`), `bool`, `f32`, and `f64`. Character literals have type `u8` and are
-  covered by the integer rule. An integer or `bool` initializer folds as a
-  constant expression at the const's declared integer width. A float
-  initializer folds only when it is finite and its form is a literal, a const
-  name, or a cast chain; a float arithmetic initializer stays a place. An
-  enum-typed, `raw`, view, aggregate, or handle const is not folded.
+  `isize`) and `bool`. Character literals have type `u8` and are covered by the
+  integer rule. An integer or `bool` initializer folds as a constant expression
+  at the const's declared integer width. A `f32`/`f64` const stays a place in
+  this plan: the existing constant folder evaluates floats in `f64` and does
+  not round an `f32` cast at each operation, so a folded float read can differ
+  from its stored value. An enum-typed, `raw`, view, aggregate, or handle const
+  is not folded either.
 - **R4.2 Scope-gated read.** Folding applies only when the resolved place is
   a bare module-level binding whose `GlobalInfo` is a `const`. A local or
   parameter that shadows the name and a qualified read with a field or element
@@ -178,10 +179,12 @@ general optimizer.
     renders through the existing signed-wrap spelling rather than a huge
     unsigned literal;
   - `bool` is `ValueKind::Bool`;
-  - `f64` is a finite float literal; `f32` is a cast of the finite,
-    single-precision-rounded value to the `float` type, so a comparison does
-    not accidentally promote the folded value to double;
-  - a non-finite float, or a float arithmetic initializer, stays a place;
+  - a `f32`/`f64` const stays a place; float folding waits for a folder that
+    rounds at every `f32` operation;
+  - a narrow arithmetic initializer (an operation whose operand type is below
+    32 bits) stays a place, because C promotes the operation to `int` while
+    the typed folder wraps at the operand width; a direct narrow literal or
+    cast is still folded;
   - an integer const used where a narrower type is declared is emitted with
     that declared type's suffix and cast, exactly as a source literal.
 - **R4.6 Storage unchanged.** The module binding keeps its current storage and
@@ -198,11 +201,14 @@ general optimizer.
 
 ### R5 — Compact large one-extent scalar fills
 
-- **R5.1 Threshold and scope.** A fill of a one-extent fixed array whose
-  covered slot count (`extent - prefix`) is at least 16 is emitted compactly.
-  A smaller fill keeps the existing per-element spelling. The scope is a
-  scalar element fill in statement position; nested-row fills, struct-literal
-  fills, array copies, and the deferred expression form are excluded.
+- **R5.1 Threshold and scope.** A one-extent scalar fill in statement position
+  is emitted compactly when its covered slot count (`extent - prefix`) is at
+  least 16 for a `u8`/`i8` element (the `memset` form) or at least 64 for any
+  other scalar (the loop form; the loop saves code size but is slower than
+  unrolled stores). A smaller fill keeps the per-element spelling. Nested-row
+  fills, struct-literal fills, array copies, the deferred expression form, and
+  a field or volatile target are excluded; a field target may name a volatile
+  member, and a volatile array cannot be passed to `memset`.
 - **R5.2 Forms.** A `u8` or `i8` fill with a constant integer value is emitted
   as one `memset` over the covered slots. Any other scalar element type,
   including `bool`, uses one `for` loop over the covered indices. `bool` is
@@ -281,11 +287,11 @@ general optimizer.
 - **R8.1 Specification tests.** Add
   `compiler/tests/generated_c_optimization_spec_test.rs`. The suite is a
   green-before/green-after regression oracle for behavior, because R4–R7
-  preserve program meaning: folded constants of every supported type
-  (including negative, `f32`, imported, and expression-initialized
-  constants); a shadowing local; an address-taken const with a raw write; a
-  non-address-taken const; a typed shift/wrap const (`1 << 31`, `1 << 32`);
-  a finite `f32` literal cast and a non-finite float; a nested `&N` in a call
+  preserve program meaning: folded integer constants (including negative,
+  imported, expression-initialized, and typed shift/wrap constants such as
+  `1 << 31` and `1 << 32`); a shadowing local; an address-taken const with a
+  raw write; a non-address-taken const; a float const that stays a place; a
+  narrow arithmetic const that stays a place; a nested `&N` in a call
   argument, lambda, and `defer`; byte, integer, `bool`, prefixed, impure,
   adjusted parameter, and hidden-return-slot fills; a pure volatile place read
   per element and an impure fill evaluated once into a temporary; unsigned,
