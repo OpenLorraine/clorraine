@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 22/38 tasks (58%)
+> **Progress**: 25/38 tasks (66%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -267,19 +267,19 @@ and a shadow-safe type-name cast lowering.
 **Objective**: Add the UBSan runner, the two opt-in suites, the suite-level
 controls, and the verify placement.
 
-- [ ] 5.1.1 Add `docker/scripts/ubsan-suite.sh` with the activation self-test
+- [x] 5.1.1 Add `docker/scripts/ubsan-suite.sh` with the activation self-test
   (nonzero exit expected), discovery, minimum count, timeout, `ulimit -c 0`,
-  and `-no-pie` wrapper
-- [ ] 5.1.2 Add `RDC_UBSAN` to the robustness suite, the suite-level ASan/UBSan
-  controls, and `ubsan_corpus_spec_test.rs`
-- [ ] 5.1.3 Add the `ubsan` target, `UBSAN_SUITE_TIMEOUT`, and the `verify`
-  step after `check`; run `make ubsan`; commit
-  `build: add a host UBSan verification leg`
+  and `-no-pie` wrapper ✅ (completed: 2026-11-08 01:30)
+- [x] 5.1.2 Add `RDC_UBSAN` to the robustness suite, the suite-level ASan/UBSan
+  controls, and `ubsan_corpus_spec_test.rs` ✅ (completed: 2026-11-08 01:35)
+- [x] 5.1.3 Add the `ubsan` target, `UBSAN_SUITE_TIMEOUT`, and the `verify`
+  step after `check`; run `make ubsan` (9.91 s, 2 suites); commit
+  `build: add a host UBSan verification leg` ✅ (completed: 2026-11-08 01:40)
 
 **Deliverables**:
-- [ ] `make ubsan` green with the measured runtime in `05-findings.md`
-- [ ] The corpus sweep and suite controls green
-- [ ] One verified commit
+- [x] `make ubsan` green with the measured runtime in `05-findings.md`
+- [x] The corpus sweep and suite controls green
+- [x] One verified commit
 
 ---
 

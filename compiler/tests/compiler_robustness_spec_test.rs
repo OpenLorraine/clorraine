@@ -272,6 +272,68 @@ fn assert_trap(tag: &str, source: &str, first_line: &str) {
 }
 
 // ---------------------------------------------------------------------------
+// Sanitizer activation controls
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_activate_the_sanitizer_suite_builds() {
+    let asan = std::env::var_os("RDC_ASAN").is_some();
+    let ubsan = std::env::var_os("RDC_UBSAN").is_some();
+    if !asan && !ubsan {
+        return;
+    }
+    let scratch = ScratchDir::new("sanitizer-activation");
+    let mut flags: Vec<&str> = vec!["-std=c99", "-O0", "-g", "-Wall", "-Wextra", "-Werror"];
+    flags.extend(sanitizer_flags());
+    flags.push("-no-pie");
+
+    let mut check = |name: &str, source: &str, needle: &str| {
+        let c_path = scratch.path().join(format!("{name}.c"));
+        std::fs::write(&c_path, source).expect("write the activation probe");
+        let program = scratch.path().join(name);
+        let mut build = Command::new("cc");
+        build.args(&flags);
+        build.args([
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("C path"),
+        ]);
+        let built = build.output().expect("spawn cc");
+        assert!(
+            built.status.success(),
+            "{name}: the activation probe did not build; stderr:\n{}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+        let run = Command::new(&program)
+            .env("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")
+            .env("UBSAN_OPTIONS", "print_stacktrace=0")
+            .output()
+            .expect("run the activation probe");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(
+            stderr.contains(needle),
+            "{name}: the sanitizer did not report {needle:?}; stderr:\n{stderr}"
+        );
+    };
+
+    if asan {
+        check(
+            "asan-activation",
+            r#"int main(void) { int a[2] = {0, 0}; volatile int i = 3; return a[i]; }"#,
+            "AddressSanitizer",
+        );
+    }
+    if ubsan {
+        check(
+            "ubsan-activation",
+            r#"#include <limits.h>
+int main(void) { volatile int value = INT_MAX; value = value + 1; return value == 0; }"#,
+            "runtime error:",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // D1 — fill operand guards
 // ---------------------------------------------------------------------------
 

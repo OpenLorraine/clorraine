@@ -21,6 +21,8 @@
 # the runtime faults. It requires the SDK X display for the FS-UAE leg.
 #
 # `make asan` runs the memory-safety suites under AddressSanitizer.
+# `make ubsan` runs the undefined-behavior suites under UBSan; it proves the
+# leg is active with a known-overflow probe and is part of `make verify`.
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
@@ -50,8 +52,9 @@ FS_UAE_ENV = $(if $(filter hosted-amiga-13,$(PROFILE)),AMIGA_MODEL=A500 KICKSTAR
 export DIFF_ONLY
 export OUTDIR
 export ASAN_SUITE_TIMEOUT
+export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -89,6 +92,12 @@ bench-shape:
 # Each suite runs serially in its own bounded process.
 asan:
 	$(DOCKER_MAKE) exec PASSTHROUGH="ASAN_SUITE_TIMEOUT" CMD="docker/scripts/asan-suite.sh"
+
+# Run every suite that references RDC_UBSAN under UndefinedBehaviorSanitizer.
+# The runner proves the leg is active with a known-overflow probe, then runs
+# each suite serially in its own bounded process with -no-pie sanitizer links.
+ubsan:
+	$(DOCKER_MAKE) exec PASSTHROUGH="UBSAN_SUITE_TIMEOUT" CMD="docker/scripts/ubsan-suite.sh"
 
 # Compare host and hosted-amiga stdout for three portable programs. This is a
 # convenience gate over the same outputs the corpus pins, not an independent
@@ -142,6 +151,7 @@ run-fault-amiga:
 verify:
 	$(MAKE) check
 	$(MAKE) bench-shape
+	$(MAKE) ubsan
 	$(MAKE) sdk-a500-smoke
 	$(MAKE) sdk-a500-boing
 	$(MAKE) sdk-a500-sprites

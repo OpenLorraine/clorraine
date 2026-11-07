@@ -88,11 +88,18 @@
 |---|---|---|
 | `make check` baseline | green, 123.78 s | `build/robustness/logs/make-check-baseline.log` |
 | `make asan` | pending | |
-| `make ubsan` | pending | |
+| `make ubsan` | green, 2 suites, activation self-test, 9.91 s | `build/robustness/logs/ubsan-d1.log`, `ubsan-d1b.log` |
 | `make corpus-amiga` | pending | |
 | `make differential` | pending | |
 | `make bench-shape` | pending | |
 | `make verify` | pending | |
+
+`make ubsan` measured 9.91 seconds on the reference container (warm build)
+including the activation probe and two suites. It is kept verify-only per
+R6.5/AR-16: the fast gate is already dominated by the Rust suite, and the
+measured cost, while bounded, is not needed on every edit. The suite-level
+controls prove the child builds are sanitized even when the runner's compiler
+works.
 
 ## Review Verdicts
 
