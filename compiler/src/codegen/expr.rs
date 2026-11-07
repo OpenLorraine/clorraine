@@ -1733,6 +1733,8 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
         }
         _ => {}
     }
+    if matches!(value.kind, ValueKind::Conditional { .. }) {
+    }
     // A nested out-of-range float cast makes the whole always-evaluated
     // integer expression a dead placeholder: the E11212 guard runs first.
     contains_dead_float_cast(value)
@@ -1755,6 +1757,26 @@ fn contains_dead_float_cast(value: &Value) -> bool {
             contains_dead_float_cast(inner)
         }
         ValueKind::Unary { operand, .. } => contains_dead_float_cast(operand),
+        ValueKind::Binary {
+            op: BinaryOp::LogicalAnd,
+            left,
+            right,
+        } => {
+            let left_constant = constant_integer(left);
+            contains_dead_float_cast(left)
+                || (left_constant.is_some_and(|value| value != 0)
+                    && contains_dead_float_cast(right))
+        }
+        ValueKind::Binary {
+            op: BinaryOp::LogicalOr,
+            left,
+            right,
+        } => {
+            let left_constant = constant_integer(left);
+            contains_dead_float_cast(left)
+                || (left_constant.is_some_and(|value| value == 0)
+                    && contains_dead_float_cast(right))
+        }
         ValueKind::Binary { left, right, .. } => {
             contains_dead_float_cast(left) || contains_dead_float_cast(right)
         }
@@ -1763,9 +1785,18 @@ fn contains_dead_float_cast(value: &Value) -> bool {
             then_value,
             else_value,
         } => {
-            contains_dead_float_cast(condition)
-                || contains_dead_float_cast(then_value)
-                || contains_dead_float_cast(else_value)
+            if let Some(condition) = constant_integer(condition) {
+                let dead = if condition != 0 {
+                    contains_dead_float_cast(then_value)
+                } else {
+                    contains_dead_float_cast(else_value)
+                };
+                dead
+            } else {
+                // A run-time condition evaluates exactly one arm; a dead
+                // cast in either arm cannot make the divisor a constant zero.
+                contains_dead_float_cast(condition)
+            }
         }
         ValueKind::Materialize { value: inner, .. } => contains_dead_float_cast(inner),
         _ => false,
@@ -1990,12 +2021,34 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             then_value,
             else_value,
         } => {
-            let branch = if constant_integer(condition)? != 0 {
-                then_value
+            let cond = constant_integer(condition)?;
+            let branch = if cond != 0 { then_value } else { else_value };
+            let value = constant_integer(branch)?;
+            Some(value)
+        }
+        ValueKind::Binary {
+            op: BinaryOp::LogicalAnd,
+            left,
+            right,
+        } => {
+            let left = constant_integer(left)?;
+            if left == 0 {
+                Some(0)
             } else {
-                else_value
-            };
-            Some(constant_integer(branch)?)
+                Some(i128::from(constant_integer(right)? != 0))
+            }
+        }
+        ValueKind::Binary {
+            op: BinaryOp::LogicalOr,
+            left,
+            right,
+        } => {
+            let left = constant_integer(left)?;
+            if left != 0 {
+                Some(1)
+            } else {
+                Some(i128::from(constant_integer(right)? != 0))
+            }
         }
         ValueKind::Binary { op, left, right } => {
             let left_float = matches!(

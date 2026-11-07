@@ -1167,3 +1167,69 @@ func main(): i32 {
         "materialized-conditional: ok\n",
     );
 }
+
+#[test]
+fn should_keep_a_dead_conditional_arm_out_of_the_zero_trap() {
+    assert_output(
+        "dead-conditional-arm",
+        r#"
+module bench.DeadConditionalArm;
+import { println } from std.io;
+func main(): i32 {
+    let x: i32 = 7;
+    let a: i32 = x / (false ? i8(f32(300)) : i8(1));
+    let flag: bool = false;
+    let b: i32 = x / (flag ? i8(f32(300)) : i8(1));
+    println($"dead-arm: {a} {b}");
+    return 0;
+}
+"#,
+        "dead-arm: 7 7\n",
+    );
+}
+
+#[test]
+fn should_keep_a_short_circuit_operand_out_of_the_zero_trap() {
+    assert_output(
+        "short-circuit-divisor",
+        r#"
+module bench.ShortCircuitDivisor;
+import { println } from std.io;
+func main(): i32 {
+    let x: i32 = 7;
+    let a: i32 = x / i32(true || (i8(f32(300)) > i8(0)));
+    println($"short-circuit: {a}");
+    return 0;
+}
+"#,
+        "short-circuit: 7\n",
+    );
+    assert_trap(
+        "short-circuit-zero-divisor",
+        r#"
+module bench.ShortCircuitZero;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(false && (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        "error E11210: integer division by zero",
+    );
+}
+
+#[test]
+fn should_trap_a_comparison_of_an_out_of_range_float_cast() {
+    assert_trap(
+        "float-comparison-out-of-range",
+        r#"
+module bench.FloatComparisonOutOfRange;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(i8(f32(300)) > i8(0));
+    return q;
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+}

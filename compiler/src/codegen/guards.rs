@@ -2125,6 +2125,12 @@ impl<'a> Emitter<'a> {
         if !ty.is_integer() {
             return None;
         }
+        // The value renderer replaces a constant-zero divisor with the trap
+        // expression, so a separate `if` guard would be dead (and a boolean
+        // divisor would trip `-Werror=bool-compare`).
+        if super::expr::constant_zero_value(right) {
+            return None;
+        }
         // The value renderer turns a literal zero divisor into the trap
         // expression, so a second guard would only repeat the trap.
         if matches!(right.kind, ValueKind::Int(0)) {

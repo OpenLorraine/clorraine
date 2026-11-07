@@ -1171,5 +1171,51 @@ func main(): i32 {
         &emitted,
         "cl_trap(\"E11210\", \"integer division by zero\")",
     );
-    assert_absent("div-float-bool-comparison", &emitted, "bool-compare");
+    assert_absent("div-float-bool-comparison", &emitted, "== -1)");
+}
+
+
+#[test]
+fn should_not_emit_the_bool_compare_guard_for_a_short_circuit_divisor() {
+    let emitted = emit(
+        "div-float-short-circuit",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplShortCircuitDiv;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(true || (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent("div-float-short-circuit", &emitted, "== -1)");
+    assert_contains("div-float-short-circuit", &emitted, "1 ||");
+}
+
+#[test]
+fn should_trap_a_false_short_circuit_zero_divisor() {
+    let emitted = emit(
+        "div-float-short-circuit-zero",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplShortCircuitZero;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(false && (i8(f32(300)) > i8(0)));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-short-circuit-zero",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
 }
