@@ -1075,4 +1075,54 @@ func main(): i32 {
         "main.clo",
     );
     assert_contains("div-float-unsigned", &emitted, "E11212");
+    assert_absent("div-float-unsigned", &emitted, "q = (x /");
+}
+
+#[test]
+fn should_not_trap_an_integer_to_integer_cast_divisor() {
+    let emitted = emit(
+        "div-int-cast",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplIntCast;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i8(200);
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_absent(
+        "div-int-cast",
+        &emitted,
+        "((void)(x), cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+}
+
+#[test]
+fn should_trap_a_float_cast_of_an_integer_or_bool_expression() {
+    let emitted = emit(
+        "div-float-bool-expr",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatBoolExpr;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(f32(1 & 0));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-bool-expr",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+    assert_absent("div-float-bool-expr", &emitted, "q = (x /");
 }

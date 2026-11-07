@@ -966,7 +966,7 @@ impl<'a> Emitter<'a> {
 
     /// Renders a binary operator with the wrapping and masking strategy.
     fn binary(&self, op: BinaryOp, left: &Value, right: &Value, whole: &Value) -> String {
-            // A literal zero divisor is a guaranteed runtime fault. Emitting the
+        // A literal zero divisor is a guaranteed runtime fault. Emitting the
         // division would fail the strict C build even though the trap runs
         // first, so the expression becomes the trap and a zero placeholder.
         if matches!(op, BinaryOp::Div | BinaryOp::Rem)
@@ -984,7 +984,7 @@ impl<'a> Emitter<'a> {
         if let Some(test) = self.view_null_test(op, left, right) {
             return test;
         }
-            let left_c = self.value(left);
+        let left_c = self.value(left);
         let right_c = self.value(right);
         let ty = self.substitute(&whole.ty);
         // A compound store recorded in a generic body carries the opaque
@@ -1639,9 +1639,10 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
 /// True when a value is a constant shape the guard may evaluate.
 ///
 /// The shape admits literals, casts, unary forms, binary expressions, and
-/// materialized constants. `constant_integer` evaluates every operation with
-/// the C wrap and shift-mask rules, so a binary expression is safe here; a
-/// place, call, or other runtime value is not.
+/// materialized constants. `constant_integer` evaluates integer operations
+/// with the C wrap and shift-mask rules and delegates a float-typed node to
+/// the float evaluator at an integer cast, so a binary expression is safe
+/// here; a place, call, or other runtime value is not.
 fn guard_constant_shape(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) | ValueKind::Float(_) => true,
@@ -1694,17 +1695,24 @@ pub(super) fn constant_fill_integer(value: &Value) -> Option<i128> {
 
 /// True when a divisor is a constant zero the renderer must trap.
 ///
-/// A literal float cast to an integer (`i32(0.0)`) is a constant zero even
-/// though the generic constant shape excludes float values; the C cast is
-/// exact for zero.
+/// A finite float expression cast to an integer (`i32(0.5)`, `i32(0.0)`,
+/// `i32(f32(0.0))`) is zero when its C truncation is zero. An out-of-range or
+/// non-finite cast also selects the placeholder: the E11212 float guard runs
+/// first, so the E11210 placeholder is dead and the reported fault stays
+/// E11212.
 pub(super) fn constant_zero_value(value: &Value) -> bool {
     if constant_guard_integer(value) == Some(0) {
         return true;
     }
     match &value.kind {
         ValueKind::Cast { value: inner, .. } => {
-            if let Some(zero) = float_cast_zero(value, inner) {
-                return zero;
+            if matches!(
+                inner.ty.kind,
+                TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+            ) {
+                if let Some(zero) = float_cast_zero(value, inner) {
+                    return zero;
+                }
             }
         }
         ValueKind::Materialize { value: inner, .. } => {
@@ -1748,6 +1756,11 @@ fn float_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
 
 /// Evaluates a parameter-free float expression at its own width.
 fn float_constant(value: &Value) -> Option<f64> {
+    if let TyKind::Scalar(scalar) = value.ty.kind {
+        if !crate::types::is_float_scalar(scalar) {
+            return Some(constant_integer(value)? as f64);
+        }
+    }
     match &value.kind {
         ValueKind::Float(number) => Some(*number),
         ValueKind::Int(number) => Some(*number as f64),
@@ -1846,8 +1859,12 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             ) {
                 // A float-to-integer cast truncates at the destination type.
                 let number = float_constant(inner)?;
+                // The runtime E11212 guard runs before this value is used, so
+                // a non-finite or out-of-range cast is a dead zero placeholder
+                // that keeps the strict C build from spelling the bad cast in
+                // a division.
                 if !number.is_finite() {
-                    return None;
+                    return Some(0);
                 }
                 let bits = crate::types::scalar_bits(scalar);
                 let (low, high) = if crate::types::is_signed_scalar(scalar) {
@@ -1859,7 +1876,7 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
                     (0.0, ((1i128 << bits) - 1) as f64)
                 };
                 if number < low || number > high {
-                    return None;
+                    return Some(0);
                 }
                 return Some(cast_integer(number.trunc() as i128, target));
             }

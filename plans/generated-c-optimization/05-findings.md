@@ -95,7 +95,7 @@ red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
 **After the change:** `generated_c_optimization_spec_test` has 36 passing
-cases and `generated_c_optimization_impl_test` has 40 passing pins. The
+cases and `generated_c_optimization_impl_test` has 42 passing pins. The
 fix-pass cases cover volatile targets on every fill path, integer consts
 through float casts, unsigned unary divisors, binary/float zero divisors,
 the 63/64 non-byte threshold, and the materialized conditional.
@@ -163,6 +163,9 @@ pinned by the expanded suites:
 | Second fix pass: trace timeout left the child unreaped | MINOR | The timeout path kills, waits, and closes both streams; the stub-`vamos` test covers it |
 | Third fix pass: only a direct `i32(0.0)` float zero was recognized; `i32(0.5)`, nested casts, `-0.0`, and float arithmetic zeros failed the strict build | MAJOR | `constant_zero_value` now evaluates the float expression at its own width, rounds `f32` at every cast/operation, applies the integer cast, and compares the truncated value to zero. Pinned by the truncating/nested-cast and float-to-one spec/impl cases |
 | Third fix pass follow-up: an integer expression containing a float cast (`i32(f32(2)) - 2`), an extra integer cast (`i32(u8(0.5))`), and an out-of-range unsigned cast (`u32(-0.5)`) still missed the static trap | MAJOR | The constant evaluator now handles a float-to-integer cast with C truncation and range checks inside an integer expression; an out-of-range cast leaves the E11212 guard first and uses the dead E11210 placeholder so the strict build passes. Pinned by the three new spec/impl cases |
+| Third fix pass residual: the float-cast zero helper fired on integer-to-integer casts (`x / i8(200)`) | MAJOR | `constant_zero_value` only applies the float evaluator when the cast source is float; integer casts use the C-faithful integer evaluator. Pinned by the `i8(200)` case |
+| Third fix pass residual: `float_constant` evaluated integer-typed subexpressions in floating point (`i32(f32(1/2+1/2))`) | MAJOR | `float_constant` delegates any non-float scalar node to `constant_integer`, so the inner integer arithmetic is 0 as C says. Pinned by the bool/char/bit-and/int-arith cases |
+| Third fix pass residual: a nested out-of-range float cast (`u32(f32(-0.5)) + u32(0)`) still spelled a constant zero division | MAJOR | The out-of-range cast returns a dead 0 placeholder and the E11212 guard runs first; the strict build passes and reports E11212. Pinned by the nested-unsigned case |
 
 ## Pre-existing Defects (outside this change)
 

@@ -1,7 +1,9 @@
 //! Behavior oracle for the generated-C optimization feature.
 //!
-//! Every case here passes on the base compiler and must keep passing. The
-//! cases are derived from the requirements: folded constants, compact fills,
+//! The original cases pass on the base compiler and must keep passing. The
+//! fix-pass trap cases were added with the fix and are red on the pre-fix
+//! compiler; they pin the intended behavior, not the old emission. The cases
+//! derive from the requirements: folded constants, compact fills,
 //! slice/string index guards, and constant division guards. The emission
 //! shapes are pinned separately in the implementation suite.
 
@@ -1009,6 +1011,10 @@ func main(): i32 {
         ("div-float-sum", "i32(0.0 + 0.0)"),
         ("div-float-int-expr", "(i32(f32(2)) - 2)"),
         ("div-float-extra-cast", "i32(u8(0.5))"),
+        ("div-float-bool-expr", "i32(f32(false))"),
+        ("div-float-char-expr", "i32(f32('\0'))"),
+        ("div-float-bitand", "i32(f32(1 & 0))"),
+        ("div-float-int-arith", "i32(f32(1 / 2 + 1 / 2))"),
     ] {
         assert_trap(
             tag,
@@ -1036,6 +1042,32 @@ func main(): i32 {
 }
 "#,
         "error E11212: float-to-integer conversion out of range",
+    );
+    assert_trap(
+        "div-float-unsigned-nested",
+        r#"
+module bench.FloatUnsignedNested;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x / (u32(f32(-0.5)) + u32(0));
+    return i32(q);
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
+    assert_output(
+        "div-int-cast",
+        r#"
+module bench.IntCastDiv;
+import { println } from std.io;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i8(200);
+    println($"int-cast: {q}");
+    return 0;
+}
+"#,
+        "int-cast: 0\n",
     );
     assert_output(
         "div-float-one",
