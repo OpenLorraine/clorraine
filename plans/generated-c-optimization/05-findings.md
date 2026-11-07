@@ -46,8 +46,8 @@ Filled after each optimization phase and at the final acceptance.
 | strings | 2,972,051 | 2,972,051 | 0.0% | 77,540 | 77,492 | −0.1% | −0.01% | equal |
 | moves | 45,205 | 45,205 | 0.0% | 76,880 | 76,832 | −0.1% | −0.01% | equal |
 
-**Head identity:** commit `8bec4b5`, clean tree, `clc` SHA-256
-`f1fcc6b6b78017c0e9abaeceace0a90e72bdacc39370c6755d6da34e23ded7b0`.
+**Head identity:** commit `84babbd`, clean tree, `clc` SHA-256
+`681a3f5af61c2a915e128331071c8ceb037e1817c68f624b495a99c1ea54d553`.
 Host time is advisory; the container medians vary by tens of percent and are
 not part of the pass/fail gate.
 
@@ -57,6 +57,18 @@ met; no benchmark regressed beyond 1%. The matrix instruction drop is the
 same const-fold mechanism: its loop bound `N` is now a literal. The matrix
 `.text` win is small because its nested fill is outside the compact scope and
 the removed float folds no longer reduce the standard library's `.text`.
+
+## Final Acceptance
+
+| Gate | Result |
+|---|---|
+| `make check` | green (spec check, registry, workspace suites, `bench-test`) |
+| `make asan` | 26 suites green |
+| `make corpus-amiga` | all portable programs match on hosted-amiga; vbcc warning-free |
+| `make differential` | all portable programs match |
+| `make verify` | `verify: all legs passed` (log `build/perf/verify-final2.log`) |
+| `make bench-compare` | passed; sieve −31.6% instructions, −24.4% `.text`, −36.6% C bytes |
+| `make bench-shape` | m68k GCC, vbcc, and freestanding warning-free |
 
 ## Emission Audit
 
@@ -89,10 +101,10 @@ The base run of `generated_c_optimization_impl_test.rs` records:
 
 **Base evidence:** the base compiler emitted 8,192 per-element stores for the
 sieve fill, read `cl_..._N` in the loop tests, wrote `(1 < 0)` for a slice
-constant index, and wrote `2 == 0` in the `% 2` guard. The base compiler was
-not asked to run the new impl suite (its tests use `CARGO_BIN_EXE_clc`), so the
-red set is established from those emitted-C probes plus the base/head
-instruction and size deltas.
+constant index, and wrote `2 == 0` in the `% 2` guard. The review worktrees
+built the pre-fix heads and ran the suite against them; the red pins below are
+the observed result. The list covers the original IP-1–IP-20 set; the
+fix-pass pins are recorded in the Review Findings table.
 
 **After the change:** `generated_c_optimization_spec_test` has 43 passing
 cases and `generated_c_optimization_impl_test` has 49 passing pins. The
@@ -172,6 +184,18 @@ pinned by the expanded suites:
 | Fourth fix pass: a bool-derived divisor still emitted the `== -1` guard and tripped `-Werror=bool-compare` | MAJOR | `division_guard_condition` returns no guard when `constant_zero_value` already forces the renderer's static trap; a runtime boolean divisor emits only `d == 0`. Pinned by the short-circuit and runtime-bool impl cases |
 | Fifth fix pass: a live out-of-range float cast in a selected constant conditional arm or forced short-circuit operand reported E11210 instead of E11212 | MAJOR | The static-trap spelling now evaluates the divisor's own guarded path before the E11210 placeholder, so the E11212 guard runs first. Pinned by the live-arm/live-operand spec and impl cases |
 
+## Final Review Verdict
+
+The last focused gate on `84babbd` reports **clean**: no new critical or
+major finding in the divisor-evaluator fix. The final gate reproduced the
+live-arm, live-operand, dead-arm, short-circuit, runtime-bool, `i8(200)`,
+and float-zero cases on host and hosted-amiga; all 43 spec and 49 impl cases
+pass; `make check` is green; and the corpus emission is byte-identical
+between the prior and final heads. The base-to-head differences remain the
+attributed R4–R7 changes in the Emission Audit above. The remaining
+pre-existing defects recorded below are outside this feature's scope and stay
+in the backlog.
+
 ## Pre-existing Defects (outside this change)
 
 | Defect | Base evidence |
@@ -189,8 +213,8 @@ pinned by the expanded suites:
 |---|---|---|---|
 | Requirements preflight | PF-REQ-001–027 | Resolved; see [Requirements Preflight](00-preflight-report-requirements.md) | All critical/major closed |
 | Plan preflight | PF-PLAN-001–031 | Resolved; see [Plan Preflight](00-preflight-report.md) | All critical/major closed |
-| Correctness review | RV-001/RV-002 resolved; second-round volatile/f32/unsigned/zero findings resolved; final focused re-review pending | `build/perf/verify.log` |
-| Memory-safety review | MS-001–MS-004 resolved; second-round unsigned-divisor and DerefTemp findings resolved; final focused re-review pending | probes under `build/` |
-| Emission-integrity review | F1–F8 resolved; second-round zero-divisor/volatile/f32 findings resolved; final focused re-review pending | base/head emission diff |
-| Performance review | PE-001–PE-006 resolved; the byte non-constant loop uses 64 | base/head JSON |
-| Semantics review | SR-001–SR-007 resolved; unsigned unary and binary/float zero fixed; final focused re-review pending | probes under `build/` |
+| Correctness review | All RV findings resolved; final focused re-review clean | `build/perf/verify-final2.log` |
+| Memory-safety review | MS-001–MS-004 resolved; final ASan probe set clean, no leak/double-free/use-after-free | probes under `build/` |
+| Emission-integrity review | F1–F8 and the divisor-evaluator residuals resolved; final scoped gate clean | base/head emission diff |
+| Performance review | PE-001–PE-006 resolved; no major findings; threshold 64 for non-byte/non-constant | base/head JSON |
+| Semantics review | SR-001–SR-007 and the evaluated-path residuals resolved; final scoped gate clean | probes under `build/` |

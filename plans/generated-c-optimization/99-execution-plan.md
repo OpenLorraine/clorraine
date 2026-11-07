@@ -3,8 +3,8 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
-> **Last Updated**: 2026-11-07 04:09
-> **Progress**: 28/30 tasks (93%)
+> **Last Updated**: 2026-11-07 12:45
+> **Progress**: 30/30 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -223,7 +223,7 @@ reviews.
 - [x] 6.1.1 Update `AGENTS.md` commands/layout, `benchmarks/README.md`, the plan docs, `05-findings.md`, `docs/known-limitations.md`, the production-readiness register, the AR-22 struct-size record, and `plans/00-roadmap.md` ✅ (completed: 2026-11-07 04:09)
 - [x] 6.1.2 Run the full benchmark base/head compare and write the evidence table; confirm the R4.8/R5.7 sieve targets ✅ (completed: 2026-11-07 04:09)
 - [x] 6.1.3 Add and run a focused vbcc build-only and freestanding compile leg for the new shapes ✅ (completed: 2026-11-07 04:09)
-- [~] 6.1.4 Run `make check`, `make asan`, `make corpus-amiga`, `make differential`, and `make verify`; fix every failure ⏳ (implemented: 2026-11-07 04:09)
+- [x] 6.1.4 Run `make check`, `make asan`, `make corpus-amiga`, `make differential`, and `make verify`; fix every failure ✅ (completed: 2026-11-07 12:45)
 
 ### Step 6.2: Emission diff and independent review
 
@@ -231,13 +231,13 @@ reviews.
 **Objective**: Resolve every critical/major finding before the final commit.
 
 - [x] 6.2.1 Emit the corpus with `build/perf/base-clc` and the head `clc`; diff and attribute every change to R4–R7 ✅ (completed: 2026-11-07 04:09)
-- [ ] 6.2.2 Dispatch the correctness reviewer, memory-safety auditor, emission-integrity auditor, performance auditor, and semantics reviewer; resolve every critical/major finding and re-run the affected gate
+- [x] 6.2.2 Dispatch the correctness reviewer, memory-safety auditor, emission-integrity auditor, performance auditor, and semantics reviewer; resolve every critical/major finding and re-run the affected gate ✅ (completed: 2026-11-07 12:09)
 
 **Deliverables**:
-- [ ] The documentation and roadmap updated
-- [ ] The full acceptance matrix green
-- [ ] The emission diff attributed
-- [ ] The review findings resolved and the final commit pushed via the git-commit skill in push mode
+- [x] The documentation and roadmap updated
+- [x] The full acceptance matrix green
+- [x] The emission diff attributed
+- [x] The review findings resolved and the final commit pushed via the git-commit skill in push mode
 
 ---
 
@@ -245,11 +245,11 @@ reviews.
 
 The plan is done when every deliverable is checked and:
 
-- [ ] R1–R8 are implemented and traced to a passing test or gate.
-- [ ] The final `make bench-compare` passes the generic 1% rows and the
+- [x] R1–R8 are implemented and traced to a passing test or gate.
+- [x] The final `make bench-compare` passes the generic 1% rows and the
       R4.8/R5.7 sieve targets.
-- [ ] `make check`, `make asan`, `make corpus-amiga`, `make differential`, and
+- [x] `make check`, `make asan`, `make corpus-amiga`, `make differential`, and
       `make verify` are green.
-- [ ] The base/head corpus emission diff is attributed in `05-findings.md`.
-- [ ] No critical or major review finding remains open.
-- [ ] The roadmap row is Done and the final commit is pushed.
+- [x] The base/head corpus emission diff is attributed in `05-findings.md`.
+- [x] No critical or major review finding remains open.
+- [x] The roadmap row is Done and the final commit is pushed.

@@ -1,7 +1,7 @@
 # Generated-C Optimization (PLAN-14)
 
 > **Feature**: A measurement-first optimization programme for the C the compiler emits: a deterministic benchmark harness, a representative benchmark suite, and only the generated-C changes that the measurements justify.
-> **Status**: Executing — 2026-11-07
+> **Status**: Done — 30/30; harness + four measured codegen rules; all gates green
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
 > **Implements**: R1–R8

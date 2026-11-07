@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-06T15:50:05+01:00",
+  "checkedAt": "2026-11-07T12:45:00+01:00",
   "plans": [
     "amiga-library-surface",
     "amiga-rtg",
@@ -43,6 +43,7 @@
     "element-loop-integrity",
     "eval-emission-integrity",
     "evaluation-residue",
+    "generated-c-optimization",
     "generic-field-integrity",
     "generic-substitution-guards",
     "global-borrow-conformance",

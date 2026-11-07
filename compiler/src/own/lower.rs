@@ -7087,8 +7087,6 @@ pub(super) fn fixed_array_extent(ty: &Ty) -> Option<usize> {
     }
 }
 
-
-
 /// True when an initializer is a value-stable constant form.
 ///
 /// `sizeof`/`offsetof` fold through the type table's layout, while the emitted

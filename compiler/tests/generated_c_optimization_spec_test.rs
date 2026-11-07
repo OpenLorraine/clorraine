@@ -348,10 +348,9 @@ export let G: Pair = Pair { n: 9 };
 "#;
     let main = r#"
 module bench.QualifiedMain;
-import { N, G } from bench.QualifiedHolder;
 import { println } from std.io;
 func main(): i32 {
-    println($"qualified: {N} {G.n}");
+    println($"qualified: {bench.QualifiedHolder.N} {bench.QualifiedHolder.G.n}");
     return 0;
 }
 "#;

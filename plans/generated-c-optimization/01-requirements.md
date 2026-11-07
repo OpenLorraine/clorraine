@@ -205,18 +205,20 @@ general optimizer.
 
 - **R5.1 Threshold and scope.** A one-extent scalar fill in statement position
   is emitted compactly when its covered slot count (`extent - prefix`) is at
-  least 16 for a `u8`/`i8` element (the `memset` form) or at least 64 for any
-  other scalar (the loop form; the loop saves code size but is slower than
-  unrolled stores). A smaller fill keeps the per-element spelling. Nested-row
+  least 16 for a constant `u8`/`i8` fill (the `memset` form) or at least 64
+  for every other scalar fill, including a non-constant `u8`/`i8` fill and
+  `bool` (the loop form; the loop saves code size but is slower than unrolled
+  stores). A smaller fill keeps the per-element spelling. Nested-row
   fills, struct-literal fills, array copies, the deferred expression form, a
   field or volatile target, a `DerefTemp` loop alias, and a fill whose
   expression reads a named binding through the shared self-read path are
   excluded; a field target may name a volatile member, and a volatile array
   cannot be passed to `memset`.
-- **R5.2 Forms.** A `u8` or `i8` fill with a constant integer value is emitted
-  as one `memset` over the covered slots. Any other scalar element type,
-  including `bool`, uses one `for` loop over the covered indices. `bool` is
-  not byte-sized on the target, so it must not use `memset`.
+- **R5.2 Forms.** A `u8` or `i8` fill with a constant integer value and at
+  least 16 covered slots is emitted as one `memset` over the covered slots.
+  Every other scalar fill, including a non-constant byte fill and `bool`, uses
+  one `for` loop over the covered indices at 64 or more covered slots. `bool`
+  is not byte-sized on the target, so it must not use `memset`.
 - **R5.3 Prefix and extent.** `[a, b; fill]` keeps the two direct prefix
   stores and compacts only the remaining `extent - 2` slots. `[; fill]`
   compacts all slots. An empty covered range emits no loop and no `memset`.
@@ -281,8 +283,11 @@ general optimizer.
   behavior is unchanged: the value renderer emits the trap expression and
   `division_guard_condition` returns no separate `if` guard. The constant
   folder's `E10223` remains the compile-time diagnostic in a constant context.
-- **R7.4 Non-literal divisor.** A run-time divisor keeps the full
-  zero-and-overflow guard unchanged.
+- **R7.4 Non-literal divisor.** A run-time integer divisor keeps the full
+  zero-and-overflow guard unchanged. A run-time boolean divisor (a `bool`
+  place or a comparison) emits only the zero test, because the `MIN / -1`
+  branch is impossible and `d == -1` on a boolean would trip
+  `-Werror=bool-compare`.
 - **R7.5 Acceptance.** Every existing division-fault program still traps with
   the same code and exit status; the emitted guard for `x % 2` no longer
   contains `2 == 0`; a `MIN / -1` case still traps; and no benchmark regresses
@@ -302,16 +307,17 @@ general optimizer.
   adjusted parameter, and hidden-return-slot fills; a pure volatile place read
   per element and an impure fill evaluated once into a temporary; unsigned,
   signed, slice, and string index boundaries; constant zero, `-1`, and
-  non-zero division; a wrapping binary divisor that keeps the full guard; and
-  the trap cases. None of these edit a frozen `spec/tests` golden.
+  non-zero division; a wrapping binary divisor that still traps `MIN / -1`;
+  and the trap cases. None of these edit a frozen `spec/tests` golden.
 - **R8.2 Implementation tests.** Add
   `compiler/tests/generated_c_optimization_impl_test.rs` as the red-first
   driver for the emitted shapes: a folded const leaves the storage
   declaration and initializer but has no read; a 4,096-slot `u8` fill emits
   `memset`; a 4,096-slot `i32` fill emits one loop and at most the threshold
-  number of direct stores; a 15-slot fill stays unrolled; a 16-slot fill
-  compacts; the adjusted-parameter fill uses the element-count byte size and
-  not `sizeof` the pointer; a small fill stays unrolled; `s[1]` has no `< 0`;
+  number of direct stores; a 15-slot `u8` fill stays unrolled; a 16-slot `u8`
+  fill compacts while a 16-slot `i32` fill stays unrolled; the
+  adjusted-parameter fill uses the element-count byte size and not `sizeof`
+  the pointer; `s[1]` has no `< 0`;
   a `% 2` guard has no zero check; determinism across two emits.
 - **R8.3 Existing gates.** `make check`, `make asan`, `make corpus-amiga`,
   `make differential`, and `make verify` all pass. The test count grows by the

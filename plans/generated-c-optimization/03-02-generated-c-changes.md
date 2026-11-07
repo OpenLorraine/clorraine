@@ -162,7 +162,8 @@ statement form), emit one of:
   valid for an array object, an adjusted parameter, and a hidden return slot.
   The element is one byte by definition, so no `sizeof` is needed. A prefix
   starts the `memset` at the first covered slot, not at index zero.
-- **any other scalar fill** (at least 64 covered slots): a C block with one
+- **any other scalar fill** (at least 64 covered slots, including a
+  non-constant `u8`/`i8` fill and `bool`): a C block with one
   `usize` index local and one `for` loop from `prefix` to `extent`, storing
   the existing lowered value. For an impure fill or a store-needing literal,
   the loop copies the existing once-evaluated temporary; for a pure fill, the
@@ -224,8 +225,7 @@ In `compiler/src/codegen/guards.rs::bounds_guard_condition`, when the index is
 signed, call a shared `constant_guard_integer(index)`. If it is `Some(n)` with
 `n >= 0`, build the unsigned condition for that index. The upper-bound
 comparison remains. `constant_guard_integer` accepts a literal, `bool`,
-character, cast, unary, materialized constant, or binary form evaluated with
-the C semantics: the constant evaluator wraps each operation at its result
+character, cast, unary, or binary form evaluated with the C semantics: the constant evaluator wraps each operation at its result
 type and masks shift counts at the left operand's width, so a wrapping binary
 index is classified correctly. A non-constant expression keeps the full
 guard.

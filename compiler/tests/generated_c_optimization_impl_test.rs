@@ -533,9 +533,8 @@ export let G: Pair = Pair { n: 9 };
 "#;
     let main = r#"
 module bench.ImplQualified;
-import { N, G } from bench.ImplHolder;
 func main(): i32 {
-    return N + G.n;
+    return bench.ImplHolder.N + bench.ImplHolder.G.n;
 }
 "#;
     let emitted = emit(

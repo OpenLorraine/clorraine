@@ -24,9 +24,9 @@ case "${OUTDIR}" in
 esac
 FIXTURE="${FIXTURE:-tools/perf/fixtures/shapes.clo}"
 
-GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2)
+GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -Wall -Wextra -Werror)
 VBCC_FLAGS=(+aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include)
-FREESTANDING_FLAGS=(-std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2)
+FREESTANDING_FLAGS=(-std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2 -Wall -Wextra -Werror)
 
 rm -rf "${OUTDIR}"
 mkdir -p "${OUTDIR}"

@@ -2136,9 +2136,9 @@ impl<'a> Emitter<'a> {
         if matches!(right.kind, ValueKind::Int(0)) {
             return None;
         }
-        // A constant divisor has no zero hazard; only -1 can overflow a signed
-        // division at the minimum value. A binary divisor stays on the full
-        // guard because its C value can wrap at the operand type.
+        // A non-zero constant divisor has no zero hazard; only -1 can
+        // overflow a signed division at the minimum value. The constant is
+        // evaluated with C wrap and shift semantics.
         if let Some(constant) = super::expr::constant_guard_integer(right) {
             if constant == 0 {
                 return None;
@@ -2204,8 +2204,9 @@ impl<'a> Emitter<'a> {
         let index_c = self.value(index);
         let mut signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
         // A non-negative constant index is already in range on the low side;
-        // the upper comparison remains. A binary expression is not treated as
-        // constant because its C value can wrap at the operand type.
+        // the upper comparison remains. The constant is evaluated with C wrap
+        // and shift semantics, so a wrapping binary index is classified by
+        // the value its C expression produces.
         if signed && super::expr::constant_guard_integer(index).is_some_and(|value| value >= 0) {
             signed = false;
         }

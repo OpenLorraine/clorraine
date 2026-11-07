@@ -5,12 +5,15 @@
 
 ## Testing Overview
 
-The feature is behavior-preserving codegen. The spec suite is therefore a
-green-before/green-after regression oracle: every case passes on the base
-compiler and must keep passing. The impl suite is the red-first driver only for
-the pins whose shape is absent at the base; the pins that already pass are
-regression pins. The benchmark harness proves the measured win and guards
-against a runtime regression.
+The feature is behavior-preserving for accepted programs. The original spec
+suite is a green-before/green-after regression oracle: its R4–R7 cases pass on
+the base compiler and must keep passing. The fix-pass trap cases pin defects
+the independent reviews exposed in the first implementation and in the base
+compiler's constant handling; those cases are red on the pre-fix compiler and
+are bug-fix oracles, not behavior-preservation claims. The impl suite is the
+red-first driver only for the pins whose shape is absent at the base; the pins
+that already pass are regression pins. The benchmark harness proves the
+measured win and guards against a runtime regression.
 
 | Layer | File | Role |
 |---|---|---|
@@ -107,7 +110,7 @@ computed from the language rules, not from the current emitter.
 | # | Input / scenario | Expected output / behavior | Source |
 |---|---|---|---|
 | ST-33 | Emit the same source twice | byte-identical C | N3 |
-| ST-34 | Emit a no-stdlib program with a compact fill, a folded const, and a slice guard for `host`, `hosted-amiga`, and `freestanding` | all three are accepted; the m68k unit builds with the strict flags | N4 |
+| ST-34 | Emit a no-stdlib program with a compact fill and a folded const for `host`, `hosted-amiga`, and `freestanding`; the slice guard is host-only | all three are accepted; the m68k unit builds with the strict flags | N4 |
 | ST-35 | Run the existing `spec/tests/run` fault programs | same codes and exit statuses | R8.3 |
 
 ## Implementation Test Cases
@@ -153,7 +156,7 @@ The independent reviews and the fix pass added these oracle cases:
 | ST-49 | `u8[32] = [; u8(1) << 8]` | unrolled (non-constant byte), value 1 per element | R5.2 |
 | ST-50 | `const B = A` where `&A` is taken; a lambda address; a huge negative slice; a bitnot divisor | place reads, trap codes preserved | R4.3, R6.2 |
 
-The spec suite now has 36 cases; the impl suite has 34 pins. The red/green
+The spec suite now has 43 cases; the impl suite has 49 pins. The red/green
 record is in `05-findings.md`.
 
 ## The Harness Self-Tests
@@ -181,6 +184,18 @@ functions. The fake-compiler cases use a stub tool directory on `PATH` whose
 `clc` exits non-zero (or emits a program with a different fixed output); the
 run stops at the emit failure, so no real toolchain is needed. The integration
 proof is `make bench` itself.
+
+## Existing Emission Pins Updated
+
+Two existing implementation pins change with the intended emission, and both
+keep their behavior checks:
+
+- `checker_conformance_impl_test::should_store_an_impure_dividend_once_in_an_initializer`
+  no longer expects the `MIN` guard for a constant `1` divisor; the impure
+dividend is still stored once and the division is still tested.
+- `def_backlog_closeout_impl_test::should_spell_module_names_inside_a_captureless_lambda`
+  now expects the folded `40` instead of a module-const read; the lambda still
+  calls the same function and the program still exits 42.
 
 ## Test Data and Fixtures
 
