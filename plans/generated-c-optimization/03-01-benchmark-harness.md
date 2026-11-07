@@ -199,7 +199,7 @@ measured fill benchmark; every other benchmark displays it as advisory.
 
 The 1% allowance is a guard against a real regression in a deterministic
 metric, not noise padding: repeated instruction counts and sizes are exact.
-Host time is advisory because its 30-run spread is 6–10% (AR-2, AR-11).
+Host time is advisory because its 30-run spread is often tens of percent (AR-2, AR-11).
 
 ## Base/Head Workflow
 

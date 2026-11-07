@@ -42,14 +42,21 @@ Filled after each optimization phase and at the final acceptance.
 | Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta | C bytes delta | Output |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
 | sieve | 1,520,792 | 1,040,581 | −31.6% | 101,396 | 76,664 | −24.4% | −36.6% | equal |
-| matrix | 22,059 | 11,154 | −49.4% | 80,732 | 77,992 | −3.4% | −0.3% | equal |
+| matrix | 22,059 | 10,959 | −50.3% | 80,732 | 80,652 | −0.1% | −0.03% | equal |
 | strings | 2,972,051 | 2,972,051 | 0.0% | 77,540 | 77,492 | −0.1% | −0.01% | equal |
 | moves | 45,205 | 45,205 | 0.0% | 76,880 | 76,832 | −0.1% | −0.01% | equal |
+
+**Head identity:** commit `8bec4b5`, clean tree, `clc` SHA-256
+`f1fcc6b6b78017c0e9abaeceace0a90e72bdacc39370c6755d6da34e23ded7b0`.
+Host time is advisory; the container medians vary by tens of percent and are
+not part of the pass/fail gate.
 
 **Final verdict:** `make bench-compare` passed. The R4.8 sieve target
 (−20% instructions) and the R5.7 targets (−10% `.text`, −25% C bytes) are
 met; no benchmark regressed beyond 1%. The matrix instruction drop is the
-same const-fold mechanism: its loop bound `N` is now a literal.
+same const-fold mechanism: its loop bound `N` is now a literal. The matrix
+`.text` win is small because its nested fill is outside the compact scope and
+the removed float folds no longer reduce the standard library's `.text`.
 
 ## Emission Audit
 
@@ -102,7 +109,7 @@ tests covering the 20 pins (the 15/16 threshold is one test with two emits).
 | A non-byte fill below 64 slots stays unrolled | The loop saves code size but is slower than unrolled stores at 16–63 slots; the byte `memset` threshold remains 16 | R5.1, AR-6 |
 | Nested-row, struct-literal, array-copy, and deferred expression fills keep their spelling | No measured need; the measured fill is a one-extent scalar statement fill | R5.1 |
 | The upper index bound is not eliminated by the compiler front end | Manual elimination measured slower on m68k; the C compiler removes it after const folding | R6.4 |
-| Host time is advisory | 6–10% run-to-run spread; the target metric is the m68k instruction count | R1.5, AR-2 |
+| Host time is advisory | run-to-run spread is often tens of percent; the target metric is the m68k instruction count | R1.5, AR-2 |
 | The harness has no FS-UAE cycle counter | FS-UAE 3.1.66 has no stable headless counter; `vamos` is deterministic | AR-16 |
 | The harness does not report per-struct sizes | The linked section sizes are the accepted code-size metric; the ABI is frozen | AR-22 |
 

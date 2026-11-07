@@ -59,7 +59,7 @@ Authority: AI — delegated by --auto-design
 Eligibility: measurement mechanism; no product behavior
 Objective: choose a target-side runtime metric that is deterministic and available headlessly
 Decision: m68k -O2 net instruction count from `vamos --instr-trace` is the only hard runtime gate; host time is recorded and displayed as advisory
-Evidence: repeated trace counts are byte-identical; host best-of-30 timings vary by 6-10%; FS-UAE has no stable headless cycle counter
+Evidence: repeated trace counts are byte-identical; host best-of-30 timings vary by tens of percent; FS-UAE has no stable headless cycle counter
 Rejected alternatives: FS-UAE wall time (boot/display overhead, non-deterministic); host time alone (not the target); static instruction count (misses loop counts)
 Strongest counterargument: `vamos` emulates Amiga library calls in Python, so the trace measures guest CPU work, not library internals; the counter is that every compared program uses the same library path and the delta is the signal
 Confidence: High
@@ -212,7 +212,7 @@ Authority: AI — delegated by --auto-design
 Eligibility: performance engineering and test strategy
 Objective: distinguish a real win from noise without hiding a regression
 Decision: 1% instruction and .text allowance; host time is advisory; 20% instruction or 10% .text required win. The numbers implement the user-approved measured-need direction rather than creating a new product acceptance criterion.
-Evidence: repeated instruction counts are exact; host best-of-30 varies by 6-10%; the selected wins are 28.9% and 24.3%
+Evidence: repeated instruction counts are exact; host best-of-30 varies by tens of percent; the selected wins are 28.9% and 24.3%
 Rejected alternatives: zero tolerance (flaky host time); a hard 2% host gate (contradicts AR-2 and the measured noise); a single aggregate score (hides a per-benchmark regression)
 Strongest counterargument: thresholds are arbitrary; the counter is that each is tied to the metric's observed noise or the expected win's margin, and the user's direction is the measured-need rule
 Confidence: High
