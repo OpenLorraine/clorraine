@@ -36,8 +36,13 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 
 | Command | Purpose |
 |---------|---------|
-| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `cargo test --workspace` in the container, then `bench-test` |
+| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `cargo test --workspace` in the container, then `bench-test`, `fuzz-test`, and `fuzz-smoke` |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
+| `make ubsan` | Run every suite that references `RDC_UBSAN` under UndefinedBehaviorSanitizer; a known-overflow probe proves the leg is active, and the runner links children with `-no-pie`; part of `make verify` |
+| `make fuzz-test` | Fuzzer unit tests; part of `make check` |
+| `make fuzz-smoke` | Bounded deterministic differential fuzzer matrix (12 seeds + generated 0–15); part of `make check` |
+| `make fuzz-smoke-host` | Host-only fuzzer fallback; no m68k leg |
+| `make fuzz` | Longer local fuzzer run (generated 0–255, full host/sanitizer matrix) |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
 | `make verify` | Full acceptance: `check`, `bench-shape`, `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `sdk-a1200-rtg`, `sdk-a4000-rtg-piv`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
@@ -87,12 +92,13 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `compiler/tests/` | Rust integration test drivers |
 | `benchmarks/` | Generated-C benchmark fixtures (not spec goldens) |
 | `tools/perf/` | Benchmark harness and its unit tests |
+| `tools/fuzz/` | Deterministic differential fuzzer, committed seeds and goldens, and its unit tests |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
 | `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
-| `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, and a compile-fail ownership sample |
+| `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, the target-side fault probes under `examples/robustness/`, and a compile-fail ownership sample |
 | `plans/` | CodeOps plans (one directory per feature) and `plans/00-roadmap.md`; flat layout |
 | `docs/`, `spikes/` | Findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
 
@@ -119,6 +125,15 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   own bounded process with `--test-threads=1`, and installs a temporary `cc`
   wrapper that appends `-no-pie` to ASan links. The wrapper is required: the
   SDK image's GCC 12 ASan runtime is unstable for PIE executables.
+- `make ubsan` discovers the suites that reference `RDC_UBSAN`, runs each in
+  its own bounded process with `--test-threads=1`, proves the sanitizer is
+  active with a known signed-overflow probe, and appends `-no-pie` to
+  sanitizer links. The robustness suite also builds its own ASan/UBSan
+  controls, so a silently unsanitized child build is a failure.
+- `tools/fuzz/fuzz.py` is a SHA-256-seeded, typed template generator. The
+  smoke target runs the committed seeds on host, ASan/UBSan, and m68k, plus a
+  bounded generated range; `make fuzz` is the longer local run. Seed goldens
+  catch shared host/m68k wrong values; the differential catches divergence.
 - `make differential` is a convenience gate over the same host and hosted-amiga
   outputs the corpus pins; it is not an independent signal. The CI workflow is
   host-only, so m68k-only tests skip themselves without the SDK toolchain.
@@ -160,7 +175,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   tree; `codeops/` holds only `specialist-check.json`.
 - Branch: `main` is the integration branch (`origin`:
   `git@github.com:OpenLorraine/clorraine.git`).
-- Specialist coverage: **up to date (2026-11-07)** — 66 plan folders recorded in
+- Specialist coverage: **up to date (2026-11-08)** — 67 plan folders recorded in
   `codeops/specialist-check.json`.
 - Do not run the CodeOps installer from inside this repository: it replaces the
   two customized reviewer briefs (`correctness-reviewer`, `semantics-reviewer`)

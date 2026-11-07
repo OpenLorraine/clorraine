@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 30/38 tasks (79%)
+> **Progress**: 34/38 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -338,16 +338,19 @@ runner, the seeded goldens, and the CI gates.
 **Reference**: [Requirements](01-requirements.md) R8.4–R9.6 ·
 [Testing Strategy](07-testing-strategy.md)
 
-- [ ] 7.1.1 Extend the shape fixture with the narrow const, narrow fill,
+- [x] 7.1.1 Extend the shape fixture with the narrow const, narrow fill,
   narrow arithmetic fill, f32 const, enum, and runtime-index fill; add the
-  `nix13` leg; run `make bench-shape`; commit
-- [ ] 7.1.2 Add the two fill fault probes and extend `run-fault-amiga.sh` with a
-  per-case path; run `make run-fault-amiga`; commit
-- [ ] 7.1.3 Update `AGENTS.md`, the roadmap PLAN-18 row, the specialist check,
+  `nix13` leg; run `make bench-shape`; commit ✅ (completed: 2026-11-08 03:20)
+- [x] 7.1.2 Add the two fill fault probes and extend `run-fault-amiga.sh` with a
+  per-case path; run `make run-fault-amiga` (eight faults); commit
+  ✅ (completed: 2026-11-08 03:30)
+- [x] 7.1.3 Update `AGENTS.md`, the roadmap PLAN-18 row, the specialist check,
   and `docs/known-limitations.md` where required; commit the docs
-- [ ] 7.1.4 Reuse `build/robustness/base-96ae0d4-clc` and
+  ✅ (completed: 2026-11-08 03:40)
+- [x] 7.1.4 Reuse `build/robustness/base-96ae0d4-clc` and
   `base-0ac87d3e-clc`; emit the corpus and seeds for host and hosted-amiga with
-  base and head; attribute every difference
+  base and head; attribute every difference (0 status diffs; 29 attributed
+  C diffs) ✅ (completed: 2026-11-08 03:45)
 - [ ] 7.1.5 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
   `make differential`, `make bench-shape`, and `make verify`; record the exact
   output

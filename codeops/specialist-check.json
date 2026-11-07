@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-07T12:45:00+01:00",
+  "checkedAt": "2026-11-08T03:00:00+01:00",
   "plans": [
     "amiga-library-surface",
     "amiga-rtg",
@@ -31,6 +31,7 @@
     "clorraine-v1-language-completion",
     "closure-integrity",
     "codegen-ownership-safety",
+    "compiler-robustness-closeout",
     "conditional-projection-integrity",
     "conditional-projection-residue",
     "conditional-projection-residue-ii",

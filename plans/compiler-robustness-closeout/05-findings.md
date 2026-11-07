@@ -82,6 +82,33 @@
 | Fix | shared `enum_member_values` (declaring module, cached prefix, ABI sizeof, layout-keyed const cache), sema fit check, checker-recorded cast sites, conversion lowering |
 | Green | spec 54/54, impl 22/22, `make check` green |
 
+## Emission Audit
+
+Base `build/robustness/base-96ae0d4-clc` (sha256 `06ae4eda…`) vs head
+`target/debug/clc`, over `spec/tests/corpus`, `benchmarks`, `examples`,
+`tools/fuzz/seeds`, and `tools/perf/fixtures`, host and hosted-amiga. Command:
+`build/robustness/emission-audit.sh`; log `build/robustness/logs/emission-audit.log`.
+Result: **0 status differences**; every emitted-C difference is one of the
+attributed fixes.
+
+| Program | Profile | Difference | Attribution |
+|---|---|---|---|
+| `spec/tests/corpus/string-parser` | host, hosted-amiga | `u8` subtraction result cast | D2 |
+| `spec/tests/corpus/volatile-mmio` | hosted-amiga | `u16` subtraction result cast | D2 |
+| `examples/amiga/imageviewer` | hosted-amiga | `u8` shift result cast | D2 |
+| `examples/amiga/paddle` | hosted-amiga | `u8` addition result cast | D2 |
+| `examples/robustness/fill-bounds` | host, hosted-amiga | bounds guard added before the fill | D1 |
+| `examples/robustness/fill-divisor` | host, hosted-amiga | division guard added before the fill | D1 |
+| `tools/fuzz/seeds/narrow_arith`, `narrow_fill` | both | narrow result casts | D2 |
+| `tools/fuzz/seeds/fill_bounds`, `fill_divisor`, `fill_float`, `struct_fill` | both | fill guard before the stores | D1 |
+| `tools/fuzz/seeds/enum_extent` | both | `E_A 0/E_B 1` → `E_A 5/E_B 6` | D6 |
+| `tools/fuzz/seeds/f32_round` | both | rounded `f32` extent | D5 |
+| `tools/perf/fixtures/shapes` | both | narrow consts/fill (D2), fill guard (D1), `f32`/enum shapes (D5/D6) | D1/D2/D5/D6 |
+
+No change appears in `benchmarks/`, `spec/tests/staged/`, the frozen compile-fail
+set, or any unrelated example. The differential gate confirms the corpus
+stdout is unchanged.
+
 ## Gate Evidence
 
 | Gate | Result | Log |

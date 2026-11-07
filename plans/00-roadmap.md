@@ -3,8 +3,8 @@
 > **Feature-Set**: Clorraine
 > **Status**: Done
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-11-07
-> **Progress**: 561/563 rows done; 0 open; 2 Parked
+> **Last Updated**: 2026-11-08
+> **Progress**: 561/564 rows done; 1 open (Executing); 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -578,6 +578,7 @@
 | PLAN-15 | v1.0 production readiness | — | [v1-production-readiness](v1-production-readiness/00-index.md) | Done | ✅ | 2026-11-04 08:20 | 45/45; DX 28/28; PLAN-13 16/16 (`std.amiga.exec` + two programs); MIT 1.0.0 release readiness; `make check`, `make verify` all legs, `make asan` 24/24, and `make differential` 3/3 green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0 |
 | PLAN-16 | Amiga SDK surface | — | [amiga-sdk-optional](amiga-sdk-optional/00-index.md) | Done | ✅ | 2026-11-06 07:30 | Bundles 0–9 complete. Bundle 9 closeout 30/30: five headless gates, 20 registry rows done (20/20); RTG now Bundle 10. Runtime-symbol collisions resolved in codegen (issue #12); issue #10 closed |
 | PLAN-17 | Picasso96 RTG | — | [amiga-rtg](amiga-rtg/00-index.md) | Done | ✅ | 2026-11-06 22:35 | 26/26; 24- and 32-bit `std.amiga.picasso96` screen/bitmap/pixel/blit/readback; A1200/KS3.1 UAEGFX and A4000/KS3.1 emulated Picasso IV gates + PPM captures; Bundle 10 2/2; commit `7501fca` |
+| PLAN-18 | Compiler robustness closeout | — | [compiler-robustness-closeout](compiler-robustness-closeout/00-index.md) | Executing | 🔄 | 2026-11-08 | six latent defects closed, UBSan leg (`make ubsan`), deterministic differential fuzzer (`make fuzz-smoke`/`make fuzz`), cross-toolchain shape and fault gates |
 
 ## Batch N accounting (2026-10-19)
 
