@@ -95,7 +95,7 @@ red set is established from those emitted-C probes plus the base/head
 instruction and size deltas.
 
 **After the change:** `generated_c_optimization_spec_test` has 36 passing
-cases and `generated_c_optimization_impl_test` has 37 passing pins. The
+cases and `generated_c_optimization_impl_test` has 40 passing pins. The
 fix-pass cases cover volatile targets on every fill path, integer consts
 through float casts, unsigned unary divisors, binary/float zero divisors,
 the 63/64 non-byte threshold, and the materialized conditional.
@@ -162,6 +162,7 @@ pinned by the expanded suites:
 | Second fix pass: the `DerefTemp` volatile alias could compact | MINOR | `fill_target_compactable` rejects a `DerefTemp` target; the shape is not strict-valid today and remains recorded as a conservative gate |
 | Second fix pass: trace timeout left the child unreaped | MINOR | The timeout path kills, waits, and closes both streams; the stub-`vamos` test covers it |
 | Third fix pass: only a direct `i32(0.0)` float zero was recognized; `i32(0.5)`, nested casts, `-0.0`, and float arithmetic zeros failed the strict build | MAJOR | `constant_zero_value` now evaluates the float expression at its own width, rounds `f32` at every cast/operation, applies the integer cast, and compares the truncated value to zero. Pinned by the truncating/nested-cast and float-to-one spec/impl cases |
+| Third fix pass follow-up: an integer expression containing a float cast (`i32(f32(2)) - 2`), an extra integer cast (`i32(u8(0.5))`), and an out-of-range unsigned cast (`u32(-0.5)`) still missed the static trap | MAJOR | The constant evaluator now handles a float-to-integer cast with C truncation and range checks inside an integer expression; an out-of-range cast leaves the E11212 guard first and uses the dead E11210 placeholder so the strict build passes. Pinned by the three new spec/impl cases |
 
 ## Pre-existing Defects (outside this change)
 

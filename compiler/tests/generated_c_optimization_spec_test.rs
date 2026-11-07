@@ -1007,6 +1007,8 @@ func main(): i32 {
         ("div-float-nested", "i32(f32(0.0))"),
         ("div-float-negative-zero", "i32(-0.0)"),
         ("div-float-sum", "i32(0.0 + 0.0)"),
+        ("div-float-int-expr", "(i32(f32(2)) - 2)"),
+        ("div-float-extra-cast", "i32(u8(0.5))"),
     ] {
         assert_trap(
             tag,
@@ -1023,6 +1025,18 @@ func main(): i32 {{
             "error E11210: integer division by zero",
         );
     }
+    assert_trap(
+        "div-float-unsigned-negative",
+        r#"
+module bench.FloatUnsignedNegative;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x / u32(-0.5);
+    return i32(q);
+}
+"#,
+        "error E11212: float-to-integer conversion out of range",
+    );
     assert_output(
         "div-float-one",
         r#"

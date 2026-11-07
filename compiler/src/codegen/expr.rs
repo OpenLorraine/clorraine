@@ -1643,27 +1643,15 @@ fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<S
 /// the C wrap and shift-mask rules, so a binary expression is safe here; a
 /// place, call, or other runtime value is not.
 fn guard_constant_shape(value: &Value) -> bool {
-    fn float_ty(ty: &Ty) -> bool {
-        matches!(
-            ty.kind,
-            TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
-        )
-    }
     match &value.kind {
-        ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) => true,
-        ValueKind::Cast { value, .. } => {
-            !float_ty(&value.ty) && guard_constant_shape(value)
-        }
+        ValueKind::Int(_) | ValueKind::Char(_) | ValueKind::Bool(_) | ValueKind::Float(_) => true,
+        ValueKind::Cast { value, .. } => guard_constant_shape(value),
         ValueKind::Unary { op, operand } => {
-            !float_ty(&operand.ty)
-                && matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
+            matches!(op, crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::BitNot)
                 && guard_constant_shape(operand)
         }
         ValueKind::Binary { left, right, .. } => {
-            !float_ty(&left.ty)
-                && !float_ty(&right.ty)
-                && guard_constant_shape(left)
-                && guard_constant_shape(right)
+            guard_constant_shape(left) && guard_constant_shape(right)
         }
         ValueKind::Materialize { value, .. } => guard_constant_shape(value),
         _ => false,
@@ -1715,13 +1703,9 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
     }
     match &value.kind {
         ValueKind::Cast { value: inner, .. } => {
-            // A finite float expression cast to an integer is zero when its
-            // C truncation is zero. Evaluate the float at its own width so a
-            // half-plus-half pair is 1, not a pair of truncated zeros.
-            let Some(cast) = integer_cast_zero(value, inner) else {
-                return false;
-            };
-            return cast;
+            if let Some(zero) = float_cast_zero(value, inner) {
+                return zero;
+            }
         }
         ValueKind::Materialize { value: inner, .. } => {
             return constant_zero_value(inner);
@@ -1729,6 +1713,37 @@ pub(super) fn constant_zero_value(value: &Value) -> bool {
         _ => {}
     }
     false
+}
+
+/// True when an integer cast of a float expression truncates to zero.
+///
+/// An out-of-range or non-finite cast is treated as zero here: the E11212
+/// float guard runs first, so the E11210 placeholder is dead and the reported
+/// fault stays E11212.
+fn float_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
+    let crate::types::TyKind::Scalar(scalar) = value.ty.kind else {
+        return None;
+    };
+    if !crate::types::is_integer_scalar(scalar) {
+        return None;
+    }
+    let number = float_constant(inner)?;
+    if !number.is_finite() {
+        return Some(true);
+    }
+    let bits = crate::types::scalar_bits(scalar);
+    let (low, high) = if crate::types::is_signed_scalar(scalar) {
+        (
+            -(1i128 << (bits - 1)) as f64,
+            ((1i128 << (bits - 1)) - 1) as f64,
+        )
+    } else {
+        (0.0, ((1i128 << bits) - 1) as f64)
+    };
+    if number < low || number > high {
+        return Some(true);
+    }
+    Some(number.trunc() == 0.0)
 }
 
 /// Evaluates a parameter-free float expression at its own width.
@@ -1741,6 +1756,11 @@ fn float_constant(value: &Value) -> Option<f64> {
             operand,
         } => Some(-float_constant(operand)?),
         ValueKind::Cast { value: inner, .. } => {
+            if let TyKind::Scalar(scalar) = &value.ty.kind {
+                if crate::types::is_integer_scalar(*scalar) {
+                    return Some(constant_integer(value)? as f64);
+                }
+            }
             let number = float_constant(inner)?;
             match &value.ty.kind {
                 TyKind::Scalar(crate::ast::ScalarType::F32) => Some(number as f32 as f64),
@@ -1769,33 +1789,6 @@ fn float_constant(value: &Value) -> Option<f64> {
     }
 }
 
-/// True when an integer cast of a float expression truncates to zero.
-fn integer_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
-    let crate::types::TyKind::Scalar(scalar) = value.ty.kind else {
-        return None;
-    };
-    if !crate::types::is_integer_scalar(scalar) {
-        return None;
-    }
-    let number = float_constant(inner)?;
-    if !number.is_finite() {
-        return Some(false);
-    }
-    let bits = crate::types::scalar_bits(scalar);
-    let (low, high) = if crate::types::is_signed_scalar(scalar) {
-        (
-            -(1i128 << (bits - 1)) as f64,
-            ((1i128 << (bits - 1)) - 1) as f64,
-        )
-    } else {
-        (0.0, ((1i128 << bits) - 1) as f64)
-    };
-    if number < low || number > high {
-        return Some(false);
-    }
-    let result = number.trunc() == 0.0;
-    Some(result)
-}
 
 /// Evaluates an integer constant with the C wrap and shift-mask rules.
 ///
@@ -1804,6 +1797,12 @@ fn integer_cast_zero(value: &Value, inner: &Value) -> Option<bool> {
 /// type, binary arithmetic wraps at its result type, and a shift count masks
 /// at the left operand's width. A non-constant value returns `None`.
 pub(super) fn constant_integer(value: &Value) -> Option<i128> {
+    if matches!(
+        value.ty.kind,
+        TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+    ) {
+        return None;
+    }
     match &value.kind {
         ValueKind::Int(number) => Some(*number),
         ValueKind::Bool(flag) => Some(if *flag { 1 } else { 0 }),
@@ -1834,8 +1833,38 @@ pub(super) fn constant_integer(value: &Value) -> Option<i128> {
             Some(cast_integer(result, &ty))
         }
         ValueKind::Cast { value: inner, .. } => {
+            let target = &value.ty;
+            let crate::types::TyKind::Scalar(scalar) = target.kind else {
+                return None;
+            };
+            if !crate::types::is_integer_scalar(scalar) {
+                return None;
+            }
+            if matches!(
+                inner.ty.kind,
+                TyKind::Scalar(crate::ast::ScalarType::F32 | crate::ast::ScalarType::F64)
+            ) {
+                // A float-to-integer cast truncates at the destination type.
+                let number = float_constant(inner)?;
+                if !number.is_finite() {
+                    return None;
+                }
+                let bits = crate::types::scalar_bits(scalar);
+                let (low, high) = if crate::types::is_signed_scalar(scalar) {
+                    (
+                        -(1i128 << (bits - 1)) as f64,
+                        ((1i128 << (bits - 1)) - 1) as f64,
+                    )
+                } else {
+                    (0.0, ((1i128 << bits) - 1) as f64)
+                };
+                if number < low || number > high {
+                    return None;
+                }
+                return Some(cast_integer(number.trunc() as i128, target));
+            }
             let number = constant_integer(inner)?;
-            Some(cast_integer(number, &value.ty))
+            Some(cast_integer(number, target))
         }
         ValueKind::Binary { op, left, right } => {
             let left_value = constant_integer(left)?;

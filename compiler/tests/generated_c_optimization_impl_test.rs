@@ -1005,3 +1005,74 @@ func main(): i32 {
     );
     assert_contains("fill-byte-nonconst-threshold", &threshold, "a[63] = cl_bench_ImplByteNonconstThreshold_seed;");
 }
+
+
+#[test]
+fn should_trap_a_float_cast_inside_an_integer_divisor_expression() {
+    let emitted = emit(
+        "div-float-int-expr",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatIntExpr;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / (i32(f32(2)) - 2);
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-int-expr",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+    assert_absent("div-float-int-expr", &emitted, "q = (x /");
+}
+
+#[test]
+fn should_trap_an_extra_integer_cast_around_a_float_zero() {
+    let emitted = emit(
+        "div-float-extra-cast",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatExtraCast;
+func main(): i32 {
+    let x: i32 = 7;
+    let q: i32 = x / i32(u8(0.5));
+    return q;
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains(
+        "div-float-extra-cast",
+        &emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+    assert_absent("div-float-extra-cast", &emitted, "q = (x /");
+}
+
+#[test]
+fn should_keep_the_e11212_trap_for_an_out_of_range_float_divisor() {
+    let emitted = emit(
+        "div-float-unsigned",
+        &[(
+            "main.clo",
+            r#"
+module bench.ImplFloatUnsigned;
+func main(): i32 {
+    let x: u32 = 7;
+    let q: u32 = x / u32(-0.5);
+    return i32(q);
+}
+"#,
+        )],
+        "main.clo",
+    );
+    assert_contains("div-float-unsigned", &emitted, "E11212");
+}
