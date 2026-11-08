@@ -55,7 +55,7 @@
 |---|---|
 | Red | `-Werror=overflow` on `const U8W: u8 = u8(200) + u8(100)` |
 | Fix | shared with D2 |
-| Green | pending |
+| Green | strict host/m68k/vbcc/freestanding builds green; `const U8W` reads 44 |
 
 ### D5 — `f32` rounding and constant float overflow
 
@@ -66,8 +66,8 @@
 | Red (NaN) | base: accepted, `#define E_A 0` |
 | Red (range) | base: accepted; fractional boundary accepted |
 | Fix | `round_float`, untruncated range/NaN `E10202` with the registered message, float result scalar, declared width, per-op rounding |
-| Green | spec 54/54, impl 22/22, consts unit 35/35, `make check` green |
-| Review | pending with D6 (semantics lens) |
+| Green | spec 55/55, impl 23/23, consts unit 35/35, `make check` green |
+| Review | Reviewed with D6; correctness/emission/semantics findings fixed |
 
 ### D6 — Enum values and conversion
 
@@ -80,14 +80,14 @@
 | Red (cross-module) | consumer module folds the declaring const |
 | Red (ABI sizeof) | the macro and the runtime `sizeof` disagree; a cached value-context `sizeof` hides the overflow |
 | Fix | shared `enum_member_values` (declaring module, cached prefix, ABI sizeof, layout-keyed const cache), sema fit check, checker-recorded cast sites, conversion lowering |
-| Green | spec 54/54, impl 22/22, `make check` green |
+| Green | spec 55/55, impl 23/23, `make check` green |
 
 ## Emission Audit
 
 Base `build/robustness/base-96ae0d4-clc` (sha256 `06ae4eda…`) vs head
 `target/debug/clc`, over `spec/tests/corpus`, `benchmarks`, `examples`,
 `tools/fuzz/seeds`, and `tools/perf/fixtures`, host and hosted-amiga. Command:
-`build/robustness/emission-audit.sh`; log `build/robustness/logs/emission-audit.log`.
+`build/robustness/emission-audit.sh`; log `build/robustness/logs/emission-audit.log` and the identical `emission-audit-final2.log`.
 Result: **0 status differences**; every emitted-C difference is one of the
 attributed fixes.
 
@@ -114,12 +114,12 @@ stdout is unchanged.
 | Gate | Result | Log |
 |---|---|---|
 | `make check` baseline | green, 123.78 s | `build/robustness/logs/make-check-baseline.log` |
-| `make asan` | pending | |
+| `make asan` | green, 27 suites | `build/robustness/logs/asan-final2.log` |
 | `make ubsan` | green, 2 suites, activation self-test, 9.91 s | `build/robustness/logs/ubsan-d1.log`, `ubsan-d1b.log` |
-| `make corpus-amiga` | pending | |
-| `make differential` | pending | |
-| `make bench-shape` | pending | |
-| `make verify` | pending | |
+| `make corpus-amiga` | green, all portable programs match | `build/robustness/logs/corpus-amiga-final.log` |
+| `make differential` | green, 3/3 match | `build/robustness/logs/differential-d6.log` |
+| `make bench-shape` | green: GCC nix20/nix13, vbcc, freestanding | `build/robustness/logs/bench-shape-d7d.log` |
+| `make verify` | green: `verify: all legs passed` (re-gated after the final semantics fix) | `build/robustness/logs/verify-final2.log` |
 
 ## Fuzzer Evidence
 
@@ -140,6 +140,24 @@ measured cost, while bounded, is not needed on every edit. The suite-level
 controls prove the child builds are sanitized even when the runner's compiler
 works.
 
+## Final Verdict
+
+All six defects are closed:
+
+| Defect | Fix | Test |
+|---|---|---|
+| D1 fill guards | guard emitted before the first store on every path; module fill dedup | spec/impl + ASan/UBSan + target fault probes |
+| D2/D4 narrow wrapping | defined `unsigned int` intermediate; narrow shift result cast | value matrix, strict builds, UBSan, emission audit |
+| D3 inline shift divisor | no code change; regression and base evidence | spec/impl + pre-PLAN-14 trap |
+| D5 f32 and constant float overflow | per-op/cast rounding, untruncated E10202 range check | spec + unit + message + fractional boundaries |
+| D6 enum values and conversion | shared declaring-module ABI walk, E10202 fit, checker-recorded cast sites | spec/impl + shadow, backward, cross-module, ABI sizeof |
+| Known limits | imported type names, inexact casts, non-integer members, runtime handle, case-label consts, MIN/-1, and the D1-adjacent shapes are documented | `docs/known-limitations.md` §8 |
+
+`make verify` prints `verify: all legs passed`; `make asan` is 27 suites;
+`make ubsan` is 2 suites; the fuzzer smoke is 28 cases / 0 failures in
+`make check`; the full fuzzer run is 268 cases / 0 failures. The working tree
+is clean and `origin/main` is up to date after the closeout push.
+
 ## Review Verdicts
 
 | Phase | Reviewers | Verdict |
@@ -148,9 +166,9 @@ works.
 | Plan | 2 independent auditors + focused re-scan | 45 + 14 findings resolved |
 | D1 | correctness reviewer + memory-safety auditor | RV-001 fixed; MS-001/MS-002 fixed; re-review clean; 87 ASan/LSan probes, no report |
 | D2/D3 | correctness + memory-safety + emission-integrity | RV-001/EI-001 fixed; re-review clean; 3,760-case matrix, UBSan clean, corpus diff attributable |
-| D4/D6 | pending | |
-| Fuzzer | pending | |
-| Final | pending | |
+| D4/D6 | correctness + emission-integrity + semantics | 4 review rounds; the ffi/global/import shadow, same-enum backward ref, cross-module const, ABI sizeof, layout cache, fit order, and inexact-cast findings fixed; re-review clean |
+| Fuzzer | correctness reviewer | 3 majors (leg counters/matrix tests, float bound, diversity test) and the minors fixed; 28 unit tests, smoke 28/0, full 268/0 |
+| Final | correctness + memory-safety + emission-integrity + semantics | No critical/major code finding; the final semantics inexact-cast finding was fixed; docs/evidence finalized; `make verify` green |
 
 ## Residual Limitations
 

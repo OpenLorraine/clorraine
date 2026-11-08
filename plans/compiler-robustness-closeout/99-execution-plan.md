@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 34/38 tasks (89%)
+> **Progress**: 37/38 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -351,21 +351,24 @@ runner, the seeded goldens, and the CI gates.
   `base-0ac87d3e-clc`; emit the corpus and seeds for host and hosted-amiga with
   base and head; attribute every difference (0 status diffs; 29 attributed
   C diffs) ✅ (completed: 2026-11-08 03:45)
-- [ ] 7.1.5 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
+- [x] 7.1.5 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
   `make differential`, `make bench-shape`, and `make verify`; record the exact
-  output
-- [ ] 7.1.6 Final independent review: correctness, memory-safety,
-  emission-integrity, and semantics reviewers on the whole change. Resolve
-  every critical/major finding
-- [ ] 7.1.7 Re-run the affected gates and the full `make verify` on the exact
-  tree after the final review; write the final report and `05-findings.md`
+  output (final logs `*-final2.log`) ✅ (completed: 2026-11-08 04:20)
+- [x] 7.1.6 Final independent review: correctness, memory-safety,
+  emission-integrity, and semantics reviewers on the whole change. The final
+  semantics inexact-cast finding was fixed; no critical/major code finding
+  remains ✅ (completed: 2026-11-08 04:40)
+- [x] 7.1.7 Re-run the affected gates and the full `make verify` on the exact
+  tree after the final review (27 ASan suites, 2 UBSan suites, `verify: all
+  legs passed`); write the final report and `05-findings.md`
+  ✅ (completed: 2026-11-08 04:50)
 - [ ] 7.1.8 Commit the closeout; push `origin/main`; verify the tree is clean
   and `origin/main..HEAD` is 0
 
 **Deliverables**:
-- [ ] Green shape, fault, and full acceptance gates
-- [ ] A clean emission audit
-- [ ] Independent review verdicts
+- [x] Green shape, fault, and full acceptance gates
+- [x] A clean emission audit
+- [x] Independent review verdicts
 - [ ] The pushed closeout commit
 
 ---

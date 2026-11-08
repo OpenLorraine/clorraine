@@ -253,11 +253,11 @@ and imported enum conversions remain pre-existing limitations recorded in
 **R5.6 Cross-module members.** The emitter folds a member declared in another
 loaded module with that module's constants; the folder and emitter agree there
 too. A member may read an earlier member of the same enum (`C = A | B`); a
-forward or self reference is still a cycle. The walk uses the enum's declared
-`sizeof` policy, not the array-extent ABI policy, so an extent that reads a
-member agrees with the emitted macro. Enum names are resolved by the language's
-existing bare-name rule; a same-name enum in two modules keeps that rule and is
-recorded as a collision scope, not newly supported.
+forward or self reference is still a cycle. The walk uses the target ABI
+`sizeof` layout, so an extent that reads a member agrees with the emitted macro
+and the runtime C `sizeof`. Enum names are resolved by the language's existing
+bare-name rule; a same-name enum in two modules keeps that rule and is recorded
+as a collision scope, not newly supported.
 
 A constant-context enum conversion (`E(2)` in an extent or `case`) remains
 `E10224`: the frozen constant-expression list does not include enum casts, and

@@ -1,7 +1,7 @@
 # Compiler Robustness Closeout (PLAN-18)
 
 > **Feature**: Close the six latent compiler defects left outside the generated-C optimization work, add a host UBSan leg, and add a committed deterministic grammar-based fuzzer.
-> **Status**: In Progress
+> **Status**: Done — 38/38; all gates green; pushed
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
 > **Implements**: R1–R9
