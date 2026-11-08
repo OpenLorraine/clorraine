@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-07
 > **Last Updated**: 2026-11-07
-> **Progress**: 37/38 tasks (97%)
+> **Progress**: 38/38 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -362,14 +362,14 @@ runner, the seeded goldens, and the CI gates.
   tree after the final review (27 ASan suites, 2 UBSan suites, `verify: all
   legs passed`); write the final report and `05-findings.md`
   ✅ (completed: 2026-11-08 04:50)
-- [ ] 7.1.8 Commit the closeout; push `origin/main`; verify the tree is clean
-  and `origin/main..HEAD` is 0
+- [x] 7.1.8 Commit the closeout; push `origin/main`; verify the tree is clean
+  and `origin/main..HEAD` is 0 ✅ (completed: 2026-11-08 05:10)
 
 **Deliverables**:
 - [x] Green shape, fault, and full acceptance gates
 - [x] A clean emission audit
 - [x] Independent review verdicts
-- [ ] The pushed closeout commit
+- [x] The pushed closeout commit
 
 ---
 
