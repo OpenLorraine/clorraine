@@ -123,8 +123,9 @@ func readFirst(path: cstring): i32 {
 }
 ```
 
-A short count is not an error. Loop when the whole request matters, and keep
-the count and the error as separate values. The DOS surface also provides
+A count of zero or less is end of file or an error. Loop when the whole
+request matters; when the caller must distinguish the two, wrap the count in a
+status struct such as the `ReadResult` recipe in section 11. The DOS surface also provides
 `std.amiga.dos.lockPath`, `pathInfo`, `volumeInfo`, and the delay helpers.
 
 ## 4. Strings
@@ -239,6 +240,9 @@ func dispatchOne(item: raw u8): u32 {
 }
 ```
 
+The `ffi` block belongs in a wrapper module; application code calls
+`dispatchOne` (spec Chapter 12, CN-13).
+
 The callback can capture because the compiler emits a trampoline and a
 caller-stack environment. A callback stored by the C side (a registration, a
 task entry, or an interrupt handler) must be capture-less. A capturing
@@ -295,7 +299,8 @@ func readInto(path: cstring, borrow buffer: u8[]): i32 {
         return -1;
     }
     let f: File = maybe;
-    return readFile(f, buffer);
+    let view: u8[] = buffer;
+    return readFile(f, view);
 }
 ```
 
@@ -347,6 +352,8 @@ another `take` function or let it drop; it may not copy it.
 ### Borrowed view accessor
 
 ```clorraine
+import { slice } from std.mem;
+
 func payload(data: u8[], at: usize): u8[] {
     return slice(data, at, len(data));
 }
@@ -391,7 +398,8 @@ func dispatchOne(item: raw u8): u32 {
 ```
 
 The C side must not store `visit`. A callback registered for later must be a
-plain function and cannot capture.
+plain function and cannot capture. The `ffi` block belongs in a library or
+wrapper module; application code calls the wrapper (spec Chapter 12, CN-13).
 
 ## Where next
 

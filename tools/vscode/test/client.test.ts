@@ -39,18 +39,21 @@ test("should initialize, request, and stop against a split-frame server", async 
 test("should correlate two out-of-order responses", async () => {
   const client = new LspClient({ command: process.execPath, args: [fake] });
   await client.start();
-  const first = client.request<{ contents: { value: string } }>(
-    "textDocument/hover",
-    hover(0),
-  );
-  const second = client.request<{ contents: { value: string } }>(
-    "textDocument/hover",
-    hover(1),
-  );
-  const [a, b] = await Promise.all([first, second]);
-  assert.match(a.contents.value, /line 0/);
-  assert.match(b.contents.value, /line 1/);
-  await client.stop();
+  try {
+    const first = client.request<{ contents: { value: string } }>(
+      "textDocument/hover",
+      hover(0),
+    );
+    const second = client.request<{ contents: { value: string } }>(
+      "textDocument/hover",
+      hover(1),
+    );
+    const [a, b] = await Promise.all([first, second]);
+    assert.match(a.contents.value, /line 0/);
+    assert.match(b.contents.value, /line 1/);
+  } finally {
+    await client.stop();
+  }
 });
 
 test("should reject a pending request on a malformed response", async () => {
