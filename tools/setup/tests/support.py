@@ -99,6 +99,9 @@ def probe_output(
         "vamos": True,
     }
     lines = [f"tool:{name}={'ok' if present else 'missing'}" for name, present in tools.items()]
+    for name, present in tools.items():
+        if present:
+            lines.append(f"version:{name}=version line for {name}")
     lines.append(f"ndk={'ok' if ndk else 'missing'}")
     lines.append(f"provenance={commit}")
     return "\n".join(lines) + "\n"

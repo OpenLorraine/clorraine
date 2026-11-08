@@ -37,8 +37,15 @@ PROBE_TIMEOUT = 10.0
 #: The shell program run inside the image to report tools, NDK, and provenance.
 IMAGE_PROBE = r"""
 for t in m68k-amigaos-gcc m68k-amigaos-gdb vc vamos; do
-  if command -v "$t" >/dev/null 2>&1; then
+  case "$t" in
+    m68k-amigaos-gcc) v="$(m68k-amigaos-gcc --version 2>&1 | head -1)" ;;
+    m68k-amigaos-gdb) v="$(m68k-amigaos-gdb --version 2>&1 | head -1)" ;;
+    vc)               v="$(vc -v 2>&1 | head -1)" ;;
+    vamos)            v="$(vamos --help 2>&1 | head -1)" ;;
+  esac
+  if command -v "$t" >/dev/null 2>&1 && [ -n "$v" ]; then
     echo "tool:$t=ok"
+    echo "version:$t=$v"
   else
     echo "tool:$t=missing"
   fi
@@ -99,7 +106,9 @@ class Probe:
     adfs: int
     hdfs: int
     host_cc: str | None
+    env_readable: bool = False
     tools: dict[str, bool] = field(default_factory=dict)
+    versions: dict[str, str] = field(default_factory=dict)
     ndk: bool = False
     provenance: str | None = None
     pinned_commit: str | None = None
@@ -227,7 +236,7 @@ def read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return values
     for line in text.splitlines():
         stripped = line.strip()
@@ -243,6 +252,15 @@ def read_env(path: Path) -> dict[str, str]:
     return values
 
 
+def env_readable(path: Path) -> bool:
+    """True when the environment file exists and decodes as UTF-8."""
+    try:
+        path.read_text(encoding="utf-8")
+        return True
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def count_files(directory: Path, suffix: str) -> int:
     """Counts regular files with a suffix, without opening them."""
     try:
@@ -252,28 +270,38 @@ def count_files(directory: Path, suffix: str) -> int:
     return sum(1 for entry in entries if entry.is_file() and entry.suffix.lower() == suffix)
 
 
-def probe_image(image: str) -> tuple[dict[str, bool], bool, str | None]:
-    """Runs the in-image probe and returns tools, NDK, and provenance."""
+def probe_image(
+    image: str,
+) -> tuple[dict[str, bool], dict[str, str], bool, str | None]:
+    """Runs the in-image probe and returns tools, versions, NDK, and provenance."""
     result = run_command(
         ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", IMAGE_PROBE],
         timeout=PROBE_TIMEOUT,
     )
     tools = {name: False for name in IMAGE_TOOLS}
+    versions: dict[str, str] = {}
     ndk = False
     provenance = None
     if result.returncode != 0:
-        return tools, ndk, provenance
+        return tools, versions, ndk, provenance
     for line in result.stdout.splitlines():
         if line.startswith("tool:") and "=" in line:
             name, state = line[len("tool:") :].split("=", 1)
             if name in tools:
                 tools[name] = state == "ok"
+        elif line.startswith("version:") and "=" in line:
+            name, value = line[len("version:") :].split("=", 1)
+            if name in tools and value.strip():
+                versions[name] = value.strip()
         elif line == "ndk=ok":
             ndk = True
         elif line.startswith("provenance="):
             value = line[len("provenance=") :].strip()
             provenance = value or None
-    return tools, ndk, provenance
+    for name in IMAGE_TOOLS:
+        if name not in versions:
+            tools[name] = False
+    return tools, versions, ndk, provenance
 
 
 def detect(root: Path, amiga_data: Path | None, require_media: bool) -> Report:
@@ -311,11 +339,14 @@ def detect(root: Path, amiga_data: Path | None, require_media: bool) -> Report:
 
     image_id = image_result.stdout.strip() if image_result.returncode == 0 else None
     if image_id:
-        tools, ndk, provenance = probe_image(image)
+        tools, versions, ndk, provenance = probe_image(image)
     else:
-        tools, ndk, provenance = ({name: False for name in IMAGE_TOOLS}, False, None)
+        tools = {name: False for name in IMAGE_TOOLS}
+        versions, ndk, provenance = {}, False, None
 
     host_cc = which("cc") or which("gcc")
+    named_media = env.get("AMIGA_DATA")
+    media_named_ok = not named_media or Path(named_media).is_dir()
     probe = Probe(
         docker_client=client.stdout.strip() if client.returncode == 0 else None,
         docker_daemon=daemon.stdout.strip() if daemon.returncode == 0 else None,
@@ -323,13 +354,15 @@ def detect(root: Path, amiga_data: Path | None, require_media: bool) -> Report:
         image=image,
         image_id=image_id,
         env_file=env_file,
-        env_present=env_file.is_file(),
+        env_present=env_file.is_file() and env_readable(env_file) and media_named_ok,
+        env_readable=env_readable(env_file),
         media_root=media_root,
         roms=count_files(media_root / "roms", ".rom"),
         adfs=count_files(media_root / "adf", ".adf"),
         hdfs=count_files(media_root / "hdf", ".hdf"),
         host_cc=host_cc,
         tools=tools,
+        versions=versions,
         ndk=ndk,
         provenance=provenance,
         pinned_commit=pinned_commit,
@@ -339,8 +372,16 @@ def detect(root: Path, amiga_data: Path | None, require_media: bool) -> Report:
 
 def build_report(probe: Probe, root: Path, require_media: bool) -> Report:
     """Turns a probe into ordered components, a plan, and a readiness flag."""
-    tool_names = ", ".join(name for name in IMAGE_TOOLS if not probe.tools.get(name))
-    tool_detail = "all present" if not tool_names else f"missing: {tool_names}"
+    tool_names = ", ".join(
+        name
+        for name in IMAGE_TOOLS
+        if not (probe.tools.get(name) and probe.versions.get(name))
+    )
+    tool_detail = (
+        "all present with versions"
+        if not tool_names
+        else f"missing or without a version: {tool_names}"
+    )
 
     if probe.provenance is None:
         provenance_detail = "not recorded"
@@ -388,12 +429,19 @@ def build_report(probe: Probe, root: Path, require_media: bool) -> Report:
         Component(
             "env",
             "ok" if probe.env_present else "missing",
-            str(probe.env_file),
+            str(probe.env_file)
+            if probe.env_present
+            else f"{probe.env_file} is missing or unreadable",
             f"make -C {root / 'docker'} init",
         ),
         Component(
             "toolchain",
-            "ok" if all(probe.tools.get(name) for name in IMAGE_TOOLS) else "missing",
+            "ok"
+            if all(
+                probe.tools.get(name) and probe.versions.get(name)
+                for name in IMAGE_TOOLS
+            )
+            else "missing",
             tool_detail,
             f"make -C {root / 'docker'} image",
         ),
@@ -453,6 +501,12 @@ def render_text(report: Report) -> str:
     lines = ["Clorraine SDK"]
     for row in report.components:
         lines.append(f"  [{row.state}]".ljust(13) + f"{row.name}".ljust(13) + row.detail)
+    lines.append("")
+    lines.append(
+        "Downloads: the pinned `make -C docker image` build only; upstream "
+        "archives are checksum-verified where upstream publishes checksums."
+    )
+    lines.append("Media: never downloaded, copied, or modified by this installer.")
     if report.plan:
         lines.append("")
         lines.append("Planned changes:")
@@ -487,6 +541,10 @@ def render_json(report: Report) -> str:
         ],
         "actions": [format_command(argv) for argv in report.plan],
         "plan": [format_command(argv) for argv in report.plan],
+        "downloads": (
+            "the pinned docker image build; upstream archives are checksum-verified "
+            "where upstream publishes checksums; media is never downloaded"
+        ),
     }
     return json.dumps(payload, indent=2) + "\n"
 
@@ -509,8 +567,8 @@ def report_missing(report: Report) -> None:
 def run_plan(plan: list[list[str]], root: Path) -> bool:
     """Runs the fetch plan; returns false on the first failure."""
     for argv in plan:
-        sys.stdout.write(f"running: {format_command(argv)}\n")
-        sys.stdout.flush()
+        sys.stderr.write(f"running: {format_command(argv)}\n")
+        sys.stderr.flush()
         result = run_command(argv)
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip() or "no output"
@@ -553,26 +611,33 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     report = detect(arguments.root, arguments.amiga_data, arguments.require_media)
-    print_report(report, arguments.as_json)
 
     if not arguments.fetch:
+        print_report(report, arguments.as_json)
         if not report.ready and not arguments.dry_run:
             verify(report)
             sys.stderr.write("install_sdk: the SDK is not ready; see the missing rows above.\n")
             return 1
         return 0
 
+    if arguments.dry_run:
+        print_report(report, arguments.as_json)
+        sys.stderr.write("Dry run: no command was run.\n")
+        return 0
+
     if not report.plan:
+        print_report(report, arguments.as_json)
         if report.ready:
             return 0
+        verify(report)
         sys.stderr.write(
             "install_sdk: no automatic action can fix the missing components; "
             "follow the recovery hints above.\n"
         )
         return 1
-    if arguments.dry_run:
-        sys.stdout.write("Dry run: no command was run.\n")
-        return 0
+
+    if not arguments.as_json:
+        print_report(report, False)
     if not arguments.yes:
         if not is_interactive():
             sys.stderr.write(
@@ -580,22 +645,23 @@ def main(argv: list[str] | None = None) -> int:
                 "(or use --dry-run to inspect the plan)\n"
             )
             return 2
-        sys.stdout.write("Proceed? [y/N] ")
-        sys.stdout.flush()
+        sys.stderr.write("Proceed? [y/N] ")
+        sys.stderr.flush()
         answer = input().strip().lower()
         if answer not in ("y", "yes"):
             sys.stderr.write("install_sdk: cancelled\n")
             return 1
 
     if not run_plan(report.plan, arguments.root):
+        if arguments.as_json:
+            print_report(report, True)
         return 1
     verified = detect(arguments.root, arguments.amiga_data, arguments.require_media)
     print_report(verified, arguments.as_json)
     if not verify(verified):
         return 1
-    sys.stdout.write("Clorraine SDK is ready.\n")
+    sys.stderr.write("Clorraine SDK is ready.\n")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

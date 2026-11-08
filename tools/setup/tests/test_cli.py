@@ -67,6 +67,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(values["IMAGE"], "clorraine-sdk:dev")
         self.assertEqual(values["AMIGA_DATA"], "/tmp/a b")
 
+    def test_should_report_a_missing_media_root_named_by_env(self) -> None:
+        env = self.root / "docker" / ".env"
+        env.write_text(
+            f"IMAGE=clorraine-sdk:dev\nAMIGA_DATA={self.root / 'missing'}\n",
+            encoding="utf-8",
+        )
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        states = {row["name"]: row["state"] for row in json.loads(out)["components"]}
+        self.assertEqual(states["env"], "missing")
+        self.assertIn("init", err)
+
+    def test_should_state_the_download_boundary(self) -> None:
+        code, out, err = self.invoke()
+        self.assertEqual(code, 0, err)
+        self.assertIn("Downloads:", out)
+        self.assertIn("never downloaded", out)
+
     def test_should_print_a_human_table_by_default(self) -> None:
         code, out, err = self.invoke()
         self.assertEqual(code, 0, err)

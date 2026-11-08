@@ -151,11 +151,96 @@ class DetectTests(unittest.TestCase):
             "media discovery must inspect metadata only",
         )
 
+    def test_should_report_components_in_a_fixed_order(self) -> None:
+        report = self.report()
+        self.assertEqual(
+            [row["name"] for row in report["components"]],
+            [
+                "docker",
+                "compose",
+                "image",
+                "env",
+                "toolchain",
+                "ndk",
+                "host-cc",
+                "kickstart",
+                "workbench",
+            ],
+        )
+
+    def test_should_report_a_missing_compose(self) -> None:
+        self.runner.responses = [
+            (prefix, result)
+            for prefix, result in self.runner.responses
+            if prefix != ("docker", "compose", "version")
+        ]
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        states = {row["name"]: row["state"] for row in json.loads(out)["components"]}
+        self.assertEqual(states["compose"], "missing")
+        self.assertIn("compose", err.lower())
+
+    def test_should_plan_init_when_the_env_file_is_missing(self) -> None:
+        (self.root / "docker" / ".env").unlink()
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        report = json.loads(out)
+        states = {row["name"]: row["state"] for row in report["components"]}
+        self.assertEqual(states["env"], "missing")
+        self.assertTrue(
+            any("init" in command for command in report["plan"]), report["plan"]
+        )
+
+    def test_should_reject_an_unreadable_env_file(self) -> None:
+        env = self.root / "docker" / ".env"
+        env.write_bytes(b"\xff\xfe")
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        states = {row["name"]: row["state"] for row in json.loads(out)["components"]}
+        self.assertEqual(states["env"], "missing")
+        self.assertNotIn("Traceback", err)
+
+    def test_should_report_a_toolchain_without_a_version(self) -> None:
+        self.runner.responses = [
+            (prefix, result)
+            for prefix, result in self.runner.responses
+            if prefix != ("docker", "run")
+        ]
+        self.runner.on(
+            ("docker", "run"),
+            support.CommandResult(
+                0,
+                "tool:m68k-amigaos-gcc=ok\ntool:m68k-amigaos-gdb=ok\n"
+                "tool:vc=ok\ntool:vamos=ok\nndk=ok\nprovenance=abc123\n",
+            ),
+        )
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        states = {row["name"]: row["state"] for row in json.loads(out)["components"]}
+        self.assertEqual(states["toolchain"], "missing")
+        self.assertIn("version", err)
+
+    def test_should_report_a_missing_ndk(self) -> None:
+        self.runner.responses = [
+            (prefix, result)
+            for prefix, result in self.runner.responses
+            if prefix != ("docker", "run")
+        ]
+        self.runner.on(
+            ("docker", "run"),
+            support.CommandResult(0, support.probe_output(ndk=False)),
+        )
+        code, out, err = self.invoke("--json")
+        self.assertEqual(code, 1)
+        states = {row["name"]: row["state"] for row in json.loads(out)["components"]}
+        self.assertEqual(states["ndk"], "missing")
+        self.assertIn("ndk", err.lower())
+
     def test_json_report_has_stable_keys(self) -> None:
         report = self.report()
         self.assertEqual(
             set(report),
-            {"ready", "image", "media_root", "components", "actions", "plan"},
+            {"ready", "image", "media_root", "components", "actions", "plan", "downloads"},
         )
         for row in report["components"]:
             self.assertEqual(set(row), {"name", "state", "detail", "hint"})

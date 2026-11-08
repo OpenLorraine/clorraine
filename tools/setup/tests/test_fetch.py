@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -84,6 +85,10 @@ class FetchTests(unittest.TestCase):
         self.assertIn("image", make_calls[0])
         self.assertTrue(self.image_present)
         self.assertIn("image", out.lower())
+        inspects = [
+            call for call in self.runner.calls if call[:3] == ["docker", "image", "inspect"]
+        ]
+        self.assertGreaterEqual(len(inspects), 2, "the fetch must re-probe the image")
 
     def test_should_refuse_a_non_interactive_fetch_without_yes(self) -> None:
         code, out, err = self.invoke("--fetch")
@@ -113,12 +118,58 @@ class FetchTests(unittest.TestCase):
         self.assertIn("make", err)
         self.assertIn("compiler failed", err)
 
+    def test_should_verify_provenance_after_a_fetch(self) -> None:
+        self.runner.responses = [
+            (prefix, result)
+            for prefix, result in self.runner.responses
+            if prefix != ("docker", "run")
+        ]
+        self.runner.on(
+            ("docker", "run"),
+            support.CommandResult(0, support.probe_output(commit="deadbeef")),
+        )
+        code, out, err = self.invoke("--fetch", "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("provenance", err.lower())
+        self.assertIn("deadbeef", err)
+        self.assertIn("abc123", err)
+        self.assertIn("recovery", err.lower())
+
+    def test_should_report_provenance_when_no_plan_can_fix_it(self) -> None:
+        self.image_present = True
+        self.runner.responses = [
+            (prefix, result)
+            for prefix, result in self.runner.responses
+            if prefix != ("docker", "run")
+        ]
+        self.runner.on(
+            ("docker", "run"),
+            support.CommandResult(0, support.probe_output(commit="deadbeef")),
+        )
+        code, out, err = self.invoke("--fetch", "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("provenance", err.lower())
+        self.assertIn("recovery", err.lower())
+
+    def test_should_emit_one_json_object_for_a_fetch(self) -> None:
+        code, out, err = self.invoke("--fetch", "--yes", "--json")
+        self.assertEqual(code, 0, err)
+        report = json.loads(out)
+        self.assertTrue(report["ready"])
+
+    def test_should_emit_one_json_object_for_a_dry_run(self) -> None:
+        code, out, err = self.invoke("--fetch", "--dry-run", "--json")
+        self.assertEqual(code, 0, err)
+        report = json.loads(out)
+        self.assertTrue(report["plan"])
+        self.assertIn("Dry run", err)
+
     def test_should_confirm_on_a_terminal(self) -> None:
         self.interactive = True
         with mock.patch("builtins.input", return_value="y"):
             code, out, err = self.invoke("--fetch")
         self.assertEqual(code, 0, err)
-        self.assertIn("Proceed?", out)
+        self.assertIn("Proceed?", err)
 
 
 if __name__ == "__main__":
