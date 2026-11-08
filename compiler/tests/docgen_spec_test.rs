@@ -181,3 +181,24 @@ fn should_write_lf_only_from_a_crlf_source() {
     let page = std::fs::read(output.join("app.crlf.md")).expect("page");
     assert!(!page.contains(&b'\r'), "generated Markdown must use LF only");
 }
+
+#[test]
+fn should_default_to_build_doc_and_print_the_directory() {
+    let scratch = Scratch::new("default");
+    let files = copied_fixtures(&scratch);
+    let result = Command::new(env!("CARGO_BIN_EXE_clorraine"))
+        .arg("--doc")
+        .arg(&files[0])
+        .current_dir(&scratch.path)
+        .env_clear()
+        .output()
+        .expect("run default --doc");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(scratch.path.join("build/doc/index.md").is_file());
+    let printed = String::from_utf8_lossy(&result.stdout);
+    assert!(printed.contains("build/doc"));
+}

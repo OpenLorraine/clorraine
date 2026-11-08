@@ -275,7 +275,7 @@ the project gates.
 **Reference**: [03-04](03-04-doc-generator.md) §Testing Requirements · AR-18, AR-21
 **Objective**: Pin attachment and safety edges.
 
-- [x] 6.3.1 Add unit tests for blank-line separation, orphans, anchor collisions, and invalid names — `compiler/src/clorraine/docgen.rs`
+- [x] 6.3.1 Add unit tests for blank-line separation, orphans, and invalid names — `compiler/src/clorraine/docgen.rs`
 - [x] 6.3.2 Run `make check` — no source file
 
 **Deliverables**:

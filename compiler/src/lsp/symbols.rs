@@ -281,18 +281,42 @@ impl SymbolTable {
             }
             Stmt::ForC(decl) => {
                 match &decl.init {
-                    Some(ForInit::Let(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span),
-                    Some(ForInit::Const(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span),
-                    _ => {}
+                    Some(ForInit::Let(binding)) => {
+                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span);
+                        if let Some(value) = &binding.value {
+                            self.expr(file, module, value, function);
+                        }
+                    }
+                    Some(ForInit::Const(binding)) => {
+                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span);
+                        self.expr(file, module, &binding.value, function);
+                    }
+                    Some(ForInit::Expr(expressions)) => {
+                        for expression in expressions {
+                            self.expr(file, module, expression, function);
+                        }
+                    }
+                    None => {}
+                }
+                if let Some(condition) = &decl.condition {
+                    self.expr(file, module, condition, function);
+                }
+                for step in &decl.step {
+                    self.expr(file, module, step, function);
                 }
                 self.block(file, module, &decl.body, function);
             }
             Stmt::ForIn(decl) => {
                 self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                self.expr(file, module, &decl.iterable, function);
                 self.block(file, module, &decl.body, function);
             }
             Stmt::Switch(decl) => {
+                self.expr(file, module, &decl.scrutinee, function);
                 for clause in &decl.clauses {
+                    if let crate::ast::SwitchLabel::Case(value) = &clause.label {
+                        self.expr(file, module, value, function);
+                    }
                     for statement in &clause.statements {
                         self.statement(file, module, statement, function, clause.span);
                     }
@@ -442,6 +466,7 @@ impl SymbolTable {
     ) {
         match branch {
             Some(ElseBranch::If(decl)) => {
+                self.expr(file, module, &decl.condition, function);
                 self.block(file, module, &decl.then_block, function);
                 self.else_branch(file, module, &decl.else_branch, function);
             }
@@ -658,6 +683,32 @@ mod tests {
 mod lambda_tests {
     use super::*;
     use crate::analysis::{self, SourceFile};
+
+    #[test]
+    fn should_scope_a_lambda_in_a_switch_scrutinee() {
+        let text = "module app.lambda;\nfunc main(): i32 {\n    let x: i32 = 1;\n    switch (((x: i32) => x + 1)(1)) {\n        case 2: return 0;\n        default: return 1;\n    }\n}\n";
+        let parsed = analysis::parse(vec![SourceFile {
+            path: "app/switch.clo".to_owned(),
+            text: text.to_owned(),
+        }]);
+        assert!(
+            parsed.diagnostics.items().is_empty(),
+            "switch lambda fixture must parse: {:?}",
+            parsed.diagnostics.items()
+        );
+        let table = SymbolTable::build(&parsed.sources, &parsed.programs);
+        let file = parsed.files["app/switch.clo"];
+        let param = text.find("(x: i32)").expect("lambda parameter") + 1;
+        let body = text.rfind("x + 1").expect("lambda body");
+        assert_eq!(
+            table.local_at(file, "x", param as u32).unwrap().name_span.start as usize,
+            param
+        );
+        assert_eq!(
+            table.local_at(file, "x", body as u32).unwrap().name_span.start as usize,
+            param
+        );
+    }
 
     #[test]
     fn should_scope_lambda_parameters_and_bodies_to_the_lambda() {
