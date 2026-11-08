@@ -21,6 +21,14 @@ export const DEFAULT_COUNT: u32 = 4;
 /// The current entry.
 export let current: i32 = 0;
 
+/// A volatile tick counter.
+export volatile let ticks: u32 = 0;
+
+/// Doubles a value at compile time.
+export comptime func twice(value: u32): u32 {
+    return value * 2;
+}
+
 /// Releases a token.
 export func releaseToken(take token: Token): void {
 }

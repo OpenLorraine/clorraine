@@ -33,6 +33,8 @@ struct DocModule {
     doc: Option<String>,
     /// Declarations in source order.
     items: Vec<DocItem>,
+    /// Local import name to target module.
+    imports: BTreeMap<String, String>,
 }
 
 /// Runs the generator and returns the process exit code.
@@ -55,6 +57,17 @@ pub fn run(options: &DocOptions) -> i32 {
         eprint!("{}", parsed.diagnostics.render(&parsed.sources));
         return 1;
     }
+    if let Some((file, _)) = parsed
+        .programs
+        .iter()
+        .find(|(_, program)| program.module.name.to_dotted().is_empty())
+    {
+        eprintln!(
+            "docgen: '{}' has no module declaration",
+            parsed.sources.path(*file)
+        );
+        return 1;
+    }
     let modules = match collect_modules(&parsed.sources, &parsed.programs) {
         Ok(modules) => modules,
         Err(message) => {
@@ -65,6 +78,10 @@ pub fn run(options: &DocOptions) -> i32 {
     if modules.is_empty() {
         eprintln!("docgen: no modules to document");
         return 1;
+    }
+    if modules.contains_key("index") {
+        eprintln!("docgen: module name 'index' collides with the generated index page");
+        return 2;
     }
     let root = PathBuf::from(options.output.clone().unwrap_or_else(|| "build/doc".to_owned()));
     if let Err(error) = std::fs::create_dir_all(&root) {
@@ -79,6 +96,17 @@ pub fn run(options: &DocOptions) -> i32 {
         }
     };
     let rendered = render(&root, &modules);
+    for (path, _) in &rendered {
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                eprintln!(
+                    "docgen: refusing to overwrite non-regular '{}'",
+                    path.display()
+                );
+                return 2;
+            }
+        }
+    }
     for (path, text) in rendered {
         if let Err(error) = std::fs::write(&path, text) {
             eprintln!("docgen: cannot write '{}': {error}", path.display());
@@ -106,7 +134,16 @@ fn collect_modules(
         let module = modules.entry(name.clone()).or_insert(DocModule {
             doc: None,
             items: Vec::new(),
+            imports: BTreeMap::new(),
         });
+        for import in &program.imports {
+            for item in &import.items {
+                module.imports.insert(
+                    item.alias.clone().unwrap_or_else(|| item.name.clone()),
+                    import.from.to_dotted(),
+                );
+            }
+        }
         if module.doc.is_none() {
             module.doc = doc_comment(sources.text(*file), program.module.span.start as usize);
         }
@@ -121,8 +158,8 @@ fn collect_modules(
 
 /// Builds one declaration's documentation.
 fn item_docs(sources: &SourceMap, file: FileId, item: &Item) -> Option<DocItem> {
-    let (name, span, signature_end, types, exported) = item_shape(sources, item)?;
-    let signature = signature_text(sources, file, span, signature_end, exported);
+    let (name, span, signature_end, types, prefix) = item_shape(sources, item)?;
+    let signature = signature_text(sources, file, span, signature_end, &prefix);
     Some(DocItem {
         name,
         doc: doc_comment(sources.text(file), span.start as usize),
@@ -131,11 +168,23 @@ fn item_docs(sources: &SourceMap, file: FileId, item: &Item) -> Option<DocItem> 
     })
 }
 
+/// Builds the modifiers the parser consumed before a declaration.
+fn declaration_prefix(exported: bool, extra: Option<&str>) -> String {
+    let mut prefix = String::new();
+    if exported {
+        prefix.push_str("export ");
+    }
+    if let Some(extra) = extra {
+        prefix.push_str(extra);
+    }
+    prefix
+}
+
 /// Returns the name, full span, signature end, and named types of an item.
 fn item_shape(
     sources: &SourceMap,
     item: &Item,
-) -> Option<(String, Span, u32, Vec<String>, bool)> {
+) -> Option<(String, Span, u32, Vec<String>, String)> {
     let mut types = Vec::new();
     match item {
         Item::Func(decl) => {
@@ -143,25 +192,34 @@ fn item_shape(
                 collect_type_names(&param.ty, &mut types);
             }
             collect_type_names(&decl.returns, &mut types);
-            Some((decl.name.clone(), decl.span, decl.body.span.start, types, decl.exported))
+            discard_type_params(&decl.type_params, &mut types);
+            Some((decl.name.clone(), decl.span, decl.body.span.start, types, declaration_prefix(decl.exported, None)))
         }
         Item::Comptime(decl) => {
             for param in &decl.params {
                 collect_type_names(&param.ty, &mut types);
             }
             collect_type_names(&decl.returns, &mut types);
-            Some((decl.name.clone(), decl.span, decl.body.span.start, types, decl.exported))
+            discard_type_params(&decl.type_params, &mut types);
+            Some((
+                decl.name.clone(),
+                decl.span,
+                decl.body.span.start,
+                types,
+                declaration_prefix(decl.exported, Some("comptime ")),
+            ))
         }
         Item::Struct(decl) => {
             for field in &decl.fields {
                 collect_type_names(&field.ty, &mut types);
             }
+            discard_type_params(&decl.type_params, &mut types);
             Some((
                 decl.name.clone(),
                 decl.span,
                 cut_at_brace(sources, decl.span),
                 types,
-                decl.exported,
+                declaration_prefix(decl.exported, None),
             ))
         }
         Item::Enum(decl) => {
@@ -171,36 +229,50 @@ fn item_shape(
                 decl.span,
                 cut_at_brace(sources, decl.span),
                 types,
-                decl.exported,
+                declaration_prefix(decl.exported, None),
             ))
         }
         Item::Handle(decl) => {
             types.push(decl.freed_by.to_dotted());
-            Some((decl.name.clone(), decl.span, decl.span.end, types, decl.exported))
+            Some((decl.name.clone(), decl.span, decl.span.end, types, declaration_prefix(decl.exported, None)))
         }
         Item::Ffi(decl) => Some((
             decl.name.clone(),
             decl.span,
             cut_at_brace(sources, decl.span),
             types,
-            decl.exported,
+            declaration_prefix(decl.exported, None),
         )),
         Item::Intrinsic(decl) => {
             for param in &decl.params {
                 collect_type_names(&param.ty, &mut types);
             }
             collect_type_names(&decl.returns, &mut types);
-            Some((decl.name.clone(), decl.span, decl.span.end, types, false))
+            Some((decl.name.clone(), decl.span, decl.span.end, types, declaration_prefix(false, None)))
         }
         Item::GlobalLet(decl) => {
             collect_type_names(&decl.ty, &mut types);
-            Some((decl.name.clone(), decl.span, decl.span.end, types, decl.exported))
+            let extra = if decl.volatile { Some("volatile ") } else { None };
+            Some((
+                decl.name.clone(),
+                decl.span,
+                decl.span.end,
+                types,
+                declaration_prefix(decl.exported, extra),
+            ))
         }
         Item::GlobalConst(decl) => {
             collect_type_names(&decl.ty, &mut types);
-            Some((decl.name.clone(), decl.span, decl.span.end, types, decl.exported))
+            Some((decl.name.clone(), decl.span, decl.span.end, types, declaration_prefix(decl.exported, None)))
         }
     }
+}
+
+/// Removes generic parameter names from a related-type list.
+fn discard_type_params(params: &[crate::ast::TypeParam], types: &mut Vec<String>) {
+    let names: std::collections::BTreeSet<&str> =
+        params.iter().map(|param| param.name.as_str()).collect();
+    types.retain(|name| !names.contains(name.as_str()));
 }
 
 /// Collects named types from a type expression.
@@ -246,21 +318,18 @@ fn signature_text(
     file: FileId,
     span: Span,
     end: u32,
-    exported: bool,
+    prefix: &str,
 ) -> String {
     let end = end.max(span.start).min(span.end);
     let text = sources.snippet(Span::new(file, span.start as usize, end as usize));
+    let text = text.replace("\r\n", "\n").replace('\r', "");
     let text = text
         .trim()
         .trim_end_matches('{')
         .trim()
         .trim_end_matches(';')
         .trim();
-    if exported {
-        format!("export {text}")
-    } else {
-        text.to_owned()
-    }
+    format!("{prefix}{text}")
 }
 
 /// Extracts the contiguous `///` run immediately above `start`.
@@ -306,7 +375,7 @@ fn valid_module(name: &str) -> bool {
 
 /// Renders every page and returns its path and text.
 fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, String)> {
-    let mut type_index: BTreeMap<String, (String, String)> = BTreeMap::new();
+    let mut type_index: BTreeMap<(String, String), String> = BTreeMap::new();
     for (module_name, module) in modules {
         let mut used: BTreeMap<String, usize> = BTreeMap::new();
         for item in &module.items {
@@ -316,11 +385,11 @@ fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, S
             let value = if *count == 1 {
                 base.clone()
             } else {
-                format!("{base}-{count}")
+                format!("{base}-{}", *count - 1)
             };
             type_index
-                .entry(item.name.clone())
-                .or_insert((module_name.clone(), value));
+                .entry((module_name.clone(), item.name.clone()))
+                .or_insert(value);
         }
     }
     let mut output = Vec::new();
@@ -347,7 +416,7 @@ fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, S
 fn render_module(
     name: &str,
     module: &DocModule,
-    type_index: &BTreeMap<String, (String, String)>,
+    type_index: &BTreeMap<(String, String), String>,
 ) -> String {
     let mut page = format!("# {name}\n\n");
     if let Some(doc) = &module.doc {
@@ -369,7 +438,23 @@ fn render_module(
             if type_name == &item.name || !seen.insert(type_name.clone()) {
                 continue;
             }
-            let Some((target_module, target_anchor)) = type_index.get(type_name) else {
+            let target = module
+                .imports
+                .get(type_name)
+                .and_then(|target_module| {
+                    type_index
+                        .get(&(target_module.clone(), type_name.clone()))
+                        .map(|anchor| (target_module.clone(), anchor.clone()))
+                })
+                .or_else(|| {
+                    type_index
+                        .iter()
+                        .find(|((_, declared), _)| declared == type_name)
+                        .map(|((target_module, _), anchor)| {
+                            (target_module.clone(), anchor.clone())
+                        })
+                });
+            let Some((target_module, target_anchor)) = target else {
                 continue;
             };
             let link = if target_module == name {

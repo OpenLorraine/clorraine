@@ -53,3 +53,11 @@
 | RV-009 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — file buffers and paths are declared parameters |
 | RV-010 | 7 | MINOR | `docs/README.md` | fixed — Phase 1 and Phase 2 descriptions corrected |
 | RV-011 | 7 | MINOR | `docs/c-to-clorraine.md` §11 | fixed — view helper, ffi mode, and capture list corrected |
+| RV-001 | 6 | MAJOR | `compiler/src/clorraine/docgen.rs` | fixed — a symlink or non-regular target is rejected before any write; test |
+| RV-002 | 6 | MAJOR | `compiler/src/clorraine/docgen.rs` | fixed — `volatile let` and `comptime func` modifiers are preserved; golden covers both |
+| RV-003 | 6 | MAJOR | `compiler/src/clorraine/docgen.rs` | fixed — a mixed input with a missing module exits 1 and writes nothing; test |
+| RV-004 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — a module named `index` is rejected before writing; test |
+| RV-005 | 6 | MINOR | `compiler/tests/docgen_spec_test.rs` | fixed — fixture copies, empty environment, mixed input, symlink, CRLF, and reserved-name tests added |
+| RV-006 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — signature slices normalize CRLF; test |
+| RV-007 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — related types resolve through the module's imports and type parameters are skipped |
+| RV-008 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — duplicate anchors use the standard `-1` suffix |

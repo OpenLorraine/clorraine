@@ -44,6 +44,22 @@ export let current: i32 = 0
 
 The current entry.
 
+## ticks
+
+```clorraine
+export volatile let ticks: u32 = 0
+```
+
+A volatile tick counter.
+
+## twice
+
+```clorraine
+export comptime func twice(value: u32): u32
+```
+
+Doubles a value at compile time.
+
 ## releaseToken
 
 ```clorraine
