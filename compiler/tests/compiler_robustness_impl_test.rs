@@ -467,6 +467,26 @@ func main(): i32 {
 }
 
 #[test]
+fn should_keep_an_inexact_type_name_call_on_the_call_path() {
+    let emitted = emit(
+        "inexact-cast-pin",
+        r#"
+module fuzz.InexactCastPin;
+enum E: u8 { A }
+func main(): i32 {
+    let x: u8 = 2;
+    let a: E = E<i32>(2);
+    let b: E = E(borrow x);
+    return i32(a) + i32(b);
+}
+"#,
+    );
+    assert_contains("inexact-cast-pin", &emitted, "E(2)");
+    assert_contains("inexact-cast-pin", &emitted, "E(x)");
+    assert_absent("inexact-cast-pin", &emitted, "(ClE)");
+}
+
+#[test]
 fn should_emit_an_enum_conversion_as_a_cast() {
     let emitted = emit(
         "enum-cast-pin",

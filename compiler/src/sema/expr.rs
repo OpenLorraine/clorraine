@@ -59,8 +59,14 @@ impl Checker<'_, '_> {
                 type_args,
                 args,
             } => {
+                // A cast is exactly `T(expr)`: no type arguments and no
+                // call-site marker. Any other form stays on the ordinary call
+                // path, which is the pre-existing documented limitation.
+                let exact_cast = type_args.is_empty()
+                    && args.len() == 1
+                    && matches!(args[0].marker, crate::ast::Mode::None);
                 let ty = self.check_call(callee, type_args, args, expr.span);
-                if self.callee_type(callee).is_some() {
+                if exact_cast && self.callee_type(callee).is_some() {
                     self.type_casts.insert(expr as *const Expr as usize);
                 }
                 ty
