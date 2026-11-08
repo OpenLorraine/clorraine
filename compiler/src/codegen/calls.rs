@@ -154,9 +154,10 @@ impl Emitter<'_> {
                 // plain null its mode-ignoring ABI prototype spells. A value
                 // inferred from `null` carries the same shape, so it takes the
                 // parameter's null value too.
-                let text = if (matches!(arg.kind, ValueKind::Null)
-                    || (self.is_null_shaped(arg)
-                        && expected.is_some_and(|expected| self.carries_null_value(expected))))
+                let text = if !ffi_abi
+                    && (matches!(arg.kind, ValueKind::Null)
+                        || (self.is_null_shaped(arg)
+                            && expected.is_some_and(|expected| self.carries_null_value(expected))))
                     && (func_ty.is_some() || user_call)
                 {
                     match expected {

@@ -617,7 +617,7 @@ impl Checker<'_, '_> {
             self.error(
                 "E10400",
                 "capturing lambda cannot be used as 'func(...)'",
-                "use a capture-less lambda, or a C-hook trampoline (v1.1)",
+                "use a capture-less lambda, a `borrow` C hook, or a generic callable bound",
                 span,
             );
             return;
@@ -631,7 +631,7 @@ impl Checker<'_, '_> {
                         expected.display(),
                         ty.display()
                     ),
-                    "match the exact signature; capture-less lambdas only",
+                    "match the exact signature and the ABI-identical callback set",
                     span,
                 );
             }

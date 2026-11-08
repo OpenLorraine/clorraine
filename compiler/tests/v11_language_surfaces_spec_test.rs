@@ -1854,3 +1854,89 @@ fn a_generic_function_field_reaches_a_hook() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A deleter that only borrows its parameter is rejected.
+#[test]
+fn a_deleter_that_only_borrows_is_rejected() {
+    assert_rejected(
+        "x1-borrow-only",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi lib { func cl_widget_free(take w: Widget): void; func cl_peek(borrow w: Widget): i32; }\n\
+             func freeWidget(take w: Widget): void { let v = cl_peek(w); }",
+        ),
+        "E10102",
+    );
+}
+
+/// A deleter that releases only on one branch is rejected.
+#[test]
+fn a_deleter_that_frees_on_one_branch_is_rejected() {
+    assert_rejected(
+        "x1-branch-free",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi lib { func cl_widget_free(take w: Widget): void; func maybe(): bool; }\n\
+             func freeWidget(take w: Widget): void { if (maybe()) { cl_widget_free(w); } }",
+        ),
+        "E10102",
+    );
+}
+
+/// An indirect deleter release cycle is rejected.
+#[test]
+fn an_indirect_deleter_cycle_is_rejected() {
+    assert_rejected(
+        "x1-cycle",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi lib { func cl_widget_free(take w: Widget): void; }\n\
+             func relay(take w: Widget): void { freeWidget(w); }\n\
+             func freeWidget(take w: Widget): void { relay(w); }",
+        ),
+        "E10102",
+    );
+}
+
+/// A take argument that forwards the captured binding through a call is caught.
+#[test]
+fn a_hook_capture_of_a_binding_moved_through_a_call_is_rejected() {
+    assert_rejected(
+        "hk-capture-take-call",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi widget { func cl_widget_new(): Widget; func cl_widget_free(take w: Widget): void; }\n\
+             ffi lib { func apply(borrow cb: func(i32): i32, take w: Widget): i32; }\n\
+             func freeWidget(take w: Widget): void { cl_widget_free(w); }\n\
+             func pass(take w: Widget): Widget { return w; }\n\
+             func demo(): i32 {\n\
+                 let w = cl_widget_new();\n\
+                 return apply([w] (v: i32) => v, pass(w));\n\
+             }",
+        ),
+        "E10030",
+    );
+}
+
+/// A null view argument to a capturing hook uses the ABI null, not a zero view.
+#[test]
+fn a_null_view_argument_in_a_capturing_hook_builds() {
+    let output = run_host_fixture(
+        "hk-null-view",
+        &run_program(
+            "ffi lib { func cl_fixture_view(borrow cb: func(i32): i32, s: str?): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 if (cl_fixture_view([n] (x: i32) => x + n, null) == 2) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the null view must cross as the ABI null; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

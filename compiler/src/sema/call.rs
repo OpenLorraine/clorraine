@@ -2003,16 +2003,12 @@ impl Checker<'_, '_> {
             let Some(arg) = args.get(index) else {
                 continue;
             };
-            let Some(root) = super::place_root_name(&arg.value) else {
-                continue;
-            };
             if let Some(capture) = captures.iter().find(|capture| {
-                capture.name == root
-                    && matches!(
-                        capture.mode,
-                        crate::types::CaptureMode::ReadOnlyBorrow
-                            | crate::types::CaptureMode::WriteBorrow
-                    )
+                matches!(
+                    capture.mode,
+                    crate::types::CaptureMode::ReadOnlyBorrow
+                        | crate::types::CaptureMode::WriteBorrow
+                ) && Self::expression_mentions_binding(&arg.value, &capture.name)
             }) {
                 self.error(
                     "E10030",
@@ -2024,12 +2020,83 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// True when an expression mentions the named binding anywhere.
+    ///
+    /// A `take` argument that forwards the binding through a call
+    /// (`pass(w)`) still moves it before the callback can read the captured
+    /// environment, so the whole argument expression is walked rather than
+    /// only its outer place root.
+    fn expression_mentions_binding(expr: &Expr, name: &str) -> bool {
+        match &expr.kind {
+            ExprKind::Name(found) => found == name,
+            ExprKind::Qualified(qualified) => {
+                qualified.segments.first().is_some_and(|segment| segment == name)
+            }
+            ExprKind::Index { base, index } => {
+                Self::expression_mentions_binding(base, name)
+                    || Self::expression_mentions_binding(index, name)
+            }
+            ExprKind::Member { base, .. } => Self::expression_mentions_binding(base, name),
+            ExprKind::Unary { operand, .. } => Self::expression_mentions_binding(operand, name),
+            ExprKind::Binary { left, right, .. } => {
+                Self::expression_mentions_binding(left, name)
+                    || Self::expression_mentions_binding(right, name)
+            }
+            ExprKind::Assign { target, value, .. } => {
+                Self::expression_mentions_binding(target, name)
+                    || Self::expression_mentions_binding(value, name)
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                Self::expression_mentions_binding(condition, name)
+                    || Self::expression_mentions_binding(then_value, name)
+                    || Self::expression_mentions_binding(else_value, name)
+            }
+            ExprKind::Cast { value, .. }
+            | ExprKind::RawCast { value, .. }
+            | ExprKind::Unsafe(value) => Self::expression_mentions_binding(value, name),
+            ExprKind::StructLiteral { fields, .. } => fields
+                .iter()
+                .any(|field| Self::expression_mentions_binding(&field.value, name)),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| Self::expression_mentions_binding(element, name))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| Self::expression_mentions_binding(fill, name))
+            }
+            ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                crate::ast::TemplatePiece::Placeholder(inner) => {
+                    Self::expression_mentions_binding(inner, name)
+                }
+                crate::ast::TemplatePiece::Literal(_) => false,
+            }),
+            ExprKind::Call { callee, args, .. } => {
+                Self::expression_mentions_binding(callee, name)
+                    || args
+                        .iter()
+                        .any(|arg| Self::expression_mentions_binding(&arg.value, name))
+            }
+            ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+                crate::ast::IntrinsicArg::Expr(inner) => {
+                    Self::expression_mentions_binding(inner, name)
+                }
+                crate::ast::IntrinsicArg::Type(_) => false,
+            }),
+            _ => false,
+        }
+    }
+
     /// Reports a capturing closure offered where a C function pointer is due.
     fn report_capturing_hook(&mut self, span: Span) {
         self.error(
             "E10400",
             "capturing lambda cannot be used as 'func(...)'",
-            "use a capture-less lambda; hook trampolines are not emitted yet",
+            "use a capture-less lambda, a `borrow` C hook, or a generic callable bound",
             span,
         );
     }
@@ -2043,7 +2110,7 @@ impl Checker<'_, '_> {
                 Ty::func(expected.clone()).display(),
                 found.display()
             ),
-            "match the exact signature; capture-less lambdas only",
+            "match the exact signature and the ABI-identical callback set",
             span,
         );
     }

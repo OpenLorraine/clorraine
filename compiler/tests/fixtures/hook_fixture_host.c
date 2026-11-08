@@ -61,3 +61,8 @@ void *cl_fixture_ptr_b(void) {
 int cl_fixture_read(void *p) {
     return *(int *)p;
 }
+
+int cl_fixture_view(int (*cb)(int), void *p) {
+    (void)p;
+    return cb(1);
+}
