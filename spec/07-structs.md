@@ -124,7 +124,9 @@ and assigning `p.left` again re-initializes the whole struct (O5).
 
 Fields drop in declaration order (O2). A native struct drops structurally:
 each field drops as its own type dictates. A handle drops through its
-`freedBy` deleter (X2); native structs never declare `freedBy`.
+`freedBy` deleter (X1); the deleter is an ordinary Clorraine function or an
+`ffi` declaration, and its `take T` parameter is excluded from the implicit
+scope drop. Native structs never declare `freedBy` (X2).
 
 ```clorraine
 struct Resource {

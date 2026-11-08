@@ -75,7 +75,7 @@
 |---|---|---|---|
 | E10100 | Call to an uncontracted extern without `unsafe` | `uncontracted call to '{fn}' requires 'unsafe'` | wrap the call, or add a contract declaration |
 | E10101 | Owned or borrowed value passed to an uncontracted extern | `'{fn}' has no contract for parameter '{name}'` | pass a `raw` pointer derived inside `unsafe` |
-| E10102 | `freedBy` deleter is not an FFI function taking `take T` and returning `void` | `'{fn}' is not a valid deleter for '{type}'` | declare the deleter in an `ffi` block with the right signature |
+| E10102 | `freedBy` deleter is not an ordinary module-scoped function or an `ffi` function taking `take T` and returning `void`, or it does not consume its parameter | `'{fn}' is not a valid deleter for '{type}'` | declare an ordinary function or an `ffi` function with the right signature; pass the parameter to a call |
 | E10103 | `ffi` block marked `export`, or FFI declarations leaking into app code | `'ffi' blocks are module-scoped and cannot be exported` | export a wrapper function instead |
 | E10104 | Native struct declared with `freedBy` | `'freedBy' is only for handle types` | native structs drop structurally (X2) |
 | E10105 | Generic aggregate or `Box<T>` in an `ffi` declaration | `'{type}' cannot cross the FFI boundary` | wrap the value in a concrete C-facing struct, or use `boxWith` |
@@ -94,7 +94,7 @@
 | E10207 | Overlay (volatile) type used as a value | `overlay type '{type}' cannot be used by value` | access it through a `raw` pointer inside `unsafe` |
 | E10208 | `volatile` on something that is neither a struct field nor a module-level `let` | `'volatile' is not allowed here` | declare it on a field or a module `let` |
 | E10209 | Indexing a type that is not indexable | `type '{type}' cannot be indexed` | arrays, slices, and `str` are indexable |
-| E10210 | Function type mismatch (signature or capture) | `function type mismatch: expected '{expected}', found '{found}'` | match the exact signature; capture-less lambdas only |
+| E10210 | Function type mismatch (signature, capture, or hook ABI spelling) | `function type mismatch: expected '{expected}', found '{found}'` | match the exact signature and the ABI-identical callback set |
 | E10211 | Enum backing type is not an integer type | `enum backing type must be an integer type` | use `i8`-`u32`, `usize`, or `isize` |
 | E10212 | Unknown member of a struct, enum, module, or type parameter | `'{name}' is not a member of '{type}'` | check the declaration or the spelling |
 | E10213 | `embed` outside a constant context | `'embed' is only allowed in a constant context` | use it in `const` or a module-level initializer |
@@ -131,7 +131,7 @@
 
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
-| E10400 | Capturing lambda used where a plain function pointer is required | `capturing lambda cannot be used as 'func(...)'` | use a capture-less lambda, or a C-hook trampoline (v1.1) |
+| E10400 | Capturing lambda used where a plain function pointer is required | `capturing lambda cannot be used as 'func(...)'` | use a capture-less lambda, a `borrow` C hook, or a generic callable bound |
 | E10401 | Lambda moves a captured binding | `cannot move captured '{name}' in a lambda` | copy the value at capture time |
 | E10402 | Lambda writes a captured binding without a `[borrow]` capture | `cannot write captured '{name}' without '[borrow {name}]'` | add the borrow capture |
 | E10403 | `take` capture | `'take' captures are not supported` | copy or borrow the capture |

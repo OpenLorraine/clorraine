@@ -115,7 +115,7 @@ The per-phase reviewers are dispatched by the execution plan:
 | 2 | correctness + memory-safety | 10 findings; 9 fixed, 1 pre-existing capture UAF recorded |
 | 3 | correctness + memory-safety | 9 findings; 8 fixed, 1 minor cleanup |
 | 5 | correctness + memory-safety + emission-integrity + semantics | 4 reviews; 4 critical, 6 major, 5 minor; all critical/major fixed, minors documented |
-| 7 | final cross-phase | pending |
+| 7 | final cross-phase (memory safety, emission integrity, semantics) | 3 reviews; 2 new critical, 2 new major, 3 minor; all new critical/major fixed; pre-existing capture-lend routes documented |
 
 ### Phase 1 review (Box type model)
 

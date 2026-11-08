@@ -215,8 +215,9 @@ Notes:
   of four raw bytes pointers, not a raw pointer to an array.
 * `static str` is a string value with static origin; it widens to `str`
   implicitly (T3, T4).
-* `func(...) : R` is an exact-signature function pointer (F3); only
-  capture-less lambdas match it (L5).
+* `func(...) : R` is an exact-signature function pointer (F3); capture-less
+  lambdas match it, and a capturing lambda matches only a `borrow`-mode `ffi`
+  callback (L5, [Ch 06](06-functions.md) section 6.1).
 * `named_type` covers structs, enums, handles, and `String` (a standard-library
   handle, T2), with optional explicit type arguments.
 
@@ -510,8 +511,9 @@ lambda_param    = identifier , ":" , value_type ;
 
 Lambda semantics are implemented (L1-L6). `take` captures parse and are
 rejected (L2, E10403). Capture-less lambdas are plain C function pointers and
-match `func(...)` types (L3, L5); a capturing closure fills a generic
-callable-bound parameter and is inline-only, so it cannot be stored or
+match `func(...)` types (L3, L5). A capturing closure fills a generic
+callable-bound parameter or crosses a synchronous `borrow`-mode `ffi` callback
+through a generated trampoline; it is inline-only, so it cannot be stored or
 returned (L6, E10404).
 
 ## 9. Generics

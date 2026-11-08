@@ -1,6 +1,6 @@
-# Known Limitations (v1.0)
+# Known Limitations (v1.1)
 
-This document records the accepted limitations of Clorraine v1.0. It is deliberately short: a new
+This document records the accepted limitations of Clorraine v1.0 and v1.1. It is deliberately short: a new
 accepted limitation must be added here and to the production-readiness ambiguity register before
 release.
 
@@ -176,3 +176,27 @@ stable headless cycle counter, so a cycle-accurate comparison is not part of
 the gate. Host wall time is recorded and displayed but is advisory: its
 run-to-run spread is often tens of percent, while the instruction and
 section-size metrics are deterministic.
+
+## 11. v1.1 surface limits
+
+These limits belong to the v1.1 `Box<T>`, ordinary `freedBy` deleter, and
+C-hook trampoline surfaces.
+
+| Area | Limitation | Workaround |
+|---|---|---|
+| `Box<T>` allocation | An allocation failure uses the `E1` trap; `Box<T>` itself is not nullable. `Box<T>?` is an optional slot, not an allocation result. | Check an allocation through a nullable API before boxing, or accept the trap. |
+| `Box<T>` moves | A boxed value cannot be moved out of its box. | Use `boxSet` to replace it or `boxWith` to lend it. |
+| `Box<T>` FFI | A direct Box FFI crossing is `E10105`. | Use `boxWith` or a concrete C-facing struct. |
+| `Box<T>` freestanding | The freestanding profile has no heap and rejects Box (`E11200`). | Use `host` or `hosted-amiga`, or a plain value/raw pointer. |
+| `Box<T>` name | A user type declaration named `Box` shadows the built-in. | Use a different name. |
+| `Box<str>` | Only `static str` elements are accepted; a plain `str` element is `E10227`. | Box an owner or use a `static str` literal. |
+| Ordinary deleters | An ordinary `freedBy` deleter is resolved module-scoped; a cross-module candidate must be `export`ed, and a non-consuming body is `E10102`. | Declare the deleter in the handle's module, export a cross-module one, and pass the `take T` parameter to a call. |
+| Hook lifetime | A C hook is synchronous. The environment is a caller-stack node, never a heap allocation; a C callee that stores the callback violates the contract. | Keep the callback inside the C call; the no-live-node case faults `E11215`. |
+| Hook after-return aliasing | A stored capturing callback invoked during a later invocation of the same lambda site finds the newer environment because one plain C function pointer identifies the site. | Do not store callbacks across calls; a strict per-invocation token is not part of v1.1. |
+| Hook generics | A capturing hook inside a generic function body is `E10400`; a per-instance trampoline is not part of v1.1. | Move the hook into a non-generic function. |
+| Hook signature set | Views, slices, fixed arrays, borrowed move-only structs, and fixed-array returns are `E10210`; a function-pointer callback return is also rejected because the `ffi` prototype cannot spell it. | Use scalar, `bool`, enum, `raw`, `cstring`, handle, non-generic struct, or function-pointer parameters; return a scalar, enum, `raw`, handle, or non-generic struct. |
+| Hook capture/move | A capturing hook that borrows a binding the same call moves is `E10030`. | Copy the value into the callback before the call, or move the callback before the `take`. |
+| Hook symbol names | Generated `cl_hooktramp_*`, `cl_hookwrap_*`, and `cl_hook_env_*` names are not reserved against user `ffi` declarations. | Avoid declaring an `ffi` symbol with one of those prefixes. |
+| Box helper names | Generated `cl_box_alloc__<key>` and `cl_box_drop__<key>` names are not reserved against user `ffi` declarations. | Avoid declaring an `ffi` symbol with those prefixes. |
+| Box in a C-facing struct | `E10105` rejects a Box at the top of an FFI type (and inside raw/array/function types), but a non-generic struct with a Box field crosses by value; the C side then owns a Box it cannot release. | Keep Box fields out of structs that cross the FFI boundary. |
+| `boxWith` capture-lend | The callable-bound `boxWith` path shares the pre-existing borrow-checker hole where a callback borrows a box and mutates it through another capture during the call; the read can use freed storage. This is the same pre-existing capture-lend defect recorded in the v1.1 findings ledger, not a new Box rule. | Do not mutate a box through one capture while another capture reads it during the same callback. |

@@ -77,6 +77,27 @@ func sum(borrow xs: Array<i32>): i32 {
 }
 ```
 
+### 3.1 `Box<T>` and the `std.mem` allocator surface
+
+`Box<T>` is the built-in owning pointer (P7a). It is one `void *` in C,
+move-only, non-nullable as `Box<T>`, and optional as `Box<T>?`. Its drop glue is
+generated recursively and null-safe. `boxAlloc<T>()` is the reserved compiler
+intrinsic; `std.mem` exposes the safe surface:
+
+| API | Result | Meaning |
+|---|---|---|
+| `boxNew<T>(value: take T)` | `Box<T>` | allocate and move `value` into a new box |
+| `boxSet<T>(box: borrow Box<T>, value: take T)` | `void` | replace the pointee, dropping the old value |
+| `boxWith<T, F: func(T): void>(box: borrow Box<T>, f: F)` | `void` | lend the pointee to a callable-bound callback for the call |
+| `boxPtr<T>(box: borrow Box<T>)` | `raw T` | internal helper; not exported |
+
+The allocation uses `cl_box_alloc` (`cl_alloc`) and frees through `cl_box_free`
+(`cl_free`); the block is zeroed. An allocation failure uses the existing `E1`
+trap. A declared `Box` shadows the built-in, except inside the embedded
+`std.mem` module. A non-static view-typed or overlay element is
+E10227/E10207; a direct Box FFI crossing is E10105; the freestanding profile
+rejects Box with E11200.
+
 ## 4. One error/status carrier
 
 Detail-carrying failures use one status struct; `T?` stays detail-free (E1, E6):
@@ -382,8 +403,8 @@ and `bufferBytes` — for the result's origin
 | Item | Target | Reason |
 |---|---|---|
 | Pools and arenas | v2 | bulk release invalidates views; needs a region model (E90004, [Ch 11](11-memory.md) section 5) |
-| `Box<T>` with generated drop glue | v1.1 | needs the X1 amendment allowing ordinary Clorraine `freedBy` functions (X1) |
-| C-hook trampolines for capturing lambdas | v1.1 | capturing closures cross synchronous C hooks only, via generated trampolines (L5) |
+
+The v1.1 items are implemented: `Box<T>` with generated drop glue (P7a, [Ch 11](11-memory.md) section 2.1) and C-hook trampolines for capturing lambdas (L5, [Ch 06](06-functions.md) section 6.1 and [Ch 17](17-codegen.md) section 8). Ordinary Clorraine `freedBy` deleters are implemented under X1.
 
 ## 13. Exec (`std.amiga.exec`)
 

@@ -23,11 +23,22 @@ only and never describes a value.
 | Raw pointer | `raw T`, `raw T?` | section 7 |
 | Fixed array | `T[N]` | [Ch 08](08-arrays-strings.md) |
 | Function | `func(T): R` | [Ch 06](06-functions.md) |
+| Box | `Box<T>`, `Box<T>?` | section 5a |
 
 `value_type` may carry the nullability suffix `?`; `type` is `void` or a
 `value_type`. A value type may also be a generic reference such as
 `Array<i32>`. A function type is `func(T): R`, an exact-signature C function
 pointer (F3); a signature mismatch is E10210 ([Ch 06](06-functions.md)).
+
+`Box<T>` is the built-in owning pointer. Its C form is one `void *`, it is
+move-only, and it releases its pointee through generated recursive drop glue
+(P7a, [Ch 11](11-memory.md)). `Box<T>` is not constructible from a value:
+`Box<T> {}` is E10203 and `Box<T>(x)` is E10201. A non-static view-typed
+element is E10227 (`static str` is accepted), an overlay element is E10207,
+and a direct Box FFI crossing is E10105 ([Ch 12](12-ffi-contracts.md)). A user
+type declaration named `Box` shadows the built-in through the ordinary
+resolution order; inside the embedded `std.mem` module the built-in always
+wins.
 
 ## 2. Scalar types
 
@@ -116,12 +127,14 @@ section 7.
 ## 5. Nullability
 
 `T?` adds the single empty state `null`. It applies only to pointer-like types:
-handles, `raw`, `cstring`, and views. Scalars, `bool`, enums, and structs
-cannot be nullable.
+handles, `raw`, `cstring`, views, and the built-in `Box<T>`. Scalars, `bool`,
+enums, and structs cannot be nullable.
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| TY-4 | `T?` is allowed only on handles, `raw`, `cstring`, and views | E10011 |
+| TY-4 | `T?` is allowed only on handles, `raw`, `cstring`, views, and `Box<T>` | E10011 |
+| TY-4a | `Box<T>` is non-nullable; `Box<T>?` is the optional slot | - |
+| TY-4b | A boxed value cannot be moved out; `boxSet` replaces and `boxWith` lends | E10201/E10203 |
 | TY-5 | `T` widens implicitly to `T?` | - |
 | TY-6 | Using a nullable value without a narrowing check is an error | E10010 |
 | TY-7 | `null` used where a non-nullable type is required is an error, except where an explicit cast's own rule applies (Ch 04 §14) | E10012/E10201 |

@@ -64,6 +64,15 @@ A `handle` declaration is public only if it is exported, because application
 code must name the type. [Ch 12](12-ffi-contracts.md) owns the `ffi` and
 `handle` rules; ownership of the resource is [Ch 03](03-ownership.md).
 
+An ordinary `freedBy` deleter is resolved module-scoped: the handle's own module
+first (its functions, imports, and `ffi` declarations), then exactly one
+exported ordinary function program-wide. A qualified name resolves in the named
+module, and a cross-module ordinary candidate must be `export`ed. Any
+non-function declaration of the written name shadows the fallback; a missing,
+ambiguous, wrongly typed, or non-consuming deleter is E10102. The embedded
+`std.mem` module is not special here: its own functions and imports resolve
+first.
+
 ## 3. Declaration merging
 
 Several files may declare the same module. Their declarations merge into one

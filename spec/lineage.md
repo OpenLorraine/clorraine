@@ -91,8 +91,9 @@ func greeting(): static str { return "hello"; }
 | Statics at exit | Statics do not drop | Globals may not own (`own` globals banned) | O10 |
 | Partial moves | Any field, supported by drop flags | Top-level fields of owned locals and `take` parameters only | O4, O5 |
 
-`Box<T>` with generated drop glue is a v1.1 design item (X1, F4); until then
-recursive structures use raw pointers and explicit release.
+`Box<T>` with generated drop glue is implemented in v1.1 (P7a); recursive
+structures can use `Box<Node>?` and drop recursively, or raw pointers with an
+explicit release where the allocation source is not `Box`.
 
 ## 6. Borrow checking: target and v2
 
@@ -115,7 +116,7 @@ absent, so `Send`/`Sync` and shared-mutation aliasing do not exist.
   restricted to call and pass; values cannot be stored or returned.
 * Lambda captures (L2) follow Rust-like defaults (duplicable types copy, other
   types borrow) without `move` closures and without `take` captures. Lambdas
-  are ephemeral; C-hook trampolines arrive in v1.1 (L5).
+  are ephemeral; C-hook trampolines are implemented in v1.1 (L5).
 
 ## 8. Deliberate deviations
 

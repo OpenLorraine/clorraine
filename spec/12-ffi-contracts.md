@@ -67,9 +67,10 @@ Nullability lives in the type (`File?`), never in a clause (X3).
 |---|---|---|
 | CN-4 | FFI declarations use ordinary signatures and modes; nullability lives in the type | - |
 | CN-5 | `handle T freedBy F;` declares an opaque resource once, in the library that owns it | - |
-| CN-6 | `F` must be an `ffi`-declared function taking `take T` and returning `void` | E10102 |
+| CN-6 | `F` is a function taking `take T` and returning `void`: an `ffi` declaration or an ordinary Clorraine function resolved module-scoped (X1). Its own `take T` parameter is excluded from the implicit scope drop, and the body must pass it to a call | E10102 |
 | CN-7 | Exactly one deleter per handle type; a second `handle` declaration for the same type is a duplicate declaration | E11101 |
 | CN-8 | A native struct never declares `freedBy`; it drops structurally | E10104 |
+| CN-22 | A direct `Box<T>` FFI crossing is rejected; use `boxWith` or a raw pointer | E10105 |
 
 The handle type is public, so it is exported. The `ffi` blocks stay
 module-private (M9). Declarations resolve globally within a module, so the
@@ -145,6 +146,42 @@ keep the pointer or release the value.
 | CN-14 | A returned handle is owned by the caller and released by its `freedBy` deleter | - |
 | CN-15 | A `take` argument transfers ownership; the caller's binding is invalid after the call | E10020 |
 | CN-16 | A lend never transfers ownership; the callee must not store or release it, except the `borrow T?` slot's own incoming value, which the callee owns on entry and may release; a different lend's value or view is E10034 | E10034 |
+
+### 4.1 Synchronous C hooks
+
+A `borrow`-mode `func(...)` parameter on an `ffi` declaration is a synchronous
+callback (L5). The C prototype is still a plain function pointer; the mode is
+semantic. The callee may call the callback zero or more times during the call
+and must not store it, return it, or call it after the call returns.
+
+A capture-less lambda is passed as a plain function pointer. A capturing lambda
+is accepted at this position: the compiler materializes its environment at the
+callback's own argument position and passes a generated trampoline. The
+environment is a caller-frame node keyed by the lambda site, never a heap
+allocation. One wrapper per call site pushes the nodes, forwards the original
+call, and pops them in reverse order; nested and reentrant hooks each find
+their own node. An invocation after the hook returns faults E11215 when no
+environment for its site is live.
+
+The callback signature must be ABI-identical to the lifted lambda: scalar,
+`bool`, enum, `raw`, `cstring`, handle, non-generic by-value struct, and
+function-pointer **parameters**. A function-pointer **return** is E10210
+because the `ffi` prototype cannot spell `ret (*)(...) name(...)`; views,
+slices, fixed arrays, borrowed move-only structs, and fixed-array returns are
+also E10210. A signature mismatch is E10210; a non-callable argument is E10200.
+A capturing hook inside a generic function body is E10400. A capturing hook
+that borrows a binding the same call moves is E10030. A capturing callback's
+invocation after the hook returns faults E11215 when no environment for its
+site is live; a capture-less callback stays a plain pointer and has no runtime
+check.
+
+| Rule | Statement | Diagnostic |
+|---|---|---|
+| CN-17 | A `borrow`-mode `func(...)` `ffi` parameter is a synchronous callback; the C prototype is unchanged | - |
+| CN-18 | A capturing callback crosses through a generated trampoline and a caller-stack environment; no heap environment | - |
+| CN-19 | The callback signature must be ABI-identical to the lifted lambda | E10210 |
+| CN-20 | A capturing hook inside a generic body needs a per-instance trampoline, which v1.1 does not add | E10400 |
+| CN-21 | A capturing callback invoked after its C hook returned faults when its environment node is not live | E11215 |
 
 ## 5. Nullable acquisition and out-parameters
 

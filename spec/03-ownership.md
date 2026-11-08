@@ -20,13 +20,26 @@ A **value** is a scalar, an aggregate, a view, or a handle.
 | Aggregate | struct, fixed array | duplicable when every field or element is duplicable (V8) |
 | View | `str`, `T[]`, `cstring` | duplicable; a copy is a cheap pointer-and-length view |
 | Handle | `File`, `Buffer`, `String` | move-only; released by its `freedBy` deleter |
+| Box | `Box<T>` | move-only; released by generated recursive drop glue |
 
 A **handle** names a resource: heap memory, a library base, a file, a message
 port. The library that owns the resource declares it once with
-`handle T freedBy F;` (X1). `F` is an `ffi`-declared func that takes `take T`
-and returns `void`; there is exactly one deleter per type. Native structs never
-use `freedBy`; they release their fields structurally (X2). Application code
-never writes `ffi` blocks (X6); [Ch 12](12-ffi-contracts.md) owns the boundary.
+`handle T freedBy F;` (X1). `F` is a function that takes `take T` and returns
+`void`; it may be an ordinary Clorraine function or an `ffi` declaration, and
+there is exactly one deleter per type. An ordinary deleter is resolved
+module-scoped (the handle's own module, its imports, then exactly one exported
+ordinary function program-wide); a cross-module ordinary candidate must be
+`export`ed, a non-function declaration shadows the fallback, and a missing,
+ambiguous, wrongly typed, or non-consuming deleter is E10102. The deleter's own
+`take T` parameter is excluded from the implicit scope drop, and its body must
+pass that parameter to a call. Native structs never use `freedBy`; they release
+their fields structurally (X2). Application code never writes `ffi` blocks
+(X6); [Ch 12](12-ffi-contracts.md) owns the boundary.
+
+The built-in `Box<T>` owns its pointee through generated drop glue rather than
+a user deleter (P7a). `Box<T>` is move-only and `Box<T>?` drops null-safely; a
+boxed value cannot be moved out, and a nested box, struct, or array drops
+recursively ([Ch 11](11-memory.md)).
 
 Bindings hold values. A view arrives from a parameter or a view-typed return,
 never from a local view expression (O9). The retired placeholder keywords of
@@ -171,6 +184,14 @@ Temporaries drop at the end of the statement that created them (D5).
 registration order, and the block is checked at its exit context (F5). Drops run
 on every `return`, `break`, and `continue` that leaves a scope (P2), and the
 null-safe check (O7) makes them run exactly once (O1).
+
+A `Box<T>` drop releases its pointee recursively: a scalar pointee is freed
+directly, a struct or array pointee drops its owned fields or elements first,
+and a nested `Box` pointee recurses. The generated helper is null-safe and
+checks the box before touching the pointee, so a `null` box drops nothing. A
+`Box<T>?` uses the same helper and is a no-op when null. An ordinary `freedBy`
+deleter lowers to a null-safe call to the deleter symbol, exactly like an
+`ffi` deleter (P5).
 
 There are no drops at process exit. `panic` aborts without running the ladder
 (D4, E4). A global must therefore be duplicable or `const`: a non-duplicable

@@ -96,7 +96,7 @@ such target (for example ARM64) is planned for v1.
 | Not adopted | Why |
 |---|---|
 | Traits, `impl` blocks, inheritance | Module functions plus exact-signature function values cover v1 needs |
-| Closures with heap environments | Lambdas are implemented (L1-L4); a capturing lambda uses a stack environment, never a heap allocation. C-hook trampolines remain staged (L5). |
+| Closures with heap environments | Lambdas are implemented (L1-L5); a capturing lambda uses a stack environment, never a heap allocation. C-hook trampolines are implemented in v1.1. |
 | `Result`/`Maybe` and `?` propagation | Three error tiers instead: `panic`, `T?`, and status structs (E1-E6) |
 | Exceptions and unwinding | Deterministic release on m68k; `panic` aborts (D4, E2) |
 | Macros and a preprocessor | Modules replace includes; `comptime` is the compile-time path and is staged |

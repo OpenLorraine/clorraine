@@ -405,7 +405,7 @@ calls (L5).
 | IH-2 | A handler is allocation-free, drop-free, and panic-free; it must not `panic` (E4). This is an audited convention in v1; effect-marker enforcement is a named Phase 2 follow-up |
 | IH-3 | State shared with a handler is a `volatile` module-level `let` (T7); a polling loop would otherwise read a stale value |
 | IH-4 | `stores` and `transfers` contracts are deferred to v2 (E90003) |
-| IH-5 | C-hook trampolines for capturing lambdas arrive in v1.1 (L5); a capture-less lambda already matches `func(...)` |
+| IH-5 | C-hook trampolines for capturing lambdas are implemented in v1.1 (L5); a capture-less lambda stays a plain function pointer |
 
 ```clorraine
 module Demo.Timer;

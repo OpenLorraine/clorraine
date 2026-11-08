@@ -140,8 +140,8 @@ through the cleanup ladder.
 | L1 | Full lambda **syntax is frozen now**: `(params) => expr`, `(params) => { ... }` with typed parameters, optional capture list `[borrow x, ...]` (parse `take` but reject it) |
 | L2 | Captures: duplicable types copy; non-duplicable types are read-only borrowed; parent mutation requires an explicit `[borrow x]` capture. No `take` captures in v1 |
 | L3 | Closures are **ephemeral**: they cannot be returned, stored in fields/globals/arrays, or captured by another closure; they can be called and passed. No heap environments |
-| L4 | Semantics are staged (syntax + AST from day one): stage 1 capture-less, stage 2 copy/borrow captures, stage 3 `[borrow]`, stage 4 `F: func(...)` generics; stage 5 C-hook trampolines (v1.1) |
-| L5 | C boundary: `func(...)` is a plain C function pointer; only capture-less lambdas match it. Capturing closures cross only through synchronous C hooks via generated trampolines (contract `borrows`), never through `stores` APIs |
+| L4 | Semantics are staged (syntax + AST from day one): stage 1 capture-less, stage 2 copy/borrow captures, stage 3 `[borrow]`, stage 4 `F: func(...)` generics; stage 5 C-hook trampolines are implemented in v1.1 |
+| L5 | C boundary: `func(...)` is a plain C function pointer; a capture-less lambda matches it directly. A capturing closure crosses a synchronous C hook through a generated trampoline when the `ffi` parameter is written `borrow`. The hook may call the callback zero or more times during the call and must not store, return, or call it after returning; the environment is a caller-stack node, never a heap allocation. The callback signature must be ABI-identical to the lifted lambda (scalar, `bool`, enum, `raw`, `cstring`, handle, non-generic by-value struct, function-pointer parameters; a function-pointer return is `E10210`); views, borrowed move-only structs, fixed arrays, and fixed-array returns are `E10210`. A capturing hook inside a generic function body is `E10400`. A capturing callback's invocation after the hook returns faults `E11215` when no environment for its site is live; a capture-less callback has no runtime check |
 
 ## 10. Strings and templates
 
@@ -158,7 +158,7 @@ through the cleanup ladder.
 
 | Ref | Decision |
 |---|---|
-| X1 | Opaque resources: `handle T freedBy F;` declared once, in the library. `F` must be an FFI-declared function taking `take T` and returning `void`; one deleter per type. v1.1 design item (F4): allow ordinary Clorraine functions as `freedBy` deleters, enabling a built-in `Box<T>` with generated drop glue |
+| X1 | Opaque resources: `handle T freedBy F;` declared once, in the library. `F` is a function taking `take T` and returning `void`; one deleter per type. In v1.1 the deleter may be an ordinary Clorraine function or an `ffi` declaration. An ordinary function is resolved module-scoped: the handle's own module first (its functions, imports, and `ffi` declarations), then exactly one exported ordinary function program-wide; a qualified name resolves in the named module. A cross-module ordinary candidate must be `export`ed. Any non-function declaration of the written name shadows the fallback. A missing, ambiguous, wrongly typed, or non-consuming deleter is `E10102`. The built-in `Box<T>` uses generated drop glue rather than a user deleter |
 | X2 | Native structs do not use `freedBy`; they drop structurally (fields in declaration order) |
 | X3 | FFI declarations use ordinary signatures and the ordinary vocabulary. The draft clause words `consumes`, `value`, `borrows`, `borrows mut`, and `nullable` are removed; nullability lives in the type (`File?`) |
 | X4 | Uncontracted extern calls may only appear inside `unsafe`; passing owned/borrowed values to them is an error (FFI-1) |
@@ -217,7 +217,8 @@ through the cleanup ladder.
 | P4 | Zero = empty layout guarantee (O7) |
 | P5 | `freedBy` drops emit `Deleter(value)` calls, null-safe, in the ladder |
 | P6 | `String` layout: one AllocVec block `[len][cap][bytes][NUL]`; `FreeString` deleter. `str` is a value struct (pointer + length) |
-| P7 | Lambdas: lifted `static` functions; capture-less = plain function pointers; capturing = two-word callable (function + stack env). Trampolines for C hooks arrive in v1.1 |
+| P7 | Lambdas: lifted `static` functions; capture-less = plain function pointers; capturing = two-word callable (function + stack env). C-hook trampolines are implemented in v1.1; the environment is a caller-frame node found by a site id, never a heap allocation |
+| P7a | `Box<T>` lowers to one `void *`; allocation uses `cl_box_alloc` (`cl_alloc`/`cl_free`), the block is zeroed, and allocation failure uses the existing `E1` trap. Drop glue is generated recursively, null-safe, and exactly once. `Box<T>?` is an optional slot; a boxed value cannot be moved out. A direct Box FFI crossing is `E10105`; a non-static view-typed element is `E10227` (`static str` is accepted); overlays are `E10207`; the freestanding profile rejects Box with `E11200`. A user type declaration named `Box` shadows the built-in |
 | P8 | Interpolation desugars to string-builder/`toText` calls |
 | P9 | Module init: generated `cl_init_<module>` functions in dependency order; a generated entry stub runs them before the user's `main` |
 | P10 | Single translation unit in v1; internal symbols `static`, external only for `export` and the entry |
@@ -278,9 +279,10 @@ The library is where most ergonomics live. v1 ships, in priority order:
 | Interrupt/hook dispatcher | C-side qualified handler plus token add/remove; handlers are allocation-free, drop-free, panic-free |
 | `Span` | Offset-based parsing helper (view fields stay banned) |
 
-Standard-library APIs are written dot-call style (F8). v1.1 candidate:
-built-in `Box<T>` with compiler-generated drop glue, which needs the X1
-amendment to allow ordinary Clorraine `freedBy` functions.
+Standard-library APIs are written dot-call style (F8). v1.1 implements the
+built-in `Box<T>` with compiler-generated drop glue under the X1 amendment that
+allows ordinary Clorraine `freedBy` functions; the C-hook trampolines (L5) are
+implemented too.
 
 ## 19. Phase B grammar freezes
 
@@ -309,7 +311,7 @@ the diagnostics registry follow them.
 | T2a | Core handle types declare their own FFI deleters instead of reusing the deleter of a differently-typed handle: `handle String freedBy FreeString;` with `func FreeString(take s: String): void;`, and `handle Buffer freedBy FreeBuffer;`. C-facing types keep the C symbols (`Memory`/`FreeVec`, `Library`/`CloseLibrary`, `File`/`Close`, `MsgPort`/`DeleteMsgPort`). This makes T2's shorthand type-correct under X1. |
 | T10a | Enums compare with `==` and `!=` only; ordering an enum is E10222. Members without an explicit value number sequentially from 0. |
 | V9a | A writable lend parameter instantiated with a duplicable type binds a copy (V5). Writes affect that copy only, and W10001 marks the needless writable lend; read-only lends of duplicables copy silently. Generic copy obligations are recorded and discharged at instantiation. |
-| X1a | The `freedBy` name is a qualified name resolved like any other declaration; the deleter is an FFI function taking `take T` and returning `void`. |
+| X1a | The `freedBy` name is a qualified name resolved like any other declaration; the deleter is a function taking `take T` and returning `void`. In v1.1 an ordinary Clorraine function is eligible under the module-scoped rule in X1, and its own `take T` parameter is excluded from the implicit scope drop; the body must pass it to a call |
 | E112xx | Runtime fault codes live in the E112xx block next to the profile limits (`E11210` division by zero, `E11211` index out of range, `E11212` float-to-integer range, `E11213` assertion failure). They print the standard `error CODE: message` first line and abort (N8). |
 | N8a | New compile-time codes assigned in Phase C: definite assignment `E10021`, the index checks `E10216`/`E11211`, the float rules `E11212`, and the completeness codes `E10218`-`E10222`. `E10605` is retired before release; misplaced `volatile` is `E10208`. |
 | S2a | Template float placeholders use a fixed v1 precision of six significant digits; precision control is deferred (S6). The public conversion is `text` (T5); `toText` in P8 names the internal desugaring helper. |

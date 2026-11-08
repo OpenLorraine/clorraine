@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 59/74 tasks (80%)
+> **Progress**: 63/74 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -354,15 +354,15 @@ language-rule surface.
 **Reference**: R13 · [Requirements](01-requirements.md) §R13 · AR-2, AR-5, AR-55
 **Objective**: Record the approved amendments and the new diagnostics.
 
-- [ ] 6.1.1 Add the v1.1 decision section to `spec/decisions.md` (X1, L5, P7, Box, profiles, diagnostics) and update the affected chapters: Ch 01 (type-name predeclaration and shadowing), Ch 02 (type universe/nullability/casts), Ch 03 (ownership/drop), Ch 06 §6.1, Ch 07 §5/§10, Ch 10 (module-scoped deleter resolution, if applicable), Ch 11 (heap allocation), Ch 12 §2/§4/§7, Ch 14, Ch 15 (profiles), Ch 16 §2/§4, Ch 17, appendix-stdlib §12 and a new Box/std.mem section, lineage — `spec/`
-- [ ] 6.1.2 Update the `E10102`/`E10400` help text and keep their first lines stable; confirm the Phase 1 compile-fail tests and the Phase 5 `E11215` exclusion pass — `spec/14-diagnostics.md`, `spec/tests/compile-fail/`, `spec/check.sh`
-- [ ] 6.1.3 Update `docs/known-limitations.md` (no nullable allocation failure, no move-out, no Box FFI, no freestanding Box, no heap env, synchronous-only, non-generic hooks, ABI set), the appendix implementation table, the roadmap stage/row, and AGENTS if a new suite/target needs a line — `docs/`, `plans/00-roadmap.md`, `AGENTS.md`
-- [ ] 6.1.4 Run `./spec/check.sh` and `make check`; commit the specification-amendment docs separately from the implementation commits
+- [x] 6.1.1 Add the v1.1 decision section to `spec/decisions.md` (X1, L5, P7, Box, profiles, diagnostics) and update the affected chapters: Ch 01 (type-name predeclaration and shadowing), Ch 02 (type universe/nullability/casts), Ch 03 (ownership/drop), Ch 06 §6.1, Ch 07 §5/§10, Ch 10 (module-scoped deleter resolution, if applicable), Ch 11 (heap allocation), Ch 12 §2/§4/§7, Ch 14, Ch 15 (profiles), Ch 16 §2/§4, Ch 17, appendix-stdlib §12 and a new Box/std.mem section, lineage — `spec/` ✅ (completed: 2026-11-08 10:45; decisions L4/L5/P7/P7a/X1/X1a, Ch 00/02/03/06/07/10/11/12/14/15/17, appendix §3.1/§12, lineage, grammar-deltas, appendix-amiga)
+- [x] 6.1.2 Update the `E10102`/`E10400` help text and keep their first lines stable; confirm the Phase 1 compile-fail tests and the Phase 5 `E11215` exclusion pass — `spec/14-diagnostics.md`, `spec/tests/compile-fail/`, `spec/check.sh` ✅ (completed: 2026-11-08 10:45; first lines unchanged, 114 compile-fail tests pass)
+- [x] 6.1.3 Update `docs/known-limitations.md` (no nullable allocation failure, no move-out, no Box FFI, no freestanding Box, no heap env, synchronous-only, non-generic hooks, ABI set), the appendix implementation table, the roadmap stage/row, and AGENTS if a new suite/target needs a line — `docs/`, `plans/00-roadmap.md`, `AGENTS.md` ✅ (completed: 2026-11-08 10:45; no AGENTS change needed)
+- [x] 6.1.4 Run `./spec/check.sh` and `make check`; commit the specification-amendment docs separately from the implementation commits ✅ (completed: 2026-11-08 10:45; spec check OK 27 files, `make check` exit 0)
 
 **Deliverables**:
-- [ ] Every approved amendment is in the ledger and the affected chapter
-- [ ] The new diagnostics are registered and tested
-- [ ] The limitations are documented
+- [x] Every approved amendment is in the ledger and the affected chapter
+- [x] The new diagnostics are registered and tested
+- [x] The limitations are documented
 
 **Verify**: `./spec/check.sh`, `make check`.
 

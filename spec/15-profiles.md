@@ -47,7 +47,9 @@ v1 ships `hosted-amiga`. v1.1 adds `hosted-amiga-13`, the A500/Kickstart 1.3
 baseline. The `host` profile exists for fast tests. `freestanding` is implemented
 provisionally: because LorraineOS does not exist yet, this project defines a thin
 ABI (m68k, 32-bit, big-endian, no libc) that LorraineOS can adopt or replace
-later.
+later. The freestanding profile has no heap: the built-in `String` and `Box<T>`
+are rejected with E11200, and the embedded `std.mem` allocator surface is not
+available there.
 
 | Profile fact | `hosted-amiga` (v1) | `host` (tests) | `freestanding` (provisional) |
 |---|---|---|---|

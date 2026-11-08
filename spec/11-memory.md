@@ -59,9 +59,10 @@ ffi stdmem {
 }
 ```
 
-`freedBy F` names an `ffi`-declared function that takes `take T` and returns
-`void`; there is exactly one deleter per type (X1). The standard library wraps
-the C functions; application code never writes `ffi` blocks (X6).
+`freedBy F` names a function that takes `take T` and returns `void`; it may be
+an ordinary Clorraine function (resolved module-scoped, X1) or an `ffi`
+declaration. There is exactly one deleter per type (X1). The standard library
+wraps the C functions; application code never writes `ffi` blocks (X6).
 
 | Resource | C allocator | C deleter | `freedBy` |
 |---|---|---|---|
@@ -71,8 +72,8 @@ the C functions; application code never writes `ffi` blocks (X6).
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| MR-1 | There is no language-level `new`, no garbage collection, and no reference counting (A2) | - |
-| MR-2 | An allocator returns a nullable owned value, `T?` (T8) | - |
+| MR-1 | There is no language-level `new`, no garbage collection, and no reference counting (A2); the built-in `Box<T>` constructor is the one compiler-owned allocation, and it traps `E1` on failure (section 2.1) | - |
+| MR-2 | An allocator returns a nullable owned value, `T?` (T8), except the `Box<T>` constructor, which is non-nullable and traps | - |
 | MR-3 | The caller checks `== null` / `!= null` before use | E10010 |
 
 Ownership lowers to plain C: a move copies the value and zeroes the source
@@ -96,6 +97,29 @@ func makeBuffer(size: usize): Buffer? {
 API names. `String` is built in (T2) and follows the same rule: one allocation
 holds `[len][cap][bytes][NUL]`, and `FreeString` releases it (P6, T2a). The string
 types and their conversions are in [Ch 08](08-arrays-strings.md).
+
+### 2.1 Box
+
+`Box<T>` is the built-in owning pointer (P7a). It is one `void *` in C, move-only,
+and released by generated recursive drop glue. `boxAlloc<T>()` is the reserved
+compiler intrinsic; `std.mem` exposes the safe surface:
+
+| API | Meaning |
+|---|---|
+| `boxNew<T>(value: take T): Box<T>` | allocate and move `value` into a new box |
+| `boxSet<T>(box: borrow Box<T>, value: take T): void` | replace and drop the old pointee |
+| `boxWith<T, F: func(T): void>(box: borrow Box<T>, f: F): void` | lend the pointee to a callable-bound callback for the duration of the call |
+| `boxPtr<T>(box: borrow Box<T>): raw T` | internal helper: the pointee address for library code; not exported |
+
+The allocation uses `cl_box_alloc` (which calls `cl_alloc`) and frees through
+`cl_box_free` (`cl_free`). The block is zeroed. An allocation failure uses the
+existing `E1` trap; `Box<T>` itself is non-nullable, while `Box<T>?` is an
+optional slot. A boxed value cannot be moved out. A non-static view-typed
+element is E10227 (`static str` is accepted), an overlay element is E10207, a
+non-view element must be storable, and a direct Box FFI crossing is E10105. The
+freestanding profile has no allocator and rejects Box with E11200. A user type
+declaration named `Box` shadows the built-in; inside the embedded `std.mem` the
+built-in always wins.
 
 ## 3. Stack discipline
 

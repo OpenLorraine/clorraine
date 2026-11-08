@@ -71,7 +71,7 @@ removes the reason, and each row names what Clorraine allows instead.
 | 9 | Explicit `fallthrough;` statement required | Readability policy | C-exact implicit fallthrough plus an optional warning | B5 |
 | 10 | Special `interrupt function` kind and ABI qualifiers | 6502 IRQ vectors and register saves | Ordinary functions behind a stdlib dispatcher | F7 |
 | 11 | `place()` and zero-page placement clauses | ROM/RAM layout proof | No language placement; profile regions later | draft Ch 11 |
-| 12 | No function values; call targets were static | SFA | Exact-signature function pointers; lambdas (implemented, with C-hook trampolines staged) | F3, L1-L5 |
+| 12 | No function values; call targets were static | SFA | Exact-signature function pointers; lambdas (implemented, including C-hook trampolines) | F3, L1-L5 |
 | 13 | No floating point | 6502 cost and cycles | `f32`/`f64` with soft-float verification and an FPU leg | T1, F17, P15 |
 
 ## 5. Carried deliberately from Blend65
@@ -103,7 +103,7 @@ removes the reason, and each row names what Clorraine allows instead.
 | `volatile` fields, volatile globals, six hardware intrinsics | T7 |
 | FFI blocks, `handle T freedBy F`, uncontracted calls inside `unsafe` | X1-X6 |
 | Generics with monomorphization and callable bounds | G1-G8 |
-| Lambdas (implemented; C-hook trampolines staged) | L1-L5 |
+| Lambdas (implemented; C-hook trampolines implemented) | L1-L5 |
 | Templates `$"..."` | S1-S5 |
 | `defer` | F5 |
 | Floats | T1, F17 |

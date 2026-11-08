@@ -201,11 +201,23 @@ aggregate move, removable only when the value is provably dead.
 ## 6. Drops, deleters, and String - P5, P6
 
 A handle's deleter comes from its type declaration (`handle T freedBy F`, X1) and
-is emitted null-safe, exactly once:
+is emitted null-safe, exactly once. The deleter may be an `ffi` declaration or an
+ordinary Clorraine function resolved module-scoped:
 
 ```c
 if (value) { F(value); }
 ```
+
+The built-in `Box<T>` is one `void *`; its drop releases the pointee through a
+generated recursive helper and is null-safe:
+
+```c
+if (box) { cl_box_drop__<key>(box); }
+```
+
+The helper drops a struct's owned fields or an array's elements first and then
+frees the block through `cl_box_free` (`cl_free`); a nested `Box` recurses. A
+`Box<T>?` uses the same helper and skips the call when null.
 
 A native struct drops structurally: its fields in declaration order, array
 elements first to last (O2). Parameters drop after the body's locals. All
@@ -268,13 +280,27 @@ A lambda is lifted to a file-scope `static` func with a generated name.
 | Lambda | Emission |
 |---|---|
 | Capture-less `(x: i32) => x + 1` | a lifted `static` func; its address is a plain C function pointer |
-| `func(...)` parameter | a plain C function pointer; only capture-less lambdas match (L5, E10400) |
+| `func(...)` parameter | a plain C function pointer; a capture-less lambda is cast through the warning-free `void (*)(void)` intermediate to the `ffi` ABI spelling |
 | Capturing closure | a two-word callable: a func pointer plus a stack environment pointer; the lifted func takes the environment |
 | Stored, returned, or captured closure | rejected; closures are ephemeral (L3, E10404) |
-| Closure crossing a C hook | a generated trampoline; arrives in v1.1 (L5) |
+| Closure crossing a C hook | a generated trampoline and one wrapper per call site; implemented in v1.1 (L5) |
 
 A capturing closure's environment lives on the enclosing frame, valid only for
-the synchronous call that receives it, which is why storing it is E10404.
+the synchronous call that receives it, which is why storing it is E10404. At a
+`borrow`-mode `ffi` callback the lowering materializes the environment at the
+callback's own argument position, replaces the argument with
+`cl_hooktramp_<site>`, and appends `(<temp>).env`. The emitter writes:
+
+* a `ClHookEnvNode` linked stack (`cl_hook_env_push`/`pop`/`find`) once per unit;
+* one `static` trampoline per callback, with the exact ABI signature and the
+  `E11215` null-environment check;
+* one `static` wrapper per call site, with the original `ffi` ABI parameters,
+  one environment pointer per callback, pushes in argument order, the original
+  call, and reverse pops.
+
+The wrapper and trampoline are `static`; the language call keeps the original
+`ffi` modes, so a `take` argument still moves once. A capture-less callback has
+no wrapper, trampoline, or environment.
 
 ## 9. Templates - P8
 

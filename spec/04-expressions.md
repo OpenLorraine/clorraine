@@ -229,8 +229,10 @@ disables the check.
 A function value is a bare identifier whose type is `func(...): R`; there is
 no `&` (GF13). Function types are exact-signature C function pointers (F3):
 no variadics, default arguments, named arguments, tuples, or multiple returns.
-A signature mismatch is E10210. Only capture-less lambdas match a `func(...)`
-type [grammar.ebnf.md](grammar.ebnf.md) section 8.
+A signature mismatch is E10210. A capture-less lambda matches a `func(...)`
+type [grammar.ebnf.md](grammar.ebnf.md) section 8. A capturing lambda is
+E10400 except at a `borrow`-mode `ffi` callback, where it crosses through a
+generated trampoline ([Ch 06](06-functions.md) section 6.1).
 
 ```clorraine
 func onTick(): void { tick(); }

@@ -210,11 +210,19 @@ func demo(): i32 {
 ### 6.1 Lambdas
 
 Lambda semantics are implemented (L1-L6). A capture-less lambda is a plain
-function pointer and matches `func(...)`; a capturing lambda used where
-`func(...)` is required is E10400. A capturing closure is inline-only: it may
-be invoked immediately or passed to a generic callable-bound parameter, and
-storing, returning, or capturing it is E10404 (L-6). A lambda expression is part
-of the expression grammar; see [Ch 04](04-expressions.md).
+function pointer and matches `func(...)`; a capturing lambda used where a plain
+`func(...)` value is required is E10400. A capturing closure is inline-only: it
+may be invoked immediately, passed to a generic callable-bound parameter, or
+passed to a **synchronous C hook** (`borrow`-mode `func(...)` parameter on an
+`ffi` declaration). The hook lowers to a generated trampoline and a
+caller-stack environment; the callback signature must be ABI-identical to the
+lifted lambda (scalar, `bool`, enum, `raw`, `cstring`, handle, non-generic
+by-value struct, function-pointer parameters; a function-pointer return is
+E10210), and a capturing hook inside a generic body is E10400. Storing,
+returning, or capturing a closure is E10404 (L-6). A capturing callback
+invoked after the C hook returns faults E11215 when no environment for its
+site is live; a capture-less callback has no runtime check. A lambda
+expression is part of the expression grammar; see [Ch 04](04-expressions.md).
 
 ```clorraine
 let inc: func(i32): i32 = (x: i32) => x + 1;   // capture-less: a function pointer
@@ -233,6 +241,10 @@ let bad = [take s] () => s;                     // E10403: 'take' captures are r
 | L-4 | Writing a captured binding needs a `[borrow x]` capture | E10402 |
 | L-5 | `take` captures are rejected in v1 | E10403 |
 | L-6 | A capturing closure is ephemeral: it cannot be returned, stored, or captured | E10404 |
+| L-7 | A capturing closure crosses only a synchronous `borrow`-mode `ffi` callback; every other concrete `func(...)` position is E10400 | E10400 |
+| L-8 | The hook callback signature must be ABI-identical to the lifted lambda; views, borrowed move-only structs, fixed arrays, fixed-array returns, and function-pointer returns are rejected | E10210 |
+| L-9 | A capturing hook inside a generic function body needs a per-instance trampoline, which v1.1 does not add | E10400 |
+| L-10 | A capturing callback invoked after its C hook returned faults when its environment node is no longer live | E11215 |
 
 ## 7. `comptime func`
 
