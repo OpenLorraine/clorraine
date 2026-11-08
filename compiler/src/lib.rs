@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod abi;
+pub mod analysis;
 pub mod ast;
 pub mod borrow;
 pub mod clorraine;

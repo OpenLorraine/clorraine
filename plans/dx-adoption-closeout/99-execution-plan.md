@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 0/56 tasks (0%)
+> **Progress**: 7/56 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -53,25 +53,25 @@ the project gates.
 **Reference**: [03-02](03-02-shared-analysis.md) · [07](07-testing-strategy.md) ST-13 to ST-15 · AR-8, AR-16
 **Objective**: Pin the new API before it exists.
 
-- [ ] 1.1.1 [spec-author] Write `compiler/tests/analysis_spec_test.rs` for ST-13 to ST-15 — `compiler/tests/analysis_spec_test.rs`
-- [ ] 1.1.2 Run the suite and record the red phase (the module does not exist) — `cargo test -p clc --test analysis_spec_test`
+- [x] 1.1.1 [spec-author] Write `compiler/tests/analysis_spec_test.rs` for ST-13 to ST-15 — `compiler/tests/analysis_spec_test.rs`
+- [x] 1.1.2 Run the suite and record the red phase (the module does not exist) — `cargo test -p clc --test analysis_spec_test`
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-02](03-02-shared-analysis.md) §Exact sequence · AR-16
 **Objective**: Move the driver pipeline into a reusable library call.
 
-- [ ] 1.2.1 Add `analysis.rs` with `SourceFile`, `Mode`, `Analysis`, `analyze`, and `parse`; add `load::load_with_entry_check` — `compiler/src/analysis.rs`, `compiler/src/load/mod.rs`
-- [ ] 1.2.2 Refactor `driver::run` to call `analysis` and keep its CLI, messages, and output — `compiler/src/driver.rs`
-- [ ] 1.2.3 Run the analysis suite green and the existing driver suites — `cargo test -p clc --test analysis_spec_test --test clorraine_driver_spec_test`
+- [x] 1.2.1 Add `analysis.rs` with `SourceFile`, `Mode`, `Analysis`, `analyze`, and `parse`; add `load::load_with_entry_check` — `compiler/src/analysis.rs`, `compiler/src/load/mod.rs`
+- [x] 1.2.2 Refactor `driver::run` to call `analysis` and keep its CLI, messages, and output — `compiler/src/driver.rs`
+- [x] 1.2.3 Run the analysis suite green and the existing driver suites — `cargo test -p clc --test analysis_spec_test --test clorraine_driver_spec_test`
 
 ### Step 1.3: Implementation tests and verification
 
 **Reference**: [07](07-testing-strategy.md) ST-16 · AR-16
 **Objective**: Prove the refactor changed no emitted C.
 
-- [ ] 1.3.1 Add unit tests for parse-only, file identity, and entry-point mode — `compiler/src/analysis.rs`
-- [ ] 1.3.2 Diff emitted C over `spec/tests/corpus` against the phase baseline and run `make check` — no source file
+- [x] 1.3.1 Add unit tests for parse-only, file identity, and entry-point mode — `compiler/src/analysis.rs`
+- [x] 1.3.2 Diff emitted C over `spec/tests/corpus` against the phase baseline and run `make check` — no source file
 
 **Deliverables**:
 - [ ] `analysis` API used by the driver

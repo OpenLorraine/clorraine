@@ -147,7 +147,25 @@ struct Group {
 }
 
 /// Builds the module table from the parsed files.
+///
+/// This is the executable-build entry point: it requires exactly one
+/// well-typed `func main(): i32`.
 pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> Loaded {
+    load_with_entry_check(programs, true, diagnostics)
+}
+
+/// Builds the module table, optionally without the executable entry-point
+/// check.
+///
+/// A language-server workspace holds library modules that are not programs.
+/// Passing `require_entry_point = false` keeps every other load rule intact,
+/// so a library still reports duplicate declarations, missing imports, and
+/// reserved names exactly as it does in a build.
+pub fn load_with_entry_check(
+    programs: Vec<(FileId, Program)>,
+    require_entry_point: bool,
+    diagnostics: &mut Diagnostics,
+) -> Loaded {
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
     for (file, program) in programs {
         let Some(name) = file_module(file, &program, diagnostics) else {
@@ -197,7 +215,7 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
     }
 
     let loaded = Loaded { modules };
-    if diagnostics.error_count() == 0 {
+    if require_entry_point && diagnostics.error_count() == 0 {
         // A dropped declaration may have held the entry point, and the entry
         // point is dependent on the module structure being sound, so an
         // already-reported error suppresses this check.

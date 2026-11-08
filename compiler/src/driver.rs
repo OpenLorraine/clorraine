@@ -6,21 +6,13 @@
 //! translation unit, so the command-line behavior and the diagnostic stream
 //! are already exercised end to end.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use crate::ast::Program;
+use crate::analysis;
 use crate::codegen;
 use crate::diag::{
     format_error, format_from_args, registry, Diagnostic, DiagnosticFormat, Diagnostics,
 };
-use crate::load;
-use crate::own;
-use crate::parse::Parser;
 use crate::profile::Profile;
-use crate::resolve;
-use crate::sema;
-use crate::span::{FileId, SourceMap};
-use crate::stdlib;
+use crate::span::SourceMap;
 
 /// Exit code for command-line and input problems.
 const EXIT_USAGE: i32 = 2;
@@ -151,127 +143,6 @@ fn error_limit(raw: &str) -> Result<usize, String> {
     Ok(limit)
 }
 
-/// Parses and adds every embedded standard-library module the program imports.
-///
-/// The standard library is ordinary Clorraine compiled with the program, so an
-/// imported module is loaded exactly like a user file. Only modules with an
-/// embedded source are injected; a module that still has only a declaration
-/// surface resolves its imports through the standard-library export table, so
-/// its callers keep compiling while the module body is ported.
-///
-/// An embedded module may itself import another embedded module (for example the
-/// graphics module borrows the screen handle from intuition). Injection
-/// therefore runs to a fixpoint: each pass requests every module the current
-/// programs reference, and a pass that injects nothing ends the loop.
-fn inject_stdlib(
-    programs: &mut Vec<(FileId, Program)>,
-    sources: &mut SourceMap,
-    diagnostics: &mut Diagnostics,
-) {
-    loop {
-        let requested = requested_modules(programs);
-        if requested.is_empty() {
-            break;
-        }
-        for name in requested {
-            let Some(text) = stdlib::source(&name) else {
-                continue;
-            };
-            let path = format!("stdlib/{name}.clo");
-            let file = sources.add_file(path, text.to_owned());
-            let before = diagnostics.error_count();
-            let mut program = Parser::new(sources, file, diagnostics).parse_program();
-            if diagnostics.error_count() > before {
-                // A malformed embedded module would be a compiler defect; the
-                // parser already recorded the reason, so the stage stops here.
-                continue;
-            }
-            // Mark the item as embedded so the reserved-intrinsic check allows
-            // the library to declare the compiler-known helpers.
-            program.embedded = true;
-            programs.push((file, program));
-        }
-    }
-}
-
-/// The embedded standard-library modules the programs reference but do not yet
-/// include, for which an embedded source exists.
-///
-/// A qualified reference to a standard-library module is as good as an import
-/// for loading it, so both kinds of request are collected.
-fn requested_modules(programs: &[(FileId, Program)]) -> Vec<String> {
-    let mut imported: BTreeSet<String> =
-        load::referenced_modules(programs).into_keys().collect();
-    let mut present: BTreeSet<String> = BTreeSet::new();
-    for (_, program) in programs.iter() {
-        present.insert(program.module.name.to_dotted());
-        for import in &program.imports {
-            imported.insert(import.from.to_dotted());
-        }
-    }
-    imported
-        .into_iter()
-        .filter(|name| !present.contains(name) && stdlib::source(name).is_some())
-        .collect()
-}
-
-/// Reports a reference to an embedded standard-library module the profile does
-/// not provide, returning false when at least one was reported.
-///
-/// A profile names its own API surface, so a standard-library module outside it
-/// is a profile-surface error rather than a missing-module error. Both an
-/// `import` and a qualified reference such as `std.amiga.dos.delayTicks(1)`
-/// name the module, so both are checked. The check is gated on the module
-/// actually being an embedded library module: a user module whose name happens
-/// to start with the same prefix is ordinary code and must not be rejected.
-/// Reporting before the load stage keeps the diagnostic single instead of
-/// letting the reference cascade into unresolved-name errors.
-fn report_unavailable_profile_imports(
-    profile: Profile,
-    programs: &[(FileId, Program)],
-    diagnostics: &mut Diagnostics,
-) -> bool {
-    // A module the program itself declares is user code, even when its name
-    // matches an embedded library module. `inject_stdlib` prefers the user
-    // module, so the profile check must agree and not reject it.
-    let provided: BTreeSet<String> = programs
-        .iter()
-        .map(|(_, program)| program.module.name.to_dotted())
-        .collect();
-    let mut unavailable: BTreeMap<String, crate::span::Span> = BTreeMap::new();
-    for (_, program) in programs {
-        for import in &program.imports {
-            let module = import.from.to_dotted();
-            if is_unavailable_stdlib(profile, &module, &provided) {
-                unavailable.entry(module).or_insert(import.span);
-            }
-        }
-    }
-    for (module, span) in load::referenced_modules_outside_staged(programs) {
-        if is_unavailable_stdlib(profile, &module, &provided) {
-            unavailable.entry(module).or_insert(span);
-        }
-    }
-    let mut available = true;
-    for (module, span) in unavailable {
-        diagnostics.push(Diagnostic::error(
-            "E11200",
-            format!("'{module}' is not available on profile '{}'", profile.name()),
-            span,
-        ));
-        available = false;
-    }
-    available
-}
-
-/// True when the module is an embedded standard-library module the profile does
-/// not provide and that the program did not supply itself.
-fn is_unavailable_stdlib(profile: Profile, module: &str, provided: &BTreeSet<String>) -> bool {
-    stdlib::source(module).is_some()
-        && !provided.contains(module)
-        && !profile.supports_module(module)
-}
-
 /// Runs the compiler and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
     let requested = format_from_args(&args);
@@ -323,11 +194,13 @@ pub fn run(args: Vec<String>) -> i32 {
         emit_diagnostics(&diagnostics, &SourceMap::new(), format);
         return diagnostics.exit_code();
     }
-    let mut sources = SourceMap::new();
-    let mut files: Vec<FileId> = Vec::new();
+    let mut inputs = Vec::new();
     for path in &options.files {
         match std::fs::read_to_string(path) {
-            Ok(text) => files.push(sources.add_file(path.clone(), text)),
+            Ok(text) => inputs.push(analysis::SourceFile {
+                path: path.clone(),
+                text,
+            }),
             Err(error) => {
                 eprint!(
                     "{}",
@@ -337,69 +210,49 @@ pub fn run(args: Vec<String>) -> i32 {
             }
         }
     }
-    let mut programs = Vec::new();
-    for file in files {
-        let before = diagnostics.error_count();
-        let program = Parser::new(&sources, file, &mut diagnostics).parse_program();
-        if diagnostics.error_count() > before {
-            // The front end already poisoned this file; running the module
-            // stage would only add dependent errors.
-            continue;
-        }
-        programs.push((file, program));
-    }
     // A stage-select run stops after the parser: the source shapes a stage
     // test exercises may be rejected by a later stage, while the parse is the
     // stage under test. Syntax errors still report and fail the run.
     if options.parse_only {
-        emit_diagnostics(&diagnostics, &sources, format);
-        return diagnostics.exit_code();
+        let parsed = analysis::parse_with(inputs, diagnostics);
+        emit_diagnostics(&parsed.diagnostics, &parsed.sources, format);
+        return parsed.diagnostics.exit_code();
     }
     let Some(kind) = Profile::parse(profile) else {
         return EXIT_USAGE;
     };
-    if !report_unavailable_profile_imports(kind, &programs, &mut diagnostics) {
-        emit_diagnostics(&diagnostics, &sources, format);
-        return diagnostics.exit_code();
-    }
-    inject_stdlib(&mut programs, &mut sources, &mut diagnostics);
-    // The module and name stages consume the loaded program instead of
-    // dropping it; the emitter lands later and will take the same value.
-    let loaded = load::load(programs, &mut diagnostics);
-    resolve::resolve(&loaded, &mut diagnostics);
-    let mut analysis = None;
-    if diagnostics.error_count() == 0 {
-        // A file that already failed resolution has no trustworthy names, so
-        // the type stage would only produce dependent errors.
-        let sema = sema::check(&loaded, kind, &mut diagnostics);
-        if diagnostics.error_count() == 0 {
-            // The ownership stage consumes the types the type stage recorded,
-            // so it runs only on a program that typed cleanly. Its output is
-            // the input code generation consumes.
-            let ownership = own::check(&loaded, &sema, &mut diagnostics);
-            analysis = Some((sema, ownership));
-        }
-    }
+    let mut analyzed = analysis::analyze_with(
+        kind,
+        inputs,
+        analysis::Mode::Full,
+        true,
+        diagnostics,
+    );
     // A front-end error rules out code generation; rendered here so the
     // command-line contract still reports the diagnostics before exiting.
-    if diagnostics.exit_code() != 0 {
-        emit_diagnostics(&diagnostics, &sources, format);
-        return diagnostics.exit_code();
+    if analyzed.diagnostics.exit_code() != 0 {
+        emit_diagnostics(&analyzed.diagnostics, &analyzed.sources, format);
+        return analyzed.diagnostics.exit_code();
     }
     // A successful compile emits the translation unit; an absent `-o` keeps the
     // compiler silent, matching the command-line contract. The analysis is
     // present whenever code generation runs, because a diagnostics-clean
     // program always produced it. Code generation may add the large-frame
     // warning, so the diagnostics render only after it runs.
-    let emitted = match &analysis {
-        Some((sema, ownership)) => {
-            codegen::emit(&loaded, sema, ownership, kind, &sources, &mut diagnostics)
-        }
-        None => String::new(),
+    let emitted = match (&analyzed.loaded, &analyzed.typed) {
+        (Some(loaded), Some((sema, ownership))) => codegen::emit(
+            loaded,
+            sema,
+            ownership,
+            kind,
+            &analyzed.sources,
+            &mut analyzed.diagnostics,
+        ),
+        _ => String::new(),
     };
-    emit_diagnostics(&diagnostics, &sources, format);
-    if diagnostics.exit_code() != 0 {
-        return diagnostics.exit_code();
+    emit_diagnostics(&analyzed.diagnostics, &analyzed.sources, format);
+    if analyzed.diagnostics.exit_code() != 0 {
+        return analyzed.diagnostics.exit_code();
     }
     if let Some(path) = &options.output {
         if let Err(error) = std::fs::write(path, emitted) {
