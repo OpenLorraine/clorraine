@@ -119,11 +119,11 @@ func nameLength(borrow name: str): usize {
     return len(name);
 }
 
-import { stringOf } from std.text;
+import { stringOf, toCString } from std.text;
 
 let owned: String = stringOf("hello");
 let view: str = owned;
-let c: cstring = "literal";
+let c: cstring = toCString(view);
 ```
 
 A `String` does not implicitly become a `cstring`; the NUL-terminated form is

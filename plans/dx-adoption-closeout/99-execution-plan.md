@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 50/56 tasks (89%)
+> **Progress**: 52/56 tasks (93%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -323,8 +323,8 @@ the project gates.
 **Reference**: [07](07-testing-strategy.md) ST-55 to ST-57 · AR-35, AR-36
 **Objective**: Make the new surfaces discoverable and gated.
 
-- [ ] 8.1.1 Wire `make check`, `setup-check`, `vscode-check`, and `vscode-package`; update CI — `Makefile`, `.github/workflows/check.yml`
-- [ ] 8.1.2 Update `AGENTS.md` and `README.md` with the installer, LSP, extension, `--doc`, and guide — `AGENTS.md`, `README.md`
+- [x] 8.1.1 Wire `make check`, `setup-check`, `vscode-check`, and `vscode-package`; update CI — `Makefile`, `.github/workflows/check.yml`
+- [x] 8.1.2 Update `AGENTS.md` and `README.md` with the installer, LSP, extension, `--doc`, and guide — `AGENTS.md`, `README.md`
 
 ### Step 8.2: Full verification and closeout
 
