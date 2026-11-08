@@ -24,6 +24,15 @@ pub enum Command {
     Emit,
 }
 
+/// The documentation-generator options.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DocOptions {
+    /// Output directory; `build/doc` when absent.
+    pub output: Option<String>,
+    /// Source files in command-line order.
+    pub files: Vec<String>,
+}
+
 /// A parsed and validated invocation.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Options {
@@ -56,6 +65,8 @@ pub enum Action {
     Version,
     /// Print the registry entry for a diagnostic code and exit zero.
     Explain(String),
+    /// Generate Markdown from documentation comments.
+    Doc(DocOptions),
     /// Perform a command.
     Invoke(Options),
 }
@@ -79,6 +90,7 @@ Options:
       --emulator                      Amiga run: use FS-UAE (host handoff)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
+      --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
       --explain CODE                  Print the registry entry for a diagnostic code
       --diagnostics=json              Print diagnostics as JSON objects on stderr
   -h, --help                          Print this help
@@ -126,6 +138,9 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
     if let Some(explain) = explain_argument(args) {
         return explain.map(Action::Explain);
     }
+    if let Some(doc) = doc_argument(args) {
+        return doc.map(Action::Doc);
+    }
     let Some(first) = args.first() else {
         // No command at all is the same as asking for help.
         return Ok(Action::Help);
@@ -165,6 +180,48 @@ fn explain_argument(args: &[String]) -> Option<Result<String, String>> {
         }
     }
     None
+}
+
+/// Reads the `--doc` mode wherever it appears.
+///
+/// The documentation generator is a parse-only tool: it accepts files and one
+/// output directory, never a profile or a command word. A malformed line still
+/// returns its usage message.
+fn doc_argument(args: &[String]) -> Option<Result<DocOptions, String>> {
+    if !args.iter().any(|argument| argument == "--doc") {
+        return None;
+    }
+    let mut output = None;
+    let mut files = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        match argument {
+            "--doc" => {}
+            "-o" | "--output" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return Some(Err(format!("{argument} needs a value")));
+                };
+                output = Some(value.clone());
+            }
+            _ if argument.starts_with("--output=") => {
+                output = Some(argument["--output=".len()..].to_owned());
+            }
+            _ if argument.starts_with("-o=") => {
+                output = Some(argument["-o=".len()..].to_owned());
+            }
+            _ if argument.starts_with('-') => {
+                return Some(Err(format!("unknown option '{argument}' in --doc mode")));
+            }
+            _ => files.push(argument.to_owned()),
+        }
+        index += 1;
+    }
+    if files.is_empty() {
+        return Some(Err("--doc needs at least one input file".to_owned()));
+    }
+    Some(Ok(DocOptions { output, files }))
 }
 
 /// Reads the options and files after the command word.

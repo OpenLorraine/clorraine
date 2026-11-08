@@ -1,0 +1,9 @@
+/// Input and output helpers.
+module app.io;
+
+import { Entry } from app.core;
+
+/// Wraps an entry unchanged.
+export func wrap(take entry: Entry<i32>): Entry<i32> {
+    return entry;
+}

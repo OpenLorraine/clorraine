@@ -14,6 +14,7 @@
 mod artifacts;
 mod build;
 mod cli;
+mod docgen;
 mod display;
 mod environment;
 mod run;
@@ -58,6 +59,7 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
             println!("{}", cli::version_text());
             0
         }
+        Ok(Action::Doc(options)) => docgen::run(&options),
         Ok(Action::Explain(code)) => match registry::explain(&code) {
             Some(text) => {
                 print!("{text}");

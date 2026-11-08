@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 39/56 tasks (69%)
+> **Progress**: 47/56 tasks (84%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -257,31 +257,31 @@ the project gates.
 **Reference**: [03-04](03-04-doc-generator.md) · [07](07-testing-strategy.md) ST-39 to ST-46 · AR-17 to AR-22
 **Objective**: Author the fixture and golden from the specification.
 
-- [ ] 6.1.1 [spec-author] Write the two-module fixture, golden tree, and `docgen_spec_test.rs` — `compiler/tests/fixtures/doc/`, `compiler/tests/docgen_spec_test.rs`
-- [ ] 6.1.2 Run the suite and record the red phase (`--doc` is unknown) — `cargo test -p clc --test docgen_spec_test`
+- [x] 6.1.1 [spec-author] Write the two-module fixture, golden tree, and `docgen_spec_test.rs` — `compiler/tests/fixtures/doc/`, `compiler/tests/docgen_spec_test.rs`
+- [x] 6.1.2 Run the suite and record the red phase (`--doc` is unknown) — `cargo test -p clc --test docgen_spec_test`
 
 ### Step 6.2: Implementation
 
 **Reference**: [03-04](03-04-doc-generator.md) §CLI, §Extraction, §Rendering, §Output safety · AR-17 to AR-21
 **Objective**: Turn `///` plus declarations into linked Markdown.
 
-- [ ] 6.2.1 Add the `--doc` action, dedicated argument scan, help text, and default output — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs`
-- [ ] 6.2.2 Implement comment extraction and exact signature slices — `compiler/src/clorraine/docgen.rs`
-- [ ] 6.2.3 Implement module pages, index, related links, anchors, and path validation — `compiler/src/clorraine/docgen.rs`
-- [ ] 6.2.4 Run the golden suite green — `cargo test -p clc --test docgen_spec_test`
+- [x] 6.2.1 Add the `--doc` action, dedicated argument scan, help text, and default output — `compiler/src/clorraine/cli.rs`, `compiler/src/clorraine/mod.rs`
+- [x] 6.2.2 Implement comment extraction and exact signature slices — `compiler/src/clorraine/docgen.rs`
+- [x] 6.2.3 Implement module pages, index, related links, anchors, and path validation — `compiler/src/clorraine/docgen.rs`
+- [x] 6.2.4 Run the golden suite green — `cargo test -p clc --test docgen_spec_test`
 
 ### Step 6.3: Implementation tests and verification
 
 **Reference**: [03-04](03-04-doc-generator.md) §Testing Requirements · AR-18, AR-21
 **Objective**: Pin attachment and safety edges.
 
-- [ ] 6.3.1 Add unit tests for blank-line separation, orphans, anchor collisions, and invalid names — `compiler/src/clorraine/docgen.rs`
-- [ ] 6.3.2 Run `make check` — no source file
+- [x] 6.3.1 Add unit tests for blank-line separation, orphans, anchor collisions, and invalid names — `compiler/src/clorraine/docgen.rs`
+- [x] 6.3.2 Run `make check` — no source file
 
 **Deliverables**:
-- [ ] Deterministic golden output
-- [ ] Exact signatures and identifiers
-- [ ] Invalid input writes nothing
+- [x] Deterministic golden output
+- [x] Exact signatures and identifiers
+- [x] Invalid input writes nothing
 
 **Verify**: `make check`
 

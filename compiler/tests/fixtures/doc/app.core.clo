@@ -1,0 +1,39 @@
+/// Core application types.
+module app.core;
+
+/// A stored value.
+export struct Entry<T> {
+    value: T;
+}
+
+/// A failure code.
+export enum Failure : u8 {
+    None,
+    Bad,
+}
+
+/// An owned handle.
+export handle Token freedBy releaseToken;
+
+/// The default entry count.
+export const DEFAULT_COUNT: u32 = 4;
+
+/// The current entry.
+export let current: i32 = 0;
+
+/// Releases a token.
+export func releaseToken(take token: Token): void {
+}
+
+/// Creates an entry.
+///
+/// The value moves into the entry.
+export func makeEntry<T>(take value: T): Entry<T> {
+    return Entry<T> { value: value };
+}
+
+/// Describes an entry.
+export func describe(
+    borrow entry: Entry<i32>
+): void {
+}
