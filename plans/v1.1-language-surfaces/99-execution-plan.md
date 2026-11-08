@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 38/74 tasks (51%)
+> **Progress**: 42/74 tasks (57%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -256,8 +256,8 @@ can read it, and use it in both the validator and the emitter.
 concrete-`func` rejection, the generic-bound carve-out, and the generic-body
 restriction.
 
-- [ ] 4.1.1 [spec-author] Write the hook rejection/acceptance cases: capture-less accept; capturing at `borrow` still `E10400` in this phase; unmarked/`const`/`take` reject; user func reject; stored APIs reject; view/borrow/fixed-array signature reject; mismatch; non-callable; generic bound accept; generic body reject; short-circuit; `[borrow x]` capture — `compiler/tests/v11_language_surfaces_spec_test.rs`
-- [ ] 4.1.2 Record the red run: a capturing lambda at an unmarked ffi callback is accepted and emits `ClClosure_N`; a view callback is accepted
+- [x] 4.1.1 [spec-author] Write the hook rejection/acceptance cases: capture-less accept; capturing at `borrow` still `E10400` in this phase; unmarked/`const`/`take` reject; user func reject; stored APIs reject; view/borrow/fixed-array signature reject; mismatch; non-callable; generic bound accept; generic body reject; short-circuit; `[borrow x]` capture — `compiler/tests/v11_language_surfaces_spec_test.rs` ✅ (completed: 2026-11-08 08:38)
+- [x] 4.1.2 Record the red run: a capturing lambda at an unmarked ffi callback is accepted and emits `ClClosure_N`; a view callback is accepted ✅ (completed: 2026-11-08 08:38; 9 intended failures, recorded in `05-findings.md` §3.4)
 
 ### Step 4.2: Sema and record
 
@@ -265,9 +265,9 @@ restriction.
 **Objective**: Add the function-type branch and the ABI-identical check; keep
 all capturing `func` arguments rejected until the emission path exists.
 
-- [ ] 4.2.1 Thread the call-node address from `check_expr` into `check_ffi_arguments`; convert `ffi_parameter_types` and both ffi call paths to `(Ty, Mode)` — `compiler/src/sema/{expr,call}.rs`
-- [ ] 4.2.2 Add the `Func` argument branch: signature match, `E10400` for every capturing closure (including `borrow` until Phase 5), `E10210` for the ABI set, `E10200` for non-callables — `compiler/src/sema/call.rs`
-- [ ] 4.2.3 Run the focused suite and `make check`; commit the hook-rejection task
+- [x] 4.2.1 Thread the call-node address from `check_expr` into `check_ffi_arguments`; convert `ffi_parameter_types` and both ffi call paths to `(Ty, Mode)` — `compiler/src/sema/{expr,call}.rs` ✅ (completed: 2026-11-08 08:38)
+- [x] 4.2.2 Add the `Func` argument branch: signature match, `E10400` for every capturing closure (including `borrow` until Phase 5), `E10210` for the ABI set, `E10200` for non-callables — `compiler/src/sema/call.rs` ✅ (completed: 2026-11-08 08:38)
+- [~] 4.2.3 Run the focused suite and `make check`; commit the hook-rejection task (started: 2026-11-08 08:38)
 
 **Deliverables**:
 - [ ] The base invalid-C capture is now `E10400`

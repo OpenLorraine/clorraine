@@ -69,6 +69,16 @@ the base).
 | capturing lambda at a `borrow` callback | same invalid C (the marker is not special yet) |
 | view/borrow/fixed-array callback | accepted; the lifted lambda's C spelling differs from the ABI |
 
+**Red run (2026-11-08)**: the new hook suite compiled the base with
+`cargo test --test v11_language_surfaces_spec_test` — 9 of the new cases failed
+and 63 older cases passed. The compiler accepted a capturing lambda at an
+unmarked, `const`, `take`, and `borrow` callback and emitted
+`((ClClosure_0){ cl_lambda_0, ... })` into a `LONG (*)(LONG)` parameter; it also
+accepted `str`, `i32[]`, `i32[2]`, and `func(): i32[2]` callbacks, a
+`borrow Owned` (move-only struct) callback, and a non-callable `1` argument.
+The mismatch case reported `E10219` only because the first probe used a
+non-existent `i64` spelling; the committed case uses `u8` and now passes.
+
 ## 4. Gate Log
 
 | Gate | Command | Result | Log |
@@ -76,6 +86,7 @@ the base).
 | Baseline | `make check` | exit 0 | `build/v11/make-check-baseline.log` |
 | Requirements preflight | document audit | passed with notes | [report](00-preflight-report-requirements.md) |
 | Plan preflight | document audit | passed | [report](00-preflight-report.md) |
+| Phase 4 focused suite | `cargo test --test v11_language_surfaces_spec_test` | 74 passed, 0 failed | `build/v11/spec-green-phase4.log` (ignored) |
 
 The phase gate logs are appended as each phase completes.
 
