@@ -1,9 +1,8 @@
-//! Behavior oracle for the compiler robustness closeout.
+//! Behavior oracle for the compiler's guard, arithmetic, float, and enum rules.
 //!
-//! The cases derive from the requirements: fill operand guards, narrow
-//! arithmetic wrapping, the inline shift divisor, `f32` folding, and enum
-//! member values and conversions. The emitted shapes are pinned separately in
-//! the implementation suite.
+//! The cases cover fill operand guards, narrow arithmetic wrapping, the inline
+//! shift divisor, `f32` folding, and enum member values and conversions. The
+//! emitted shapes are pinned separately in the implementation suite.
 //!
 //! The suite opts into both sanitizer legs. `RDC_ASAN` adds AddressSanitizer to
 //! every child build; `RDC_UBSAN` adds UndefinedBehaviorSanitizer. The
@@ -334,7 +333,7 @@ int main(void) { volatile int value = INT_MAX; value = value + 1; return value =
 }
 
 // ---------------------------------------------------------------------------
-// D1 — fill operand guards
+// Fill operand guards
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -875,7 +874,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D2/D4 — narrow arithmetic wrapping
+// Narrow arithmetic wrapping
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1056,7 +1055,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D6 — enum member values and conversion
+// Enum member values and conversion
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1220,7 +1219,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D5 — f32 rounding and constant float-to-integer overflow
+// f32 rounding and constant float-to-integer overflow
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1392,7 +1391,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D3 — inline constant shift divisor
+// Inline constant shift divisor
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -1,8 +1,8 @@
 // A build-only fixture for the generated-C shapes: a folded const in a loop,
 // a byte fill, an integer fill, a slice constant index, an adjusted-parameter
-// fill, a hidden-return fill, a constant division, and the robustness
-// closeout shapes (narrow consts, a narrow fill, an f32 const, an enum, and a
-// guarded slice fill).
+// fill, a hidden-return fill, a constant division, and the guard, narrow
+// arithmetic, f32, and enum shapes (narrow consts, a narrow fill, an f32
+// const, an enum, and a guarded slice fill).
 module bench.Shapes;
 
 const N: i32 = 64;

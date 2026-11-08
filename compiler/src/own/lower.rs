@@ -790,9 +790,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         match scalar {
             // A folded float read may differ from its stored value in the last
-            // bit, and materializing floats is a storage decision outside this
-            // closeout. Float constants stay places; the folder now rounds at
-            // the declared width for the constant contexts that consume them.
+            // bit, and materializing floats is a separate storage decision.
+            // Float constants stay places; the folder rounds at the declared
+            // width for the constant contexts that consume them.
             ScalarType::F32 | ScalarType::F64 => None,
             ScalarType::Bool => match folder.fold(initializer).ok()? {
                 crate::consts::ConstValue::Bool(value) => {

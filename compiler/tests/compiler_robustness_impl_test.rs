@@ -1,4 +1,4 @@
-//! Emission pins for the compiler robustness closeout.
+//! Emission pins for compiler robustness.
 //!
 //! The red pins fail on the starting compiler; the green pins are regression
 //! guards for forms the change must leave alone. Guard counts are scoped to the
@@ -147,7 +147,7 @@ fn assert_absent(tag: &str, haystack: &str, needle: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// D1 — fill guard counts
+// Fill guard counts
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -345,7 +345,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D2/D4 — narrow result wrapping
+// Narrow result wrapping
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -431,7 +431,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D6 — enum member values and conversion
+// Enum member values and conversion
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -578,7 +578,7 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
-// D3 — inline constant shift divisor
+// Inline constant shift divisor
 // ---------------------------------------------------------------------------
 
 #[test]
