@@ -355,6 +355,16 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
             .with_help("remove one declaration; declaration merging forbids duplicates"),
         );
     }
+    for (name, module, span) in table.cross_module_handle_collisions() {
+        diagnostics.push(
+            Diagnostic::error(
+                "E11101",
+                format!("duplicate declaration of '{name}' in module '{module}'"),
+                span,
+            )
+            .with_help("remove one declaration; declaration merging forbids duplicates"),
+        );
+    }
     // A global initializer cycle has no valid initialization order, so it is
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);

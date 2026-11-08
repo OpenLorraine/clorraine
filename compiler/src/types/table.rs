@@ -111,6 +111,11 @@ pub struct TypeTable {
     /// stage report a cross-module collision without changing the keys or the
     /// emitter's type identity.
     struct_origins: BTreeMap<String, Vec<(String, Span)>>,
+    /// Every module that declares each simple handle name, in build order.
+    ///
+    /// A handle has exactly one deleter, so a cross-module duplicate is an
+    /// error; the first origin is the declaration both stages use.
+    handle_origins: BTreeMap<String, Vec<(String, Span)>>,
     enums: BTreeMap<String, EnumInfo>,
     handles: BTreeSet<String>,
     functions: BTreeMap<String, BTreeMap<String, FuncSig>>,
@@ -127,8 +132,23 @@ impl TypeTable {
     /// loader's declaration error, so only the first origin from a different
     /// module is returned for each name.
     pub fn cross_module_struct_collisions(&self) -> Vec<(String, String, Span)> {
+        Self::cross_module_collisions(&self.struct_origins)
+    }
+
+    /// Reports each cross-module handle-name collision at its second origin.
+    ///
+    /// A handle has exactly one deleter, so two modules may not declare the
+    /// same handle; the same-module duplicate is the loader's error.
+    pub fn cross_module_handle_collisions(&self) -> Vec<(String, String, Span)> {
+        Self::cross_module_collisions(&self.handle_origins)
+    }
+
+    /// Shared worker for the two origin maps.
+    fn cross_module_collisions(
+        origins: &BTreeMap<String, Vec<(String, Span)>>,
+    ) -> Vec<(String, String, Span)> {
         let mut collisions = Vec::new();
-        for (name, origins) in &self.struct_origins {
+        for (name, origins) in origins {
             let Some((first_module, _)) = origins.first() else {
                 continue;
             };
@@ -151,6 +171,10 @@ impl TypeTable {
             ..TypeTable::default()
         };
         table.handles.insert("String".to_owned());
+        table.handle_origins.insert(
+            "String".to_owned(),
+            vec![("<predeclared>".to_owned(), Span::default())],
+        );
 
         for module in loaded.modules.values() {
             for item in &module.items {
@@ -171,6 +195,11 @@ impl TypeTable {
                     }
                     Item::Handle(decl) => {
                         table.handles.insert(decl.name.clone());
+                        table
+                            .handle_origins
+                            .entry(decl.name.clone())
+                            .or_default()
+                            .push((module.name.clone(), decl.name_span));
                     }
                     Item::Func(decl) | Item::Comptime(decl) => {
                         table

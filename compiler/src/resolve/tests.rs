@@ -268,21 +268,3 @@ fn import_used_only_in_an_ffi_signature_is_not_unused() {
     ]);
     assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:?}");
 }
-
-#[test]
-fn qualified_deleter_resolves_in_its_own_module() {
-    let diagnostics = resolve_sources(&[r#"
-module app;
-
-handle File freedBy app.Close;
-
-ffi lib {
-    func Close(f: File): void;
-}
-
-func main(): i32 {
-    return 0;
-}
-"#]);
-    assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:?}");
-}

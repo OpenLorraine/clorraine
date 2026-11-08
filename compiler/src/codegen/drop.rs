@@ -289,30 +289,24 @@ impl<'a> Emitter<'a> {
     }
 
     /// The C symbol of a handle's deleter.
+    ///
+    /// The identity was resolved once in the handle's declaring module, so an
+    /// ordinary function mangles its own module and an `ffi` function keeps
+    /// its C name. A dotted written name is never passed to either spelling.
     fn deleter_symbol(&self, handle: &str) -> String {
         if handle == "String" {
             return "FreeString".to_owned();
         }
-        let deleter = self.handle_deleter(handle).unwrap_or_else(|| handle.to_owned());
-        if let Some(info) = self.resolve_function(&deleter) {
-            self.function_symbol(&info.module, &deleter)
+        let identity = self
+            .ownership
+            .deleter_identities
+            .get(handle)
+            .unwrap_or_else(|| panic!("handle '{handle}' has no resolved deleter"));
+        if identity.ffi {
+            identity.name.clone()
         } else {
-            deleter
+            self.function_symbol(&identity.module, &identity.name)
         }
-    }
-
-    /// Finds the `freedBy` deleter name of a handle declaration.
-    fn handle_deleter(&self, handle: &str) -> Option<String> {
-        for module in self.loaded.modules.values() {
-            for item in &module.items {
-                if let crate::ast::Item::Handle(decl) = item {
-                    if decl.name == handle {
-                        return Some(decl.freed_by.segments.join("_"));
-                    }
-                }
-            }
-        }
-        None
     }
 }
 

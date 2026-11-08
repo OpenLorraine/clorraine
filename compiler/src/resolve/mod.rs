@@ -79,7 +79,10 @@ impl Resolver<'_, '_> {
                     }
                 }
             }
-            Item::Handle(decl) => self.resolve_dotted_name(&decl.freed_by),
+            // A handle's `freedBy` name is resolved by the ownership stage,
+            // which owns the E10102 diagnostic. The name resolver must not
+            // preempt it with an undeclared-name error.
+            Item::Handle(_) => {}
             Item::Ffi(block) => {
                 for signature in &block.decls {
                     self.resolve_signature(signature);
@@ -402,8 +405,8 @@ impl Resolver<'_, '_> {
         }
     }
 
-    /// Resolves a dotted name in a type or deleter position, reporting an
-    /// undeclared name.
+    /// Resolves a dotted name in a type position, reporting an undeclared
+    /// name.
     ///
     /// A single segment is a lexical or module-scope name; a longer name is
     /// either a module path or a member of something in scope.

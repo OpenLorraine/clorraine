@@ -73,6 +73,32 @@ fn compile(tag: &str, profile: &str, source: &str) -> (ScratchDir, String) {
     (scratch, c)
 }
 
+/// Compiles two modules and returns the scratch directory and emitted C.
+fn compile_two(tag: &str, first: &str, second: &str) -> (ScratchDir, String) {
+    let scratch = ScratchDir::new(tag);
+    let first_path = scratch.path().join("a.clo");
+    let second_path = scratch.path().join("b.clo");
+    std::fs::write(&first_path, first).expect("write the first module");
+    std::fs::write(&second_path, second).expect("write the second module");
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        first_path.display().to_string(),
+        second_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let c = std::fs::read_to_string(&c_path).expect("read the emitted C");
+    (scratch, c)
+}
+
 /// A minimal program wrapper.
 fn program(items: &str) -> String {
     format!("module spec.v11.impl;\n{items}\nfunc main(): i32 {{ return 0; }}\n")
@@ -219,5 +245,46 @@ fn a_generic_box_new_names_the_concrete_helper() {
     assert!(
         c.contains("cl_box_alloc__String"),
         "the concrete String helper must be emitted; emitted:\n{c}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// X1: ordinary freedBy deleters
+// ---------------------------------------------------------------------------
+
+/// A same-module ordinary deleter uses its mangled module symbol.
+#[test]
+fn an_ordinary_deleter_uses_its_module_symbol() {
+    let (_scratch, c) = compile(
+        "x1-symbol",
+        "host",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi lib { func cl_free_widget(take w: Widget): void; }\n\
+             func freeWidget(take w: Widget): void { cl_free_widget(w); }\n\
+             func demo(take w: Widget): void { }",
+        ),
+    );
+    assert!(
+        c.contains("cl_spec_v11_impl_freeWidget(w)"),
+        "the ordinary deleter must use its module symbol; emitted:\n{c}"
+    );
+}
+
+/// A cross-module qualified deleter is mangled once, not twice.
+#[test]
+fn a_cross_module_deleter_is_not_double_mangled() {
+    let (_scratch, c) = compile_two(
+        "x1-cross-symbol",
+        "module a;\nexport handle Widget freedBy b.freeWidget;\nfunc demo(take w: Widget): void { }\nfunc main(): i32 { return 0; }\n",
+        "module b;\nffi lib { func cl_free_widget(take w: a.Widget): void; }\nexport func freeWidget(take w: a.Widget): void { cl_free_widget(w); }\n",
+    );
+    assert!(
+        c.contains("cl_b_freeWidget(w)"),
+        "the qualified deleter must mangle once; emitted:\n{c}"
+    );
+    assert!(
+        !c.contains("cl_b_b_freeWidget"),
+        "the qualified deleter must not double-mangle; emitted:\n{c}"
     );
 }

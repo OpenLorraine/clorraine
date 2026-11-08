@@ -1,10 +1,11 @@
-//! AddressSanitizer memory proof for the `Box<T>` drop glue.
+//! AddressSanitizer memory proof for the v1.1 drop paths.
 //!
-//! One program exercises every owning path the type model and library add:
-//! scalar, String, `boxSet`, a nested box, a growable array, a struct with an
-//! owned field, a recursive list, a loop, a reassignment, a defer, and a null
-//! slot. It runs in its own suite so the sanitizer child build is not mixed
-//! with the behavior suite's many short-lived compilations.
+//! One program exercises every owning path the feature adds: the `Box<T>`
+//! allocation, replacement, nested, container, struct, recursive-list, loop,
+//! reassignment, defer, and null shapes; and an ordinary `freedBy` deleter that
+//! consumes its handle and drops an owned field. It runs in its own suite so
+//! the sanitizer child build is not mixed with the behavior suite's many
+//! short-lived compilations.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -41,12 +42,24 @@ impl Drop for ScratchDir {
     }
 }
 
-/// The comprehensive box memory program.
+/// The comprehensive memory program.
 const SOURCE: &str = r#"module spec.v11.memory;
 import { boxNew, boxSet, boxWith, arrayNew, push, Array } from std.mem;
 import { String, stringOf, bytes } from std.text;
 struct Node { value: i32; next: Box<Node>?; }
 struct Holder { s: String; }
+struct Payload { s: String; }
+handle Widget freedBy freeWidget;
+ffi widget {
+    func cl_widget_new(): Widget;
+    func cl_widget_free(take w: Widget): void;
+}
+func freeWidget(take w: Widget): void {
+    unsafe {
+        let payload: Payload = *raw Payload(w);
+    }
+    cl_widget_free(w);
+}
 func demo(): i32 {
     let b = boxNew<i32>(7);
     let n: i32 = 0;
@@ -76,31 +89,36 @@ func demo(): i32 {
     defer {
         let d = boxNew<i32>(9);
     }
+    let w = cl_widget_new();
+    unsafe {
+        *raw Payload(w) = Payload { s: stringOf("owned") };
+    }
     return 0;
 }
 func main(): i32 { return demo(); }
 "#;
 
-/// The comprehensive Box program emits, builds under the strict flags with
-/// AddressSanitizer, and runs with leak detection.
-#[test]
-fn the_box_memory_case_is_clean() {
-    if std::env::var_os("RDC_ASAN").is_none() {
-        eprintln!("skip: RDC_ASAN is not set");
-        return;
-    }
-    let scratch = ScratchDir::new("case");
+/// The C fixture behind the widget allocator/release.
+const FIXTURE: &str = r#"#include <stdlib.h>
+#include <string.h>
+void *cl_widget_new(void) { return calloc(1, 64); }
+void cl_widget_free(void *p) { free(p); }
+"#;
+
+/// Compiles, builds with the fixture under ASan, and runs the program.
+fn run_memory_case(tag: &str) -> std::process::Output {
+    let scratch = ScratchDir::new(tag);
     let source_path = scratch.path().join("main.clo");
     std::fs::write(&source_path, SOURCE).expect("write the program");
     let c_path = scratch.path().join("out.c");
     let compile = Command::new("timeout")
         .args(["60", env!("CARGO_BIN_EXE_clc")])
         .args([
-        "--profile".to_owned(),
-        "host".to_owned(),
-        "-o".to_owned(),
-        c_path.display().to_string(),
-        source_path.display().to_string(),
+            "--profile",
+            "host",
+            "-o",
+            c_path.to_str().expect("C path"),
+            source_path.to_str().expect("source path"),
         ])
         .output()
         .expect("failed to spawn the compiler binary");
@@ -110,6 +128,8 @@ fn the_box_memory_case_is_clean() {
         "the memory program was rejected; stderr:\n{}",
         String::from_utf8_lossy(&compile.stderr)
     );
+    let fixture_path = scratch.path().join("fixture.c");
+    std::fs::write(&fixture_path, FIXTURE).expect("write the fixture");
     let program = scratch.path().join("prog");
     let built = Command::new("timeout")
         .args(["60", "cc"])
@@ -126,6 +146,7 @@ fn the_box_memory_case_is_clean() {
         ])
         .arg(&program)
         .arg(&c_path)
+        .arg(&fixture_path)
         .output()
         .expect("failed to spawn the host C compiler");
     assert!(
@@ -133,11 +154,21 @@ fn the_box_memory_case_is_clean() {
         "the strict host C compiler rejected the memory program; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
-    let result = Command::new("timeout")
+    Command::new("timeout")
         .args(["30", program.to_str().expect("program path")])
         .env("ASAN_OPTIONS", "detect_leaks=1:abort_on_error=1")
         .output()
-        .expect("failed to run the memory program");
+        .expect("failed to run the memory program")
+}
+
+/// The comprehensive Box and ordinary-deleter program is ASan-clean.
+#[test]
+fn the_v11_memory_case_is_clean() {
+    if std::env::var_os("RDC_ASAN").is_none() {
+        eprintln!("skip: RDC_ASAN is not set");
+        return;
+    }
+    let result = run_memory_case("case");
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         result.status.code() == Some(0),

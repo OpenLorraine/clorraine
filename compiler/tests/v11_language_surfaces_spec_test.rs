@@ -189,6 +189,109 @@ fn assert_run_ok(tag: &str, source: &str) {
     );
 }
 
+/// Compiles two source files and returns the scratch directory, output, and C.
+fn compile_two(tag: &str, first: &str, second: &str) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let first_path = scratch.path().join("a.clo");
+    let second_path = scratch.path().join("b.clo");
+    std::fs::write(&first_path, first).expect("write the first module");
+    std::fs::write(&second_path, second).expect("write the second module");
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        first_path.display().to_string(),
+        second_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
+/// Asserts two modules are accepted and their emitted C builds strictly.
+fn assert_accepted_two(tag: &str, first: &str, second: &str) {
+    let (scratch, output, c_path) = compile_two(tag, first, second);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+        ])
+        .arg(&program)
+        .arg(&c_path)
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the strict host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    drop(scratch);
+}
+
+/// Asserts two modules are rejected with `code`.
+fn assert_rejected_two(tag: &str, first: &str, second: &str, code: &str) {
+    let (scratch, output, c_path) = compile_two(tag, first, second);
+    let codes = error_codes(&output);
+    assert!(
+        codes.iter().any(|found| found == code),
+        "{tag}: expected {code}, got {codes:?}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!c_path.exists(), "a rejected program must not write C");
+    drop(scratch);
+}
+
+/// Compiles, builds with a C fixture, and runs a program.
+fn run_host_fixture(tag: &str, source: &str, fixture: &str) -> Output {
+    let (scratch, output, c_path) = compile_only(tag, "host", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let fixture_path = scratch.path().join("fixture.c");
+    std::fs::write(&fixture_path, fixture).expect("write the C fixture");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+        ])
+        .arg(&program)
+        .arg(&c_path)
+        .arg(&fixture_path)
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the strict host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let result = Command::new(&program)
+        .output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
+    drop(scratch);
+    result
+}
+
 /// A minimal program wrapper around a `Box` declaration.
 fn program(items: &str) -> String {
     format!("module spec.v11;\n{items}\nfunc main(): i32 {{ return 0; }}\n")
@@ -758,5 +861,280 @@ fn a_nullable_box_argument_needs_narrowing() {
              }",
         ),
         "E10010",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// X1: ordinary Clorraine freedBy deleters.
+// ---------------------------------------------------------------------------
+
+/// A same-module ordinary `take T -> void` function is a valid deleter and
+/// releases the handle exactly once at scope exit.
+#[test]
+fn a_same_module_ordinary_deleter_is_accepted() {
+    let output = run_host_fixture(
+        "x1-same-module",
+        r#"module spec.v11;
+import { String, stringOf } from std.text;
+handle Widget freedBy freeWidget;
+ffi lib {
+    func cl_widget_new(): Widget;
+    func cl_widget_free(take w: Widget): void;
+}
+func freeWidget(take w: Widget): void {
+    let s = stringOf("x");
+    cl_widget_free(w);
+}
+func demo(): i32 {
+    let w = cl_widget_new();
+    return 0;
+}
+func main(): i32 { return demo(); }
+"#,
+        r#"#include <stdlib.h>
+void *cl_widget_new(void) { return malloc(16); }
+void cl_widget_free(void *p) { free(p); }
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the forwarding deleter exited {:?}; stderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// An exported cross-module ordinary deleter resolves through its module.
+#[test]
+fn a_cross_module_exported_deleter_is_accepted() {
+    let (scratch, output, c_path) = compile_two(
+        "x1-cross-module",
+        "module a;\nexport handle Widget freedBy b.freeWidget;\nfunc main(): i32 { return 0; }\n",
+        "module b;\nffi lib { func cl_free_widget(take w: a.Widget): void; }\nexport func freeWidget(take w: a.Widget): void { cl_free_widget(w); }\n",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the cross-module deleter was rejected; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let c = std::fs::read_to_string(&c_path).expect("read the emitted C");
+    assert!(c.contains("cl_b_freeWidget"), "the deleter symbol is missing; emitted:\n{c}");
+    drop(scratch);
+}
+
+/// A simple imported deleter name resolves in the handle's module scope.
+#[test]
+fn a_cross_module_imported_deleter_is_accepted() {
+    let (scratch, output, c_path) = compile_two(
+        "x1-imported",
+        "module a;\nimport { freeWidget } from b;\nexport handle Widget freedBy freeWidget;\nfunc main(): i32 { return 0; }\n",
+        "module b;\nffi lib { func cl_free_widget(take w: a.Widget): void; }\nexport func freeWidget(take w: a.Widget): void { cl_free_widget(w); }\n",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the imported deleter was rejected; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let c = std::fs::read_to_string(&c_path).expect("read the emitted C");
+    assert!(c.contains("cl_b_freeWidget"), "the deleter symbol is missing; emitted:\n{c}");
+    drop(scratch);
+}
+
+/// A wrong mode is E10102.
+#[test]
+fn a_deleter_with_the_wrong_mode_is_rejected() {
+    assert_rejected(
+        "x1-wrong-mode",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             func freeWidget(w: Widget): void { }",
+        ),
+        "E10102",
+    );
+}
+
+/// A non-void return is E10102.
+#[test]
+fn a_deleter_with_a_non_void_return_is_rejected() {
+    assert_rejected(
+        "x1-return",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             func freeWidget(take w: Widget): i32 { return 0; }",
+        ),
+        "E10102",
+    );
+}
+
+/// A wrong parameter type is E10102.
+#[test]
+fn a_deleter_with_the_wrong_parameter_type_is_rejected() {
+    assert_rejected(
+        "x1-param",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             func freeWidget(take w: i32): void { }",
+        ),
+        "E10102",
+    );
+}
+
+/// An unresolved deleter name is E10102.
+#[test]
+fn a_missing_deleter_is_rejected() {
+    assert_rejected(
+        "x1-missing",
+        &program("handle Widget freedBy missing;"),
+        "E10102",
+    );
+}
+
+/// An intrinsic is not a user deleter.
+#[test]
+fn an_intrinsic_deleter_is_rejected() {
+    assert_rejected(
+        "x1-intrinsic",
+        &program("handle Widget freedBy rawStr;"),
+        "E10102",
+    );
+}
+
+/// A generic function is not a deleter in v1.1.
+#[test]
+fn a_generic_deleter_is_rejected() {
+    assert_rejected(
+        "x1-generic",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             func freeWidget<T>(take w: Widget): void { }",
+        ),
+        "E10102",
+    );
+}
+
+/// Two modules may not declare the same handle.
+#[test]
+fn a_cross_module_handle_duplicate_is_rejected() {
+    assert_rejected_two(
+        "x1-duplicate",
+        "module a;\nexport handle Widget freedBy b.freeWidget;\nfunc main(): i32 { return 0; }\n",
+        "module b;\nexport handle Widget freedBy b.freeWidget;\nexport func freeWidget(take w: a.Widget): void { }\n",
+        "E11101",
+    );
+}
+
+/// A deleter body may drop an owned field through the opaque handle.
+#[test]
+fn an_owned_field_deleter_releases_once() {
+    let output = run_host_fixture(
+        "x1-owned-field",
+        r#"module spec.v11;
+import { String, stringOf } from std.text;
+handle Widget freedBy freeWidget;
+ffi lib {
+    func cl_widget_new(): Widget;
+    func cl_widget_free(take w: Widget): void;
+}
+struct Payload { s: String; }
+func freeWidget(take w: Widget): void {
+    unsafe {
+        let payload: Payload = *raw Payload(w);
+    }
+    cl_widget_free(w);
+}
+func demo(): i32 {
+    let w = cl_widget_new();
+    unsafe {
+        *raw Payload(w) = Payload { s: stringOf("owned") };
+    }
+    return 0;
+}
+func main(): i32 { return demo(); }
+"#,
+        r#"#include <stdlib.h>
+#include <string.h>
+void *cl_widget_new(void) { return calloc(1, 64); }
+void cl_widget_free(void *p) { free(p); }
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the owned-field deleter exited {:?}; stderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A deleter body that never releases its `take` parameter is rejected.
+#[test]
+fn a_non_consuming_deleter_is_rejected() {
+    assert_rejected(
+        "x1-non-consuming",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             func freeWidget(take w: Widget): void { }",
+        ),
+        "E10102",
+    );
+}
+
+/// A private cross-module function is not a deleter.
+#[test]
+fn a_private_cross_module_deleter_is_rejected() {
+    let (scratch, output, _c_path) = compile_two(
+        "x1-private",
+        "module a;\nexport handle Widget freedBy b.freeWidget;\nfunc main(): i32 { return 0; }\n",
+        "module b;\nfunc freeWidget(take w: a.Widget): void { }\n",
+    );
+    let codes = error_codes(&output);
+    assert!(
+        codes.iter().any(|code| code == "E10102"),
+        "expected E10102, got {codes:?}"
+    );
+    drop(scratch);
+}
+
+/// A same-module declaration of another kind shadows a program-wide function.
+#[test]
+fn a_non_function_declaration_shadows_the_deleter() {
+    assert_rejected(
+        "x1-struct-shadow",
+        &program(
+            "struct freeWidget { x: i32; }\n\
+             handle Widget freedBy freeWidget;",
+        ),
+        "E10102",
+    );
+}
+
+/// A user `handle String` is a duplicate of the predeclared handle.
+#[test]
+fn a_user_string_handle_is_rejected() {
+    assert_rejected(
+        "x1-string-duplicate",
+        &program(
+            "ffi lib { func freeS(take s: String): void; }\n\
+             handle String freedBy freeS;",
+        ),
+        "E11101",
+    );
+}
+
+/// A handle remains move-only under an ordinary deleter.
+#[test]
+fn an_ordinary_deleter_keeps_the_handle_move_only() {
+    assert_rejected(
+        "x1-move-only",
+        &program(
+            "handle Widget freedBy freeWidget;\n\
+             ffi lib { func cl_free_widget(take w: Widget): void; }\n\
+             func freeWidget(take w: Widget): void { cl_free_widget(w); }\n\
+             func demo(take w: Widget): void { let a = w; let b = w; }",
+        ),
+        "E10020",
     );
 }

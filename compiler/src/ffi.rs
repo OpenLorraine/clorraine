@@ -7,11 +7,11 @@
 //! `freedBy`) and the small classification helpers the call-site and
 //! unsafe-context checks share.
 
-use crate::ast::{FuncSignature, Item, Mode, StructDecl, Type, TypeKind};
+use crate::ast::{FuncSignature, Item, Mode, StructDecl, Type};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::types::{resolve_ty, resolve_ty_folded, Ty, TyKind, TypeTable};
 
-use super::own::program::{type_name_matches, ProgramInfo};
+use super::own::program::{HandleInfo, ProgramInfo};
 
 /// Checks the declaration-level FFI rules of a whole program.
 ///
@@ -57,7 +57,7 @@ pub fn check_items(program: &ProgramInfo, table: &TypeTable, diagnostics: &mut D
         }
     }
     for handle in program.handles.values() {
-        if !deleter_is_valid(handle.deleter.as_str(), &handle.name, program) {
+        if !deleter_is_valid(handle, table, program) {
             diagnostics.push(
                 Diagnostic::error(
                     "E10102",
@@ -67,8 +67,28 @@ pub fn check_items(program: &ProgramInfo, table: &TypeTable, diagnostics: &mut D
                     ),
                     handle.span,
                 )
-                .with_help("declare the deleter in an `ffi` block with the right signature"),
+                .with_help("declare a function taking 'take T' and returning 'void'"),
             );
+        } else if let Some(decl) = ordinary_deleter_decl(handle, program) {
+            // The deleter's own `take` parameter is not dropped at its scope
+            // exit (that would call the function again). The body must release
+            // it explicitly; a body that never consumes it would leak.
+            let Some(param) = decl.params.first() else {
+                continue;
+            };
+            if !body_consumes_parameter(&decl.body, &param.name, &decl.name) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10102",
+                        format!(
+                            "'{}' is not a valid deleter for '{}'",
+                            handle.deleter, handle.name
+                        ),
+                        decl.name_span,
+                    )
+                    .with_help("the deleter must release its 'take' parameter"),
+                );
+            }
         }
     }
     for decl in program.structs.values() {
@@ -140,18 +160,69 @@ fn check_ffi_boundary_ty(ty: &Ty, span: crate::span::Span, diagnostics: &mut Dia
 }
 
 
-fn deleter_is_valid(deleter: &str, handle: &str, program: &ProgramInfo) -> bool {
-    let Some(signature) = program.ffi_function(deleter) else {
+fn deleter_is_valid(handle: &HandleInfo, table: &TypeTable, program: &ProgramInfo) -> bool {
+    let Some(resolved) = &handle.resolved else {
         return false;
     };
-    if signature.params.len() != 1 {
+    let Some(module) = program.loaded.module(&resolved.module) else {
+        return false;
+    };
+    for item in &module.items {
+        match item {
+            Item::Func(decl) if !resolved.ffi && decl.name == resolved.name => {
+                if !decl.type_params.is_empty() {
+                    return false;
+                }
+                return signature_is_valid(
+                    &decl.params,
+                    &decl.returns,
+                    &handle.name,
+                    module,
+                    table,
+                    program.loaded,
+                );
+            }
+            Item::Ffi(block) if resolved.ffi => {
+                for signature in &block.decls {
+                    if signature.name == resolved.name {
+                        return signature_is_valid(
+                            &signature.params,
+                            &signature.returns,
+                            &handle.name,
+                            module,
+                            table,
+                            program.loaded,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// True when a declaration is `take T -> void` for the exact handle type `T`.
+fn signature_is_valid(
+    params: &[crate::ast::Param],
+    returns: &Type,
+    handle: &str,
+    module: &crate::load::Module,
+    table: &TypeTable,
+    loaded: &crate::load::Loaded,
+) -> bool {
+    let [param] = params else {
+        return false;
+    };
+    if param.mode != Mode::Take {
         return false;
     }
-    let param = &signature.params[0];
-    param.mode == Mode::Take
-        && type_name_matches(&param.ty, handle)
-        && matches!(signature.returns.kind, TypeKind::Void)
-        && !signature.returns.nullable
+    let param_ty = resolve_ty_folded(&param.ty, &[], table, module, loaded);
+    let expected = Ty::handle(handle);
+    let returns_ty = resolve_ty_folded(returns, &[], table, module, loaded);
+    param_ty == expected
+        && matches!(returns_ty.kind, crate::types::TyKind::Void)
+        && !returns_ty.nullable
 }
 
 /// True when an `ffi` signature has at least one uncontracted parameter.
@@ -368,5 +439,215 @@ mod tests {
             }\n\
             func main(): i32 { return 0; }\n";
         assert!(!reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+}
+
+/// The ordinary function declaration a handle's deleter resolves to.
+fn ordinary_deleter_decl<'a>(
+    handle: &HandleInfo,
+    program: &'a ProgramInfo,
+) -> Option<&'a crate::ast::FuncDecl> {
+    let resolved = handle.resolved.as_ref()?;
+    if resolved.ffi {
+        return None;
+    }
+    let module = program.loaded.module(&resolved.module)?;
+    module.items.iter().find_map(|item| match item {
+        Item::Func(decl) if decl.name == resolved.name => Some(decl),
+        _ => None,
+    })
+}
+
+/// True when a deleter body passes its parameter to a call (and so moves it
+/// into that call). The body's own end-of-scope drop is suppressed, so a body
+/// with no consuming call would leak the handle.
+fn body_consumes_parameter(
+    body: &crate::ast::Block,
+    name: &str,
+    self_name: &str,
+) -> bool {
+    block_consumes(body, name, self_name)
+}
+
+/// Walks a block for a consuming call.
+fn block_consumes(block: &crate::ast::Block, name: &str, self_name: &str) -> bool {
+    block
+        .statements
+        .iter()
+        .any(|stmt| statement_consumes(stmt, name, self_name))
+}
+
+/// Walks one `if` statement for a consuming call.
+fn if_consumes(decl: &crate::ast::IfStmt, name: &str, self_name: &str) -> bool {
+    expression_consumes(&decl.condition, name, self_name)
+        || block_consumes(&decl.then_block, name, self_name)
+        || match &decl.else_branch {
+            Some(crate::ast::ElseBranch::If(inner)) => if_consumes(inner, name, self_name),
+            Some(crate::ast::ElseBranch::Block(block)) => {
+                block_consumes(block, name, self_name)
+            }
+            None => false,
+        }
+}
+
+/// Walks one statement for a consuming call.
+fn statement_consumes(stmt: &crate::ast::Stmt, name: &str, self_name: &str) -> bool {
+    use crate::ast::Stmt;
+    match stmt {
+        Stmt::Let(decl) => decl
+            .value
+            .as_ref()
+            .is_some_and(|value| expression_consumes(value, name, self_name)),
+        Stmt::Const(decl) => expression_consumes(&decl.value, name, self_name),
+        Stmt::Expr(expr) => expression_consumes(expr, name, self_name),
+        Stmt::If(decl) => if_consumes(decl, name, self_name),
+        Stmt::While(decl) => {
+            expression_consumes(&decl.condition, name, self_name)
+                || block_consumes(&decl.body, name, self_name)
+        }
+        Stmt::DoWhile(decl) => {
+            block_consumes(&decl.body, name, self_name)
+                || expression_consumes(&decl.condition, name, self_name)
+        }
+        Stmt::ForC(decl) => {
+            let init = match &decl.init {
+                Some(crate::ast::ForInit::Let(let_stmt)) => let_stmt
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| expression_consumes(value, name, self_name)),
+                Some(crate::ast::ForInit::Const(const_stmt)) => {
+                    expression_consumes(&const_stmt.value, name, self_name)
+                }
+                Some(crate::ast::ForInit::Expr(exprs)) => exprs
+                    .iter()
+                    .any(|expr| expression_consumes(expr, name, self_name)),
+                None => false,
+            };
+            init || decl
+                .condition
+                .as_ref()
+                .is_some_and(|condition| expression_consumes(condition, name, self_name))
+                || decl
+                    .step
+                    .iter()
+                    .any(|step| expression_consumes(step, name, self_name))
+                || block_consumes(&decl.body, name, self_name)
+        }
+        Stmt::ForIn(decl) => {
+            expression_consumes(&decl.iterable, name, self_name)
+                || block_consumes(&decl.body, name, self_name)
+        }
+        Stmt::Return { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expression_consumes(value, name, self_name)),
+        Stmt::Switch(decl) => {
+            expression_consumes(&decl.scrutinee, name, self_name)
+                || decl.clauses.iter().any(|clause| {
+                    let label = match &clause.label {
+                        crate::ast::SwitchLabel::Case(expr) => {
+                            expression_consumes(expr, name, self_name)
+                        }
+                        crate::ast::SwitchLabel::Default => false,
+                    };
+                    label
+                        || clause
+                            .statements
+                            .iter()
+                            .any(|stmt| statement_consumes(stmt, name, self_name))
+                })
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            block_consumes(block, name, self_name)
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => false,
+    }
+}
+
+/// True when an expression contains a call that consumes the parameter.
+fn expression_consumes(expr: &crate::ast::Expr, name: &str, self_name: &str) -> bool {
+    use crate::ast::{ExprKind, IntrinsicArg, TemplatePiece};
+    match &expr.kind {
+        ExprKind::Call { callee, args, .. } => {
+            let self_call = matches!(&callee.kind, ExprKind::Name(n) if n == self_name);
+            let consumes = !self_call
+                && args
+                    .iter()
+                    .any(|arg| expression_is_parameter(&arg.value, name));
+            consumes
+                || expression_consumes(callee, name, self_name)
+                || args
+                    .iter()
+                    .any(|arg| expression_consumes(&arg.value, name, self_name))
+        }
+        ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+            IntrinsicArg::Expr(inner) => expression_consumes(inner, name, self_name),
+            IntrinsicArg::Type(_) => false,
+        }),
+        ExprKind::Member { base, .. } => expression_consumes(base, name, self_name),
+        ExprKind::Index { base, index } => {
+            expression_consumes(base, name, self_name)
+                || expression_consumes(index, name, self_name)
+        }
+        ExprKind::Unary { operand, .. } => expression_consumes(operand, name, self_name),
+        ExprKind::Binary { left, right, .. } => {
+            expression_consumes(left, name, self_name)
+                || expression_consumes(right, name, self_name)
+        }
+        ExprKind::Assign { target, value, .. } => {
+            expression_consumes(target, name, self_name)
+                || expression_consumes(value, name, self_name)
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            expression_consumes(value, name, self_name)
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            expression_consumes(condition, name, self_name)
+                || expression_consumes(then_value, name, self_name)
+                || expression_consumes(else_value, name, self_name)
+        }
+        ExprKind::StructLiteral { fields, .. } => fields
+            .iter()
+            .any(|field| expression_consumes(&field.value, name, self_name)),
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements
+                .iter()
+                .any(|element| expression_consumes(element, name, self_name))
+                || fill
+                    .as_ref()
+                    .is_some_and(|fill| expression_consumes(fill, name, self_name))
+        }
+        ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            TemplatePiece::Placeholder(inner) => expression_consumes(inner, name, self_name),
+            TemplatePiece::Literal(_) => false,
+        }),
+        ExprKind::Unsafe(inner) => expression_consumes(inner, name, self_name),
+        ExprKind::Lambda { body, .. } => match body {
+            crate::ast::LambdaBody::Expr(inner) => expression_consumes(inner, name, self_name),
+            crate::ast::LambdaBody::Block(block) => block_consumes(block, name, self_name),
+        },
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Error => false,
+    }
+}
+
+/// True when an expression names the parameter.
+fn expression_is_parameter(expr: &crate::ast::Expr, name: &str) -> bool {
+    match &expr.kind {
+        crate::ast::ExprKind::Name(found) => found == name,
+        crate::ast::ExprKind::Qualified(qualified) => {
+            qualified.segments.len() == 1 && qualified.segments[0] == name
+        }
+        _ => false,
     }
 }

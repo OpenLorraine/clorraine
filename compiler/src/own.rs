@@ -88,6 +88,12 @@ pub struct OwnershipOutput {
     /// are lifted by the synthetic context in [`check`]; the emitter resolves
     /// the initializer's callable through this map.
     pub init_lambdas: BTreeMap<usize, usize>,
+    /// The resolved `freedBy` deleter of every handle, keyed by handle name.
+    ///
+    /// The validator and the emitter read the same identity, so a dotted name
+    /// can never be mangled twice and a module-scoped simple name resolves in
+    /// the handle's declaring module.
+    pub deleter_identities: BTreeMap<String, program::DeleterRef>,
 }
 
 /// The declaration identity a take-view requirement and its call records share.
@@ -286,6 +292,16 @@ pub fn check(
     diagnostics: &mut Diagnostics,
 ) -> OwnershipOutput {
     let program = ProgramInfo::collect(loaded, &sema.table);
+    let deleter_identities: BTreeMap<String, program::DeleterRef> = program
+        .handles
+        .iter()
+        .filter_map(|(name, handle)| {
+            handle
+                .resolved
+                .clone()
+                .map(|resolved| (name.clone(), resolved))
+        })
+        .collect();
     ffi::check_items(&program, &sema.table, diagnostics);
     for module in loaded.modules.values() {
         program::check_globals(module, loaded, &program, sema, diagnostics);
@@ -573,6 +589,7 @@ pub fn check(
         functions,
         monomorphization,
         init_lambdas,
+        deleter_identities,
     }
 }
 
@@ -622,6 +639,12 @@ struct FunctionChecker<'a, 'd> {
     sema: &'a SemaOutput,
     /// The function being checked.
     decl: &'a crate::ast::FuncDecl,
+    /// The handle whose ordinary deleter this function is, when it is one.
+    ///
+    /// The deleter's own `take T` parameter must not be dropped at scope exit:
+    /// the drop would call this function again. The body is required to release
+    /// the parameter explicitly, and the AST check reports a body that does not.
+    deleter_handle: Option<String>,
     /// Generic parameter names in scope.
     type_params: Vec<String>,
     /// The declared return type.
@@ -1010,12 +1033,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 mode: param.mode,
             })
             .collect();
+        let deleter_handle = program
+            .handles
+            .values()
+            .find(|handle| {
+                handle.resolved.as_ref().is_some_and(|resolved| {
+                    !resolved.ffi
+                        && resolved.module == module.name
+                        && resolved.name == decl.name
+                })
+            })
+            .map(|handle| handle.name.clone());
         Self {
             program,
             loaded,
             module,
             sema,
             decl,
+            deleter_handle,
             type_params,
             returns: returns.clone(),
             scopes: Vec::new(),
@@ -1634,8 +1669,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             BindingKind::Param
         };
-        let needs_drop =
-            param.mode == Mode::Take && (self.owns_drop(&ty) || self.maybe_owns(&ty));
+        let deleter_parameter = param.mode == Mode::Take
+            && matches!(
+                &ty.kind,
+                TyKind::Handle(name) if self.deleter_handle.as_deref() == Some(name.as_str())
+            );
+        let needs_drop = param.mode == Mode::Take
+            && !deleter_parameter
+            && (self.owns_drop(&ty) || self.maybe_owns(&ty));
         let id = self.declare(
             &param.name,
             param.name_span,

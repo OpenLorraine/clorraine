@@ -24,12 +24,31 @@ use crate::types::{resolve_ty_folded, Ty, TyKind};
 /// A user-declared function with a body.
 pub type UserFunc<'a> = &'a FuncDecl;
 
+/// A resolved `freedBy` deleter identity.
+///
+/// The module and simple name are stored separately so the emitter can mangle
+/// an ordinary function (`cl_<module>_<name>`) and spell an `ffi` symbol
+/// without passing a dotted path to either spelling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleterRef {
+    /// The declaring module.
+    pub module: String,
+    /// The simple declaration name.
+    pub name: String,
+    /// True for an `ffi`-declared function.
+    pub ffi: bool,
+}
+
 /// A handle declaration and the deleter it names.
 pub struct HandleInfo<'a> {
     /// The handle's name.
     pub name: String,
-    /// The named deleter.
+    /// The handle's declaring module.
+    pub module: String,
+    /// The written deleter name, for diagnostics.
     pub deleter: String,
+    /// The resolved deleter identity; `None` when the name does not resolve.
+    pub resolved: Option<DeleterRef>,
     /// Span of the handle's name, used for the deleter diagnostic.
     pub span: Span,
     /// The declaration, for type checking of the deleter.
@@ -122,15 +141,14 @@ impl<'a> ProgramInfo<'a> {
                         }
                     }
                     Item::Handle(decl) => {
-                        info.handles.insert(
-                            decl.name.clone(),
-                            HandleInfo {
-                                name: decl.name.clone(),
-                                deleter: decl.freed_by.segments.join("."),
-                                span: decl.name_span,
-                                decl,
-                            },
-                        );
+                        info.handles.entry(decl.name.clone()).or_insert(HandleInfo {
+                            name: decl.name.clone(),
+                            module: module.name.clone(),
+                            deleter: decl.freed_by.segments.join("."),
+                            resolved: None,
+                            span: decl.name_span,
+                            decl,
+                        });
                     }
                     Item::Struct(decl) => {
                         info.structs.entry(decl.name.clone()).or_insert(decl);
@@ -170,6 +188,19 @@ impl<'a> ProgramInfo<'a> {
             }
         }
         info.address_taken_consts = collect_address_taken(loaded, &info);
+        // Resolve each handle's deleter once, in the handle's declaring module
+        // scope, and store the identity both the validator and the emitter use.
+        let keys: Vec<String> = info.handles.keys().cloned().collect();
+        for name in keys {
+            let (module, written) = {
+                let handle = &info.handles[&name];
+                (handle.module.clone(), handle.deleter.clone())
+            };
+            let resolved = resolve_deleter(loaded, &module, &written);
+            if let Some(handle) = info.handles.get_mut(&name) {
+                handle.resolved = resolved;
+            }
+        }
         info
     }
 
@@ -277,14 +308,6 @@ pub fn stdlib_effect(name: &str) -> Option<StdlibEffect> {
 
 /// Resolves a written type name to an AST spelling for the handle/deleter
 /// comparison, which only needs the declared name.
-pub fn type_name_matches(ty: &crate::ast::Type, name: &str) -> bool {
-    match &ty.kind {
-        crate::ast::TypeKind::Named { name: written, .. } => {
-            written.segments.last().is_some_and(|last| last == name)
-        }
-        _ => false,
-    }
-}
 
 /// Rejects a module-level `let` whose declared type needs a drop.
 ///
@@ -1403,4 +1426,104 @@ fn walk_expr(
         | ExprKind::Qualified(_)
         | ExprKind::Error => {}
     }
+}
+
+/// Resolves a written `freedBy` name in the handle's declaring module.
+///
+/// The scope order is the declaration order the language uses: the declaring
+/// module's own functions, its own `ffi` blocks, imports, then a unique
+/// program-wide function. A qualified name resolves in the named module only.
+/// An ambiguous simple name is not a deleter.
+fn resolve_deleter(loaded: &Loaded, handle_module: &str, written: &str) -> Option<DeleterRef> {
+    if let Some((module, simple)) = written.rsplit_once('.') {
+        let target = loaded.module(module)?;
+        let kind = target.decl(simple)?.kind;
+        return match kind {
+            crate::load::DeclKind::Func => {
+                // A cross-module ordinary function must be exported; the
+                // handle's own module may use a private one.
+                if module != handle_module && !loaded.module_exports(module, simple) {
+                    return None;
+                }
+                find_user(loaded, module, simple)
+            }
+            crate::load::DeclKind::Ffi => find_ffi(loaded, module, simple),
+            _ => None,
+        };
+    }
+    // The handle's own module scope: a declaration of any kind with the
+    // written name shadows every outer scope. A non-callable declaration is not
+    // a deleter, and the search must not fall through to another module.
+    let own = loaded.module(handle_module);
+    if let Some(decl) = own.and_then(|module| module.decl(written)) {
+        return match decl.kind {
+            crate::load::DeclKind::Func => find_user(loaded, handle_module, written),
+            crate::load::DeclKind::Ffi => find_ffi(loaded, handle_module, written),
+            _ => None,
+        };
+    }
+    // An import names one declaration; it shadows the program-wide fallback
+    // even when it is not callable.
+    if let Some(binding) = own.and_then(|module| module.import(written)) {
+        let target = loaded.module(&binding.module)?;
+        let kind = target.decl(&binding.original)?.kind;
+        return match kind {
+            crate::load::DeclKind::Func => {
+                if !loaded.module_exports(&binding.module, &binding.original) {
+                    return None;
+                }
+                find_user(loaded, &binding.module, &binding.original)
+            }
+            crate::load::DeclKind::Ffi => find_ffi(loaded, &binding.module, &binding.original),
+            _ => None,
+        };
+    }
+    // No nearer declaration: exactly one exported ordinary function or one
+    // visible ffi signature program-wide. Two candidates are ambiguous and
+    // invalid; an ffi block is module-scoped, so only the handle's own module
+    // and a qualified name reach one.
+    let users: Vec<DeleterRef> = loaded
+        .modules
+        .values()
+        .filter(|module| module.name != handle_module)
+        .filter(|module| loaded.module_exports(&module.name, written))
+        .filter_map(|module| find_user(loaded, &module.name, written))
+        .collect();
+    if users.len() == 1 {
+        return users.into_iter().next();
+    }
+    None
+}
+
+/// Finds an ordinary function declaration in one module.
+fn find_user(loaded: &Loaded, module: &str, name: &str) -> Option<DeleterRef> {
+    let module = loaded.module(module)?;
+    module.items.iter().find_map(|item| match item {
+        Item::Func(decl) if decl.name == name => Some(DeleterRef {
+            module: module.name.clone(),
+            name: name.to_owned(),
+            ffi: false,
+        }),
+        _ => None,
+    })
+}
+
+/// Finds an `ffi` signature in one module.
+fn find_ffi(loaded: &Loaded, module: &str, name: &str) -> Option<DeleterRef> {
+    let module = loaded.module(module)?;
+    module.items.iter().find_map(|item| match item {
+        Item::Ffi(block)
+            if block
+                .decls
+                .iter()
+                .any(|signature| signature.name == name) =>
+        {
+            Some(DeleterRef {
+                module: module.name.clone(),
+                name: name.to_owned(),
+                ffi: true,
+            })
+        }
+        _ => None,
+    })
 }
