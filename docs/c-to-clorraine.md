@@ -280,3 +280,70 @@ the same entry from the binary.
 - [The language specification](../spec/README.md)
 - [Known limitations](known-limitations.md)
 - [The standard library appendix](../spec/appendix-stdlib.md)
+
+## 11. Wrapper cookbook
+
+These are the shapes to copy when wrapping one more C facility.
+
+### Opaque handle
+
+```clorraine
+export handle Device freedBy closeDevice;
+
+export func openDevice(name: cstring): Device? {
+    return OpenDevice(name);
+}
+
+export func closeDevice(take device: Device): void {
+    CloseDevice(device);
+}
+```
+
+The handle owns the C resource. A caller that receives `Device` may pass it to
+another `take` function or let it drop; it may not copy it.
+
+### Borrowed view accessor
+
+```clorraine
+export func deviceBytes(borrow device: Device): u8[] {
+    unsafe {
+        return u8[raw u8(device.ptr), device.len];
+    }
+}
+```
+
+The result borrows the device for the rest of the view's origin. Do not return
+a view of a temporary or of a value the caller may move while the view lives.
+
+### Status plus payload
+
+```clorraine
+export struct ReadResult {
+    ok: bool;
+    count: i32;
+}
+
+export func readAll(borrow f: File, borrow buf: u8[]): ReadResult {
+    let n: i32 = readFile(f, buf);
+    return ReadResult { ok: n >= 0, count: n };
+}
+```
+
+A short count is not a failure; the `ok` flag distinguishes an error from a
+partial transfer.
+
+### Synchronous callback
+
+```clorraine
+ffi dispatch {
+    func ForEach(item: raw Item, visit: borrow func(raw Item): void): u32;
+}
+
+let seen: i32 = 0;
+let code: u32 = ForEach(first, (item: raw Item) => {
+    // use `seen` here; the environment is on this call's stack
+});
+```
+
+The C side must not store `visit`. A callback registered for later must be a
+plain function and cannot capture.

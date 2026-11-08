@@ -1,4 +1,4 @@
-module app.shared.extra;
+module app.shared;
 
 /// Helps the caller.
 export func helper(): i32 {

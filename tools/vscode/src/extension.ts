@@ -290,9 +290,9 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   } catch (error) {
     starting = false;
     created.beginStop();
+    session = undefined;
     await client.stop();
     created.dispose();
-    session = undefined;
     void vscode.window.showErrorMessage(
       `Clorraine: could not start ${command}: ${
         error instanceof Error ? error.message : String(error)

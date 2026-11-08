@@ -231,7 +231,7 @@ returns `-32602` with the accepted names. ST-31 covers `host` versus
 **Location:** [00-index](00-index.md) Related Files.
 **Evidence:** The index first listed `lsp_impl_test.rs` and
 `docgen_impl_test.rs`, but the testing strategy puts those cases in
-`compiler/src/lsp/tests.rs` and inline `docgen` unit tests.
+the inline unit tests in `compiler/src/lsp/*.rs` and inline `docgen` unit tests.
 **Resolution:** The rows now name the real files. Fixed.
 
 ### PF-013: Wrong traceability code in ST-43 🟡 MINOR

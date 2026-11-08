@@ -24,7 +24,7 @@
 | RV-008 | 3 | MINOR | `compiler/src/lsp/text.rs`, plan | fixed — plan wording aligned with the representable position |
 | RV-001 | 4 | MAJOR | `compiler/src/lsp/symbols.rs` | fixed — declaration and local lookup filter by `FileId`; regression test |
 | RV-002 | 4 | MAJOR | `compiler/src/lsp/features.rs` | fixed — completion uses module declarations; split-module test; `freedBy`/`static` added |
-| RV-003 | 4 | MINOR | `compiler/src/lsp/symbols.rs` | accepted — lambda-body locals are not in the navigation table; documented limitation |
+| RV-003 | 4 | MINOR | `compiler/src/lsp/symbols.rs` | fixed — lambda parameters and bodies are walked and scoped to the lambda |
 | RV-004 | 4 | MINOR | `compiler/src/lsp/features.rs` | fixed — hover returns the hovered token range and exact signature is asserted |
 | RV-005 | 4 | MINOR | `compiler/tests/lsp_spec_test.rs` | fixed — missing-document symbols, save, exact hover, symbol kinds, and untitled features asserted |
 | RV-006 | 4 | MINOR | tests/plan | fixed — file-scoped and innermost-local unit tests added; plan path corrected |
@@ -32,7 +32,13 @@
 | RV-008 | 4 | MINOR | `compiler/src/lsp/features.rs`, `analysis.rs` | fixed — partial parse trees serve symbols for a syntax-error file |
 | RV-001 | 5 | MAJOR | `tools/vscode/src/extension.ts` | fixed — the client starts before document sync; failed starts stop the child |
 | RV-002 | 5 | MAJOR | `tools/vscode/test/` | fixed — staged and packaged manifest paths, version, and grammar bytes are asserted |
-| RV-003 | 5 | MAJOR | `tools/vscode/test/client.test.ts` | fixed — out-of-order correlation and clean-shutdown exit are asserted |
+| RV-003 | 5 | MAJOR | `tools/vscode/test/client.test.ts` | fixed — the first response is delayed so correlation is genuinely out of order; clean-shutdown exit is asserted |
 | RV-004 | 5 | MINOR | `tools/vscode/src/client.ts` | fixed — a malformed response rejects pending requests and kills the client |
-| RV-005 | 5 | MINOR | `tools/vscode/src/extension.ts` | fixed — failed start stops the child and reports one message |
+| RV-005 | 5 | MINOR | `tools/vscode/src/extension.ts` | fixed — failed start enters the stopping state, stops the child, and reports one message |
 | RV-006 | 5 | MINOR | `tools/vscode/test/manifest.test.ts` | fixed — typed manifest interface, no `any` |
+| RV-009 | 3 | MINOR | `compiler/src/lsp/workspace.rs` | fixed — the index cap is applied after a lexicographic sort |
+| RV-010 | 3 | MINOR | `compiler/src/lsp/server.rs` | fixed — completed ids are remembered so a late cancel cannot hit a reused id |
+| RV-011 | 3 | MINOR | `compiler/src/lsp/server.rs` | fixed — a stdout failure writes one stderr line before exit 1 |
+| RV-009 | 4 | MINOR | `compiler/src/lsp/features.rs` | fixed — the module is resolved by file from the module table; declaration-less module test |
+| RV-011 | 4 | MINOR | tests/fixtures | fixed — true same-module completion fixture, `local_at` cross-file unit test, and untitled hover assertion |
+| RV-012 | 4 | MINOR | `compiler/src/lsp/symbols.rs` | fixed — lambda parameters, expression bodies, and block bodies are walked and scoped to the lambda |

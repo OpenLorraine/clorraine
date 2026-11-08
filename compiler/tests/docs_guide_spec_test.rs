@@ -34,6 +34,7 @@ fn should_cover_every_required_pattern() {
         "## 8. Ownership modes",
         "## 9. Error handling",
         "## 10. Diagnostics a C programmer will meet",
+        "## 11. Wrapper cookbook",
     ] {
         assert!(guide.contains(heading), "missing heading: {heading}");
     }

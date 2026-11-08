@@ -205,7 +205,7 @@ C-hook trampoline surfaces.
 
 | Area | Limitation | Workaround |
 |---|---|---|
-| LSP navigation | Lambda parameters and lambda-body locals are not in the hover/goto symbol table. Rename, formatting, references, and workspace symbols are not implemented. | Use a named local or move the lambda body into a function for navigation. |
+| LSP navigation | Rename, formatting, references, and workspace symbols are not implemented. | Use the implemented hover, definition, completion, and document-symbol features. |
 | LSP workspace | The index reads at most 2000 `*.clo` files, and one request analyzes at most 256 files. | Open the file directly or keep unrelated programs in separate roots. |
 | LSP analysis | A file is parsed and type-checked on each request; there is no incremental cache. | Small workspaces are the intended scope. |
 | Installer integrity | The installer downloads nothing itself. The pinned image build verifies upstream archives where upstream publishes SHA-256 values; the installer's own gate is provenance, NDK presence, and tool versions. | Inspect `docker/versions.env` and `/opt/amiga/BUILD-PROVENANCE.txt`; rebuild with `make setup FETCH=1 YES=1`. |

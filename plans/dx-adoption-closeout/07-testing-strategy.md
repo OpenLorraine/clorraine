@@ -137,7 +137,7 @@ oracle. No test writes outside its temporary root.
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/src/lsp/tests.rs` | JSON escapes/surrogates/depth, split frames, header case, oversized frame, UTF-16, URI, workspace closure | High |
+| the inline unit tests in `compiler/src/lsp/*.rs` | JSON escapes/surrogates/depth, split frames, header case, oversized frame, UTF-16, URI, workspace closure | High |
 | `compiler/src/clorraine/docgen.rs` unit tests | Attachment edge cases, anchor collisions, path validation | High |
 | `tools/vscode/test/client.test.ts` | Split response, crash, pending rejection | High |
 | `tools/setup/tests/test_detect.py` | Probe helpers and report ordering | Medium |

@@ -279,7 +279,8 @@ fn doc_comment(text: &str, start: usize) -> Option<String> {
         let line = &text[previous_start..previous_end];
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix("///") {
-            lines.push(rest.strip_prefix(' ').unwrap_or(rest).to_owned());
+            let rest = rest.strip_prefix(' ').unwrap_or(rest).trim_end_matches('\r');
+            lines.push(rest.to_owned());
             cursor = previous_start;
         } else {
             break;

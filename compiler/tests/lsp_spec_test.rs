@@ -324,7 +324,13 @@ fn should_serve_an_untitled_buffer() {
         .collect();
     assert_eq!(names, vec!["main"]);
     let hover = client.at("textDocument/hover", uri, 1, 5);
-    assert!(hover.get("result").is_some());
+    let value = hover
+        .get("result")
+        .and_then(|result| result.get("contents"))
+        .and_then(|contents| contents.get("value"))
+        .and_then(Json::as_str)
+        .expect("untitled hover value");
+    assert!(value.contains("func main"), "untitled hover was {value:?}");
     let completion = client.at("textDocument/completion", uri, 1, 0);
     let labels: Vec<&str> = completion
         .get("result")
@@ -586,6 +592,7 @@ fn should_complete_a_declaration_from_a_sibling_file_of_the_same_module() {
         .filter_map(|item| item.get("label").and_then(Json::as_str))
         .collect();
     assert!(labels.contains(&"helper"), "completion was {labels:?}");
+    assert!(labels.contains(&"main"), "completion was {labels:?}");
     assert!(labels.contains(&"freedBy"), "completion was {labels:?}");
     assert!(labels.contains(&"static"), "completion was {labels:?}");
     assert_eq!(client.shutdown_and_exit(), 0);
@@ -657,5 +664,23 @@ fn should_ignore_a_cancel_for_a_completed_request() {
         second.get("error").is_none(),
         "a late cancel must not cancel a reused id: {second:?}"
     );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_complete_module_declarations_from_a_file_with_no_declarations() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("shared"));
+    let empty = fixture_uri("shared", "empty.clo");
+    client.open(&empty, &fixture_text("shared", "empty.clo"));
+    let completion = client.at("textDocument/completion", &empty, 1, 0);
+    let labels: Vec<&str> = completion
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("completion")
+        .iter()
+        .filter_map(|item| item.get("label").and_then(Json::as_str))
+        .collect();
+    assert!(labels.contains(&"helper"), "completion was {labels:?}");
     assert_eq!(client.shutdown_and_exit(), 0);
 }

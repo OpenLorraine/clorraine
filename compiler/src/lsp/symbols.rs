@@ -258,16 +258,27 @@ impl SymbolTable {
         match statement {
             Stmt::Let(decl) => {
                 self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                if let Some(value) = &decl.value {
+                    self.expr(file, module, value, function);
+                }
             }
             Stmt::Const(decl) => {
                 self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                self.expr(file, module, &decl.value, function);
             }
             Stmt::If(decl) => {
+                self.expr(file, module, &decl.condition, function);
                 self.block(file, module, &decl.then_block, function);
                 self.else_branch(file, module, &decl.else_branch, function);
             }
-            Stmt::While(decl) => self.block(file, module, &decl.body, function),
-            Stmt::DoWhile(decl) => self.block(file, module, &decl.body, function),
+            Stmt::While(decl) => {
+                self.expr(file, module, &decl.condition, function);
+                self.block(file, module, &decl.body, function);
+            }
+            Stmt::DoWhile(decl) => {
+                self.block(file, module, &decl.body, function);
+                self.expr(file, module, &decl.condition, function);
+            }
             Stmt::ForC(decl) => {
                 match &decl.init {
                     Some(ForInit::Let(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span),
@@ -290,10 +301,110 @@ impl SymbolTable {
             Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
                 self.block(file, module, block, function);
             }
-            Stmt::Expr(_)
-            | Stmt::Return { .. }
+            Stmt::Expr(expression) => self.expr(file, module, expression, function),
+            Stmt::Return { value: Some(value), .. } => {
+                self.expr(file, module, value, function);
+            }
+            Stmt::Return { value: None, .. }
             | Stmt::Break(_)
             | Stmt::Continue(_) => {}
+        }
+    }
+
+    /// Walks an expression and records lambda parameters and bodies.
+    fn expr(&mut self, file: FileId, module: &str, expression: &crate::ast::Expr, function: Span) {
+        use crate::ast::{ExprKind, IntrinsicArg, LambdaBody, TemplatePiece};
+        match &expression.kind {
+            ExprKind::Call { callee, args, .. } => {
+                self.expr(file, module, callee, function);
+                for argument in args {
+                    self.expr(file, module, &argument.value, function);
+                }
+            }
+            ExprKind::Index { base, index } => {
+                self.expr(file, module, base, function);
+                self.expr(file, module, index, function);
+            }
+            ExprKind::Member { base, .. } => self.expr(file, module, base, function),
+            ExprKind::Unary { operand, .. } => self.expr(file, module, operand, function),
+            ExprKind::Binary { left, right, .. } => {
+                self.expr(file, module, left, function);
+                self.expr(file, module, right, function);
+            }
+            ExprKind::Assign { target, value, .. } => {
+                self.expr(file, module, target, function);
+                self.expr(file, module, value, function);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.expr(file, module, condition, function);
+                self.expr(file, module, then_value, function);
+                self.expr(file, module, else_value, function);
+            }
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.expr(file, module, value, function);
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.expr(file, module, &field.value, function);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.expr(file, module, element, function);
+                }
+                if let Some(fill) = fill {
+                    self.expr(file, module, fill, function);
+                }
+            }
+            ExprKind::Lambda { params, body, .. } => {
+                for parameter in params {
+                    self.symbols.push(Symbol {
+                        name: parameter.name.clone(),
+                        kind: SymbolKind::Parameter,
+                        name_span: parameter.name_span,
+                        full_span: parameter.span,
+                        signature_end: parameter.span.end,
+                        module: module.to_owned(),
+                        file,
+                        function_span: Some(expression.span),
+                        scope_span: Some(expression.span),
+                    });
+                }
+                match body {
+                    LambdaBody::Expr(value) => self.expr(file, module, value, expression.span),
+                    LambdaBody::Block(block) => {
+                        self.block(file, module, block, expression.span)
+                    }
+                }
+            }
+            ExprKind::Unsafe(inner) => self.expr(file, module, inner, function),
+            ExprKind::IntrinsicCall { args, .. } => {
+                for argument in args {
+                    if let IntrinsicArg::Expr(value) = argument {
+                        self.expr(file, module, value, function);
+                    }
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let TemplatePiece::Placeholder(value) = piece {
+                        self.expr(file, module, value, function);
+                    }
+                }
+            }
+            ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Char(_)
+            | ExprKind::Str(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Null
+            | ExprKind::Name(_)
+            | ExprKind::Qualified(_)
+            | ExprKind::Error => {}
         }
     }
 
@@ -371,6 +482,11 @@ impl SymbolTable {
     /// A module declaration by name.
     pub fn module(&self, name: &str) -> Option<&ModuleSymbol> {
         self.modules.iter().find(|module| module.name == name)
+    }
+
+    /// The module declared by a file, when the file declares one.
+    pub fn module_for_file(&self, file: FileId) -> Option<&ModuleSymbol> {
+        self.modules.iter().find(|module| module.file == file)
     }
 
     /// A top-level declaration by module and name.
@@ -510,7 +626,7 @@ mod tests {
     #[test]
     fn should_not_match_a_symbol_from_another_file() {
         let first = "module app.one;\nfunc f(): void {\n    let shared: i32 = 1;\n}\n";
-        let second = "module app.two;\n\n\n\n\n\n\n\n\n\nfunc g(): void {\n    let shared: i32 = 2;\n}\n";
+        let second = "module app.two;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfunc g(): void {\n    let shared: i32 = 2;\n}\n";
         let parsed = analysis::parse(vec![
             SourceFile {
                 path: "one.clo".to_owned(),
@@ -529,5 +645,39 @@ mod tests {
         assert_eq!(symbol.name_span.start, second_offset);
         let first_file = parsed.files["one.clo"];
         assert!(table.at(first_file, second_offset).is_none());
+        assert!(table
+            .local_at(first_file, "shared", second_offset)
+            .is_none());
+        assert!(table
+            .local_at(second_file, "shared", second_offset)
+            .is_some());
+    }
+}
+
+#[cfg(test)]
+mod lambda_tests {
+    use super::*;
+    use crate::analysis::{self, SourceFile};
+
+    #[test]
+    fn should_scope_lambda_parameters_and_bodies_to_the_lambda() {
+        let text = "module app.lambda;\nfunc main(): i32 {\n    let x: i32 = 1;\n    let f: func(i32): i32 = (x: i32) => x + 1;\n    return f(x);\n}\n";
+        let parsed = analysis::parse(vec![SourceFile {
+            path: "app/lambda.clo".to_owned(),
+            text: text.to_owned(),
+        }]);
+        assert!(
+            parsed.diagnostics.items().is_empty(),
+            "lambda fixture must parse: {:?}",
+            parsed.diagnostics.items()
+        );
+        let table = SymbolTable::build(&parsed.sources, &parsed.programs);
+        let file = parsed.files["app/lambda.clo"];
+        let param = text.find("(x: i32)").expect("lambda parameter") + 1;
+        let body = text.rfind("x + 1").expect("lambda body");
+        let outer = text.find("x: i32 = 1").expect("outer local");
+        assert_eq!(table.local_at(file, "x", param as u32).unwrap().name_span.start as usize, param);
+        assert_eq!(table.local_at(file, "x", body as u32).unwrap().name_span.start as usize, param);
+        assert_eq!(table.local_at(file, "x", outer as u32).unwrap().name_span.start as usize, outer);
     }
 }

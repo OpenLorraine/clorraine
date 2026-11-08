@@ -61,9 +61,8 @@ impl FeatureInput {
     /// The module declared by the requested file.
     fn module_of_file(&self) -> String {
         self.table
-            .file_declarations(self.file)
-            .next()
-            .map(|symbol| symbol.module.clone())
+            .module_for_file(self.file)
+            .map(|module| module.name.clone())
             .unwrap_or_default()
     }
 }

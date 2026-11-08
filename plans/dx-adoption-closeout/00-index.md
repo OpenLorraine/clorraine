@@ -114,7 +114,7 @@ correctness lens (AR-37)._
 | `compiler/src/lsp/`, `compiler/src/lsp_main.rs` | New server and binary |
 | `compiler/src/clorraine/cli.rs`, `docgen.rs` | `--doc` action and generator |
 | `compiler/tests/lsp_spec_test.rs` | LSP integration suite |
-| `compiler/src/lsp/tests.rs` | LSP unit suite |
+| the inline unit tests in `compiler/src/lsp/*.rs` | LSP unit suite |
 | `compiler/tests/docgen_spec_test.rs` | Doc golden suite |
 | `compiler/src/clorraine/docgen.rs` tests | Doc unit suite |
 | `compiler/tests/analysis_spec_test.rs` | Analysis suite |
