@@ -265,18 +265,23 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   }
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   let starting = true;
+  let created: Session | undefined;
   const client = new LspClient({
     command,
     rootUri: root ? pathToFileURL(root).toString() : undefined,
     initializationOptions: { profile },
-    onDiagnostics: (params) => session?.setDiagnostics(params),
+    onDiagnostics: (params) => {
+      if (session === created) {
+        created?.setDiagnostics(params);
+      }
+    },
     onExit: (code) => {
-      if (!starting) {
-        session?.unexpectedExit(`exit code ${code ?? "null"}`);
+      if (!starting && session === created) {
+        created?.unexpectedExit(`exit code ${code ?? "null"}`);
       }
     },
   });
-  const created = new Session(client, context);
+  created = new Session(client, context);
   session = created;
   try {
     await client.start();
@@ -284,6 +289,7 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
     created.register();
   } catch (error) {
     starting = false;
+    created.beginStop();
     await client.stop();
     created.dispose();
     session = undefined;

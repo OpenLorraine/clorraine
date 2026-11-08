@@ -61,7 +61,7 @@ stdin.on("data", (chunk) => {
               contents: { kind: "markdown", value: `func fake line ${line}` },
             },
           });
-        if (line === 1) {
+        if (line === 0) {
           setTimeout(reply, 50);
         } else {
           reply();

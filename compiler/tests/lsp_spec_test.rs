@@ -635,3 +635,27 @@ fn should_publish_diagnostics_on_save() {
     assert_eq!(diagnostics_array(&client.diagnostics()).len(), 0);
     assert_eq!(client.shutdown_and_exit(), 0);
 }
+
+#[test]
+fn should_ignore_a_cancel_for_a_completed_request() {
+    let mut client = LspClient::start();
+    client.initialize("host");
+    client.request_with_id(5, "textDocument/hover", empty());
+    let first = client.await_response(5);
+    assert!(first.get("error").is_none());
+    client.send_text(
+        &Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("$/cancelRequest".to_owned())),
+            ("params", Json::object([("id", Json::Number(5))])),
+        ])
+        .render(),
+    );
+    client.request_with_id(5, "textDocument/hover", empty());
+    let second = client.await_response(5);
+    assert!(
+        second.get("error").is_none(),
+        "a late cancel must not cancel a reused id: {second:?}"
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}

@@ -43,10 +43,16 @@ test("should run the packaged client against the real server", async (context) =
   ) as {
     main: string;
     version: string;
-    contributes: { grammars: Array<{ path: string }> };
+    contributes: {
+      languages: Array<{ configuration: string }>;
+      grammars: Array<{ path: string }>;
+    };
   };
   assert.equal(manifest.main, "./out/extension.js");
   assert.ok(existsSync(join(extensionRoot, manifest.main.slice(2))));
+  const configuration = manifest.contributes.languages[0].configuration;
+  assert.equal(configuration, "./language-configuration.json");
+  assert.ok(existsSync(join(extensionRoot, configuration.slice(2))));
   const grammar = manifest.contributes.grammars[0].path;
   assert.ok(grammar.startsWith("./"));
   assert.deepEqual(

@@ -89,6 +89,8 @@ pub struct Symbol {
     pub file: FileId,
     /// Enclosing function span for a local; `None` for a top-level item.
     pub function_span: Option<Span>,
+    /// Scope in which a local is visible; `None` for a top-level item.
+    pub scope_span: Option<Span>,
 }
 
 impl Symbol {
@@ -233,24 +235,32 @@ impl SymbolTable {
             module: module.to_owned(),
             file,
             function_span,
+            scope_span: function_span,
         });
     }
 
     /// Walks a block and records its local bindings.
     fn block(&mut self, file: FileId, module: &str, block: &Block, function: Span) {
         for statement in &block.statements {
-            self.statement(file, module, statement, function);
+            self.statement(file, module, statement, function, block.span);
         }
     }
 
     /// Records one statement's locals and recurses.
-    fn statement(&mut self, file: FileId, module: &str, statement: &Stmt, function: Span) {
+    fn statement(
+        &mut self,
+        file: FileId,
+        module: &str,
+        statement: &Stmt,
+        function: Span,
+        scope: Span,
+    ) {
         match statement {
             Stmt::Let(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function);
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
             }
             Stmt::Const(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function);
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
             }
             Stmt::If(decl) => {
                 self.block(file, module, &decl.then_block, function);
@@ -260,20 +270,20 @@ impl SymbolTable {
             Stmt::DoWhile(decl) => self.block(file, module, &decl.body, function),
             Stmt::ForC(decl) => {
                 match &decl.init {
-                    Some(ForInit::Let(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function),
-                    Some(ForInit::Const(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function),
+                    Some(ForInit::Let(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span),
+                    Some(ForInit::Const(binding)) => self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span),
                     _ => {}
                 }
                 self.block(file, module, &decl.body, function);
             }
             Stmt::ForIn(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function);
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
                 self.block(file, module, &decl.body, function);
             }
             Stmt::Switch(decl) => {
                 for clause in &decl.clauses {
                     for statement in &clause.statements {
-                        self.statement(file, module, statement, function);
+                        self.statement(file, module, statement, function, clause.span);
                     }
                 }
             }
@@ -296,6 +306,7 @@ impl SymbolTable {
         name_span: Span,
         full_span: Span,
         function: Span,
+        scope: Span,
     ) {
         self.symbols.push(Symbol {
             name: name.to_owned(),
@@ -306,6 +317,7 @@ impl SymbolTable {
             module: module.to_owned(),
             file,
             function_span: Some(function),
+            scope_span: Some(scope),
         });
     }
 
@@ -348,7 +360,7 @@ impl SymbolTable {
             .filter(|symbol| symbol.name == name)
             .filter(|symbol| {
                 symbol
-                    .function_span
+                    .scope_span
                     .map(|span| span.start <= offset && offset < span.end)
                     .unwrap_or(false)
             })

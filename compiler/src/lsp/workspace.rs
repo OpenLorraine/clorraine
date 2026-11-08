@@ -112,7 +112,7 @@ impl ModuleIndex {
         let mut index = Self::default();
         let mut files = Vec::new();
         let mut stack = vec![root.to_path_buf()];
-        'walk: while let Some(directory) = stack.pop() {
+        while let Some(directory) = stack.pop() {
             let Ok(entries) = std::fs::read_dir(&directory) else {
                 continue;
             };
@@ -141,14 +141,14 @@ impl ModuleIndex {
                     && path.extension().and_then(|ext| ext.to_str()) == Some("clo")
                 {
                     files.push(path);
-                    if files.len() >= MAX_INDEX_FILES {
-                        index.truncated = true;
-                        break 'walk;
-                    }
                 }
             }
         }
         files.sort();
+        if files.len() > MAX_INDEX_FILES {
+            files.truncate(MAX_INDEX_FILES);
+            index.truncated = true;
+        }
         for path in files {
             let entry = index.entry_for_path(&path);
             index.insert(entry);

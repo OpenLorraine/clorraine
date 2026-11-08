@@ -53,11 +53,14 @@ enum Incoming {
 pub fn run_stdio() -> i32 {
     let (sender, receiver) = mpsc::channel();
     let cancelled = Arc::new(Mutex::new(HashSet::new()));
+    let completed = Arc::new(Mutex::new(HashSet::new()));
     let reader_cancelled = Arc::clone(&cancelled);
-    thread::spawn(move || read_loop(sender, reader_cancelled));
+    let reader_completed = Arc::clone(&completed);
+    thread::spawn(move || read_loop(sender, reader_cancelled, reader_completed));
     let mut server = Server {
         writer: FrameWriter::new(io::stdout()),
         cancelled,
+        completed,
         documents: DocumentStore::new(),
         index: ModuleIndex::default(),
         root: None,
@@ -70,7 +73,11 @@ pub fn run_stdio() -> i32 {
 }
 
 /// Reads frames until end of stream or a fatal framing error.
-fn read_loop(sender: mpsc::Sender<Incoming>, cancelled: Arc<Mutex<HashSet<String>>>) {
+fn read_loop(
+    sender: mpsc::Sender<Incoming>,
+    cancelled: Arc<Mutex<HashSet<String>>>,
+    completed: Arc<Mutex<HashSet<String>>>,
+) {
     let stdin = io::stdin();
     let mut reader = FrameReader::new(stdin.lock());
     loop {
@@ -83,11 +90,17 @@ fn read_loop(sender: mpsc::Sender<Incoming>, cancelled: Arc<Mutex<HashSet<String
                             .and_then(|params| params.get("id"))
                             .and_then(request_key)
                         {
-                            if let Ok(mut set) = cancelled.lock() {
-                                if set.len() >= 1024 {
-                                    set.clear();
+                            let finished = completed
+                                .lock()
+                                .map(|set| set.contains(&id))
+                                .unwrap_or(false);
+                            if !finished {
+                                if let Ok(mut set) = cancelled.lock() {
+                                    if set.len() >= 1024 {
+                                        set.clear();
+                                    }
+                                    set.insert(id);
                                 }
-                                set.insert(id);
                             }
                         }
                         continue;
@@ -118,6 +131,7 @@ fn read_loop(sender: mpsc::Sender<Incoming>, cancelled: Arc<Mutex<HashSet<String
 struct Server<W: Write> {
     writer: FrameWriter<W>,
     cancelled: Arc<Mutex<HashSet<String>>>,
+    completed: Arc<Mutex<HashSet<String>>>,
     documents: DocumentStore,
     index: ModuleIndex,
     root: Option<PathBuf>,
@@ -151,6 +165,7 @@ impl<W: Write> Server<W> {
                 }
             }
             if self.failed {
+                eprintln!("clorraine-lsp: cannot write to stdout");
                 return 1;
             }
         }
@@ -169,7 +184,22 @@ impl<W: Write> Server<W> {
             return None;
         };
         match id {
-            Some(id) => self.handle_request(&method, id, params),
+            Some(id) => {
+                let key = request_key(&id);
+                let code = self.handle_request(&method, id, params);
+                if let Some(key) = key {
+                    if let Ok(mut set) = self.completed.lock() {
+                        if set.len() >= 4096 {
+                            set.clear();
+                        }
+                        set.insert(key.clone());
+                    }
+                    if let Ok(mut set) = self.cancelled.lock() {
+                        set.remove(&key);
+                    }
+                }
+                code
+            }
             None => self.handle_notification(&method, params),
         }
     }
