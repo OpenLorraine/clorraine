@@ -7,8 +7,9 @@ routing belongs in configuration, not prose.
 ## Project
 
 The Clorraine compiler: a std-only Rust workspace (one member, `compiler/`; no
-external crates, no build scripts) with two binaries. `clc` compiles `.clo`
-sources to one C99 translation unit; `clorraine` is the build/run driver.
+external crates, no build scripts) with three binaries. `clc` compiles `.clo`
+sources to one C99 translation unit; `clorraine` is the build/run driver;
+`clorraine-lsp` is the stdio language server.
 
 Profiles:
 - `host` — development and host test runs.
@@ -23,8 +24,9 @@ The language is frozen under `spec/`. The compiler implements the corpus subset
 plus the completed language surfaces (generics, lambdas, volatile/MMIO with
 per-chip wrappers, and the v2 NLL borrow model). The embedded standard library
 is `stdlib/`; the runtime shims are C in `compiler/runtime/`. Emitted C must stay
-valid C99 and pass the strict host and Amiga toolchain legs. `tools/demo/` is a
-separate npm package and is not part of the Rust workspace.
+valid C99 and pass the strict host and Amiga toolchain legs. `tools/demo/` and
+`tools/vscode/` are separate npm packages and are not part of the Rust
+workspace.
 
 ## Commands
 
@@ -50,7 +52,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` and `clorraine` at `target/debug/` |
-| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--diagnostics=json`) |
+| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
 | `make sdk-a500-smoke` | Build hello for `hosted-amiga-13`, decrypt the licensed Kickstart 1.3 ROM locally, boot the ADF in FS-UAE as an A500, and compare the captured screen line |
 | `make sdk-a500-boing` | Build the native-video Boing demo for `hosted-amiga-13`, see its live custom display on the A500/KS1.3 run, and compare the final frame-checksum line |
@@ -79,6 +81,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make bench-test` | Harness unit tests; also part of `make check` |
 | `make bench-shape` | Build the generated-C shape fixture with m68k GCC, vbcc, and the freestanding profile |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
+| `make setup` | Detect the SDK; `FETCH=1` builds missing public components, `DRY=1` prints the plan, `YES=1` skips confirmation; never downloads media |
+| `make setup-check` | Installer unit tests; also part of `make check` |
+| `make vscode-check` | Build the server in the container, type-check and test `tools/vscode/`, package a `.vsix`, audit it, and run the packaged client |
+| `make vscode-package` | Build and package `build/vscode/clorraine-<version>.vsix` |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |
 
 ## Layout
@@ -87,7 +93,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 |------|----------|
 | `spec/` | Frozen specification: chapters, grammar, diagnostics registry, and golden data (`spec/tests/{compile-fail,run,staged,corpus}`) |
 | `stdlib/` | Embedded standard library (`std.*.clo`), including `std.iff`, `std.math`, `std.amiga.video`, `std.amiga.ilbm`, `std.amiga.sprite`, `std.amiga.audio`, `std.amiga.input`, `std.amiga.timer`, `std.amiga.text`, `std.amiga.layers`, `std.amiga.exec`, `std.amiga.icon`, `std.amiga.workbench`, `std.amiga.expansion`, `std.amiga.picasso96`, and the other Amiga modules (`std.amiga.*`) |
-| `compiler/src/` | Compiler stages (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph`, and the `clorraine` driver |
+| `compiler/src/` | Compiler stages (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `analysis`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph`, the `clorraine` driver, `docgen`, and `lsp/` |
 | `compiler/runtime/` | C runtime shims: `shim_host.c`, `shim_hosted_amiga.c` plus the 2.0+ `shim_hosted_amiga_20.c` and optional suffixes, `shim_freestanding.c`, and the vendored `picasso96.h` definitions |
 | `compiler/tests/` | Rust integration test drivers |
 | `benchmarks/` | Generated-C benchmark fixtures (not spec goldens) |
@@ -97,10 +103,12 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
+| `tools/setup/` | Fetch/detect SDK installer and its Python unit tests |
+| `tools/vscode/` | VS Code extension package, LSP client, and headless tests |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
 | `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, the target-side fault probes under `examples/robustness/`, and a compile-fail ownership sample |
 | `plans/` | CodeOps plans (one directory per feature) and `plans/00-roadmap.md`; flat layout |
-| `docs/`, `spikes/` | Findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
+| `docs/`, `spikes/` | Documentation index, the C-to-Clorraine guide, findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
 
 ## Testing
 
@@ -116,6 +124,11 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 - `#[cfg(test)] mod tests` inside `compiler/src/` holds focused unit tests.
 - `tools/demo/test/*.spec.test.ts` and `*.impl.test.ts` follow the same split;
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
+- `tools/setup/tests/` runs with `make setup-check`; `tools/vscode/test/`
+  runs with `make vscode-check` and includes a packaged-client smoke test.
+- `compiler/tests/lsp_spec_test.rs`, `compiler/tests/docgen_spec_test.rs`, and
+  `compiler/tests/docs_guide_spec_test.rs` cover the language server, the
+  documentation generator, and the guide links.
 - `tools/perf/bench.py` measures generated-C size, m68k section sizes, host time,
   and the streamed `vamos` instruction count; `make bench-test` runs its unit
   tests. Benchmark fixtures live under `benchmarks/` and are not spec goldens.
