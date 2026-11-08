@@ -18,8 +18,10 @@ who owns a value and when it is released.
 | A cast reinterprets | `raw T` is explicit and `unsafe` at the hardware boundary |
 | An error is a sentinel return | A nullable return or a status struct says what failed |
 
-The ownership chapter is [Chapter 03](../spec/03-ownership.md); the memory rules
-are [Chapter 11](../spec/11-memory.md).
+A parameter with no mode or with `const` is a read-only lend. `borrow` is the
+writable lend, and `take` transfers ownership. The ownership chapter is
+[Chapter 03](../spec/03-ownership.md); the memory rules are
+[Chapter 11](../spec/11-memory.md).
 
 ## 2. Allocation
 
@@ -37,20 +39,21 @@ FreeMem(b, sizeof *b);
 Clorraine, with the safe owner:
 
 ```clorraine
-import { Buffer, bufferNew, bufferLen } from std.mem;
+import { Buffer, bufferLen, bufferNew } from std.mem;
 
-let maybe: Buffer? = bufferNew(64);
-if (maybe == null) {
-    return;
+func useBuffer(): void {
+    let maybe: Buffer? = bufferNew(64);
+    if (maybe == null) {
+        return;
+    }
+    let b: Buffer = maybe;
+    let n: usize = bufferLen(b);
 }
-let b: Buffer = maybe;
-let n: usize = bufferLen(b);
-// `b` is released at the end of the scope
 ```
 
 `Buffer` is an opaque handle with a `freedBy` deleter. `bufferNew` returns
 `Buffer?`, so the check is explicit and the narrowed value moves into the
-non-null binding.
+non-null binding. The buffer is released at the end of the scope.
 
 A recursive owner uses `Box<T>`. Given
 `struct Node { next: Box<Node>?; value: i32; }`:
@@ -58,22 +61,32 @@ A recursive owner uses `Box<T>`. Given
 ```clorraine
 import { boxNew } from std.mem;
 
-let node: Box<Node> = boxNew(Node { next: null, value: 1 });
+func makeNode(): Box<Node> {
+    return boxNew(Node { next: null, value: 1 });
+}
 ```
 
 `Box<T>` is move-only and non-nullable; `Box<T>?` is optional. A box releases
 the pointee recursively and then frees the block. See
 [Chapter 11](../spec/11-memory.md) and the `std.mem` appendix entries.
 
-For a caller-owned resource, declare a handle and a deleter:
+For a caller-owned resource, declare a handle and a deleter that releases it
+through an `ffi` `take` call:
 
 ```clorraine
 export handle Token freedBy releaseToken;
 
+ffi tokens {
+    func FreeToken(take token: Token): void;
+}
+
 export func releaseToken(take token: Token): void {
-    // release the resource exactly once
+    FreeToken(token);
 }
 ```
+
+The deleter is a library-module pattern: its body must release the `take`
+parameter with a top-level `ffi` call.
 
 ## 3. Files
 
@@ -93,14 +106,21 @@ inside the module:
 
 ```clorraine
 import { File, MODE_OLDFILE, openFile, readFile } from std.io;
+import { Buffer, bufferBytes, bufferNew } from std.mem;
 
-let maybe: File? = openFile("data.bin", MODE_OLDFILE);
-if (maybe == null) {
-    return;
+func readFirst(path: cstring): i32 {
+    let file: File? = openFile(path, MODE_OLDFILE);
+    if (file == null) {
+        return -1;
+    }
+    let storage: Buffer? = bufferNew(4096);
+    if (storage == null) {
+        return -1;
+    }
+    let buffer: Buffer = storage;
+    let bytes: u8[] = bufferBytes(buffer);
+    return readFile(file, bytes);
 }
-let f: File = maybe;
-let n: i32 = readFile(f, buffer);
-// `f` closes at the end of the scope
 ```
 
 A short count is not an error. Loop when the whole request matters, and keep
@@ -118,15 +138,17 @@ C has `char *` and `strlen`. Clorraine separates three things:
 | `cstring` | A borrowed NUL-terminated view for an `ffi` call |
 
 ```clorraine
-func nameLength(borrow name: str): usize {
+import { stringOf, toCString } from std.text;
+
+func nameLength(name: str): usize {
     return len(name);
 }
 
-import { stringOf, toCString } from std.text;
-
-let owned: String = stringOf("hello");
-let view: str = owned;
-let c: cstring = toCString(view);
+func conversions(): void {
+    let owned: String = stringOf("hello");
+    let view: str = owned;
+    let c: cstring = toCString(view);
+}
 ```
 
 A `String` does not implicitly become a `cstring`; the NUL-terminated form is
@@ -142,18 +164,20 @@ volatile UWORD *color = (UWORD *)0xDFF180;
 *color = 0x0F00;
 ```
 
-Clorraine keeps the same address but makes the access auditable:
+Clorraine keeps the same address but makes the access auditable. The per-chip
+wrapper names the register and keeps the address arithmetic in one place:
 
 ```clorraine
-unsafe {
-    writeVolatile16(raw u16(0xDFF180), 0x0F00);
+import { setColor } from std.amiga.custom;
+
+func setBackground(): void {
+    setColor(0, 0x0F00);
 }
 ```
 
-The per-chip wrappers in `std.amiga.video` and the other `std.amiga.*` modules
-are preferred: they name the register, keep the `unsafe` block small, and hide
-the address arithmetic. A `raw` base may be `const`; the pointed-to value is
-still volatile where the wrapper says so. See
+`setColor` writes the volatile register; the `unsafe` and raw address stay
+inside the standard library. The overlay and volatile rules are in
+[Chapter 07](../spec/07-structs.md) section 7; profile availability is in
 [Chapter 15](../spec/15-profiles.md).
 
 ## 6. Interrupts
@@ -168,8 +192,10 @@ func onTick(): void {
     // allocation-free and drop-free
 }
 
-let token: HandlerToken = addHandler(onTick);
-removeHandler(token);
+func install(): void {
+    let token: HandlerToken = addHandler(onTick);
+    removeHandler(token);
+}
 ```
 
 The handler is a plain function, not a closure: a storing registration API
@@ -178,48 +204,65 @@ chain until `removeHandler`. See the `std.amiga.interrupt` module.
 
 ## 7. Hooks
 
-C:
-
-```c
-struct Hook hook = { 0, 0, entry, data };
-CallHookA(&hook, obj, message);
-```
-
-Clorraine passes a synchronous C hook through an `ffi` declaration. A
-capturing lambda can cross that call because the compiler emits a trampoline
-and a caller-stack environment:
+C builds a `struct Hook` and passes its address to `CallHookA`. The standard
+library owns that layout; an application uses the `Hook` surface:
 
 ```clorraine
-ffi utility {
-    func CallHookA(hook: borrow func(): void, obj: raw Object, msg: raw Message): u32;
+import { Hook, callHook, newHook } from std.amiga.utility;
+
+func onHook(): void {
 }
 
-let base: i32 = 10;
-let result: u32 = CallHookA(() => {
-    // `base` is captured in a caller-stack environment
-}, obj, msg);
+func useHook(): i32 {
+    let maybe: Hook? = newHook(onHook, 0);
+    if (maybe == null) {
+        return 0;
+    }
+    let hook: Hook = maybe;
+    return callHook(hook);
+}
 ```
 
-A callback stored by the C side (a `newHook` registration, a task entry, or an
-interrupt handler) must be capture-less. A capturing lambda there is
-diagnosed; a stored callback invoked after the synchronous hook returns faults
-`E11215`. See [Chapter 12](../spec/12-ffi-contracts.md) and the L5 rule.
+A synchronous callback at a plain C function-pointer parameter is declared
+with a `borrow` mode on the parameter name:
+
+```clorraine
+ffi dispatch {
+    func ForEach(item: raw u8, borrow visit: func(raw u8): void): u32;
+}
+
+func dispatchOne(item: raw u8): u32 {
+    let base: i32 = 10;
+    return ForEach(item, [base] (value: raw u8) => {
+        let n: i32 = base;
+    });
+}
+```
+
+The callback can capture because the compiler emits a trampoline and a
+caller-stack environment. A callback stored by the C side (a registration, a
+task entry, or an interrupt handler) must be capture-less. A capturing
+callback stored despite the contract and invoked after the synchronous call
+returns faults `E11215`; a capture-less callback has no runtime guard. See
+[Chapter 12](../spec/12-ffi-contracts.md) and the L5 rule.
 
 ## 8. Ownership modes
 
 | Mode | Use when | Caller after the call |
 | ---- | -------- | --------------------- |
-| `T` (by value) | The callee needs its own copy; `T` is duplicable | Still owns its copy |
-| `borrow T` | Read-only use for the call | Still owns |
+| `T` or `const T` parameter | Read-only lend for the call | Still owns; a duplicable value may also be copied by value elsewhere |
+| `borrow T` | Writable lend for the call | Still owns |
 | `take T` | The callee becomes the owner | Must not use the value |
-| `borrow T` on a view | The callee may write through a view | Still owns the storage |
-| `handle` | An opaque resource with a `freedBy` deleter | Moves when passed by value |
+| `T` by value in a local or return | Copy when duplicable, move when owning | The source is invalid after a move |
+| `handle` | An opaque resource with a `freedBy` deleter | Lends without a mode; moves only through `take` |
 | `raw T` | Hardware or an uncontracted C boundary | Unchanged; `unsafe` |
 
 The compiler rejects a use after a move and a release of a borrowed parameter.
 Those two diagnostics catch most C habits:
 
 ```clorraine
+import { stringOf } from std.text;
+
 func consume(take s: String): void {
 }
 
@@ -244,10 +287,15 @@ matches the operation:
 | Trap | `panic("invariant")` for a broken program, not for user input |
 
 ```clorraine
-let maybe: File? = openFile(path, MODE_OLDFILE);
-if (maybe != null) {
+import { File, MODE_OLDFILE, openFile, readFile } from std.io;
+
+func readInto(path: cstring, borrow buffer: u8[]): i32 {
+    let maybe: File? = openFile(path, MODE_OLDFILE);
+    if (maybe == null) {
+        return -1;
+    }
     let f: File = maybe;
-    let n: i32 = readFile(f, buffer);
+    return readFile(f, buffer);
 }
 ```
 
@@ -265,21 +313,15 @@ type cannot be initialized from `null`; the diagnostic is `E10012`.
 | `E10034` | Releasing or storing a borrowed parameter | Declare `take` or by value |
 | `E10105` | Passing a generic or `Box` value across FFI | Use the box/handle API at the boundary |
 | `E10201` | A C-style cast between unrelated types | Use the declared conversion or `raw` |
-| `E10207` | Storing an overlay outside its scope | Keep the overlay local or copy |
+| `E10207` | An overlay (volatile) type used as a value | Access it through a `raw` pointer inside `unsafe`; never store, copy, or pass it by value |
 | `E10306` | Storing an ephemeral closure | Use a plain function or a synchronous hook |
 | `E10400` | A capturing lambda at a storing C API | Make it capture-less or use a synchronous hook |
 | `E11200` | An Amiga module on the wrong profile | Select `hosted-amiga` |
-| `E11215` | A stored hook callback invoked after return | Keep the call synchronous; do not store it |
+| `E11215` | A capturing hook callback invoked after its call frame is gone | Keep the call synchronous; a capture-less callback has no guard |
 
 The live registry and the fix hint for every code are in
 [Chapter 14](../spec/14-diagnostics.md). `clorraine --explain E10020` prints
 the same entry from the binary.
-
-## Where next
-
-- [The language specification](../spec/README.md)
-- [Known limitations](known-limitations.md)
-- [The standard library appendix](../spec/appendix-stdlib.md)
 
 ## 11. Wrapper cookbook
 
@@ -290,8 +332,8 @@ These are the shapes to copy when wrapping one more C facility.
 ```clorraine
 export handle Device freedBy closeDevice;
 
-export func openDevice(name: cstring): Device? {
-    return OpenDevice(name);
+ffi devices {
+    func CloseDevice(take device: Device): void;
 }
 
 export func closeDevice(take device: Device): void {
@@ -305,19 +347,20 @@ another `take` function or let it drop; it may not copy it.
 ### Borrowed view accessor
 
 ```clorraine
-export func deviceBytes(borrow device: Device): u8[] {
-    unsafe {
-        return u8[raw u8(device.ptr), device.len];
-    }
+func payload(data: u8[], at: usize): u8[] {
+    return slice(data, at, len(data));
 }
 ```
 
-The result borrows the device for the rest of the view's origin. Do not return
-a view of a temporary or of a value the caller may move while the view lives.
+The result borrows the same storage for the rest of the view's origin. Do not
+return a view of a temporary or of a value the caller may move while the view
+lives.
 
 ### Status plus payload
 
 ```clorraine
+import { File, readFile } from std.io;
+
 export struct ReadResult {
     ok: bool;
     count: i32;
@@ -336,14 +379,22 @@ partial transfer.
 
 ```clorraine
 ffi dispatch {
-    func ForEach(item: raw Item, visit: borrow func(raw Item): void): u32;
+    func ForEach(item: raw u8, borrow visit: func(raw u8): void): u32;
 }
 
-let seen: i32 = 0;
-let code: u32 = ForEach(first, (item: raw Item) => {
-    // use `seen` here; the environment is on this call's stack
-});
+func dispatchOne(item: raw u8): u32 {
+    let seen: i32 = 0;
+    return ForEach(item, [seen] (value: raw u8) => {
+        let n: i32 = seen;
+    });
+}
 ```
 
 The C side must not store `visit`. A callback registered for later must be a
 plain function and cannot capture.
+
+## Where next
+
+- [The language specification](../spec/README.md)
+- [Known limitations](known-limitations.md)
+- [The standard library appendix](../spec/appendix-stdlib.md)

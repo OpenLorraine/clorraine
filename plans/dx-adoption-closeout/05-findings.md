@@ -42,3 +42,14 @@
 | RV-009 | 4 | MINOR | `compiler/src/lsp/features.rs` | fixed — the module is resolved by file from the module table; declaration-less module test |
 | RV-011 | 4 | MINOR | tests/fixtures | fixed — true same-module completion fixture, `local_at` cross-file unit test, and untitled hover assertion |
 | RV-012 | 4 | MINOR | `compiler/src/lsp/symbols.rs` | fixed — lambda parameters, expression bodies, and block bodies are walked and scoped to the lambda |
+| RV-001 | 7 | MAJOR | `docs/c-to-clorraine.md` | fixed — ffi mode order, declared callback types, and a real capture list |
+| RV-002 | 7 | MAJOR | `docs/c-to-clorraine.md` | fixed — the Hook pattern uses `std.amiga.utility`; the function-pointer example is separate and ABI-valid |
+| RV-003 | 7 | MAJOR | `docs/c-to-clorraine.md` | fixed — the ownership table separates read-only lends, writable borrows, and takes |
+| RV-004 | 7 | MAJOR | `docs/c-to-clorraine.md` | fixed — E10207 now says overlays are accessed through a raw pointer, never stored or copied |
+| RV-005 | 7 | MAJOR | `docs/c-to-clorraine.md` | fixed — deleters release through a top-level ffi take call |
+| RV-006 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — Buffer, MODE_OLDFILE, boxNew, Node, and toCString are declared or imported |
+| RV-007 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — E11215 is qualified to a stored capturing callback |
+| RV-008 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — the MMIO example uses `std.amiga.custom.setColor` and links the overlay rule |
+| RV-009 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — file buffers and paths are declared parameters |
+| RV-010 | 7 | MINOR | `docs/README.md` | fixed — Phase 1 and Phase 2 descriptions corrected |
+| RV-011 | 7 | MINOR | `docs/c-to-clorraine.md` §11 | fixed — view helper, ffi mode, and capture list corrected |
