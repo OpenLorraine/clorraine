@@ -3,8 +3,8 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
-> **Last Updated**: 2026-11-08
-> **Progress**: 0/32 tasks (0%)
+> **Last Updated**: 2026-11-09
+> **Progress**: 8/32 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -68,9 +68,9 @@ a reason.
 the measured evidence, and the goal. Record findings in
 `00-preflight-report-requirements.md`; resolve every critical/major finding.
 
-- [ ] 0.1.1 Run the requirements preflight; record every finding with severity,
+- [x] 0.1.1 Run the requirements preflight; record every finding with severity,
       evidence, options, and ruling.
-- [ ] 0.1.2 Resolve every critical/major finding; re-read the affected
+- [x] 0.1.2 Resolve every critical/major finding; re-read the affected
       requirements; record the verdict.
 
 **Verify**: the preflight report has no open critical/major finding.
@@ -81,21 +81,21 @@ the measured evidence, and the goal. Record findings in
 **Objective**: Verify the design is grounded in the current code, every shape
 is testable, the gate change is sufficient, and no hidden ambiguity remains.
 
-- [ ] 0.2.1 Run the plan preflight; check every cited file and line, every
+- [x] 0.2.1 Run the plan preflight; check every cited file and line, every
       exclusion, the threshold, and the commit sequence.
-- [ ] 0.2.2 Resolve every critical/major finding; update the owning documents;
+- [x] 0.2.2 Resolve every critical/major finding; update the owning documents;
       record the verdict in `00-preflight-report.md`.
 
 **Verify**: the plan preflight report has no open critical/major finding.
 
 ### Step 0.3: Commit the plan documents
 
-- [ ] 0.3.1 Review `git diff --cached`; commit
+- [x] 0.3.1 Review `git diff --cached`; commit
       `docs(plans): add the nested fill compaction plan` with the index,
       requirements, current state, designs, testing strategy, findings
       skeleton, ambiguity register, execution plan, and both preflight
       reports.
-- [ ] 0.3.2 Confirm `git status --porcelain` is empty.
+- [x] 0.3.2 Confirm `git status --porcelain` is empty.
 
 **Verify**: commit exists; clean tree.
 
@@ -110,34 +110,34 @@ is testable, the gate change is sufficient, and no hidden ambiguity remains.
 
 ### Step 1.1: Clean clone and pre-change gate
 
-- [ ] 1.1.1 Confirm the clone is clean at the plan-docs commit; record
+- [x] 1.1.1 Confirm the clone is clean at the plan-docs commit; record
       `git status --porcelain`, `git rev-parse HEAD`, and
       `git rev-parse b68dae5`.
-- [ ] 1.1.2 Run `make check`; record the final line and any skipped m68k tests.
+- [x] 1.1.2 Run `make check`; record the final line and any skipped m68k tests.
 
 **Verify**: clean status; `make check` green.
 
 ### Step 1.2: Base and head documents
 
-- [ ] 1.2.1 Run `make bench-base COMMIT=b68dae5`; record the retained
+- [x] 1.2.1 Run `make bench-base COMMIT=b68dae5`; record the retained
       `build/perf/base-clc` SHA-256 and `base.json` identity.
-- [ ] 1.2.2 Run `make bench`; record `head.json` identity and confirm
+- [x] 1.2.2 Run `make bench`; record `head.json` identity and confirm
       `dirty=false`. Record both SHA-256 values; do not require equality.
 
 **Verify**: both documents exist; identities recorded; trace counts present.
 
 ### Step 1.3: Attribution, probe, and stale-gate evidence
 
-- [ ] 1.3.1 Emit the four benchmark C files with `build/perf/base-clc` into
+- [x] 1.3.1 Emit the four benchmark C files with `build/perf/base-clc` into
       `build/perf/audit`, build them with m68k GCC `-O2`, and record the trace
       totals and PC buckets; write the attribution table.
-- [ ] 1.3.2 Run the pre-change `make bench-compare`; record the failure and
+- [x] 1.3.2 Run the pre-change `make bench-compare`; record the failure and
       name the hardcoded rules that caused it.
-- [ ] 1.3.3 Re-run the matrix probe with `build/perf/base-clc`: emit the C,
+- [x] 1.3.3 Re-run the matrix probe with `build/perf/base-clc`: emit the C,
       replace the row temporary and copies with one `memset`, build, trace,
       and record the exact commands and the observed instructions, `.text`,
       and C bytes. Record the final `REQUIRE` values and the ruling.
-- [ ] 1.3.4 Retain the emitted C and trace logs under `build/perf/audit` for
+- [x] 1.3.4 Retain the emitted C and trace logs under `build/perf/audit` for
       the emission audit; record the paths in `05-findings.md`.
 
 **Verify**: attribution table, probe evidence, and stale-gate output are in
@@ -145,16 +145,16 @@ the log; the final requirements are recorded.
 
 ### Step 1.4: Baseline record
 
-- [ ] 1.4.1 Fill the Committed Baseline table, the calibration line, and the
+- [x] 1.4.1 Fill the Committed Baseline table, the calibration line, and the
       identities in [Findings](05-findings.md).
 
 **Verify**: the table has no `pending` cell in the baseline section.
 
 ### Step 1.5: Commit the baseline record
 
-- [ ] 1.5.1 Review `git diff --cached`; commit
+- [x] 1.5.1 Review `git diff --cached`; commit
       `docs(plans): record the nested fill baseline`.
-- [ ] 1.5.2 Confirm `git status --porcelain` is empty.
+- [x] 1.5.2 Confirm `git status --porcelain` is empty.
 
 **Verify**: commit exists; clean tree.
 

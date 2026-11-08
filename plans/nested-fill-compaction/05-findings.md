@@ -21,50 +21,79 @@ binary can embed a different path.
 
 | Benchmark | `instructions_net` | m68k `.text` `-O2` | C bytes | Host `-O2` median |
 |---|---:|---:|---:|---:|
-| sieve | pending | pending | pending | pending |
-| matrix | pending | pending | pending | pending |
-| strings | pending | pending | pending | pending |
-| moves | pending | pending | pending | pending |
+| sieve | 1,040,581 | 76,728 | 311,284 | 0.79 ms |
+| matrix | 10,959 | 80,712 | 313,817 | 0.83 ms |
+| strings | 2,964,051 | 77,604 | 312,685 | 1.25 ms |
+| moves | 45,205 | 76,896 | 313,173 | 0.66 ms |
 
-Calibration is a separate line, not a scored benchmark: it records only
-`calibration.instructions` (raw) and `calibration.host_release_ns` (best).
-It has no `.text` row, no C-byte row, and no median in the JSON.
+Calibration: `instructions` 3,372; `host_release_ns` best 0.504 ms. It is not a
+scored benchmark and the JSON has no `.text`, C-byte, or median field for it.
+Host medians are advisory.
 
-**Base compiler source commit:** `b68dae5` (40-hex recorded in `base.json`).
+**Base compiler source commit:** `b68dae5858585d43f8df7894a119798a4607ec62`.
 
-**Head source commit:** the plan-docs commit; no compiler file differs from
-`b68dae5`.
+**Head source commit:** `72a39a112072` (plan-docs commit); no compiler file
+differs from `b68dae5`.
 
-**Base / head compiler SHA-256:** pending (recorded, not required to be equal).
+**Base compiler SHA-256:** `94e6d8f6e13cadd79b2f7759d32b933c300946eb7c848129dc335d53c16e90f0`.
 
-**Dirty state:** must be `false` in both documents.
+**Head compiler SHA-256:** `22d7bf9f9300d37a7536a8d564cb81f767e878813195140855da39cf11455d37`.
+
+The hashes differ because the base builds in `build/perf/base-worktree` and a
+debug binary embeds its build path. The compiler source is identical; every
+metric in the two documents is byte-identical.
+
+**Dirty state:** `false` in both documents.
 
 **Commands:** `make bench-base COMMIT=b68dae5`, `make bench`.
 
-## Exploratory Probe
+## Exploratory Probe (re-run with the base compiler)
 
-The probe below was run on the current compiler before the plan. It patched
-only the emitted C of matrix; the benchmark source and expected output were
-unchanged. It selected the shape; the committed baseline above is the gate.
+The probe patches only the emitted C of matrix; the benchmark source and
+expected output are unchanged. This re-run uses `build/perf/base-clc`, the
+retained compiler from `b68dae5`, and the exact commands in
+[Testing Strategy](07-testing-strategy.md#reproducible-audit-commands).
 
 | Metric | Current emission | One `memset` | Delta |
 |---|---:|---:|---:|
 | matrix trace instructions (raw) | 14,331 | 13,280 | -1,051 |
-| matrix net instructions | 10,959 | 9,908 | -9.6% |
+| matrix net instructions (raw - 3,372) | 10,959 | 9,908 | -9.6% |
 | matrix m68k `-O2` `.text` | 80,712 | 76,676 | -5.0% |
-| matrix C bytes (exploratory) | 315,167 | 312,510 | -0.8% |
+| matrix C bytes | 313,637 | 310,980 | -2,657 (-0.85%) |
 | output | `matrix: 523776` | `matrix: 523776` | equal |
 
-The absolute C-byte values are exploratory. A later reproduction measured
-313,637 / 310,980, the same 2,657-byte delta. Phase 1 re-runs the probe with
-`build/perf/base-clc` and records the committed numbers; the gate uses
-instructions and `.text`.
+The probe C bytes are emitted from the clone root, so they match the head
+document's path-dependent C size, not the base document's nested-worktree C
+size (313,817). The instruction and `.text` metrics are path-independent and
+match the base document exactly (10,959 / 80,712). The probe exceeds the
+initial 5%/3% requirement, so the final requirement stays
+`matrix:instructions:5 matrix:text:3`. This is the Phase 1 ruling.
+
+Artifacts: `build/perf/audit/matrix-base.c`, `matrix-probe.c`, the two trace
+files, and `sizes.txt`. They are gitignored.
+
+## Stale Gate Evidence
+
+`make bench-compare` on the flat baseline exited 2:
+
+```
+compare: FAILED
+  - sieve: instructions target missed (1040581 > 1040581 * 0.80)
+  - sieve: .text target missed (76728 > 76728 * 0.90)
+  - sieve: C-byte target missed (311284 > 311284 * 0.75)
+  - no benchmark improved by 20% instructions or 10% .text
+```
+
+This is the evidence for R2: the pre-change gate cannot pass a tree with no
+regression, because it encodes PLAN-14's sieve targets and a generic
+improvement rule.
 
 ## Head and Delta
 
 Filled after the codegen commit with `make bench` and
-`make bench-compare REQUIRE="<final requirements>"` (the Phase 1 ruling sets
-the final values; the initial 5/3 is provisional).
+`make bench-compare REQUIRE="matrix:instructions:5 matrix:text:3"`. The Phase 1
+probe reproduced -9.6% instructions and -5.0% `.text`, so the initial values
+are final.
 
 | Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta | C bytes delta | Output |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
