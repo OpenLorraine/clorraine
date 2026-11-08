@@ -16,7 +16,6 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
-import math
 import platform
 import re
 import subprocess
@@ -24,6 +23,7 @@ import sys
 import tempfile
 import time
 import unittest
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 SCHEMA = 1
@@ -566,10 +566,12 @@ def format_delta(base: int | None, head: int | None) -> str:
     return f"{(head - base) * 100.0 / base:+.1f}%"
 
 
+# The metrics a --require entry may name. `instructions` maps to
+# `instructions_net`; `text` maps to the m68k release `.text` size.
 REQUIREMENT_METRICS = ("instructions", "text")
 
 
-def parse_requirement(spec: str) -> tuple[str, str, float]:
+def parse_requirement(spec: str) -> tuple[str, str, Decimal]:
     """Parse one ``NAME:METRIC:PERCENT`` expectation.
 
     The name may contain a colon, so the split is from the right: the last
@@ -588,12 +590,12 @@ def parse_requirement(spec: str) -> tuple[str, str, float]:
             "(use instructions or text)"
         )
     try:
-        percent = float(raw_percent)
-    except ValueError as error:
+        percent = Decimal(raw_percent)
+    except InvalidOperation as error:
         raise HarnessError(
             f"invalid percentage in --require: {raw_percent}"
         ) from error
-    if not math.isfinite(percent) or percent <= 0:
+    if not percent.is_finite() or percent <= 0:
         raise HarnessError(
             f"percentage must be a positive finite number in --require: "
             f"{raw_percent}"
@@ -611,7 +613,7 @@ def requirement_metric(
 
 
 def command_compare(args: argparse.Namespace) -> int:
-    """Compare a base and head result document under the plan thresholds."""
+    """Compare two result documents under the invariants and --require entries."""
     base = load_document(path(args.base))
     head = load_document(path(args.head))
     for field in ("toolchain", "runs", "flags", "profiles"):
@@ -665,8 +667,11 @@ def command_compare(args: argparse.Namespace) -> int:
             failures.append(f"{name}: missing {metric_name} metric for --require")
             requirement_rows.append((name, metric_name, base_value, head_value, percent, False))
             continue
-        limit = base_value * (1.0 - percent / 100.0)
-        passed = head_value <= limit
+        # Compare exactly: head/base <= (100 - percent)/100. Decimal keeps a
+        # decimal percentage such as 2.5 from losing the boundary to a float.
+        passed = Decimal(head_value) * 100 <= Decimal(base_value) * (
+            Decimal(100) - percent
+        )
         requirement_rows.append((name, metric_name, base_value, head_value, percent, passed))
         if not passed:
             failures.append(

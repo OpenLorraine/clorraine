@@ -101,7 +101,7 @@ vscode-package:
 # Benchmark harness (generated C: emitted size, section size, host time, m68k
 # instruction count). `bench` traces; `bench-fast` skips the trace for
 # iteration; `bench-base` builds the recorded base compiler; `bench-compare`
-# enforces the plan thresholds.
+# enforces the comparison invariants and any declared `REQUIRE` expectations.
 bench:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/perf/bench.py run --compiler-git $$(git rev-parse HEAD) --label head --out build/perf/head.json"
 

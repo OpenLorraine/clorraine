@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -210,9 +211,10 @@ class CompareTests(TempFiles):
         head = make_document(label="head", instructions=980, text=1000, c_bytes=900)
         code, output = self.result(base, head, ["matrix:instructions:5"])
         self.assertEqual(code, 1)
-        self.assertIn("matrix", output)
-        self.assertIn("instructions", output)
-        self.assertIn("-2.0%", output)
+        self.assertIn(
+            "matrix: instructions -2.0% misses the required -5%",
+            output,
+        )
         self.assertIn("need <= -5%", output)
 
     def test_compare_fails_on_missed_text_requirement(self) -> None:
@@ -220,14 +222,47 @@ class CompareTests(TempFiles):
         head = make_document(label="head", instructions=1000, text=990, c_bytes=900)
         code, output = self.result(base, head, ["matrix:text:3"])
         self.assertEqual(code, 1)
-        self.assertIn("matrix", output)
-        self.assertIn("text", output)
-        self.assertIn("-1.0%", output)
+        self.assertIn(
+            "matrix: text -1.0% misses the required -3%",
+            output,
+        )
+        self.assertIn("need <= -3%", output)
 
     def test_compare_fails_flat_with_requirement(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
         head = make_document(label="head", instructions=1000, text=1000, c_bytes=1000)
-        self.assertEqual(self.compare(base, head, ["matrix:instructions:5"]), 1)
+        code, output = self.result(base, head, ["matrix:instructions:5"])
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "matrix: instructions +0.0% misses the required -5%",
+            output,
+        )
+        self.assertIn("need <= -5%", output)
+
+    def test_compare_checks_a_duplicate_requirement_twice(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=940, text=1000, c_bytes=900)
+        code, output = self.result(
+            base,
+            head,
+            ["matrix:instructions:5", "matrix:instructions:5"],
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(output.count("need <= -5%"), 2)
+
+    def test_compare_accepts_an_exact_boundary(self) -> None:
+        base = make_document(label="base", instructions=5, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1, text=1000, c_bytes=1000)
+        code, output = self.result(base, head, ["matrix:instructions:80"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("FAIL", output)
+
+    def test_compare_rejects_a_tiny_positive_percentage(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1000, text=1000, c_bytes=1000)
+        code, output = self.result(base, head, ["matrix:instructions:1e-15"])
+        self.assertEqual(code, 1)
+        self.assertIn("misses the required -1e-15%", output)
 
     def test_compare_ignores_c_byte_regression(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
@@ -254,12 +289,14 @@ class CompareTests(TempFiles):
         head = make_document(label="head", instructions=700, text=800, c_bytes=700)
         with self.assertRaises(bench.HarnessError):
             self.compare(base, head, ["missing:instructions:5"])
+        self.assertEqual(self.output.getvalue(), "")
 
     def test_compare_rejects_unknown_metric(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
         head = make_document(label="head", instructions=700, text=800, c_bytes=700)
         with self.assertRaises(bench.HarnessError):
             self.compare(base, head, ["matrix:bogus:5"])
+        self.assertEqual(self.output.getvalue(), "")
 
     def test_compare_rejects_bad_percentage(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
@@ -267,12 +304,14 @@ class CompareTests(TempFiles):
         for value in ("0", "-5", "nan", "inf", "nope"):
             with self.assertRaises(bench.HarnessError):
                 self.compare(base, head, [f"matrix:instructions:{value}"])
+            self.assertEqual(self.output.getvalue(), "")
 
     def test_compare_rejects_malformed_requirement(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
         head = make_document(label="head", instructions=700, text=800, c_bytes=700)
         with self.assertRaises(bench.HarnessError):
             self.compare(base, head, ["matrix:instructions"])
+        self.assertEqual(self.output.getvalue(), "")
 
     def test_compare_fails_on_missing_trace(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
@@ -293,12 +332,24 @@ class RequirementParsingTests(unittest.TestCase):
     def test_parse_requirement_reads_from_the_right(self) -> None:
         self.assertEqual(
             bench.parse_requirement("matrix:instructions:5"),
-            ("matrix", "instructions", 5.0),
+            ("matrix", "instructions", Decimal("5")),
         )
         self.assertEqual(
             bench.parse_requirement("a:b:text:2.5"),
-            ("a:b", "text", 2.5),
+            ("a:b", "text", Decimal("2.5")),
         )
+
+    def test_parse_args_preserves_a_colon_in_the_name(self) -> None:
+        args = bench.parse_args(
+            [
+                "compare",
+                "--require",
+                "a:b:instructions:5",
+                "base.json",
+                "head.json",
+            ]
+        )
+        self.assertEqual(args.require, ["a:b:instructions:5"])
 
     def test_parse_args_collects_repeated_require(self) -> None:
         args = bench.parse_args(
