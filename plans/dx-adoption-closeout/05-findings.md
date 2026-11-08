@@ -59,7 +59,8 @@
 | RV-004 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — a module named `index` is rejected before writing; test |
 | RV-005 | 6 | MINOR | `compiler/tests/docgen_spec_test.rs` | fixed — fixture copies, empty environment, mixed input, symlink, CRLF, and reserved-name tests added |
 | RV-006 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — signature slices normalize CRLF; test |
-| RV-007 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — related types resolve through the module's imports and type parameters are skipped |
-| RV-008 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — duplicate anchors use the standard `-1` suffix |
+| RV-007 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed for unaliased imports; accepted limit for aliased/qualified same-name references, recorded in known-limitations |
+| RV-008 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | fixed — duplicate anchors use the standard `-1` suffix; a dedicated collision fixture is accepted as a test gap |
 | RV-012 | 7 | MAJOR | `docs/c-to-clorraine.md` §9 | fixed — the read example passes a local view; the direct form hit E10030 |
 | RV-013 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — the ffi blocks note the library-wrapper rule |
+| RV-009 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | accepted — a declaration whose anchor equals the module H1 slug can link to the title; recorded as a tooling limit |

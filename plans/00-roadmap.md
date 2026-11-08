@@ -1,10 +1,10 @@
 # Roadmap: Clorraine
 
 > **Feature-Set**: Clorraine
-> **Status**: Active — DX and adoption closeout (executing)
+> **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-08
-> **Progress**: 564/567 rows done; 1 open (1 Executing); 2 Parked
+> **Progress**: 565/567 rows done; 0 open; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -581,7 +581,7 @@
 | PLAN-18 | Compiler robustness closeout | — | [compiler-robustness-closeout](compiler-robustness-closeout/00-index.md) | Done | ✅ | 2026-11-08 | 38/38; six latent defects closed, UBSan leg (`make ubsan`, 2 suites), deterministic differential fuzzer (smoke 28/0 in `make check`, full 268/0), cross-toolchain shape and eight-fault gates; `make verify` green |
 | PLAN-19 | v1.1 language surfaces | [01-requirements](v1.1-language-surfaces/01-requirements.md) | [v1.1-language-surfaces](v1.1-language-surfaces/00-index.md) | Done | ✅ | 2026-11-08 | `Box<T>` with generated recursive drop glue, ordinary `freedBy` deleters (X1), C-hook trampolines for capturing lambdas (L5); requirements preflight 23 findings (21 resolved, 1 accepted, 1 incorporated); plan preflight 19 findings (all resolved); 74/74 tasks and all phase deliverables checked; task 2.2.5 closed (`e8f7407`) with a per-instance operand-shape audit covering explicit/inferred/forwarding/member/index/deref/conditional/alias/loop/capture/address-of/store routes; 112 spec + 13 impl tests; `make check`, `make asan` (28 suites), `make ubsan` (2 suites), `make verify` (`verify: all legs passed`) |
 | PLAN-20 | v1.1.0 release closeout | — | [RELEASE.md](../RELEASE.md) | Done | ✅ | 2026-11-08 | Version `1.1.0`, changelog and release notes, v1.1.0 runbook and README, release binaries and tarballs with `SHA256SUMS`, annotated `v1.1.0` tag; `make check`, `make asan` (28 suites), `make ubsan` (2 suites), `make corpus-amiga`, `make differential` (3/3), `make bench-shape`, and `make verify` (`verify: all legs passed`) green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.0 |
-| PLAN-21 | DX and adoption closeout | [01-requirements](dx-adoption-closeout/01-requirements.md) | [dx-adoption-closeout](dx-adoption-closeout/00-index.md) | Executing | 🔄 | 2026-11-08 | Fetch/detect SDK installer, std-only LSP with diagnostics/hover/goto/completion/symbols, VS Code extension packaging, `clorraine --doc`, and the C-to-Clorraine guide; no new Rust crates; no language, stdlib, ABI, or runtime changes; requirements preflight 15 findings (12 resolved, 2 accepted, 1 out of scope); plan preflight 16 findings (11 resolved, 4 fixed, 1 out of scope); 56 tasks in 8 phases |
+| PLAN-21 | DX and adoption closeout | [01-requirements](dx-adoption-closeout/01-requirements.md) | [dx-adoption-closeout](dx-adoption-closeout/00-index.md) | Done | ✅ | 2026-11-08 | 56/56; fetch/detect SDK installer (29 tests), std-only `clorraine-lsp` (32 integration + 26 unit tests), VS Code extension `.vsix` with packaged-client smoke, `clorraine --doc` (9 spec + 4 unit tests), C-to-Clorraine guide; requirements preflight 15 findings, plan preflight 16, phase reviews closed; no new Rust crates; no spec, stdlib, ABI, runtime, or codegen changes; `make check`, `make asan` (28 suites), `make ubsan` (2 suites), `make corpus-amiga`, `make differential` (3/3), `make verify` (`verify: all legs passed`), `make demo-check`, `make vscode-check` green |
 
 ## Batch N accounting (2026-10-19)
 

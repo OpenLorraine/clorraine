@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-08
-> **Progress**: 52/56 tasks (93%)
+> **Last Updated**: 2026-11-08 22:30
+> **Progress**: 56/56 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -331,15 +331,15 @@ the project gates.
 **Reference**: [07](07-testing-strategy.md) ST-55 to ST-57 · AR-35, AR-36, AR-37
 **Objective**: Prove the whole tree green and close the plan.
 
-- [ ] 8.2.1 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, and `make verify` — no source file
-- [ ] 8.2.2 Run `make demo-check` and `make vscode-check` — no source file
-- [ ] 8.2.3 Run the correctness and semantics phase reviews; record findings and rulings — `plans/dx-adoption-closeout/05-findings.md`
-- [ ] 8.2.4 Mark the roadmap row Done and push the verified tree — `plans/00-roadmap.md`
+- [x] 8.2.1 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, and `make verify` — no source file
+- [x] 8.2.2 Run `make demo-check` and `make vscode-check` — no source file
+- [x] 8.2.3 Run the correctness and semantics phase reviews; record findings and rulings — `plans/dx-adoption-closeout/05-findings.md`
+- [x] 8.2.4 Mark the roadmap row Done and push the verified tree — `plans/00-roadmap.md`
 
 **Deliverables**:
-- [ ] Every gate green
-- [ ] Review findings resolved
-- [ ] Roadmap Done and `origin/main` level
+- [x] Every gate green
+- [x] Review findings resolved
+- [x] Roadmap Done and `origin/main` level
 
 **Verify**: `make check && make demo-check && make vscode-check && make asan && make ubsan && make corpus-amiga && make differential && make verify`
 
