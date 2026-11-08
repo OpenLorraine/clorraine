@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 8/32 tasks (25%)
+> **Progress**: 12/32 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -169,7 +169,7 @@ the log; the final requirements are recorded.
 
 ### Step 2.1: Unit tests
 
-- [ ] 2.1.1 Add the comparison-gate tests listed in
+- [x] 2.1.1 Add the comparison-gate tests listed in
       [Comparison Gate](03-01-comparison-gate.md); run `make bench-test` and
       record the expected failures on the old comparator.
 
@@ -177,19 +177,19 @@ the log; the final requirements are recorded.
 
 ### Step 2.2: Comparator implementation
 
-- [ ] 2.2.1 Implement `--require`, validation, the requirement rows, and the
+- [x] 2.2.1 Implement `--require`, validation, the requirement rows, and the
       removal of the hardcoded sieve and generic improvement rules.
-- [ ] 2.2.2 Promote the tests to green.
+- [x] 2.2.2 Promote the tests to green.
 
 **Verify**: `make bench-test` green.
 
 ### Step 2.3: Make target
 
-- [ ] 2.3.1 Add the `REQUIRE` make variable and the `--require` expansion to
+- [x] 2.3.1 Add the `REQUIRE` make variable and the `--require` expansion to
       `bench-compare`.
-- [ ] 2.3.2 Add the `make -n` expansion test for empty and two-value `REQUIRE`.
-- [ ] 2.3.3 Run a flat comparison with an empty `REQUIRE` and confirm exit 0.
-- [ ] 2.3.4 Record the `AGENTS.md` `make bench-compare` row change for the
+- [x] 2.3.2 Add the `make -n` expansion test for empty and two-value `REQUIRE`.
+- [x] 2.3.3 Run a flat comparison with an empty `REQUIRE` and confirm exit 0.
+- [x] 2.3.4 Record the `AGENTS.md` `make bench-compare` row change for the
       closeout docs commit; do not mix it into the tooling commit.
 
 **Verify**: flat compare passes; `make bench-test` still green; the AGENTS row
@@ -197,9 +197,9 @@ is queued for the docs commit.
 
 ### Step 2.4: Commit the tooling change
 
-- [ ] 2.4.1 Review `git diff --cached`; commit
+- [x] 2.4.1 Review `git diff --cached`; commit
       `feat(perf): parameterize the benchmark comparison gate`.
-- [ ] 2.4.2 Record the commit and the empty emission audit (no codegen files
+- [x] 2.4.2 Record the commit and the empty emission audit (no codegen files
       changed).
 
 **Verify**: commit exists; tree clean; no codegen file in the diff.

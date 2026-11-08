@@ -88,6 +88,33 @@ This is the evidence for R2: the pre-change gate cannot pass a tree with no
 regression, because it encodes PLAN-14's sieve targets and a generic
 improvement rule.
 
+## Tooling Gate Review
+
+Implementation commit `6256c40`; fix commit `8b47312`. The change touches only
+`tools/perf/bench.py`, `tools/perf/tests/test_bench.py`, and the `Makefile`;
+`git diff --name-only 5f708a6..8b47312` contains no codegen, runtime, stdlib,
+or measurement file. The emission audit for this phase is empty.
+
+**Red evidence.** The new `CompareTests` run against the pre-change comparator
+(`5f708a6`'s `bench.py`) reports 14 failures out of 19. The five that pass are
+the unchanged invariants: output mismatch, instruction regression, `.text`
+regression, missing trace, and structural mismatch. The requirement cases
+(met, missed, flat-with-requirement, duplicate, boundary, invalid input) all
+fail on the old code. Command: copy the old `bench.py` and the new tests into a
+scratch tree and run
+`python3 -m unittest discover -s tools/perf/tests -t tools/perf -k CompareTests -v`.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| RV-001: the missed-text and flat-requirement tests passed on the old comparator for the wrong reason | MAJOR | Assert the exact named failure lines (`matrix: text -1.0% misses the required -3%`, `matrix: instructions +0.0% misses the required -5%`) and the `need <=` rows; the red run now fails both |
+| RV-002: float boundary could false-fail an exact 80% or false-pass a tiny percentage | MINOR | Use `Decimal` and the exact inequality `head * 100 <= base * (100 - percent)`; boundary and `1e-15` tests added |
+| RV-003: duplicate, colon-name, and no-table-before-error cases were missing | MINOR | Added the duplicate requirement, the `parse_args` colon-name case, and empty-output assertions after every rejected input |
+| RV-004: stale "plan thresholds" wording and an undocumented constant | MINOR | Reworded the comparator and Makefile comments; documented `REQUIREMENT_METRICS` |
+| RV-005: plan progress and the old-red/empty-emission records were missing | MINOR | This section and the Phase 2 checkboxes record both |
+
+**Verify:** `make bench-test` 40 tests OK; flat comparison exit 0; the declared
+5%/3% requirement on the flat pair exits 1 with both named failures.
+
 ## Head and Delta
 
 Filled after the codegen commit with `make bench` and
