@@ -64,3 +64,13 @@
 | RV-012 | 7 | MAJOR | `docs/c-to-clorraine.md` §9 | fixed — the read example passes a local view; the direct form hit E10030 |
 | RV-013 | 7 | MINOR | `docs/c-to-clorraine.md` | fixed — the ffi blocks note the library-wrapper rule |
 | RV-009 | 6 | MINOR | `compiler/src/clorraine/docgen.rs` | accepted — a declaration whose anchor equals the module H1 slug can link to the title; recorded as a tooling limit |
+
+## Re-review outcomes
+
+| Phase | Outcome |
+|---|---|
+| 3 | All three MAJOR findings resolved; the index-cap and cancellation residuals were fixed and tested. |
+| 4 | Both MAJOR findings resolved; the declaration-less completion, same-module fixture, cross-file local lookup, and lambda scopes were fixed and tested. |
+| 5 | All three MAJOR findings resolved; out-of-order correlation, failed-start cleanup, and the packaged configuration path are pinned. |
+| 6 | All three MAJOR findings resolved; the remaining related-link and anchor edges are accepted as tooling limits. |
+| 7 | All five original MAJOR findings resolved; the new read-example E10030 and the remaining wording/import gaps were fixed. |
