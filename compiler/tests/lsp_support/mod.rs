@@ -162,6 +162,131 @@ impl LspClient {
         )
     }
 
+    /// Initializes with a profile and a workspace root.
+    pub fn initialize_with_root(&mut self, profile: &str, root: &std::path::Path) -> Json {
+        self.request(
+            "initialize",
+            Json::object([
+                (
+                    "rootUri",
+                    Json::String(clc::lsp::uri::from_path(root)),
+                ),
+                (
+                    "initializationOptions",
+                    Json::object([("profile", Json::String(profile.to_owned()))]),
+                ),
+            ]),
+        )
+    }
+
+    /// Sends `textDocument/didOpen`.
+    pub fn open(&mut self, uri: &str, text: &str) {
+        self.send(&Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("textDocument/didOpen".to_owned())),
+            (
+                "params",
+                Json::object([(
+                    "textDocument",
+                    Json::object([
+                        ("uri", Json::String(uri.to_owned())),
+                        ("languageId", Json::String("clorraine".to_owned())),
+                        ("version", Json::Number(1)),
+                        ("text", Json::String(text.to_owned())),
+                    ]),
+                )]),
+            ),
+        ]));
+    }
+
+    /// Sends a full-text `textDocument/didChange`.
+    pub fn change(&mut self, uri: &str, text: &str) {
+        self.send(&Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("textDocument/didChange".to_owned())),
+            (
+                "params",
+                Json::object([
+                    (
+                        "textDocument",
+                        Json::object([
+                            ("uri", Json::String(uri.to_owned())),
+                            ("version", Json::Number(2)),
+                        ]),
+                    ),
+                    (
+                        "contentChanges",
+                        Json::Array(vec![Json::object([(
+                            "text",
+                            Json::String(text.to_owned()),
+                        )])]),
+                    ),
+                ]),
+            ),
+        ]));
+    }
+
+    /// Sends `textDocument/didClose`.
+    pub fn close(&mut self, uri: &str) {
+        self.send(&Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("textDocument/didClose".to_owned())),
+            (
+                "params",
+                Json::object([(
+                    "textDocument",
+                    Json::object([("uri", Json::String(uri.to_owned()))]),
+                )]),
+            ),
+        ]));
+    }
+
+    /// Reads messages until the next `publishDiagnostics` notification.
+    pub fn diagnostics(&mut self) -> Json {
+        loop {
+            let message = self.message();
+            if message.get("method").and_then(Json::as_str)
+                == Some("textDocument/publishDiagnostics")
+            {
+                return message
+                    .get("params")
+                    .cloned()
+                    .expect("diagnostics params");
+            }
+        }
+    }
+
+    /// Sends a feature request at a zero-based line and character.
+    pub fn at(&mut self, method: &str, uri: &str, line: u32, character: u32) -> Json {
+        self.request(
+            method,
+            Json::object([
+                (
+                    "textDocument",
+                    Json::object([("uri", Json::String(uri.to_owned()))]),
+                ),
+                (
+                    "position",
+                    Json::object([
+                        ("line", Json::Number(line as i64)),
+                        ("character", Json::Number(character as i64)),
+                    ]),
+                ),
+            ]),
+        )
+    }
+
+    /// Sends `textDocument/documentSymbol`.
+    pub fn symbols(&mut self, uri: &str) -> Json {
+        self.request(
+            "textDocument/documentSymbol",
+            Json::object([(
+                "textDocument",
+                Json::object([("uri", Json::String(uri.to_owned()))]),
+            )]),
+        )
+    }
+
     /// Shuts down and sends `exit`; returns the process exit code.
     pub fn shutdown_and_exit(&mut self) -> i32 {
         let response = self.request("shutdown", Json::Null);
