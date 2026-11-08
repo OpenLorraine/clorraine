@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 7/56 tasks (13%)
+> **Progress**: 14/56 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -93,25 +93,25 @@ the project gates.
 **Reference**: [03-01](03-01-installer.md) · [07](07-testing-strategy.md) ST-1 to ST-12 · AR-27 to AR-32
 **Objective**: Encode every component, dry-run, and integrity case before code.
 
-- [ ] 2.1.1 [spec-author] Write installer unit tests for ST-1 to ST-12 — `tools/setup/tests/`
-- [ ] 2.1.2 Run the suite and record the red phase — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
+- [x] 2.1.1 [spec-author] Write installer unit tests for ST-1 to ST-12 — `tools/setup/tests/`
+- [x] 2.1.2 Run the suite and record the red phase — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-01](03-01-installer.md) §Probe, §Report, §Fetch plan · AR-27 to AR-31
 **Objective**: Build the report, plan, and fetch path.
 
-- [ ] 2.2.1 Implement CLI parsing, `Probe`, report rows, text and JSON output — `tools/setup/install_sdk.py`
-- [ ] 2.2.2 Implement fetch planning, confirmation, execution, and provenance verification — `tools/setup/install_sdk.py`
-- [ ] 2.2.3 Run the installer suite green — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
+- [x] 2.2.1 Implement CLI parsing, `Probe`, report rows, text and JSON output — `tools/setup/install_sdk.py`
+- [x] 2.2.2 Implement fetch planning, confirmation, execution, and provenance verification — `tools/setup/install_sdk.py`
+- [x] 2.2.3 Run the installer suite green — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
 
 ### Step 2.3: Implementation tests and integration
 
 **Reference**: [03-01](03-01-installer.md) §Testing · AR-32
 **Objective**: Cover helpers and wire the gate.
 
-- [ ] 2.3.1 Add implementation tests for probe helpers, report ordering, and JSON encoding — `tools/setup/tests/`
-- [ ] 2.3.2 Add `setup`/`setup-check` targets, the CI step, and run `make check` — `Makefile`, `.github/workflows/check.yml`
+- [x] 2.3.1 Add implementation tests for probe helpers, report ordering, and JSON encoding — `tools/setup/tests/`
+- [x] 2.3.2 Add `setup`/`setup-check` targets, the CI step, and run `make check` — `Makefile`, `.github/workflows/check.yml`
 
 **Deliverables**:
 - [ ] Installer detects every component and fails closed

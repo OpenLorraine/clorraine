@@ -54,15 +54,26 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
+	$(MAKE) setup-check
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 	$(MAKE) bench-test
 	$(MAKE) fuzz-test
 	$(MAKE) fuzz-smoke
+
+# Detect and optionally prepare the Amiga SDK. `FETCH=1` builds the pinned
+# image from public upstream sources; `DRY=1` reports the plan without running
+# it; `YES=1` skips confirmation. Licensed ROMs and Workbench media are never
+# downloaded or copied.
+setup:
+	python3 tools/setup/install_sdk.py $(if $(filter 1,$(FETCH)),--fetch,) $(if $(filter 1,$(DRY)),--dry-run,) $(if $(filter 1,$(YES)),--yes,)
+
+setup-check:
+	cd tools/setup && python3 -m unittest discover -s tests -t tests -v
 
 # Benchmark harness (generated C: emitted size, section size, host time, m68k
 # instruction count). `bench` traces; `bench-fast` skips the trace for

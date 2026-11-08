@@ -24,5 +24,7 @@ jobs:
         run: rustup toolchain install stable --profile minimal
       - name: Spec check
         run: ./spec/check.sh
+      - name: Installer tests
+        run: cd tools/setup && python3 -m unittest discover -s tests -t tests -v
       - name: Workspace tests
         run: cargo test --workspace

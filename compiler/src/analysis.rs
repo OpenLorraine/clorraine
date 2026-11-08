@@ -55,7 +55,11 @@ pub struct Analysis {
     pub sources: SourceMap,
     /// File identity by logical path.
     pub files: BTreeMap<String, FileId>,
-    /// Parsed programs, in input order.
+    /// Path identity and the parsed tree, in input order.
+    ///
+    /// [`Mode::Full`] consumes the programs during loading, so this vector is
+    /// empty after a full analysis; a caller that needs the tree uses
+    /// [`parse`].
     pub programs: Vec<(FileId, Program)>,
     /// The loaded program, when loading ran.
     pub loaded: Option<Loaded>,
