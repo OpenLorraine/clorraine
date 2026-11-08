@@ -91,7 +91,7 @@ pinned by IP-19.
 
 1. Write both suites; do not change the compiler.
 2. Run `cargo test --test nested_fill_compaction_impl_test` in the clean
-   worktree. Record every failing positive pin and boundary pin, and the
+   clone. Record every failing positive pin and boundary pin, and the
    observed old spelling. The exclusion guards must pass.
 3. Run `cargo test --test nested_fill_compaction_spec_test`. It must pass on
    the base; a failure means the test or the expected output is wrong.
@@ -148,7 +148,7 @@ not the tooling commit.
 
 ## Reproducible Audit Commands
 
-These commands run from the worktree root. Outputs stay under
+These commands run from the repository root. Outputs stay under
 `build/perf/audit/`, which is gitignored and is removed or retained only as a
 scratch artifact.
 

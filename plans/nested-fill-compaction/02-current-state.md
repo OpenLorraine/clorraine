@@ -15,7 +15,7 @@
 
 The main checkout contains two user artifacts (`examples/hello/hello.clo`
 without a trailing newline and an untracked `.vscode/`). They are not part of
-this feature. The benchmark work runs in a separate worktree at `b68dae5`.
+this feature. The benchmark work runs in a isolated clone at `b68dae5`.
 
 ## Harness Audit
 
@@ -89,7 +89,7 @@ and trace method were unchanged.
 | Program output | `matrix: 523776` | `matrix: 523776` | equal |
 
 The instruction and `.text` deltas reproduce. The **absolute C-byte values are
-exploratory**: a later reproduction with the worktree's `clc` measured 313,637
+exploratory**: a later reproduction with the clone's `clc` measured 313,637
 bytes for the current emission and 310,980 bytes for the probe, a difference of
 1,530 bytes in both. The delta is the same. Phase 1 re-runs the probe with
 `build/perf/base-clc` and records the committed numbers; the requirements gate

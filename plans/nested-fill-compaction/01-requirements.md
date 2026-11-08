@@ -37,7 +37,7 @@ bounds; trap removal; new external crates; and build scripts.
 
 ### R1 — Baseline and measurement audit
 
-- **R1.1 Clean baseline.** Benchmark only a clean worktree. The plan documents
+- **R1.1 Clean baseline.** Benchmark only a clean isolated clone. The plan documents
   are committed first, because an untracked `plans/nested-fill-compaction/`
   makes the harness record `dirty=true`. The base compiler source is commit
   `b68dae5`; the head compiler is built from the plan-docs commit, which

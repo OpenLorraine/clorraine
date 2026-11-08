@@ -75,7 +75,7 @@ and any change to the scored programs or their expected output.
 | Threshold | 64 covered leaf slots (conservative floor) |
 | Float leaves | Excluded in this cut |
 | Execution mode | `--auto-commit --auto-design`; pushes held to the final gate |
-| Branch | `main`; work in a clean worktree |
+| Branch | `main`; work in a clean isolated clone |
 
 ## Specialist Agents
 

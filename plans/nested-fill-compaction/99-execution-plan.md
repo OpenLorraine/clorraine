@@ -24,7 +24,7 @@ a reason.
 
 ```
 0.1 requirements preflight ──> 0.2 plan preflight ──> 0.3 docs commit
-0.3 ──> 1.1 clean worktree + make check
+0.3 ──> 1.1 clean isolated clone + make check
 1.1 ──> 1.2 bench-base + bench ──> 1.3 attribution/probe/stale gate
 1.3 ──> 1.4 baseline record ──> 1.5 baseline commit
 1.5 ──> 2.1 gate unit tests ──> 2.2 gate implementation ──> 2.3 Makefile
@@ -108,9 +108,9 @@ is testable, the gate change is sufficient, and no hidden ambiguity remains.
 > **Verify**: base and head JSON identities are recorded; the baseline table is
 > filled; `dirty=false` in both documents.
 
-### Step 1.1: Clean worktree and pre-change gate
+### Step 1.1: Clean clone and pre-change gate
 
-- [ ] 1.1.1 Confirm the worktree is clean at the plan-docs commit; record
+- [ ] 1.1.1 Confirm the clone is clean at the plan-docs commit; record
       `git status --porcelain`, `git rev-parse HEAD`, and
       `git rev-parse b68dae5`.
 - [ ] 1.1.2 Run `make check`; record the final line and any skipped m68k tests.
@@ -226,7 +226,7 @@ is queued for the docs commit.
 
 - [ ] 3.1.1 Add `compiler/tests/nested_fill_compaction_spec_test.rs` with the
       ST cases in [Testing Strategy](07-testing-strategy.md).
-- [ ] 3.1.2 Run it with the unmodified worktree compiler; record green and
+- [ ] 3.1.2 Run it with the unmodified clone compiler; record green and
       the observed output values that become the expected text.
 
 **Verify**: all ST cases pass before any compiler change.

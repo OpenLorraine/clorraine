@@ -13,7 +13,7 @@ review verdicts, and the final acceptance table. The exploratory study stays in
 ## Committed Baseline
 
 Filled after `make bench-base COMMIT=b68dae5` and `make bench` on the clean
-worktree. The base compiler source is the recorded commit and is retained as
+clone. The base compiler source is the recorded commit and is retained as
 `build/perf/base-clc`. The head is built from the plan-docs commit, which
 changes no compiler file. The two SHA-256 values are recorded; they are not
 required to be equal because the base builds in a nested worktree and a debug
