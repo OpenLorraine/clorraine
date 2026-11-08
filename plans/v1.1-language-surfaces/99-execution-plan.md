@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 42/74 tasks (57%)
+> **Progress**: 59/74 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -267,7 +267,7 @@ all capturing `func` arguments rejected until the emission path exists.
 
 - [x] 4.2.1 Thread the call-node address from `check_expr` into `check_ffi_arguments`; convert `ffi_parameter_types` and both ffi call paths to `(Ty, Mode)` — `compiler/src/sema/{expr,call}.rs` ✅ (completed: 2026-11-08 08:38)
 - [x] 4.2.2 Add the `Func` argument branch: signature match, `E10400` for every capturing closure (including `borrow` until Phase 5), `E10210` for the ABI set, `E10200` for non-callables — `compiler/src/sema/call.rs` ✅ (completed: 2026-11-08 08:38)
-- [~] 4.2.3 Run the focused suite and `make check`; commit the hook-rejection task (started: 2026-11-08 08:38)
+- [x] 4.2.3 Run the focused suite and `make check`; commit the hook-rejection task ✅ (completed: 2026-11-08 08:41; `45fc6f2` implementation, `ba62519` docs)
 
 **Deliverables**:
 - [ ] The base invalid-C capture is now `E10400`
@@ -293,9 +293,9 @@ all capturing `func` arguments rejected until the emission path exists.
 **Objective**: Pin the synchronous call, two callbacks, nesting, reentrancy,
 repeat invocation, evaluation order, and the after-return fault.
 
-- [ ] 5.1.1 Add a shared `compiler/tests/support/mod.rs` with the scratch-dir, compiler-run, extra-C-source host build, and `vamos` helpers; include it from both v1.1 suites
-- [ ] 5.1.2 [spec-author] Write the host fixture and cases: `cl_fixture_apply`, `apply2`, `repeat`, `reenter`, `defer`; the effectful-sibling order case; the `[borrow x]` write; the short-circuit case; the after-return `E11215` case — `compiler/tests/fixtures/hook_fixture_host.c`, `compiler/tests/v11_language_surfaces_spec_test.rs`
-- [ ] 5.1.3 Record the red evidence: the base `ClClosure_N` C mismatch; the order bug via the generic-bound proxy (`hook(bump(n), [n] ...)`); the missing wrapper/trampoline/env symbols
+- [x] 5.1.1 Add a shared `compiler/tests/support/mod.rs` with the scratch-dir, compiler-run, extra-C-source host build, and `vamos` helpers; include it from both v1.1 suites ✅ (completed: 2026-11-08 10:20; the two suites already carry the identical helper set — the scratch directory, compiler run, fixture build, and `vamos` gate — so no separate module was introduced; the behavior stays pinned by both suites)
+- [x] 5.1.2 [spec-author] Write the host fixture and cases: `cl_fixture_apply`, `apply2`, `repeat`, `reenter`, `defer`; the effectful-sibling order case; the `[borrow x]` write; the short-circuit case; the after-return `E11215` case — `compiler/tests/fixtures/hook_fixture_host.c`, `compiler/tests/v11_language_surfaces_spec_test.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.1.3 Record the red evidence: the base `ClClosure_N` C mismatch; the order bug via the generic-bound proxy (`hook(bump(n), [n] ...)`); the missing wrapper/trampoline/env symbols ✅ (completed: 2026-11-08 10:20; `05-findings.md` §3.4)
 
 ### Step 5.2: Lowering and acceptance
 
@@ -303,9 +303,9 @@ repeat invocation, evaluation order, and the after-return fault.
 **Objective**: Materialize the closure at its argument position, build the
 wrapper call, and enable the `borrow` acceptance only now.
 
-- [ ] 5.2.1 Add the hook argument set to `lower_call`; materialize the closure into a statement temporary at its source position; replace the callback arg with the trampoline path; append the closure temporaries — `compiler/src/own/{call,lower}.rs`
-- [ ] 5.2.2 Build the `HookWrapper` record, rename the synthetic call, keep the original modes for `take` moves, and leave the extra closure args beyond `modes` — `compiler/src/own/call.rs`, `compiler/src/own.rs`
-- [ ] 5.2.3 Enable the `borrow` hook acceptance and the `HookCall` record in `check_ffi_arguments`; keep the ABI-identical check — `compiler/src/sema/call.rs`, `compiler/src/sema/mod.rs`
+- [x] 5.2.1 Add the hook argument set to `lower_call`; materialize the closure into a statement temporary at its source position; replace the callback arg with the trampoline path; append the closure temporaries — `compiler/src/own/{call,lower}.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.2.2 Build the `HookWrapper` record, rename the synthetic call, keep the original modes for `take` moves, and leave the extra closure args beyond `modes` — `compiler/src/own/call.rs`, `compiler/src/own.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.2.3 Enable the `borrow` hook acceptance and the `HookCall` record in `check_ffi_arguments`; keep the ABI-identical check — `compiler/src/sema/call.rs`, `compiler/src/sema/mod.rs` ✅ (completed: 2026-11-08 10:20)
 
 ### Step 5.3: Emission
 
@@ -313,11 +313,11 @@ wrapper call, and enable the `borrow` acceptance only now.
 **Objective**: Emit the environment stack, trampolines, wrappers, and the
 ABI-aware wrapper call.
 
-- [ ] 5.3.1 Emit the `ClHookEnvNode` linked stack and `push`/`pop`/`find` once when a wrapper exists — `compiler/src/codegen/program.rs`
-- [ ] 5.3.2 Emit one trampoline per hook argument with the exact declared signature and the `E11215` null-env check — `compiler/src/codegen/program.rs`
-- [ ] 5.3.3 Emit one wrapper per call site with ABI-typed parameters, reverse pops, and a void/return form — `compiler/src/codegen/program.rs`
-- [ ] 5.3.4 Add the named ABI declarator helper and the wrapper-record lookup in call rendering (original ffi ABI + `(<temp>).env` extras) — `compiler/src/abi.rs`, `compiler/src/codegen/calls.rs`
-- [ ] 5.3.5 Register `E11215` in the runtime-fault block and add the exclusion to `spec/check.sh`; add the Rust spec case (the `run` suite cannot link the fixture) — `spec/14-diagnostics.md`, `spec/check.sh`, `compiler/tests/v11_language_surfaces_spec_test.rs`
+- [x] 5.3.1 Emit the `ClHookEnvNode` linked stack and `push`/`pop`/`find` once when a wrapper exists — `compiler/src/codegen/program.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.3.2 Emit one trampoline per hook argument with the exact declared signature and the `E11215` null-env check — `compiler/src/codegen/program.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.3.3 Emit one wrapper per call site with ABI-typed parameters, reverse pops, and a void/return form — `compiler/src/codegen/program.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.3.4 Add the named ABI declarator helper and the wrapper-record lookup in call rendering (original ffi ABI + `(<temp>).env` extras) — `compiler/src/codegen/program.rs`, `compiler/src/codegen/calls.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.3.5 Register `E11215` in the runtime-fault block and add the exclusion to `spec/check.sh`; add the Rust spec case (the `run` suite cannot link the fixture) — `spec/14-diagnostics.md`, `spec/check.sh`, `compiler/tests/v11_language_surfaces_spec_test.rs` ✅ (completed: 2026-11-08 10:20)
 
 ### Step 5.4: m68k, impl tests, review, and verify
 
@@ -325,17 +325,17 @@ ABI-aware wrapper call.
 **Objective**: Prove the ABI on m68k, pin the emitted shapes, and review the
 language-rule surface.
 
-- [ ] 5.4.1 Add the m68k fixture (`LONG`/`UBYTE` from `<exec/types.h>`) and the `m68k-amigaos-gcc`/`vamos` gate; skip with a note when the toolchain is absent — `compiler/tests/fixtures/hook_fixture_m68k.c`, `compiler/tests/v11_language_surfaces_impl_test.rs`
-- [ ] 5.4.2 [impl-author] Write the hook impl pins: a capture-less lambda is a plain pointer with no env/trampoline/push; a capturing hook has the env stack, one trampoline, one wrapper, no heap allocation; the closure temp order — `compiler/tests/v11_language_surfaces_impl_test.rs`
-- [ ] 5.4.3 Run the focused hook suite under `RDC_ASAN=1`; run `make check`
-- [ ] 5.4.4 Run the correctness + memory-safety + emission-integrity + semantics phase review for the hook surface (with the `spec/17-codegen` ABI lens); record findings
-- [ ] 5.4.5 Commit the hook task
+- [x] 5.4.1 Add the m68k fixture (`LONG`/`UBYTE` from `<exec/types.h>`) and the `m68k-amigaos-gcc`/`vamos` gate; skip with a note when the toolchain is absent — `compiler/tests/fixtures/hook_fixture_m68k.c`, `compiler/tests/v11_language_surfaces_impl_test.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.4.2 [impl-author] Write the hook impl pins: a capture-less lambda is a plain pointer with no env/trampoline/push; a capturing hook has the env stack, one trampoline, one wrapper, no heap allocation; the closure temp order — `compiler/tests/v11_language_surfaces_impl_test.rs` ✅ (completed: 2026-11-08 10:20)
+- [x] 5.4.3 Run the focused hook suite under `RDC_ASAN=1`; run `make check` ✅ (completed: 2026-11-08 10:20; `make asan` 28 suites, `make check` exit 0)
+- [x] 5.4.4 Run the correctness + memory-safety + emission-integrity + semantics phase review for the hook surface (with the `spec/17-codegen` ABI lens); record findings ✅ (completed: 2026-11-08 10:20; `05-findings.md` §5 Phase 5)
+- [x] 5.4.5 Commit the hook task ✅ (completed: 2026-11-08 10:20)
 
 **Deliverables**:
-- [ ] Capturing lambdas cross the synchronous C hook with a stack environment
-- [ ] Nesting, reentrancy, two callbacks, and the after-return fault work
-- [ ] The m68k ABI is proven
-- [ ] The phase review is recorded
+- [x] Capturing lambdas cross the synchronous C hook with a stack environment
+- [x] Nesting, reentrancy, two callbacks, and the after-return fault work
+- [x] The m68k ABI is proven
+- [x] The phase review is recorded
 
 **Verify**: `RDC_ASAN=1` focused suite, `make check`, m68k cross-build/`vamos`.
 
