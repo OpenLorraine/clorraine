@@ -96,8 +96,8 @@ every live registry code; runtime faults are excluded only through
 `excluded_codes` (`E11210-E11214`). `make check` runs the spec check first.
 **The Problem:** `E10105`, `E10227`, and `E11215` would fail `make check`, and
 R13.2 forbade the required files.
-**Resolution:** R13.1 now authorizes the three new spec tests and the
-`E11215` runtime-fault exclusion; R13.2 is reworded to "no existing golden
+**Resolution:** R13.1 now authorizes the two new compile-fail spec tests and
+the `E11215` runtime-fault exclusion; R13.2 is reworded to "no existing golden
 changes". The goal's "spec only through explicit rulings" is satisfied by the
 approved diagnostic amendment.
 **User Decision:** Resolved — AI delegated mechanism under the approved
@@ -421,7 +421,7 @@ remaining implementation surface.
 | Finding | Document changed | Revision |
 |---|---|---|
 | PF-001 | R1.1, 03-01 §1 | type-only `Box` predeclaration; bare-Box test |
-| PF-002 | R13.1-R13.2, AR-5 | three new spec tests + E11215 exclusion |
+| PF-002 | R13.1-R13.2, AR-5 | two new compile-fail tests + E11215 exclusion |
 | PF-003 | R11.6, 03-03 §3 | closure materialized at its argument position |
 | PF-004 | R10.2, 03-03 §2 | ABI-identical hook signature set |
 | PF-005 | R1.3, R5.1, AR-64 | `match_param` Box recursion |

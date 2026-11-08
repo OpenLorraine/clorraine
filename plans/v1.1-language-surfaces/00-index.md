@@ -3,7 +3,7 @@
 > **Feature**: Add the three v1.1 language surfaces: built-in `Box<T>` with
 > generated drop glue, ordinary Clorraine functions as `freedBy` deleters
 > (the X1 amendment), and C-hook trampolines for capturing lambdas (L5).
-> **Status**: RFC — requirements and plan in progress
+> **Status**: Plan Preflighted — ready for execution
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
 > **Implements**: R1-R13
@@ -77,10 +77,10 @@ change plus a module-scoped deleter identity, one emitter drop special case
 and `emits_drop` arm, one FFI-call contract marker and signature restriction,
 one trampoline/wrapper emission path, one runtime fault code (`E11215`), one
 new FFI diagnostic (`E10105`), one view diagnostic (`E10227`), a small
-type-only resolver predeclaration plus reserved-type-name check, three new
-specification golden files for the approved diagnostics, two new Rust test
-suites plus focused additions to existing suites, one test-only C fixture for
-host and m68k, and specification and documentation amendments.
+type-only resolver predeclaration plus reserved-type-name check, two new
+compile-fail specification tests plus the `E11215` runtime exclusion, two new
+Rust test suites plus focused additions to existing suites, one test-only C
+fixture for host and m68k, and specification and documentation amendments.
 
 ## Document Index
 
@@ -94,6 +94,7 @@ host and m68k, and specification and documentation amendments.
 | 03-02 | [FreedBy Design](03-02-freedby.md) | Ordinary deleters, resolution, emission, and diagnostics |
 | 03-03 | [Hook Trampolines](03-03-hook-trampolines.md) | Contract marker, ABI, environment stack, and lowering |
 | 07 | [Testing Strategy](07-testing-strategy.md) | Spec, impl, sanitizer, host, and m68k evidence |
+| 05 | [Findings](05-findings.md) | Red evidence, gate logs, review findings, residual limits |
 | 00-PF-REQ | [Requirements Preflight](00-preflight-report-requirements.md) | Independent requirements audit and resolution |
 | 00-PF-PLAN | [Plan Preflight](00-preflight-report.md) | Independent plan audit and resolution |
 | 99 | [Execution Plan](99-execution-plan.md) | Task-by-task delivery and evidence |

@@ -467,17 +467,20 @@ is recorded in `spec/decisions.md` and the affected chapter or appendix:
   structs chapter, its recursive-self-reference rule, and its profile rule.
 - The new diagnostics `E10105`, `E10227`, and `E11215`, and the updated
   `E10102` and `E10400` triggers/help. This amendment authorizes the matching
-  new specification tests: `spec/tests/compile-fail/E10105_*.clo`,
-  `spec/tests/compile-fail/E10227_*.clo`, and
-  `spec/tests/run/E11215_*.clo`, plus adding `E11215` to the runtime-fault
-  exclusion list in `spec/check.sh`. These are new tests for approved
-  diagnostics, not edits to an existing golden.
+  new specification tests: `spec/tests/compile-fail/E10105_*.clo` and
+  `spec/tests/compile-fail/E10227_*.clo`, plus adding `E11215` to the
+  runtime-fault exclusion list in `spec/check.sh`. `E11215` is a runtime fault
+  whose behavior needs the C hook fixture, so its specification case lives in
+  `compiler/tests/v11_language_surfaces_spec_test.rs` (the `run` suite does not
+  link custom C). These are new tests for approved diagnostics, not edits to
+  an existing golden.
 
 **R13.2 No existing golden change.** No existing file under `spec/tests/`
 changes. The frozen corpus and every existing compile-fail/run golden stay
-byte-identical. The three new files authorized by R13.1 are additions; the
-`spec/check.sh` exclusion list add is the runtime-fault registration the
-checker requires for every new `E112xx` code.
+byte-identical. The two new compile-fail files authorized by R13.1 are
+additions; the `spec/check.sh` exclusion-list add is the runtime-fault
+registration the checker requires for every new `E112xx` code, and the
+`E11215` behavior case lives in the Rust spec suite.
 
 **R13.3 Tests.** Behavior tests live in
 `compiler/tests/v11_language_surfaces_spec_test.rs`; emission and ABI pins
