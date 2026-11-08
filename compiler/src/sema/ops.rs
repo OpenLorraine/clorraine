@@ -650,6 +650,15 @@ impl Checker<'_, '_> {
         match op {
             AssignOp::Assign => {
                 self.check_into_slot(value, &target_ty);
+                // A store into an unresolved local replaces its recorded
+                // shape, so a later raw cast follows the latest lexically
+                // checked value rather than its first initializer.
+                if super::needs_raw_cast_origin(&target_ty) {
+                    if let Some(name) = plain_binding_name(target) {
+                        let origin = std::rc::Rc::new(self.raw_cast_operand(value));
+                        self.set_binding_origin(name, origin);
+                    }
+                }
                 // A capture moved through the store is recorded with the
                 // destination. A borrowed capture is recorded only at a
                 // writable lend destination — the out-slot class, where the
@@ -807,6 +816,19 @@ fn unary_spelling(op: UnaryOp) -> &'static str {
         UnaryOp::Deref => "*",
         UnaryOp::PreIncrement | UnaryOp::PostIncrement => "++",
         UnaryOp::PreDecrement | UnaryOp::PostDecrement => "--",
+    }
+}
+
+/// The binding name a store assigns when its target is a plain local.
+///
+/// A member, index, or dereference target keeps the binding's own recorded
+/// shape: only a whole-local store replaces it. The `unsafe` wrapper is
+/// transparent to the place it wraps.
+fn plain_binding_name(target: &Expr) -> Option<&str> {
+    match &target.kind {
+        ExprKind::Name(name) => Some(name),
+        ExprKind::Unsafe(inner) => plain_binding_name(inner),
+        _ => None,
     }
 }
 

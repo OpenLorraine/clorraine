@@ -21,7 +21,7 @@ use crate::borrow::{is_view, is_view_like, is_whole_slot_view};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
-use crate::sema::{ConversionLiteral, SemaOutput};
+use crate::sema::{ConversionLiteral, RawCastOperand, SemaOutput};
 use crate::span::Span;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
@@ -59,6 +59,7 @@ pub fn check(
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
+    check_raw_cast_requirements(program, sema, mono, diagnostics);
     check_opaque_indexes(program, sema, mono, diagnostics);
     check_opaque_member_uses(program, sema, mono, diagnostics);
     check_opaque_conditionals(program, sema, mono, diagnostics);
@@ -2052,6 +2053,152 @@ fn check_opaque_projections(
                 .with_help("check the declaration or the spelling"),
             );
             break;
+        }
+    }
+}
+
+/// Reports `E10201` when a recorded raw cast's substituted operand is a Box.
+///
+/// The declaration rejects a cast whose operand is already typed `Box`, but a
+/// cast inside a generic body sees a type parameter, and a cast of an
+/// unresolved member, index, dereference, conditional, or alias sees no type at
+/// all. Each recorded instance resolves the recorded operand shape: an instance
+/// that makes it a `Box` reports the reserved pointee-pointer rule at the cast,
+/// exactly as the concrete spelling does, while a non-Box instance keeps the
+/// cast accepted. An operand shape that cannot be followed stays unresolved and
+/// leaves its report to the rule that owns the unknown type. One cast site
+/// reports once — its first Box instance.
+fn check_raw_cast_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in &sema.raw_casts {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let source = resolve_raw_cast_operand(sema, &requirement.operand, &bindings);
+            if !source.is_box() {
+                continue;
+            }
+            let target = crate::types::substitute(&requirement.target, &bindings);
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10201",
+                    format!(
+                        "cannot cast '{}' to 'raw {}'",
+                        source.display(),
+                        target.display()
+                    ),
+                    requirement.span,
+                )
+                .with_help("use `boxWith` to access the pointee"),
+            );
+            break;
+        }
+    }
+}
+
+/// The deepest recorded operand shape the audit follows.
+///
+/// A pathological alias or member chain can build a shape deeper than the
+/// native stack can resolve recursively. The limit keeps the compiler from
+/// aborting; an operand beyond it stays unresolved and keeps the declaration's
+/// acceptance. The value is far above any source-written expression a person
+/// writes and still leaves room for the audit's own frames.
+const RAW_CAST_OPERAND_DEPTH_LIMIT: usize = 256;
+
+/// Resolves a raw cast operand after substituting the instance arguments.
+///
+/// The recorded shape follows the expression the declaration could not type:
+/// a member read resolves through the concrete struct or raw pointee, an index
+/// yields the row's element, a dereference yields the raw pointee, a raw
+/// pointer shape carries its pointee, a conditional resolves its arms, and an
+/// alias follows the binding's recorded initializer or store. A member or index
+/// whose base stays unresolved or still mentions a parameter, and a
+/// dereference of a non-raw value, leave the operand unresolved: another rule
+/// owns that report, and the cast keeps the declaration's acceptance. A
+/// conditional arm that resolves to a Box reports that arm as the operand: the
+/// conditional either yields the box or is already invalid, so the reserved
+/// pointee-pointer rule still applies. A shape deeper than
+/// [`RAW_CAST_OPERAND_DEPTH_LIMIT`] is left unresolved instead of exhausting
+/// the stack.
+fn resolve_raw_cast_operand(
+    sema: &SemaOutput,
+    operand: &RawCastOperand,
+    bindings: &BTreeMap<String, Ty>,
+) -> Ty {
+    resolve_raw_cast_operand_at(sema, operand, bindings, 0)
+}
+
+/// The depth-bounded worker for [`resolve_raw_cast_operand`].
+fn resolve_raw_cast_operand_at(
+    sema: &SemaOutput,
+    operand: &RawCastOperand,
+    bindings: &BTreeMap<String, Ty>,
+    depth: usize,
+) -> Ty {
+    if depth > RAW_CAST_OPERAND_DEPTH_LIMIT {
+        return Ty::unknown();
+    }
+    let next = depth + 1;
+    match operand {
+        RawCastOperand::Type(ty) => crate::types::substitute(ty, bindings),
+        RawCastOperand::Unknown => Ty::unknown(),
+        RawCastOperand::Alias(inner) => resolve_raw_cast_operand_at(sema, inner, bindings, next),
+        RawCastOperand::Member(base, name) => {
+            let base = resolve_raw_cast_operand_at(sema, base, bindings, next);
+            if base.is_unknown() || crate::types::contains_param(&base) {
+                return Ty::unknown();
+            }
+            resolved_member_ty(sema, &base, name).unwrap_or_else(Ty::unknown)
+        }
+        RawCastOperand::Index(base) => {
+            let base = resolve_raw_cast_operand_at(sema, base, bindings, next);
+            if base.is_unknown() || crate::types::contains_param(&base) {
+                return Ty::unknown();
+            }
+            crate::types::index_element(&base)
+        }
+        RawCastOperand::Deref(base) => {
+            let base = resolve_raw_cast_operand_at(sema, base, bindings, next);
+            match &base.kind {
+                TyKind::Raw(inner) => (**inner).clone(),
+                _ => Ty::unknown(),
+            }
+        }
+        RawCastOperand::Raw(inner) => {
+            let pointee = resolve_raw_cast_operand_at(sema, inner, bindings, next);
+            if pointee.is_unknown() {
+                Ty::unknown()
+            } else {
+                Ty::raw(pointee)
+            }
+        }
+        RawCastOperand::Conditional(then_operand, else_operand) => {
+            let then_ty = resolve_raw_cast_operand_at(sema, then_operand, bindings, next);
+            let else_ty = resolve_raw_cast_operand_at(sema, else_operand, bindings, next);
+            if then_ty.is_box() {
+                return then_ty;
+            }
+            if else_ty.is_box() {
+                return else_ty;
+            }
+            if then_ty.is_unknown()
+                || else_ty.is_unknown()
+                || crate::types::contains_param(&then_ty)
+                || crate::types::contains_param(&else_ty)
+            {
+                return Ty::unknown();
+            }
+            crate::types::conditional_result(&then_ty, &else_ty).unwrap_or_else(Ty::unknown)
         }
     }
 }

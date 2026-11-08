@@ -4,13 +4,15 @@
 //! is declared after its own initializer has been checked, and control-flow
 //! conditions are required to be `bool`.
 
+use std::rc::Rc;
+
 use crate::ast::{
     Block, ConstStmt, DoWhileStmt, ElseBranch, ForCStmt, ForInStmt, ForInit, IfStmt, LetStmt, Stmt,
     SwitchLabel, SwitchStmt,
 };
 use crate::types::{integer_scalar, Ty, TyKind};
 
-use super::Checker;
+use super::{Checker, RawCastOperand};
 
 impl Checker<'_, '_> {
     /// Checks a block in a fresh scope.
@@ -106,14 +108,28 @@ impl Checker<'_, '_> {
                 if value_ty.is_closure() && !matches!(ty.kind, TyKind::Func(_)) {
                     self.reject_ephemeral_storage(&value_ty, value.span);
                 }
-                self.declare(&decl.name, ty.clone());
+                if super::needs_raw_cast_origin(ty) {
+                    // A declared type the checker cannot model keeps the
+                    // initializer's shape for a later raw cast.
+                    let origin = Rc::new(self.raw_cast_operand(value));
+                    self.declare_with_origin(&decl.name, ty.clone(), origin);
+                } else {
+                    self.declare(&decl.name, ty.clone());
+                }
             }
             (Some(ty), None) => self.declare(&decl.name, ty.clone()),
             (None, Some(value)) => {
                 let ty = self.check_value(value, None);
                 self.reject_callable_only_value(&ty, value.span);
                 self.reject_ephemeral_storage(&ty, value.span);
-                self.declare(&decl.name, ty);
+                if super::needs_raw_cast_origin(&ty) {
+                    // An unresolved initializer keeps its shape so a later raw
+                    // cast through this binding can follow a substituted box.
+                    let origin = Rc::new(self.raw_cast_operand(value));
+                    self.declare_with_origin(&decl.name, ty, origin);
+                } else {
+                    self.declare(&decl.name, ty);
+                }
             }
             (None, None) => self.declare(&decl.name, Ty::unknown()),
         }
@@ -239,8 +255,21 @@ impl Checker<'_, '_> {
             },
             _ => iterable.iterated_element(),
         };
+        // An unresolved iterable still yields a shaped element: a later raw
+        // cast through the loop binding follows the iterable's shape one index
+        // step, so a Box element stays judged after substitution.
+        let origin = if super::needs_raw_cast_origin(&element) {
+            Some(Rc::new(RawCastOperand::Index(Rc::new(
+                self.raw_cast_operand(&decl.iterable),
+            ))))
+        } else {
+            None
+        };
         self.push_scope();
-        self.declare(&decl.name, element);
+        match origin {
+            Some(origin) => self.declare_with_origin(&decl.name, element, origin),
+            None => self.declare(&decl.name, element),
+        };
         self.check_block(&decl.body);
         self.pop_scope();
     }

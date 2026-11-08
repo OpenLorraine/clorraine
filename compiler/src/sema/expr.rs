@@ -10,6 +10,7 @@
 //! literals, aggregates, intrinsics, and templates.
 
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use crate::ast::{
     Expr, ExprKind, FieldInit, IntrinsicArg, LambdaBody, QualifiedName, ScalarType, TemplatePiece,
@@ -21,7 +22,7 @@ use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureI
 
 use super::{
     CaptureMoveRequirement, Checker, ConversionLiteral, OpaqueConversion, OpaqueIndex,
-    OpaqueMemberUse, OpaqueProjection,
+    OpaqueMemberUse, OpaqueProjection, RawCastOperand, RawCastRequirement,
 };
 
 impl Checker<'_, '_> {
@@ -233,7 +234,19 @@ impl Checker<'_, '_> {
                 info.mode,
                 CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow
             );
-            self.declare_with_lend(&info.name, info.ty.clone(), lend);
+            // An unresolved capture keeps the enclosing binding's shape, so a
+            // raw cast inside the body still follows a substituted box.
+            let origin = if super::needs_raw_cast_origin(&info.ty) {
+                self.binding_origin(&info.name)
+            } else {
+                None
+            };
+            match origin {
+                Some(origin) => {
+                    self.declare_with_lend_origin(&info.name, info.ty.clone(), lend, origin)
+                }
+                None => self.declare_with_lend(&info.name, info.ty.clone(), lend),
+            }
         }
         for (param, ty) in params.iter().zip(&param_types) {
             // A lambda parameter owns its value; only the enclosing
@@ -1162,23 +1175,173 @@ impl Checker<'_, '_> {
         // A box's pointee pointer is an internal escape hatch. Only the
         // standard-library module that implements `boxPtr` may cast a Box to a
         // raw pointer; application code uses `boxWith` so it cannot move the
-        // value out or free the block by hand.
-        if source.is_box() && !(self.module.embedded && self.module.name == "std.mem") {
-            self.error(
-                "E10201",
-                format!(
-                    "cannot cast '{}' to 'raw {}'",
-                    source.display(),
-                    target.display()
-                ),
-                "use `boxWith` to access the pointee",
-                value.span,
-            );
+        // value out or free the block by hand. An operand whose type is still a
+        // parameter, or an unresolved shape built from one, is recorded for
+        // the instance audit: the substitution decides whether it is a Box.
+        if source.is_box() {
+            if !self.raw_cast_exempt() {
+                self.error(
+                    "E10201",
+                    format!(
+                        "cannot cast '{}' to 'raw {}'",
+                        source.display(),
+                        target.display()
+                    ),
+                    "use `boxWith` to access the pointee",
+                    value.span,
+                );
+            }
+        } else if (crate::types::contains_param(&source) || source.is_unknown())
+            && !self.raw_cast_exempt()
+        {
+            if let Some(function) = self.function_name.clone() {
+                let operand = if source.is_unknown() {
+                    self.raw_cast_operand(value)
+                } else {
+                    RawCastOperand::Type(source.clone())
+                };
+                self.raw_casts.push(RawCastRequirement {
+                    function,
+                    target: target.clone(),
+                    span: value.span,
+                    operand,
+                });
+            }
         }
         Ty {
             kind: TyKind::Raw(Box::new(target)),
             nullable: false,
         }
+    }
+
+    /// True when the current module may cast a Box to its pointee pointer.
+    ///
+    /// The exemption belongs to the embedded standard library's memory module,
+    /// the only code that implements `boxPtr`; a user module that happens to be
+    /// named `std.mem` is not exempt.
+    fn raw_cast_exempt(&self) -> bool {
+        self.module.embedded && self.module.name == "std.mem"
+    }
+
+    /// The checked type of an expression node already visited by the checker.
+    ///
+    /// Every node's type is recorded as it is checked, so a parent expression
+    /// can read the type of a child without checking it twice. A node that was
+    /// never recorded is unresolved.
+    fn checked_type_of(&self, expr: &Expr) -> Ty {
+        let node = expr as *const Expr as usize;
+        self.recorded
+            .iter()
+            .rev()
+            .find(|(recorded, _)| *recorded == node)
+            .map(|(_, ty)| ty.clone())
+            .unwrap_or_else(Ty::unknown)
+    }
+
+    /// Records the shape of a raw cast operand whose checked type is unknown.
+    ///
+    /// A member read on a type parameter, an index, a dereference, a
+    /// conditional, or an alias of those all return `unknown` at the
+    /// declaration while the instance decides the concrete type. The shape
+    /// keeps the operations and the checked type of each subexpression, so the
+    /// audit can resolve the same path after substitution and reject a Box
+    /// reached through it.
+    pub(super) fn raw_cast_operand(&self, expr: &Expr) -> RawCastOperand {
+        let checked = self.checked_type_of(expr);
+        // A raw pointer whose pointee is still open keeps the pointee shape:
+        // the address-of expression names what a later dereference yields, and
+        // a binding of that raw type carries the shape its initializer built.
+        if let TyKind::Raw(inner) = &checked.kind {
+            if inner.is_unknown() || crate::types::contains_param(inner) {
+                match &expr.kind {
+                    ExprKind::Unsafe(inner) => {
+                        return self.raw_cast_operand(inner);
+                    }
+                    ExprKind::Conditional {
+                        then_value,
+                        else_value,
+                        ..
+                    } => {
+                        return RawCastOperand::Conditional(
+                            Rc::new(self.raw_cast_operand(then_value)),
+                            Rc::new(self.raw_cast_operand(else_value)),
+                        );
+                    }
+                    ExprKind::Unary {
+                        op: crate::ast::UnaryOp::AddressOf,
+                        operand,
+                    } => {
+                        return RawCastOperand::Raw(Rc::new(self.raw_cast_operand(operand)));
+                    }
+                    ExprKind::Name(name) => {
+                        if let Some(origin) = self.binding_origin(name) {
+                            return RawCastOperand::Alias(origin);
+                        }
+                    }
+                    _ => {}
+                }
+                return RawCastOperand::Type(checked);
+            }
+        }
+        if !checked.is_unknown() {
+            return RawCastOperand::Type(checked);
+        }
+        match &expr.kind {
+            ExprKind::Unsafe(inner) => self.raw_cast_operand(inner),
+            ExprKind::Member { base, name } => RawCastOperand::Member(
+                Rc::new(self.raw_cast_operand(base)),
+                name.clone(),
+            ),
+            ExprKind::Index { base, .. } => {
+                RawCastOperand::Index(Rc::new(self.raw_cast_operand(base)))
+            }
+            ExprKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                operand,
+            } => RawCastOperand::Deref(Rc::new(self.raw_cast_operand(operand))),
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => RawCastOperand::Conditional(
+                Rc::new(self.raw_cast_operand(then_value)),
+                Rc::new(self.raw_cast_operand(else_value)),
+            ),
+            ExprKind::Qualified(name) => self.raw_cast_qualified(name),
+            ExprKind::Name(name) => self
+                .binding_origin(name)
+                .map(RawCastOperand::Alias)
+                .unwrap_or(RawCastOperand::Unknown),
+            _ => RawCastOperand::Unknown,
+        }
+    }
+
+    /// Records a dotted member chain rooted at a lexical binding.
+    ///
+    /// A dotted read is spelled as a qualified name, so the intermediate
+    /// members have no expression node of their own. The head's binding type is
+    /// the chain's base; each later segment is a member step. A head that is
+    /// not a lexical binding names a module path or a type and has no
+    /// parameter-typed base to follow.
+    fn raw_cast_qualified(&self, name: &QualifiedName) -> RawCastOperand {
+        let Some(first) = name.segments.first() else {
+            return RawCastOperand::Unknown;
+        };
+        if name.segments.len() < 2 || !self.is_local(first) {
+            return RawCastOperand::Unknown;
+        }
+        let head = self.name_type(first);
+        let mut operand = if head.is_unknown() {
+            self.binding_origin(first)
+                .map(RawCastOperand::Alias)
+                .unwrap_or(RawCastOperand::Type(head))
+        } else {
+            RawCastOperand::Type(head)
+        };
+        for segment in &name.segments[1..] {
+            operand = RawCastOperand::Member(Rc::new(operand), segment.clone());
+        }
+        operand
     }
 
     /// Types a struct literal, checking its fields and its type arguments.

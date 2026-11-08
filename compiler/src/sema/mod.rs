@@ -17,6 +17,7 @@
 //! never reaches here.
 
 use std::collections::{ BTreeMap, HashMap, BTreeSet };
+use std::rc::Rc;
 
 use crate::ast::{Expr, ExprKind, FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
@@ -117,6 +118,61 @@ pub struct SemaOutput {
     /// whether a null arm reaches a non-nullable context, so the per-instance
     /// audit re-applies the conditional rule to the resolved arms.
     pub opaque_conditionals: Vec<OpaqueConditional>,
+    /// Raw casts whose operand's type is still open at the declaration.
+    ///
+    /// A cast of an operand typed by a type parameter cannot tell whether the
+    /// instance makes it a `Box`, so the per-instance audit substitutes the
+    /// operand and reports the reserved pointee-pointer rule. A cast already
+    /// typed `Box` is judged at the declaration and is not recorded.
+    pub raw_casts: Vec<RawCastRequirement>,
+}
+
+/// One raw cast whose operand names a type parameter or is unresolved.
+///
+/// The declaration cannot reject the cast: a type-parameter instance may be
+/// any type, and an unresolved operand — a member read on a parameter, an
+/// index, a dereference, a conditional, or an alias of those — may resolve to
+/// the box's pointee pointer only through the instance. The per-instance audit
+/// resolves the recorded operand shape and applies the same reserved-to-
+/// `std.mem` judgment the concrete spelling applies.
+pub struct RawCastRequirement {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The written pointee type of the `raw` cast.
+    pub target: Ty,
+    /// The operand's span, where the concrete cast reports.
+    pub span: Span,
+    /// The operand's type shape, resolved after substitution.
+    pub operand: RawCastOperand,
+}
+
+/// One raw cast operand whose declared type is still open.
+///
+/// The shape mirrors the expression operations that can hide a substituted
+/// box: a member read, an index, a raw dereference, a raw pointer's pointee, a
+/// conditional, and an alias of another shape. A leaf carries the checked type
+/// of the subexpression; a type parameter in a leaf is substituted with the
+/// caller's argument. An operation the declaration could not type stays
+/// unresolved and keeps the cast accepted. The children share their sub-shapes
+/// so a long alias chain stays linear in memory.
+#[derive(Clone)]
+pub enum RawCastOperand {
+    /// A subexpression whose checked type is known, possibly a parameter.
+    Type(Ty),
+    /// A member read on the resolved base.
+    Member(Rc<RawCastOperand>, String),
+    /// An index read on the resolved base.
+    Index(Rc<RawCastOperand>),
+    /// A raw dereference of the resolved base.
+    Deref(Rc<RawCastOperand>),
+    /// A raw pointer value whose pointee shape is recorded.
+    Raw(Rc<RawCastOperand>),
+    /// A conditional, whose arms are resolved independently.
+    Conditional(Rc<RawCastOperand>, Rc<RawCastOperand>),
+    /// A local binding's recorded initializer or assigned shape.
+    Alias(Rc<RawCastOperand>),
+    /// An operand the declaration could not follow.
+    Unknown,
 }
 
 /// One capturing lambda accepted at a synchronous C hook.
@@ -410,6 +466,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
     let mut opaque_conversions: Vec<OpaqueConversion> = Vec::new();
     let mut opaque_conditionals: Vec<OpaqueConditional> = Vec::new();
+    let mut raw_casts: Vec<RawCastRequirement> = Vec::new();
     let mut hook_calls: BTreeMap<usize, HookCallSite> = BTreeMap::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
@@ -426,6 +483,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
         opaque_conversions.extend(checker.opaque_conversions.drain(..));
         opaque_conditionals.extend(checker.opaque_conditionals.drain(..));
+        raw_casts.extend(checker.raw_casts.drain(..));
         merge_hook_calls(&mut hook_calls, std::mem::take(&mut checker.hook_calls));
         expr_types.extend(checker.recorded.drain(..));
         type_casts.extend(std::mem::take(&mut checker.type_casts));
@@ -442,6 +500,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses,
         opaque_conversions,
         opaque_conditionals,
+        raw_casts,
     }
 }
 
@@ -484,6 +543,32 @@ struct Binding {
     /// through the caller's storage, which is what makes an owning move out
     /// of a capture unsound there.
     lend: bool,
+    /// The recorded shape of the latest lexically checked initializer or
+    /// whole-local store whose type is unresolved.
+    ///
+    /// A later raw cast through the binding follows this shape after the
+    /// instance substitutes its parameters, so a box reached through a local
+    /// alias still meets the reserved pointee-pointer rule. The shape is shared
+    /// so a chain of aliases does not duplicate the tree. The record is
+    /// flow-insensitive: a branch or a later partial store does not merge its
+    /// shape with this one.
+    origin: Option<Rc<RawCastOperand>>,
+}
+
+/// True when a binding's type is open enough that a raw cast through it needs
+/// the recorded operand shape.
+///
+/// An unresolved value has no type at all. A raw pointer whose pointee is
+/// unresolved carries a shape for what a dereference yields, so an address-of
+/// local can still be followed after substitution.
+pub(super) fn needs_raw_cast_origin(ty: &Ty) -> bool {
+    if ty.is_unknown() {
+        return true;
+    }
+    match &ty.kind {
+        TyKind::Raw(inner) => inner.is_unknown() || crate::types::contains_param(inner),
+        _ => false,
+    }
 }
 
 /// Checks one module against the program-wide type table.
@@ -542,6 +627,8 @@ struct Checker<'a, 'd> {
     /// Conditionals whose arm agreement is deferred to their instance, in
     /// check order.
     opaque_conditionals: Vec<OpaqueConditional>,
+    /// Raw casts whose operand's type is still open, in check order.
+    raw_casts: Vec<RawCastRequirement>,
     /// The arm types of every checked conditional, in check order.
     conditional_arms: Vec<ConditionalArms>,
     /// Maps a conditional's then arm address to its entry in
@@ -632,6 +719,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             opaque_member_uses: Vec::new(),
             opaque_conversions: Vec::new(),
             opaque_conditionals: Vec::new(),
+            raw_casts: Vec::new(),
             conditional_arms: Vec::new(),
             conditional_index: HashMap::new(),
             view_pointer_members: BTreeSet::new(),
@@ -915,7 +1003,80 @@ impl<'a, 'd> Checker<'a, 'd> {
     /// Declares a name in the innermost scope, marking a writable lend.
     fn declare_with_lend(&mut self, name: &str, ty: Ty, lend: bool) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_owned(), Binding { ty, lend });
+            scope.insert(
+                name.to_owned(),
+                Binding {
+                    ty,
+                    lend,
+                    origin: None,
+                },
+            );
+        }
+    }
+
+    /// Declares a name whose initializer's type is unresolved.
+    ///
+    /// The origin shape lets a later raw cast follow the initializer after
+    /// substitution; every other use keeps the unresolved type.
+    fn declare_with_origin(&mut self, name: &str, ty: Ty, origin: Rc<RawCastOperand>) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_owned(),
+                Binding {
+                    ty,
+                    lend: false,
+                    origin: Some(origin),
+                },
+            );
+        }
+    }
+
+    /// Declares a binding whose type and origin are unresolved.
+    ///
+    /// The lend flag is separate: a copy capture passes `false` while a
+    /// write-borrow capture passes `true`, exactly as an ordinary capture
+    /// declaration does.
+    fn declare_with_lend_origin(
+        &mut self,
+        name: &str,
+        ty: Ty,
+        lend: bool,
+        origin: Rc<RawCastOperand>,
+    ) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_owned(),
+                Binding {
+                    ty,
+                    lend,
+                    origin: Some(origin),
+                },
+            );
+        }
+    }
+
+    /// The recorded initializer or store shape of a binding, when it has one.
+    fn binding_origin(&self, name: &str) -> Option<Rc<RawCastOperand>> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                return binding.origin.clone();
+            }
+        }
+        None
+    }
+
+    /// Replaces a binding's recorded shape after a whole-local store.
+    ///
+    /// A later raw cast through the binding follows the latest lexically
+    /// checked value. The record is flow-insensitive, so a store inside a
+    /// branch replaces the shape for every later read and a partial store does
+    /// not update it.
+    fn set_binding_origin(&mut self, name: &str, origin: Rc<RawCastOperand>) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.get_mut(name) {
+                binding.origin = Some(origin);
+                return;
+            }
         }
     }
 

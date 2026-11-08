@@ -463,6 +463,342 @@ fn a_raw_cast_of_a_box_outside_the_library_is_rejected() {
     );
 }
 
+/// A generic cast is judged at each explicit instantiation, so a Box argument
+/// reports the reserved pointee-pointer rule.
+#[test]
+fn an_explicit_generic_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-explicit",
+        &program(
+            "func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x); }\n\
+             }\n\
+             func demo(b: Box<i32>): raw i32 { return leak<Box<i32>>(b); }",
+        ),
+        "E10201",
+    );
+}
+
+/// An inferred generic argument is judged the same way as an explicit one.
+#[test]
+fn an_inferred_generic_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-inferred",
+        &program(
+            "func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x); }\n\
+             }\n\
+             func demo(b: Box<i32>): raw i32 { return leak(b); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A forwarding generic call records its own instance, so it cannot hide the
+/// Box argument from the cast audit.
+#[test]
+fn a_forwarding_generic_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-forwarding",
+        &program(
+            "func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x); }\n\
+             }\n\
+             func forward<T>(x: T): raw i32 { return leak<T>(x); }\n\
+             func demo(b: Box<i32>): raw i32 { return forward(b); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A Box reached through an unresolved member chain is still a Box operand.
+#[test]
+fn a_member_chain_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-member-chain",
+        &program(
+            "struct Inner { n: Box<i32>; }\n\
+             struct Holder { inner: Inner; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x.inner.n); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak<Holder>(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A conditional whose arms resolve to a Box cannot hide the cast operand.
+#[test]
+fn a_conditional_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-conditional",
+        &program(
+            "struct Holder { b: Box<i32>; }\n\
+             func leak<T>(x: T, c: bool): raw i32 {\n\
+                 unsafe { return raw i32(c ? x.b : x.b); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h, true); }",
+        ),
+        "E10201",
+    );
+}
+
+/// An index into a substituted row of Box elements is still a Box operand.
+#[test]
+fn an_index_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-index",
+        &program(
+            "struct Holder { items: Box<i32>[1]; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x.items[0]); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A raw dereference of a substituted pointer to a Box is still a Box operand.
+#[test]
+fn a_dereference_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-deref",
+        &program(
+            "struct Holder { p: raw Box<i32>; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(*(x.p)); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A local alias of an unresolved member read keeps the operand chain.
+#[test]
+fn an_alias_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-alias",
+        &program(
+            "struct Inner { n: Box<i32>; }\n\
+             struct Holder { inner: Inner; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe { let y = x.inner; return raw i32(y.n); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A loop binding over an unresolved row keeps the iterable's element shape.
+#[test]
+fn a_loop_element_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-loop",
+        &program(
+            "struct Holder { items: Box<i32>[1]; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe {\n\
+                     for (v in x.items) { return raw i32(v); }\n\
+                     return raw i32(0);\n\
+                 }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A lambda capture of an unresolved local keeps the captured shape.
+#[test]
+fn a_lambda_capture_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-capture",
+        &program(
+            "struct Holder { b: Box<i32>; }\n\
+             func apply<F: func(): raw i32>(f: F): raw i32 { return f(); }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe { let y = x.b; return apply([y] () => raw i32(y)); }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A dereference of an address-of local keeps the pointee's shape.
+#[test]
+fn an_address_of_deref_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-address-of",
+        &program(
+            "struct Inner { n: Box<i32>; }\n\
+             struct Holder { inner: Inner; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe {\n\
+                     let p = &x.inner.n;\n\
+                     return raw i32(*p);\n\
+                 }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A conditional of address-of pointers keeps both pointee shapes.
+#[test]
+fn a_conditional_address_of_deref_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-conditional-address-of",
+        &program(
+            "struct Holder { b: Box<i32>; }\n\
+             func leak<T>(x: T, c: bool): raw i32 {\n\
+                 unsafe {\n\
+                     let q = c ? &x.b : &x.b;\n\
+                     return raw i32(*q);\n\
+                 }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h, true); }",
+        ),
+        "E10201",
+    );
+}
+
+/// The prefix `unsafe` wrapper is transparent to the address-of shape.
+#[test]
+fn an_unsafe_address_of_deref_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-unsafe-address-of",
+        &program(
+            "struct Inner { n: Box<i32>; }\n\
+             struct Holder { inner: Inner; }\n\
+             func leak<T>(x: T): raw i32 {\n\
+                 unsafe {\n\
+                     let p = unsafe &x.inner.n;\n\
+                     return raw i32(*p);\n\
+                 }\n\
+             }\n\
+             func demo(h: Holder): raw i32 { return leak(h); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A store of a Box into an unresolved local replaces its recorded shape.
+#[test]
+fn a_store_raw_cast_of_a_box_is_rejected() {
+    assert_rejected(
+        "box-raw-cast-store",
+        &program(
+            "struct InnerInt { n: i32; }\n\
+             struct Holder { inner: InnerInt; }\n\
+             func leak<T>(x: T, box: Box<i32>): raw i32 {\n\
+                 unsafe { let y = x.inner; y = box; return raw i32(y); }\n\
+             }\n\
+             func demo(h: Holder, b: Box<i32>): raw i32 { return leak(h, b); }",
+        ),
+        "E10201",
+    );
+}
+
+/// A later non-Box store replaces an earlier Box-shaped origin, so the cast
+/// follows the value the binding actually holds.
+#[test]
+fn a_non_box_store_after_a_box_shaped_initializer_is_accepted() {
+    assert_accepts_source(
+        "box-raw-cast-store-non-box",
+        "host",
+        &program(
+            "struct InnerBox { n: Box<i32>; }\n\
+             struct InnerInt { n: i32; }\n\
+             struct Holder { inner: InnerBox; }\n\
+             func leak<T>(x: T, other: InnerInt): raw i32 {\n\
+                 unsafe { let y = x.inner; y = other; return raw i32(y.n); }\n\
+             }\n\
+             func demo(h: Holder, o: InnerInt): raw i32 { return leak(h, o); }",
+        ),
+    );
+}
+
+/// The same unresolved operand shapes with non-Box members stay accepted.
+#[test]
+fn unresolved_operand_shapes_with_non_box_fields_are_accepted() {
+    assert_accepts_source(
+        "box-raw-cast-shapes-non-box",
+        "host",
+        &program(
+            "struct Inner { n: i32; }\n\
+             struct Holder { b: i32; inner: Inner; items: i32[1]; p: raw i32; }\n\
+             func conditional<T>(x: T, c: bool): raw i32 {\n\
+                 unsafe { return raw i32(c ? x.b : x.b); }\n\
+             }\n\
+             func indexed<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x.items[0]); }\n\
+             }\n\
+             func dereferenced<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(*(x.p)); }\n\
+             }\n\
+             func aliased<T>(x: T): raw i32 {\n\
+                 unsafe { let y = x.inner; return raw i32(y.n); }\n\
+             }\n\
+             func addressed<T>(x: T): raw i32 {\n\
+                 unsafe { let p = &x.inner.n; return raw i32(*p); }\n\
+             }\n\
+             func conditionalAddressed<T>(x: T, c: bool): raw i32 {\n\
+                 unsafe { let q = c ? &x.b : &x.b; return raw i32(*q); }\n\
+             }\n\
+             func demo(h: Holder): i32 {\n\
+                 let a: raw i32 = conditional(h, true);\n\
+                 let b: raw i32 = indexed(h);\n\
+                 let c: raw i32 = dereferenced(h);\n\
+                 let d: raw i32 = aliased(h);\n\
+                 let e: raw i32 = addressed(h);\n\
+                 let f: raw i32 = conditionalAddressed(h, true);\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// The same generic instantiated with a non-Box type stays accepted.
+///
+/// The judgment is the compiler stage: a run-time integer-to-`raw` cast is a
+/// separate, pre-existing emission question, so this case does not build the
+/// unit.
+#[test]
+fn a_generic_raw_cast_of_a_non_box_is_accepted() {
+    assert_accepts_source(
+        "box-raw-cast-non-box",
+        "host",
+        &program(
+            "func leak<T>(x: T): raw i32 {\n\
+                 unsafe { return raw i32(x); }\n\
+             }\n\
+             func demo(): raw i32 { return leak<i32>(7); }",
+        ),
+    );
+}
+
+/// The embedded `std.mem` `boxPtr` helper keeps its pointee-pointer cast.
+#[test]
+fn the_standard_library_box_pointer_helper_is_accepted() {
+    assert_accepted(
+        "box-raw-cast-stdmem",
+        &program(
+            "import { boxNew, boxWith } from std.mem;\n\
+             func demo(): i32 {\n\
+                 let b: Box<i32> = boxNew<i32>(7);\n\
+                 boxWith(b, [] (v: i32) => { });\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
 /// A non-static view cannot be boxed.
 #[test]
 fn a_view_typed_box_element_is_rejected() {
