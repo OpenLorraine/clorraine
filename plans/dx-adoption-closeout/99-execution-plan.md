@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 14/56 tasks (25%)
+> **Progress**: 23/56 tasks (41%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -74,9 +74,9 @@ the project gates.
 - [x] 1.3.2 Diff emitted C over `spec/tests/corpus` against the phase baseline and run `make check` — no source file
 
 **Deliverables**:
-- [ ] `analysis` API used by the driver
-- [ ] Existing suites and corpus emission unchanged
-- [ ] All verification passing
+- [x] `analysis` API used by the driver
+- [x] Existing suites and corpus emission unchanged
+- [x] All verification passing
 
 **Verify**: `make check`
 
@@ -94,7 +94,7 @@ the project gates.
 **Objective**: Encode every component, dry-run, and integrity case before code.
 
 - [x] 2.1.1 [spec-author] Write installer unit tests for ST-1 to ST-12 — `tools/setup/tests/`
-- [x] 2.1.2 Run the suite and record the red phase — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
+- [x] 2.1.2 Run the suite and record the red phase — `cd tools/setup && python3 -m unittest discover -s tests -t tests`
 
 ### Step 2.2: Implementation
 
@@ -103,7 +103,7 @@ the project gates.
 
 - [x] 2.2.1 Implement CLI parsing, `Probe`, report rows, text and JSON output — `tools/setup/install_sdk.py`
 - [x] 2.2.2 Implement fetch planning, confirmation, execution, and provenance verification — `tools/setup/install_sdk.py`
-- [x] 2.2.3 Run the installer suite green — `python3 -m unittest discover -s tools/setup/tests -t tools/setup`
+- [x] 2.2.3 Run the installer suite green — `cd tools/setup && python3 -m unittest discover -s tests -t tests`
 
 ### Step 2.3: Implementation tests and integration
 
@@ -114,9 +114,9 @@ the project gates.
 - [x] 2.3.2 Add `setup`/`setup-check` targets, the CI step, and run `make check` — `Makefile`, `.github/workflows/check.yml`
 
 **Deliverables**:
-- [ ] Installer detects every component and fails closed
-- [ ] Dry run and `--yes` behavior proven
-- [ ] No media content read or written
+- [x] Installer detects every component and fails closed
+- [x] Dry run and `--yes` behavior proven
+- [x] No media content read or written
 
 **Verify**: `make setup-check && make check`
 
@@ -133,32 +133,32 @@ the project gates.
 **Reference**: [03-03](03-03-language-server.md) · [07](07-testing-strategy.md) ST-17 to ST-25 · AR-4 to AR-12
 **Objective**: Pin lifecycle, framing, and error mapping.
 
-- [ ] 3.1.1 [spec-author] Write `lsp_spec_test.rs` for ST-17 to ST-25 — `compiler/tests/lsp_spec_test.rs`
-- [ ] 3.1.2 Run the suite and record the red phase (the binary does not exist) — `cargo test -p clc --test lsp_spec_test`
+- [x] 3.1.1 [spec-author] Write `lsp_spec_test.rs` for ST-17 to ST-25 — `compiler/tests/lsp_spec_test.rs`
+- [x] 3.1.2 Run the suite and record the red phase (the binary does not exist) — `cargo test -p clc --test lsp_spec_test`
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-language-server.md) §JSON, §Framing, §URIs, §Text, §Workspace, §Server lifecycle · AR-5, AR-10
 **Objective**: A server that initializes, shuts down, and survives malformed input.
 
-- [ ] 3.2.1 Implement the JSON value model, parser, writer, and Content-Length framing — `compiler/src/lsp/json.rs`, `compiler/src/lsp/protocol.rs`
-- [ ] 3.2.2 Implement URI conversion and UTF-16 line/position mapping — `compiler/src/lsp/uri.rs`, `compiler/src/lsp/text.rs`
-- [ ] 3.2.3 Implement the module index, overlays, and import closure; add the binary — `compiler/src/lsp/workspace.rs`, `compiler/src/lsp_main.rs`, `compiler/Cargo.toml`
-- [ ] 3.2.4 Implement lifecycle, dispatch, reader thread, cancellation, and error responses — `compiler/src/lsp/server.rs`, `compiler/src/lsp/mod.rs`
-- [ ] 3.2.5 Run the lifecycle suite green — `cargo test -p clc --test lsp_spec_test`
+- [x] 3.2.1 Implement the JSON value model, parser, writer, and Content-Length framing — `compiler/src/lsp/json.rs`, `compiler/src/lsp/protocol.rs`
+- [x] 3.2.2 Implement URI conversion and UTF-16 line/position mapping — `compiler/src/lsp/uri.rs`, `compiler/src/lsp/text.rs`
+- [x] 3.2.3 Implement the module index, overlays, and import closure; add the binary — `compiler/src/lsp/workspace.rs`, `compiler/src/lsp_main.rs`, `compiler/Cargo.toml`
+- [x] 3.2.4 Implement lifecycle, dispatch, reader thread, cancellation, and error responses — `compiler/src/lsp/server.rs`, `compiler/src/lsp/mod.rs`
+- [x] 3.2.5 Run the lifecycle suite green — `cargo test -p clc --test lsp_spec_test`
 
 ### Step 3.3: Implementation tests and verification
 
 **Reference**: [03-03](03-03-language-server.md) §Testing Requirements · AR-5, AR-10
 **Objective**: Pin the parser and framing edge cases.
 
-- [ ] 3.3.1 Add unit tests for escapes, surrogates, depth, split frames, header case, size cap, URI round-trip, and UTF-16 — `compiler/src/lsp/tests.rs`
-- [ ] 3.3.2 Run `make check` with the new binary and suites — no source file
+- [x] 3.3.1 Add unit tests for escapes, surrogates, depth, split frames, header case, size cap, URI round-trip, and UTF-16 — `compiler/src/lsp/tests.rs`
+- [x] 3.3.2 Run `make check` with the new binary and suites — no source file
 
 **Deliverables**:
-- [ ] `clorraine-lsp` initializes, shuts down, and exits correctly
-- [ ] Malformed input never crashes or hangs
-- [ ] Cancellation and overlays work
+- [x] `clorraine-lsp` initializes, shuts down, and exits correctly
+- [x] Malformed input never crashes or hangs
+- [x] Cancellation and overlays work
 
 **Verify**: `make check`
 

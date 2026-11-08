@@ -20,6 +20,7 @@ pub mod init_graph;
 pub mod ir;
 pub mod lex;
 pub mod load;
+pub mod lsp;
 pub mod own;
 pub mod parse;
 pub mod profile;

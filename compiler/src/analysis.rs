@@ -65,7 +65,10 @@ pub struct Analysis {
     pub loaded: Option<Loaded>,
     /// Diagnostics from every stage that ran.
     pub diagnostics: Diagnostics,
-    /// Type and ownership output when the program checked cleanly.
+    /// Type and ownership output when type checking succeeded.
+    ///
+    /// Ownership diagnostics may still be present; the driver checks the
+    /// diagnostics before it emits C.
     pub typed: Option<(SemaOutput, OwnershipOutput)>,
 }
 
@@ -337,6 +340,50 @@ mod tests {
     }
 
     const LIBRARY: &str = "module app.core;\nexport func add(a: i32, b: i32): i32 { return a + b; }\n";
+
+    #[test]
+    fn should_keep_the_typed_output_when_ownership_reports() {
+        let program = "\
+module app.move;
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let n: u32 = 1;
+    let s: String = $\"n={n}\";
+    let t: String = s;
+    observe(s);
+    observe(t);
+}
+
+func main(): i32 {
+    return 0;
+}
+";
+        let analysis = analyze(
+            Profile::Host,
+            vec![source("app/move.clo", program)],
+            Mode::Full,
+            true,
+        );
+        assert!(
+            analysis
+                .diagnostics
+                .items()
+                .iter()
+                .any(|diagnostic| diagnostic.code == "E10020"),
+            "the move-then-use must report E10020"
+        );
+        assert!(
+            analysis.typed.is_some(),
+            "the type output stays available while ownership reports"
+        );
+        assert!(
+            analysis.programs.is_empty(),
+            "a full analysis consumes the parsed programs during loading"
+        );
+    }
 
     #[test]
     fn should_map_every_input_path_to_its_file_id() {
