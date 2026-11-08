@@ -225,3 +225,20 @@ The v1.1 limits to document in `docs/known-limitations.md`:
   not reserved against user `ffi` declarations.
 - A pre-existing `Array<str>` view-storage hole is outside this feature; the
   Box path (`Box<Array<str>>`) is closed by `E10227`.
+
+## 7. Final Acceptance
+
+| Gate | Result | Log |
+|---|---|---|
+| `make check` | exit 0; fuzzer smoke 28/0 | `build/v11/make-check-fixes.log` (ignored) |
+| `make asan` | 28 suites | `build/v11/asan-fixes.log` (ignored) |
+| `make ubsan` | 2 suites | `build/v11/ubsan.log` (ignored) |
+| `make corpus-amiga` | exit 0 (retry after a transient vbcc `No config file!`) | `build/v11/corpus-amiga-retry.log` (ignored) |
+| `make differential` | all portable programs match | `build/v11/differential.log` (ignored) |
+| `make bench-shape` | exit 0 | `build/v11/bench-shape.log` (ignored) |
+| `make verify` | `verify: all legs passed` | `build/v11/verify.log` (ignored) |
+
+The final review's new critical/major findings are fixed (`05c5244`); the
+pre-existing capture-lend, earlier-statement move, and evaluated-guard drop
+defects reproduce on the pre-v1.1 base and remain recorded residual limits.
+The tree is pushed only with all seven legs green.

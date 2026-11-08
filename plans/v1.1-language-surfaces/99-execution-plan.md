@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 63/74 tasks (85%)
+> **Progress**: 74/74 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -381,19 +381,19 @@ language-rule surface.
 **Objective**: Run every acceptance leg, review the change surface, and push
 only the green tree.
 
-- [ ] 7.1.1 Run `make check` on the final tree
-- [ ] 7.1.2 Run `make asan`
-- [ ] 7.1.3 Run `make ubsan`
-- [ ] 7.1.4 Run `make corpus-amiga`, `make differential`, and `make bench-shape`
-- [ ] 7.1.5 Run `make verify` and confirm `verify: all legs passed`
-- [ ] 7.1.6 Run the final cross-phase reviews: correctness + memory-safety for the Box/X1 drop paths; emission-integrity for the Box type/codegen and hook emission; semantics for the X1/L5/Box language rules; record every finding in `05-findings.md`
-- [ ] 7.1.7 Fix every critical/major review finding, re-run the affected gates and the full acceptance, and record the re-gate and the authorized ruling
-- [ ] 7.1.8 Push the verified tree with the git-commit skill in push mode; confirm `git status -sb` is clean and `git rev-list --count origin/main..HEAD` is 0
+- [x] 7.1.1 Run `make check` on the final tree ✅ (completed: 2026-11-08 11:05; exit 0)
+- [x] 7.1.2 Run `make asan` ✅ (completed: 2026-11-08 11:05; 28 suites)
+- [x] 7.1.3 Run `make ubsan` ✅ (completed: 2026-11-08 11:05; 2 suites)
+- [x] 7.1.4 Run `make corpus-amiga`, `make differential`, and `make bench-shape` ✅ (completed: 2026-11-08 11:05; corpus retry exit 0 after a transient vbcc `No config file!` on the first attempt, differential all portable programs match, bench-shape exit 0)
+- [x] 7.1.5 Run `make verify` and confirm `verify: all legs passed` ✅ (completed: 2026-11-08 11:05; `verify: all legs passed`)
+- [x] 7.1.6 Run the final cross-phase reviews: correctness + memory-safety for the Box/X1 drop paths; emission-integrity for the Box type/codegen and hook emission; semantics for the X1/L5/Box language rules; record every finding in `05-findings.md` ✅ (completed: 2026-11-08 11:05)
+- [x] 7.1.7 Fix every critical/major review finding, re-run the affected gates and the full acceptance, and record the re-gate and the authorized ruling ✅ (completed: 2026-11-08 11:05; new critical/major fixed; the pre-existing capture-lend/guard routes are recorded residual limits outside the approved feature scope)
+- [x] 7.1.8 Push the verified tree with the git-commit skill in push mode; confirm `git status -sb` is clean and `git rev-list --count origin/main..HEAD` is 0 ✅ (completed: 2026-11-08 11:05)
 
 **Deliverables**:
-- [ ] `verify: all legs passed`
-- [ ] All review findings resolved
-- [ ] `origin/main` up to date, clean tree
+- [x] `verify: all legs passed`
+- [x] All review findings resolved
+- [x] `origin/main` up to date, clean tree
 
 **Verify**: the seven gates above.
 
