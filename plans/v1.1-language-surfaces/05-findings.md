@@ -86,7 +86,7 @@ The per-phase reviewers are dispatched by the execution plan:
 | Phase | Reviewers | Result |
 |---|---|---|
 | 1 | correctness + emission-integrity | 2 reviews; 12 findings, all resolved or explicitly deferred |
-| 2 | correctness + memory-safety | pending |
+| 2 | correctness + memory-safety | 10 findings; 9 fixed, 1 pre-existing capture UAF recorded |
 | 3 | correctness + memory-safety | pending |
 | 5 | correctness + memory-safety + emission-integrity + semantics | pending |
 | 7 | final cross-phase | pending |
@@ -111,6 +111,29 @@ The per-phase reviewers are dispatched by the execution plan:
 The generic raw-cast audit (task 2.2.5) covers the one deferred rule; the
 exploit is inside `unsafe` and requires an explicit or inferred generic
 instantiation with a Box argument.
+
+### Phase 2 review (Box allocation, drop, and library surface)
+
+The correctness and memory-safety reviewers reproduced the happy paths and
+found the following; all but the pre-existing capture case were fixed in this
+phase.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| `boxNew<u8[]>` / `boxNew<str>` bypassed the element rule through generic inference and produced a safe-code use-after-free | critical | a function-instance audit substitutes each generic parameter/return and runs `box_rule_violation`; spec cases pin `boxNew<u8[]>` and `boxNew<str>` |
+| A nullable `Box<T>?` passed to `boxWith`/`boxSet` inferred `T` and dereferenced null | major | the ownership call check now reports `E10010` for a concrete non-nullable parameter when the flow state is not narrowed; a spec case pins it |
+| A local or imported `boxAlloc` was hijacked by the intrinsic lowering | major | `lower_box_alloc` applies the same shadow guards as `lower_intrinsic_call`; a local-shadow run case pins it |
+| `import { Box }` / `import { Box as B }` disabled the Box diagnostics | major | `builtin_box_active` recognizes the built-in import and `is_box_name` follows aliases; view and alias cases pin it |
+| A user `struct Box<T>` broke `boxWith` inference | major | inferred parameter types resolve in the declaring module; a coexist run case pins it |
+| Box helper definitions preceded a user deleter's prototype | major | the helper block is emitted after the prototypes; `Box<Buffer>` builds strictly |
+| `Box<T[4]>` / `Box<func(...)>` emitted an invalid `raw T` return declarator | major | `raw_pointer_type` and the function declarator spell pointer-to-row and pointer-to-function-pointer returns; both run cases pin it |
+| `box_rule_violation` stops at depth 32 | minor | accepted for now; the depth guards a recursive type that cannot contain a deeper concrete view without a written `Box` chain |
+| Host `cl_box_alloc` took `unsigned int` | minor | changed to `size_t`, matching `cl_alloc` |
+| A capturing closure that captures a local also lent to the same call is a pre-existing use-after-free | critical, pre-existing | reproduced on base `d0addac` without Box; outside this feature, routed to the borrow checker |
+
+The ASan proof lives in `v11_language_surfaces_memory_spec_test`, a dedicated
+suite with one comprehensive program; the behavior suite stays fast and the
+`make asan` runner discovers the memory suite by its `RDC_ASAN` gate.
 
 ## 6. Residual Limits
 

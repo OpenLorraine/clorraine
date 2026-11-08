@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 20/74 tasks (27%)
+> **Progress**: 31/74 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -156,9 +156,9 @@ instance recording.
 recursive drop, reassignment, loops, defer, mutual recursion, hosted-amiga,
 and m68k size.
 
-- [ ] 2.1.1 [spec-author] Write the Box behavior cases and the ASan memory helper cases: BX-1..BX-9, BX-18..BX-23, including `b.member`/`b[i]`/`b()`, the conditional/return exactly-once case, `boxSet`, reassignment, loop, defer, null, move, `boxWith` lambda, and view escape — `compiler/tests/v11_language_surfaces_spec_test.rs`
-- [ ] 2.1.2 Add a hosted-amiga Box build/run case and an m68k `sizeof(Box<i32>)`/struct-layout check to the Box suite
-- [ ] 2.1.3 Record the red run: the API and type are absent; capture the outputs
+- [x] 2.1.1 [spec-author] Write the Box behavior cases and the ASan memory helper cases: BX-1..BX-9, BX-18..BX-23, including `b.member`/`b[i]`/`b()`, the conditional/return exactly-once case, `boxSet`, reassignment, loop, defer, null, move, `boxWith` lambda, and view escape — `compiler/tests/v11_language_surfaces_spec_test.rs`
+- [x] 2.1.2 Add a hosted-amiga Box build/run case and an m68k `sizeof(Box<i32>)`/struct-layout check to the Box suite
+- [x] 2.1.3 Record the red run: the API and type are absent; capture the outputs
 
 ### Step 2.2: Allocation, API, and drop glue
 
@@ -166,10 +166,10 @@ and m68k size.
 **Objective**: Provide the allocator, the stdlib API, and the recursive drop
 glue without adding a new dependency.
 
-- [ ] 2.2.1 Add `cl_box_alloc` (zeroed, trapping) and `cl_box_free` (null-safe) to the host and hosted-amiga shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.2 Add the `boxAlloc` intrinsic declaration to `std.mem`, `COMPILER_INTRINSICS`, the free/qualified sema branches, the `own/call.rs` lowering, the `codegen/calls.rs` emission arm, and the `cl_box_alloc__<key>` helper definition — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`, `compiler/src/sema/call.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen/{calls,program}.rs`
-- [ ] 2.2.3 Add `boxNew<T>`, `boxSet<T>`, `boxWith<T, F>`, and `boxPtr<T>` to `std.mem`; add `boxNew`/`boxSet`/`boxWith`/`Box` to the export table; add `Box` to `COMPILER_KNOWN_EXPORTS` — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`
-- [ ] 2.2.4 Collect Box element types transitively, emit the `static inline` prototypes and `cl_box_drop__<key>` definitions, add the drop arm and expression form, and replace the Phase 1 drop placeholder; keep `is_pointer_param` false for Box — `compiler/src/codegen/{program,drop,function,types}.rs`
+- [x] 2.2.1 Add `cl_box_alloc` (zeroed, trapping) and `cl_box_free` (null-safe) to the host and hosted-amiga shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`
+- [x] 2.2.2 Add the `boxAlloc` intrinsic declaration to `std.mem`, `COMPILER_INTRINSICS`, the free/qualified sema branches, the `own/call.rs` lowering, the `codegen/calls.rs` emission arm, and the `cl_box_alloc__<key>` helper definition — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`, `compiler/src/sema/call.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen/{calls,program}.rs`
+- [x] 2.2.3 Add `boxNew<T>`, `boxSet<T>`, `boxWith<T, F>`, and `boxPtr<T>` to `std.mem`; add `boxNew`/`boxSet`/`boxWith`/`Box` to the export table; add `Box` to `COMPILER_KNOWN_EXPORTS` — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`
+- [x] 2.2.4 Collect Box element types transitively, emit the `static inline` prototypes and `cl_box_drop__<key>` definitions, add the drop arm and expression form, and replace the Phase 1 drop placeholder; keep `is_pointer_param` false for Box — `compiler/src/codegen/{program,drop,function,types}.rs`
 - [ ] 2.2.5 Audit substituted raw casts: reject a `raw T(x)` whose operand resolves to a Box outside embedded `std.mem` in each function instance; add explicit and inferred generic cases — `compiler/src/own/instance_check.rs`, `compiler/tests/v11_language_surfaces_spec_test.rs`
 
 ### Step 2.3: Impl tests, review, and verify
@@ -178,10 +178,10 @@ glue without adding a new dependency.
 **Objective**: Pin the helper, prototype, and drop-site shapes and prove the
 memory paths.
 
-- [ ] 2.3.1 [impl-author] Write the Box impl pins: helper names, prototypes before definitions, drop-site call, reassignment release, plain `void *` parameter, no `uint32_t`, no heap environment — `compiler/tests/v11_language_surfaces_impl_test.rs`
-- [ ] 2.3.2 Run the focused Box spec/impl suite under `RDC_ASAN=1`; run `make check`
-- [ ] 2.3.3 Run the correctness + memory-safety phase review for the Box drop paths; record findings in `05-findings.md`
-- [ ] 2.3.4 Run `make asan`; commit the Box task
+- [x] 2.3.1 [impl-author] Write the Box impl pins: helper names, prototypes before definitions, drop-site call, reassignment release, plain `void *` parameter, no `uint32_t`, no heap environment — `compiler/tests/v11_language_surfaces_impl_test.rs`
+- [x] 2.3.2 Run the focused Box spec/impl suite under `RDC_ASAN=1`; run `make check`
+- [x] 2.3.3 Run the correctness + memory-safety phase review for the Box drop paths; record findings in `05-findings.md`
+- [x] 2.3.4 Run `make asan`; commit the Box task
 
 **Deliverables**:
 - [ ] Box allocates, moves, replaces, drops recursively, and is ASan-clean
