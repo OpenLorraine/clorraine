@@ -34,6 +34,21 @@ toolkit in `tools/demo/`. Run `make demo` to rebuild them (and
 `make demo-check` to type-check and test the toolkit). Generated media is not
 committed; `demo/poster.png` is the one checked-in still.
 
+## Editor and tooling
+
+- **Language server** — `clorraine-lsp` speaks LSP over stdio and provides
+  diagnostics, hover, go to definition, completion, and document symbols.
+  Build it with `make -C docker exec CMD="cargo build --workspace"`.
+- **VS Code extension** — `tools/vscode/` launches the server and registers the
+  canonical grammar; `make vscode-check` packages and audits a `.vsix`.
+- **SDK installer** — `make setup` detects Docker, the pinned image, the
+  toolchain, the NDK, and licensed media; `make setup FETCH=1` builds missing
+  public components without ever downloading media.
+- **Reference documentation** — `clorraine --doc -o build/api FILE...` renders
+  `///` comments as linked Markdown.
+- **C to Clorraine** — [the Rosetta guide](docs/c-to-clorraine.md) translates
+  the common Amiga C patterns and the diagnostics they meet.
+
 ## Status
 
 Clorraine v1.1.0 is the current release. The reproducible Docker toolchain, the

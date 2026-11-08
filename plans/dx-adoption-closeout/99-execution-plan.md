@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 47/56 tasks (84%)
+> **Progress**: 50/56 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -298,14 +298,14 @@ the project gates.
 **Reference**: [03-06](03-06-rosetta-guide.md) · [07](07-testing-strategy.md) ST-53 to ST-54 · AR-33
 **Objective**: Pin the required sections and diagnostics, then write the guide.
 
-- [ ] 7.1.1 [spec-author] Write the guide content and link spec test — `compiler/tests/docs_guide_spec_test.rs`
-- [ ] 7.1.2 Write the guide, the docs index, and the README links — `docs/c-to-clorraine.md`, `docs/README.md`, `README.md`
-- [ ] 7.1.3 Run the doc suite and `make check` — no source file
+- [x] 7.1.1 [spec-author] Write the guide content and link spec test — `compiler/tests/docs_guide_spec_test.rs`
+- [x] 7.1.2 Write the guide, the docs index, and the README links — `docs/c-to-clorraine.md`, `docs/README.md`, `README.md`
+- [x] 7.1.3 Run the doc suite and `make check` — no source file
 
 **Deliverables**:
-- [ ] Every required pattern and diagnostic present
-- [ ] All links resolve
-- [ ] Specification not duplicated
+- [x] Every required pattern and diagnostic present
+- [x] All links resolve
+- [x] Specification not duplicated
 
 **Verify**: `make check`
 
