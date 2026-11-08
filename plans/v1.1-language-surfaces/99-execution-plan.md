@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 74/74 tasks (100%)
+> **Progress**: 74/74 tasks (100%); all phase deliverables checked; closeout for task 2.2.5 complete
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -76,9 +76,9 @@ docs baseline.
 - [x] 0.1.4 Update the PLAN-19 roadmap row to Plan Preflighted and commit the revised plan documents (including this plan and `05-findings.md`); record the new baseline hash ✅ (completed: 2026-11-08; `3dac902`)
 
 **Deliverables**:
-- [ ] Baseline log under `build/v11/` (ignored)
-- [ ] Findings ledger and revised plan committed; `git status --short` empty
-- [ ] PLAN-19 at Plan Preflighted
+- [x] Baseline log under `build/v11/` (ignored)
+- [x] Findings ledger and revised plan committed; `git status --short` empty
+- [x] PLAN-19 at Plan Preflighted
 
 **Verify**: `make check` exit 0; `git status --short` empty.
 
@@ -132,9 +132,9 @@ instance recording.
 - [x] 1.3.3 Run `make check`; run the correctness + emission-integrity review for the type-model phase and record findings in `05-findings.md`; commit the type-model task ✅ (completed: 2026-11-08)
 
 **Deliverables**:
-- [ ] `TyKind::Box` accepted by every stage
-- [ ] E10227/E10105 registered and tested
-- [ ] All Phase 1 cases green; `make check` exit 0
+- [x] `TyKind::Box` accepted by every stage
+- [x] E10227/E10105 registered and tested
+- [x] All Phase 1 cases green; `make check` exit 0
 
 **Verify**: focused suites, `cargo test --workspace`, `make check`.
 
@@ -170,7 +170,7 @@ glue without adding a new dependency.
 - [x] 2.2.2 Add the `boxAlloc` intrinsic declaration to `std.mem`, `COMPILER_INTRINSICS`, the free/qualified sema branches, the `own/call.rs` lowering, the `codegen/calls.rs` emission arm, and the `cl_box_alloc__<key>` helper definition — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`, `compiler/src/sema/call.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen/{calls,program}.rs`
 - [x] 2.2.3 Add `boxNew<T>`, `boxSet<T>`, `boxWith<T, F>`, and `boxPtr<T>` to `std.mem`; add `boxNew`/`boxSet`/`boxWith`/`Box` to the export table; add `Box` to `COMPILER_KNOWN_EXPORTS` — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`
 - [x] 2.2.4 Collect Box element types transitively, emit the `static inline` prototypes and `cl_box_drop__<key>` definitions, add the drop arm and expression form, and replace the Phase 1 drop placeholder; keep `is_pointer_param` false for Box — `compiler/src/codegen/{program,drop,function,types}.rs`
-- [ ] 2.2.5 Audit substituted raw casts: reject a `raw T(x)` whose operand resolves to a Box outside embedded `std.mem` in each function instance; add explicit and inferred generic cases — `compiler/src/own/instance_check.rs`, `compiler/tests/v11_language_surfaces_spec_test.rs`
+- [x] 2.2.5 Audit substituted raw casts: reject a `raw T(x)` whose operand resolves to a Box outside embedded `std.mem` in each function instance; cover explicit and inferred generic arguments, forwarding calls, member chains, indexes, dereferences, conditionals, aliases, loop bindings, lambda captures, address-of dereferences (including `unsafe` and conditional forms), and stores — `compiler/src/own/instance_check.rs`, `compiler/src/sema/{expr,mod,ops,stmt}.rs`, `compiler/tests/v11_language_surfaces_spec_test.rs` ✅ (completed: 2026-11-08; `e8f7407`; the per-instance operand-shape audit resolves `Type`/`Member`/`Index`/`Deref`/`Raw`/`Conditional`/`Alias`/`Unknown` with a recursion bound and reports `E10201`; embedded `std.mem` `boxPtr` stays exempt; 14 rejection tests plus acceptance guards)
 
 ### Step 2.3: Impl tests, review, and verify
 
@@ -184,9 +184,9 @@ memory paths.
 - [x] 2.3.4 Run `make asan`; commit the Box task
 
 **Deliverables**:
-- [ ] Box allocates, moves, replaces, drops recursively, and is ASan-clean
-- [ ] Mutual recursion, reassignment, hosted-amiga, and m68k layout are covered
-- [ ] The phase review is recorded
+- [x] Box allocates, moves, replaces, drops recursively, and is ASan-clean
+- [x] Mutual recursion, reassignment, hosted-amiga, and m68k layout are covered
+- [x] The phase review is recorded
 
 **Verify**: `RDC_ASAN=1` focused suite, `make check`, `make asan`.
 
@@ -228,14 +228,14 @@ can read it, and use it in both the validator and the emitter.
 
 - [x] 3.3.1 [impl-author] Write the X1 impl pins: `cl_<module>_<name>` for a cross-module ordinary deleter, the C name for `ffi`, no `cl_A_B_A_B_*` — `compiler/tests/v11_language_surfaces_impl_test.rs`
 - [x] 3.3.2 Run the focused X1 suite under `RDC_ASAN=1`; run `make check`
-- [ ] 3.3.3 Run the correctness + memory-safety phase review for the X1 release path; record findings
-- [ ] 3.3.4 Commit the X1 task
+- [x] 3.3.3 Run the correctness + memory-safety phase review for the X1 release path; record findings ✅ (completed: 2026-11-08; `05-findings.md` Phase 3 review)
+- [x] 3.3.4 Commit the X1 task ✅ (completed: 2026-11-08)
 
 **Deliverables**:
-- [ ] Ordinary deleters work with the correct diagnostics
-- [ ] One deleter per type, cross-module included
-- [ ] Owned-field deletion is ASan-clean
-- [ ] The phase review is recorded
+- [x] Ordinary deleters work with the correct diagnostics
+- [x] One deleter per type, cross-module included
+- [x] Owned-field deletion is ASan-clean
+- [x] The phase review is recorded
 
 **Verify**: `RDC_ASAN=1` focused suite, `make check`.
 
@@ -270,9 +270,9 @@ all capturing `func` arguments rejected until the emission path exists.
 - [x] 4.2.3 Run the focused suite and `make check`; commit the hook-rejection task ✅ (completed: 2026-11-08 08:41; `45fc6f2` implementation, `ba62519` docs)
 
 **Deliverables**:
-- [ ] The base invalid-C capture is now `E10400`
-- [ ] The ABI-identical accepted set is rejected/accepted correctly
-- [ ] No capturing `borrow` hook is accepted before emission exists
+- [x] The base invalid-C capture is now `E10400`
+- [x] The ABI-identical accepted set is rejected/accepted correctly
+- [x] No capturing `borrow` hook is accepted before emission exists
 
 **Verify**: focused hook sema suite, `make check`.
 

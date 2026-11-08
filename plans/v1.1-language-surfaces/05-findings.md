@@ -126,7 +126,7 @@ The per-phase reviewers are dispatched by the execution plan:
 | `Box<T>? == null` was `E10222` | major | `comparable` now includes `Box`; a spec case pins the comparison and narrowing |
 | `Box<u8[]>` and `Box<Holder<str>>` were accepted | major | the shared `box_rule_violation` walk checks slices and follows struct fields after substitution; two spec cases pin them |
 | Shadowing was only checked for a struct named `Box` | major | `builtin_box_active` covers type parameters, structural/enum/handle declarations, and imports; enum/handle shadow cases pin it |
-| A raw cast of a Box outside `std.mem` could be reached through a generic parameter | major | direct casts are rejected; the substituted-instance audit is task 2.2.5 (the remaining path is inside `unsafe`) |
+| A raw cast of a Box outside `std.mem` could be reached through a generic parameter | major | fixed: the per-instance operand-shape audit reports `E10201` for explicit and inferred generic arguments, forwarding calls, member chains, indexes, dereferences, conditionals, aliases, loop bindings, lambda captures, address-of dereferences (including `unsafe` and conditional forms), and stores; `std.mem`'s `boxPtr` stays accepted |
 | A user module named `std.mem` could claim the raw-cast exemption | major | the gate now requires the embedded std.mem module |
 | `Box<i32?>` reported `E10011` twice | low | the duplicate Box arm was removed; the argument walk reports once |
 | `Box<i32, u8>(p)` missed `E10300` | low | the call-shaped branch checks the type-argument count |
@@ -134,9 +134,14 @@ The per-phase reviewers are dispatched by the execution plan:
 | FFI struct fields are not walked for a nested Box | minor | accepted: the emitted C is valid and the boxed field is opaque; the direct Box rule is enforced |
 | `Box<Wrap<i32>>` emits an unreferenced inner instance | minor | accepted: the instance is recorded for the future drop helper and builds strictly |
 
-The generic raw-cast audit (task 2.2.5) covers the one deferred rule; the
-exploit is inside `unsafe` and requires an explicit or inferred generic
-instantiation with a Box argument.
+The generic raw-cast audit (task 2.2.5) is complete. It rejects explicit and
+inferred generic Box raw casts, forwarding generic calls, member chains,
+indexes, dereferences, conditionals, aliases, loop bindings, lambda captures,
+address-of dereferences (including `unsafe` and conditional forms), and stores,
+while a non-Box instantiation and the embedded `std.mem` `boxPtr` helper stay
+accepted. The exploit was inside `unsafe` and needed an explicit or inferred
+generic instantiation with a Box argument; the closeout evidence is in
+[§8](#8-closeout-substituted-box-raw-cast).
 
 ### Phase 2 review (Box allocation, drop, and library surface)
 
@@ -242,3 +247,134 @@ The final review's new critical/major findings are fixed (`05c5244`); the
 pre-existing capture-lend, earlier-statement move, and evaluated-guard drop
 defects reproduce on the pre-v1.1 base and remain recorded residual limits.
 The tree is pushed only with all seven legs green.
+
+## 8. Closeout: Substituted Box Raw Cast
+
+Task 2.2.5 closed the last deferred R3.4 rule. A raw cast whose substituted
+operand resolves to `Box<T>` now reports `E10201`; the embedded `std.mem`
+`boxPtr` helper keeps its exemption. Implementation commit: `e8f7407`.
+
+### Reproducer
+
+Before the fix the compiler accepted this program with exit 0:
+
+```clorraine
+module probe;
+func leak<T>(x: T): raw i32 { unsafe { return raw i32(x); } }
+func demo(b: Box<i32>): raw i32 { return leak(b); }
+```
+
+After the fix:
+
+```text
+error E10201: cannot cast 'Box<i32>' to 'raw i32'
+  help: use `boxWith` to access the pointee
+```
+
+### Implementation
+
+- The type checker records a `RawCastRequirement` only when the operand's
+  checked type still mentions a parameter or is unresolved. A cast already
+  typed `Box` is rejected at the declaration; the embedded `std.mem` module is
+  exempt.
+- `RawCastOperand` carries the operand's shape: `Type`, `Member`, `Index`,
+  `Deref`, `Raw`, `Conditional`, `Alias`, and `Unknown`. The per-instance audit
+  substitutes the instance arguments and resolves the shape with the existing
+  member, index-element, pointee, and conditional rules.
+- An unresolved local keeps its initializer or whole-local store shape in
+  `Binding.origin`; loop bindings take an `Index` shape over the iterable, and
+  lambda captures inherit the enclosing binding's shape. Shapes share their
+  children through `Rc`, so an alias chain is linear in memory.
+- The resolver is depth-bounded (256) so a pathological chain leaves the
+  operand unresolved instead of exhausting the compiler stack. The bound is far
+  above source-written expressions and does not affect any accepted program's
+  emission.
+
+### Tests
+
+The v1.1 spec suite grew from 94 to 112 tests. The 14 new rejection tests pin:
+
+| Test | Shape |
+|---|---|
+| `an_explicit_generic_raw_cast_of_a_box_is_rejected` | explicit `leak<Box<i32>>` |
+| `an_inferred_generic_raw_cast_of_a_box_is_rejected` | inferred `leak(b)` |
+| `a_forwarding_generic_raw_cast_of_a_box_is_rejected` | nested/forwarding generic call |
+| `a_member_chain_raw_cast_of_a_box_is_rejected` | `x.inner.n` |
+| `a_conditional_raw_cast_of_a_box_is_rejected` | `c ? x.b : x.b` |
+| `an_index_raw_cast_of_a_box_is_rejected` | `x.items[0]` |
+| `a_dereference_raw_cast_of_a_box_is_rejected` | `*(x.p)` |
+| `an_alias_raw_cast_of_a_box_is_rejected` | `let y = x.inner; y.n` |
+| `a_loop_element_raw_cast_of_a_box_is_rejected` | `for (v in x.items)` |
+| `a_lambda_capture_raw_cast_of_a_box_is_rejected` | capture of an unresolved alias |
+| `an_address_of_deref_raw_cast_of_a_box_is_rejected` | `let p = &x.inner.n; *p` |
+| `a_conditional_address_of_deref_raw_cast_of_a_box_is_rejected` | conditional address-of |
+| `an_unsafe_address_of_deref_raw_cast_of_a_box_is_rejected` | `unsafe` address-of |
+| `a_store_raw_cast_of_a_box_is_rejected` | Box store into an unresolved local |
+
+Acceptance guards keep the non-Box generic instantiation, non-Box operand
+shapes, non-Box store replacement, and the embedded `std.mem` helper accepted.
+The direct-cast test remains unchanged.
+
+Test-integrity evidence: with the new test file applied to the base compiler
+sources (`6010efb`), all 14 rejection tests fail because the compiler accepts
+the program; the direct-cast and non-Box acceptance guards pass. The two later
+acceptance guards pass on both trees by design.
+
+### Closeout Review
+
+The correctness reviewer and the read-only memory-safety auditor were dispatched
+twice. The first pass found the conditional/index/alias routes, unbounded alias
+memory, and the loop/capture/store gaps; the second pass confirmed the fixes and
+found only the residuals below. No critical or major finding remains.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| RV-001 conditional/index wrapper routes were accepted | major | the `RawCastOperand` shape tree resolves conditional arms and indexes |
+| RV-002/RV-008 squashed statements | minor | both lines split |
+| RV-003 stale operand docs | minor | records and docs rewritten for both parameter and unresolved shapes |
+| RV-004/MS-001 alias-chain exponential memory | major/minor | `Rc` sharing; 4000 aliases measured ~23.5 MB, linear |
+| RV-005 loop and lambda-capture bindings lost the shape | major | loop `Index` shape and capture-origin propagation; tests added |
+| RV-006/RV-007 store and alias origins | minor | whole-local stores replace the origin; the non-Box store guard passes |
+| RV-009 raw-pointer conditional/address-of routes | minor | raw-typed conditional arms and `unsafe` transparent unwrapping; tests added |
+| RV-010 flow-insensitive/partial-store residuals | minor | accepted; every observed case emits invalid C, so no runtime escape |
+| RV-011 `checked_type_of` linear scan | minor | accepted; memory is linear and the measured time is not a gate blocker |
+| RV-012 doc wording | minor | corrected to the flow-insensitive limit |
+| MS-002 deep instantiated alias chain aborted | minor | resolver depth bound; the 4500-alias probe now compiles without abort |
+| PRE-001..PRE-004 substituted-cast UAF routes | critical, pre-existing | fixed by this closeout |
+| PRE-005..PRE-008 non-cast implicit Box escapes | critical, pre-existing | recorded as residual; base and head emit identical C and the concrete twins are `E10200` |
+
+Accepted residuals, all compiler-stage only (each observed case fails the strict
+C build, so none is a usable runtime escape):
+
+- `Binding.origin` is flow-insensitive: a conditional store, a `defer` store,
+  a partial member/index store, or an address-of snapshot can leave the shape
+  describing a different path. The cases with Box shapes are accepted only when
+  the emitted C is invalid.
+- A call-rooted or array-literal-rooted operand whose type stays `Unknown`
+  cannot be followed; the emitted C is invalid.
+- The non-cast implicit-conversion family (`return x.inner.n` to a `raw`
+  slot, call argument, assignment, and declared slot) is pre-existing and
+  outside the raw-cast rule. Both base and head accept it, emit byte-identical
+  C, build strictly, and the base reproduces the ASan use-after-free. The
+  concrete twins report `E10200`; that separate deferred-conversion gap remains
+  a residual limit.
+
+### Gate Evidence
+
+| Gate | Result | Log |
+|---|---|---|
+| Reproducer | `E10201`, exit 1, no C | manual |
+| Focused behavior suite | 112 passed, 0 failed | `cargo test --test v11_language_surfaces_spec_test` |
+| Focused impl suite | 13 passed, 0 failed | `cargo test --test v11_language_surfaces_impl_test` |
+| Base test-integrity | 14 rejection tests fail on base; 98 pass | stash of `compiler/src` |
+| `make check` | exit 0; spec check 27 files/114 compile-fail tests; fuzzer smoke 28/0 | `build/v11-subst/make-check-final.log` (ignored) |
+| `make asan` | 28 suites, exit 0 | `build/v11-subst/asan-final.log` (ignored) |
+| `make ubsan` | 2 suites, exit 0 | `build/v11-subst/ubsan-final.log` (ignored) |
+| `make corpus-amiga` | exit 0 after the known transient vbcc `No config file!` retry | `build/v11-subst/corpus-amiga-retry.log` (ignored) |
+| `make verify` | `verify: all legs passed` | `build/v11-subst/verify-final4.log` (ignored) |
+
+The exact-frame FS-UAE legs are timing-sensitive. The final `make verify` ran
+against a private Xvfb display with modest CPU contention so the demos held
+their acceptance frames long enough to capture; the paddle and sprite binaries
+emit C byte-identical to the base compiler, and every failing retry showed the
+completed result line rather than a compiler error.

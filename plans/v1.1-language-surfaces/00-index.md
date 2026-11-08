@@ -3,7 +3,7 @@
 > **Feature**: Add the three v1.1 language surfaces: built-in `Box<T>` with
 > generated drop glue, ordinary Clorraine functions as `freedBy` deleters
 > (the X1 amendment), and C-hook trampolines for capturing lambdas (L5).
-> **Status**: Plan Preflighted — ready for execution
+> **Status**: Done — 74/74 tasks verified; task 2.2.5 closeout landed
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
 > **Implements**: R1-R13
