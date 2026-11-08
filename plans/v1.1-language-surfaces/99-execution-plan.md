@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 2/73 tasks (3%)
+> **Progress**: 20/74 tasks (27%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -21,7 +21,7 @@ tests green.
 The plan incorporates every resolution in the
 [Requirements Preflight](00-preflight-report-requirements.md) and the
 [Plan Preflight](00-preflight-report.md): the type-only resolver
-predeclaration, the reserved `Box` name, the `E10105` FFI check,
+predeclaration, the `Box` shadowing rule, the `E10105` FFI check,
 `emits_drop`, the helper prototypes, the module-scoped deleter identity in
 `OwnershipOutput`, the ABI-identical hook signature set, the closure
 materialization at its argument position, the two new compile-fail
@@ -35,14 +35,14 @@ specification tests, and the `E11215` runtime exclusion.
 |---|---|---|
 | 0 | Baseline, ledger, and docs | 4 |
 | 1 | Box type-model plumbing | 16 |
-| 2 | Box allocation, API, and drop glue | 11 |
+| 2 | Box allocation, API, and drop glue | 12 |
 | 3 | X1 ordinary `freedBy` deleters | 9 |
 | 4 | L5 hook contract and rejection | 5 |
 | 5 | L5 acceptance, trampoline, and wrapper | 16 |
 | 6 | Specification amendments and docs | 4 |
 | 7 | Full acceptance, reviews, push | 8 |
 
-**Total: 73 tasks across 8 phases.**
+**Total: 74 tasks across 8 phases.**
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 >
@@ -72,8 +72,8 @@ docs baseline.
 
 - [x] 0.1.1 Record the `make check` baseline (exit 0; fuzzer smoke 28/0) and the starting tree `a7dbdd5` ✅ (completed: 2026-11-08)
 - [x] 0.1.2 Commit the requirements, designs, testing strategy, ambiguity register, and requirements preflight; record `8a91bc5` ✅ (completed: 2026-11-08)
-- [ ] 0.1.3 Create `05-findings.md` with the baseline, red-evidence, gate-log, and review sections
-- [ ] 0.1.4 Update the PLAN-19 roadmap row to Plan Preflighted and commit the revised plan documents (including this plan and `05-findings.md`); record the new baseline hash
+- [x] 0.1.3 Create `05-findings.md` with the baseline, red-evidence, gate-log, and review sections ✅ (completed: 2026-11-08)
+- [x] 0.1.4 Update the PLAN-19 roadmap row to Plan Preflighted and commit the revised plan documents (including this plan and `05-findings.md`); record the new baseline hash ✅ (completed: 2026-11-08; `3dac902`)
 
 **Deliverables**:
 - [ ] Baseline log under `build/v11/` (ignored)
@@ -100,8 +100,8 @@ docs baseline.
 **Objective**: Pin the type-name, arity, construction, view, overlay,
 ephemeral, freestanding, and FFI-boundary rules before the type exists.
 
-- [ ] 1.1.1 [spec-author] Write the Box type-model and FFI spec cases: BX-10..BX-17; `Box` arity; user `Box` E20006; `Box {}` E10203; `Box(x)` E10201; `raw i32(b)` outside `std.mem` E10201; `Box<static str>` accepted; `Box<Array<str>>` E10227; `Box<i32>` in `ffi` and inside a callback type E10105; `Wrap<i32>` in `ffi` E10105 — `compiler/tests/v11_language_surfaces_spec_test.rs`
-- [ ] 1.1.2 Record the red run: every `Box` spelling is E10219 on `a7dbdd5`; a user `struct Box<T>` is accepted; the FFI invalid-C cases are accepted and fail the strict C build. Record the first-attempt red results (E10203/E10201/E10227/E20006/E10105) when they appear after 1.2.5-1.2.9
+- [x] 1.1.1 [spec-author] Write the Box type-model and FFI spec cases: BX-10..BX-17; `Box` arity; a user `Box` declaration shadows the built-in; `Box {}` E10203; `Box(x)` E10201; `raw i32(b)` outside `std.mem` E10201; `Box<static str>` accepted; `Box<Array<str>>` E10227; `Box<i32>` in `ffi` and inside a callback type E10105; `Wrap<i32>` in `ffi` E10105 — `compiler/tests/v11_language_surfaces_spec_test.rs`
+- [x] 1.1.2 Record the red run: every `Box` spelling is E10219 on `a7dbdd5`; a user `struct Box<T>` is accepted; the FFI invalid-C cases are accepted and fail the strict C build. Record the first-attempt red results (E10203/E10201/E10227/E10105) when they appear after 1.2.5-1.2.9
 
 ### Step 1.2: Type model
 
@@ -109,17 +109,17 @@ ephemeral, freestanding, and FFI-boundary rules before the type exists.
 **Objective**: Add `TyKind::Box` with a complete, compiler-checked type model,
 including the silent `_` fallbacks and the FFI boundary.
 
-- [ ] 1.2.1 Add `TyKind::Box(Box<Ty>)`, `Ty::boxed`, display, equality, substitute, `contains_param`, `is_param`, `contains_closure`, and the `mentions_type_param` arm — `compiler/src/types/mod.rs`, `compiler/src/own/lower.rs`
-- [ ] 1.2.2 Add the type key, `RESERVED_COMPONENTS` entry, pointer size/alignment, `duplicable`, `size_of`, and `abi_size_of` arms — `compiler/src/types/{keys,layout,table}.rs`
-- [ ] 1.2.3 Add `is_view`/`is_lend_candidate`/`is_handle`/`is_nullable_capable`/`is_handle_or_aggregate`/`embeds_by_value`/overlay recursion — `compiler/src/borrow.rs`, `compiler/src/sema/items.rs`
-- [ ] 1.2.4 Add the total `abi::ffi_type` mapping (`void *`) and the `ffi::is_uncontracted_param` classification — `compiler/src/abi.rs`, `compiler/src/ffi.rs`
-- [ ] 1.2.5 Add `Box` to the resolver's type-only predeclarations and a separate reserved-type-name check (`E20006`) — `compiler/src/resolve/mod.rs`, `compiler/src/parse/mod.rs`
-- [ ] 1.2.6 Add the `E10300` arity check in `validate_type_at` and the `match_param`/`mentions_unbound` recursion for `boxWith` inference — `compiler/src/sema/{items,call}.rs`
-- [ ] 1.2.7 Add nullable/overlay/closure/view walks (`E10227`), construction rejection (`E10203`/`E10201`), and the raw-cast gate (`E10201`) — `compiler/src/sema/{expr,items,mod}.rs`
-- [ ] 1.2.8 Add `mentions_box` to the freestanding profile check (`E11200`) — `compiler/src/sema/mod.rs`
-- [ ] 1.2.9 Add the `E10105` FFI check: pass `&sema.table` and each block's module to `check_items`, resolve with `resolve_ty_folded`, and recurse through arrays, raw pointers, and function-pointer types — `compiler/src/ffi.rs`, `compiler/src/own.rs`
-- [ ] 1.2.10 Add the `own/generics.rs` `is_concrete`/`record_struct_type` arms and the `Box` arms in `own/place.rs`, `own/expr.rs`, `own/statements.rs`, `own/instance_check.rs` — `compiler/src/own/`
-- [ ] 1.2.11 Add the `E10227`/`E10105` registry entries and the two compile-fail files; run `./spec/check.sh` — `spec/14-diagnostics.md`, `spec/tests/compile-fail/`
+- [x] 1.2.1 Add `TyKind::Box(Box<Ty>)`, `Ty::boxed`, display, equality, substitute, `contains_param`, `is_param`, `contains_closure`, and the `mentions_type_param` arm — `compiler/src/types/mod.rs`, `compiler/src/own/lower.rs`
+- [x] 1.2.2 Add the type key, `RESERVED_COMPONENTS` entry, pointer size/alignment, `duplicable`, `size_of`, and `abi_size_of` arms — `compiler/src/types/{keys,layout,table}.rs`
+- [x] 1.2.3 Add `is_view`/`is_lend_candidate`/`is_handle`/`is_nullable_capable`/`is_handle_or_aggregate`/`embeds_by_value`/overlay recursion — `compiler/src/borrow.rs`, `compiler/src/sema/items.rs`
+- [x] 1.2.4 Add the total `abi::ffi_type` mapping (`void *`) and the `ffi::is_uncontracted_param` classification — `compiler/src/abi.rs`, `compiler/src/ffi.rs`
+- [x] 1.2.5 Add `Box` to the resolver's type-only predeclarations and keep the ordinary shadowing order (a user declaration named `Box` wins) — `compiler/src/resolve/mod.rs`, `compiler/src/types/table.rs`
+- [x] 1.2.6 Add the `E10300` arity check in `validate_type_at` and the `match_param`/`mentions_unbound` recursion for `boxWith` inference — `compiler/src/sema/{items,call}.rs`
+- [x] 1.2.7 Add nullable/overlay/closure/view walks (`E10227`), construction rejection (`E10203`/`E10201`), and the raw-cast gate (`E10201`) — `compiler/src/sema/{expr,items,mod}.rs`
+- [x] 1.2.8 Add `mentions_box` to the freestanding profile check (`E11200`) — `compiler/src/sema/mod.rs`
+- [x] 1.2.9 Add the `E10105` FFI check: pass `&sema.table` and each block's module to `check_items`, resolve with `resolve_ty_folded`, and recurse through arrays, raw pointers, and function-pointer types — `compiler/src/ffi.rs`, `compiler/src/own.rs`
+- [x] 1.2.10 Add the `own/generics.rs` `is_concrete`/`record_struct_type` arms and the `Box` arms in `own/place.rs`, `own/expr.rs`, `own/statements.rs`, `own/instance_check.rs` — `compiler/src/own/`
+- [x] 1.2.11 Add the `E10227`/`E10105` registry entries and the two compile-fail files; run `./spec/check.sh` — `spec/14-diagnostics.md`, `spec/tests/compile-fail/`
 
 ### Step 1.3: Impl tests and verify
 
@@ -127,9 +127,9 @@ including the silent `_` fallbacks and the FFI boundary.
 **Objective**: Pin the type keys, display, layout, FFI rejection, and generic
 instance recording.
 
-- [ ] 1.3.1 [impl-author] Write the type-model impl pins: `Box__<key>`, `Box<T>` display, `sizeof(Box<i32>)`, a type-only `sizeof(StructWithBox)`/`offsetof`/extent (no Box value is constructed), `Box<Wrap<i32>>` instance emission, and the absent `ClWrap` prototype — `compiler/tests/v11_language_surfaces_impl_test.rs`
-- [ ] 1.3.2 Run the focused suites and `cargo test --workspace`; fix the plumbing
-- [ ] 1.3.3 Run `make check`; run the correctness + emission-integrity review for the type-model phase and record findings in `05-findings.md`; commit the type-model task
+- [x] 1.3.1 [impl-author] Write the type-model impl pins: `Box__<key>`, `Box<T>` display, `sizeof(Box<i32>)`, a type-only `sizeof(StructWithBox)`/`offsetof`/extent (no Box value is constructed), `Box<Wrap<i32>>` instance emission, and the absent `ClWrap` prototype — `compiler/tests/v11_language_surfaces_impl_test.rs`
+- [x] 1.3.2 Run the focused suites and `cargo test --workspace`; fix the plumbing
+- [x] 1.3.3 Run `make check`; run the correctness + emission-integrity review for the type-model phase and record findings in `05-findings.md`; commit the type-model task ✅ (completed: 2026-11-08)
 
 **Deliverables**:
 - [ ] `TyKind::Box` accepted by every stage
@@ -169,7 +169,8 @@ glue without adding a new dependency.
 - [ ] 2.2.1 Add `cl_box_alloc` (zeroed, trapping) and `cl_box_free` (null-safe) to the host and hosted-amiga shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`
 - [ ] 2.2.2 Add the `boxAlloc` intrinsic declaration to `std.mem`, `COMPILER_INTRINSICS`, the free/qualified sema branches, the `own/call.rs` lowering, the `codegen/calls.rs` emission arm, and the `cl_box_alloc__<key>` helper definition — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`, `compiler/src/sema/call.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen/{calls,program}.rs`
 - [ ] 2.2.3 Add `boxNew<T>`, `boxSet<T>`, `boxWith<T, F>`, and `boxPtr<T>` to `std.mem`; add `boxNew`/`boxSet`/`boxWith`/`Box` to the export table; add `Box` to `COMPILER_KNOWN_EXPORTS` — `stdlib/std.mem.clo`, `compiler/src/stdlib.rs`
-- [ ] 2.2.4 Collect Box element types transitively, emit the `static inline` prototypes and `cl_box_drop__<key>` definitions, add the drop arm and expression form, and add `TyKind::Box => true` to `emits_drop`; keep `is_pointer_param` false for Box — `compiler/src/codegen/{program,drop,function,types}.rs`
+- [ ] 2.2.4 Collect Box element types transitively, emit the `static inline` prototypes and `cl_box_drop__<key>` definitions, add the drop arm and expression form, and replace the Phase 1 drop placeholder; keep `is_pointer_param` false for Box — `compiler/src/codegen/{program,drop,function,types}.rs`
+- [ ] 2.2.5 Audit substituted raw casts: reject a `raw T(x)` whose operand resolves to a Box outside embedded `std.mem` in each function instance; add explicit and inferred generic cases — `compiler/src/own/instance_check.rs`, `compiler/tests/v11_language_surfaces_spec_test.rs`
 
 ### Step 2.3: Impl tests, review, and verify
 
@@ -353,7 +354,7 @@ language-rule surface.
 **Reference**: R13 · [Requirements](01-requirements.md) §R13 · AR-2, AR-5, AR-55
 **Objective**: Record the approved amendments and the new diagnostics.
 
-- [ ] 6.1.1 Add the v1.1 decision section to `spec/decisions.md` (X1, L5, P7, Box, profiles, diagnostics) and update the affected chapters: Ch 01 (reserved names), Ch 02 (type universe/nullability/casts), Ch 03 (ownership/drop), Ch 06 §6.1, Ch 07 §5/§10, Ch 10 (module-scoped deleter resolution, if applicable), Ch 11 (heap allocation), Ch 12 §2/§4/§7, Ch 14, Ch 15 (profiles), Ch 16 §2/§4, Ch 17, appendix-stdlib §12 and a new Box/std.mem section, lineage — `spec/`
+- [ ] 6.1.1 Add the v1.1 decision section to `spec/decisions.md` (X1, L5, P7, Box, profiles, diagnostics) and update the affected chapters: Ch 01 (type-name predeclaration and shadowing), Ch 02 (type universe/nullability/casts), Ch 03 (ownership/drop), Ch 06 §6.1, Ch 07 §5/§10, Ch 10 (module-scoped deleter resolution, if applicable), Ch 11 (heap allocation), Ch 12 §2/§4/§7, Ch 14, Ch 15 (profiles), Ch 16 §2/§4, Ch 17, appendix-stdlib §12 and a new Box/std.mem section, lineage — `spec/`
 - [ ] 6.1.2 Update the `E10102`/`E10400` help text and keep their first lines stable; confirm the Phase 1 compile-fail tests and the Phase 5 `E11215` exclusion pass — `spec/14-diagnostics.md`, `spec/tests/compile-fail/`, `spec/check.sh`
 - [ ] 6.1.3 Update `docs/known-limitations.md` (no nullable allocation failure, no move-out, no Box FFI, no freestanding Box, no heap env, synchronous-only, non-generic hooks, ABI set), the appendix implementation table, the roadmap stage/row, and AGENTS if a new suite/target needs a line — `docs/`, `plans/00-roadmap.md`, `AGENTS.md`
 - [ ] 6.1.4 Run `./spec/check.sh` and `make check`; commit the specification-amendment docs separately from the implementation commits

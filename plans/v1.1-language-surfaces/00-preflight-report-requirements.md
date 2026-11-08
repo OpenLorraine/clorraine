@@ -240,8 +240,12 @@ substitution, freestanding Box, and `boxAlloc` emission.
 (`types/table.rs:798-823`); the challenger demonstrated the same hazard with
 `struct String` and `std.text` (E10036/warnings inside the stdlib). The current
 design promised supported shadowing.
-**Resolution:** `Box` is now a reserved built-in type name (`E20006`) and
-predeclared type-only; shadowing is not promised. A shadowing test is added.
+**Resolution:** The preflight first chose a reserved `Box` name (`E20006`).
+Execution rejected that: it broke 957 existing implementation-test sources and
+the spec's own `Box<T>` generic example. A user `struct Box` now shadows the
+built-in like `String`; the standard-library Box API is unavailable in that
+program and the limitation is documented (AR-69 runtime). The shadowing test is
+added.
 **User Decision:** Resolved — AI delegated.
 
 ### PF-013: `Box<Self>` uses a type the language does not have 🟠 MAJOR
@@ -431,7 +435,7 @@ remaining implementation surface.
 | PF-009 | R7.1-R7.2, 03-02 §2 | module-scoped resolution + resolved Ty |
 | PF-010 | R3.2, AR-24b | `emits_drop` Box arm + ASan case |
 | PF-011 | 03-01 §9 | silent-fallback checklist + tests |
-| PF-012 | R1.1, AR-20 | reserved `Box` + E20006 |
+| PF-012 | R1.1, AR-20, AR-69 | shadowing rule + documented limit |
 | PF-013 | R3.5, AR-14 | concrete `Node`, no `Self` |
 | PF-014 | R1.3, AR-63 | no `export`; export table |
 | PF-015 | R1.3, AR-24, AR-63 | intrinsic wiring + impl pins |

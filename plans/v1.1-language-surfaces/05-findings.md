@@ -43,6 +43,12 @@ starting behavior is in [Current State](02-current-state.md).
 | `Box {}` / `Box(x)` / `Box<str>` | `E10219` before the name resolves; after 1.2.5 they are the accepted cases the new checks close |
 | `Box<i32>` in `ffi` | `E10219` before the name resolves; the generic-aggregate `Wrap<i32>` case emits `ClWrap` with no typedef |
 
+**Red run (2026-11-08)**: `cargo test --test
+v11_language_surfaces_spec_test` — 22 failed, 0 passed. The
+`box-arity-zero` and `box-arity-two` cases reported `["E10219"]` instead of
+`E10300`; the user-`Box` case was accepted; every other case stopped at
+`E10219`. Log: `build/v11/spec-red-phase1.log` (ignored).
+
 ### 3.2 Box allocation and drop
 
 Records the first implementation attempt's output (the API/type are absent on
@@ -79,11 +85,32 @@ The per-phase reviewers are dispatched by the execution plan:
 
 | Phase | Reviewers | Result |
 |---|---|---|
-| 1 | correctness + emission-integrity | pending |
+| 1 | correctness + emission-integrity | 2 reviews; 12 findings, all resolved or explicitly deferred |
 | 2 | correctness + memory-safety | pending |
 | 3 | correctness + memory-safety | pending |
 | 5 | correctness + memory-safety + emission-integrity + semantics | pending |
 | 7 | final cross-phase | pending |
+
+### Phase 1 review (Box type model)
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| A bare built-in `Box` was accepted as a value and emitted `Box` | major | `check_name` now reports `E10219` for a bare `Box` type name; a spec case pins it |
+| A Box parameter/local was not read, so the strict C build could warn | major | `emit_drop_expr`/`drop_expr_text`/`emits_drop` now reference the place; the real recursive release lands with the allocator in Phase 2 |
+| `Box<T>? == null` was `E10222` | major | `comparable` now includes `Box`; a spec case pins the comparison and narrowing |
+| `Box<u8[]>` and `Box<Holder<str>>` were accepted | major | the shared `box_rule_violation` walk checks slices and follows struct fields after substitution; two spec cases pin them |
+| Shadowing was only checked for a struct named `Box` | major | `builtin_box_active` covers type parameters, structural/enum/handle declarations, and imports; enum/handle shadow cases pin it |
+| A raw cast of a Box outside `std.mem` could be reached through a generic parameter | major | direct casts are rejected; the substituted-instance audit is task 2.2.5 (the remaining path is inside `unsafe`) |
+| A user module named `std.mem` could claim the raw-cast exemption | major | the gate now requires the embedded std.mem module |
+| `Box<i32?>` reported `E10011` twice | low | the duplicate Box arm was removed; the argument walk reports once |
+| `Box<i32, u8>(p)` missed `E10300` | low | the call-shaped branch checks the type-argument count |
+| `E10105`/`E10227` were not registered and had no goldens | low | registry rows and three compile-fail files added; the compile-fail and DX counts were updated |
+| FFI struct fields are not walked for a nested Box | minor | accepted: the emitted C is valid and the boxed field is opaque; the direct Box rule is enforced |
+| `Box<Wrap<i32>>` emits an unreferenced inner instance | minor | accepted: the instance is recorded for the future drop helper and builds strictly |
+
+The generic raw-cast audit (task 2.2.5) covers the one deferred rule; the
+exploit is inside `unsafe` and requires an explicit or inferred generic
+instantiation with a Box argument.
 
 ## 6. Residual Limits
 

@@ -39,9 +39,12 @@ a type position without a declaration, accepts exactly one type argument, and
 is distinct from every declared struct, enum, and handle. The name is
 predeclared in the resolve stage as a type-only name (the resolver currently
 predeclares only `String`), so `Box<T>` reaches the type stage without
-`E10219`. `Box` is a reserved built-in type name: a user declaration of a
-struct, enum, handle, or function named `Box` is `E20006`. The name is not a
-value: `Box<T>(x)` and `Box<T> { ... }` are rejected.
+`E10219`. A user declaration named `Box` shadows the built-in through the
+ordinary resolution order, exactly as a user declaration named `String` does;
+the standard-library `boxNew`/`boxSet`/`boxWith` surface is then unavailable
+in that program and the shadowing is documented as a limitation. The name is
+not a value: `Box<T>(x)` and `Box<T> { ... }` are rejected when `Box` is the
+built-in.
 
 **R1.2 Representation.** A `Box<T>` value is one opaque pointer to a heap
 block that holds exactly one `T`. Its C spelling is `void *`; its size is the
@@ -497,9 +500,11 @@ must be green before any commit.
 no `Box<T>?` allocation failure value (the allocator traps), no boxed-value
 move-out (a raw cast of a Box outside `std.mem` is rejected), no direct Box FFI
 crossing, no freestanding Box, no heap closure environment, the synchronous-only
-callback contract, capturing hooks only in non-generic bodies, and the
+callback contract, capturing hooks only in non-generic bodies, the
 ABI-identical callback signature restriction (no view, borrow, or fixed-array
-callback parameters or returns).
+callback parameters or returns), and the `Box`-shadowing rule (a user
+declaration named `Box` shadows the built-in; the standard-library Box API is
+unavailable in that program).
 
 **R13.6 Roadmap.** One roadmap row, `PLAN-19`, is added at RD Drafted and kept
 in sync through Plan Preflighted, Executing, and Done.
