@@ -64,6 +64,7 @@ pub fn run_stdio() -> i32 {
         profile: Profile::parse("hosted-amiga").unwrap_or(Profile::Host),
         initialized: false,
         shutdown: false,
+        failed: false,
     };
     server.run(receiver)
 }
@@ -83,6 +84,9 @@ fn read_loop(sender: mpsc::Sender<Incoming>, cancelled: Arc<Mutex<HashSet<String
                             .and_then(request_key)
                         {
                             if let Ok(mut set) = cancelled.lock() {
+                                if set.len() >= 1024 {
+                                    set.clear();
+                                }
                                 set.insert(id);
                             }
                         }
@@ -120,6 +124,7 @@ struct Server<W: Write> {
     profile: Profile,
     initialized: bool,
     shutdown: bool,
+    failed: bool,
 }
 
 impl<W: Write> Server<W> {
@@ -145,6 +150,9 @@ impl<W: Write> Server<W> {
                     return if self.shutdown { 0 } else { 1 };
                 }
             }
+            if self.failed {
+                return 1;
+            }
         }
         0
     }
@@ -169,15 +177,19 @@ impl<W: Write> Server<W> {
     /// Handles a request and writes its response.
     fn handle_request(&mut self, method: &str, id: Json, params: Json) -> Option<i32> {
         if let Some(key) = request_key(&id) {
-            if self
+            let cancelled = self
                 .cancelled
                 .lock()
-                .map(|set| set.contains(&key))
-                .unwrap_or(false)
-            {
+                .map(|mut set| set.remove(&key))
+                .unwrap_or(false);
+            if cancelled {
                 self.send_error(id, REQUEST_CANCELLED, "request cancelled");
                 return None;
             }
+        }
+        if self.shutdown {
+            self.send_error(id, INVALID_REQUEST, "the server is shutting down");
+            return None;
         }
         match method {
             "initialize" => {
@@ -238,7 +250,7 @@ impl<W: Write> Server<W> {
                     .request_uri(&params)
                     .and_then(|uri| self.feature_input(&uri))
                     .map(|input| features::document_symbols(&input))
-                    .unwrap_or_else(|| Json::Array(Vec::new()));
+                    .unwrap_or(Json::Null);
                 self.send_result(id, result);
                 None
             }
@@ -254,6 +266,7 @@ impl<W: Write> Server<W> {
         match method {
             "exit" => Some(if self.shutdown { 0 } else { 1 }),
             "initialized" | "$/cancelRequest" => None,
+            _ if !self.initialized || self.shutdown => None,
             "textDocument/didOpen" => {
                 if let Some(uri) = self.update_document(&params, DocumentChange::Open) {
                     self.publish_diagnostics(&uri);
@@ -268,6 +281,9 @@ impl<W: Write> Server<W> {
             }
             "textDocument/didSave" => {
                 if let Some(uri) = document_uri(&params) {
+                    if let Some(text) = params.get("text").and_then(Json::as_str) {
+                        self.documents.change(&uri, text.to_owned());
+                    }
                     self.publish_diagnostics(&uri);
                 }
                 None
@@ -315,7 +331,7 @@ impl<W: Write> Server<W> {
     /// Parses the analysis set for one requested document.
     fn feature_input(&self, uri: &DocumentUri) -> Option<FeatureInput> {
         let set = self.index.analysis_set(uri, &self.documents);
-        let parsed = analysis::parse(set);
+        let parsed = analysis::parse_partial(set);
         let file = *parsed.files.get(&uri.key())?;
         let table = SymbolTable::build(&parsed.sources, &parsed.programs);
         Some(FeatureInput {
@@ -409,7 +425,9 @@ impl<W: Write> Server<W> {
             ("method", Json::String(method.to_owned())),
             ("params", params),
         ]);
-        let _ = self.writer.write(&body.render());
+        if self.writer.write(&body.render()).is_err() {
+            self.failed = true;
+        }
     }
 
     /// Handles `initialize`.
@@ -484,7 +502,9 @@ impl<W: Write> Server<W> {
             ("id", id),
             ("result", result),
         ]);
-        let _ = self.writer.write(&body.render());
+        if self.writer.write(&body.render()).is_err() {
+            self.failed = true;
+        }
     }
 
     /// Writes an error response; returns false when the stream failed.
@@ -500,7 +520,11 @@ impl<W: Write> Server<W> {
                 ]),
             ),
         ]);
-        self.writer.write(&body.render()).is_ok()
+        let written = self.writer.write(&body.render()).is_ok();
+        if !written {
+            self.failed = true;
+        }
+        written
     }
 }
 

@@ -291,12 +291,18 @@ impl LspClient {
     pub fn shutdown_and_exit(&mut self) -> i32 {
         let response = self.request("shutdown", Json::Null);
         assert!(response.get("error").is_none(), "shutdown failed: {response:?}");
+        assert_eq!(response.get("result"), Some(&Json::Null));
         self.send_text(&Json::object([
             ("jsonrpc", Json::String("2.0".to_owned())),
             ("method", Json::String("exit".to_owned())),
         ])
         .render());
         self.wait_exit()
+    }
+
+    /// The number of notifications buffered while waiting for a response.
+    pub fn buffered(&self) -> usize {
+        self.pending.len()
     }
 
     /// Waits for the process to exit, killing it after the deadline.
@@ -378,4 +384,24 @@ fn read_frame(reader: &mut BufReader<std::process::ChildStdout>) -> Result<Optio
 /// Extracts the numeric error code from a response.
 pub fn error_code(value: &Json) -> Option<i64> {
     value.get("error")?.get("code")?.as_i64()
+}
+
+/// Sends `textDocument/didSave`.
+impl LspClient {
+    pub fn save(&mut self, uri: &str, text: &str) {
+        self.send(&Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("textDocument/didSave".to_owned())),
+            (
+                "params",
+                Json::object([
+                    (
+                        "textDocument",
+                        Json::object([("uri", Json::String(uri.to_owned()))]),
+                    ),
+                    ("text", Json::String(text.to_owned())),
+                ]),
+            ),
+        ]));
+    }
 }

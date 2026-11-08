@@ -1,0 +1,7 @@
+module app.shared;
+
+import { helper } from app.shared.extra;
+
+func main(): i32 {
+    return helper();
+}

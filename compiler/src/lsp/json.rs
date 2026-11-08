@@ -45,6 +45,7 @@ impl Json {
     /// the value is an error.
     pub fn parse(text: &str) -> Result<Self, JsonError> {
         let mut parser = Parser {
+            text,
             bytes: text.as_bytes(),
             index: 0,
             depth: 0,
@@ -177,6 +178,7 @@ fn write_string(value: &str, out: &mut String) {
 
 /// Recursive-descent parser state.
 struct Parser<'a> {
+    text: &'a str,
     bytes: &'a [u8],
     index: usize,
     depth: usize,
@@ -342,9 +344,7 @@ impl<'a> Parser<'a> {
                     return Err(self.error("a raw control byte is not allowed in a string"));
                 }
                 _ => {
-                    let start = self.index;
-                    let character = std::str::from_utf8(&self.bytes[start..])
-                        .map_err(|_| self.error("invalid UTF-8"))?
+                    let character = self.text[self.index..]
                         .chars()
                         .next()
                         .ok_or_else(|| self.error("invalid UTF-8"))?;
@@ -445,6 +445,20 @@ mod tests {
         assert!(Json::parse(r#""\udc00""#).is_err());
         assert!(Json::parse("{} x").is_err());
         assert!(Json::parse("").is_err());
+    }
+
+    #[test]
+    fn should_parse_a_large_string_without_quadratic_revalidation() {
+        let payload = "a".repeat(512 * 1024);
+        let text = format!("\"{payload}\"");
+        let start = std::time::Instant::now();
+        let parsed = Json::parse(&text).expect("large string");
+        assert_eq!(parsed.as_str().map(str::len), Some(payload.len()));
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "a 512 KiB string took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]

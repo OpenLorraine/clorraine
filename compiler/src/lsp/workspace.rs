@@ -112,7 +112,7 @@ impl ModuleIndex {
         let mut index = Self::default();
         let mut files = Vec::new();
         let mut stack = vec![root.to_path_buf()];
-        while let Some(directory) = stack.pop() {
+        'walk: while let Some(directory) = stack.pop() {
             let Ok(entries) = std::fs::read_dir(&directory) else {
                 continue;
             };
@@ -141,14 +141,14 @@ impl ModuleIndex {
                     && path.extension().and_then(|ext| ext.to_str()) == Some("clo")
                 {
                     files.push(path);
+                    if files.len() >= MAX_INDEX_FILES {
+                        index.truncated = true;
+                        break 'walk;
+                    }
                 }
             }
         }
         files.sort();
-        if files.len() > MAX_INDEX_FILES {
-            files.truncate(MAX_INDEX_FILES);
-            index.truncated = true;
-        }
         for path in files {
             let entry = index.entry_for_path(&path);
             index.insert(entry);
@@ -214,6 +214,9 @@ impl ModuleIndex {
             }
             for module in wanted {
                 for path in self.files_for_module(&module) {
+                    if keys.len() >= MAX_ANALYSIS_FILES {
+                        break;
+                    }
                     if seen.insert(path.clone()) {
                         keys.push(path.clone());
                     }
@@ -231,11 +234,15 @@ impl ModuleIndex {
         key: &str,
         documents: &DocumentStore,
     ) -> Option<IndexEntry> {
-        if let Some(entry) = self.paths.get(key) {
-            return Some(entry.clone());
+        if let Some(text) = documents.text(key) {
+            let indexed_path = self.paths.get(key).and_then(|entry| entry.path.clone());
+            let mut entry = Self::parse_entry(key, indexed_path, text);
+            if let Some(indexed) = self.paths.get(key) {
+                entry.uri = indexed.uri.clone();
+            }
+            return Some(entry);
         }
-        let text = documents.text(key)?;
-        Some(Self::parse_entry(key, None, text))
+        self.paths.get(key).cloned()
     }
 
     /// Reads or overlays one source file.
@@ -359,6 +366,28 @@ mod tests {
             !names.iter().any(|name| name.ends_with("other.clo")),
             "an independent program must not join the set"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn should_use_an_overlay_import_when_building_the_closure() {
+        let root = std::env::temp_dir().join(format!(
+            "clorraine-lsp-overlay-import-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        write(&root.join("lib.clo"), "module app.lib;\nexport func add(): i32 { return 1; }\n");
+        write(&root.join("main.clo"), "module app.main;\nfunc main(): i32 { return 0; }\n");
+        let index = ModuleIndex::index_root(&root);
+        let uri = uri::parse(&uri::from_path(&root.join("main.clo"))).expect("uri");
+        let mut documents = DocumentStore::new();
+        documents.open(
+            &uri,
+            "module app.main;\nimport { add } from app.lib;\nfunc main(): i32 { return add(); }\n"
+                .to_owned(),
+        );
+        let set = index.analysis_set(&uri, &documents);
+        assert_eq!(set.len(), 2, "the overlay import must join the library file");
         let _ = std::fs::remove_dir_all(&root);
     }
 

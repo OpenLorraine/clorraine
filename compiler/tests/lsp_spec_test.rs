@@ -323,6 +323,17 @@ fn should_serve_an_untitled_buffer() {
         .filter_map(|symbol| symbol.get("name").and_then(Json::as_str))
         .collect();
     assert_eq!(names, vec!["main"]);
+    let hover = client.at("textDocument/hover", uri, 1, 5);
+    assert!(hover.get("result").is_some());
+    let completion = client.at("textDocument/completion", uri, 1, 0);
+    let labels: Vec<&str> = completion
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("completion")
+        .iter()
+        .filter_map(|item| item.get("label").and_then(Json::as_str))
+        .collect();
+    assert!(labels.contains(&"main"), "completion was {labels:?}");
     assert_eq!(client.shutdown_and_exit(), 0);
 }
 
@@ -339,9 +350,28 @@ fn should_hover_a_documented_function() {
         .and_then(|contents| contents.get("value"))
         .and_then(Json::as_str)
         .expect("hover value");
-    assert!(value.contains("func add"), "hover was {value:?}");
+    assert!(
+        value.contains("func add(a: i32, b: i32): i32"),
+        "hover was {value:?}"
+    );
     assert!(value.contains("function"), "hover was {value:?}");
     assert!(value.contains("app.lib"), "hover was {value:?}");
+    let range = hover
+        .get("result")
+        .and_then(|result| result.get("range"))
+        .expect("hover range");
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("line")).and_then(Json::as_i64),
+        Some(6)
+    );
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("character")).and_then(Json::as_i64),
+        Some(19)
+    );
+    assert_eq!(
+        range.get("end").and_then(|end| end.get("character")).and_then(Json::as_i64),
+        Some(22)
+    );
     assert_eq!(client.shutdown_and_exit(), 0);
 }
 
@@ -426,6 +456,11 @@ fn should_list_document_symbols_in_source_order() {
         .filter_map(|symbol| symbol.get("name").and_then(Json::as_str))
         .collect();
     assert_eq!(names, vec!["add", "Point", "ORIGIN_X"]);
+    let kinds: Vec<i64> = entries
+        .iter()
+        .filter_map(|symbol| symbol.get("kind").and_then(Json::as_i64))
+        .collect();
+    assert_eq!(kinds, vec![12, 23, 14]);
     assert_eq!(client.shutdown_and_exit(), 0);
 }
 
@@ -438,7 +473,165 @@ fn should_not_crash_on_an_embedded_module_reference() {
     let _ = client.diagnostics();
     let hover = client.at("textDocument/hover", &uri, 2, 9);
     let definition = client.at("textDocument/definition", &uri, 2, 9);
-    assert!(hover.get("result").is_some());
-    assert!(definition.get("result").is_some());
+    assert_eq!(hover.get("result"), Some(&Json::Null));
+    assert_eq!(definition.get("result"), Some(&Json::Null));
+    let symbols = client.symbols(&uri);
+    assert!(symbols.get("result").is_some());
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_reject_requests_after_shutdown() {
+    let mut client = LspClient::start();
+    client.initialize("host");
+    let shutdown = client.request("shutdown", Json::Null);
+    assert_eq!(shutdown.get("result"), Some(&Json::Null));
+    let hover = client.request("textDocument/hover", empty());
+    assert_eq!(error_code(&hover), Some(-32600));
+    let again = client.request("shutdown", Json::Null);
+    assert_eq!(error_code(&again), Some(-32600));
+    client.send_text(
+        &Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("exit".to_owned())),
+        ])
+        .render(),
+    );
+    assert_eq!(client.wait_exit(), 0);
+}
+
+#[test]
+fn should_ignore_document_notifications_before_initialize() {
+    let mut client = LspClient::start();
+    client.open(
+        "file:///tmp/pre-init.clo",
+        "module app.pre;\nfunc main(): i32 { let x: i32 = null; return x; }\n",
+    );
+    let initialized = client.initialize("host");
+    assert!(initialized.get("result").is_some());
+    assert_eq!(
+        client.buffered(),
+        0,
+        "a pre-initialize didOpen must not publish diagnostics"
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_not_answer_an_unknown_notification() {
+    let mut client = LspClient::start();
+    client.send_text(
+        &Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String("workspace/nothing".to_owned())),
+            ("params", empty()),
+        ])
+        .render(),
+    );
+    let initialized = client.initialize("host");
+    assert!(initialized.get("result").is_some());
+    assert_eq!(client.buffered(), 0, "a notification must have no response");
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_reject_an_oversized_body_without_reading_it() {
+    use clc::lsp::protocol::{FrameError, FrameReader, MAX_BODY};
+    use std::io::Cursor;
+    let header = format!("Content-Length: {}\r\n\r\n", MAX_BODY + 1);
+    let mut reader = FrameReader::new(Cursor::new(header.into_bytes()));
+    assert!(matches!(reader.read(), Err(FrameError::TooLarge)));
+}
+
+#[test]
+fn should_resolve_a_local_before_a_struct_in_another_file() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let hover = client.at("textDocument/hover", &main, 6, 28);
+    let value = hover
+        .get("result")
+        .and_then(|result| result.get("contents"))
+        .and_then(|contents| contents.get("value"))
+        .and_then(Json::as_str)
+        .expect("hover value");
+    assert!(value.contains("let p"), "hover was {value:?}");
+    let definition = client.at("textDocument/definition", &main, 6, 28);
+    let result = definition.get("result").expect("definition");
+    let range = result.get("range").expect("range");
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("line")).and_then(Json::as_i64),
+        Some(5)
+    );
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("character")).and_then(Json::as_i64),
+        Some(8)
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_complete_a_declaration_from_a_sibling_file_of_the_same_module() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("shared"));
+    let a = fixture_uri("shared", "a.clo");
+    client.open(&a, &fixture_text("shared", "a.clo"));
+    let completion = client.at("textDocument/completion", &a, 5, 0);
+    let labels: Vec<&str> = completion
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("completion")
+        .iter()
+        .filter_map(|item| item.get("label").and_then(Json::as_str))
+        .collect();
+    assert!(labels.contains(&"helper"), "completion was {labels:?}");
+    assert!(labels.contains(&"freedBy"), "completion was {labels:?}");
+    assert!(labels.contains(&"static"), "completion was {labels:?}");
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_serve_partial_symbols_for_a_syntax_error_file() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("errors"));
+    let syntax = fixture_uri("errors", "syntax.clo");
+    client.open(&syntax, &fixture_text("errors", "syntax.clo"));
+    let _ = client.diagnostics();
+    let symbols = client.symbols(&syntax);
+    let names: Vec<&str> = symbols
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("symbols")
+        .iter()
+        .filter_map(|symbol| symbol.get("name").and_then(Json::as_str))
+        .collect();
+    assert!(names.contains(&"good"), "symbols were {names:?}");
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_return_null_symbols_for_a_missing_document() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let missing = clc::lsp::uri::from_path(&fixture("workspace").join("nope.clo"));
+    let symbols = client.symbols(&missing);
+    assert_eq!(symbols.get("result"), Some(&Json::Null));
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+
+#[test]
+fn should_publish_diagnostics_on_save() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("errors"));
+    let uri = fixture_uri("errors", "bad.clo");
+    client.open(&uri, &fixture_text("errors", "bad.clo"));
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 1);
+    client.save(
+        &uri,
+        "module app.bad;\nfunc main(): i32 {\n    return 0;\n}\n",
+    );
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 0);
     assert_eq!(client.shutdown_and_exit(), 0);
 }

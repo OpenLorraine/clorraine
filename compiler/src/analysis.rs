@@ -178,8 +178,22 @@ pub fn parse(files: Vec<SourceFile>) -> Parsed {
     parse_with(files, Diagnostics::new(false, None))
 }
 
+/// Parses sources and keeps the partial tree of a file with syntax errors.
+///
+/// The language server uses this so a file that is being edited still offers
+/// symbols and completion for the declarations the parser recovered. The
+/// compiler pipeline never uses it: a rejected file is not loaded or checked.
+pub fn parse_partial(files: Vec<SourceFile>) -> Parsed {
+    parse_inner(files, Diagnostics::new(false, None), true)
+}
+
 /// Like [`parse`], but with a caller-configured diagnostic collector.
 pub fn parse_with(files: Vec<SourceFile>, diagnostics: Diagnostics) -> Parsed {
+    parse_inner(files, diagnostics, false)
+}
+
+/// The shared parse body.
+fn parse_inner(files: Vec<SourceFile>, diagnostics: Diagnostics, keep_partial: bool) -> Parsed {
     let mut sources = SourceMap::new();
     let mut diagnostics = diagnostics;
     let mut file_ids = BTreeMap::new();
@@ -193,7 +207,7 @@ pub fn parse_with(files: Vec<SourceFile>, diagnostics: Diagnostics) -> Parsed {
     for id in ids {
         let before = diagnostics.error_count();
         let program = Parser::new(&sources, id, &mut diagnostics).parse_program();
-        if diagnostics.error_count() > before {
+        if diagnostics.error_count() > before && !keep_partial {
             // A file the parser rejected has no trustworthy tree; later stages
             // would only add dependent errors.
             continue;

@@ -36,11 +36,11 @@ impl FeatureInput {
 
     /// Resolves the symbol a position names.
     fn symbol_at(&self, offset: u32) -> Option<&Symbol> {
-        if let Some(symbol) = self.table.at(offset) {
+        if let Some(symbol) = self.table.at(self.file, offset) {
             return Some(symbol);
         }
         let (_, word) = word_at(self.text(), offset as usize)?;
-        if let Some(symbol) = self.table.local_at(&word, offset) {
+        if let Some(symbol) = self.table.local_at(self.file, &word, offset) {
             return Some(symbol);
         }
         let module = self.module_of_file();
@@ -50,6 +50,12 @@ impl FeatureInput {
         let import = self.table.import_in_file(self.file, &word)?;
         self.table
             .declaration(&import.module, &import.original)
+    }
+
+    /// The exact token span at, or immediately before, `offset`.
+    fn token_span(&self, offset: u32) -> Option<Span> {
+        let (start, word) = word_at(self.text(), offset as usize)?;
+        Some(Span::new(self.file, start, start + word.len()))
     }
 
     /// The module declared by the requested file.
@@ -65,12 +71,13 @@ impl FeatureInput {
 /// Returns the hover result for a position.
 pub fn hover(input: &FeatureInput, position: Position) -> Option<Json> {
     let offset = input.offset(position)? as u32;
+    let token = input.token_span(offset);
     if let Some(symbol) = input.symbol_at(offset) {
-        return Some(symbol_hover(input, symbol));
+        return Some(symbol_hover(input, symbol, token));
     }
     let dotted = dotted_at(input.text(), offset as usize)?;
     if input.table.module(&dotted).is_some() {
-        return Some(Json::object([(
+        let mut fields = vec![(
             "contents",
             Json::object([
                 ("kind", Json::String("markdown".to_owned())),
@@ -79,17 +86,21 @@ pub fn hover(input: &FeatureInput, position: Position) -> Option<Json> {
                     Json::String(format!("```clorraine\nmodule {dotted}\n```\n\nmodule")),
                 ),
             ]),
-        )]));
+        )];
+        if let Some(span) = token {
+            fields.push(("range", range_json(input.token_range(span))));
+        }
+        return Some(Json::from_pairs(fields));
     }
     let mut segments: Vec<&str> = dotted.split('.').collect();
     let name = segments.pop()?;
     let module = segments.join(".");
     let symbol = input.table.declaration(&module, name)?;
-    Some(symbol_hover(input, symbol))
+    Some(symbol_hover(input, symbol, token))
 }
 
 /// Builds the hover JSON for one symbol.
-fn symbol_hover(input: &FeatureInput, symbol: &Symbol) -> Json {
+fn symbol_hover(input: &FeatureInput, symbol: &Symbol, token: Option<Span>) -> Json {
     let signature = symbol.signature(&input.sources);
     let value = format!(
         "```clorraine\n{signature}\n```\n\n{} in module `{}`",
@@ -103,8 +114,8 @@ fn symbol_hover(input: &FeatureInput, symbol: &Symbol) -> Json {
             ("value", Json::String(value)),
         ]),
     )];
-    if symbol.file == input.file {
-        fields.push(("range", range_json(symbol_range(input, symbol.name_span))));
+    if let Some(span) = token.or_else(|| (symbol.file == input.file).then_some(symbol.name_span)) {
+        fields.push(("range", range_json(input.token_range(span))));
     }
     Json::from_pairs(fields)
 }
@@ -145,9 +156,10 @@ fn location(input: &FeatureInput, file: FileId, span: Span) -> Option<Json> {
 pub fn completion(input: &FeatureInput, modules: &BTreeSet<String>) -> Json {
     let keywords = [
         "borrow", "break", "case", "comptime", "const", "continue", "default", "do",
-        "else", "enum", "export", "false", "ffi", "for", "from", "func", "handle", "if",
-        "import", "in", "intrinsic", "let", "module", "null", "raw", "return", "struct",
-        "switch", "take", "true", "unsafe", "volatile", "while",
+        "else", "enum", "export", "false", "ffi", "for", "freedBy", "from", "func",
+        "handle", "if", "import", "in", "intrinsic", "let", "module", "null", "raw",
+        "return", "static", "struct", "switch", "take", "true", "unsafe", "volatile",
+        "while",
     ];
     let types = [
         "Array", "Box", "Buffer", "String", "bool", "char", "cstring", "f32", "f64",
@@ -167,7 +179,13 @@ pub fn completion(input: &FeatureInput, modules: &BTreeSet<String>) -> Json {
     for name in types {
         push(name.to_owned(), 25, "built-in type".to_owned());
     }
-    for symbol in input.table.file_declarations(input.file) {
+    let module = input.module_of_file();
+    let declarations: Vec<&Symbol> = if module.is_empty() {
+        input.table.file_declarations(input.file).collect()
+    } else {
+        input.table.module_declarations(&module).collect()
+    };
+    for symbol in declarations {
         push(
             symbol.name.clone(),
             symbol.kind.lsp(),
@@ -224,9 +242,11 @@ pub fn document_symbols(input: &FeatureInput) -> Json {
     Json::Array(entries)
 }
 
-/// Resolves a span in the requested document to a range.
-fn symbol_range(input: &FeatureInput, span: Span) -> Range {
-    LineIndex::new(input.text()).range(input.text(), span)
+impl FeatureInput {
+    /// Resolves a span in the requested document to a range.
+    fn token_range(&self, span: Span) -> Range {
+        LineIndex::new(self.text()).range(self.text(), span)
+    }
 }
 
 /// Renders a protocol range.

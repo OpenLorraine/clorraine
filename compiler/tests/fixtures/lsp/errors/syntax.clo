@@ -1,0 +1,7 @@
+module app.syntax;
+
+func good(): i32 {
+    return 1;
+}
+
+func bad( {

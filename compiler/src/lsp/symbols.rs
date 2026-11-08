@@ -9,8 +9,6 @@
 //! is written here" and "which names are visible". Type checking stays in the
 //! compiler.
 
-use std::collections::BTreeMap;
-
 use crate::ast::{Block, ElseBranch, ForInit, Item, Program, Stmt};
 use crate::span::{FileId, SourceMap, Span};
 
@@ -111,8 +109,6 @@ pub struct ImportSymbol {
     pub original: String,
     /// Target module.
     pub module: String,
-    /// Span of the imported name or alias.
-    pub name_span: Span,
     /// File that contains the import.
     pub file: FileId,
 }
@@ -158,7 +154,6 @@ impl SymbolTable {
                         local: item.alias.clone().unwrap_or_else(|| item.name.clone()),
                         original: item.name.clone(),
                         module: import.from.to_dotted(),
-                        name_span: item.span,
                         file: *file,
                     });
                 }
@@ -175,42 +170,42 @@ impl SymbolTable {
     fn item(&mut self, sources: &SourceMap, file: FileId, module: &str, item: &Item) {
         match item {
             Item::Func(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Function, decl.name_span, decl.span, Some(decl.body.span.start as u32), None);
+                self.push(file, module, &decl.name, SymbolKind::Function, decl.name_span, decl.span, Some(decl.body.span.start as u32), None);
                 for param in &decl.params {
-                    self.push(sources, file, module, &param.name, SymbolKind::Parameter, param.name_span, param.span, None, Some(decl.span));
+                    self.push(file, module, &param.name, SymbolKind::Parameter, param.name_span, param.span, None, Some(decl.span));
                 }
                 self.block(file, module, &decl.body, decl.span);
             }
             Item::Comptime(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Comptime, decl.name_span, decl.span, Some(decl.body.span.start as u32), None);
+                self.push(file, module, &decl.name, SymbolKind::Comptime, decl.name_span, decl.span, Some(decl.body.span.start as u32), None);
                 for param in &decl.params {
-                    self.push(sources, file, module, &param.name, SymbolKind::Parameter, param.name_span, param.span, None, Some(decl.span));
+                    self.push(file, module, &param.name, SymbolKind::Parameter, param.name_span, param.span, None, Some(decl.span));
                 }
                 self.block(file, module, &decl.body, decl.span);
             }
             Item::Struct(decl) => {
                 let end = cut_at_brace(sources, decl.span);
-                self.push(sources, file, module, &decl.name, SymbolKind::Struct, decl.name_span, decl.span, Some(end), None);
+                self.push(file, module, &decl.name, SymbolKind::Struct, decl.name_span, decl.span, Some(end), None);
             }
             Item::Enum(decl) => {
                 let end = cut_at_brace(sources, decl.span);
-                self.push(sources, file, module, &decl.name, SymbolKind::Enum, decl.name_span, decl.span, Some(end), None);
+                self.push(file, module, &decl.name, SymbolKind::Enum, decl.name_span, decl.span, Some(end), None);
             }
             Item::Handle(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Handle, decl.name_span, decl.span, None, None);
+                self.push(file, module, &decl.name, SymbolKind::Handle, decl.name_span, decl.span, None, None);
             }
             Item::Ffi(decl) => {
                 let end = cut_at_brace(sources, decl.span);
-                self.push(sources, file, module, &decl.name, SymbolKind::Ffi, decl.name_span, decl.span, Some(end), None);
+                self.push(file, module, &decl.name, SymbolKind::Ffi, decl.name_span, decl.span, Some(end), None);
             }
             Item::Intrinsic(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Function, decl.name_span, decl.span, None, None);
+                self.push(file, module, &decl.name, SymbolKind::Function, decl.name_span, decl.span, None, None);
             }
             Item::GlobalLet(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Global, decl.name_span, decl.span, None, None);
+                self.push(file, module, &decl.name, SymbolKind::Global, decl.name_span, decl.span, None, None);
             }
             Item::GlobalConst(decl) => {
-                self.push(sources, file, module, &decl.name, SymbolKind::Constant, decl.name_span, decl.span, None, None);
+                self.push(file, module, &decl.name, SymbolKind::Constant, decl.name_span, decl.span, None, None);
             }
         }
     }
@@ -219,7 +214,6 @@ impl SymbolTable {
     #[allow(clippy::too_many_arguments)]
     fn push(
         &mut self,
-        _sources: &SourceMap,
         file: FileId,
         module: &str,
         name: &str,
@@ -333,19 +327,23 @@ impl SymbolTable {
         }
     }
 
-    /// The symbol whose name span contains `offset`, if any.
-    pub fn at(&self, offset: u32) -> Option<&Symbol> {
-        self.symbols
-            .iter()
-            .find(|symbol| symbol.name_span.start <= offset && offset < symbol.name_span.end)
+    /// The symbol in `file` whose name span contains `offset`, if any.
+    pub fn at(&self, file: FileId, offset: u32) -> Option<&Symbol> {
+        self.symbols.iter().find(|symbol| {
+            symbol.file == file
+                && symbol.name_span.start <= offset
+                && offset < symbol.name_span.end
+        })
     }
 
-    /// The innermost local with `name` that is visible at `offset`.
-    pub fn local_at(&self, name: &str, offset: u32) -> Option<&Symbol> {
+    /// The innermost local in `file` with `name` that is visible at `offset`.
+    pub fn local_at(&self, file: FileId, name: &str, offset: u32) -> Option<&Symbol> {
         self.symbols
             .iter()
             .filter(|symbol| {
-                symbol.kind == SymbolKind::Local || symbol.kind == SymbolKind::Parameter
+                symbol.file == file
+                    && (symbol.kind == SymbolKind::Local
+                        || symbol.kind == SymbolKind::Parameter)
             })
             .filter(|symbol| symbol.name == name)
             .filter(|symbol| {
@@ -370,6 +368,16 @@ impl SymbolTable {
                 && symbol.kind != SymbolKind::Parameter
                 && symbol.module == module
                 && symbol.name == name
+        })
+    }
+
+    /// Every module-level declaration in one module, in source order.
+    pub fn module_declarations(&self, module: &str) -> impl Iterator<Item = &Symbol> + '_ {
+        let module = module.to_owned();
+        self.symbols.iter().filter(move |symbol| {
+            symbol.module == module
+                && symbol.kind != SymbolKind::Local
+                && symbol.kind != SymbolKind::Parameter
         })
     }
 
@@ -462,11 +470,52 @@ pub fn dotted_at(text: &str, offset: usize) -> Option<String> {
     }
 }
 
-/// Builds a map from module name to the first file that declares it.
-pub fn module_files(table: &SymbolTable) -> BTreeMap<String, FileId> {
-    let mut files = BTreeMap::new();
-    for module in &table.modules {
-        files.entry(module.name.clone()).or_insert(module.file);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::{self, SourceFile};
+
+    fn parse_one(text: &str) -> (SourceMap, Vec<(FileId, Program)>) {
+        let parsed = analysis::parse(vec![SourceFile {
+            path: "app.scope.clo".to_owned(),
+            text: text.to_owned(),
+        }]);
+        (parsed.sources, parsed.programs)
     }
-    files
+
+    #[test]
+    fn should_pick_the_innermost_local_visible_at_the_offset() {
+        let text = "module app.scope;\nfunc f(): void {\n    let x: i32 = 1;\n    {\n        let x: i32 = 2;\n    }\n}\n";
+        let (sources, programs) = parse_one(text);
+        let table = SymbolTable::build(&sources, &programs);
+        let second = text.rfind("x: i32 = 2").expect("second x");
+        let symbol = table
+            .local_at(programs[0].0, "x", second as u32)
+            .expect("second local");
+        assert_eq!(symbol.name_span.start as usize, second);
+    }
+
+    #[test]
+    fn should_not_match_a_symbol_from_another_file() {
+        let first = "module app.one;\nfunc f(): void {\n    let shared: i32 = 1;\n}\n";
+        let second = "module app.two;\n\n\n\n\n\n\n\n\n\nfunc g(): void {\n    let shared: i32 = 2;\n}\n";
+        let parsed = analysis::parse(vec![
+            SourceFile {
+                path: "one.clo".to_owned(),
+                text: first.to_owned(),
+            },
+            SourceFile {
+                path: "two.clo".to_owned(),
+                text: second.to_owned(),
+            },
+        ]);
+        let table = SymbolTable::build(&parsed.sources, &parsed.programs);
+        let second_file = parsed.files["two.clo"];
+        let second_offset = second.find("shared").expect("shared") as u32;
+        let symbol = table.at(second_file, second_offset).expect("symbol");
+        assert_eq!(symbol.file, second_file);
+        assert_eq!(symbol.name_span.start, second_offset);
+        let first_file = parsed.files["one.clo"];
+        assert!(table.at(first_file, second_offset).is_none());
+    }
 }

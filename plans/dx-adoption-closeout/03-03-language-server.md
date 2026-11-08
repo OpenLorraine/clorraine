@@ -115,7 +115,7 @@ impl LineIndex {
 Positions are zero-based LSP positions. Character columns count UTF-16 code
 units. A position past the end clamps to the end of its line; a line past the
 end clamps to the last line. A character inside a surrogate pair moves to the
-next code point boundary.
+start of that code point, the only position that can be represented.
 
 ### Workspace (`workspace.rs`)
 
