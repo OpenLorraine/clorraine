@@ -23,9 +23,11 @@ the tag and artifacts remain unpublished.
 The version of record is set in `compiler/Cargo.toml` and mirrored in
 `Cargo.lock`. The release is manual; release automation is out of scope.
 
-**Publication status (2026-11-08):** the local release is prepared and the
-annotated `v1.1.0` tag is created locally. The tag is **not pushed** and no
-GitHub release exists. Publication is blocked on explicit user authorization.
+**Publication status (2026-11-08):** **published** as
+[v1.1.0](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.0). The
+annotated tag, source tarball, Linux x86_64 tarball, `SHA256SUMS`, release
+notes, and changelog are attached. The conditional publish steps below are
+complete.
 
 ## Pre-release gates
 
@@ -105,18 +107,28 @@ Workbench media, `build/` output, `target/` output, or a local environment file.
 
 ## Conditional publication
 
-These steps run only after the user explicitly authorizes publication.
+These steps ran after the user explicitly authorized publication on
+2026-11-08.
 
-- [ ] Push the annotated tag: `git push origin v1.1.0`
-- [ ] Create the release:
+- [x] Push the annotated tag: `git push origin v1.1.0`
+- [x] Create the release:
       `gh release create v1.1.0 --title "Clorraine v1.1.0" --notes-file RELEASE-NOTES.md`
       with the source tarball, Linux x86_64 tarball, and `SHA256SUMS` attached
-- [ ] Confirm the release page lists the notes, changelog reference, and all
+- [x] Confirm the release page lists the notes, changelog reference, and all
       three checksummed assets
 
-If publication is not authorized, keep the tag local, report the exact artifact
-names and SHA-256 values, and record the blocker here. The local release remains
-complete; only publication is blocked.
+Published assets:
+
+| Asset | Size (bytes) | SHA-256 |
+| ----- | -----------: | ------- |
+| `clorraine-1.1.0-src.tar.gz` | 4,742,187 | `dbae3bc2ad5c57841a722b12dbe9fda3b6c41ab5acf1d0d9bf9209d1ffb4855c` |
+| `clorraine-1.1.0-linux-x86_64.tar.gz` | 4,435,694 | `d4a556ff09db28b86b68fbdc708512da6f0e51b506839f81aa1598a3ce662ad5` |
+| `SHA256SUMS` | 195 | covers both tarballs |
+
+If publication had not been authorized, the tag would have stayed local, the
+exact artifact names and SHA-256 values would be reported, and the blocker
+would be recorded here. The local release remains complete in that case; only
+publication is blocked.
 
 ## Historical publication: v1.0.0
 
