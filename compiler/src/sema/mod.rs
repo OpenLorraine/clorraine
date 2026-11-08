@@ -61,6 +61,13 @@ pub struct SemaOutput {
     /// global, or an import can shadow the type. The checker already applied
     /// that rule, so the lowering reads this set instead.
     pub type_casts: BTreeSet<usize>,
+    /// The capture list of each capturing lambda accepted at a synchronous C
+    /// hook, keyed by the call expression's address.
+    ///
+    /// The ownership stage materializes each closure at its argument position
+    /// and builds the wrapper call from this record; the emitter names the
+    /// trampoline and environment stack from it.
+    pub hook_calls: BTreeMap<usize, HookCallSite>,
     /// The captured bindings of each capturing lambda, keyed by its site id.
     ///
     /// The ownership and emission stages read this instead of re-deriving the
@@ -110,6 +117,32 @@ pub struct SemaOutput {
     /// whether a null arm reaches a non-nullable context, so the per-instance
     /// audit re-applies the conditional rule to the resolved arms.
     pub opaque_conditionals: Vec<OpaqueConditional>,
+}
+
+/// One capturing lambda accepted at a synchronous C hook.
+pub struct HookCall {
+    /// The callback's argument position in the `ffi` call.
+    pub arg: usize,
+    /// The capturing closure's ephemeral type.
+    pub closure: crate::types::ClosureTy,
+}
+
+/// The original `ffi` signature and accepted callbacks of one hook call.
+///
+/// The wrapper the ownership stage generates must forward the call unchanged,
+/// so the record keeps the declared parameter types and modes and the checked
+/// result type in addition to the callback list.
+pub struct HookCallSite {
+    /// The `ffi` C function's written name.
+    pub callee: String,
+    /// The declared parameter types in source order.
+    pub params: Vec<Ty>,
+    /// The declared parameter modes in source order.
+    pub modes: Vec<crate::ast::Mode>,
+    /// The checked result type in ABI terms.
+    pub returns: Ty,
+    /// The capturing callbacks, in argument order.
+    pub callbacks: Vec<HookCall>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -377,6 +410,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
     let mut opaque_conversions: Vec<OpaqueConversion> = Vec::new();
     let mut opaque_conditionals: Vec<OpaqueConditional> = Vec::new();
+    let mut hook_calls: BTreeMap<usize, HookCallSite> = BTreeMap::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -392,6 +426,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
         opaque_conversions.extend(checker.opaque_conversions.drain(..));
         opaque_conditionals.extend(checker.opaque_conditionals.drain(..));
+        merge_hook_calls(&mut hook_calls, std::mem::take(&mut checker.hook_calls));
         expr_types.extend(checker.recorded.drain(..));
         type_casts.extend(std::mem::take(&mut checker.type_casts));
     }
@@ -399,6 +434,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         table,
         expr_types,
         type_casts,
+        hook_calls,
         closures,
         capture_moves,
         opaque_projections,
@@ -406,6 +442,36 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses,
         opaque_conversions,
         opaque_conditionals,
+    }
+}
+
+/// Merges a module checker's hook records into the program-wide map.
+///
+/// A generic body and the per-instance audit may visit one call twice; the
+/// argument index identifies the callback, so a repeated visit updates the
+/// closure instead of duplicating it.
+fn merge_hook_calls(
+    into: &mut BTreeMap<usize, HookCallSite>,
+    from: BTreeMap<usize, HookCallSite>,
+) {
+    for (site, mut incoming) in from {
+        match into.get_mut(&site) {
+            Some(existing) => {
+                for callback in incoming.callbacks.drain(..) {
+                    if !existing
+                        .callbacks
+                        .iter()
+                        .any(|current| current.arg == callback.arg)
+                    {
+                        existing.callbacks.push(callback);
+                    }
+                }
+                existing.callbacks.sort_by_key(|callback| callback.arg);
+            }
+            None => {
+                into.insert(site, incoming);
+            }
+        }
     }
 }
 
@@ -491,6 +557,8 @@ struct Checker<'a, 'd> {
     /// The mode travels with the type: a `borrow` function parameter is the
     /// synchronous C-hook contract.
     ffi_params: BTreeMap<String, Vec<(Ty, crate::ast::Mode)>>,
+    /// The capturing lambda hooks accepted at each call expression.
+    hook_calls: BTreeMap<usize, HookCallSite>,
     /// The resolved result type of each `ffi` declaration this module calls,
     /// resolved once with the parameters so the ordinary conversion judgments
     /// see the result's declared type.
@@ -569,6 +637,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             view_pointer_members: BTreeSet::new(),
             ffi_params: BTreeMap::new(),
             ffi_results: BTreeMap::new(),
+            hook_calls: BTreeMap::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),

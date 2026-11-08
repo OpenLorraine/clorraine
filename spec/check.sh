@@ -165,7 +165,7 @@ done
 # fallback and has one live trigger (a fixed-array Array element); the rest are
 # staged in tests/staged/ until their feature or harness exists. Retired codes
 # such as E90002 are not in the live registry.
-excluded_codes="E11210 E11211 E11212 E11213 E11214 E90003 E90004 W10005"
+excluded_codes="E11210 E11211 E11212 E11213 E11214 E11215 E90003 E90004 W10005"
 while IFS= read -r code; do
     [ -z "${code}" ] && continue
     skip=0

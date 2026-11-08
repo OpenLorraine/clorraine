@@ -54,6 +54,10 @@ ffi widget {
     func cl_widget_new(): Widget;
     func cl_widget_free(take w: Widget): void;
 }
+ffi fixture {
+    func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32;
+    func cl_fixture_repeat(borrow cb: func(i32): i32, value: i32): i32;
+}
 func freeWidget(take w: Widget): void {
     unsafe {
         let payload: Payload = *raw Payload(w);
@@ -93,23 +97,31 @@ func demo(): i32 {
     unsafe {
         *raw Payload(w) = Payload { s: stringOf("owned") };
     }
+    let hn: i32 = 1;
+    let h1 = cl_fixture_apply([borrow hn] (x: i32) => { hn = hn + 1; return x + hn; }, 1);
+    if (hn != 2 || h1 != 3) { return 3; }
+    let hm: i32 = 10;
+    let h2 = cl_fixture_repeat([hm] (x: i32) => x + hm, 3);
+    if (h2 != 26) { return 4; }
     return 0;
 }
 func main(): i32 { return demo(); }
 "#;
 
-/// The C fixture behind the widget allocator/release.
+/// The C fixture behind the widget allocator/release and the hook callbacks.
 const FIXTURE: &str = r#"#include <stdlib.h>
 #include <string.h>
 void *cl_widget_new(void) { return calloc(1, 64); }
 void cl_widget_free(void *p) { free(p); }
+int cl_fixture_apply(int (*cb)(int), int value) { return cb(value); }
+int cl_fixture_repeat(int (*cb)(int), int value) { return cb(value) + cb(value); }
 "#;
 
 /// Compiles, builds with the fixture under ASan, and runs the program.
-fn run_memory_case(tag: &str) -> std::process::Output {
+fn run_memory_case(tag: &str, source: &str) -> std::process::Output {
     let scratch = ScratchDir::new(tag);
     let source_path = scratch.path().join("main.clo");
-    std::fs::write(&source_path, SOURCE).expect("write the program");
+    std::fs::write(&source_path, source).expect("write the program");
     let c_path = scratch.path().join("out.c");
     let compile = Command::new("timeout")
         .args(["60", env!("CARGO_BIN_EXE_clc")])
@@ -168,7 +180,7 @@ fn the_v11_memory_case_is_clean() {
         eprintln!("skip: RDC_ASAN is not set");
         return;
     }
-    let result = run_memory_case("case");
+    let result = run_memory_case("case", SOURCE);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         result.status.code() == Some(0),

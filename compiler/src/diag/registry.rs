@@ -165,7 +165,7 @@ mod tests {
         let entries = parse_registry(REGISTRY);
         assert_eq!(
             entries.len(),
-            116,
+            117,
             "parsed codes: {:?}",
             entries.iter().map(|entry| entry.code).collect::<Vec<_>>()
         );

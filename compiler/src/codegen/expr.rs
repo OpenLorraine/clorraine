@@ -12,7 +12,9 @@ use crate::ast::{BinaryOp, ScalarType, UnaryOp};
 use crate::ir::{
     Place, PlaceBase, Projection, Value, ValueKind, ValuePiece,
 };
-use crate::types::{is_signed_scalar, scalar_bits, CaptureMode, Ty, TyKind};
+use crate::types::{
+    is_signed_scalar, scalar_bits, CaptureMode, FuncParam, FuncTy, Ty, TyKind,
+};
 
 use super::render::{
     binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
@@ -1177,6 +1179,46 @@ impl<'a> Emitter<'a> {
             None
         };
         let callee = resolved_callee.as_deref().unwrap_or(callee);
+        // A synchronous hook call goes through its generated wrapper. The
+        // wrapper's own parameters are the original `ffi` declaration's, so
+        // the original arguments cross by the `ffi` ABI, and each appended
+        // environment value reads the closure temporary's `env` member.
+        if let Some(wrapper) = self
+            .ownership
+            .hook_wrappers
+            .iter()
+            .find(|wrapper| wrapper.name == callee)
+        {
+            let original_len = wrapper.params.len().min(args.len());
+            let (original, extras) = args.split_at(original_len);
+            let ffi_ty = Ty::func(FuncTy {
+                params: wrapper
+                    .params
+                    .iter()
+                    .zip(&wrapper.modes)
+                    .map(|(ty, mode)| FuncParam {
+                        ty: ty.clone(),
+                        mode: *mode,
+                    })
+                    .collect(),
+                returns: Box::new(wrapper.returns.clone()),
+            });
+            let mut rendered: Vec<String> = Vec::new();
+            if !original.is_empty() {
+                rendered.push(self.call_arguments_with(
+                    &wrapper.callee,
+                    &[],
+                    original,
+                    Some(&ffi_ty),
+                    true,
+                ));
+            }
+            for extra in extras {
+                rendered.push(format!("({}).env", self.value(extra)));
+            }
+            let argument_list = rendered.join(", ");
+            return format!("{callee}({argument_list})");
+        }
         // A call through a func value takes its parameter types and modes from
         // the value's own signature, so a `borrow` parameter and a `str`
         // widening reach the argument renderer.

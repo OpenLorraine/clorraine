@@ -218,7 +218,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else if let Some(alloc) = self.lower_box_alloc(callee, &ty) {
                     alloc
                 } else {
-                    let call = self.lower_call(callee, type_args, args);
+                    let sema = self.sema;
+                    let hook = sema.hook_calls.get(&(expr as *const Expr as usize));
+                    let lowered = self.lower_call(callee, type_args, args, hook);
+                    // A capturing callback call is forwarded through one
+                    // generated wrapper per call site. The wrapper receives
+                    // the original arguments plus one environment pointer per
+                    // callback; the language-level call keeps the original
+                    // modes, so a `take` argument still moves once.
+                    let call = self.wrap_hook_call(lowered);
                     // A call consumes the places its callee's own signature
                     // marks `take`, whether the callee is a declared function,
                     // a func-typed binding, field, or global, or a call result.

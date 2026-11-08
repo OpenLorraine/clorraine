@@ -338,6 +338,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         callee: &'a Expr,
         type_args: &'a [crate::ast::Type],
         args: &'a [Arg],
+        hook: Option<&crate::sema::HookCallSite>,
     ) -> LoweredCall {
         // A name that resolves to a func-typed local or parameter is called
         // through its binding, so the IR carries the binding's own spelling;
@@ -416,6 +417,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .zip(&store_positions)
             .map(|(arg, needs)| *needs && expression_has_effects(&arg.value))
             .collect();
+        // A capturing callback's environment is filled by a statement at its
+        // own position. Every earlier effectful argument must settle into its
+        // own statement first, exactly as if the callback position were a
+        // later statement fill; otherwise the environment would be built
+        // before an earlier sibling's effect, contrary to left-to-right order.
+        let mut effect_positions = effect_positions;
+        if let Some(site) = hook {
+            for callback in &site.callbacks {
+                if args
+                    .get(..callback.arg)
+                    .is_some_and(|earlier| {
+                        earlier
+                            .iter()
+                            .any(|arg| expression_has_effects(&arg.value))
+                    })
+                {
+                    if let Some(slot) = effect_positions.get_mut(callback.arg) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
         // A callable receiver and a dot receiver are both position zero and
         // must settle before a later argument's statement fill.
         let receiver_pin_store =
@@ -444,6 +467,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             receiver_pin_store && !callable_field_receiver && !dot_callable_field;
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
+        // The materialized environment temporary of each accepted capturing
+        // callback, in argument order. The closure is lowered at its own
+        // argument position so a later sibling cannot change a captured value
+        // before the environment is built.
+        let mut hook_callbacks: Vec<LoweredHookCallback> = Vec::new();
         // The modes come from the callable the call actually reaches: a
         // `func`-typed field or call result, a `func`-typed or callable-bound
         // local, parameter, or capture, a module-level func-typed global, or
@@ -537,6 +565,64 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .iter()
                 .any(|needs| *needs);
             let value = self.lower_value(&arg.value);
+            // An accepted capturing callback is a two-word value that cannot
+            // reach the C function pointer directly. Materialize it into a
+            // statement temporary here, at its own argument position, and
+            // pass the trampoline in its place; the wrapper call appends the
+            // environment pointer. The temporary is read after the call, so a
+            // later sibling's effects cannot change what was captured.
+            if let Some(callback) = hook.and_then(|site| {
+                site.callbacks
+                    .iter()
+                    .find(|callback| callback.arg == position)
+            }) {
+                let closure_ty = value.ty.clone();
+                // A guarded operand (a short-circuit right side or a `?:` arm)
+                // evaluates only on its own path, so the environment fill is
+                // deferred to the guard emitter; an eager context fills it at
+                // this statement position.
+                let temp_value = if self.defer_move_outs > 0 {
+                    let temp = self.new_temp(closure_ty.clone());
+                    self.mark_destination_temp(temp);
+                    self.register_pending_release(temp, &closure_ty);
+                    Value::new(
+                        closure_ty.clone(),
+                        ValueKind::Materialize {
+                            temp: Some(temp),
+                            destination: None,
+                            value: Box::new(value),
+                            move_outs: Vec::new(),
+                            value_move_outs: Vec::new(),
+                            adopting: false,
+                        },
+                    )
+                } else {
+                    self.materialize_value_type(value, closure_ty.clone())
+                };
+                let temp = match &temp_value.kind {
+                    ValueKind::Temp(temp) => *temp,
+                    ValueKind::Materialize {
+                        temp: Some(temp), ..
+                    } => *temp,
+                    _ => unreachable!("the closure is materialized into a temporary"),
+                };
+                hook_callbacks.push(LoweredHookCallback {
+                    arg: position,
+                    closure: callback.closure.clone(),
+                    temp,
+                    environment: temp_value,
+                });
+                let callback_ty = hook
+                    .and_then(|site| site.params.get(position))
+                    .cloned()
+                    .unwrap_or_else(Ty::unknown);
+                arg_types.push(callback_ty.clone());
+                values.push(Value::new(
+                    callback_ty,
+                    ValueKind::Path(vec![format!("cl_hooktramp_{}", callback.closure.id)]),
+                ));
+                continue;
+            }
             // A view-element array argument adopts each temporary element's
             // backing in this frame, exactly as a view binding does: the
             // elements are views of their sources, so a temporary element's
@@ -643,7 +729,68 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             type_args: resolved,
             args: values,
             modes,
+            hook: if hook_callbacks.is_empty() {
+                None
+            } else {
+                let site = hook.expect("a materialized callback has a hook record");
+                Some(LoweredHook {
+                    callee: site.callee.clone(),
+                    params: site.params.clone(),
+                    modes: site.modes.clone(),
+                    returns: site.returns.clone(),
+                    callbacks: hook_callbacks,
+                })
+            },
         }
+    }
+
+    /// Wraps a lowered hook call in its generated wrapper.
+    ///
+    /// The wrapper takes the original arguments plus one environment pointer
+    /// per capturing callback. The language-level call keeps the original
+    /// modes, so a `take` argument still moves once; the environment extras
+    /// sit beyond the mode list and own nothing. The wrapper record is pushed
+    /// for the emitter, and the call is renamed to the wrapper symbol.
+    pub(super) fn wrap_hook_call(&mut self, mut call: LoweredCall) -> LoweredCall {
+        let Some(hook) = call.hook.take() else {
+            return call;
+        };
+        let wrapper_name = format!("cl_hookwrap_{}", hook.callbacks[0].closure.id);
+        for callback in &hook.callbacks {
+            // The environment value carries the deferred fill when the hook
+            // sits in a guarded operand, so the guard emitter sees the
+            // `Materialize` node and fills it on the evaluated path only.
+            call.args.push(callback.environment.clone());
+        }
+        call.name = wrapper_name.clone();
+        call.type_args.clear();
+        // A loop fixpoint and a deferred-exit re-check lower one call site
+        // more than once; the generated wrapper is identical for every
+        // lowering, so only the first record is kept.
+        if self
+            .hook_wrappers
+            .iter()
+            .any(|existing| existing.name == wrapper_name)
+        {
+            return call;
+        }
+        self.hook_wrappers.push(HookWrapper {
+            name: wrapper_name,
+            callee: hook.callee,
+            params: hook.params,
+            modes: hook.modes,
+            returns: hook.returns,
+            callbacks: hook
+                .callbacks
+                .iter()
+                .map(|callback| HookCallback {
+                    arg: callback.arg,
+                    closure: callback.closure.clone(),
+                    hook_id: callback.closure.id,
+                })
+                .collect(),
+        });
+        call
     }
 
     /// True when an argument is filled by a statement before the call runs.
@@ -1261,6 +1408,41 @@ pub(super) struct LoweredCall {
     /// its owned temporary arguments and `take` arguments exactly like a
     /// module call's.
     pub modes: Option<Vec<Mode>>,
+    /// The materialized callbacks of a synchronous C hook call, when the call
+    /// has any. The caller renames the call to the generated wrapper and
+    /// appends one environment value per callback.
+    pub hook: Option<LoweredHook>,
+}
+
+/// The materialized callbacks of one synchronous C hook call.
+pub(super) struct LoweredHook {
+    /// The original `ffi` C symbol.
+    pub callee: String,
+    /// The original `ffi` parameter types.
+    pub params: Vec<Ty>,
+    /// The original `ffi` parameter modes.
+    pub modes: Vec<Mode>,
+    /// The checked result type.
+    pub returns: Ty,
+    /// The callbacks in argument order.
+    pub callbacks: Vec<LoweredHookCallback>,
+}
+
+/// One capturing callback whose environment is materialized at its position.
+pub(super) struct LoweredHookCallback {
+    /// The callback's argument position.
+    pub arg: usize,
+    /// The capturing closure's type.
+    pub closure: crate::types::ClosureTy,
+    /// The statement temporary holding the two-word closure value.
+    pub temp: ir::TempId,
+    /// The materialized closure value.
+    ///
+    /// An eager context holds a plain temporary; a guarded operand holds a
+    /// deferred `Materialize` the guard emitter fills on the evaluated path.
+    /// The value itself is appended as the wrapper's environment argument, so
+    /// dropping it would leave the temporary unfilled.
+    pub environment: Value,
 }
 
 /// The `func` declaration a module declares under a name.

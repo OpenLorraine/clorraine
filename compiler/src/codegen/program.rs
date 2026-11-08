@@ -12,6 +12,7 @@ use crate::ast::{
 };
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::load::Module;
+use crate::own::{HookCallback, HookWrapper};
 use crate::profile::Profile;
 use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type, CaptureMode, Ty, TyKind, TypeTable};
 
@@ -1037,6 +1038,27 @@ impl<'a> Emitter<'a> {
             self.subst = saved_subst;
             self.instance_key = saved_key;
         }
+        // A synchronous hook's trampoline and wrapper are used from the body
+        // that writes the call, so both need a prototype before the bodies.
+        let mut hook_trampolines = BTreeSet::new();
+        for wrapper in &self.ownership.hook_wrappers {
+            for callback in &wrapper.callbacks {
+                if hook_trampolines.insert(callback.hook_id) {
+                    lines.push(format!(
+                        "static {};",
+                        self.hook_trampoline_signature(callback)
+                    ));
+                }
+            }
+        }
+        for wrapper in &self.ownership.hook_wrappers {
+            let signature = self.ffi_function_declarator(
+                &wrapper.returns,
+                self.hook_wrapper_params(wrapper),
+                &wrapper.name,
+            );
+            lines.push(format!("static {signature};"));
+        }
         for module in self.loaded.modules.values() {
             for item in &module.items {
                 if let Item::Ffi(block) = item {
@@ -1075,13 +1097,34 @@ impl<'a> Emitter<'a> {
     }
 
     /// The C ABI type of an `ffi` type, resolving an enum's backing scalar.
-    fn ffi_c_type(&self, ty: &Ty) -> String {
+    ///
+    /// A function-pointer type recurses so a nested enum or function pointer
+    /// keeps the same spelling the trampoline and wrapper use.
+    pub(super) fn ffi_c_type(&self, ty: &Ty) -> String {
         let ty = self.substitute(ty);
+        if let TyKind::Func(signature) = &ty.kind {
+            return self.ffi_function_pointer_type(signature);
+        }
         let backing = match &ty.kind {
             TyKind::Enum(name) => self.sema.table.enum_backing(name).and_then(scalar_of),
             _ => None,
         };
         crate::abi::ffi_type_with(&ty, backing)
+    }
+
+    /// The unnamed C function-pointer type of an `ffi` callback signature.
+    fn ffi_function_pointer_type(&self, signature: &crate::types::FuncTy) -> String {
+        let returns = self.ffi_c_type(&signature.returns);
+        let params: Vec<String> = signature
+            .params
+            .iter()
+            .map(|param| self.ffi_c_type(&param.ty))
+            .collect();
+        if params.is_empty() {
+            format!("{returns} (*)(void)")
+        } else {
+            format!("{returns} (*)({})", params.join(", "))
+        }
     }
 
     /// Writes the module-level variables with empty-state initializers.
@@ -4181,9 +4224,253 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Writes the callback environment stack, trampolines, and wrappers.
+    ///
+    /// The stack is a linked list of caller-frame nodes; no heap allocation is
+    /// involved. One trampoline is emitted per capturing callback and one
+    /// wrapper per hook call site. Both are `static`: they are reached only
+    /// through the generated call, never by name from another unit.
+    pub(super) fn emit_hook_support(&mut self) {
+        let wrappers = self.ownership.hook_wrappers.clone();
+        if wrappers.is_empty() {
+            return;
+        }
+        self.push("struct ClHookEnvNode {");
+        self.push("    unsigned long id;");
+        self.push("    void *env;");
+        self.push("    struct ClHookEnvNode *prev;");
+        self.push("};");
+        self.push("static struct ClHookEnvNode *cl_hook_env_top;");
+        self.push(
+            "static void cl_hook_env_push(struct ClHookEnvNode *node, unsigned long id, void *env)",
+        );
+        self.push("{");
+        self.push("    node->id = id;");
+        self.push("    node->env = env;");
+        self.push("    node->prev = cl_hook_env_top;");
+        self.push("    cl_hook_env_top = node;");
+        self.push("}");
+        self.push("static void cl_hook_env_pop(struct ClHookEnvNode *node)");
+        self.push("{");
+        self.push("    cl_hook_env_top = node->prev;");
+        self.push("}");
+        self.push("static void *cl_hook_env_find(unsigned long id)");
+        self.push("{");
+        self.push("    struct ClHookEnvNode *node = cl_hook_env_top;");
+        self.push("    while (node) {");
+        self.push("        if (node->id == id) { return node->env; }");
+        self.push("        node = node->prev;");
+        self.push("    }");
+        self.push("    return 0;");
+        self.push("}");
+        self.push("");
+        let mut emitted_trampolines = BTreeSet::new();
+        for wrapper in &wrappers {
+            for callback in &wrapper.callbacks {
+                if !emitted_trampolines.insert(callback.hook_id) {
+                    continue;
+                }
+                self.emit_hook_trampoline(callback);
+            }
+        }
+        for wrapper in &wrappers {
+            self.emit_hook_wrapper(wrapper);
+        }
+    }
+
+    /// The C symbol of one callback trampoline.
+    fn hook_trampoline_symbol(&self, callback: &HookCallback) -> String {
+        format!("cl_hooktramp_{}", callback.hook_id)
+    }
+
+    /// The exact declared signature of one callback trampoline.
+    ///
+    /// The trampoline is the function pointer the C hook receives, so its
+    /// parameters and return use the `ffi` ABI spelling. The accepted
+    /// signature set guarantees the lifted lambda's language spelling is
+    /// ABI-compatible; on m68k `LONG` and `i32` are distinct C spellings of
+    /// the same width, and only the ABI spelling converts to the hook's
+    /// function-pointer type without a warning.
+    fn hook_trampoline_signature(&self, callback: &HookCallback) -> String {
+        let closure = &callback.closure;
+        let params: Vec<String> = closure
+            .params
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| self.ffi_c_declarator(ty, &format!("a{index}")))
+            .collect();
+        self.ffi_function_declarator(
+            &closure.returns,
+            params,
+            &self.hook_trampoline_symbol(callback),
+        )
+    }
+
+    /// Writes the trampoline that finds its environment and calls the lambda.
+    fn emit_hook_trampoline(&mut self, callback: &HookCallback) {
+        let signature = self.hook_trampoline_signature(callback);
+        self.push(&format!("static {signature}"));
+        self.push("{");
+        self.push(&format!(
+            "    struct ClEnv_{} *__env = (struct ClEnv_{} *)cl_hook_env_find({});",
+            callback.hook_id, callback.hook_id, callback.hook_id
+        ));
+        self.push("    if (!__env) {");
+        self.push(
+            "        cl_trap(\"E11215\", \"callback invoked after its C hook returned\");",
+        );
+        self.push("    }");
+        let arguments: Vec<String> = callback
+            .closure
+            .params
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| {
+                let name = format!("a{index}");
+                let language = c_type(&self.substitute(ty), &self.sema.table);
+                let abi = self.ffi_c_type(ty);
+                if language == abi {
+                    name
+                } else if matches!(ty.kind, TyKind::Func(_)) {
+                    // A function-pointer parameter uses the same
+                    // `void (*)(void)` intermediate the call boundary uses,
+                    // so the strict `-Wcast-function-type` warning stays off.
+                    format!("({language})(void (*)(void))({name})")
+                } else {
+                    format!("({language})({name})")
+                }
+            })
+            .collect();
+        let arguments = if arguments.is_empty() {
+            "__env".to_owned()
+        } else {
+            format!("__env, {}", arguments.join(", "))
+        };
+        if callback.closure.returns.is_void() {
+            self.push(&format!("    cl_lambda_{}({arguments});", callback.hook_id));
+        } else {
+            let language = c_type(
+                &self.substitute(&callback.closure.returns),
+                &self.sema.table,
+            );
+            let abi = self.ffi_c_type(&callback.closure.returns);
+            let cast = if language == abi {
+                String::new()
+            } else {
+                format!("({abi})")
+            };
+            self.push(&format!(
+                "    return {cast}cl_lambda_{}({arguments});",
+                callback.hook_id
+            ));
+        }
+        self.push("}");
+        self.push("");
+    }
+
+    /// The parameter declarations of a hook wrapper.
+    ///
+    /// The original `ffi` parameters keep their ABI spelling, so the wrapper
+    /// forwards exactly what the C prototype expects. Each callback adds one
+    /// pointer to its generated environment struct.
+    fn hook_wrapper_params(&self, wrapper: &HookWrapper) -> Vec<String> {
+        let mut params: Vec<String> = wrapper
+            .params
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| self.ffi_c_declarator(ty, &format!("p{index}")))
+            .collect();
+        for (index, callback) in wrapper.callbacks.iter().enumerate() {
+            params.push(format!(
+                "struct ClEnv_{} *env{index}",
+                callback.hook_id
+            ));
+        }
+        params
+    }
+
+    /// Writes one wrapper that installs the callback environments and forwards.
+    fn emit_hook_wrapper(&mut self, wrapper: &HookWrapper) {
+        let signature =
+            self.ffi_function_declarator(&wrapper.returns, self.hook_wrapper_params(wrapper), &wrapper.name);
+        self.push(&format!("static {signature}"));
+        self.push("{");
+        if !wrapper.returns.is_void() {
+            self.push(&format!(
+                "    {};",
+                self.ffi_c_declarator(&wrapper.returns, "__cl_hook_result")
+            ));
+        }
+        for (index, callback) in wrapper.callbacks.iter().enumerate() {
+            self.push(&format!("    struct ClHookEnvNode n{index};"));
+            self.push(&format!(
+                "    cl_hook_env_push(&n{index}, {}, env{index});",
+                callback.hook_id
+            ));
+        }
+        let args: Vec<String> = (0..wrapper.params.len())
+            .map(|index| format!("p{index}"))
+            .collect();
+        let call = format!("{}({})", wrapper.callee, args.join(", "));
+        if wrapper.returns.is_void() {
+            self.push(&format!("    {call};"));
+        } else {
+            self.push(&format!("    __cl_hook_result = {call};"));
+        }
+        for index in (0..wrapper.callbacks.len()).rev() {
+            self.push(&format!("    cl_hook_env_pop(&n{index});"));
+        }
+        if !wrapper.returns.is_void() {
+            self.push("    return __cl_hook_result;");
+        }
+        self.push("}");
+        self.push("");
+    }
+
+    /// The declaration of a name with an `ffi` ABI return type.
+    ///
+    /// A function-pointer return nests inside the declarator, exactly as the
+    /// language declarator does, so an accepted callback or wrapper signature
+    /// cannot produce `ret (*)(args) name(...)`.
+    fn ffi_function_declarator(&self, returns: &Ty, params: Vec<String>, name: &str) -> String {
+        let params = if params.is_empty() {
+            vec!["void".to_owned()]
+        } else {
+            params
+        };
+        if let TyKind::Func(signature) = &self.substitute(returns).kind {
+            let pointer = format!("(*{name}({}))", params.join(", "));
+            let nested: Vec<String> = signature
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, param)| self.ffi_c_declarator(&param.ty, &format!("a{index}")))
+                .collect();
+            return self.ffi_function_declarator(&signature.returns, nested, &pointer);
+        }
+        format!("{} {name}({})", self.ffi_c_type(returns), params.join(", "))
+    }
+
+    /// The declaration of a name with an `ffi` ABI type.
+    fn ffi_c_declarator(&self, ty: &Ty, name: &str) -> String {
+        if let TyKind::Func(signature) = &self.substitute(ty).kind {
+            let nested: Vec<String> = signature
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, param)| self.ffi_c_declarator(&param.ty, &format!("a{index}")))
+                .collect();
+            return self.ffi_function_declarator(
+                &signature.returns,
+                nested,
+                &format!("(*{name})"),
+            );
+        }
+        format!("{} {name}", self.ffi_c_type(ty))
+    }
+
     /// Writes the `int main(void)` stub that runs inits then the user `main`.
-    pub(super) fn emit_entry_stub(&mut self) {
-        let inits: Vec<String> = self
+    pub(super) fn emit_entry_stub(&mut self) {        let inits: Vec<String> = self
             .init_order()
             .into_iter()
             .map(|module| format!("    cl_init_{}();", mangle_module(&module)))

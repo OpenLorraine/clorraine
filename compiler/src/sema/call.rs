@@ -149,8 +149,11 @@ impl Checker<'_, '_> {
                                 .iter()
                                 .map(|(ty, mode)| (self.resolve_type(ty), *mode))
                                 .collect();
-                            self.check_ffi_arguments(&last, &params, args, span, call_site);
-                            return Self::ffi_abi_result(self.resolve_type(returns));
+                            let result = Self::ffi_abi_result(self.resolve_type(returns));
+                            self.check_ffi_arguments(
+                                &last, &params, args, span, call_site, &result,
+                            );
+                            return result;
                         }
                     }
                     _ => {}
@@ -260,9 +263,10 @@ impl Checker<'_, '_> {
                 if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
                     if let Some(signature) = self.ffi_signature(name) {
                         let params = self.ffi_parameter_types(name, signature);
-                        self.check_ffi_arguments(name, &params, args, span, call_site);
+                        let result = self.ffi_result_type(name, signature);
+                        self.check_ffi_arguments(name, &params, args, span, call_site, &result);
                         let _ = self.check_value(callee, None);
-                        return self.ffi_result_type(name, signature);
+                        return result;
                     }
                 }
                 // The compiler-known `text(v)` formatter is not declared in
@@ -1626,16 +1630,19 @@ impl Checker<'_, '_> {
     /// (error recovery or an extern result) keeps the accepted path, and every
     /// argument is still walked for its own errors.
     ///
-    /// A function-type parameter is the C callback contract. `_call_site` is
+    /// A function-type parameter is the C callback contract. `call_site` is
     /// the call expression's address, threaded from the expression checker so
-    /// the accepted synchronous hook can be keyed for the lowering stage.
+    /// an accepted synchronous hook can be keyed for the lowering stage;
+    /// `returns` is the call's checked result type, which the generated
+    /// wrapper forwards.
     fn check_ffi_arguments(
         &mut self,
         name: &str,
         params: &[(Ty, crate::ast::Mode)],
         args: &[Arg],
         span: Span,
-        _call_site: usize,
+        call_site: usize,
+        returns: &Ty,
     ) {
         if args.len() != params.len() {
             self.error(
@@ -1649,6 +1656,7 @@ impl Checker<'_, '_> {
                 span,
             );
         }
+        let mut callbacks = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             let ty = self.check_value(&arg.value, None);
             let Some((param, mode)) = params.get(index) else {
@@ -1656,7 +1664,22 @@ impl Checker<'_, '_> {
             };
             if let TyKind::Func(expected) = &param.kind {
                 let expected = expected.clone();
-                self.check_hook_argument(&ty, &expected, *mode, arg.value.span);
+                if let Some(closure) =
+                    self.check_hook_argument(&ty, &expected, *mode, arg)
+                {
+                    // A borrowing capture stores the binding's address in the
+                    // environment. If another argument of the same call moves
+                    // that binding, the callee may release it before invoking
+                    // the callback, so the environment would dangle.
+                    self.reject_hook_capture_of_moved_binding(
+                        &closure,
+                        index,
+                        params,
+                        args,
+                        arg.value.span,
+                    );
+                    callbacks.push(super::HookCall { arg: index, closure });
+                }
                 continue;
             }
             if matches!(param.kind, TyKind::CString)
@@ -1699,6 +1722,29 @@ impl Checker<'_, '_> {
                 }
             }
         }
+        if callbacks.is_empty() {
+            return;
+        }
+        let site = self
+            .hook_calls
+            .entry(call_site)
+            .or_insert_with(|| super::HookCallSite {
+                callee: name.to_owned(),
+                params: params.iter().map(|(ty, _)| ty.clone()).collect(),
+                modes: params.iter().map(|(_, mode)| *mode).collect(),
+                returns: returns.clone(),
+                callbacks: Vec::new(),
+            });
+        for callback in callbacks {
+            if !site
+                .callbacks
+                .iter()
+                .any(|existing| existing.arg == callback.arg)
+            {
+                site.callbacks.push(callback);
+            }
+        }
+        site.callbacks.sort_by_key(|callback| callback.arg);
     }
 
     /// Checks one argument offered to an `ffi` function-type parameter.
@@ -1707,27 +1753,42 @@ impl Checker<'_, '_> {
     /// and return type; the callback's own parameter modes are not part of the
     /// contract, exactly as a callable-bound generic parameter judges them. A
     /// capturing closure is a two-word value, never a C function pointer: it
-    /// needs a generated trampoline and the synchronous `borrow` contract.
-    /// Until the emission path exists every capturing hook is E10400. The
-    /// accepted signature set is the one whose lifted C spelling is identical
-    /// to the `ffi` spelling; anything else is E10210 because the emitted
-    /// function pointer would not convert.
+    /// crosses only a synchronous `borrow` hook, where the lowering emits a
+    /// trampoline and a caller-frame environment, and only outside a generic
+    /// body, whose instances would need separate wrappers. The accepted
+    /// signature set is the one whose lifted C spelling is identical to the
+    /// `ffi` spelling; anything else is E10210 because the emitted function
+    /// pointer would not convert.
+    ///
+    /// Returns the accepted capturing closure so the caller can record the
+    /// hook site; a capture-less function and every rejected form return
+    /// `None`.
     fn check_hook_argument(
         &mut self,
         ty: &Ty,
         expected: &FuncTy,
         mode: crate::ast::Mode,
-        span: Span,
-    ) {
+        arg: &Arg,
+    ) -> Option<crate::types::ClosureTy> {
+        let span = arg.value.span;
         match &ty.kind {
             TyKind::Func(found) => {
                 if !Self::hook_signature_matches(expected, found) {
                     self.report_hook_signature_mismatch(expected, ty, span);
-                    return;
+                    return None;
+                }
+                // The value's own C spelling is what the hook receives. A
+                // named function written with a borrowed non-duplicable
+                // parameter spells `T *` while the hook passes the value by
+                // `T`, so the found signature needs the same judgment.
+                if let Some(reason) = self.hook_abi_mismatch(found) {
+                    self.report_hook_abi_mismatch(&reason, span);
+                    return None;
                 }
                 if let Some(reason) = self.hook_abi_mismatch(expected) {
                     self.report_hook_abi_mismatch(&reason, span);
                 }
+                None
             }
             TyKind::Closure(found) => {
                 // A capturing closure needs a synchronous `borrow` contract
@@ -1735,18 +1796,47 @@ impl Checker<'_, '_> {
                 // lifetime, so the closure can never become a C pointer there.
                 if mode != crate::ast::Mode::Borrow {
                     self.report_capturing_hook(span);
-                    return;
+                    return None;
                 }
                 if !Self::hook_closure_signature_matches(expected, &found.params, &found.returns) {
                     self.report_hook_signature_mismatch(expected, ty, span);
-                    return;
+                    return None;
                 }
-                // The synchronous contract is present, but the trampoline and
-                // wrapper emission path does not exist yet: no capturing hook
-                // is accepted before it can be emitted soundly.
-                self.report_capturing_hook(span);
+                if !self.type_params.is_empty() {
+                    self.error(
+                        "E10400",
+                        "capturing lambda cannot be used as 'func(...)'",
+                        "move the callback into a non-generic function; a generic body needs one trampoline per instance",
+                        span,
+                    );
+                    return None;
+                }
+                if let Some(reason) = self.hook_abi_mismatch(expected) {
+                    self.report_hook_abi_mismatch(&reason, span);
+                    return None;
+                }
+                Some(found.clone())
             }
             _ => {
+                // A member read on a bare type parameter has no type until
+                // the instance is known. Record the use so the instance audit
+                // judges the member's function type against the hook; a
+                // concrete non-callable still reports here.
+                if ty.is_unknown() {
+                    if let Some(name) = super::expr::member_read_name(&arg.value) {
+                        if let Some(function) = self.function_name.clone() {
+                            self.opaque_member_uses.push(super::OpaqueMemberUse {
+                                function,
+                                name,
+                                span,
+                                expected: Ty::func(expected.clone()),
+                                sanctioned: false,
+                                base: super::expr::plain_binding_root(&arg.value),
+                            });
+                            return None;
+                        }
+                    }
+                }
                 self.error(
                     "E10200",
                     format!(
@@ -1757,6 +1847,7 @@ impl Checker<'_, '_> {
                     "pass a matching function or capture-less lambda",
                     span,
                 );
+                None
             }
         }
     }
@@ -1863,12 +1954,73 @@ impl Checker<'_, '_> {
             }
             TyKind::Array { .. } => Some("a view".to_owned()),
             TyKind::Str | TyKind::StaticStr => Some("a view".to_owned()),
-            TyKind::Func(signature) => self
-                .hook_abi_mismatch(signature)
-                .map(|_| "a non-ABI-identical function pointer".to_owned()),
+            // The `ffi` prototype itself cannot spell a function-pointer
+            // return without a named declarator, so a callback that returns
+            // one is rejected until the prototype surface supports it.
+            TyKind::Func(_) => {
+                Some("a function-pointer return ('ret (*)(...) name(...)' is not a C declaration)".to_owned())
+            }
             TyKind::Box(_) => Some("a Box".to_owned()),
             TyKind::Closure(_) => Some("a closure".to_owned()),
             TyKind::Param(_) | TyKind::Unknown => Some("an unresolved type".to_owned()),
+        }
+    }
+
+    /// Rejects a capturing hook whose borrowed capture is moved by the call.
+    ///
+    /// The environment stores the captured binding's address for a read-only
+    /// or writable borrow. A `take` argument in the same call transfers the
+    /// binding to the callee, which may release it before it invokes the
+    /// callback; the environment pointer would then dangle. A copy capture is
+    /// safe because the value is copied when the closure is built.
+    fn reject_hook_capture_of_moved_binding(
+        &mut self,
+        closure: &crate::types::ClosureTy,
+        callback_index: usize,
+        params: &[(Ty, crate::ast::Mode)],
+        args: &[Arg],
+        span: Span,
+    ) {
+        let captures = self
+            .closures
+            .iter()
+            .find(|site| site.id == closure.id)
+            .map(|site| site.captures.clone())
+            .unwrap_or_default();
+        if !captures.iter().any(|capture| {
+            matches!(
+                capture.mode,
+                crate::types::CaptureMode::ReadOnlyBorrow
+                    | crate::types::CaptureMode::WriteBorrow
+            )
+        }) {
+            return;
+        }
+        for (index, (_, mode)) in params.iter().enumerate() {
+            if index == callback_index || *mode != crate::ast::Mode::Take {
+                continue;
+            }
+            let Some(arg) = args.get(index) else {
+                continue;
+            };
+            let Some(root) = super::place_root_name(&arg.value) else {
+                continue;
+            };
+            if let Some(capture) = captures.iter().find(|capture| {
+                capture.name == root
+                    && matches!(
+                        capture.mode,
+                        crate::types::CaptureMode::ReadOnlyBorrow
+                            | crate::types::CaptureMode::WriteBorrow
+                    )
+            }) {
+                self.error(
+                    "E10030",
+                    format!("borrow of '{}' does not live long enough", capture.name),
+                    "the same call moves the binding before the callback can read it",
+                    span,
+                );
+            }
         }
     }
 

@@ -655,6 +655,7 @@ impl<'a> Emitter<'a> {
         self.emit_globals();
         self.emit_init_functions();
         self.emit_bodies();
+        self.emit_hook_support();
         self.emit_entry_stub();
         // The 2.0+ Workbench/icon/expansion shim follows the user program so
         // its headers' macros cannot rewrite user identifiers.

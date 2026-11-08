@@ -101,6 +101,24 @@ impl Emitter<'_> {
         args: &[Value],
         func_ty: Option<&Ty>,
     ) -> String {
+        self.call_arguments_with(callee, type_args, args, func_ty, false)
+    }
+
+    /// Renders a call's argument list with an explicit `ffi` ABI sigil.
+    ///
+    /// `ffi_abi` marks a generated hook-wrapper call: its parameters are the
+    /// original `ffi` declaration's, so they cross by value and a view uses
+    /// its pointer member even though a `func` type supplied the parameter
+    /// list. Without the sigil a `func`-typed callee keeps the language
+    /// pointer rules for a borrowed parameter.
+    pub(super) fn call_arguments_with(
+        &self,
+        callee: &str,
+        type_args: &[Ty],
+        args: &[Value],
+        func_ty: Option<&Ty>,
+        ffi_abi: bool,
+    ) -> String {
         let (modes, param_types) = match func_ty.and_then(|ty| match &self.substitute(ty).kind {
             TyKind::Func(signature) => Some((
                 signature
@@ -124,7 +142,7 @@ impl Emitter<'_> {
                 self.instance_param_types(callee, type_args, args),
             ),
         };
-        let user_call = self.resolve_function(callee).is_some();
+        let user_call = !ffi_abi && self.resolve_function(callee).is_some();
         let rendered: Vec<String> = args
             .iter()
             .enumerate()
@@ -164,6 +182,32 @@ impl Emitter<'_> {
                 } else {
                     self.argument_text(arg, expected)
                 };
+                // A callback parameter is a C function pointer in the `ffi`
+                // ABI spelling. The language value is a compatible plain
+                // pointer, but its parameter types may spell the same widths
+                // differently (`i32` vs `LONG` on m68k), so the boundary takes
+                // an explicit cast the accepted-set contract justifies.
+                let text = if ffi_abi || (func_ty.is_none() && !user_call) {
+                    match expected {
+                        Some(expected) if matches!(expected.kind, TyKind::Func(_)) => {
+                            let language = c_type(expected, &self.sema.table);
+                            let abi = self.ffi_c_type(expected);
+                            if language == abi {
+                                text
+                            } else {
+                                // A direct function-type cast trips
+                                // `-Wcast-function-type`; the documented
+                                // `void (*)(void)` intermediate is the
+                                // warning-free spelling of the same
+                                // ABI-identical conversion.
+                                format!("({abi})(void (*)(void))({text})")
+                            }
+                        }
+                        _ => text,
+                    }
+                } else {
+                    text
+                };
                 // An uncontracted `ffi` parameter takes its ABI type from the
                 // FFI table, so a view argument whose ABI type is a pointer
                 // crosses as the view's pointer member rather than as the view
@@ -171,9 +215,8 @@ impl Emitter<'_> {
                 // `cstring` parameter is already a C pointer (its literals and
                 // values render as pointers), so it never wraps. The prototype
                 // and the tables are unchanged.
-                let text = if func_ty.is_none() && !user_call {
-                    match expected {
-                        Some(expected)
+                let text = if ffi_abi || (func_ty.is_none() && !user_call) {
+                    match expected {                        Some(expected)
                             if crate::abi::ffi_type_with(expected, None) == "APTR"
                                 && self.argument_crosses_as_view(arg, expected) =>
                         {
@@ -192,7 +235,7 @@ impl Emitter<'_> {
                 // parameter is not yet the instance's type, so the substituted
                 // argument type stands in for it. An `ffi` callee ignores modes
                 // in its prototype, so its arguments stay by value.
-                let pointer = if func_ty.is_none() && !user_call {
+                let pointer = if ffi_abi || (func_ty.is_none() && !user_call) {
                     false
                 } else {
                     match expected.filter(|expected| !contains_param(expected)) {

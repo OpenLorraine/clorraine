@@ -94,6 +94,44 @@ pub struct OwnershipOutput {
     /// can never be mangled twice and a module-scoped simple name resolves in
     /// the handle's declaring module.
     pub deleter_identities: BTreeMap<String, program::DeleterRef>,
+    /// The generated wrappers that install callback environments around a
+    /// synchronous C hook call.
+    ///
+    /// Each wrapper is emitted once and called from the hook call site; the
+    /// emitter also uses the record to render the environment extras.
+    pub hook_wrappers: Vec<HookWrapper>,
+}
+
+/// One capturing callback of a generated hook wrapper.
+#[derive(Clone, Debug)]
+pub struct HookCallback {
+    /// The callback's argument position in the `ffi` call.
+    pub arg: usize,
+    /// The capturing closure's ephemeral type.
+    pub closure: crate::types::ClosureTy,
+    /// The environment-stack id the trampoline looks up.
+    pub hook_id: usize,
+}
+
+/// A generated wrapper that installs each callback's environment for one call.
+///
+/// The wrapper has the original `ffi` parameters plus one environment pointer
+/// per capturing callback. It pushes a caller-frame node for each environment,
+/// calls the original C symbol, and pops the nodes in reverse order.
+#[derive(Clone, Debug)]
+pub struct HookWrapper {
+    /// The generated C symbol.
+    pub name: String,
+    /// The original `ffi` C symbol the wrapper forwards to.
+    pub callee: String,
+    /// The original `ffi` parameter types in source order.
+    pub params: Vec<Ty>,
+    /// The original `ffi` parameter modes in source order.
+    pub modes: Vec<crate::ast::Mode>,
+    /// The checked result type in ABI terms.
+    pub returns: Ty,
+    /// The capturing callbacks in argument order.
+    pub callbacks: Vec<HookCallback>,
 }
 
 /// The declaration identity a take-view requirement and its call records share.
@@ -323,6 +361,7 @@ pub fn check(
     let mut take_view_requirements: Vec<TakeViewRequirement> = Vec::new();
     let mut take_call_arguments: Vec<TakeCallArgument> = Vec::new();
     let mut function_value_uses: BTreeSet<String> = BTreeSet::new();
+    let mut hook_wrappers: Vec<HookWrapper> = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -361,10 +400,12 @@ pub fn check(
                     take_requirements,
                     take_calls,
                     value_uses,
+                    wrappers,
                 ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
                 functions.extend(lifted);
+                hook_wrappers.extend(wrappers);
                 duplicable_requirements.extend(requirements);
                 element_move_requirements.extend(element_moves);
                 not_lend_requirements.extend(lend_duties);
@@ -472,6 +513,7 @@ pub fn check(
         let (sites, lifted) = checker.lift_initializer_lambdas(&values);
         init_lambdas.extend(sites);
         functions.extend(lifted);
+        hook_wrappers.extend(checker.hook_wrappers);
     }
     let mut monomorphization = generics::collect(loaded, &program, sema);
     for requirement in duplicable_requirements {
@@ -590,6 +632,7 @@ pub fn check(
         monomorphization,
         init_lambdas,
         deleter_identities,
+        hook_wrappers,
     }
 }
 
@@ -1004,6 +1047,8 @@ struct FunctionChecker<'a, 'd> {
     /// collected here and appended to the program's function list once the
     /// enclosing body is checked.
     lifted: Vec<ir::Function>,
+    /// The generated synchronous-hook wrappers this body needs.
+    hook_wrappers: Vec<HookWrapper>,
     /// Next lambda-site id for a capture-less lambda, shared with every other
     /// function so one program never names two lifted functions the same.
     next_lifted: &'a mut usize,
@@ -1128,6 +1173,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             recorded_self_assign: BTreeSet::new(),
             recorded_element_moves: BTreeSet::new(),
             lifted: Vec::new(),
+            hook_wrappers: Vec::new(),
             next_lifted,
             diagnostics,
         }
@@ -1160,6 +1206,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<TakeViewRequirement>,
         Vec<TakeCallArgument>,
         BTreeSet<String>,
+        Vec<HookWrapper>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -1219,6 +1266,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.take_view_requirements,
             self.take_call_arguments,
             self.function_value_uses,
+            self.hook_wrappers,
         )
     }
 

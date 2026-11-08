@@ -443,7 +443,7 @@ pub(super) fn empty_state(ty: &Ty) -> String {
         // The null literal's shape spells its empty state the way its
         // declaration type does, so the two agree.
         TyKind::Unknown if ty.nullable => "NULL".to_owned(),
-        TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) | TyKind::Enum(_) => "{0}".to_owned(),
+        TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) | TyKind::Enum(_) | TyKind::Closure(_) => "{0}".to_owned(),
         TyKind::Array { .. } => "{0}".to_owned(),
         _ => "0".to_owned(),
     }

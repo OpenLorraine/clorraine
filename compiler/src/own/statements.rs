@@ -242,7 +242,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     return;
                 }
-                let call = self.lower_call(callee, type_args, args);
+                let sema = self.sema;
+                let hook = sema.hook_calls.get(&(expr as *const Expr as usize));
+                let lowered = self.lower_call(callee, type_args, args, hook);
+                let call = self.wrap_hook_call(lowered);
                 let move_outs = self.take_move_out_places(call.modes.as_deref(), &call.args);
                 let value_move_outs =
                     self.take_pointee_move_outs(call.modes.as_deref(), &call.args);

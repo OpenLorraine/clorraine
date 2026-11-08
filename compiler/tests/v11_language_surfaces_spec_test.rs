@@ -182,6 +182,31 @@ fn assert_rejected_profile(tag: &str, profile: &str, source: &str, code: &str) {
     drop(scratch);
 }
 
+/// Asserts a source compiles and its emitted C builds strictly (no link).
+fn assert_accepted_c(tag: &str, source: &str) {
+    let (scratch, output, c_path) = compile_only(tag, "host", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let object = scratch.path().join("out.o");
+    let built = Command::new("cc")
+        .args(["-std=c99", "-O0", "-Wall", "-Wextra", "-Werror", "-c"])
+        .arg(&c_path)
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the strict host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    drop(scratch);
+}
+
 /// Compiles, builds, and runs an accepted program under the strict host
 /// flags. The dedicated memory suite owns the AddressSanitizer child build.
 fn run_host(tag: &str, source: &str) -> Output {
@@ -336,12 +361,13 @@ fn run_host_fixture(tag: &str, source: &str, fixture: &str) -> Output {
 /// A minimal program wrapper around a `Box` declaration.
 fn program(items: &str) -> String {
     format!("module spec.v11;\n{items}\nfunc main(): i32 {{ return 0; }}\n")
-}
-
-/// A wrapper whose entry calls `demo`, for behavior cases.
+}/// A wrapper whose entry calls `demo`, for behavior cases.
 fn run_program(items: &str) -> String {
     format!("module spec.v11;\n{items}\nfunc main(): i32 {{ return demo(); }}\n")
 }
+
+/// The synchronous C hook fixture linked by the host behavior cases.
+const HOOK_FIXTURE: &str = include_str!("fixtures/hook_fixture_host.c");
 
 // ---------------------------------------------------------------------------
 // The Box type is spellable as a type-only built-in.
@@ -1197,14 +1223,13 @@ fn a_captureless_lambda_crosses_a_borrow_hook() {
     );
 }
 
-/// A capturing lambda is rejected until the trampoline path exists.
+/// A capturing lambda without a synchronous `borrow` contract is rejected.
 #[test]
-fn a_capturing_hook_lambda_is_rejected_until_trampolines() {
+fn a_capturing_hook_without_a_borrow_contract_is_rejected() {
     for (tag, marker) in [
         ("unmarked", ""),
         ("const", "const "),
         ("take", "take "),
-        ("borrow", "borrow "),
     ] {
         let source = program(&format!(
             "ffi lib {{ func apply({marker}cb: func(i32): i32, value: i32): i32; }}\n\
@@ -1394,9 +1419,8 @@ fn a_hook_callback_borrowing_a_move_only_struct_is_rejected() {
 /// The ABI-identical scalar, enum, struct, and function-pointer set is accepted.
 #[test]
 fn a_hook_callback_with_abi_identical_types_is_accepted() {
-    assert_accepts_source(
+    assert_accepted_c(
         "hk-abi-set",
-        "host",
         &program(
             "struct Point { x: i32; y: i32; }\n\
              enum Color: u8 { Red, Green }\n\
@@ -1406,19 +1430,27 @@ fn a_hook_callback_with_abi_identical_types_is_accepted() {
     );
 }
 
-/// A `[borrow x]` capture at a hook is a capturing hook, not a plain pointer.
+/// A `[borrow x]` capture writes through the callback's environment.
 #[test]
-fn a_borrow_capture_at_a_hook_is_rejected_until_trampolines() {
-    assert_rejected(
+fn a_borrow_capture_at_a_hook_writes_through() {
+    let output = run_host_fixture(
         "hk-borrow-capture",
-        &program(
-            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+        &run_program(
+            "ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
              func demo(): i32 {\n\
                  let n: i32 = 1;\n\
-                 return apply([borrow n] (x: i32) => { n = n + 1; return x + n; }, 1);\n\
+                 let r = cl_fixture_apply([borrow n] (x: i32) => { n = n + 1; return x + n; }, 1);\n\
+                 if (n == 2 && r == 3) { return 0; }\n\
+                 return 1;\n\
              }",
         ),
-        "E10400",
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the borrow capture must write through; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -1435,5 +1467,390 @@ fn a_capturing_lambda_at_a_callable_bound_is_still_accepted() {
                  return 1;\n\
              }",
         ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A capturing lambda crosses a synchronous C hook through a trampoline.
+// ---------------------------------------------------------------------------
+
+/// A capturing lambda returns the value its environment holds.
+#[test]
+fn a_capturing_lambda_crosses_a_borrow_hook() {
+    let output = run_host_fixture(
+        "hk-capturing",
+        &run_program(
+            "ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 40;\n\
+                 if (cl_fixture_apply([n] (x: i32) => x + n, 2) == 42) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the capturing hook must return its captured value; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Two capturing callbacks in one call each find their own environment.
+#[test]
+fn two_capturing_callbacks_find_their_environments() {
+    let output = run_host_fixture(
+        "hk-two-callbacks",
+        &run_program(
+            "ffi lib { func cl_fixture_apply2(borrow a: func(i32): i32, borrow b: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let x: i32 = 1;\n\
+                 let y: i32 = 2;\n\
+                 if (cl_fixture_apply2([x] (v: i32) => v + x, [y] (v: i32) => v + y, 10) == 23) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "both callbacks must find their own environment; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A callback that calls a Clorraine function which calls another hook nests.
+#[test]
+fn nested_hook_calls_find_their_environments() {
+    let output = run_host_fixture(
+        "hk-nested",
+        &run_program(
+            "ffi lib {\n\
+                 func cl_fixture_reenter(borrow cb: func(i32): i32, value: i32): i32;\n\
+                 func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32;\n\
+             }\n\
+             func inner(x: i32): i32 {\n\
+                 let n: i32 = 100;\n\
+                 return cl_fixture_apply([n] (v: i32) => v + n, x);\n\
+             }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 if (cl_fixture_reenter([n] (v: i32) => inner(v) + n, 5) == 106) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the nested hook must find its own environment; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A recursive hook reuses the same lambda site with a new environment.
+#[test]
+fn a_reentrant_hook_finds_its_own_environment() {
+    let output = run_host_fixture(
+        "hk-reentrant",
+        &run_program(
+            "ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func step(depth: i32): i32 {\n\
+                 if (depth == 0) { return 0; }\n\
+                 let n: i32 = depth;\n\
+                 return cl_fixture_apply([n, depth] (x: i32) => x + n + step(depth - 1), 1);\n\
+             }\n\
+             func demo(): i32 { if (step(2) == 5) { return 0; } return 1; }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the reentrant hook must find the innermost environment; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A C hook that calls one callback twice reads the same environment.
+#[test]
+fn a_repeated_callback_reads_the_same_environment() {
+    let output = run_host_fixture(
+        "hk-repeat",
+        &run_program(
+            "ffi lib { func cl_fixture_repeat(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 5;\n\
+                 if (cl_fixture_repeat([n] (x: i32) => x + n, 3) == 16) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a repeated callback must read the same environment; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A sibling effect after the callback runs cannot change a copy capture.
+#[test]
+fn a_sibling_effect_does_not_change_a_captured_value() {
+    let output = run_host_fixture(
+        "hk-order",
+        &run_program(
+            "ffi lib {\n\
+                 func cl_fixture_ptr_a(): raw i32;\n\
+                 func cl_fixture_ptr_b(): raw i32;\n\
+                 func cl_fixture_read(p: raw i32): i32;\n\
+                 func cl_fixture_apply0(borrow cb: func(): i32, value: i32): i32;\n\
+             }\n\
+             func bump(borrow p: raw i32?): i32 { p = cl_fixture_ptr_b(); return 0; }\n\
+             func demo(): i32 {\n\
+                 let p: raw i32? = cl_fixture_ptr_a();\n\
+                 let r = cl_fixture_apply0(\n\
+                     [p] () => { if (p == null) { return -1; } return cl_fixture_read(p); },\n\
+                     bump(p));\n\
+                 if (p == null) { return 1; }\n\
+                 if (cl_fixture_read(p) != 9) { return 2; }\n\
+                 if (r != 7) { return 3; }\n\
+                 return 0;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the capture must be read at its own argument position; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capturing hook in a short-circuit operand does not run when skipped.
+#[test]
+fn a_capturing_hook_in_a_short_circuit_does_not_run() {
+    let output = run_host_fixture(
+        "hk-short-circuit-capturing",
+        &run_program(
+            "ffi lib {\n\
+                 func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32;\n\
+                 func cl_fixture_count(): i32;\n\
+             }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 if (false && cl_fixture_apply([n] (x: i32) => x + n, 2) == 3) { return 1; }\n\
+                 return cl_fixture_count();\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the skipped hook must not run; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A callback invoked after its C hook returns faults with E11215.
+#[test]
+fn a_callback_invoked_after_return_faults() {
+    let output = run_host_fixture(
+        "hk-after-return",
+        &run_program(
+            "ffi lib {\n\
+                 func cl_fixture_defer(borrow cb: func(i32): i32): void;\n\
+                 func cl_fixture_run_deferred(value: i32): i32;\n\
+             }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 cl_fixture_defer([n] (x: i32) => x + n);\n\
+                 return cl_fixture_run_deferred(10);\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "an after-return callback must fault"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("E11215"),
+        "the fault must report E11215; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A borrowing capture of a binding the same call moves is rejected.
+#[test]
+fn a_hook_capture_of_a_moved_binding_is_rejected() {
+    assert_rejected(
+        "hk-capture-take",
+        &program(
+            "import { String, stringOf, bytes } from std.text;\n\
+             ffi lib { func apply(borrow cb: func(i32): i32, take s: String): i32; }\n\
+             func demo(): i32 {\n\
+                 let s = stringOf(\"x\");\n\
+                 return apply([s] (x: i32) => x + i32(len(bytes(s))), s);\n\
+             }",
+        ),
+        "E10030",
+    );
+}
+
+/// A guarded hook whose operand is evaluated fills the environment and runs.
+#[test]
+fn a_capturing_hook_in_an_evaluated_guard_runs() {
+    let output = run_host_fixture(
+        "hk-guard-true",
+        &run_program(
+            "ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 if (true && cl_fixture_apply([n] (x: i32) => x + n, 2) == 3) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the evaluated guarded hook must run; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capturing hook in a loop body emits one wrapper and runs each iteration.
+#[test]
+fn a_capturing_hook_in_a_loop_body_builds() {
+    let output = run_host_fixture(
+        "hk-loop-body",
+        &run_program(
+            "ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 let total: i32 = 0;\n\
+                 let i: i32 = 0;\n\
+                 while (i < 2) {\n\
+                     total = total + cl_fixture_apply([n] (x: i32) => x + n, 1);\n\
+                     i = i + 1;\n\
+                 }\n\
+                 if (total == 4) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the loop-body hook must emit one wrapper; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capturing hook in a defer emits one wrapper and runs on the exit edge.
+#[test]
+fn a_capturing_hook_in_a_defer_builds() {
+    let output = run_host_fixture(
+        "hk-defer",
+        "module spec.v11;\n\
+         ffi lib {\n\
+             func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32;\n\
+             func cl_fixture_count(): i32;\n\
+         }\n\
+         func demo(): i32 {\n\
+             let n: i32 = 1;\n\
+             defer { let r = cl_fixture_apply([n] (x: i32) => x + n, 1); }\n\
+             return 0;\n\
+         }\n\
+         func main(): i32 { let r = demo(); return cl_fixture_count() - 1; }\n",
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the defer hook must emit one wrapper and run once; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// An earlier effectful sibling runs before the callback environment is built.
+#[test]
+fn a_hook_capture_reads_after_an_earlier_sibling_effect() {
+    let output = run_host_fixture(
+        "hk-order-reverse",
+        &run_program(
+            "ffi lib {\n\
+                 func cl_fixture_ptr_a(): raw i32;\n\
+                 func cl_fixture_ptr_b(): raw i32;\n\
+                 func cl_fixture_read(p: raw i32): i32;\n\
+                 func cl_fixture_apply1(value: i32, borrow cb: func(): i32): i32;\n\
+             }\n\
+             func bump(borrow p: raw i32?): i32 { p = cl_fixture_ptr_b(); return 0; }\n\
+             func demo(): i32 {\n\
+                 let p: raw i32? = cl_fixture_ptr_a();\n\
+                 let r = cl_fixture_apply1(\n\
+                     bump(p),\n\
+                     [p] () => { if (p == null) { return -1; } return cl_fixture_read(p); });\n\
+                 if (r == 9) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the earlier sibling effect must run before the capture; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A named callback's own ABI spelling is judged as well as the hook's.
+#[test]
+fn a_hook_callback_with_a_borrowed_value_is_rejected() {
+    assert_rejected(
+        "hk-found-mode",
+        &program(
+            "struct Owned { s: String; }\n\
+             ffi lib { func apply(borrow cb: func(Owned): i32): i32; }\n\
+             func peek(borrow o: Owned): i32 { return 0; }\n\
+             func demo(): i32 { return apply(peek); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A generic body can forward an opaque function field to a hook.
+#[test]
+fn a_generic_function_field_reaches_a_hook() {
+    let output = run_host_fixture(
+        "hk-generic-field",
+        &run_program(
+            "struct Holder { cb: func(i32): i32; }\n\
+             ffi lib { func cl_fixture_apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func run<T>(h: T): i32 { return cl_fixture_apply(h.cb, 1); }\n\
+             func demo(): i32 {\n\
+                 let r = run(Holder { cb: (x: i32) => x + 1 });\n\
+                 if (r == 2) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
+        HOOK_FIXTURE,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the generic function field must reach the hook; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
