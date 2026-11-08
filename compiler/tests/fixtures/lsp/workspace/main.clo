@@ -1,0 +1,9 @@
+module app.main;
+
+import { add, Point } from app.lib;
+
+func main(): i32 {
+    let p: Point = Point { x: 1, y: 2 };
+    let sum: i32 = add(p.x, p.y);
+    return sum;
+}

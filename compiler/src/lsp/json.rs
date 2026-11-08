@@ -111,6 +111,15 @@ impl Json {
         Json::Object(values)
     }
 
+    /// Builds an object from a dynamic list of key/value pairs.
+    pub fn from_pairs(pairs: Vec<(&str, Json)>) -> Json {
+        let mut values = BTreeMap::new();
+        for (key, value) in pairs {
+            values.insert(key.to_owned(), value);
+        }
+        Json::Object(values)
+    }
+
     /// Writes the value into `out`.
     fn write(&self, out: &mut String) {
         match self {

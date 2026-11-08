@@ -1,0 +1,14 @@
+module app.lib;
+
+/// Adds two values.
+export func add(a: i32, b: i32): i32 {
+    return a + b;
+}
+
+/// A two-dimensional point.
+export struct Point {
+    x: i32;
+    y: i32;
+}
+
+export const ORIGIN_X: i32 = 0;

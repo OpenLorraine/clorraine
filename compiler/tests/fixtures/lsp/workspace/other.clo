@@ -1,0 +1,5 @@
+module app.other;
+
+func main(): i32 {
+    return 0;
+}

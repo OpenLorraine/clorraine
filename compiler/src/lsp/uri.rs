@@ -28,6 +28,14 @@ impl DocumentUri {
         }
     }
 
+    /// Returns the protocol URI spelling.
+    pub fn to_uri(&self) -> String {
+        match self {
+            DocumentUri::File(path) => from_path(path),
+            DocumentUri::Untitled(uri) => uri.clone(),
+        }
+    }
+
     /// Returns the file path, when this is a file URI.
     pub fn path(&self) -> Option<&Path> {
         match self {

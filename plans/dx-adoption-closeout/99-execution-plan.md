@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 23/56 tasks (41%)
+> **Progress**: 31/56 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -175,31 +175,31 @@ the project gates.
 **Reference**: [03-03](03-03-language-server.md) §Symbols, §Features · [07](07-testing-strategy.md) ST-26 to ST-38 · AR-13 to AR-15
 **Objective**: Pin diagnostics and the four navigation features.
 
-- [ ] 4.1.1 [spec-author] Extend `lsp_spec_test.rs` with ST-26 to ST-38 and the fixture workspace — `compiler/tests/lsp_spec_test.rs`, `compiler/tests/fixtures/lsp/`
-- [ ] 4.1.2 Run the suite and record the red phase — `cargo test -p clc --test lsp_spec_test`
+- [x] 4.1.1 [spec-author] Extend `lsp_spec_test.rs` with ST-26 to ST-38 and the fixture workspace — `compiler/tests/lsp_spec_test.rs`, `compiler/tests/fixtures/lsp/`
+- [x] 4.1.2 Run the suite and record the red phase — `cargo test -p clc --test lsp_spec_test`
 
 ### Step 4.2: Implementation
 
 **Reference**: [03-03](03-03-language-server.md) §Symbols, §Features, §Diagnostics · AR-13, AR-14, AR-15
 **Objective**: Serve compiler diagnostics and the navigation surface.
 
-- [ ] 4.2.1 Build the declaration, local, import, and module symbol table — `compiler/src/lsp/symbols.rs`
-- [ ] 4.2.2 Implement hover and definition, including cross-file targets — `compiler/src/lsp/features.rs`
-- [ ] 4.2.3 Implement completion, document symbols, and diagnostic publication — `compiler/src/lsp/features.rs`, `compiler/src/lsp/server.rs`
-- [ ] 4.2.4 Run the feature suite green — `cargo test -p clc --test lsp_spec_test`
+- [x] 4.2.1 Build the declaration, local, import, and module symbol table — `compiler/src/lsp/symbols.rs`
+- [x] 4.2.2 Implement hover and definition, including cross-file targets — `compiler/src/lsp/features.rs`
+- [x] 4.2.3 Implement completion, document symbols, and diagnostic publication — `compiler/src/lsp/features.rs`, `compiler/src/lsp/server.rs`
+- [x] 4.2.4 Run the feature suite green — `cargo test -p clc --test lsp_spec_test`
 
 ### Step 4.3: Implementation tests and verification
 
 **Reference**: [07](07-testing-strategy.md) ST-30 to ST-38 · AR-7
 **Objective**: Pin the closure and lookup edge cases.
 
-- [ ] 4.3.1 Add unit tests for closure selection and innermost-scope lookup — `compiler/src/lsp/tests.rs`
-- [ ] 4.3.2 Run `make check` — no source file
+- [x] 4.3.1 Add unit tests for closure selection and innermost-scope lookup — `compiler/src/lsp/tests.rs`
+- [x] 4.3.2 Run `make check` — no source file
 
 **Deliverables**:
-- [ ] Diagnostics on open, change, save, and close
-- [ ] Hover, goto, completion, and symbols on a fixture workspace
-- [ ] Independent programs do not cross-contaminate
+- [x] Diagnostics on open, change, save, and close
+- [x] Hover, goto, completion, and symbols on a fixture workspace
+- [x] Independent programs do not cross-contaminate
 
 **Verify**: `make check`
 

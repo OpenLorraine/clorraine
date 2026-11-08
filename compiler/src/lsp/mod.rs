@@ -13,9 +13,11 @@
 //! {"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}
 //! ```
 
+pub mod features;
 pub mod json;
 pub mod protocol;
 pub mod server;
+pub mod symbols;
 pub mod text;
 pub mod uri;
 pub mod workspace;

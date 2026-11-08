@@ -6,15 +6,20 @@
 //! before it starts work and between analysis files. Stdout is owned by the
 //! handler, so responses and notifications never interleave mid-frame.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::analysis::{self, Mode};
+use crate::diag::Severity;
+use crate::lsp::features::{self, FeatureInput};
 use crate::lsp::json::Json;
 use crate::lsp::protocol::{FrameError, FrameReader, FrameWriter};
+use crate::lsp::symbols::SymbolTable;
+use crate::lsp::text::{LineIndex, Position};
 use crate::lsp::uri::{self, DocumentUri};
 use crate::lsp::workspace::{DocumentStore, ModuleIndex};
 use crate::profile::Profile;
@@ -195,16 +200,45 @@ impl<W: Write> Server<W> {
                 self.send_error(id, SERVER_NOT_INITIALIZED, "send initialize first");
                 None
             }
-            "textDocument/hover"
-            | "textDocument/definition"
-            | "textDocument/completion"
-            | "textDocument/documentSymbol" => {
-                let result = match method {
-                    "textDocument/completion" | "textDocument/documentSymbol" => {
-                        Json::Array(Vec::new())
-                    }
-                    _ => Json::Null,
-                };
+            "textDocument/hover" => {
+                let result = self
+                    .request_position(&params)
+                    .and_then(|(uri, position)| {
+                        self.feature_input(&uri)
+                            .and_then(|input| features::hover(&input, position))
+                    })
+                    .unwrap_or(Json::Null);
+                self.send_result(id, result);
+                None
+            }
+            "textDocument/definition" => {
+                let result = self
+                    .request_position(&params)
+                    .and_then(|(uri, position)| {
+                        self.feature_input(&uri)
+                            .and_then(|input| features::definition(&input, position))
+                    })
+                    .unwrap_or(Json::Null);
+                self.send_result(id, result);
+                None
+            }
+            "textDocument/completion" => {
+                let modules: BTreeSet<String> =
+                    self.index.module_names().cloned().collect();
+                let result = self
+                    .request_uri(&params)
+                    .and_then(|uri| self.feature_input(&uri))
+                    .map(|input| features::completion(&input, &modules))
+                    .unwrap_or_else(|| Json::Array(Vec::new()));
+                self.send_result(id, result);
+                None
+            }
+            "textDocument/documentSymbol" => {
+                let result = self
+                    .request_uri(&params)
+                    .and_then(|uri| self.feature_input(&uri))
+                    .map(|input| features::document_symbols(&input))
+                    .unwrap_or_else(|| Json::Array(Vec::new()));
                 self.send_result(id, result);
                 None
             }
@@ -219,18 +253,29 @@ impl<W: Write> Server<W> {
     fn handle_notification(&mut self, method: &str, params: Json) -> Option<i32> {
         match method {
             "exit" => Some(if self.shutdown { 0 } else { 1 }),
-            "initialized" | "$/cancelRequest" | "textDocument/didSave" => None,
+            "initialized" | "$/cancelRequest" => None,
             "textDocument/didOpen" => {
-                self.update_document(&params, DocumentChange::Open);
+                if let Some(uri) = self.update_document(&params, DocumentChange::Open) {
+                    self.publish_diagnostics(&uri);
+                }
                 None
             }
             "textDocument/didChange" => {
-                self.update_document(&params, DocumentChange::Change);
+                if let Some(uri) = self.update_document(&params, DocumentChange::Change) {
+                    self.publish_diagnostics(&uri);
+                }
+                None
+            }
+            "textDocument/didSave" => {
+                if let Some(uri) = document_uri(&params) {
+                    self.publish_diagnostics(&uri);
+                }
                 None
             }
             "textDocument/didClose" => {
                 if let Some(uri) = document_uri(&params) {
                     self.documents.close(&uri);
+                    self.publish_empty(&uri);
                 }
                 None
             }
@@ -239,10 +284,12 @@ impl<W: Write> Server<W> {
     }
 
     /// Applies an open or full-text change.
-    fn update_document(&mut self, params: &Json, change: DocumentChange) {
-        let Some(uri) = document_uri(params) else {
-            return;
-        };
+    fn update_document(
+        &mut self,
+        params: &Json,
+        change: DocumentChange,
+    ) -> Option<DocumentUri> {
+        let uri = document_uri(params)?;
         let text = match change {
             DocumentChange::Open => params
                 .get("textDocument")
@@ -257,13 +304,112 @@ impl<W: Write> Server<W> {
                 .and_then(Json::as_str)
                 .map(str::to_owned),
         };
-        let Some(text) = text else {
-            return;
-        };
+        let text = text?;
         match change {
             DocumentChange::Open => self.documents.open(&uri, text),
             DocumentChange::Change => self.documents.change(&uri, text),
         }
+        Some(uri)
+    }
+
+    /// Parses the analysis set for one requested document.
+    fn feature_input(&self, uri: &DocumentUri) -> Option<FeatureInput> {
+        let set = self.index.analysis_set(uri, &self.documents);
+        let parsed = analysis::parse(set);
+        let file = *parsed.files.get(&uri.key())?;
+        let table = SymbolTable::build(&parsed.sources, &parsed.programs);
+        Some(FeatureInput {
+            sources: parsed.sources,
+            file,
+            table,
+        })
+    }
+
+    /// Extracts the document from a feature request.
+    fn request_uri(&self, params: &Json) -> Option<DocumentUri> {
+        document_uri(params)
+    }
+
+    /// Extracts the document and position from a feature request.
+    fn request_position(&self, params: &Json) -> Option<(DocumentUri, Position)> {
+        let uri = document_uri(params)?;
+        let position = params.get("position")?;
+        let line = position.get("line")?.as_i64()?;
+        let character = position.get("character")?.as_i64()?;
+        if line < 0 || character < 0 {
+            return None;
+        }
+        Some((
+            uri,
+            Position {
+                line: line as u32,
+                character: character as u32,
+            },
+        ))
+    }
+
+    /// Analyzes one document and publishes its diagnostics.
+    fn publish_diagnostics(&mut self, uri: &DocumentUri) {
+        let key = uri.key();
+        let set = self.index.analysis_set(uri, &self.documents);
+        let analysis = analysis::analyze(self.profile, set, Mode::Full, false);
+        let mut diagnostics = Vec::new();
+        if let Some(file) = analysis.files.get(&key).copied() {
+            let text = analysis.sources.text(file);
+            let index = LineIndex::new(text);
+            for diagnostic in analysis.diagnostics.items() {
+                let Some(span) = diagnostic.span else {
+                    continue;
+                };
+                if span.file != file {
+                    continue;
+                }
+                let mut message = diagnostic.message.clone();
+                if let Some(help) = &diagnostic.help {
+                    message.push_str("\n\n");
+                    message.push_str(help);
+                }
+                let severity = match diagnostic.severity {
+                    Severity::Error => 1,
+                    Severity::Warning => 2,
+                };
+                diagnostics.push(Json::object([
+                    ("range", range_json(index.range(text, span))),
+                    ("severity", Json::Number(severity)),
+                    ("code", Json::String(diagnostic.code.to_owned())),
+                    ("source", Json::String("clorraine".to_owned())),
+                    ("message", Json::String(message)),
+                ]));
+            }
+        }
+        self.send_notification(
+            "textDocument/publishDiagnostics",
+            Json::object([
+                ("uri", Json::String(uri.to_uri())),
+                ("diagnostics", Json::Array(diagnostics)),
+            ]),
+        );
+    }
+
+    /// Publishes an empty diagnostic list for one document.
+    fn publish_empty(&mut self, uri: &DocumentUri) {
+        self.send_notification(
+            "textDocument/publishDiagnostics",
+            Json::object([
+                ("uri", Json::String(uri.to_uri())),
+                ("diagnostics", Json::Array(Vec::new())),
+            ]),
+        );
+    }
+
+    /// Writes one server notification.
+    fn send_notification(&mut self, method: &str, params: Json) {
+        let body = Json::object([
+            ("jsonrpc", Json::String("2.0".to_owned())),
+            ("method", Json::String(method.to_owned())),
+            ("params", params),
+        ]);
+        let _ = self.writer.write(&body.render());
     }
 
     /// Handles `initialize`.
@@ -356,6 +502,22 @@ impl<W: Write> Server<W> {
         ]);
         self.writer.write(&body.render()).is_ok()
     }
+}
+
+/// Renders a protocol range.
+fn range_json(range: crate::lsp::text::Range) -> Json {
+    Json::object([
+        ("start", position_json(range.start)),
+        ("end", position_json(range.end)),
+    ])
+}
+
+/// Renders a protocol position.
+fn position_json(position: Position) -> Json {
+    Json::object([
+        ("line", Json::Number(position.line as i64)),
+        ("character", Json::Number(position.character as i64)),
+    ])
 }
 
 /// Returns the cancellation key for a request id.

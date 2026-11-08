@@ -149,3 +149,296 @@ fn should_cancel_a_request_before_it_starts() {
     client.initialize("host");
     assert_eq!(client.shutdown_and_exit(), 0);
 }
+
+// ---- Feature surface: diagnostics and navigation ----
+
+use std::path::{Path, PathBuf};
+
+/// A fixture directory under `compiler/tests/fixtures/lsp`.
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lsp")
+        .join(name)
+}
+
+/// The `file:` URI of a fixture file.
+fn fixture_uri(name: &str, file: &str) -> String {
+    clc::lsp::uri::from_path(&fixture(name).join(file))
+}
+
+/// The document text of a fixture file.
+fn fixture_text(name: &str, file: &str) -> String {
+    std::fs::read_to_string(fixture(name).join(file)).expect("fixture")
+}
+
+/// Extracts the diagnostics array.
+fn diagnostics_array(params: &Json) -> &[Json] {
+    params
+        .get("diagnostics")
+        .and_then(Json::as_array)
+        .expect("diagnostics array")
+}
+
+#[test]
+fn should_publish_a_diagnostic_when_a_document_opens() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("errors"));
+    let uri = fixture_uri("errors", "bad.clo");
+    client.open(&uri, &fixture_text("errors", "bad.clo"));
+    let params = client.diagnostics();
+    assert_eq!(params.get("uri").and_then(Json::as_str), Some(uri.as_str()));
+    let diagnostics = diagnostics_array(&params);
+    assert_eq!(diagnostics.len(), 1, "one error, got {diagnostics:?}");
+    let code = diagnostics[0]
+        .get("code")
+        .and_then(Json::as_str)
+        .expect("code");
+    assert!(code.starts_with('E'), "expected an error code, got {code}");
+    assert_eq!(
+        diagnostics[0]
+            .get("source")
+            .and_then(Json::as_str),
+        Some("clorraine")
+    );
+    assert_eq!(
+        diagnostics[0]
+            .get("severity")
+            .and_then(Json::as_i64),
+        Some(1)
+    );
+    let start = diagnostics[0]
+        .get("range")
+        .and_then(|range| range.get("start"))
+        .expect("range start");
+    assert_eq!(start.get("line").and_then(Json::as_i64), Some(3));
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_clear_diagnostics_when_the_buffer_is_fixed() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("errors"));
+    let uri = fixture_uri("errors", "bad.clo");
+    client.open(&uri, &fixture_text("errors", "bad.clo"));
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 1);
+    client.change(
+        &uri,
+        "module app.bad;\nfunc main(): i32 {\n    return 0;\n}\n",
+    );
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 0);
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_clear_diagnostics_when_the_document_closes() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("errors"));
+    let uri = fixture_uri("errors", "bad.clo");
+    client.open(&uri, &fixture_text("errors", "bad.clo"));
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 1);
+    client.close(&uri);
+    assert_eq!(diagnostics_array(&client.diagnostics()).len(), 0);
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_return_null_for_a_missing_document() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let missing = clc::lsp::uri::from_path(&fixture("workspace").join("nope.clo"));
+    let hover = client.at("textDocument/hover", &missing, 0, 0);
+    assert_eq!(hover.get("result"), Some(&Json::Null));
+    let definition = client.at("textDocument/definition", &missing, 0, 0);
+    assert_eq!(definition.get("result"), Some(&Json::Null));
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_not_mix_independent_programs() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let params = client.diagnostics();
+    assert!(
+        diagnostics_array(&params).is_empty(),
+        "unexpected diagnostics: {params:?}"
+    );
+    let other = fixture_uri("workspace", "other.clo");
+    client.open(&other, &fixture_text("workspace", "other.clo"));
+    let params = client.diagnostics();
+    assert!(
+        diagnostics_array(&params).is_empty(),
+        "unexpected diagnostics: {params:?}"
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_use_the_selected_profile() {
+    let mut host = LspClient::start();
+    host.initialize_with_root("host", &fixture("amiga"));
+    let uri = fixture_uri("amiga", "amiga.clo");
+    host.open(&uri, &fixture_text("amiga", "amiga.clo"));
+    let host_diagnostics = diagnostics_array(&host.diagnostics()).to_vec();
+    assert!(
+        host_diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.get("code").and_then(Json::as_str) == Some("E11200")),
+        "host profile must reject std.amiga: {host_diagnostics:?}"
+    );
+    assert_eq!(host.shutdown_and_exit(), 0);
+
+    let mut amiga = LspClient::start();
+    amiga.initialize_with_root("hosted-amiga", &fixture("amiga"));
+    amiga.open(&uri, &fixture_text("amiga", "amiga.clo"));
+    let amiga_diagnostics = diagnostics_array(&amiga.diagnostics()).to_vec();
+    assert!(
+        amiga_diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.get("code").and_then(Json::as_str) != Some("E11200")),
+        "hosted-amiga must accept std.amiga: {amiga_diagnostics:?}"
+    );
+    assert_eq!(amiga.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_serve_an_untitled_buffer() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let uri = "untitled:Untitled-1";
+    client.open(
+        uri,
+        "module app.new;\nfunc main(): i32 {\n    let x: i32 = null;\n    return x;\n}\n",
+    );
+    let params = client.diagnostics();
+    assert_eq!(params.get("uri").and_then(Json::as_str), Some(uri));
+    assert_eq!(diagnostics_array(&params).len(), 1);
+    let symbols = client.symbols(uri);
+    let names: Vec<&str> = symbols
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("symbols")
+        .iter()
+        .filter_map(|symbol| symbol.get("name").and_then(Json::as_str))
+        .collect();
+    assert_eq!(names, vec!["main"]);
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_hover_a_documented_function() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let hover = client.at("textDocument/hover", &main, 6, 19);
+    let value = hover
+        .get("result")
+        .and_then(|result| result.get("contents"))
+        .and_then(|contents| contents.get("value"))
+        .and_then(Json::as_str)
+        .expect("hover value");
+    assert!(value.contains("func add"), "hover was {value:?}");
+    assert!(value.contains("function"), "hover was {value:?}");
+    assert!(value.contains("app.lib"), "hover was {value:?}");
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_go_to_a_local_definition() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let definition = client.at("textDocument/definition", &main, 7, 11);
+    let range = definition
+        .get("result")
+        .and_then(|result| result.get("range"))
+        .expect("definition range");
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("line")).and_then(Json::as_i64),
+        Some(6)
+    );
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("character")).and_then(Json::as_i64),
+        Some(8)
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_go_to_an_imported_definition() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let definition = client.at("textDocument/definition", &main, 6, 19);
+    let result = definition.get("result").expect("definition result");
+    let uri = result.get("uri").and_then(Json::as_str).expect("uri");
+    assert!(uri.ends_with("/lib.clo"), "definition uri was {uri}");
+    let range = result.get("range").expect("range");
+    assert_eq!(
+        range.get("start").and_then(|start| start.get("line")).and_then(Json::as_i64),
+        Some(3)
+    );
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_complete_keywords_types_declarations_and_modules() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let main = fixture_uri("workspace", "main.clo");
+    client.open(&main, &fixture_text("workspace", "main.clo"));
+    let completion = client.at("textDocument/completion", &main, 4, 0);
+    let labels: Vec<&str> = completion
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("completion")
+        .iter()
+        .filter_map(|item| item.get("label").and_then(Json::as_str))
+        .collect();
+    for expected in ["func", "i32", "add", "app.lib"] {
+        assert!(labels.contains(&expected), "missing {expected} in {labels:?}");
+    }
+    let mut sorted = labels.clone();
+    sorted.sort_unstable();
+    assert_eq!(labels, sorted, "completion must be sorted");
+    let mut unique = labels.clone();
+    unique.dedup();
+    assert_eq!(labels, unique, "completion must be unique");
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_list_document_symbols_in_source_order() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("host", &fixture("workspace"));
+    let lib = fixture_uri("workspace", "lib.clo");
+    let symbols = client.symbols(&lib);
+    let entries = symbols
+        .get("result")
+        .and_then(Json::as_array)
+        .expect("symbols");
+    let names: Vec<&str> = entries
+        .iter()
+        .filter_map(|symbol| symbol.get("name").and_then(Json::as_str))
+        .collect();
+    assert_eq!(names, vec!["add", "Point", "ORIGIN_X"]);
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
+
+#[test]
+fn should_not_crash_on_an_embedded_module_reference() {
+    let mut client = LspClient::start();
+    client.initialize_with_root("hosted-amiga", &fixture("amiga"));
+    let uri = fixture_uri("amiga", "amiga.clo");
+    client.open(&uri, &fixture_text("amiga", "amiga.clo"));
+    let _ = client.diagnostics();
+    let hover = client.at("textDocument/hover", &uri, 2, 9);
+    let definition = client.at("textDocument/definition", &uri, 2, 9);
+    assert!(hover.get("result").is_some());
+    assert!(definition.get("result").is_some());
+    assert_eq!(client.shutdown_and_exit(), 0);
+}
