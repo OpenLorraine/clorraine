@@ -750,7 +750,12 @@ fn orderable(ty: &Ty) -> bool {
 fn comparable(ty: &Ty) -> bool {
     matches!(
         ty.kind,
-        TyKind::Scalar(_) | TyKind::Enum(_) | TyKind::Raw(_) | TyKind::Handle(_) | TyKind::CString
+        TyKind::Scalar(_)
+            | TyKind::Enum(_)
+            | TyKind::Raw(_)
+            | TyKind::Handle(_)
+            | TyKind::Box(_)
+            | TyKind::CString
     ) || ty.is_unknown()
         || ty.is_param()
 }

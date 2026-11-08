@@ -132,6 +132,15 @@ impl Checker<'_, '_> {
                 );
             }
         }
+        if name == "Box" && !self.name_is_value(name) {
+            self.error(
+                "E10219",
+                "'Box' is a type, not a value",
+                "use `Box<T>` in a type position, or `boxNew` to create a box",
+                span,
+            );
+            return Ty::unknown();
+        }
         self.name_type(name)
     }
 
@@ -1149,7 +1158,23 @@ impl Checker<'_, '_> {
     /// Types a raw-value cast `raw T(expr)`.
     fn check_raw_cast(&mut self, ty: &Type, value: &Expr) -> Ty {
         let target = self.resolve_type(ty);
-        self.check_value(value, None);
+        let source = self.check_value(value, None);
+        // A box's pointee pointer is an internal escape hatch. Only the
+        // standard-library module that implements `boxPtr` may cast a Box to a
+        // raw pointer; application code uses `boxWith` so it cannot move the
+        // value out or free the block by hand.
+        if source.is_box() && !(self.module.embedded && self.module.name == "std.mem") {
+            self.error(
+                "E10201",
+                format!(
+                    "cannot cast '{}' to 'raw {}'",
+                    source.display(),
+                    target.display()
+                ),
+                "use `boxWith` to access the pointee",
+                value.span,
+            );
+        }
         Ty {
             kind: TyKind::Raw(Box::new(target)),
             nullable: false,
@@ -1174,6 +1199,14 @@ impl Checker<'_, '_> {
             .filter(|last| self.table.is_struct(last))
             .cloned()
         else {
+            if self.builtin_box_active() && name.segments.last().is_some_and(|last| last == "Box") {
+                self.error(
+                    "E10203",
+                    "struct literal for 'Box' does not match its fields",
+                    "create a box with `boxNew`",
+                    span,
+                );
+            }
             for field in fields {
                 self.check_value(&field.value, None);
             }

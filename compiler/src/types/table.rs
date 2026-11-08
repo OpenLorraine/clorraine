@@ -456,6 +456,7 @@ impl TypeTable {
         }
         match &ty.kind {
             TyKind::Handle(_) => false,
+            TyKind::Box(_) => false,
             // A capturing closure is ephemeral: it owns its environment for one
             // synchronous call and cannot be copied, stored, or captured.
             TyKind::Closure(_) => false,
@@ -527,7 +528,7 @@ impl TypeTable {
         match &ty.kind {
             TyKind::Void => Some(0),
             TyKind::Scalar(scalar) => scalar_size(*scalar),
-            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) => Some(4),
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) | TyKind::Box(_) => Some(4),
             TyKind::Str | TyKind::StaticStr | TyKind::CString => Some(8),
             // An enum's storage is its declared backing scalar.
             TyKind::Enum(name) => self
@@ -818,6 +819,12 @@ fn resolve_named(
     }
     if table.is_enum(last) {
         return TyKind::Enum(last.clone());
+    }
+    // The built-in owning pointer is a type-only name. A wrong argument count
+    // stays unresolved so the declaration check reports E10300 once, rather
+    // than inventing a Box of the wrong shape.
+    if last == "Box" && args.len() == 1 {
+        return TyKind::Box(Box::new(args.into_iter().next().expect("one argument")));
     }
     TyKind::Unknown
 }

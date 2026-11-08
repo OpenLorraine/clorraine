@@ -431,9 +431,12 @@ impl Resolver<'_, '_> {
     fn resolve_type_name(&mut self, name: &QualifiedName) {
         if name.segments.len() == 1 {
             let only = &name.segments[0];
-            if !self.resolve_name(only) {
-                self.report_undeclared(only, name.span);
+            // `Box` is a compiler-predeclared type-only name, like `String`.
+            // It is not a value name: the value path stays undeclared.
+            if only == "Box" || self.resolve_name(only) {
+                return;
             }
+            self.report_undeclared(only, name.span);
             return;
         }
         let Some((last, head)) = name.segments.split_last() else {
@@ -463,7 +466,12 @@ impl Resolver<'_, '_> {
     /// `String` is a compiler-predeclared handle type visible in every module,
     /// so a bare `String` resolves whether or not it is imported.
     fn resolve_name(&self, name: &str) -> bool {
+        // `String` and `Box` are compiler-predeclared type names visible in
+        // every module. A construction-shaped use (`Box<T>(x)` or
+        // `Box<T> { ... }`) still resolves here; the semantic stage owns the
+        // rule that a box is built only by `boxNew`.
         name == "String"
+            || name == "Box"
             || self.scopes.iter().rev().any(|scope| scope.contains(name))
             || self.module.decls.contains_key(name)
             || self.module.import(name).is_some()

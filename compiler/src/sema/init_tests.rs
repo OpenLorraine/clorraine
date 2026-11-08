@@ -74,9 +74,9 @@ fn a_cross_module_initializer_cycle_is_rejected() {
 fn a_same_module_field_cycle_is_rejected() {
     assert_codes(
         r#"module test;
-struct Box { v: i32; }
+struct Crate { v: i32; }
 let a: i32 = b.v + 1;
-let b: Box = Box { v: a };
+let b: Crate = Crate { v: a };
 func main(): i32 { return 0; }
 "#,
         &["E11100"],

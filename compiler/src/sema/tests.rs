@@ -411,17 +411,17 @@ func main(): i32 { return 0; }
 fn generic_struct_uses_require_their_type_arguments() {
     assert_codes(
         r#"module test;
-struct Box<T> { item: T; }
-func demo(value: Box<i32, u8>): void {}
+struct Crate<T> { item: T; }
+func demo(value: Crate<i32, u8>): void {}
 func main(): i32 { return 0; }
 "#,
         &["E10300"],
     );
     assert_codes(
         r#"module test;
-struct Box<T> { item: T; }
+struct Crate<T> { item: T; }
 func demo(): void {
-    let boxed = Box {};
+    let boxed = Crate {};
 }
 func main(): i32 { return 0; }
 "#,

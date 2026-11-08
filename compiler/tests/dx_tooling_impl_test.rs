@@ -50,7 +50,7 @@ fn live_codes(text: &str) -> Vec<String> {
 #[test]
 fn every_live_registry_row_is_explainable_and_has_help() {
     let codes = live_codes(&registry_text());
-    assert_eq!(codes.len(), 114, "the registry has 114 live rows");
+    assert_eq!(codes.len(), 116, "the registry has 116 live rows");
 
     for code in &codes {
         let text = registry::explain(code)

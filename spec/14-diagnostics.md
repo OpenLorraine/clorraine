@@ -78,6 +78,7 @@
 | E10102 | `freedBy` deleter is not an FFI function taking `take T` and returning `void` | `'{fn}' is not a valid deleter for '{type}'` | declare the deleter in an `ffi` block with the right signature |
 | E10103 | `ffi` block marked `export`, or FFI declarations leaking into app code | `'ffi' blocks are module-scoped and cannot be exported` | export a wrapper function instead |
 | E10104 | Native struct declared with `freedBy` | `'freedBy' is only for handle types` | native structs drop structurally (X2) |
+| E10105 | Generic aggregate or `Box<T>` in an `ffi` declaration | `'{type}' cannot cross the FFI boundary` | wrap the value in a concrete C-facing struct, or use `boxWith` |
 
 ## 5. Types, values, expressions (`E102xx`)
 
@@ -109,6 +110,7 @@
 | E10223 | Constant expression division by zero or constant MIN/-1 overflow | `constant expression divides by zero` | remove the zero divisor or the MIN/-1 operation, or use a non-constant operand |
 | E10224 | Expression used where a constant expression is required | `expression is not constant` | use literals, `const` bindings, enum members, and supported operators |
 | E10226 | Zero-length array extent | `array extent must be greater than zero` | use a positive extent |
+| E10227 | `Box<T>` whose element is a non-static view (`str`, `cstring`, a slice, or a container of such views) | `view-typed box element is not allowed` | box an owner, or use `static str` for literals |
 
 ## 6. Generics (`E103xx`)
 

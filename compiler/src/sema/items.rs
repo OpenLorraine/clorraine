@@ -316,6 +316,20 @@ impl Checker<'_, '_> {
                     }
                 }
                 if let Some(last) = name.segments.last() {
+                    if last == "Box" && self.builtin_box_active() && args.len() != 1 {
+                        self.error(
+                            "E10300",
+                            format!(
+                                "wrong number of type arguments for 'Box': expected 1, found {}",
+                                args.len()
+                            ),
+                            "list one type argument",
+                            ty.span,
+                        );
+                    }
+                    if last == "Box" && self.builtin_box_active() && args.len() == 1 {
+                        self.check_box_element(&args[0], ty.span);
+                    }
                     if let Some(params) = self.table.struct_type_params(last) {
                         if args.len() != params.len() {
                             self.error(
@@ -340,6 +354,40 @@ impl Checker<'_, '_> {
             | TypeKind::Error => {}
         }
         valid
+    }
+
+    /// Checks one `Box<T>` element for the shapes a box cannot own.
+    ///
+    /// A box owns its storage for an unbounded time, so a non-static view
+    /// (`str`, `cstring`, a slice, a container of such views) could outlive its
+    /// origin; an overlay describes memory the program does not own; a closure
+    /// is ephemeral. `static str` stays allowed, matching the struct-field rule.
+    /// The shared checker also follows struct fields after instance
+    /// substitution, so a concrete `Box<str>` born from `Holder<str>` is caught.
+    fn check_box_element(&mut self, arg: &Type, span: Span) {
+        let resolved = {
+            let table = self.table;
+            let type_params = &self.type_params;
+            let folder = &mut self.extent_folder;
+            let module = self.module;
+            crate::types::resolve_ty_with_alias(
+                arg,
+                type_params,
+                table,
+                &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
+                &mut |name| module.import(name).map(|binding| binding.original.clone()),
+            )
+        };
+        if let Some((code, message)) =
+            crate::types::box_rule_violation(self.table, &Ty::boxed(resolved))
+        {
+            let help = match code {
+                "E10227" => "box an owner, or use `static str` for literals",
+                "E10207" => "access it through a `raw` pointer inside `unsafe`",
+                _ => "use a storable type",
+            };
+            self.error(code, message, help, span);
+        }
     }
 }
 

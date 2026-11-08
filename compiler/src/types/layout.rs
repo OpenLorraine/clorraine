@@ -108,7 +108,9 @@ impl AbiLayout {
         match &ty.kind {
             TyKind::Void => Some(0),
             TyKind::Scalar(scalar) => scalar_size(*scalar),
-            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) => Some(self.pointer),
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) | TyKind::Box(_) => {
+                Some(self.pointer)
+            }
             // The emitted `str` view is a pointer-and-length struct; a
             // `cstring` is the bare C string pointer.
             TyKind::Str | TyKind::StaticStr => self.struct_size(
@@ -179,7 +181,7 @@ impl AbiLayout {
                 let size = scalar_size(*scalar)?;
                 Some(size.min(self.scalar_align_cap).max(1))
             }
-            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) | TyKind::CString => {
+            TyKind::Raw(_) | TyKind::Func(_) | TyKind::Handle(_) | TyKind::Box(_) | TyKind::CString => {
                 Some(self.pointer.min(self.scalar_align_cap).max(1))
             }
             TyKind::Str | TyKind::StaticStr => {

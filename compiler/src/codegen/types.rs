@@ -154,6 +154,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         // `T (*)[M]` points at a whole `T[M]`, while `T *` points at one `T`.
         TyKind::Raw(inner) => pointer_to_array_type(inner, table)
             .unwrap_or_else(|| format!("{} *", c_type(inner, table))),
+        TyKind::Box(_) => "void *".to_owned(),
         TyKind::Handle(name) => handle_type(name),
         TyKind::Enum(name) => format!("Cl{}", crate::types::type_component(name)),
         TyKind::Struct(name, args) => {

@@ -18,7 +18,9 @@ use crate::ir::{
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
-use crate::types::{resolve_ty, substitute, substitute_instance, ClosureSite, Ty, TyKind};
+use crate::types::{
+    resolve_ty, resolve_ty_folded, substitute, substitute_instance, ClosureSite, Ty, TyKind,
+};
 
 use super::program::{Callee, ProgramInfo};
 
@@ -76,21 +78,59 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
                 Item::Struct(decl) => {
                     let params = type_param_names(&decl.type_params);
                     for field in &decl.fields {
-                        record_struct_type(&resolve_ty(&field.ty, &params, &sema.table), sema, mono);
+                        record_struct_type(
+                            &resolve_ty_folded(
+                                &field.ty,
+                                &params,
+                                &sema.table,
+                                module,
+                                loaded,
+                            ),
+                            sema,
+                            mono,
+                        );
                     }
                 }
                 Item::Func(decl) | Item::Comptime(decl) => {
                     let params = type_param_names(&decl.type_params);
                     for param in &decl.params {
-                        record_struct_type(&resolve_ty(&param.ty, &params, &sema.table), sema, mono);
+                        record_struct_type(
+                            &resolve_ty_folded(
+                                &param.ty,
+                                &params,
+                                &sema.table,
+                                module,
+                                loaded,
+                            ),
+                            sema,
+                            mono,
+                        );
                     }
-                    record_struct_type(&resolve_ty(&decl.returns, &params, &sema.table), sema, mono);
+                    record_struct_type(
+                        &resolve_ty_folded(
+                            &decl.returns,
+                            &params,
+                            &sema.table,
+                            module,
+                            loaded,
+                        ),
+                        sema,
+                        mono,
+                    );
                 }
                 Item::GlobalLet(decl) => {
-                    record_struct_type(&resolve_ty(&decl.ty, &[], &sema.table), sema, mono);
+                    record_struct_type(
+                        &resolve_ty_folded(&decl.ty, &[], &sema.table, module, loaded),
+                        sema,
+                        mono,
+                    );
                 }
                 Item::GlobalConst(decl) => {
-                    record_struct_type(&resolve_ty(&decl.ty, &[], &sema.table), sema, mono);
+                    record_struct_type(
+                        &resolve_ty_folded(&decl.ty, &[], &sema.table, module, loaded),
+                        sema,
+                        mono,
+                    );
                 }
                 _ => {}
             }
@@ -165,6 +205,7 @@ fn record_struct_type(ty: &Ty, sema: &SemaOutput, mono: &mut Monomorphization) {
         }
         TyKind::Array { element, .. } => record_struct_type(element, sema, mono),
         TyKind::Raw(inner) => record_struct_type(inner, sema, mono),
+        TyKind::Box(inner) => record_struct_type(inner, sema, mono),
         TyKind::Func(signature) => {
             for param in &signature.params {
                 record_struct_type(&param.ty, sema, mono);
@@ -182,6 +223,7 @@ fn is_concrete(ty: &Ty) -> bool {
         TyKind::Param(_) | TyKind::Unknown => false,
         TyKind::Array { element, .. } => is_concrete(element),
         TyKind::Raw(inner) => is_concrete(inner),
+        TyKind::Box(inner) => is_concrete(inner),
         TyKind::Struct(_, args) => args.iter().all(is_concrete),
         TyKind::Func(signature) => {
             signature
@@ -206,6 +248,7 @@ fn instance_keyable(ty: &Ty) -> bool {
         TyKind::Closure(closure) => closure.instance.is_some(),
         TyKind::Array { element, .. } => instance_keyable(element),
         TyKind::Raw(inner) => instance_keyable(inner),
+        TyKind::Box(inner) => instance_keyable(inner),
         TyKind::Struct(_, args) => args.iter().all(instance_keyable),
         TyKind::Func(signature) => {
             signature

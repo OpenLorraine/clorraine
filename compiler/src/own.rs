@@ -284,7 +284,7 @@ pub fn check(
     diagnostics: &mut Diagnostics,
 ) -> OwnershipOutput {
     let program = ProgramInfo::collect(loaded, &sema.table);
-    ffi::check_items(&program, diagnostics);
+    ffi::check_items(&program, &sema.table, diagnostics);
     for module in loaded.modules.values() {
         program::check_globals(module, loaded, &program, sema, diagnostics);
         program::check_struct_declarations(module, loaded, sema, diagnostics);
@@ -498,6 +498,28 @@ pub fn check(
     // instance. Expand their fields now so a nested `Pair<T>` inside
     // `Box<i32>` is recorded before the emitter writes the unit.
     generics::collect_struct_instances(loaded, sema, &mut monomorphization);
+    // A concrete generic instance can turn a `Box<T>` field into `Box<str>`,
+    // `Box<u8[]>`, or `Box<Overlay>` after substitution. The declaration sees
+    // only the parameter, so audit each concrete instance once.
+    for instance in monomorphization.struct_instances() {
+        if instance.args.is_empty() {
+            continue;
+        }
+        let ty = Ty::struct_with(instance.name.clone(), instance.args.clone());
+        if let Some((code, message)) = crate::types::box_rule_violation(&sema.table, &ty) {
+            let span = program
+                .structs
+                .get(&instance.name)
+                .map(|decl| decl.name_span)
+                .unwrap_or_default();
+            let help = match code {
+                "E10227" => "box an owner, or use `static str` for literals",
+                "E10207" => "access it through a `raw` pointer inside `unsafe`",
+                _ => "use a storable type",
+            };
+            diagnostics.push(Diagnostic::error(code, message, span).with_help(help));
+        }
+    }
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
     OwnershipOutput {
         functions,

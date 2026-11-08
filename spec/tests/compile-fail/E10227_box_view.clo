@@ -1,0 +1,11 @@
+// expect-error E10227
+// trigger: a Box element that is a non-static view
+module tests.compile_fail.E10227;
+
+struct Holder {
+    b: Box<str>;
+}
+
+func main(): i32 {
+    return 0;
+}

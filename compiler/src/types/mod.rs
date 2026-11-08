@@ -66,6 +66,12 @@ pub enum TyKind {
     },
     /// An exact-signature function pointer.
     Func(FuncTy),
+    /// A built-in owning pointer `Box<T>`.
+    ///
+    /// The value is one opaque pointer to a heap block holding a `T`. The
+    /// element is kept in the type so every stage can name the pointee for the
+    /// allocation and drop helpers, the display spelling, and the generic key.
+    Box(Box<Ty>),
     /// A capturing closure's ephemeral type.
     ///
     /// A closure is a two-word callable (a function pointer plus an environment
@@ -298,6 +304,19 @@ impl Ty {
         }
     }
 
+    /// A built-in owning pointer `Box<T>`.
+    pub fn boxed(inner: Ty) -> Self {
+        Self {
+            kind: TyKind::Box(Box::new(inner)),
+            nullable: false,
+        }
+    }
+
+    /// True when the type is a `Box<T>`.
+    pub fn is_box(&self) -> bool {
+        matches!(self.kind, TyKind::Box(_))
+    }
+
     /// A function-pointer type.
     pub fn func(signature: FuncTy) -> Self {
         Self {
@@ -396,6 +415,7 @@ impl Ty {
             TyKind::CString => "cstring".to_owned(),
             TyKind::StaticStr => "static str".to_owned(),
             TyKind::Raw(inner) => format!("raw {}", inner.display()),
+            TyKind::Box(inner) => format!("Box<{}>", inner.display()),
             TyKind::Handle(name) | TyKind::Enum(name) => name.clone(),
             TyKind::Struct(name, args) => {
                 if args.is_empty() {
@@ -471,6 +491,10 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
         }
         TyKind::Raw(inner) => Ty {
             kind: TyKind::Raw(Box::new(substitute(inner, bindings))),
+            nullable: ty.nullable,
+        },
+        TyKind::Box(inner) => Ty {
+            kind: TyKind::Box(Box::new(substitute(inner, bindings))),
             nullable: ty.nullable,
         },
         TyKind::Struct(name, args) => Ty {
@@ -817,6 +841,7 @@ pub(crate) fn contains_param(ty: &Ty) -> bool {
         TyKind::Param(_) => true,
         TyKind::Array { element, .. } => contains_param(element),
         TyKind::Raw(inner) => contains_param(inner),
+        TyKind::Box(inner) => contains_param(inner),
         TyKind::Struct(_, args) => args.iter().any(contains_param),
         TyKind::Func(signature) => {
             signature.params.iter().any(|param| contains_param(&param.ty))
@@ -838,6 +863,7 @@ pub fn contains_closure(ty: &Ty) -> bool {
         TyKind::Closure(_) => true,
         TyKind::Array { element, .. } => contains_closure(element),
         TyKind::Raw(inner) => contains_closure(inner),
+        TyKind::Box(inner) => contains_closure(inner),
         TyKind::Struct(_, args) => args.iter().any(contains_closure),
         TyKind::Func(signature) => {
             signature
@@ -847,6 +873,112 @@ pub fn contains_closure(ty: &Ty) -> bool {
                 || contains_closure(&signature.returns)
         }
         _ => false,
+    }
+}
+
+/// The first rule a `Box<T>` node violates, if any.
+///
+/// The walk follows the element through nested boxes, arrays, raw pointers,
+/// function signatures, and struct fields after instance substitution. The
+/// declaration-time check sees a written `Box<str>`; this checker also sees a
+/// concrete `Box<str>` born from `Holder<str>` where `Holder<T>` stores a
+/// `Box<T>`. Returns the registered code and its first line.
+pub fn box_rule_violation(table: &TypeTable, ty: &Ty) -> Option<(&'static str, String)> {
+    match &ty.kind {
+        TyKind::Box(inner) => {
+            if type_contains_non_static_view(inner) {
+                return Some(("E10227", "view-typed box element is not allowed".to_owned()));
+            }
+            if let Some(name) = overlay_reached_type(table, inner, 0) {
+                return Some((
+                    "E10207",
+                    format!("overlay type '{name}' cannot be used by value"),
+                ));
+            }
+            if inner.contains_closure() {
+                return Some((
+                    "E10306",
+                    format!(
+                        "'Box<{}>' cannot be instantiated with an ephemeral type argument",
+                        inner.display()
+                    ),
+                ));
+            }
+            box_rule_violation(table, inner)
+        }
+        TyKind::Struct(name, args) => {
+            let params = table.struct_type_params(name).unwrap_or(&[]);
+            for (_, field) in table.struct_fields(name).unwrap_or(&[]) {
+                let field = substitute_instance(field, params, args);
+                if let Some(violation) = box_rule_violation(table, &field) {
+                    return Some(violation);
+                }
+            }
+            None
+        }
+        TyKind::Array { element, .. } | TyKind::Raw(element) => {
+            box_rule_violation(table, element)
+        }
+        TyKind::Func(signature) => {
+            for param in &signature.params {
+                if let Some(violation) = box_rule_violation(table, &param.ty) {
+                    return Some(violation);
+                }
+            }
+            box_rule_violation(table, &signature.returns)
+        }
+        _ => None,
+    }
+}
+
+/// True when a type contains a view whose origin is not static storage.
+///
+/// A struct with a view field is already rejected by E10205, so this walk
+/// stops at a non-`Array` struct: the declaration owns that report. `Array<T>`
+/// is special-cased because its element is a type argument, not a field, and a
+/// container of views would otherwise smuggle them past the box check.
+pub(crate) fn type_contains_non_static_view(ty: &Ty) -> bool {
+    if ty.is_slice() {
+        return true;
+    }
+    match &ty.kind {
+        TyKind::Str | TyKind::CString => true,
+        TyKind::StaticStr => false,
+        TyKind::Array { element, .. } | TyKind::Box(element) => {
+            type_contains_non_static_view(element)
+        }
+        TyKind::Struct(name, args) if name == "Array" => {
+            args.iter().any(type_contains_non_static_view)
+        }
+        _ => false,
+    }
+}
+
+/// The overlay type reached by a value of `ty`, following struct fields.
+fn overlay_reached_type(table: &TypeTable, ty: &Ty, depth: usize) -> Option<String> {
+    if depth > 32 {
+        return None;
+    }
+    match &ty.kind {
+        TyKind::Raw(_) => None,
+        TyKind::Box(inner) => overlay_reached_type(table, inner, depth + 1),
+        TyKind::Array { element, .. } => overlay_reached_type(table, element, depth + 1),
+        TyKind::Struct(name, args) => {
+            if table.is_overlay(name) {
+                return Some(name.clone());
+            }
+            let params = table.struct_type_params(name).unwrap_or(&[]);
+            table.struct_fields(name).and_then(|fields| {
+                fields.iter().find_map(|(_, field)| {
+                    overlay_reached_type(
+                        table,
+                        &substitute_instance(field, params, args),
+                        depth + 1,
+                    )
+                })
+            })
+        }
+        _ => None,
     }
 }
 

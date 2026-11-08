@@ -26,6 +26,36 @@ impl Checker<'_, '_> {
         args: &[Arg],
         span: Span,
     ) -> Ty {
+        // `Box<i32>(p)` is a call-shaped type conversion; a box is not
+        // constructible from a value, so the ordinary cast judgment rejects it
+        // with the `Box<i32>` spelling rather than an undeclared name.
+        if let ExprKind::Name(name) = &callee.kind {
+            if name == "Box" && self.builtin_box_active() && !self.name_is_value(name) {
+                if type_args.len() != 1 {
+                    self.error(
+                        "E10300",
+                        format!(
+                            "wrong number of type arguments for 'Box': expected 1, found {}",
+                            type_args.len()
+                        ),
+                        "list one type argument",
+                        span,
+                    );
+                }
+                let target = match type_args.first() {
+                    Some(ty) => Ty::boxed(self.resolve_type_argument(ty)),
+                    None => Ty::boxed(Ty::unknown()),
+                };
+                let arg_ty = match args.first() {
+                    Some(arg) => self.check_value(&arg.value, None),
+                    None => Ty::unknown(),
+                };
+                for extra in args.iter().skip(1) {
+                    self.check_value(&extra.value, None);
+                }
+                return self.check_type_cast(&target, arg_ty, span);
+            }
+        }
         if let Some(target) = self.callee_type(callee) {
             for ty in type_args {
                 self.resolve_type_argument(ty);
@@ -1685,8 +1715,8 @@ impl Checker<'_, '_> {
     fn check_type_cast(&mut self, target: &Ty, arg_ty: Ty, span: Span) -> Ty {
         let allowed = match &target.kind {
             // A struct is an aggregate, not a scalar; a call in cast position
-            // cannot build one.
-            TyKind::Struct(..) => false,
+            // cannot build one. A box is also not constructible from a value.
+            TyKind::Struct(..) | TyKind::Box(_) => false,
             TyKind::Enum(name) => {
                 arg_ty.is_integer()
                     || arg_ty.is_unknown()
@@ -1732,6 +1762,7 @@ fn mentions_unbound(ty: &Ty, unbound: &BTreeSet<String>) -> bool {
         TyKind::Param(name) => unbound.contains(name),
         TyKind::Array { element, .. } => mentions_unbound(element, unbound),
         TyKind::Raw(inner) => mentions_unbound(inner, unbound),
+        TyKind::Box(inner) => mentions_unbound(inner, unbound),
         TyKind::Struct(_, args) => args.iter().any(|arg| mentions_unbound(arg, unbound)),
         TyKind::Func(signature) => {
             signature
@@ -1812,6 +1843,11 @@ pub(crate) fn match_param(
         }
         TyKind::Raw(inner) => {
             if let TyKind::Raw(arg_inner) = &arg.kind {
+                match_param(inner, arg_inner, declared, inferred);
+            }
+        }
+        TyKind::Box(inner) => {
+            if let TyKind::Box(arg_inner) = &arg.kind {
                 match_param(inner, arg_inner, declared, inferred);
             }
         }

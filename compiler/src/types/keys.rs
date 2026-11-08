@@ -84,6 +84,7 @@ pub(crate) fn type_key(ty: &Ty) -> String {
         TyKind::StaticStr => "static_str".to_owned(),
         TyKind::CString => "cstring".to_owned(),
         TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
+        TyKind::Box(inner) => format!("Box__{}", type_key(inner)),
         TyKind::Handle(name) => {
             if name == "String" {
                 name.clone()

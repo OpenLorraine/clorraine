@@ -37,6 +37,13 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
                 self.push(&format!("    {c_name} = {null};"));
             }
+            // The box release helper is emitted with the allocator in the next
+            // phase. Until then the drop reads the place so a Box parameter or
+            // a saved local has a C reference and the strict build stays clean;
+            // no Box value is constructible yet.
+            TyKind::Box(_) => {
+                self.push(&format!("    if ({c_name}) {{ }}"));
+            }
             TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
                 if self.needs_drop(element) {
                     let dims: Vec<usize> =
@@ -147,6 +154,9 @@ impl<'a> Emitter<'a> {
                     "({c_name} ? ({deleter}({c_name}), {c_name} = {null}) : 0)"
                 ))
             }
+            // See `emit_drop_expr`: the release helper follows with the
+            // allocator; the expression form still reads the place.
+            TyKind::Box(_) => Some(format!("({c_name} ? 0 : 0)")),
             TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
                 if !self.needs_drop(element) {
                     return Some("0".to_owned());
@@ -240,6 +250,7 @@ impl<'a> Emitter<'a> {
         }
         match &ty.kind {
             TyKind::Handle(_) => true,
+            TyKind::Box(_) => true,
             TyKind::Struct(name, args) => {
                 let fields = self
                     .sema

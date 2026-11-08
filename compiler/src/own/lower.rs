@@ -6936,6 +6936,7 @@ pub(super) fn mentions_type_param(ty: &Ty) -> bool {
         TyKind::Param(_) => true,
         TyKind::Raw(inner) => mentions_type_param(inner),
         TyKind::Array { element, .. } => mentions_type_param(element),
+        TyKind::Box(inner) => mentions_type_param(inner),
         TyKind::Struct(_, args) => args.iter().any(mentions_type_param),
         TyKind::Func(signature) => {
             signature

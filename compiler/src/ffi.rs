@@ -7,18 +7,18 @@
 //! `freedBy`) and the small classification helpers the call-site and
 //! unsafe-context checks share.
 
-use crate::ast::{FuncSignature, Mode, StructDecl, Type, TypeKind};
+use crate::ast::{FuncSignature, Item, Mode, StructDecl, Type, TypeKind};
 use crate::diag::{Diagnostic, Diagnostics};
-use crate::types::{resolve_ty, Ty, TypeTable};
+use crate::types::{resolve_ty, resolve_ty_folded, Ty, TyKind, TypeTable};
 
 use super::own::program::{type_name_matches, ProgramInfo};
 
 /// Checks the declaration-level FFI rules of a whole program.
 ///
 /// These checks do not depend on any function body: a handle's deleter, an
-/// exported block, and a native struct's `freedBy` are all one-shot
-/// declaration facts.
-pub fn check_items(program: &ProgramInfo, diagnostics: &mut Diagnostics) {
+/// exported block, a native struct's `freedBy`, and the FFI-boundary type rule
+/// are all one-shot declaration facts.
+pub fn check_items(program: &ProgramInfo, table: &TypeTable, diagnostics: &mut Diagnostics) {
     for block in &program.ffi_blocks {
         if block.exported {
             diagnostics.push(
@@ -29,6 +29,31 @@ pub fn check_items(program: &ProgramInfo, diagnostics: &mut Diagnostics) {
                 )
                 .with_help("export a wrapper function instead"),
             );
+        }
+    }
+    for module in program.loaded.modules.values() {
+        for item in &module.items {
+            let Item::Ffi(block) = item else {
+                continue;
+            };
+            for signature in &block.decls {
+                for param in &signature.params {
+                    check_ffi_boundary_type(
+                        &param.ty,
+                        table,
+                        module,
+                        program.loaded,
+                        diagnostics,
+                    );
+                }
+                check_ffi_boundary_type(
+                    &signature.returns,
+                    table,
+                    module,
+                    program.loaded,
+                    diagnostics,
+                );
+            }
         }
     }
     for handle in program.handles.values() {
@@ -60,8 +85,61 @@ pub fn check_items(program: &ProgramInfo, diagnostics: &mut Diagnostics) {
     }
 }
 
-/// True when `deleter` is an `ffi` function taking `take T` and returning
-/// `void`, the CN-6 signature for a handle's deleter.
+/// Rejects a type that cannot cross the FFI boundary.
+///
+/// A `Box<T>` has an opaque C form the callee cannot interpret, and a generic
+/// struct instance currently spells `ClWrap` while the emitted typedef is
+/// `ClWrap__i32`; both would emit invalid C. The check resolves import aliases
+/// through the declaring module and recurses through arrays, raw pointers, and
+/// function-pointer signatures, so a nested case is caught too.
+fn check_ffi_boundary_type(
+    ty: &Type,
+    table: &TypeTable,
+    module: &crate::load::Module,
+    loaded: &crate::load::Loaded,
+    diagnostics: &mut Diagnostics,
+) {
+    let resolved = resolve_ty_folded(ty, &[], table, module, loaded);
+    check_ffi_boundary_ty(&resolved, ty.span, diagnostics);
+}
+
+/// Recursive worker for [`check_ffi_boundary_type`].
+fn check_ffi_boundary_ty(ty: &Ty, span: crate::span::Span, diagnostics: &mut Diagnostics) {
+    match &ty.kind {
+        TyKind::Box(_) => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10105",
+                    format!("'{}' cannot cross the FFI boundary", ty.display()),
+                    span,
+                )
+                .with_help("pass the pointee through `boxWith`, or a raw pointer from an unsafe wrapper"),
+            );
+        }
+        TyKind::Struct(_, args) if !args.is_empty() => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10105",
+                    format!("'{}' cannot cross the FFI boundary", ty.display()),
+                    span,
+                )
+                .with_help("wrap the generic aggregate in a concrete C-facing struct"),
+            );
+        }
+        TyKind::Array { element, .. } | TyKind::Raw(element) => {
+            check_ffi_boundary_ty(element, span, diagnostics);
+        }
+        TyKind::Func(signature) => {
+            for param in &signature.params {
+                check_ffi_boundary_ty(&param.ty, span, diagnostics);
+            }
+            check_ffi_boundary_ty(&signature.returns, span, diagnostics);
+        }
+        _ => {}
+    }
+}
+
+
 fn deleter_is_valid(deleter: &str, handle: &str, program: &ProgramInfo) -> bool {
     let Some(signature) = program.ffi_function(deleter) else {
         return false;
@@ -98,7 +176,9 @@ pub fn is_uncontracted_param(mode: Mode, ty: &Ty) -> bool {
     mode == Mode::None
         && (matches!(
             ty.kind,
-            crate::types::TyKind::Handle(_) | crate::types::TyKind::Struct(..)
+            crate::types::TyKind::Handle(_)
+                | crate::types::TyKind::Box(_)
+                | crate::types::TyKind::Struct(..)
         ) || ty.is_fixed_array())
 }
 

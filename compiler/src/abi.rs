@@ -49,6 +49,7 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
             }
         }
         TyKind::Raw(_) => "APTR".to_owned(),
+        TyKind::Box(_) => "void *".to_owned(),
         TyKind::Handle(name) => contract_handle(name)
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Cl{name}")),

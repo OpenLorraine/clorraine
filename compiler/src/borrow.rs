@@ -118,7 +118,8 @@ pub fn is_lend_candidate(ty: &Ty) -> bool {
         | TyKind::StaticStr
         | TyKind::Array { .. }
         | TyKind::Raw(_)
-        | TyKind::Handle(_) => true,
+        | TyKind::Handle(_)
+        | TyKind::Box(_) => true,
         TyKind::Struct(name, _) => name == "Array",
         _ => false,
     }
@@ -126,7 +127,7 @@ pub fn is_lend_candidate(ty: &Ty) -> bool {
 
 /// True for an owning handle type, whose value must be released.
 pub fn is_handle(ty: &Ty) -> bool {
-    matches!(ty.kind, TyKind::Handle(_))
+    matches!(ty.kind, TyKind::Handle(_) | TyKind::Box(_))
 }
 
 /// True for an owned handle or aggregate, the two shapes an uncontracted
@@ -135,7 +136,7 @@ pub fn is_handle(ty: &Ty) -> bool {
 /// A fixed array is an owned aggregate; a slice is a view and is allowed.
 pub fn is_handle_or_aggregate(ty: &Ty) -> bool {
     match ty.kind {
-        TyKind::Handle(_) | TyKind::Struct(..) => true,
+        TyKind::Handle(_) | TyKind::Box(_) | TyKind::Struct(..) => true,
         TyKind::Array { .. } => ty.is_fixed_array(),
         _ => false,
     }
@@ -149,6 +150,7 @@ pub fn is_handle_or_aggregate(ty: &Ty) -> bool {
 pub fn is_nullable_capable(ty: &Ty) -> bool {
     match ty.kind {
         TyKind::Handle(_)
+        | TyKind::Box(_)
         | TyKind::Raw(_)
         | TyKind::CString
         | TyKind::Str

@@ -732,9 +732,17 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.reject_fixed_array_sequence(&resolved, ty.span);
         // The built-in `String` handle is heap-backed: its drop and view use
         // `FreeString`/`cl_string_ptr`/`cl_string_len`, which the freestanding
-        // runtime does not provide. Reject the type there rather than emit C
-        // that cannot link.
-        if self.profile == Profile::Freestanding && mentions_heap_string(&resolved) {
+        // runtime does not provide. The built-in `Box<T>` is also heap-backed
+        // and has no freestanding allocator. Reject either type there rather
+        // than emit C that cannot link.
+        if self.profile == Profile::Freestanding && mentions_box(&resolved) {
+            self.error(
+                "E11200",
+                "'Box' is not available on profile 'freestanding'",
+                "the freestanding profile has no heap; use a plain value or a raw pointer",
+                ty.span,
+            );
+        } else if self.profile == Profile::Freestanding && mentions_heap_string(&resolved) {
             self.error(
                 "E11200",
                 "'String' is not available on profile 'freestanding'",
@@ -800,6 +808,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         }
         match &ty.kind {
             TyKind::Raw(_) => None,
+            TyKind::Box(inner) => self.overlay_reached(inner, depth + 1),
             TyKind::Array { element, .. } => self.overlay_reached(element, depth + 1),
             TyKind::Struct(name, args) => {
                 if self.table.is_overlay(name) {
@@ -1048,6 +1057,20 @@ impl<'a, 'd> Checker<'a, 'd> {
         }
     }
 
+    /// True when the built-in `Box<T>` is the active meaning of the name.
+    ///
+    /// A type parameter, a declared struct/enum/handle, or an import alias
+    /// named `Box` shadows the built-in exactly as it shadows `String`. The
+    /// built-in checks (arity, element rules, construction rejection) run only
+    /// when no such declaration is in scope.
+    pub(super) fn builtin_box_active(&self) -> bool {
+        !self.type_params.iter().any(|param| param == "Box")
+            && !self.table.is_struct("Box")
+            && !self.table.is_enum("Box")
+            && !self.table.is_handle("Box")
+            && self.module.import("Box").is_none()
+    }
+
     /// True when the name is bound in a lexical scope.
     ///
     /// A local binding shadows a module-level function of the same spelling,
@@ -1081,6 +1104,9 @@ impl<'a, 'd> Checker<'a, 'd> {
         }
         if self.table.is_handle(name) {
             return Some(Ty::handle(name));
+        }
+        if name == "Box" && self.builtin_box_active() {
+            return Some(Ty::boxed(Ty::unknown()));
         }
         None
     }
@@ -1205,6 +1231,7 @@ fn mentions_heap_string(ty: &Ty) -> bool {
         TyKind::Handle(name) => name == "String",
         TyKind::Array { element, .. } => mentions_heap_string(element),
         TyKind::Raw(inner) => mentions_heap_string(inner),
+        TyKind::Box(inner) => mentions_heap_string(inner),
         TyKind::Struct(_, args) => args.iter().any(mentions_heap_string),
         TyKind::Func(signature) => {
             signature
@@ -1216,6 +1243,25 @@ fn mentions_heap_string(ty: &Ty) -> bool {
         TyKind::Closure(closure) => {
             closure.params.iter().any(mentions_heap_string)
                 || mentions_heap_string(&closure.returns)
+        }
+        _ => false,
+    }
+}
+
+/// True when a `Box<T>` appears anywhere inside a type.
+fn mentions_box(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Box(_) => true,
+        TyKind::Array { element, .. } => mentions_box(element),
+        TyKind::Raw(inner) => mentions_box(inner),
+        TyKind::Struct(_, args) => args.iter().any(mentions_box),
+        TyKind::Func(signature) => {
+            signature.params.iter().any(|param| mentions_box(&param.ty))
+                || mentions_box(&signature.returns)
+        }
+        TyKind::Closure(closure) => {
+            closure.params.iter().any(mentions_box)
+                || mentions_box(&closure.returns)
         }
         _ => false,
     }
