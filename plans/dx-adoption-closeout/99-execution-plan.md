@@ -152,7 +152,7 @@ the project gates.
 **Reference**: [03-03](03-03-language-server.md) §Testing Requirements · AR-5, AR-10
 **Objective**: Pin the parser and framing edge cases.
 
-- [x] 3.3.1 Add unit tests for escapes, surrogates, depth, split frames, header case, size cap, URI round-trip, and UTF-16 — the inline unit tests in `compiler/src/lsp/*.rs`
+- [x] 3.3.1 Add unit tests for escapes, surrogates, depth, split frames, header case, size cap, URI round-trip, and UTF-16 — the inline unit tests in `compiler/src/lsp/*.rs` plus the oversized-frame test in `compiler/tests/lsp_spec_test.rs`
 - [x] 3.3.2 Run `make check` with the new binary and suites — no source file
 
 **Deliverables**:

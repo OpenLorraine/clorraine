@@ -200,3 +200,15 @@ C-hook trampoline surfaces.
 | Box helper names | Generated `cl_box_alloc__<key>` and `cl_box_drop__<key>` names are not reserved against user `ffi` declarations. | Avoid declaring an `ffi` symbol with those prefixes. |
 | Box in a C-facing struct | `E10105` rejects a Box at the top of an FFI type (and inside raw/array/function types), but a non-generic struct with a Box field crosses by value; the C side then owns a Box it cannot release. | Keep Box fields out of structs that cross the FFI boundary. |
 | `boxWith` capture-lend | The callable-bound `boxWith` path shares the pre-existing borrow-checker hole where a callback borrows a box and mutates it through another capture during the call; the read can use freed storage. This is the same pre-existing capture-lend defect recorded in the v1.1 findings ledger, not a new Box rule. | Do not mutate a box through one capture while another capture reads it during the same callback. |
+
+## 12. DX tooling limits
+
+| Area | Limitation | Workaround |
+|---|---|---|
+| LSP navigation | Lambda parameters and lambda-body locals are not in the hover/goto symbol table. Rename, formatting, references, and workspace symbols are not implemented. | Use a named local or move the lambda body into a function for navigation. |
+| LSP workspace | The index reads at most 2000 `*.clo` files, and one request analyzes at most 256 files. | Open the file directly or keep unrelated programs in separate roots. |
+| LSP analysis | A file is parsed and type-checked on each request; there is no incremental cache. | Small workspaces are the intended scope. |
+| Installer integrity | The installer downloads nothing itself. The pinned image build verifies upstream archives where upstream publishes SHA-256 values; the installer's own gate is provenance, NDK presence, and tool versions. | Inspect `docker/versions.env` and `/opt/amiga/BUILD-PROVENANCE.txt`; rebuild with `make setup FETCH=1 YES=1`. |
+| VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
+| `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. | Read the source for member-level detail. |
+| Release packaging | The v1.1.0 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`. | Build the server from source with `cargo build --workspace`. |

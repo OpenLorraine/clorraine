@@ -55,7 +55,13 @@ pub fn run(options: &DocOptions) -> i32 {
         eprint!("{}", parsed.diagnostics.render(&parsed.sources));
         return 1;
     }
-    let modules = collect_modules(&parsed.sources, &parsed.programs);
+    let modules = match collect_modules(&parsed.sources, &parsed.programs) {
+        Ok(modules) => modules,
+        Err(message) => {
+            eprintln!("docgen: {message}");
+            return 2;
+        }
+    };
     if modules.is_empty() {
         eprintln!("docgen: no modules to document");
         return 1;
@@ -87,12 +93,15 @@ pub fn run(options: &DocOptions) -> i32 {
 fn collect_modules(
     sources: &SourceMap,
     programs: &[(FileId, crate::ast::Program)],
-) -> BTreeMap<String, DocModule> {
+) -> Result<BTreeMap<String, DocModule>, String> {
     let mut modules: BTreeMap<String, DocModule> = BTreeMap::new();
     for (file, program) in programs {
         let name = program.module.name.to_dotted();
-        if !valid_module(&name) {
+        if name.is_empty() {
             continue;
+        }
+        if !valid_module(&name) {
+            return Err(format!("invalid module name '{name}'"));
         }
         let module = modules.entry(name.clone()).or_insert(DocModule {
             doc: None,
@@ -107,7 +116,7 @@ fn collect_modules(
             }
         }
     }
-    modules
+    Ok(modules)
 }
 
 /// Builds one declaration's documentation.

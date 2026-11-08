@@ -37,7 +37,7 @@ FreeMem(b, sizeof *b);
 Clorraine, with the safe owner:
 
 ```clorraine
-import { bufferNew, bufferLen } from std.mem;
+import { Buffer, bufferNew, bufferLen } from std.mem;
 
 let maybe: Buffer? = bufferNew(64);
 if (maybe == null) {
@@ -56,6 +56,8 @@ A recursive owner uses `Box<T>`. Given
 `struct Node { next: Box<Node>?; value: i32; }`:
 
 ```clorraine
+import { boxNew } from std.mem;
+
 let node: Box<Node> = boxNew(Node { next: null, value: 1 });
 ```
 
