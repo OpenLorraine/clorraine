@@ -67,7 +67,7 @@ Nullability lives in the type (`File?`), never in a clause (X3).
 |---|---|---|
 | CN-4 | FFI declarations use ordinary signatures and modes; nullability lives in the type | - |
 | CN-5 | `handle T freedBy F;` declares an opaque resource once, in the library that owns it | - |
-| CN-6 | `F` is a function taking `take T` and returning `void`: an `ffi` declaration or an ordinary Clorraine function resolved module-scoped (X1). Its own `take T` parameter is excluded from the implicit scope drop, and the body must pass it to a call | E10102 |
+| CN-6 | `F` is a function taking `take T` and returning `void`: an `ffi` declaration or an ordinary Clorraine function resolved module-scoped (X1). Its own `take T` parameter is excluded from the implicit scope drop, and the body must release it through a top-level `ffi` `take` call (a direct expression statement; ordinary forwarding, borrow-only, conditional/defer, block-nested, and dot-call releases are E10102) | E10102 |
 | CN-7 | Exactly one deleter per handle type; a second `handle` declaration for the same type is a duplicate declaration | E11101 |
 | CN-8 | A native struct never declares `freedBy`; it drops structurally | E10104 |
 | CN-22 | A direct `Box<T>` FFI crossing is rejected; use `boxWith` or a raw pointer | E10105 |

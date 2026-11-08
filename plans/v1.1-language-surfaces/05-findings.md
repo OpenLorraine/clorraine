@@ -168,7 +168,7 @@ fixed in this phase.
 
 | Finding | Severity | Resolution |
 |---|---|---|
-| A non-consuming deleter dropped its own `take` parameter and called itself recursively | critical | the deleter's own parameter is excluded from the implicit scope drop, and the AST check rejects a body that never passes it to a call; the forwarding/structural tests and the combined memory case cover the runtime |
+| A non-consuming deleter dropped its own `take` parameter and called itself recursively | critical | the deleter's own parameter is excluded from the implicit scope drop, and the AST check rejects a body that never releases it through a top-level `ffi` `take` call; the forwarding/structural tests and the combined memory case cover the runtime |
 | Two ordinary candidates plus one `ffi` candidate resolved to the `ffi` | major | the program-wide fallback counts ordinary and `ffi` candidates together and requires exactly one; an ambiguous name is E10102 |
 | A private cross-module ordinary function was accepted as a deleter | major | a cross-module ordinary candidate requires `export`; a private one is E10102 |
 | A non-function declaration in the handle's own or imported scope did not shadow the fallback | major | the scope lookup stops at any declaration of the written name and accepts only `func`/`ffi` |

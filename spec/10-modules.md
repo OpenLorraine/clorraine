@@ -69,9 +69,11 @@ first (its functions, imports, and `ffi` declarations), then exactly one
 exported ordinary function program-wide. A qualified name resolves in the named
 module, and a cross-module ordinary candidate must be `export`ed. Any
 non-function declaration of the written name shadows the fallback; a missing,
-ambiguous, wrongly typed, or non-consuming deleter is E10102. The embedded
-`std.mem` module is not special here: its own functions and imports resolve
-first.
+ambiguous, wrongly typed, or non-consuming deleter is E10102. A body counts as
+consuming only when it releases the parameter through a top-level `ffi` `take`
+call; ordinary forwarding, borrow-only, conditional/`defer`, block-nested, and
+dot-call releases are E10102 ([Ch 03](03-ownership.md)). The embedded `std.mem`
+module is not special here: its own functions and imports resolve first.
 
 ## 3. Declaration merging
 

@@ -31,9 +31,16 @@ module-scoped (the handle's own module, its imports, then exactly one exported
 ordinary function program-wide); a cross-module ordinary candidate must be
 `export`ed, a non-function declaration shadows the fallback, and a missing,
 ambiguous, wrongly typed, or non-consuming deleter is E10102. The deleter's own
-`take T` parameter is excluded from the implicit scope drop, and its body must
-pass that parameter to a call. Native structs never use `freedBy`; they release
-their fields structurally (X2). Application code never writes `ffi` blocks
+`take T` parameter is excluded from the implicit scope drop. In v1.1 the body
+must release it through a **top-level `ffi` `take` call**: a direct expression
+statement of the body that calls an `ffi` function whose corresponding
+parameter is declared `take`. A call to another ordinary Clorraine function
+(including a `relay(take w)` forwarding helper), a `borrow`-only call, a
+release nested in an `if`/loop/`defer`/block, and a dot-call release
+(`w.release()`) are all E10102. The restriction prevents a missed release on
+some path and an indirect release cycle; a flow-sensitive release check is
+deferred. Native structs never use `freedBy`; they release their fields
+structurally (X2). Application code never writes `ffi` blocks
 (X6); [Ch 12](12-ffi-contracts.md) owns the boundary.
 
 The built-in `Box<T>` owns its pointee through generated drop glue rather than

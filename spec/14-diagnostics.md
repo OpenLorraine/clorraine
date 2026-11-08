@@ -75,7 +75,7 @@
 |---|---|---|---|
 | E10100 | Call to an uncontracted extern without `unsafe` | `uncontracted call to '{fn}' requires 'unsafe'` | wrap the call, or add a contract declaration |
 | E10101 | Owned or borrowed value passed to an uncontracted extern | `'{fn}' has no contract for parameter '{name}'` | pass a `raw` pointer derived inside `unsafe` |
-| E10102 | `freedBy` deleter is not an ordinary module-scoped function or an `ffi` function taking `take T` and returning `void`, or it does not consume its parameter | `'{fn}' is not a valid deleter for '{type}'` | declare an ordinary function or an `ffi` function with the right signature; pass the parameter to a call |
+| E10102 | `freedBy` deleter is not an ordinary module-scoped function or an `ffi` function taking `take T` and returning `void`, or it does not release its parameter through a top-level `ffi` `take` call | `'{fn}' is not a valid deleter for '{type}'` | declare an ordinary function or an `ffi` function with the right signature; release the parameter through a top-level `ffi` `take` call |
 | E10103 | `ffi` block marked `export`, or FFI declarations leaking into app code | `'ffi' blocks are module-scoped and cannot be exported` | export a wrapper function instead |
 | E10104 | Native struct declared with `freedBy` | `'freedBy' is only for handle types` | native structs drop structurally (X2) |
 | E10105 | Generic aggregate or `Box<T>` in an `ffi` declaration | `'{type}' cannot cross the FFI boundary` | wrap the value in a concrete C-facing struct, or use `boxWith` |
