@@ -257,12 +257,12 @@ class CompareTests(TempFiles):
         self.assertEqual(code, 0)
         self.assertNotIn("FAIL", output)
 
-    def test_compare_rejects_a_tiny_positive_percentage(self) -> None:
+    def test_compare_fails_a_tiny_positive_percentage(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
         head = make_document(label="head", instructions=1000, text=1000, c_bytes=1000)
-        code, output = self.result(base, head, ["matrix:instructions:1e-15"])
+        code, output = self.result(base, head, ["matrix:instructions:0.000001"])
         self.assertEqual(code, 1)
-        self.assertIn("misses the required -1e-15%", output)
+        self.assertIn("misses the required -0.000001%", output)
 
     def test_compare_ignores_c_byte_regression(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
@@ -301,7 +301,18 @@ class CompareTests(TempFiles):
     def test_compare_rejects_bad_percentage(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
         head = make_document(label="head", instructions=700, text=800, c_bytes=700)
-        for value in ("0", "-5", "nan", "inf", "nope"):
+        for value in (
+            "0",
+            "-5",
+            "101",
+            "1e1000000",
+            "1e-7",
+            "1e-15",
+            "1e-27",
+            "nan",
+            "inf",
+            "nope",
+        ):
             with self.assertRaises(bench.HarnessError):
                 self.compare(base, head, [f"matrix:instructions:{value}"])
             self.assertEqual(self.output.getvalue(), "")

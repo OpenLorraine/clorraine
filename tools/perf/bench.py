@@ -23,7 +23,7 @@ import sys
 import tempfile
 import time
 import unittest
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from pathlib import Path
 
 SCHEMA = 1
@@ -569,6 +569,11 @@ def format_delta(base: int | None, head: int | None) -> str:
 # The metrics a --require entry may name. `instructions` maps to
 # `instructions_net`; `text` maps to the m68k release `.text` size.
 REQUIREMENT_METRICS = ("instructions", "text")
+# A percentage carries at most this many decimal places. The bound keeps the
+# exact integer comparison below representable without a float or a huge
+# denominator.
+REQUIREMENT_DECIMALS = 6
+REQUIREMENT_SCALE = 10**REQUIREMENT_DECIMALS
 
 
 def parse_requirement(spec: str) -> tuple[str, str, Decimal]:
@@ -591,14 +596,19 @@ def parse_requirement(spec: str) -> tuple[str, str, Decimal]:
         )
     try:
         percent = Decimal(raw_percent)
-    except InvalidOperation as error:
+    except DecimalException as error:
         raise HarnessError(
             f"invalid percentage in --require: {raw_percent}"
         ) from error
-    if not percent.is_finite() or percent <= 0:
+    if not percent.is_finite() or percent <= 0 or percent > 100:
         raise HarnessError(
-            f"percentage must be a positive finite number in --require: "
+            f"percentage must be greater than 0 and at most 100 in --require: "
             f"{raw_percent}"
+        )
+    if percent.as_tuple().exponent < -REQUIREMENT_DECIMALS:
+        raise HarnessError(
+            f"percentage supports at most {REQUIREMENT_DECIMALS} decimal "
+            f"places in --require: {raw_percent}"
         )
     return name, metric_name, percent
 
@@ -667,10 +677,13 @@ def command_compare(args: argparse.Namespace) -> int:
             failures.append(f"{name}: missing {metric_name} metric for --require")
             requirement_rows.append((name, metric_name, base_value, head_value, percent, False))
             continue
-        # Compare exactly: head/base <= (100 - percent)/100. Decimal keeps a
-        # decimal percentage such as 2.5 from losing the boundary to a float.
-        passed = Decimal(head_value) * 100 <= Decimal(base_value) * (
-            Decimal(100) - percent
+        # Compare exactly in integers: head*100*scale <=
+        # base*(100*scale - scaled_percent). The scale is exact because the
+        # parser bounds the percentage to six decimal places.
+        scaled_percent = int(percent * REQUIREMENT_SCALE)
+        passed = (
+            head_value * 100 * REQUIREMENT_SCALE
+            <= base_value * (100 * REQUIREMENT_SCALE - scaled_percent)
         )
         requirement_rows.append((name, metric_name, base_value, head_value, percent, passed))
         if not passed:
