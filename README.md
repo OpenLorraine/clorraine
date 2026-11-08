@@ -36,21 +36,24 @@ committed; `demo/poster.png` is the one checked-in still.
 
 ## Status
 
-Production-readiness track. The reproducible Docker toolchain, the stable v1.0
-specification, and the compiler implementation are in place: `clc` compiles the
-corpus subset of the specification to one C99 translation unit for the `host`,
-`hosted-amiga`, and `hosted-amiga-13` profiles, and the host and target
-acceptance suites are green. The `hosted-amiga-13` profile targets a stock A500
-with Kickstart 1.3; the Amiga SDK registry tracks the remaining native surface.
+Clorraine v1.1.0 is the current release. The reproducible Docker toolchain, the
+stable v1.0 specification, and the approved v1.1 language surfaces are in place:
+`clc` compiles the corpus subset and the v1.1 surfaces to one C99 translation
+unit for the `host`, `hosted-amiga`, `hosted-amiga-13`, and `freestanding`
+profiles, and the host and target acceptance suites are green. The
+`hosted-amiga-13` profile targets a stock A500 with Kickstart 1.3; the Amiga SDK
+registry tracks the remaining native surface.
 
 | Component | State |
 |---|---|
 | Amiga SDK image (GCC 16.2, binutils 2.46, gdb, libnix, NDK 3.2, vbcc/vasm/vlink) | Ready |
 | FS-UAE + `vamos` run/debug loop (`make run`, `make run-vamos`, ADF fallback) | Ready |
-| Phase 0 hosted skeleton (ownership contracts, cleanup shapes, run matrix) | Complete |
-| Language specification v1.0 — Phase A decisions, Phase B grammar freeze, Phase C chapter rewrites, Phase D compile-fail suite ([spec](spec/README.md)) | stable (v1.0); frozen; the compiler implements its corpus subset plus generics, lambdas, and volatile/MMIO |
-| Compiler (C-like → C with generics, lambdas, and volatile/MMIO) | Implemented; `make check` and `make verify` green |
+| A500/Kickstart 1.3 profile (`hosted-amiga-13`) | Ready; part of `make verify` |
+| Language specification v1.0 — Phase A decisions, Phase B grammar freeze, Phase C chapter rewrites, Phase D compile-fail suite ([spec](spec/README.md)) | stable (v1.0); frozen; the compiler implements its corpus subset plus generics, lambdas, volatile/MMIO, and the approved v1.1 surfaces |
+| v1.1 language surfaces: `Box<T>`, ordinary `freedBy` deleters, C-hook trampolines | Implemented; specification and implementation suites green |
+| Compiler (C-like → C with generics, lambdas, volatile/MMIO, and optimized emission) | Implemented; `make check` and `make verify` green |
 | Borrow checker (non-lexical lifetimes, v2 model) | Implemented; NLL and the v2 borrow model are green under `make check` |
+| Verification (UBSan leg and deterministic differential fuzzer) | `make ubsan` and `make fuzz-smoke` are part of the gate |
 | Validation corpus (`spec/tests/corpus/`) | Passes on host and hosted-amiga (GCC + `vamos`, FS-UAE, vbcc build) |
 | Freestanding (m68k, no-libc) profile | Implemented; LorraineOS bring-up is a separate downstream project |
 
@@ -86,7 +89,7 @@ lives in its own repository.
 
 ## Known limitations
 
-The accepted limitations of the v1.0 release are recorded in
+The accepted limitations of the v1.0 and v1.1 releases are recorded in
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## License
