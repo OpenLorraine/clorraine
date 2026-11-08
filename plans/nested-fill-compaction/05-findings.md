@@ -111,9 +111,16 @@ scratch tree and run
 | RV-003: duplicate, colon-name, and no-table-before-error cases were missing | MINOR | Added the duplicate requirement, the `parse_args` colon-name case, and empty-output assertions after every rejected input |
 | RV-004: stale "plan thresholds" wording and an undocumented constant | MINOR | Reworded the comparator and Makefile comments; documented `REQUIREMENT_METRICS` |
 | RV-005: plan progress and the old-red/empty-emission records were missing | MINOR | This section and the Phase 2 checkboxes record both |
+| RV2-001: a huge percentage raised a decimal traceback and `1e-27` on a flat pair still passed | MINOR | Bound percentages to at most 100 and six decimal places; compare with exact scaled integers. Tests cover 101, `1e1000000`, `1e-7`, `1e-15`, and `1e-27` |
 
-**Verify:** `make bench-test` 40 tests OK; flat comparison exit 0; the declared
-5%/3% requirement on the flat pair exits 1 with both named failures.
+**Re-review verdict:** no critical or major finding; RV-001 and RV-003/004/005
+fixed, RV-002 and RV2-001 fixed by the exact scaled-integer comparison. The
+gate phase is clean.
+
+**Verify:** `make bench-test` 40 tests OK; the new `CompareTests` still report
+14 failures out of 19 against the old comparator; the flat comparison exits 0;
+the declared 5%/3% requirement on the flat pair exits 1 with both named
+failures.
 
 ## Head and Delta
 

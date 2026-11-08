@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 12/32 tasks (38%)
+> **Progress**: 13/32 tasks (41%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -206,10 +206,10 @@ is queued for the docs commit.
 
 ### Step 2.5: Gate review
 
-- [ ] 2.5.1 Dispatch `correctness-reviewer` on the tooling diff with a
+- [x] 2.5.1 Dispatch `correctness-reviewer` on the tooling diff with a
       blast-radius check (every compare caller and test) and a test-integrity
       check (the 1% guard and each requirement case fail when broken).
-- [ ] 2.5.2 Record the verdict in [Findings](05-findings.md); a critical or
+- [x] 2.5.2 Record the verdict in [Findings](05-findings.md); a critical or
       major finding blocks Phase 3 until resolved and re-reviewed once.
 
 **Verify**: the tooling review verdict is clean and recorded.
