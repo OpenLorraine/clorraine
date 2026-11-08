@@ -52,7 +52,8 @@ let n: usize = bufferLen(b);
 `Buffer?`, so the check is explicit and the narrowed value moves into the
 non-null binding.
 
-A recursive owner uses `Box<T>`:
+A recursive owner uses `Box<T>`. Given
+`struct Node { next: Box<Node>?; value: i32; }`:
 
 ```clorraine
 let node: Box<Node> = boxNew(Node { next: null, value: 1 });
@@ -89,7 +90,7 @@ Clorraine uses the `std.io` wrappers, which keep the `ffi` and `unsafe` work
 inside the module:
 
 ```clorraine
-import { File, openFile, readFile } from std.io;
+import { File, MODE_OLDFILE, openFile, readFile } from std.io;
 
 let maybe: File? = openFile("data.bin", MODE_OLDFILE);
 if (maybe == null) {

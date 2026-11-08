@@ -3,7 +3,7 @@
 > **Feature**: Install the SDK from one entry point, edit Clorraine with a
 > language server and VS Code extension, generate Markdown reference from
 > `///` comments, and translate common Amiga C patterns with a Rosetta guide.
-> **Status**: Planning Complete
+> **Status**: Executing — 52/56 tasks verified; full gates in progress
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
 > **Implements**: R1-R14
