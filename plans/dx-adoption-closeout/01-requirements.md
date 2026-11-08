@@ -315,10 +315,11 @@ every shipped file; the packaged client starts the real `clorraine-lsp` from
 `CLORRAINE_LSP`, initializes, receives diagnostics for a fixture with an error,
 and receives a hover result.
 
-**R10.3 Command.** `make vscode-check` builds the LSP binary, runs type-check,
-tests, packaging, and a post-package archive check. It requires Node.js 22+
-and network access only for the first `npm ci`; the archive check itself is
-offline.
+**R10.3 Command.** `make vscode-check` builds the LSP binary in the pinned
+container (the host needs no Rust toolchain), then runs type-check, tests,
+packaging, and a post-package archive check on the host. It requires Node.js
+22+ and network access only for the first `npm ci`; the archive check itself
+is offline.
 
 ### R11 — `--doc` extraction and Markdown contract
 
