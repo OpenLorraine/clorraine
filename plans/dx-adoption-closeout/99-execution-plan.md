@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-08
-> **Progress**: 31/56 tasks (55%)
+> **Progress**: 39/56 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -216,31 +216,31 @@ the project gates.
 **Reference**: [03-05](03-05-vscode-extension.md) · [07](07-testing-strategy.md) ST-47 to ST-52 · AR-23 to AR-26
 **Objective**: Pin the manifest, grammar bytes, client, and package contents.
 
-- [ ] 5.1.1 [spec-author] Write manifest and client tests — `tools/vscode/test/manifest.test.ts`, `tools/vscode/test/client.test.ts`
-- [ ] 5.1.2 Run the tests and record the red phase (the package does not exist) — `cd tools/vscode && npm test`
+- [x] 5.1.1 [spec-author] Write manifest and client tests — `tools/vscode/test/manifest.test.ts`, `tools/vscode/test/client.test.ts`
+- [x] 5.1.2 Run the tests and record the red phase (the package does not exist) — `cd tools/vscode && npm test`
 
 ### Step 5.2: Implementation
 
 **Reference**: [03-05](03-05-vscode-extension.md) §Manifest, §Client, §Extension · AR-23
 **Objective**: A working client and adapter.
 
-- [ ] 5.2.1 Create the package, tsconfig, language configuration, and the typed LSP client — `tools/vscode/package.json`, `tools/vscode/tsconfig.json`, `tools/vscode/src/client.ts`
-- [ ] 5.2.2 Implement the extension providers, diagnostics, document sync, and configuration restart — `tools/vscode/src/extension.ts`
-- [ ] 5.2.3 Implement grammar staging and the `.vsix` audit script; add the Makefile targets and ignore rules — `tools/vscode/scripts/stage.mjs`, `tools/vscode/scripts/audit_vsix.py`, `Makefile`, `.gitignore`
-- [ ] 5.2.4 Run the manifest and client tests green — `cd tools/vscode && npm test`
+- [x] 5.2.1 Create the package, tsconfig, language configuration, and the typed LSP client — `tools/vscode/package.json`, `tools/vscode/tsconfig.json`, `tools/vscode/src/client.ts`
+- [x] 5.2.2 Implement the extension providers, diagnostics, document sync, and configuration restart — `tools/vscode/src/extension.ts`
+- [x] 5.2.3 Implement grammar staging and the `.vsix` audit script; add the Makefile targets and ignore rules — `tools/vscode/scripts/stage.mjs`, `tools/vscode/scripts/audit_vsix.py`, `Makefile`, `.gitignore`
+- [x] 5.2.4 Run the manifest and client tests green — `cd tools/vscode && npm test`
 
 ### Step 5.3: Implementation tests and verification
 
 **Reference**: [03-05](03-05-vscode-extension.md) §Headless tests · AR-26
 **Objective**: Exercise the packaged client against the real server.
 
-- [ ] 5.3.1 Add the packaged-client test and the crash/split-frame client cases — `tools/vscode/test/packaged.test.ts`, `tools/vscode/test/client.test.ts`
-- [ ] 5.3.2 Run `make vscode-check` and assert the archive audit — no source file
+- [x] 5.3.1 Add the packaged-client test and the crash/split-frame client cases — `tools/vscode/test/packaged.test.ts`, `tools/vscode/test/client.test.ts`
+- [x] 5.3.2 Run `make vscode-check` and assert the archive audit — no source file
 
 **Deliverables**:
-- [ ] `.vsix` packages the compiled client, canonical grammar, and manifest
-- [ ] Packaged client initializes and receives diagnostics
-- [ ] No generated file is committed
+- [x] `.vsix` packages the compiled client, canonical grammar, and manifest
+- [x] Packaged client initializes and receives diagnostics
+- [x] No generated file is committed
 
 **Verify**: `make vscode-check`
 

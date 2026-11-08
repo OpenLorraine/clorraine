@@ -1,0 +1,64 @@
+{
+  "name": "clorraine",
+  "displayName": "Clorraine",
+  "description": "Clorraine language support: compiler diagnostics, hover, definition, completion, and symbols.",
+  "version": "1.1.0",
+  "publisher": "openlorraine",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenLorraine/clorraine"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:clorraine"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "clorraine",
+        "aliases": ["Clorraine", "clorraine"],
+        "extensions": [".clo"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "clorraine",
+        "scopeName": "source.clorraine",
+        "path": "./syntaxes/clorraine.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Clorraine",
+      "properties": {
+        "clorraine.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the clorraine-lsp executable. Empty searches CLORRAINE_LSP, target/debug, target/release, and PATH."
+        },
+        "clorraine.profile": {
+          "type": "string",
+          "enum": ["hosted-amiga", "hosted-amiga-13", "host", "freestanding"],
+          "default": "hosted-amiga",
+          "description": "Compiler profile used for diagnostics and navigation."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "stage": "node scripts/stage.mjs",
+    "package": "npm run build && npm run stage"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "typescript": "^5.9.0"
+  }
+}

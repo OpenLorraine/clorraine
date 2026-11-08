@@ -32,3 +32,8 @@ node_modules/
 # Python bytecode from the benchmark harness
 __pycache__/
 *.pyc
+
+# Packaged VS Code extension and its build output
+*.vsix
+/build/vscode/
+/tools/vscode/out/

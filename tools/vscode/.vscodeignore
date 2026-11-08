@@ -1,0 +1,8 @@
+# The package is built from `build/vscode/extension`; this file only guards a
+# direct `vsce package` run from the source tree.
+node_modules/**
+src/**
+test/**
+scripts/**
+out/**/*.map
+*.vsix

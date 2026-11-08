@@ -25,6 +25,7 @@
 # leg is active with a known-overflow probe and is part of `make verify`.
 
 DOCKER_MAKE ?= $(MAKE) -C docker
+VERSION := $(shell sed -n 's/^version = "\([^"]*\)"/\1/p' compiler/Cargo.toml | head -1)
 
 # Driver passthrough options.
 #   PROFILE   host (default), hosted-amiga, hosted-amiga-13, or freestanding
@@ -54,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -74,6 +75,28 @@ setup:
 
 setup-check:
 	cd tools/setup && python3 -m unittest discover -s tests -t tests -v
+
+# Type-check, test, package, and audit the VS Code extension. The language
+# server is built in the pinned container; Node.js 22+ must be on the host PATH
+# (the same requirement as `make demo-check`).
+vscode-check:
+	@command -v node >/dev/null || { echo "vscode-check: Node.js 22+ is required on PATH"; exit 2; }
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
+	@test -d tools/vscode/node_modules || (cd tools/vscode && npm ci --silent)
+	cd tools/vscode && npm run typecheck
+	cd tools/vscode && npm run build
+	cd tools/vscode && npm run stage
+	cd tools/vscode && npm test
+	cd build/vscode/extension && ../../../tools/vscode/node_modules/.bin/vsce package --out ../clorraine-$(VERSION).vsix
+	python3 tools/vscode/scripts/audit_vsix.py --vsix build/vscode/clorraine-$(VERSION).vsix --extract build/vscode/extracted
+	CLORRAINE_VSIX=$(CURDIR)/build/vscode/clorraine-$(VERSION).vsix CLORRAINE_LSP=$(CURDIR)/target/debug/clorraine-lsp node --test tools/vscode/test/packaged.test.ts
+
+vscode-package:
+	@command -v node >/dev/null || { echo "vscode-package: Node.js 22+ is required on PATH"; exit 2; }
+	@test -d tools/vscode/node_modules || (cd tools/vscode && npm ci --silent)
+	cd tools/vscode && npm run build && npm run stage
+	cd build/vscode/extension && ../../../tools/vscode/node_modules/.bin/vsce package --out ../clorraine-$(VERSION).vsix
+	@echo "vscode-package: build/vscode/clorraine-$(VERSION).vsix"
 
 # Benchmark harness (generated C: emitted size, section size, host time, m68k
 # instruction count). `bench` traces; `bench-fast` skips the trace for
