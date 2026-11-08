@@ -11,19 +11,59 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fake = join(here, "fixtures", "fake-lsp.mjs");
 const crash = join(here, "fixtures", "crash-lsp.mjs");
 
+function hover(line: number) {
+  return {
+    textDocument: { uri: "file:///tmp/a.clo" },
+    position: { line, character: 0 },
+  };
+}
+
 test("should initialize, request, and stop against a split-frame server", async () => {
+  const exits: Array<number | null> = [];
   const client = new LspClient({
     command: process.execPath,
     args: [fake],
+    onExit: (code) => exits.push(code),
   });
   const result = await client.start();
   assert.equal(result.serverInfo?.name, "fake");
-  const hover = await client.request<{ contents: { value: string } }>(
+  const hoverResult = await client.request<{ contents: { value: string } }>(
     "textDocument/hover",
-    { textDocument: { uri: "file:///tmp/a.clo" }, position: { line: 0, character: 0 } },
+    hover(0),
   );
-  assert.match(hover.contents.value, /func fake/);
+  assert.match(hoverResult.contents.value, /func fake line 0/);
   await client.stop();
+  assert.deepEqual(exits, [0], "a clean stop must exit zero");
+});
+
+test("should correlate two out-of-order responses", async () => {
+  const client = new LspClient({ command: process.execPath, args: [fake] });
+  await client.start();
+  const first = client.request<{ contents: { value: string } }>(
+    "textDocument/hover",
+    hover(0),
+  );
+  const second = client.request<{ contents: { value: string } }>(
+    "textDocument/hover",
+    hover(1),
+  );
+  const [a, b] = await Promise.all([first, second]);
+  assert.match(a.contents.value, /line 0/);
+  assert.match(b.contents.value, /line 1/);
+  await client.stop();
+});
+
+test("should reject a pending request on a malformed response", async () => {
+  const client = new LspClient({
+    command: process.execPath,
+    args: [fake],
+    env: { ...process.env, FAKE_BAD_JSON: "1" },
+  });
+  await client.start();
+  await assert.rejects(
+    () => client.request("textDocument/hover", hover(0)),
+    /malformed JSON/,
+  );
 });
 
 test("should reject start when the server exits immediately", async () => {

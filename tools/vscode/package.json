@@ -51,7 +51,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts",
+    "test": "npm run build && npm run stage && node --test test/*.test.ts",
     "stage": "node scripts/stage.mjs",
     "package": "npm run build && npm run stage"
   },

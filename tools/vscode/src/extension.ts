@@ -44,6 +44,9 @@ class Session implements vscode.Disposable {
     this.disposables.push(
       vscode.languages.registerHoverProvider("clorraine", {
         provideHover: async (document, position) => {
+          if (!this.client.ready) {
+            return undefined;
+          }
           const result = await this.client.request<Hover | null>(
             "textDocument/hover",
             documentPosition(document, position),
@@ -63,6 +66,9 @@ class Session implements vscode.Disposable {
       }),
       vscode.languages.registerDefinitionProvider("clorraine", {
         provideDefinition: async (document, position) => {
+          if (!this.client.ready) {
+            return undefined;
+          }
           const result = await this.client.request<LspLocation | LspLocation[] | null>(
             "textDocument/definition",
             documentPosition(document, position),
@@ -84,6 +90,9 @@ class Session implements vscode.Disposable {
         "clorraine",
         {
           provideCompletionItems: async (document, position) => {
+            if (!this.client.ready) {
+              return [];
+            }
             const result = await this.client.request<CompletionItem[] | null>(
               "textDocument/completion",
               documentPosition(document, position),
@@ -103,6 +112,9 @@ class Session implements vscode.Disposable {
       ),
       vscode.languages.registerDocumentSymbolProvider("clorraine", {
         provideDocumentSymbols: async (document) => {
+          if (!this.client.ready) {
+            return [];
+          }
           const result = await this.client.request<LspDocumentSymbol[] | null>(
             "textDocument/documentSymbol",
             {
@@ -252,19 +264,27 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  let starting = true;
   const client = new LspClient({
     command,
     rootUri: root ? pathToFileURL(root).toString() : undefined,
     initializationOptions: { profile },
     onDiagnostics: (params) => session?.setDiagnostics(params),
-    onExit: (code) => session?.unexpectedExit(`exit code ${code ?? "null"}`),
+    onExit: (code) => {
+      if (!starting) {
+        session?.unexpectedExit(`exit code ${code ?? "null"}`);
+      }
+    },
   });
   const created = new Session(client, context);
   session = created;
-  created.register();
   try {
     await client.start();
+    starting = false;
+    created.register();
   } catch (error) {
+    starting = false;
+    await client.stop();
     created.dispose();
     session = undefined;
     void vscode.window.showErrorMessage(
@@ -272,6 +292,7 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    return;
   }
   context.subscriptions.push(created);
 }

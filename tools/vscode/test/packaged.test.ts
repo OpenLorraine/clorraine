@@ -5,6 +5,7 @@
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -36,6 +37,26 @@ test("should run the packaged client against the real server", async (context) =
     { cwd: repoRoot, encoding: "utf8" },
   );
   assert.equal(audit.status, 0, audit.stderr || audit.stdout);
+  const extensionRoot = join(extracted, "extension");
+  const manifest = JSON.parse(
+    readFileSync(join(extensionRoot, "package.json"), "utf8"),
+  ) as {
+    main: string;
+    version: string;
+    contributes: { grammars: Array<{ path: string }> };
+  };
+  assert.equal(manifest.main, "./out/extension.js");
+  assert.ok(existsSync(join(extensionRoot, manifest.main.slice(2))));
+  const grammar = manifest.contributes.grammars[0].path;
+  assert.ok(grammar.startsWith("./"));
+  assert.deepEqual(
+    readFileSync(join(extensionRoot, grammar.slice(2))),
+    readFileSync(join(repoRoot, "editors", "clorraine.tmLanguage.json")),
+    "the packaged grammar must equal the canonical grammar",
+  );
+  const cargo = readFileSync(join(repoRoot, "compiler", "Cargo.toml"), "utf8");
+  const version = /^version = "([^"]+)"/m.exec(cargo)?.[1];
+  assert.equal(manifest.version, version);
 
   const require = createRequire(import.meta.url);
   const packaged = require(join(extracted, "extension", "out", "client.js")) as {

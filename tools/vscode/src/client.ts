@@ -279,6 +279,12 @@ export class LspClient {
     try {
       message = JSON.parse(body) as WireMessage;
     } catch {
+      const error = new Error("the language server sent malformed JSON");
+      for (const pending of this.pending.values()) {
+        pending.reject(error);
+      }
+      this.pending.clear();
+      this.child?.kill();
       return;
     }
     if (message.method !== undefined) {

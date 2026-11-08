@@ -48,11 +48,25 @@ stdin.on("data", (chunk) => {
       if (process.env.FAKE_DIE_ON_HOVER === "1") {
         process.exit(1);
       }
-      send({
-        jsonrpc: "2.0",
-        id: message.id,
-        result: { contents: { kind: "markdown", value: "```clorraine\nfunc fake()\n```" } },
-      });
+      if (process.env.FAKE_BAD_JSON === "1") {
+        const body = "nope!";
+        process.stdout.write(`Content-Length: ${body.length}\r\n\r\n${body}`);
+      } else {
+        const line = message.params?.position?.line ?? 0;
+        const reply = () =>
+          send({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              contents: { kind: "markdown", value: `func fake line ${line}` },
+            },
+          });
+        if (line === 1) {
+          setTimeout(reply, 50);
+        } else {
+          reply();
+        }
+      }
     } else if (message.method === "shutdown") {
       shutdown = true;
       send({ jsonrpc: "2.0", id: message.id, result: null });
