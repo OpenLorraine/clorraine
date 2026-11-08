@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
-> **Progress**: 31/74 tasks (42%)
+> **Progress**: 38/74 tasks (51%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -208,8 +208,8 @@ memory paths.
 cross-module duplicates, owned-field deletion, forwarding deleters, and
 move-only semantics.
 
-- [ ] 3.1.1 [spec-author] Write the X1 cases: X1-1..X1-16, including the `ffi` regression, unresolved name, E10104, forwarding `ffi` release, exported, cross-module simple via import, aliased parameter, foreign same-named type, cross-module duplicate, all wrong signatures, intrinsic, owned-field deleter, and move-only — `compiler/tests/v11_language_surfaces_spec_test.rs`
-- [ ] 3.1.2 Record the red run: a valid ordinary deleter is E10102 and two cross-module handles are accepted
+- [x] 3.1.1 [spec-author] Write the X1 cases: X1-1..X1-16, including the `ffi` regression, unresolved name, E10104, forwarding `ffi` release, exported, cross-module simple via import, aliased parameter, foreign same-named type, cross-module duplicate, all wrong signatures, intrinsic, owned-field deleter, and move-only — `compiler/tests/v11_language_surfaces_spec_test.rs`
+- [x] 3.1.2 Record the red run: a valid ordinary deleter is E10102 and two cross-module handles are accepted
 
 ### Step 3.2: Resolution, identity, and emission
 
@@ -217,17 +217,17 @@ move-only semantics.
 **Objective**: Resolve the deleter once, store its identity where the emitter
 can read it, and use it in both the validator and the emitter.
 
-- [ ] 3.2.1 Add handle origins and report cross-module duplicates with `E11101`; add `module` and a resolved `(module, simple name, kind)` deleter to `HandleInfo`, and add a `deleter_identities` map to `OwnershipOutput` — `compiler/src/types/table.rs`, `compiler/src/sema/mod.rs`, `compiler/src/own/{program.rs,..}`
-- [ ] 3.2.2 Implement module-scoped deleter resolution (own module, imports, a counted unique program-wide candidate) and the resolved-`Ty` signature comparison; keep the `ffi` path — `compiler/src/ffi.rs`, `compiler/src/own/program.rs`
-- [ ] 3.2.3 Use the stored identity in `deleter_symbol`; remove the dotted-name `function_symbol` call and the caller-scope fallback; keep `String` → `FreeString` — `compiler/src/codegen/{drop.rs,..}`, `compiler/src/own.rs`
+- [x] 3.2.1 Add handle origins and report cross-module duplicates with `E11101`; add `module` and a resolved `(module, simple name, kind)` deleter to `HandleInfo`, and add a `deleter_identities` map to `OwnershipOutput` — `compiler/src/types/table.rs`, `compiler/src/sema/mod.rs`, `compiler/src/own/{program.rs,..}`
+- [x] 3.2.2 Implement module-scoped deleter resolution (own module, imports, a counted unique program-wide candidate) and the resolved-`Ty` signature comparison; keep the `ffi` path — `compiler/src/ffi.rs`, `compiler/src/own/program.rs`
+- [x] 3.2.3 Use the stored identity in `deleter_symbol`; remove the dotted-name `function_symbol` call and the caller-scope fallback; keep `String` → `FreeString` — `compiler/src/codegen/{drop.rs,..}`, `compiler/src/own.rs`
 
 ### Step 3.3: Impl tests, review, and verify
 
 **Reference**: [Testing Strategy](07-testing-strategy.md) X1-1..X1-16 · AR-31
 **Objective**: Pin the symbols and prove the owned-field case.
 
-- [ ] 3.3.1 [impl-author] Write the X1 impl pins: `cl_<module>_<name>` for a cross-module ordinary deleter, the C name for `ffi`, no `cl_A_B_A_B_*` — `compiler/tests/v11_language_surfaces_impl_test.rs`
-- [ ] 3.3.2 Run the focused X1 suite under `RDC_ASAN=1`; run `make check`
+- [x] 3.3.1 [impl-author] Write the X1 impl pins: `cl_<module>_<name>` for a cross-module ordinary deleter, the C name for `ffi`, no `cl_A_B_A_B_*` — `compiler/tests/v11_language_surfaces_impl_test.rs`
+- [x] 3.3.2 Run the focused X1 suite under `RDC_ASAN=1`; run `make check`
 - [ ] 3.3.3 Run the correctness + memory-safety phase review for the X1 release path; record findings
 - [ ] 3.3.4 Commit the X1 task
 

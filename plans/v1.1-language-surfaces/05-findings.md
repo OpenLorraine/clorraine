@@ -87,7 +87,7 @@ The per-phase reviewers are dispatched by the execution plan:
 |---|---|---|
 | 1 | correctness + emission-integrity | 2 reviews; 12 findings, all resolved or explicitly deferred |
 | 2 | correctness + memory-safety | 10 findings; 9 fixed, 1 pre-existing capture UAF recorded |
-| 3 | correctness + memory-safety | pending |
+| 3 | correctness + memory-safety | 9 findings; 8 fixed, 1 minor cleanup |
 | 5 | correctness + memory-safety + emission-integrity + semantics | pending |
 | 7 | final cross-phase | pending |
 
@@ -134,6 +134,23 @@ phase.
 The ASan proof lives in `v11_language_surfaces_memory_spec_test`, a dedicated
 suite with one comprehensive program; the behavior suite stays fast and the
 `make asan` runner discovers the memory suite by its `RDC_ASAN` gate.
+
+### Phase 3 review (ordinary `freedBy` deleters)
+
+The correctness and memory-safety reviewers found the following; all are
+fixed in this phase.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| A non-consuming deleter dropped its own `take` parameter and called itself recursively | critical | the deleter's own parameter is excluded from the implicit scope drop, and the AST check rejects a body that never passes it to a call; the forwarding/structural tests and the combined memory case cover the runtime |
+| Two ordinary candidates plus one `ffi` candidate resolved to the `ffi` | major | the program-wide fallback counts ordinary and `ffi` candidates together and requires exactly one; an ambiguous name is E10102 |
+| A private cross-module ordinary function was accepted as a deleter | major | a cross-module ordinary candidate requires `export`; a private one is E10102 |
+| A non-function declaration in the handle's own or imported scope did not shadow the fallback | major | the scope lookup stops at any declaration of the written name and accepts only `func`/`ffi` |
+| A user `handle String` was accepted and its deleter ignored | major | a synthetic predeclared origin makes the duplicate E11101 |
+| X1 had no sanitizer coverage and the acceptance test did not run the deleter | major | the same-module acceptance test runs through a C fixture, and the dedicated memory suite contains a structural/forwarding deleter case under ASan |
+| The impl pin could match the deleter body's own self-drop | minor | the test sources consume the handle through an ffi release, so only the caller's drop names the ordinary symbol |
+| The emitter fell back to the bare handle name when the identity was missing | minor | the emitter now panics on a missing internal identity; a valid program always records one |
+| A vacuous resolver test and an unused `type_name_matches` remained | minor | both removed; the stale `resolve_dotted_name` doc is corrected |
 
 ## 6. Residual Limits
 
