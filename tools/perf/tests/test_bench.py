@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -167,18 +168,70 @@ class DocumentTests(TempFiles):
 class CompareTests(TempFiles):
     """The comparison gate."""
 
-    def compare(self, base: dict, head: dict) -> int:
-        """Write both documents and run the comparator."""
+    def compare(self, base: dict, head: dict, require: list[str] | None = None) -> int:
+        """Write both documents, run the comparator, and keep its stdout."""
         base_path = self.write(base)
         head_path = Path(self.temp.name) / "head.json"
         head_path.write_text(json.dumps(head), encoding="utf-8")
-        args = argparse.Namespace(base=str(base_path), head=str(head_path))
-        with contextlib.redirect_stdout(io.StringIO()):
+        args = argparse.Namespace(
+            base=str(base_path),
+            head=str(head_path),
+            require=require or [],
+        )
+        self.output = io.StringIO()
+        with contextlib.redirect_stdout(self.output):
             return bench.command_compare(args)
 
-    def test_compare_passes_on_targets(self) -> None:
+    def result(self, base: dict, head: dict, require: list[str] | None = None) -> tuple[int, str]:
+        """Return the exit code and the captured comparison output."""
+        code = self.compare(base, head, require)
+        return code, self.output.getvalue()
+
+    def test_compare_passes_on_flat_metrics(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
-        head = make_document(label="head", instructions=700, text=800, c_bytes=700)
+        head = make_document(label="head", instructions=1000, text=1000, c_bytes=1000)
+        self.assertEqual(self.compare(base, head), 0)
+
+    def test_compare_passes_on_met_instruction_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=940, text=1000, c_bytes=900)
+        self.assertEqual(
+            self.compare(base, head, ["sieve:instructions:5"]),
+            0,
+        )
+
+    def test_compare_passes_on_met_text_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1000, text=960, c_bytes=900)
+        self.assertEqual(self.compare(base, head, ["sieve:text:3"]), 0)
+
+    def test_compare_fails_on_missed_instruction_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=980, text=1000, c_bytes=900)
+        code, output = self.result(base, head, ["matrix:instructions:5"])
+        self.assertEqual(code, 1)
+        self.assertIn("matrix", output)
+        self.assertIn("instructions", output)
+        self.assertIn("-2.0%", output)
+        self.assertIn("need <= -5%", output)
+
+    def test_compare_fails_on_missed_text_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1000, text=990, c_bytes=900)
+        code, output = self.result(base, head, ["matrix:text:3"])
+        self.assertEqual(code, 1)
+        self.assertIn("matrix", output)
+        self.assertIn("text", output)
+        self.assertIn("-1.0%", output)
+
+    def test_compare_fails_flat_with_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1000, text=1000, c_bytes=1000)
+        self.assertEqual(self.compare(base, head, ["matrix:instructions:5"]), 1)
+
+    def test_compare_ignores_c_byte_regression(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=1000, text=1000, c_bytes=1200)
         self.assertEqual(self.compare(base, head), 0)
 
     def test_compare_fails_on_output(self) -> None:
@@ -196,10 +249,30 @@ class CompareTests(TempFiles):
         head = make_document(label="head", instructions=700, text=1100, c_bytes=700)
         self.assertEqual(self.compare(base, head), 1)
 
-    def test_compare_fails_on_c_byte_target(self) -> None:
+    def test_compare_rejects_unknown_benchmark(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
-        head = make_document(label="head", instructions=700, text=800, c_bytes=900)
-        self.assertEqual(self.compare(base, head), 1)
+        head = make_document(label="head", instructions=700, text=800, c_bytes=700)
+        with self.assertRaises(bench.HarnessError):
+            self.compare(base, head, ["missing:instructions:5"])
+
+    def test_compare_rejects_unknown_metric(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=700, text=800, c_bytes=700)
+        with self.assertRaises(bench.HarnessError):
+            self.compare(base, head, ["matrix:bogus:5"])
+
+    def test_compare_rejects_bad_percentage(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=700, text=800, c_bytes=700)
+        for value in ("0", "-5", "nan", "inf", "nope"):
+            with self.assertRaises(bench.HarnessError):
+                self.compare(base, head, [f"matrix:instructions:{value}"])
+
+    def test_compare_rejects_malformed_requirement(self) -> None:
+        base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
+        head = make_document(label="head", instructions=700, text=800, c_bytes=700)
+        with self.assertRaises(bench.HarnessError):
+            self.compare(base, head, ["matrix:instructions"])
 
     def test_compare_fails_on_missing_trace(self) -> None:
         base = make_document(label="base", instructions=1000, text=1000, c_bytes=1000)
@@ -212,6 +285,67 @@ class CompareTests(TempFiles):
         head = make_document(label="head", instructions=700, text=800, c_bytes=700, runs=2)
         with self.assertRaises(bench.HarnessError):
             self.compare(base, head)
+
+
+class RequirementParsingTests(unittest.TestCase):
+    """The --require syntax and the Makefile expansion."""
+
+    def test_parse_requirement_reads_from_the_right(self) -> None:
+        self.assertEqual(
+            bench.parse_requirement("matrix:instructions:5"),
+            ("matrix", "instructions", 5.0),
+        )
+        self.assertEqual(
+            bench.parse_requirement("a:b:text:2.5"),
+            ("a:b", "text", 2.5),
+        )
+
+    def test_parse_args_collects_repeated_require(self) -> None:
+        args = bench.parse_args(
+            [
+                "compare",
+                "--require",
+                "matrix:instructions:5",
+                "--require",
+                "matrix:text:3",
+                "base.json",
+                "head.json",
+            ]
+        )
+        self.assertEqual(
+            args.require,
+            ["matrix:instructions:5", "matrix:text:3"],
+        )
+
+    def test_parse_args_defaults_to_no_requirement(self) -> None:
+        args = bench.parse_args(["compare", "base.json", "head.json"])
+        self.assertEqual(args.require, [])
+
+    def test_makefile_expands_two_requirements(self) -> None:
+        completed = subprocess.run(
+            ["make", "-n", "bench-compare",
+             "REQUIRE=matrix:instructions:5 matrix:text:3"],
+            cwd=str(bench.ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "--require matrix:instructions:5 --require matrix:text:3",
+            completed.stdout,
+        )
+
+    def test_makefile_expands_empty_requirement(self) -> None:
+        completed = subprocess.run(
+            ["make", "-n", "bench-compare"],
+            cwd=str(bench.ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("--require", completed.stdout)
 
 
 class FakeCompilerTests(unittest.TestCase):

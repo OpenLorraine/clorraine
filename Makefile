@@ -114,7 +114,7 @@ bench-base:
 	BASE_COMMIT=$$sha $(DOCKER_MAKE) exec PASSTHROUGH="BASE_COMMIT" CMD="docker/scripts/bench-base.sh"
 
 bench-compare:
-	$(DOCKER_MAKE) exec CMD="python3 tools/perf/bench.py compare build/perf/base.json build/perf/head.json"
+	$(DOCKER_MAKE) exec CMD="python3 tools/perf/bench.py compare $(addprefix --require ,$(REQUIRE)) build/perf/base.json build/perf/head.json"
 
 bench-test:
 	$(DOCKER_MAKE) exec CMD="python3 -m unittest discover -s tools/perf/tests -t tools/perf -v"

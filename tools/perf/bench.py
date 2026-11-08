@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import math
 import platform
 import re
 import subprocess
@@ -565,6 +566,50 @@ def format_delta(base: int | None, head: int | None) -> str:
     return f"{(head - base) * 100.0 / base:+.1f}%"
 
 
+REQUIREMENT_METRICS = ("instructions", "text")
+
+
+def parse_requirement(spec: str) -> tuple[str, str, float]:
+    """Parse one ``NAME:METRIC:PERCENT`` expectation.
+
+    The name may contain a colon, so the split is from the right: the last
+    field is the percentage, the middle field is the metric, and the rest is
+    the benchmark name.
+    """
+    fields = spec.rsplit(":", 2)
+    if len(fields) != 3:
+        raise HarnessError(
+            f"expected NAME:METRIC:PERCENT in --require: {spec}"
+        )
+    name, metric_name, raw_percent = fields
+    if metric_name not in REQUIREMENT_METRICS:
+        raise HarnessError(
+            f"unknown metric in --require: {metric_name} "
+            "(use instructions or text)"
+        )
+    try:
+        percent = float(raw_percent)
+    except ValueError as error:
+        raise HarnessError(
+            f"invalid percentage in --require: {raw_percent}"
+        ) from error
+    if not math.isfinite(percent) or percent <= 0:
+        raise HarnessError(
+            f"percentage must be a positive finite number in --require: "
+            f"{raw_percent}"
+        )
+    return name, metric_name, percent
+
+
+def requirement_metric(
+    document: dict[str, object], name: str, metric_name: str
+) -> int | None:
+    """Read the metric a ``--require`` entry names."""
+    if metric_name == "instructions":
+        return metric(document, name, "instructions_net")
+    return section(document, name, "m68k_release", "text")
+
+
 def command_compare(args: argparse.Namespace) -> int:
     """Compare a base and head result document under the plan thresholds."""
     base = load_document(path(args.base))
@@ -576,6 +621,11 @@ def command_compare(args: argparse.Namespace) -> int:
     assert isinstance(base_benchmarks, dict) and isinstance(head_benchmarks, dict)
     if set(base_benchmarks) != set(head_benchmarks):
         raise HarnessError("cannot compare: benchmark sets differ")
+
+    requirements = [parse_requirement(spec) for spec in args.require]
+    for name, _, _ in requirements:
+        if name not in base_benchmarks:
+            raise HarnessError(f"unknown benchmark in --require: {name}")
 
     failures: list[str] = []
     rows = []
@@ -607,23 +657,22 @@ def command_compare(args: argparse.Namespace) -> int:
                 head_benchmarks[name].get("host_release_median_ns"),
             )
         )
-        if name == "sieve":
-            if base_i is not None and head_i is not None and head_i > base_i * 0.80:
-                failures.append(f"sieve: instructions target missed ({head_i} > {base_i} * 0.80)")
-            if base_t is not None and head_t is not None and head_t > base_t * 0.90:
-                failures.append(f"sieve: .text target missed ({head_t} > {base_t} * 0.90)")
-            base_c = metric(base, name, "c_bytes")
-            head_c = metric(head, name, "c_bytes")
-            if base_c is not None and head_c is not None and head_c > base_c * 0.75:
-                failures.append(f"sieve: C-byte target missed ({head_c} > {base_c} * 0.75)")
-
-    improved = any(
-        (b_i is not None and h_i is not None and h_i <= b_i * 0.80)
-        or (b_t is not None and h_t is not None and h_t <= b_t * 0.90)
-        for _, b_i, h_i, b_t, h_t, _, _ in rows
-    )
-    if not improved:
-        failures.append("no benchmark improved by 20% instructions or 10% .text")
+    requirement_rows = []
+    for name, metric_name, percent in requirements:
+        base_value = requirement_metric(base, name, metric_name)
+        head_value = requirement_metric(head, name, metric_name)
+        if base_value is None or head_value is None:
+            failures.append(f"{name}: missing {metric_name} metric for --require")
+            requirement_rows.append((name, metric_name, base_value, head_value, percent, False))
+            continue
+        limit = base_value * (1.0 - percent / 100.0)
+        passed = head_value <= limit
+        requirement_rows.append((name, metric_name, base_value, head_value, percent, passed))
+        if not passed:
+            failures.append(
+                f"{name}: {metric_name} {format_delta(base_value, head_value)} "
+                f"misses the required -{percent:g}%"
+            )
 
     print(f"{'benchmark':<14}{'base ins':>12}{'head ins':>12}{'delta':>9}"
           f"{'base .text':>12}{'head .text':>12}{'delta':>9}")
@@ -644,6 +693,14 @@ def command_compare(args: argparse.Namespace) -> int:
             f"{head_c if head_c is not None else 'n/a':>9}"
             f"{format_delta(base_c, head_c):>10}"
         )
+    if requirement_rows:
+        print("\nrequire:")
+        for name, metric_name, base_value, head_value, percent, passed in requirement_rows:
+            print(
+                f"  {name:<12}{metric_name:<13}"
+                f"{format_delta(base_value, head_value):>9}"
+                f"  need <= -{percent:g}%  {'PASS' if passed else 'FAIL'}"
+            )
     if failures:
         print("\ncompare: FAILED")
         for failure in failures:
@@ -680,6 +737,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     run.set_defaults(func=command_run)
 
     compare = sub.add_parser("compare", help="compare two result documents")
+    compare.add_argument(
+        "--require",
+        action="append",
+        default=[],
+        metavar="NAME:METRIC:PERCENT",
+        help=(
+            "require a named benchmark to improve by at least PERCENT in "
+            "instructions or text; repeatable"
+        ),
+    )
     compare.add_argument("base")
     compare.add_argument("head")
     compare.set_defaults(func=command_compare)
