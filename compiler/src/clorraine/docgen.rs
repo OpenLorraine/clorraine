@@ -112,7 +112,7 @@ fn collect_modules(
 
 /// Builds one declaration's documentation.
 fn item_docs(sources: &SourceMap, file: FileId, item: &Item) -> Option<DocItem> {
-    let (name, span, signature_end, types, exported) = item_shape(sources, file, item)?;
+    let (name, span, signature_end, types, exported) = item_shape(sources, item)?;
     let signature = signature_text(sources, file, span, signature_end, exported);
     Some(DocItem {
         name,
@@ -125,7 +125,6 @@ fn item_docs(sources: &SourceMap, file: FileId, item: &Item) -> Option<DocItem> 
 /// Returns the name, full span, signature end, and named types of an item.
 fn item_shape(
     sources: &SourceMap,
-    file: FileId,
     item: &Item,
 ) -> Option<(String, Span, u32, Vec<String>, bool)> {
     let mut types = Vec::new();
@@ -297,7 +296,6 @@ fn valid_module(name: &str) -> bool {
 
 /// Renders every page and returns its path and text.
 fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, String)> {
-    let mut anchors: BTreeMap<(String, String), String> = BTreeMap::new();
     let mut type_index: BTreeMap<String, (String, String)> = BTreeMap::new();
     for (module_name, module) in modules {
         let mut used: BTreeMap<String, usize> = BTreeMap::new();
@@ -310,7 +308,6 @@ fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, S
             } else {
                 format!("{base}-{count}")
             };
-            anchors.insert((module_name.clone(), item.name.clone()), value.clone());
             type_index
                 .entry(item.name.clone())
                 .or_insert((module_name.clone(), value));
@@ -330,7 +327,7 @@ fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, S
     for (module_name, module) in modules {
         output.push((
             root.join(format!("{module_name}.md")),
-            render_module(module_name, module, &anchors, &type_index),
+            render_module(module_name, module, &type_index),
         ));
     }
     output
@@ -340,7 +337,6 @@ fn render(root: &Path, modules: &BTreeMap<String, DocModule>) -> Vec<(PathBuf, S
 fn render_module(
     name: &str,
     module: &DocModule,
-    _anchors: &BTreeMap<(String, String), String>,
     type_index: &BTreeMap<String, (String, String)>,
 ) -> String {
     let mut page = format!("# {name}\n\n");
