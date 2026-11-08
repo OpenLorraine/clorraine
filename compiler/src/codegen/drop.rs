@@ -8,7 +8,7 @@
 
 use crate::borrow::is_view;
 use crate::ir::Place;
-use crate::types::{substitute_instance, Ty, TyKind};
+use crate::types::{substitute_instance, type_key, Ty, TyKind};
 
 use super::Emitter;
 
@@ -37,12 +37,13 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
                 self.push(&format!("    {c_name} = {null};"));
             }
-            // The box release helper is emitted with the allocator in the next
-            // phase. Until then the drop reads the place so a Box parameter or
-            // a saved local has a C reference and the strict build stays clean;
-            // no Box value is constructible yet.
-            TyKind::Box(_) => {
-                self.push(&format!("    if ({c_name}) {{ }}"));
+            // A box releases its pointee recursively through the generated
+            // helper, then frees the block and empties the place.
+            TyKind::Box(inner) => {
+                let helper = format!("cl_box_drop__{}", type_key(inner));
+                let null = self.null_literal();
+                self.push(&format!("    if ({c_name}) {{ {helper}({c_name}); }}"));
+                self.push(&format!("    {c_name} = {null};"));
             }
             TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
                 if self.needs_drop(element) {
@@ -154,9 +155,15 @@ impl<'a> Emitter<'a> {
                     "({c_name} ? ({deleter}({c_name}), {c_name} = {null}) : 0)"
                 ))
             }
-            // See `emit_drop_expr`: the release helper follows with the
-            // allocator; the expression form still reads the place.
-            TyKind::Box(_) => Some(format!("({c_name} ? 0 : 0)")),
+            // A box releases its pointee through the generated helper, then
+            // frees the block and empties the place.
+            TyKind::Box(inner) => {
+                let helper = format!("cl_box_drop__{}", type_key(inner));
+                let null = self.null_literal();
+                Some(format!(
+                    "({c_name} ? ({helper}({c_name}), {c_name} = {null}) : 0)"
+                ))
+            }
             TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
                 if !self.needs_drop(element) {
                     return Some("0".to_owned());

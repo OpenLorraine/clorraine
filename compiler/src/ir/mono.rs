@@ -628,6 +628,7 @@ pub struct LiftedSpecialization {
 pub struct Monomorphization {
     instances: Vec<Instance>,
     structs: Vec<StructInstance>,
+    boxes: Vec<Ty>,
     lifted: Vec<LiftedSpecialization>,
     obligations: Vec<CopyObligation>,
     duplicable_requirements: Vec<RequiresDuplicable>,
@@ -672,6 +673,23 @@ impl Monomorphization {
     /// Every distinct struct instance recorded so far.
     pub fn struct_instances(&self) -> &[StructInstance] {
         &self.structs
+    }
+
+    /// Records one `Box<T>` element type, returning true when it was new.
+    ///
+    /// The emitter generates one allocation and one drop helper per element
+    /// type, so the set is deduplicated by the concrete element.
+    pub fn record_box(&mut self, element: Ty) -> bool {
+        if self.boxes.iter().any(|known| known == &element) {
+            return false;
+        }
+        self.boxes.push(element);
+        true
+    }
+
+    /// Every distinct `Box<T>` element type recorded so far.
+    pub fn boxes(&self) -> &[Ty] {
+        &self.boxes
     }
 
     /// Records a lifted-lambda specialization, returning true when it was not

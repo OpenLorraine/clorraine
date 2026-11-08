@@ -884,6 +884,18 @@ pub fn contains_closure(ty: &Ty) -> bool {
 /// concrete `Box<str>` born from `Holder<str>` where `Holder<T>` stores a
 /// `Box<T>`. Returns the registered code and its first line.
 pub fn box_rule_violation(table: &TypeTable, ty: &Ty) -> Option<(&'static str, String)> {
+    box_rule_violation_at(table, ty, 0)
+}
+
+/// Depth-limited worker for [`box_rule_violation`].
+fn box_rule_violation_at(
+    table: &TypeTable,
+    ty: &Ty,
+    depth: usize,
+) -> Option<(&'static str, String)> {
+    if depth > 32 {
+        return None;
+    }
     match &ty.kind {
         TyKind::Box(inner) => {
             if type_contains_non_static_view(inner) {
@@ -904,28 +916,28 @@ pub fn box_rule_violation(table: &TypeTable, ty: &Ty) -> Option<(&'static str, S
                     ),
                 ));
             }
-            box_rule_violation(table, inner)
+            box_rule_violation_at(table, inner, depth + 1)
         }
         TyKind::Struct(name, args) => {
             let params = table.struct_type_params(name).unwrap_or(&[]);
             for (_, field) in table.struct_fields(name).unwrap_or(&[]) {
                 let field = substitute_instance(field, params, args);
-                if let Some(violation) = box_rule_violation(table, &field) {
+                if let Some(violation) = box_rule_violation_at(table, &field, depth + 1) {
                     return Some(violation);
                 }
             }
             None
         }
         TyKind::Array { element, .. } | TyKind::Raw(element) => {
-            box_rule_violation(table, element)
+            box_rule_violation_at(table, element, depth + 1)
         }
         TyKind::Func(signature) => {
             for param in &signature.params {
-                if let Some(violation) = box_rule_violation(table, &param.ty) {
+                if let Some(violation) = box_rule_violation_at(table, &param.ty, depth + 1) {
                     return Some(violation);
                 }
             }
-            box_rule_violation(table, &signature.returns)
+            box_rule_violation_at(table, &signature.returns, depth + 1)
         }
         _ => None,
     }

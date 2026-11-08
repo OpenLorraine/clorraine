@@ -34,7 +34,9 @@ use crate::ir::{
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{resolve_ty_folded, view_type, CaptureInfo, CaptureMode, Ty, TyKind};
+use crate::types::{
+    resolve_ty_folded, substitute_instance, view_type, CaptureInfo, CaptureMode, Ty, TyKind,
+};
 
 pub mod program;
 
@@ -519,6 +521,52 @@ pub fn check(
             };
             diagnostics.push(Diagnostic::error(code, message, span).with_help(help));
         }
+    }
+    // A generic function instance can turn its `Box<T>` parameter or return
+    // into a view/overlay/closure box without the caller ever spelling a Box
+    // type (`boxNew<u8[]>(bytes(s))`). Audit the substituted signature too.
+    for instance in monomorphization.instances() {
+        let Some(decl) = program.user_function(&instance.function) else {
+            continue;
+        };
+        if decl.type_params.len() != instance.args.len() {
+            continue;
+        }
+        let Some(module) = loaded.modules.values().find(|module| {
+            module
+                .items
+                .iter()
+                .any(|item| matches!(item, Item::Func(candidate) if std::ptr::eq(candidate, decl)))
+        }) else {
+            continue;
+        };
+        let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        let mut reported = false;
+        let mut check = |ty: &Ty| {
+            if reported {
+                return;
+            }
+            let substituted = substitute_instance(ty, &params, &instance.args);
+            if let Some((code, message)) =
+                crate::types::box_rule_violation(&sema.table, &substituted)
+            {
+                let help = match code {
+                    "E10227" => "box an owner, or use `static str` for literals",
+                    "E10207" => "access it through a `raw` pointer inside `unsafe`",
+                    _ => "use a storable type",
+                };
+                diagnostics.push(
+                    Diagnostic::error(code, message, decl.name_span).with_help(help),
+                );
+                reported = true;
+            }
+        };
+        for param in &decl.params {
+            let ty = resolve_ty_folded(&param.ty, &params, &sema.table, module, loaded);
+            check(&ty);
+        }
+        let returns = resolve_ty_folded(&decl.returns, &params, &sema.table, module, loaded);
+        check(&returns);
     }
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
     OwnershipOutput {

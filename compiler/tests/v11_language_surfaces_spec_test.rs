@@ -3,8 +3,8 @@
 //! Each case compiles a small Clorraine program with the built `clc` binary.
 //! Accepted programs are built with the host C compiler under the fixed
 //! warning flags and run; rejected programs assert the diagnostic code and
-//! that no translation unit was written. The memory cases add AddressSanitizer
-//! leak and use-after-free detection when `RDC_ASAN` is set.
+//! that no translation unit was written. The dedicated memory suite owns the
+//! AddressSanitizer proof of the drop paths.
 //!
 //! The suite grows with the execution plan: this first group pins the `Box<T>`
 //! type model and its boundary diagnostics.
@@ -141,9 +141,62 @@ fn assert_accepted(tag: &str, source: &str) {
     drop(scratch);
 }
 
+/// Compiles, builds, and runs an accepted program under the strict host
+/// flags. The dedicated memory suite owns the AddressSanitizer child build.
+fn run_host(tag: &str, source: &str) -> Output {
+    let (scratch, output, c_path) = compile_only(tag, "host", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+        ])
+        .arg(&program)
+        .arg(&c_path)
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the strict host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let result = Command::new(&program)
+        .output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
+    drop(scratch);
+    result
+}
+
+/// Asserts a program runs and exits zero.
+fn assert_run_ok(tag: &str, source: &str) {
+    let output = run_host(tag, source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A minimal program wrapper around a `Box` declaration.
 fn program(items: &str) -> String {
     format!("module spec.v11;\n{items}\nfunc main(): i32 {{ return 0; }}\n")
+}
+
+/// A wrapper whose entry calls `demo`, for behavior cases.
+fn run_program(items: &str) -> String {
+    format!("module spec.v11;\n{items}\nfunc main(): i32 {{ return demo(); }}\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -522,5 +575,188 @@ fn a_nullable_box_compares_with_null() {
                  return 0;\n\
              }",
         ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Box allocation, access, and recursive drop.
+// ---------------------------------------------------------------------------
+
+/// A scalar box is allocated, read through `boxWith`, and dropped.
+#[test]
+fn a_box_holds_and_reads_a_scalar() {
+    assert_run_ok(
+        "box-scalar",
+        &run_program(
+            "import { boxNew, boxWith } from std.mem;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<i32>(7);\n\
+                 let n: i32 = 0;\n\
+                 boxWith(b, [borrow n] (v: i32) => { n = v; });\n\
+                 return n - 7;\n\
+             }",
+        ),
+    );
+}
+
+/// A boxed String is read through the callback and released on exit.
+#[test]
+fn a_boxed_string_reads_through_the_callback() {
+    assert_run_ok(
+        "box-string",
+        &run_program(
+            "import { boxNew, boxWith } from std.mem;\n\
+             import { String, stringOf, bytes } from std.text;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<String>(stringOf(\"hi\"));\n\
+                 let n: i32 = 0;\n\
+                 boxWith(b, [borrow n] (v: String) => { n = i32(len(bytes(v))); });\n\
+                 return n - 2;\n\
+             }",
+        ),
+    );
+}
+
+/// `boxSet` drops the old String and installs the new one.
+#[test]
+fn a_box_set_replaces_a_string() {
+    assert_run_ok(
+        "box-set",
+        &run_program(
+            "import { boxNew, boxSet, boxWith } from std.mem;\n\
+             import { String, stringOf, bytes } from std.text;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<String>(stringOf(\"ab\"));\n\
+                 boxSet(b, stringOf(\"cde\"));\n\
+                 let n: i32 = 0;\n\
+                 boxWith(b, [borrow n] (v: String) => { n = i32(len(bytes(v))); });\n\
+                 return n - 3;\n\
+             }",
+        ),
+    );
+}
+
+/// Reassigning a box releases the old block and its pointee.
+#[test]
+fn a_box_reassignment_releases_the_old_value() {
+    assert_run_ok(
+        "box-reassign",
+        &run_program(
+            "import { boxNew } from std.mem;\n\
+             import { String, stringOf } from std.text;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<String>(stringOf(\"aa\"));\n\
+                 b = boxNew<String>(stringOf(\"bb\"));\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A box of a box drops the inner block and its String.
+#[test]
+fn a_nested_box_drops_recursively() {
+    assert_run_ok(
+        "box-nested",
+        &run_program(
+            "import { boxNew } from std.mem;\n\
+             import { String, stringOf } from std.text;\n\
+             func demo(): i32 {\n\
+                 let inner = boxNew<String>(stringOf(\"x\"));\n\
+                 let outer = boxNew<Box<String>>(inner);\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A box of a growable array releases its elements before the buffer.
+#[test]
+fn a_boxed_array_drops_its_elements() {
+    assert_run_ok(
+        "box-array",
+        &run_program(
+            "import { boxNew, arrayNew, push, Array } from std.mem;\n\
+             import { String, stringOf } from std.text;\n\
+             func demo(): i32 {\n\
+                 let xs = arrayNew<String>();\n\
+                 push<String>(xs, stringOf(\"a\"));\n\
+                 push<String>(xs, stringOf(\"b\"));\n\
+                 let b = boxNew<Array<String>>(xs);\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A recursive linked list of boxes drops from the head through every link.
+#[test]
+fn a_recursive_box_list_drops() {
+    assert_run_ok(
+        "box-list",
+        &run_program(
+            "import { boxNew } from std.mem;\n\
+             struct Node { value: i32; next: Box<Node>?; }\n\
+             func demo(): i32 {\n\
+                 let c = Node { value: 3, next: null };\n\
+                 let b = boxNew<Node>(c);\n\
+                 let a = boxNew<Node>(Node { value: 2, next: b });\n\
+                 let root = boxNew<Node>(Node { value: 1, next: a });\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A box created in a loop and a defer drops each iteration's value.
+#[test]
+fn a_box_in_a_loop_and_a_defer_drops() {
+    assert_run_ok(
+        "box-loop-defer",
+        &run_program(
+            "import { boxNew } from std.mem;\n\
+             func demo(): i32 {\n\
+                 let i: i32 = 0;\n\
+                 while (i < 3) {\n\
+                     let b = boxNew<i32>(i);\n\
+                     i = i + 1;\n\
+                 }\n\
+                 defer {\n\
+                     let d = boxNew<i32>(9);\n\
+                 }\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A null box drops as a no-op.
+#[test]
+fn a_null_box_drops_as_a_noop() {
+    assert_run_ok(
+        "box-null-drop",
+        &run_program(
+            "func demo(): i32 {\n\
+                 let b: Box<i32>? = null;\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+}
+
+/// A possibly-null box cannot be passed to `boxWith` without narrowing.
+#[test]
+fn a_nullable_box_argument_needs_narrowing() {
+    assert_rejected(
+        "box-nullable-call",
+        &program(
+            "import { boxWith } from std.mem;\n\
+             func demo(b: Box<i32>?): i32 {\n\
+                 let n: i32 = 0;\n\
+                 boxWith(b, [borrow n] (v: i32) => { n = v; });\n\
+                 return n;\n\
+             }",
+        ),
+        "E10010",
     );
 }

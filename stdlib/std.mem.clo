@@ -62,6 +62,38 @@ export func bufferLen(b: Buffer): usize {
     return cl_buffer_len(b);
 }
 
+intrinsic func boxAlloc<T>(): Box<T>;
+
+/// The pointee pointer of a box. Private: application code uses `boxWith`.
+func boxPtr<T>(borrow b: Box<T>): raw T {
+    unsafe {
+        return raw T(b);
+    }
+}
+
+/// Allocates one `T` block and moves `value` into it.
+func boxNew<T>(take value: T): Box<T> {
+    let b = boxAlloc<T>();
+    unsafe {
+        *boxPtr<T>(b) = value;
+    }
+    return b;
+}
+
+/// Drops the current pointee and moves `value` into the same block.
+func boxSet<T>(borrow b: Box<T>, take value: T): void {
+    unsafe {
+        *boxPtr<T>(b) = value;
+    }
+}
+
+/// Lends the pointee to `f` for the duration of the synchronous call.
+func boxWith<T, F: func(T): void>(borrow b: Box<T>, f: F): void {
+    unsafe {
+        f(*boxPtr<T>(b));
+    }
+}
+
 export func spanOf(src: u8[], at: usize, n: usize): Span {
     let s: u8[] = slice<u8>(src, at, at + n);
     return Span {

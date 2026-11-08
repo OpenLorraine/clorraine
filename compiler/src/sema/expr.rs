@@ -1199,7 +1199,12 @@ impl Checker<'_, '_> {
             .filter(|last| self.table.is_struct(last))
             .cloned()
         else {
-            if self.builtin_box_active() && name.segments.last().is_some_and(|last| last == "Box") {
+            if self.builtin_box_active()
+                && name
+                    .segments
+                    .last()
+                    .is_some_and(|last| self.is_box_name(last))
+            {
                 self.error(
                     "E10203",
                     "struct literal for 'Box' does not match its fields",

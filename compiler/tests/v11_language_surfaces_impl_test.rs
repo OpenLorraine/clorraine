@@ -160,3 +160,64 @@ fn a_generic_aggregate_instance_is_emitted_for_a_value() {
         "a value use of Wrap<i32> must name the instance typedef; emitted:\n{c}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Box allocation and drop helpers
+// ---------------------------------------------------------------------------
+
+/// A boxed scalar has a prototype, a definition, and a zoned allocation.
+#[test]
+fn a_boxed_scalar_emits_the_helpers() {
+    let (_scratch, c) = compile(
+        "box-helpers",
+        "host",
+        &program(
+            "import { boxNew } from std.mem;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<i32>(7);\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+    assert!(
+        c.contains("static inline void *cl_box_alloc__i32(void);"),
+        "the allocation helper prototype must be emitted; emitted:\n{c}"
+    );
+    assert!(
+        c.contains("static inline void cl_box_drop__i32(void *box);"),
+        "the drop helper prototype must be emitted; emitted:\n{c}"
+    );
+    assert!(
+        c.contains("return cl_box_alloc(sizeof(i32));"),
+        "the allocation helper must ask for the element size; emitted:\n{c}"
+    );
+    assert!(
+        c.contains("if (b) { cl_box_drop__i32(b); }"),
+        "the scope drop must call the helper; emitted:\n{c}"
+    );
+}
+
+/// A generic `boxNew<T>` instance names the concrete helper, not `p1_T`.
+#[test]
+fn a_generic_box_new_names_the_concrete_helper() {
+    let (_scratch, c) = compile(
+        "box-generic-helper",
+        "host",
+        &program(
+            "import { boxNew } from std.mem;\n\
+             import { String, stringOf } from std.text;\n\
+             func demo(): i32 {\n\
+                 let b = boxNew<String>(stringOf(\"x\"));\n\
+                 return 0;\n\
+             }",
+        ),
+    );
+    assert!(
+        !c.contains("cl_box_alloc__p1_T"),
+        "an unsubstituted parameter helper name must not be emitted; emitted:\n{c}"
+    );
+    assert!(
+        c.contains("cl_box_alloc__String"),
+        "the concrete String helper must be emitted; emitted:\n{c}"
+    );
+}

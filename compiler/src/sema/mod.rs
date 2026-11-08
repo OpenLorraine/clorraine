@@ -728,6 +728,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             table,
             &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
             &mut |name| module.import(name).map(|binding| binding.original.clone()),
+            module.embedded && module.name == "std.mem",
         );
         self.reject_fixed_array_sequence(&resolved, ty.span);
         // The built-in `String` handle is heap-backed: its drop and view use
@@ -1064,11 +1065,32 @@ impl<'a, 'd> Checker<'a, 'd> {
     /// built-in checks (arity, element rules, construction rejection) run only
     /// when no such declaration is in scope.
     pub(super) fn builtin_box_active(&self) -> bool {
+        // The embedded library's own `Box<T>` always means the built-in, so a
+        // user struct named `Box` cannot retype the standard-library API.
+        if self.module.embedded && self.module.name == "std.mem" {
+            return true;
+        }
+        if let Some(binding) = self.module.import("Box") {
+            // Importing the built-in `Box` keeps it active; importing another
+            // type under the name `Box` is the ordinary shadowing case.
+            return binding.module == "std.mem" && binding.original == "Box";
+        }
         !self.type_params.iter().any(|param| param == "Box")
             && !self.table.is_struct("Box")
             && !self.table.is_enum("Box")
             && !self.table.is_handle("Box")
-            && self.module.import("Box").is_none()
+    }
+
+    /// True when a written name denotes the built-in `Box`.
+    ///
+    /// A direct `Box` and an import alias such as `import { Box as B }` both
+    /// name it; a user import that merely binds another type under the spelling
+    /// `Box` does not.
+    pub(super) fn is_box_name(&self, name: &str) -> bool {
+        match self.module.import(name) {
+            Some(binding) => binding.module == "std.mem" && binding.original == "Box",
+            None => name == "Box",
+        }
     }
 
     /// True when the name is bound in a lexical scope.
@@ -1105,7 +1127,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         if self.table.is_handle(name) {
             return Some(Ty::handle(name));
         }
-        if name == "Box" && self.builtin_box_active() {
+        if self.is_box_name(name) && self.builtin_box_active() {
             return Some(Ty::boxed(Ty::unknown()));
         }
         None

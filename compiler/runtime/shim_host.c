@@ -80,6 +80,22 @@ void cl_free(void *block)
     free(block);
 }
 
+/* Allocate one zeroed box block. The language's empty state is all-zero, so
+ * the first store's old-value drop is a no-op. An allocation failure keeps the
+ * `cl_alloc` contract: it traps. */
+void *cl_box_alloc(size_t size)
+{
+    void *block = cl_alloc(size == 0 ? 1 : size);
+    memset(block, 0, size == 0 ? 1 : size);
+    return block;
+}
+
+/* Release a box block. Null-safe. */
+void cl_box_free(void *block)
+{
+    cl_free(block);
+}
+
 /* Byte copy and compare helpers the library may bind. */
 void *cl_memcpy(void *dst, const void *src, unsigned int n)
 {

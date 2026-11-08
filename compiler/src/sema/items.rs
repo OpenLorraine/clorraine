@@ -316,7 +316,7 @@ impl Checker<'_, '_> {
                     }
                 }
                 if let Some(last) = name.segments.last() {
-                    if last == "Box" && self.builtin_box_active() && args.len() != 1 {
+                    if self.is_box_name(last) && self.builtin_box_active() && args.len() != 1 {
                         self.error(
                             "E10300",
                             format!(
@@ -327,11 +327,15 @@ impl Checker<'_, '_> {
                             ty.span,
                         );
                     }
-                    if last == "Box" && self.builtin_box_active() && args.len() == 1 {
+                    if self.is_box_name(last) && self.builtin_box_active() && args.len() == 1 {
                         self.check_box_element(&args[0], ty.span);
                     }
                     if let Some(params) = self.table.struct_type_params(last) {
-                        if args.len() != params.len() {
+                        if self.is_box_name(last) && self.builtin_box_active() {
+                            // The built-in meaning wins inside the library;
+                            // a same-named user struct's parameter count does
+                            // not apply to the library's own `Box<T>`.
+                        } else if args.len() != params.len() {
                             self.error(
                                 "E10300",
                                 format!(
@@ -376,6 +380,7 @@ impl Checker<'_, '_> {
                 table,
                 &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
                 &mut |name| module.import(name).map(|binding| binding.original.clone()),
+                module.embedded && module.name == "std.mem",
             )
         };
         if let Some((code, message)) =

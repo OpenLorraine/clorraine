@@ -311,6 +311,7 @@ impl TypeTable {
                                     self,
                                     &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
                                     &mut alias,
+                                    module.embedded && module.name == "std.mem",
                                 );
                                 fields.push((field.name.clone(), ty));
                             }
@@ -326,6 +327,7 @@ impl TypeTable {
                                 self,
                                 &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
                                 &mut alias,
+                                module.embedded && module.name == "std.mem",
                             );
                             global_updates.push((module.name.clone(), decl.name.clone(), ty));
                         }
@@ -339,6 +341,7 @@ impl TypeTable {
                                 self,
                                 &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
                                 &mut alias,
+                                module.embedded && module.name == "std.mem",
                             );
                             global_updates.push((module.name.clone(), decl.name.clone(), ty));
                         }
@@ -684,6 +687,7 @@ pub fn resolve_ty_folded(
         table,
         &mut |expr| folder.integer_at(expr, Some(ScalarType::Usize)),
         &mut alias,
+        module.embedded && module.name == "std.mem",
     )
 }
 
@@ -701,7 +705,7 @@ pub fn resolve_ty_with<F>(
 where
     F: FnMut(&Expr) -> Option<i128>,
 {
-    resolve_ty_with_alias(ty, type_params, table, fold, &mut |_| None)
+    resolve_ty_with_alias(ty, type_params, table, fold, &mut |_| None, false)
 }
 
 /// Resolves a written type with a module's import aliases.
@@ -715,6 +719,7 @@ pub fn resolve_ty_with_alias<F, A>(
     table: &TypeTable,
     fold: &mut F,
     alias: &mut A,
+    prefer_builtin_box: bool,
 ) -> Ty
 where
     F: FnMut(&Expr) -> Option<i128>,
@@ -727,11 +732,11 @@ where
         TypeKind::CString => TyKind::CString,
         TypeKind::StaticStr => TyKind::StaticStr,
         TypeKind::Raw(inner) => TyKind::Raw(Box::new(resolve_ty_with_alias(
-            inner, type_params, table, fold, alias,
+            inner, type_params, table, fold, alias, prefer_builtin_box,
         ))),
         TypeKind::Array { element, extents } => TyKind::Array {
             element: Box::new(resolve_ty_with_alias(
-                element, type_params, table, fold, alias,
+                element, type_params, table, fold, alias, prefer_builtin_box,
             )),
             extents: extents
                 .iter()
@@ -745,18 +750,32 @@ where
             params: params
                 .iter()
                 .map(|param| FuncParam {
-                    ty: resolve_ty_with_alias(&param.ty, type_params, table, fold, alias),
+                    ty: resolve_ty_with_alias(
+                        &param.ty,
+                        type_params,
+                        table,
+                        fold,
+                        alias,
+                        prefer_builtin_box,
+                    ),
                     mode: param.mode,
                 })
                 .collect(),
             returns: Box::new(resolve_ty_with_alias(
-                returns, type_params, table, fold, alias,
+                returns, type_params, table, fold, alias, prefer_builtin_box,
             )),
         }),
         TypeKind::Named { name, args } => {
             let mut resolved_args = Vec::with_capacity(args.len());
             for arg in args {
-                resolved_args.push(resolve_ty_with_alias(arg, type_params, table, fold, alias));
+                resolved_args.push(resolve_ty_with_alias(
+                    arg,
+                    type_params,
+                    table,
+                    fold,
+                    alias,
+                    prefer_builtin_box,
+                ));
             }
             let aliased = if name.segments.len() == 1
                 && !name
@@ -778,6 +797,7 @@ where
                 resolved_args,
                 type_params,
                 table,
+                prefer_builtin_box,
             )
         }
         TypeKind::Error => TyKind::Unknown,
@@ -801,12 +821,19 @@ fn resolve_named(
     args: Vec<Ty>,
     type_params: &[String],
     table: &TypeTable,
+    prefer_builtin_box: bool,
 ) -> TyKind {
     let Some(last) = name.segments.last() else {
         return TyKind::Unknown;
     };
     if name.segments.len() == 1 && type_params.iter().any(|param| param == last) {
         return TyKind::Param(last.clone());
+    }
+    // Inside the embedded `std.mem`, the built-in box wins over a same-named
+    // user struct, so the library's own `Box<T>` signatures stay the built-in.
+    // A user module keeps the ordinary shadowing order.
+    if prefer_builtin_box && last == "Box" && args.len() == 1 {
+        return TyKind::Box(Box::new(args.into_iter().next().expect("one argument")));
     }
     if table.is_struct(last) {
         return TyKind::Struct(last.clone(), args);

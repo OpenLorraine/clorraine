@@ -772,6 +772,45 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Writes the allocation and recursive drop helpers for `Box<T>`.
+    ///
+    /// One pair per concrete element type, sorted by the element key so the
+    /// output is deterministic. The prototypes precede every definition, so
+    /// two helpers that drop each other (an `A`/`B` boxed pair) are valid C99.
+    /// `static inline` keeps an unused pair warning-free.
+    pub(super) fn emit_box_helpers(&mut self) {
+        let mut elements: BTreeMap<String, Ty> = BTreeMap::new();
+        for element in self.ownership.monomorphization.boxes() {
+            elements
+                .entry(type_key(element))
+                .or_insert_with(|| element.clone());
+        }
+        if elements.is_empty() {
+            return;
+        }
+        for key in elements.keys() {
+            self.push(&format!("static inline void *cl_box_alloc__{key}(void);"));
+            self.push(&format!("static inline void cl_box_drop__{key}(void *box);"));
+        }
+        self.push("");
+        for (key, element) in &elements {
+            let pointer = c_type(&Ty::raw(element.clone()), &self.sema.table);
+            let element_c = declarator(element, "", &self.sema.table).trim().to_owned();
+            self.push(&format!("static inline void *cl_box_alloc__{key}(void)"));
+            self.push("{");
+            self.push(&format!("    return cl_box_alloc(sizeof({element_c}));"));
+            self.push("}");
+            self.push(&format!("static inline void cl_box_drop__{key}(void *box)"));
+            self.push("{");
+            self.push("    if (!box) { return; }");
+            let place = format!("(*({pointer})box)");
+            self.emit_drop_expr(&place, element);
+            self.push("    cl_box_free(box);");
+            self.push("}");
+            self.push("");
+        }
+    }
+
     /// Writes an opaque typedef for each user handle with no contract type.
     pub(super) fn emit_handle_typedefs(&mut self) {
         let mut names: BTreeSet<String> = BTreeSet::new();

@@ -1065,6 +1065,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.check_value_into(&arg.value, expected, arg.span);
                     }
                 } else {
+                    // A concrete non-nullable instance still rejects a
+                    // possibly-null argument. The declared parameter may still
+                    // name a type parameter, so the ordinary conversion walk
+                    // defers the judgment; the flow state here is the same one
+                    // the concrete call uses.
+                    let concrete_nonnull = resolved.is_some_and(|ty| {
+                        !ty.is_unknown() && !ty.nullable && !crate::types::contains_param(ty)
+                    });
+                    let declared_parameterized = crate::types::contains_param(expected);
+                    if concrete_nonnull && declared_parameterized && arg_ty.nullable {
+                        self.check_nonnull_expr(&arg.value, arg.span);
+                    }
                     self.check_value_into(&arg.value, expected, arg.span);
                 }
             }

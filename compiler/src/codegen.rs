@@ -651,6 +651,7 @@ impl<'a> Emitter<'a> {
         self.emit_row_slice_typedefs();
         self.emit_closure_declarations();
         self.emit_prototypes();
+        self.emit_box_helpers();
         self.emit_globals();
         self.emit_init_functions();
         self.emit_bodies();

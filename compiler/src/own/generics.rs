@@ -94,17 +94,14 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
                 Item::Func(decl) | Item::Comptime(decl) => {
                     let params = type_param_names(&decl.type_params);
                     for param in &decl.params {
-                        record_struct_type(
-                            &resolve_ty_folded(
-                                &param.ty,
-                                &params,
-                                &sema.table,
-                                module,
-                                loaded,
-                            ),
-                            sema,
-                            mono,
+                        let resolved = resolve_ty_folded(
+                            &param.ty,
+                            &params,
+                            &sema.table,
+                            module,
+                            loaded,
                         );
+                        record_struct_type(&resolved, sema, mono);
                     }
                     record_struct_type(
                         &resolve_ty_folded(
@@ -205,12 +202,46 @@ fn record_struct_type(ty: &Ty, sema: &SemaOutput, mono: &mut Monomorphization) {
         }
         TyKind::Array { element, .. } => record_struct_type(element, sema, mono),
         TyKind::Raw(inner) => record_struct_type(inner, sema, mono),
-        TyKind::Box(inner) => record_struct_type(inner, sema, mono),
+        TyKind::Box(inner) => {
+            record_box_type(ty, mono);
+            record_struct_type(inner, sema, mono);
+        }
         TyKind::Func(signature) => {
             for param in &signature.params {
                 record_struct_type(&param.ty, sema, mono);
             }
             record_struct_type(&signature.returns, sema, mono);
+        }
+        _ => {}
+    }
+}
+
+/// Records every `Box<T>` element type reachable from `ty`.
+///
+/// The emitter generates one allocation and one drop helper per element, so a
+/// Box nested in an array, pointer, function signature, or struct argument is
+/// recorded too. A type that still mentions a parameter is skipped; its
+/// concrete instance records the element.
+fn record_box_type(ty: &Ty, mono: &mut Monomorphization) {
+    match &ty.kind {
+        TyKind::Box(inner) => {
+            if !crate::types::contains_param(inner) && !inner.is_unknown() {
+                mono.record_box((**inner).clone());
+            }
+            record_box_type(inner, mono);
+        }
+        TyKind::Array { element, .. } => record_box_type(element, mono),
+        TyKind::Raw(inner) => record_box_type(inner, mono),
+        TyKind::Struct(_, args) => {
+            for arg in args {
+                record_box_type(arg, mono);
+            }
+        }
+        TyKind::Func(signature) => {
+            for param in &signature.params {
+                record_box_type(&param.ty, mono);
+            }
+            record_box_type(&signature.returns, mono);
         }
         _ => {}
     }
@@ -758,6 +789,12 @@ pub fn collect_ir_instances(
         };
         if template {
             continue;
+        }
+        for local in &function.locals {
+            record_box_type(&local.ty, mono);
+        }
+        for temp in &function.temps {
+            record_box_type(temp, mono);
         }
         walk_function(function, &no_bindings, program, sema, mono, None);
     }
@@ -1395,6 +1432,7 @@ fn walk_value(
     enclosing: Option<&str>,
 ) {
     record_struct_type(&substitute(&value.ty, bindings), sema, mono);
+    record_box_type(&substitute(&value.ty, bindings), mono);
     // A written type argument names concrete types of its own: `sizeof(T[])`
     // at a `Wrap<i32>` instance names the struct inside the view, so the
     // instance is recorded even when no local or parameter spells it.
@@ -1403,6 +1441,7 @@ fn walk_value(
     } = &value.kind
     {
         record_struct_type(&substitute(ty, bindings), sema, mono);
+        record_box_type(&substitute(ty, bindings), mono);
     }
     match &value.kind {
         ValueKind::DiscardThen { effects, value } => {
@@ -1415,6 +1454,9 @@ fn walk_value(
             args,
             receiver,
         } => {
+            for ty in type_args {
+                record_box_type(&substitute(ty, bindings), mono);
+            }
             record_call_instance(
                 callee, type_args, args, bindings, function, program, sema, mono, enclosing,
             );

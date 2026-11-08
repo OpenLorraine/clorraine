@@ -152,8 +152,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         TyKind::CString => "char *".to_owned(),
         // A pointer to a row keeps the row's extents attached to the pointer:
         // `T (*)[M]` points at a whole `T[M]`, while `T *` points at one `T`.
-        TyKind::Raw(inner) => pointer_to_array_type(inner, table)
-            .unwrap_or_else(|| format!("{} *", c_type(inner, table))),
+        TyKind::Raw(inner) => raw_pointer_type(inner, table),
         TyKind::Box(_) => "void *".to_owned(),
         TyKind::Handle(name) => handle_type(name),
         TyKind::Enum(name) => format!("Cl{}", crate::types::type_component(name)),
@@ -256,6 +255,26 @@ pub(super) fn function_declarator(
         params.push(declarator(returns, "__cl_ret", table));
         return format!("void {name}({})", parameter_list(params));
     }
+    // A function returning a pointer to a row spells the row's extent on the
+    // pointer declarator: `T (*name(...))[M]`. A pointer to a function pointer
+    // needs one more star inside the declarator:
+    // `T (**name(...))(...)`.
+    if let TyKind::Raw(inner) = &returns.kind {
+        let call = format!("{name}({})", parameter_list(params.clone()));
+        if let Some(declarator) = pointer_to_array_declarator(inner, &call, table) {
+            return declarator;
+        }
+        if let TyKind::Func(signature) = &inner.kind {
+            let pointer = format!("(**{call})");
+            return function_declarator(
+                &signature.returns,
+                func_pointer_params(signature, table),
+                &pointer,
+                None,
+                table,
+            );
+        }
+    }
     if let TyKind::Func(signature) = &returns.kind {
         let pointer = format!("(*{name}({}))", parameter_list(params));
         return function_declarator(
@@ -338,6 +357,28 @@ pub(super) fn pointer_to_array_declarator(
         c_type(element, table),
         fixed_extent_suffix(row)?
     ))
+}
+
+/// The C type of a raw pointer to `inner`.
+///
+/// A pointer to a row keeps the row extent (`T (*)[M]`). A pointer to a
+/// function pointer needs the two indirections inside the declarator
+/// (`T (**)(params)`), not an appended ` *`, which C rejects. Every other
+/// pointee appends the ordinary pointer star.
+fn raw_pointer_type(inner: &Ty, table: &TypeTable) -> String {
+    if let Some(array) = pointer_to_array_type(inner, table) {
+        return array;
+    }
+    if let TyKind::Func(signature) = &inner.kind {
+        return function_declarator(
+            &signature.returns,
+            func_pointer_params(signature, table),
+            "(**)",
+            None,
+            table,
+        );
+    }
+    format!("{} *", c_type(inner, table))
 }
 
 /// The C type of a scalar in generated code.

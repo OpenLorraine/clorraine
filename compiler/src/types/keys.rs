@@ -84,7 +84,9 @@ pub(crate) fn type_key(ty: &Ty) -> String {
         TyKind::StaticStr => "static_str".to_owned(),
         TyKind::CString => "cstring".to_owned(),
         TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
-        TyKind::Box(inner) => format!("Box__{}", type_key(inner)),
+        // The built-in box key is compiler-reserved (`__cl_box__`) so a user
+        // struct named `Box` cannot collide with it in C.
+        TyKind::Box(inner) => format!("__cl_box__{}", type_key(inner)),
         TyKind::Handle(name) => {
             if name == "String" {
                 name.clone()

@@ -30,7 +30,7 @@ impl Checker<'_, '_> {
         // constructible from a value, so the ordinary cast judgment rejects it
         // with the `Box<i32>` spelling rather than an undeclared name.
         if let ExprKind::Name(name) = &callee.kind {
-            if name == "Box" && self.builtin_box_active() && !self.name_is_value(name) {
+            if self.is_box_name(name) && self.builtin_box_active() && !self.name_is_value(name) {
                 if type_args.len() != 1 {
                     self.error(
                         "E10300",
@@ -124,6 +124,9 @@ impl Checker<'_, '_> {
                                 kind: TyKind::Str,
                                 nullable: false,
                             };
+                        }
+                        "boxAlloc" => {
+                            return self.check_box_alloc(type_args, args, span);
                         }
                         _ => {}
                     },
@@ -283,6 +286,14 @@ impl Checker<'_, '_> {
                 {
                     return self.check_view_builder(&name, type_args, args, span);
                 }
+                if name == "boxAlloc"
+                    && matches!(
+                        self.visible_decl_kind(name),
+                        Some(crate::load::DeclKind::Intrinsic)
+                    )
+                {
+                    return self.check_box_alloc(type_args, args, span);
+                }
             }
         }
         let callee_ty = self.check_value(callee, None);
@@ -417,6 +428,43 @@ impl Checker<'_, '_> {
                 span,
             );
         }
+    }
+
+    /// Types a `boxAlloc<T>()` intrinsic call.
+    ///
+    /// The intrinsic is declared with one type parameter and no value
+    /// parameters. A wrong count reports the ordinary generic/arity codes; the
+    /// result is the built-in `Box<T>` type the lowering turns into the
+    /// generated allocation helper.
+    fn check_box_alloc(&mut self, type_args: &[Type], args: &[Arg], span: Span) -> Ty {
+        for arg in args {
+            self.check_value(&arg.value, None);
+        }
+        if type_args.len() != 1 {
+            self.error(
+                "E10300",
+                format!(
+                    "wrong number of type arguments for 'boxAlloc': expected 1, found {}",
+                    type_args.len()
+                ),
+                "list one element type",
+                span,
+            );
+            return Ty::boxed(Ty::unknown());
+        }
+        if !args.is_empty() {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for 'boxAlloc': expected 0, found {}",
+                    args.len()
+                ),
+                "pass no value arguments",
+                span,
+            );
+        }
+        let element = self.resolve_type_argument(&type_args[0]);
+        Ty::boxed(element)
     }
 
     /// Types a compiler-known view builder call.

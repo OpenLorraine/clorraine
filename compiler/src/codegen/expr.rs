@@ -1163,6 +1163,20 @@ impl<'a> Emitter<'a> {
         receiver: Option<&Value>,
         destination: Option<&str>,
     ) -> String {
+        // A `boxAlloc<T>()` call is lowered to a fixed helper name carrying the
+        // element key. In a generic body that key still names the parameter, so
+        // the concrete instance substitutes it here.
+        let resolved_callee = if callee.starts_with("cl_box_alloc__") {
+            type_args.first().map(|element| {
+                format!(
+                    "cl_box_alloc__{}",
+                    type_key(&self.substitute(element))
+                )
+            })
+        } else {
+            None
+        };
+        let callee = resolved_callee.as_deref().unwrap_or(callee);
         // A call through a func value takes its parameter types and modes from
         // the value's own signature, so a `borrow` parameter and a `str`
         // widening reach the argument renderer.

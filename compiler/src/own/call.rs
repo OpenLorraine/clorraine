@@ -756,10 +756,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return None;
         }
         let declared: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        // Resolve the declaration's own parameter types in its declaring
+        // module, so the embedded library's `Box<T>` keeps the built-in meaning
+        // even when a user module declares a struct named `Box`.
+        let Some(module) = self.loaded.modules.values().find(|module| {
+            module
+                .items
+                .iter()
+                .any(|item| matches!(item, Item::Func(candidate) if std::ptr::eq(candidate, decl)))
+        }) else {
+            return None;
+        };
         let param_types: Vec<Ty> = decl
             .params
             .iter()
-            .map(|param| self.resolve_with(&param.ty, &declared))
+            .map(|param| {
+                crate::types::resolve_ty_folded(
+                    &param.ty,
+                    &declared,
+                    &self.sema.table,
+                    module,
+                    self.loaded,
+                )
+            })
             .collect();
         crate::sema::call::infer_type_args(&declared, &param_types, arg_types)
     }

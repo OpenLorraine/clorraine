@@ -42,6 +42,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         })
     }
 
+    /// Lowers a `boxAlloc<T>()` call to the generated allocation helper.
+    ///
+    /// The helper is emitted per concrete element type; its name carries the
+    /// element key, and the call carries the element in its type arguments so
+    /// the emitter's Box-element walk records it.
+    fn lower_box_alloc(&self, callee: &Expr, ty: &Ty) -> Option<ValueKind> {
+        let ExprKind::Name(name) = &callee.kind else {
+            return None;
+        };
+        if name != "boxAlloc" {
+            return None;
+        }
+        // A local, parameter, module binding, or import alias may shadow the
+        // intrinsic spelling; only the intrinsic declaration lowers to the
+        // generated helper. The declaration itself is an `Intrinsic`, so it is
+        // the one module binding that stays allowed.
+        if self.lookup("boxAlloc").is_some() || self.module.import("boxAlloc").is_some() {
+            return None;
+        }
+        if let Some(decl) = self.module.decl("boxAlloc") {
+            if !matches!(decl.kind, crate::load::DeclKind::Intrinsic) {
+                return None;
+            }
+        }
+        if self.program.user_function("boxAlloc").is_some()
+            || self.program.ffi_function("boxAlloc").is_some()
+        {
+            return None;
+        }
+        let TyKind::Box(element) = &ty.kind else {
+            return None;
+        };
+        let key = crate::types::type_key(element);
+        Some(ValueKind::Call {
+            callee: format!("cl_box_alloc__{key}"),
+            type_args: vec![(**element).clone()],
+            args: Vec::new(),
+            receiver: None,
+        })
+    }
+
     /// Lowers an expression to a typed IR value.
     ///
     /// Every value records the type the type stage computed for its expression,
@@ -174,6 +215,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 {
                     ty = intrinsic_ty;
                     intrinsic_kind
+                } else if let Some(alloc) = self.lower_box_alloc(callee, &ty) {
+                    alloc
                 } else {
                     let call = self.lower_call(callee, type_args, args);
                     // A call consumes the places its callee's own signature

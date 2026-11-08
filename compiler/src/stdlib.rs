@@ -212,7 +212,7 @@ pub const SOURCES: &[StdlibSource] = &[
 /// These helpers are implemented by the compiler and declared by the embedded
 /// standard library. A user module may not declare an `intrinsic func` with one
 /// of these names.
-pub const COMPILER_INTRINSICS: &[&str] = &["rawSlice", "rawStr", "slice", "len"];
+pub const COMPILER_INTRINSICS: &[&str] = &["rawSlice", "rawStr", "slice", "len", "boxAlloc"];
 
 /// True when `name` is a compiler-known intrinsic helper.
 pub fn is_compiler_intrinsic(name: &str) -> bool {
@@ -251,6 +251,10 @@ pub const MODULES: &[StdlibModule] = &[
             "bufferFrom",
             "bufferBytes",
             "bufferLen",
+            "Box",
+            "boxNew",
+            "boxSet",
+            "boxWith",
             "slice",
             "spanOf",
             "spanBytes",
@@ -972,7 +976,7 @@ mod tests {
     /// The built-in `String` handle and the compiler-known `text` formatter are
     /// exported by the table but declared by the compiler rather than by
     /// Clorraine, so they do not appear as declarations in the source.
-    const COMPILER_KNOWN_EXPORTS: &[&str] = &["String", "text"];
+    const COMPILER_KNOWN_EXPORTS: &[&str] = &["String", "text", "Box"];
 
     /// Parses one embedded module and returns it with the codes of any
     /// diagnostics the parser reported.
