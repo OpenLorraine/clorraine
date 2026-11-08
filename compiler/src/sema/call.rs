@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::{Arg, Expr, ExprKind, ScalarType, Type};
 use crate::load::DeclKind;
 use crate::span::Span;
-use crate::types::{implicit_conversion, substitute, view_type, FuncParam, FuncSig, Ty, TyKind};
+use crate::types::{implicit_conversion, substitute, view_type, FuncParam, FuncSig, FuncTy, Ty, TyKind};
 
 use super::Checker;
 
@@ -25,6 +25,7 @@ impl Checker<'_, '_> {
         type_args: &[Type],
         args: &[Arg],
         span: Span,
+        call_site: usize,
     ) -> Ty {
         // `Box<i32>(p)` is a call-shaped type conversion; a box is not
         // constructible from a value, so the ordinary cast judgment rejects it
@@ -138,17 +139,17 @@ impl Checker<'_, '_> {
                                     signature
                                         .params
                                         .iter()
-                                        .map(|param| &param.ty)
-                                        .collect::<Vec<&crate::ast::Type>>(),
+                                        .map(|param| (&param.ty, param.mode))
+                                        .collect::<Vec<(&crate::ast::Type, crate::ast::Mode)>>(),
                                     &signature.returns,
                                 )
                             });
-                        if let Some((param_types, returns)) = signature {
-                            let params: Vec<Ty> = param_types
+                        if let Some((param_decls, returns)) = signature {
+                            let params: Vec<(Ty, crate::ast::Mode)> = param_decls
                                 .iter()
-                                .map(|ty| self.resolve_type(ty))
+                                .map(|(ty, mode)| (self.resolve_type(ty), *mode))
                                 .collect();
-                            self.check_ffi_arguments(&last, &params, args, span);
+                            self.check_ffi_arguments(&last, &params, args, span, call_site);
                             return Self::ffi_abi_result(self.resolve_type(returns));
                         }
                     }
@@ -259,7 +260,7 @@ impl Checker<'_, '_> {
                 if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
                     if let Some(signature) = self.ffi_signature(name) {
                         let params = self.ffi_parameter_types(name, signature);
-                        self.check_ffi_arguments(name, &params, args, span);
+                        self.check_ffi_arguments(name, &params, args, span, call_site);
                         let _ = self.check_value(callee, None);
                         return self.ffi_result_type(name, signature);
                     }
@@ -1542,23 +1543,26 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// The resolved parameter types of an `ffi` declaration, validated once.
+    /// The resolved parameter types and modes of an `ffi` declaration,
+    /// validated once.
     ///
     /// The declared types resolve at the declaration's first call site and are
     /// cached for the rest of the module, so a declaration whose parameter
-    /// type is rejected reports once rather than once per call.
+    /// type is rejected reports once rather than once per call. The mode
+    /// travels with the type because a `borrow` function parameter is the
+    /// synchronous C-hook contract.
     fn ffi_parameter_types(
         &mut self,
         name: &str,
         signature: &crate::ast::FuncSignature,
-    ) -> Vec<Ty> {
+    ) -> Vec<(Ty, crate::ast::Mode)> {
         if let Some(params) = self.ffi_params.get(name) {
             return params.clone();
         }
         let mut params = Vec::with_capacity(signature.params.len());
         for param in &signature.params {
             let resolved = self.resolve_type(&param.ty);
-            params.push(resolved);
+            params.push((resolved, param.mode));
         }
         self.ffi_params.insert(name.to_owned(), params.clone());
         params
@@ -1621,7 +1625,18 @@ impl Checker<'_, '_> {
     /// (its bytes carry no zero-terminator guarantee). An unresolved argument
     /// (error recovery or an extern result) keeps the accepted path, and every
     /// argument is still walked for its own errors.
-    fn check_ffi_arguments(&mut self, name: &str, params: &[Ty], args: &[Arg], span: Span) {
+    ///
+    /// A function-type parameter is the C callback contract. `_call_site` is
+    /// the call expression's address, threaded from the expression checker so
+    /// the accepted synchronous hook can be keyed for the lowering stage.
+    fn check_ffi_arguments(
+        &mut self,
+        name: &str,
+        params: &[(Ty, crate::ast::Mode)],
+        args: &[Arg],
+        span: Span,
+        _call_site: usize,
+    ) {
         if args.len() != params.len() {
             self.error(
                 "E10308",
@@ -1636,9 +1651,14 @@ impl Checker<'_, '_> {
         }
         for (index, arg) in args.iter().enumerate() {
             let ty = self.check_value(&arg.value, None);
-            let Some(param) = params.get(index) else {
+            let Some((param, mode)) = params.get(index) else {
                 continue;
             };
+            if let TyKind::Func(expected) = &param.kind {
+                let expected = expected.clone();
+                self.check_hook_argument(&ty, &expected, *mode, arg.value.span);
+                continue;
+            }
             if matches!(param.kind, TyKind::CString)
                 && !is_cstring_literal_argument(&arg.value, param)
                 && !matches!(ty.kind, TyKind::CString)
@@ -1679,6 +1699,211 @@ impl Checker<'_, '_> {
                 }
             }
         }
+    }
+
+    /// Checks one argument offered to an `ffi` function-type parameter.
+    ///
+    /// A written function or capture-less lambda matches by parameter types
+    /// and return type; the callback's own parameter modes are not part of the
+    /// contract, exactly as a callable-bound generic parameter judges them. A
+    /// capturing closure is a two-word value, never a C function pointer: it
+    /// needs a generated trampoline and the synchronous `borrow` contract.
+    /// Until the emission path exists every capturing hook is E10400. The
+    /// accepted signature set is the one whose lifted C spelling is identical
+    /// to the `ffi` spelling; anything else is E10210 because the emitted
+    /// function pointer would not convert.
+    fn check_hook_argument(
+        &mut self,
+        ty: &Ty,
+        expected: &FuncTy,
+        mode: crate::ast::Mode,
+        span: Span,
+    ) {
+        match &ty.kind {
+            TyKind::Func(found) => {
+                if !Self::hook_signature_matches(expected, found) {
+                    self.report_hook_signature_mismatch(expected, ty, span);
+                    return;
+                }
+                if let Some(reason) = self.hook_abi_mismatch(expected) {
+                    self.report_hook_abi_mismatch(&reason, span);
+                }
+            }
+            TyKind::Closure(found) => {
+                // A capturing closure needs a synchronous `borrow` contract
+                // and a generated trampoline. Every other mode has no bound
+                // lifetime, so the closure can never become a C pointer there.
+                if mode != crate::ast::Mode::Borrow {
+                    self.report_capturing_hook(span);
+                    return;
+                }
+                if !Self::hook_closure_signature_matches(expected, &found.params, &found.returns) {
+                    self.report_hook_signature_mismatch(expected, ty, span);
+                    return;
+                }
+                // The synchronous contract is present, but the trampoline and
+                // wrapper emission path does not exist yet: no capturing hook
+                // is accepted before it can be emitted soundly.
+                self.report_capturing_hook(span);
+            }
+            _ => {
+                self.error(
+                    "E10200",
+                    format!(
+                        "cannot convert '{}' to '{}' implicitly",
+                        ty.display(),
+                        Ty::func(expected.clone()).display()
+                    ),
+                    "pass a matching function or capture-less lambda",
+                    span,
+                );
+            }
+        }
+    }
+
+    /// True when a written function's signature matches the hook.
+    ///
+    /// The callback's own parameter modes are deliberately ignored: a
+    /// `borrow` in a `func(...)` type is a calling convention detail, not part
+    /// of the exact C signature the hook declares.
+    fn hook_signature_matches(expected: &FuncTy, found: &FuncTy) -> bool {
+        expected.params.len() == found.params.len()
+            && expected
+                .params
+                .iter()
+                .zip(&found.params)
+                .all(|(expected, found)| expected.ty == found.ty)
+            && *expected.returns == *found.returns
+    }
+
+    /// True when a capturing lambda's parameter types and return match.
+    ///
+    /// A closure's type carries no parameter modes, so only the types and the
+    /// return are comparable.
+    fn hook_closure_signature_matches(expected: &FuncTy, params: &[Ty], returns: &Ty) -> bool {
+        expected.params.len() == params.len()
+            && expected
+                .params
+                .iter()
+                .zip(params)
+                .all(|(expected, found)| expected.ty == *found)
+            && *expected.returns == *returns
+    }
+
+    /// The first reason a declared callback signature is not ABI-identical.
+    ///
+    /// The lifted lambda spells its parameters with the language C types
+    /// (`ClStr`, `ClSlice_T`, row declarators, an environment pointer), while
+    /// the `ffi` prototype spells them with the ABI table (`APTR` and
+    /// by-value structs). Passing one where the other is expected would emit
+    /// an incompatible function pointer, so only the intersection is accepted.
+    fn hook_abi_mismatch(&self, signature: &FuncTy) -> Option<String> {
+        for (index, param) in signature.params.iter().enumerate() {
+            if let Some(reason) = self.hook_parameter_abi_mismatch(&param.ty, param.mode) {
+                return Some(format!("callback parameter {} is {reason}", index + 1));
+            }
+        }
+        self.hook_return_abi_mismatch(&signature.returns)
+            .map(|reason| format!("callback return is {reason}"))
+    }
+
+    /// The ABI reason one callback parameter cannot cross unchanged.
+    fn hook_parameter_abi_mismatch(
+        &self,
+        ty: &Ty,
+        mode: crate::ast::Mode,
+    ) -> Option<String> {
+        // A borrowed nullable value or a borrowed move-only struct lowers to a
+        // pointer in the language ABI, while an `ffi` parameter ignores its
+        // mode and stays by value.
+        if mode == crate::ast::Mode::Borrow
+            && (ty.nullable
+                || (matches!(ty.kind, TyKind::Struct(..)) && !self.table.duplicable(ty)))
+        {
+            return Some("a borrowed value ('T *' vs 'T')".to_owned());
+        }
+        match &ty.kind {
+            TyKind::Scalar(_)
+            | TyKind::Enum(_)
+            | TyKind::Raw(_)
+            | TyKind::CString
+            | TyKind::Handle(_) => None,
+            TyKind::Struct(_, args) if args.is_empty() => None,
+            TyKind::Struct(_, _) => Some("a generic struct ('ClWrap_i32' vs 'ClWrap')".to_owned()),
+            TyKind::Str | TyKind::StaticStr => {
+                Some("a view ('ClStr' vs 'APTR')".to_owned())
+            }
+            TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
+                Some("a view ('ClSlice' vs 'APTR')".to_owned())
+            }
+            TyKind::Array { .. } => Some("a fixed array ('[N]' vs 'APTR')".to_owned()),
+            TyKind::Func(signature) => self
+                .hook_abi_mismatch(signature)
+                .map(|_| "a non-ABI-identical function pointer".to_owned()),
+            TyKind::Box(_) => Some("a Box".to_owned()),
+            TyKind::Void => Some("void".to_owned()),
+            TyKind::Closure(_) => Some("a closure".to_owned()),
+            TyKind::Param(_) | TyKind::Unknown => Some("an unresolved type".to_owned()),
+        }
+    }
+
+    /// The ABI reason a callback return cannot cross unchanged.
+    fn hook_return_abi_mismatch(&self, ty: &Ty) -> Option<String> {
+        match &ty.kind {
+            TyKind::Void
+            | TyKind::Scalar(_)
+            | TyKind::Enum(_)
+            | TyKind::Raw(_)
+            | TyKind::CString
+            | TyKind::Handle(_) => None,
+            TyKind::Struct(_, args) if args.is_empty() => None,
+            TyKind::Struct(_, _) => Some("a generic struct".to_owned()),
+            TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
+                Some("a fixed array".to_owned())
+            }
+            TyKind::Array { .. } => Some("a view".to_owned()),
+            TyKind::Str | TyKind::StaticStr => Some("a view".to_owned()),
+            TyKind::Func(signature) => self
+                .hook_abi_mismatch(signature)
+                .map(|_| "a non-ABI-identical function pointer".to_owned()),
+            TyKind::Box(_) => Some("a Box".to_owned()),
+            TyKind::Closure(_) => Some("a closure".to_owned()),
+            TyKind::Param(_) | TyKind::Unknown => Some("an unresolved type".to_owned()),
+        }
+    }
+
+    /// Reports a capturing closure offered where a C function pointer is due.
+    fn report_capturing_hook(&mut self, span: Span) {
+        self.error(
+            "E10400",
+            "capturing lambda cannot be used as 'func(...)'",
+            "use a capture-less lambda; hook trampolines are not emitted yet",
+            span,
+        );
+    }
+
+    /// Reports a callback whose written signature differs from the hook.
+    fn report_hook_signature_mismatch(&mut self, expected: &FuncTy, found: &Ty, span: Span) {
+        self.error(
+            "E10210",
+            format!(
+                "function type mismatch: expected '{}', found '{}'",
+                Ty::func(expected.clone()).display(),
+                found.display()
+            ),
+            "match the exact signature; capture-less lambdas only",
+            span,
+        );
+    }
+
+    /// Reports a callback whose C spelling differs from the `ffi` spelling.
+    fn report_hook_abi_mismatch(&mut self, reason: &str, span: Span) {
+        self.error(
+            "E10210",
+            format!("function type mismatch: {reason}"),
+            "use scalar, enum, raw, cstring, handle, non-generic struct, or function-pointer callback types",
+            span,
+        );
     }
 
     /// True when a parameter is a nullable writable lend: an ownership

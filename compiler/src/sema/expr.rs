@@ -65,7 +65,7 @@ impl Checker<'_, '_> {
                 let exact_cast = type_args.is_empty()
                     && args.len() == 1
                     && matches!(args[0].marker, crate::ast::Mode::None);
-                let ty = self.check_call(callee, type_args, args, expr.span);
+                let ty = self.check_call(callee, type_args, args, expr.span, expr as *const Expr as usize);
                 if exact_cast && self.callee_type(callee).is_some() {
                     self.type_casts.insert(expr as *const Expr as usize);
                 }

@@ -141,6 +141,47 @@ fn assert_accepted(tag: &str, source: &str) {
     drop(scratch);
 }
 
+/// Asserts a source compiles and writes C, without linking the unit.
+///
+/// A hook case names an `ffi` function whose C implementation belongs to a
+/// later fixture, so the compiler stage is the whole judgment here.
+fn assert_accepts_source(tag: &str, profile: &str, source: &str) {
+    let (scratch, output, c_path) = compile_only(tag, profile, source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected acceptance; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        c_path.exists(),
+        "{tag}: an accepted program must write the translation unit"
+    );
+    drop(scratch);
+}
+
+/// Asserts a source is rejected with `code` on the given profile.
+fn assert_rejected_profile(tag: &str, profile: &str, source: &str, code: &str) {
+    let (scratch, output, c_path) = compile_only(tag, profile, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected rejection, but the compiler accepted it"
+    );
+    let codes = error_codes(&output);
+    assert!(
+        codes.iter().any(|found| found == code),
+        "{tag}: expected {code}, got {codes:?}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not write C at {}",
+        c_path.display()
+    );
+    drop(scratch);
+}
+
 /// Compiles, builds, and runs an accepted program under the strict host
 /// flags. The dedicated memory suite owns the AddressSanitizer child build.
 fn run_host(tag: &str, source: &str) -> Output {
@@ -1136,5 +1177,263 @@ fn an_ordinary_deleter_keeps_the_handle_move_only() {
              func demo(take w: Widget): void { let a = w; let b = w; }",
         ),
         "E10020",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A synchronous C hook is a `borrow`-mode `func(...)` FFI parameter.
+// ---------------------------------------------------------------------------
+
+/// A capture-less lambda is a plain function pointer and crosses the hook.
+#[test]
+fn a_captureless_lambda_crosses_a_borrow_hook() {
+    assert_accepts_source(
+        "hk-captureless",
+        "host",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 { return apply((x: i32) => x + 1, 1); }",
+        ),
+    );
+}
+
+/// A capturing lambda is rejected until the trampoline path exists.
+#[test]
+fn a_capturing_hook_lambda_is_rejected_until_trampolines() {
+    for (tag, marker) in [
+        ("unmarked", ""),
+        ("const", "const "),
+        ("take", "take "),
+        ("borrow", "borrow "),
+    ] {
+        let source = program(&format!(
+            "ffi lib {{ func apply({marker}cb: func(i32): i32, value: i32): i32; }}\n\
+             func demo(): i32 {{ let n: i32 = 1; return apply([n] (x: i32) => x + n, 1); }}"
+        ));
+        assert_rejected(&format!("hk-capture-{tag}"), &source, "E10400");
+    }
+}
+
+/// A user `func(...)` parameter keeps rejecting a capturing lambda.
+#[test]
+fn a_capturing_lambda_at_a_user_func_parameter_is_rejected() {
+    assert_rejected(
+        "hk-user-func",
+        &program(
+            "func invoke(f: func(i32): i32): i32 { return f(1); }\n\
+             func demo(): i32 { let n: i32 = 1; return invoke([n] (x: i32) => x + n); }",
+        ),
+        "E10400",
+    );
+}
+
+/// A standard-library API that stores the callback rejects a capturing lambda.
+#[test]
+fn a_stored_callback_api_rejects_a_capturing_lambda() {
+    assert_rejected_profile(
+        "hk-stored-newhook",
+        "hosted-amiga",
+        &program(
+            "import { newHook } from std.amiga.utility;\n\
+             func demo(): i32 { let n: i32 = 1; let h = newHook([n] () => { if (n == 0) { } }, 7); return 0; }",
+        ),
+        "E10400",
+    );
+    assert_rejected_profile(
+        "hk-stored-addhandler",
+        "hosted-amiga",
+        &program(
+            "import { addHandler } from std.amiga.interrupt;\n\
+             func demo(): i32 { let n: i32 = 1; let t = addHandler([n] () => { if (n == 0) { } }); return 0; }",
+        ),
+        "E10400",
+    );
+    assert_rejected_profile(
+        "hk-stored-createtask",
+        "hosted-amiga",
+        &program(
+            "import { createTask } from std.amiga.exec;\n\
+             func demo(): i32 { let n: i32 = 1; let t = createTask([n] () => { if (n == 0) { } }, 4096); return 0; }",
+        ),
+        "E10400",
+    );
+}
+
+/// A callback whose written signature differs from the hook is rejected.
+#[test]
+fn a_hook_signature_mismatch_is_rejected() {
+    assert_rejected(
+        "hk-mismatch",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 { return apply((x: u8) => 0, 1); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A value that is not a function is rejected at a callback parameter.
+#[test]
+fn a_non_callable_hook_argument_is_rejected() {
+    assert_rejected(
+        "hk-non-callable",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 { return apply(1, 1); }",
+        ),
+        "E10200",
+    );
+}
+
+/// A hook call in a short-circuit operand remains an ordinary call.
+#[test]
+fn a_captureless_hook_in_a_short_circuit_is_accepted() {
+    assert_accepts_source(
+        "hk-short-circuit",
+        "host",
+        &program(
+            "ffi lib { func check(borrow cb: func(): bool): bool; }\n\
+             func demo(): i32 { if (check(() => true) && check(() => false)) { return 1; } return 0; }",
+        ),
+    );
+}
+
+/// A capture-less hook inside a generic body is a plain pointer.
+#[test]
+fn a_captureless_hook_in_a_generic_body_is_accepted() {
+    assert_accepts_source(
+        "hk-generic-captureless",
+        "host",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func run<T>(x: T): i32 { return apply((v: i32) => v + 1, 1); }",
+        ),
+    );
+}
+
+/// A capturing hook inside a generic body needs a per-instance trampoline.
+#[test]
+fn a_capturing_hook_in_a_generic_body_is_rejected() {
+    assert_rejected(
+        "hk-generic-capture",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func run<T>(x: T): i32 { let n: i32 = 1; return apply([n] (v: i32) => v + n, 1); }",
+        ),
+        "E10400",
+    );
+}
+
+/// A view parameter is not ABI-identical to the lifted lambda.
+#[test]
+fn a_hook_callback_with_a_view_parameter_is_rejected() {
+    assert_rejected(
+        "hk-view-param",
+        &program(
+            "ffi lib { func apply(borrow cb: func(str): i32): i32; }\n\
+             func demo(): i32 { return apply((s: str) => 0); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A slice parameter is not ABI-identical to the lifted lambda.
+#[test]
+fn a_hook_callback_with_a_slice_parameter_is_rejected() {
+    assert_rejected(
+        "hk-slice-param",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32[]): i32): i32; }\n\
+             func demo(): i32 { return apply((xs: i32[]) => 0); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A fixed-array parameter is not ABI-identical to the lifted lambda.
+#[test]
+fn a_hook_callback_with_a_fixed_array_parameter_is_rejected() {
+    assert_rejected(
+        "hk-array-param",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32[2]): i32): i32; }\n\
+             func demo(): i32 { return apply((xs: i32[2]) => 0); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A fixed-array return is not ABI-identical to the lifted lambda.
+#[test]
+fn a_hook_callback_with_a_fixed_array_return_is_rejected() {
+    assert_rejected(
+        "hk-array-return",
+        &program(
+            "ffi lib { func apply(borrow cb: func(): i32[2]): i32; }\n\
+             func demo(): i32 { return apply(() => [1, 2]); }",
+        ),
+        "E10210",
+    );
+}
+
+/// A borrowed move-only struct is a pointer in the language and a value in C.
+#[test]
+fn a_hook_callback_borrowing_a_move_only_struct_is_rejected() {
+    assert_rejected(
+        "hk-borrow-owned",
+        &program(
+            "struct Owned { s: String; }\n\
+             ffi lib { func apply(borrow cb: func(borrow Owned): i32): i32; }\n\
+             func peek(borrow o: Owned): i32 { return 0; }\n\
+             func demo(): i32 { return apply(peek); }",
+        ),
+        "E10210",
+    );
+}
+
+/// The ABI-identical scalar, enum, struct, and function-pointer set is accepted.
+#[test]
+fn a_hook_callback_with_abi_identical_types_is_accepted() {
+    assert_accepts_source(
+        "hk-abi-set",
+        "host",
+        &program(
+            "struct Point { x: i32; y: i32; }\n\
+             enum Color: u8 { Red, Green }\n\
+             ffi lib { func apply(borrow cb: func(i32, bool, cstring, raw u8, Point, Color, func(i32): i32): i32): i32; }\n\
+             func demo(): i32 { return apply((a: i32, b: bool, c: cstring, d: raw u8, p: Point, col: Color, f: func(i32): i32) => 0); }",
+        ),
+    );
+}
+
+/// A `[borrow x]` capture at a hook is a capturing hook, not a plain pointer.
+#[test]
+fn a_borrow_capture_at_a_hook_is_rejected_until_trampolines() {
+    assert_rejected(
+        "hk-borrow-capture",
+        &program(
+            "ffi lib { func apply(borrow cb: func(i32): i32, value: i32): i32; }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 1;\n\
+                 return apply([borrow n] (x: i32) => { n = n + 1; return x + n; }, 1);\n\
+             }",
+        ),
+        "E10400",
+    );
+}
+
+/// A capturing lambda at a callable-bound generic parameter is not a C hook.
+#[test]
+fn a_capturing_lambda_at_a_callable_bound_is_still_accepted() {
+    assert_run_ok(
+        "hk-callable-bound",
+        &run_program(
+            "func invoke<T, F: func(T): T>(x: T, f: F): T { return f(x); }\n\
+             func demo(): i32 {\n\
+                 let n: i32 = 10;\n\
+                 if (invoke(2, [n] (x: i32) => x + n) == 12) { return 0; }\n\
+                 return 1;\n\
+             }",
+        ),
     );
 }

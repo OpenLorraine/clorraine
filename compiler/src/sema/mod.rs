@@ -486,9 +486,11 @@ struct Checker<'a, 'd> {
     /// `ptr`: they are the one form the frozen conversion table lets reach a
     /// `cstring` destination without a cast in the source.
     view_pointer_members: BTreeSet<usize>,
-    /// The resolved parameter types of each `ffi` declaration this module
-    /// calls, so its declared types are validated once per declaration.
-    ffi_params: BTreeMap<String, Vec<Ty>>,
+    /// The resolved parameter types and modes of each `ffi` declaration this
+    /// module calls, so its declared types are validated once per declaration.
+    /// The mode travels with the type: a `borrow` function parameter is the
+    /// synchronous C-hook contract.
+    ffi_params: BTreeMap<String, Vec<(Ty, crate::ast::Mode)>>,
     /// The resolved result type of each `ffi` declaration this module calls,
     /// resolved once with the parameters so the ordinary conversion judgments
     /// see the result's declared type.
@@ -643,7 +645,7 @@ impl<'a, 'd> Checker<'a, 'd> {
                     for param in &signature.params {
                         let ty = self.resolve_type(&param.ty);
                         self.check_nullable_type(&ty, param.ty.span);
-                        params.push(ty);
+                        params.push((ty, param.mode));
                     }
                     self.ffi_params.insert(signature.name.clone(), params);
                     let returns = self.resolve_type(&signature.returns);
