@@ -31,65 +31,65 @@ Publication awaits explicit user authorization.
 
 ## Pre-release gates
 
-- [ ] `make check` — specification check, Rust workspace suites, benchmark
+- [x] `make check` — specification check, Rust workspace suites, benchmark
       harness tests, fuzzer tests, and the fuzzer smoke matrix
-- [ ] `make asan` — every suite that references `RDC_ASAN`, one bounded process
+- [x] `make asan` — every suite that references `RDC_ASAN`, one bounded process
       per suite
-- [ ] `make ubsan` — the UBSan leg with the active-leg overflow probe
-- [ ] `make corpus-amiga` — portable corpus on hosted-amiga plus the vbcc build
+- [x] `make ubsan` — the UBSan leg with the active-leg overflow probe
+- [x] `make corpus-amiga` — portable corpus on hosted-amiga plus the vbcc build
       and the FS-UAE-only programs
-- [ ] `make differential` — host and hosted-amiga output match for the three
+- [x] `make differential` — host and hosted-amiga output match for the three
       differential programs
-- [ ] `make bench-shape` — generated-C shape fixture with m68k GCC, vbcc, and
+- [x] `make bench-shape` — generated-C shape fixture with m68k GCC, vbcc, and
       the freestanding profile
-- [ ] `make bench-base COMMIT=v1.1.0` / `make bench` / `make bench-compare
+- [x] `make bench-base COMMIT=v1.1.0` / `make bench` / `make bench-compare
       REQUIRE="matrix:instructions:5 matrix:text:3"` — the matrix win against
       the previous release, no scored regression
-- [ ] `make verify` — all acceptance legs; must print `verify: all legs passed`
-- [ ] `make vscode-check` — the extension type-check, tests, package audit,
+- [x] `make verify` — all acceptance legs; must print `verify: all legs passed`
+- [x] `make vscode-check` — the extension type-check, tests, package audit,
       and packaged-client smoke
 
 Gate evidence for the release tree:
 
 | Gate | Result |
 | ---- | ------ |
-| `make check` | TBD |
-| `make asan` | TBD |
-| `make ubsan` | TBD |
-| `make corpus-amiga` | TBD |
-| `make differential` | TBD |
-| `make bench-shape` | TBD |
-| `make bench-base` / `make bench` / `make bench-compare` | TBD |
-| `make verify` | TBD |
-| `make vscode-check` | TBD |
+| `make check` | exit 0; `spec check: OK (27 files, 114 compile-fail tests)`; 128 workspace test groups; fuzzer smoke `cases=28 host=28 sanitizer=16 target=16 failures=0` |
+| `make asan` | 29/29 suites passed |
+| `make ubsan` | 3/3 suites passed; the active-leg sanitizer check passed |
+| `make corpus-amiga` | 4/4 portable programs match; vbcc builds are warning-free; FS-UAE-only programs built |
+| `make differential` | 3/3 programs match |
+| `make bench-shape` | m68k GCC, GCC nix13, vbcc, and freestanding shapes are warning-free |
+| `make bench-base COMMIT=v1.1.0` / `make bench` / `make bench-compare` | base 1.1.0 (c0bd6d0) matrix 10,959 instructions / 80,712 `.text`; head 1.1.1 (2bc279e) 9,908 / 76,676 (-9.6% / -5.0%); both requirements PASS; other scored benchmarks unchanged |
+| `make verify` | exit 0; `verify: all legs passed` |
+| `make vscode-check` | exit 0; extension type-check, tests, `.vsix` package audit, and packaged-client smoke passed (Node 22.23.3 on PATH) |
 
 ## Licence and metadata audit
 
-- [ ] `LICENSE` contains the MIT text with the OpenLorraine copyright line
-- [ ] `compiler/Cargo.toml` declares `version = "1.1.1"`, `license = "MIT"`, a
+- [x] `LICENSE` contains the MIT text with the OpenLorraine copyright line
+- [x] `compiler/Cargo.toml` declares `version = "1.1.1"`, `license = "MIT"`, a
       description, and the repository URL
-- [ ] `Cargo.lock` records `clc` version `1.1.1`
-- [ ] `tools/vscode/package.json` and its lock record `1.1.1`
-- [ ] `tools/demo/package.json` keeps its own package version and declares
+- [x] `Cargo.lock` records `clc` version `1.1.1`
+- [x] `tools/vscode/package.json` and its lock record `1.1.1`
+- [x] `tools/demo/package.json` keeps its own package version and declares
       `"license": "MIT"`
-- [ ] `tools/demo/package-lock.json` records `"license": "MIT"` on the root
+- [x] `tools/demo/package-lock.json` records `"license": "MIT"` on the root
       package
-- [ ] `README.md` names MIT, links `LICENSE`, and names v1.1.1 as the current
+- [x] `README.md` names MIT, links `LICENSE`, and names v1.1.1 as the current
       release
-- [ ] `THIRD_PARTY_NOTICES.md` preserves the upstream Hamurabi MIT notice
-- [ ] `docs/known-limitations.md` exists and is linked from `README.md` and
+- [x] `THIRD_PARTY_NOTICES.md` preserves the upstream Hamurabi MIT notice
+- [x] `docs/known-limitations.md` exists and is linked from `README.md` and
       `spec/README.md`
 
 | File | Expected | Observed |
 | ---- | -------- | -------- |
-| `LICENSE` | MIT text, OpenLorraine copyright | TBD |
-| `compiler/Cargo.toml` | `1.1.1`, `MIT`, description, repository | TBD |
-| `Cargo.lock` | `clc 1.1.1` | TBD |
-| `tools/vscode/package.json` / lock | `1.1.1`, `MIT` | TBD |
-| `tools/demo/package.json` / lock | own version, `MIT` | TBD |
-| `README.md` | MIT section, `LICENSE`, v1.1.1 current release | TBD |
-| `THIRD_PARTY_NOTICES.md` | upstream Hamurabi MIT text | TBD |
-| `spec/README.md` | known-limitations link | TBD |
+| `LICENSE` | MIT text, OpenLorraine copyright | present |
+| `compiler/Cargo.toml` | `1.1.1`, `MIT`, description, repository | present |
+| `Cargo.lock` | `clc 1.1.1` | present |
+| `tools/vscode/package.json` / lock | `1.1.1`, `MIT` | present |
+| `tools/demo/package.json` / lock | own version, `MIT` | present |
+| `README.md` | MIT section, `LICENSE`, v1.1.1 current release | present |
+| `THIRD_PARTY_NOTICES.md` | upstream Hamurabi MIT text | present |
+| `spec/README.md` | known-limitations link | present |
 
 ## Build and artefact packaging
 
