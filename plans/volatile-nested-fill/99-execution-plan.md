@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-09
 > **Last Updated**: 2026-11-09
-> **Progress**: 30/44 tasks (68%)
+> **Progress**: 44/44 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent
 > **Commit mode**: `--auto-commit` with pushes held until the full fix gate
@@ -205,46 +205,46 @@ green; commit exists.
 > **Verify**: versions match; every release gate green; artifacts checksummed
 > and audited; publication explicitly authorized; tag and release published.
 
-- [ ] 5.1.1 Set `compiler/Cargo.toml` to `1.1.1`; mirror it in `Cargo.lock`;
+- [x] 5.1.1 Set `compiler/Cargo.toml` to `1.1.1`; mirror it in `Cargo.lock`;
       bump `tools/vscode/package.json` and the root package entry in
       `tools/vscode/package-lock.json` to `1.1.1`. There is no root
       `package-lock.json`.
-- [ ] 5.2.1 Add the `1.1.1` `CHANGELOG.md` entry and replace
+- [x] 5.2.1 Add the `1.1.1` `CHANGELOG.md` entry and replace
       `RELEASE-NOTES.md` with the v1.1.1 notes.
-- [ ] 5.2.2 Rewrite `RELEASE.md` as the v1.1.1 runbook with the gate-evidence
+- [x] 5.2.2 Rewrite `RELEASE.md` as the v1.1.1 runbook with the gate-evidence
       table, licence/metadata audit, exact artifact names, conditional
       publication steps, and the historical v1.1.0 section; update the
       `README.md` current-release line and the
       `docs/known-limitations.md` release-packaging line.
-- [ ] 5.2.3 Update the PLAN-24 row with the release facts.
-- [ ] 5.3.1 Review `git diff --cached`; commit
+- [x] 5.2.3 Update the PLAN-24 row with the release facts.
+- [x] 5.3.1 Review `git diff --cached`; commit
       `chore(release): prepare v1.1.1`; confirm a clean tree.
-- [ ] 5.4.1 Run the release gate set on the clean release commit:
+- [x] 5.4.1 Run the release gate set on the clean release commit:
       `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
       `make differential`, `make bench-shape`, `make bench-base
       COMMIT=7cdbb71`, `make bench`, `make bench-compare`, `make verify`, and
       `make vscode-check`.
-- [ ] 5.4.2 Fill the runbook gate-evidence table and licence/metadata audit
+- [x] 5.4.2 Fill the runbook gate-evidence table and licence/metadata audit
       from the observed results.
-- [ ] 5.4.3 Build the release binaries; assert `clc 1.1.1` and
+- [x] 5.4.3 Build the release binaries; assert `clc 1.1.1` and
       `clorraine 1.1.1`; compile and run a hello-world; confirm Linux x86_64
       ELF.
-- [ ] 5.5.1 Create the annotated `v1.1.1` tag on the release commit.
-- [ ] 5.5.2 Build `build/release/v1.1.1/`: the source tarball from the tag
+- [x] 5.5.1 Create the annotated `v1.1.1` tag on the release commit.
+- [x] 5.5.2 Build `build/release/v1.1.1/`: the source tarball from the tag
       (`clorraine-1.1.1-src.tar.gz`), the Linux x86_64 tarball
       (`clorraine-1.1.1-linux-x86_64.tar.gz`), and `SHA256SUMS`; audit the
       contents for NDK, ROM, Workbench media, `build/`, `target/`, and local
       environment files.
-- [ ] 5.6.1 Ask the user for explicit publication authorization in this
+- [x] 5.6.1 Ask the user for explicit publication authorization in this
       session. If it is granted, push `main` and the tag and create the
       GitHub release with
       `gh release create v1.1.1 --title "Clorraine v1.1.1" --notes-file RELEASE-NOTES.md`
       and the three assets; verify the page and checksums. If it is not
       granted, keep the tag local, record the artifact hashes, and stop with
       the local release complete and publication blocked.
-- [ ] 5.7.1 Record the publication status and asset hashes in `RELEASE.md`;
+- [x] 5.7.1 Record the publication status and asset hashes in `RELEASE.md`;
       mark PLAN-24 `Done`; set the header to 568/570, 0 open, `Done`.
-- [ ] 5.7.2 Commit `docs(release): record the v1.1.1 publication`; push;
+- [x] 5.7.2 Commit `docs(release): record the v1.1.1 publication`; push;
       confirm a clean tree and `origin/main..HEAD` zero.
 
 **Verify**: release published; publication record committed and pushed.
@@ -253,7 +253,7 @@ green; commit exists.
 
 ## Phase 6: Final Report
 
-- [ ] 6.1.1 Report the fix, the emitted C, the tests, the review verdicts,
+- [x] 6.1.1 Report the fix, the emitted C, the tests, the review verdicts,
       the fix gates, the release gates, the artifact hashes, and the
       publication URL.
 

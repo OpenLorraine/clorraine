@@ -25,9 +25,11 @@ The version of record is set in `compiler/Cargo.toml` and mirrored in
 and its lock are bumped with the release. The release is manual; release
 automation is out of scope.
 
-**Publication status (2026-11-09):** the local release is prepared, the
-annotated `v1.1.1` tag is created locally, and the artefacts are checksummed.
-Publication awaits explicit user authorization.
+**Publication status (2026-11-09):** **published** as
+[v1.1.1](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.1). The
+annotated tag, source tarball, Linux x86_64 tarball, `SHA256SUMS`, release
+notes, and changelog are attached. The conditional publish steps below are
+complete.
 
 ## Pre-release gates
 
@@ -118,20 +120,20 @@ Workbench media, `build/` output, `target/` output, or a local environment file.
 
 These steps run only after the user explicitly authorizes publication.
 
-- [ ] Push the annotated tag: `git push origin v1.1.1`
-- [ ] Create the release:
+- [x] Push the annotated tag: `git push origin v1.1.1`
+- [x] Create the release:
       `gh release create v1.1.1 --title "Clorraine v1.1.1" --notes-file RELEASE-NOTES.md`
       with the source tarball, Linux x86_64 tarball, and `SHA256SUMS` attached
-- [ ] Confirm the release page lists the notes, changelog reference, and all
+- [x] Confirm the release page lists the notes, changelog reference, and all
       three checksummed assets
 
 Published assets:
 
 | Asset | Size (bytes) | SHA-256 |
 | ----- | -----------: | ------- |
-| `clorraine-1.1.1-src.tar.gz` | TBD | TBD |
-| `clorraine-1.1.1-linux-x86_64.tar.gz` | TBD | TBD |
-| `SHA256SUMS` | TBD | covers both tarballs |
+| `clorraine-1.1.1-src.tar.gz` | 4,963,679 | `a292933d163f317a7f95bc1a2ad6b163621ac9a28aa9130382fc5c5bbc9f281e` |
+| `clorraine-1.1.1-linux-x86_64.tar.gz` | 4,475,046 | `26847a3ed36f60c587f392fceb062e313973b7f5d287eecefeaef9c13acdd161` |
+| `SHA256SUMS` | 195 | covers both tarballs |
 
 If publication is not authorized, the tag stays local, the exact artefact
 names and SHA-256 values are reported, and the blocker is recorded here. The
