@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 30/32 tasks (94%)
+> **Progress**: 32/32 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -424,15 +424,15 @@ exists; clean tree.
 
 ### Step 6.5: Push and tree check
 
-- [ ] 6.5.1 Push to `origin/main` only after 6.3 and 6.4 are green.
-- [ ] 6.5.2 Verify `git status -sb` clean and
+- [x] 6.5.1 Push to `origin/main` only after 6.3 and 6.4 are green.
+- [x] 6.5.2 Verify `git status -sb` clean and
       `git rev-list --count origin/main..HEAD` is 0.
 
 **Verify**: both commands satisfy the acceptance.
 
 ### Step 6.6: Final report
 
-- [ ] 6.6.1 Report the benchmark table, emitted-shape attribution, test
+- [x] 6.6.1 Report the benchmark table, emitted-shape attribution, test
       coverage, gate evidence, and residual opportunities.
 
 **Verify**: the report includes every acceptance item.
