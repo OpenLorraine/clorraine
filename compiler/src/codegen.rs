@@ -152,7 +152,7 @@ pub(super) struct Emitter<'a> {
     /// Constant-array data templates handed out in the current init function.
     ///
     /// A module initializer with a constant scalar array emits one block-scope
-    /// `__cl_ctmpl<N>` template per eligible global; the counter resets per
+    /// `__cl_ctmpl_<n>` template per eligible global; the counter resets per
     /// init function, so the names are stable and local to that function.
     pub(super) init_templates: usize,
     /// The owning init locals of the current init function, in creation order.

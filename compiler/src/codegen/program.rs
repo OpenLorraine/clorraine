@@ -1907,7 +1907,14 @@ impl<'a> Emitter<'a> {
         }) {
             return false;
         }
-        let name = format!("__cl_ctmpl_{}", self.init_templates);
+        // A user `ffi` declaration is a literal C symbol, and a block-scope
+        // template with the same spelling would shadow it inside this init
+        // function. Advance the counter until the reserved prefix is free.
+        let mut name = format!("__cl_ctmpl_{}", self.init_templates);
+        while self.is_taken_symbol(&name) {
+            self.init_templates += 1;
+            name = format!("__cl_ctmpl_{}", self.init_templates);
+        }
         self.init_templates += 1;
         let array_ty = Ty::array(element.as_ref().clone(), vec![Some(extent)]);
         let declaration = declarator(&array_ty, &name, &self.sema.table);
@@ -5028,5 +5035,31 @@ mod guard_free_constant_tests {
         )));
         let place = Place::local("x");
         assert!(!guard_free_constant(&Value::place(place)));
+    }
+}
+
+#[cfg(test)]
+mod guard_free_constant_call_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_calls_and_intrinsics() {
+        assert!(!guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Call {
+                callee: "f".to_owned(),
+                type_args: Vec::new(),
+                args: Vec::new(),
+                receiver: None,
+            }
+        )));
+        assert!(!guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Intrinsic {
+                name: "len".to_owned(),
+                args: Vec::new(),
+                type_arg: None,
+            }
+        )));
     }
 }

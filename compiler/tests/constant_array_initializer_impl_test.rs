@@ -471,3 +471,96 @@ fn should_keep_the_stores_on_freestanding() {
     let emitted = emit_profile("impl-free", "freestanding", &source);
     assert_no_template("impl-free", &emitted);
 }
+
+#[test]
+fn should_not_shadow_a_user_ffi_template_name() {
+    let source = format!(
+        r#"
+module spec.ConstArrayImplCollision;
+ffi probe {{
+    func __cl_ctmpl_0(): i32;
+}}
+let t: i32[32] = [{list}];
+let y: i32 = __cl_ctmpl_0();
+func main(): i32 {{ return t[0] + y; }}
+"#,
+        list = seq(1, 32)
+    );
+    let emitted = emit("impl-collision", &source);
+    assert_contains("impl-collision", &emitted, "static const i32 __cl_ctmpl_1[32] = {");
+    assert_contains("impl-collision", &emitted, "__cl_ctmpl_0()");
+    assert_absent("impl-collision", &emitted, "static const i32 __cl_ctmpl_0[32] = {");
+}
+
+#[test]
+fn should_keep_a_full_prefix_fill() {
+    let source = header(
+        "spec.ConstArrayImplPrefixFill",
+        &format!("let t: i32[32] = [{}; 7];\n", seq(1, 32)),
+    );
+    let emitted = emit("impl-prefix-fill", &source);
+    assert_no_template("impl-prefix-fill", &emitted);
+}
+
+#[test]
+fn should_keep_a_constant_binary_element() {
+    let source = header(
+        "spec.ConstArrayImplBinary",
+        &format!("let t: i32[32] = [1 / 2, {}];\n", rep("0", 31)),
+    );
+    let emitted = emit("impl-binary", &source);
+    assert_no_template("impl-binary", &emitted);
+}
+
+#[test]
+fn should_keep_a_constant_conditional_element() {
+    let source = header(
+        "spec.ConstArrayImplConstantConditional",
+        &format!("let t: i32[32] = [true ? 1 : 2, {}];\n", rep("0", 31)),
+    );
+    let emitted = emit("impl-constant-conditional", &source);
+    assert_no_template("impl-constant-conditional", &emitted);
+}
+
+#[test]
+fn should_keep_a_short_byte_table() {
+    let source = header(
+        "spec.ConstArrayImplShortBytes",
+        &format!("let t: u16[16] = [{}];\n", rep("1", 16)),
+    );
+    let emitted = emit("impl-short-bytes", &source);
+    assert_no_template("impl-short-bytes", &emitted);
+}
+
+#[test]
+fn should_emit_the_exact_typed_extremes() {
+    let source = header(
+        "spec.ConstArrayImplExtremes",
+        &format!(
+            "let t: i32[32] = [2147483647, -2147483647, {}];\n",
+            rep("0", 30)
+        ),
+    );
+    let emitted = emit("impl-extremes", &source);
+    assert_template("impl-extremes", &emitted);
+    assert_contains("impl-extremes", &emitted, "2147483647");
+    assert_contains("impl-extremes", &emitted, "(i32)(-(u32)2147483647)");
+}
+
+#[test]
+fn should_keep_the_init_local_and_the_template_distinct() {
+    let source = format!(
+        r#"
+module spec.ConstArrayImplInitLocal;
+func mk(): i32[32] {{ return [; 7]; }}
+let call: i32[32] = mk();
+let t: i32[32] = [{list}];
+func main(): i32 {{ return call[0] + t[0]; }}
+"#,
+        list = seq(1, 32)
+    );
+    let emitted = emit("impl-init-local", &source);
+    assert_contains("impl-init-local", &emitted, "__cl_itmp0");
+    assert_contains("impl-init-local", &emitted, "static const i32 __cl_ctmpl_0[32] = {");
+    assert_contains("impl-init-local", &emitted, "__cl_ctmpl_0, sizeof(cl_spec_ConstArrayImplInitLocal_t)");
+}
