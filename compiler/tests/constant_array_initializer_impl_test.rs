@@ -564,3 +564,27 @@ func main(): i32 {{ return call[0] + t[0]; }}
     assert_contains("impl-init-local", &emitted, "static const i32 __cl_ctmpl_0[32] = {");
     assert_contains("impl-init-local", &emitted, "__cl_ctmpl_0, sizeof(cl_spec_ConstArrayImplInitLocal_t)");
 }
+
+#[test]
+fn should_emit_the_exact_typed_cast_values() {
+    let source = format!(
+        r#"
+module spec.ConstArrayImplTypedExact;
+let a: i32[32] = [i32(2147483647), i32(-2147483647), {zeros}];
+let b: u16[32] = [u16(255), {zeros}];
+let c: u32[16] = [u32(4294967295), {zeros15}];
+let d: usize[32] = [usize(7), {zeros}];
+let e: isize[32] = [isize(-7), {zeros}];
+func main(): i32 {{ return 0; }}
+"#,
+        zeros = rep("0", 30),
+        zeros15 = rep("0", 15)
+    );
+    let emitted = emit("impl-typed-exact", &source);
+    assert_contains("impl-typed-exact", &emitted, "(i32)(2147483647)");
+    assert_contains("impl-typed-exact", &emitted, "(i32)((i32)(-(u32)2147483647))");
+    assert_contains("impl-typed-exact", &emitted, "(u16)(255)");
+    assert_contains("impl-typed-exact", &emitted, "(u32)(4294967295u)");
+    assert_contains("impl-typed-exact", &emitted, "(usize)(7)");
+    assert_contains("impl-typed-exact", &emitted, "(isize)((i32)(-(u32)7))");
+}
