@@ -591,7 +591,7 @@
 - **Active rows**: 22/22 Done — the 20 red rows are fixed with the per-phase evidence, and the two controls `DEF-427`/`DEF-447` are Done with the false-positive control evidence.
 - **Parked**: `DEF-425` was closed by the 2026-10-21 delegated ruling (the frozen BR-5 wins); `DEF-167` and `DEF-171` are now Done in `def-critical-major-closeout`.
 - **Filed during execution**: `DEF-449`..`DEF-483` (35 rows), each with a reproduction, base evidence, and a fix direction; `DEF-481` records the pre-existing call-arm read-base leak class, and `DEF-483` the scalar-`len` current-output fold.
-- **Roadmap totals (2026-10-19 snapshot)**: the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker reads 432/544 rows Done with 112 open (0 executing; 112 backlog).
+- **Roadmap totals (2026-10-19 snapshot)**: at that snapshot the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker (2026-11-09) reads 568/570 rows Done, 0 open, and 2 parked (`PLAN-06`, `PLAN-07`).
 
 ## Scope decisions (v1.0)
 
