@@ -263,14 +263,14 @@ volatile-target invalid C is documented as out of scope.
 
 | Gate | Result |
 |---|---|
-| `make check` | pending |
-| `make asan` | pending |
-| `make ubsan` | pending |
-| `make corpus-amiga` | pending |
-| `make differential` | pending |
-| `make bench-shape` | pending |
-| `make bench-compare REQUIRE="<final requirements>"` | pending |
-| `make verify` | pending |
+| `make check` | green (`EXIT:0`): spec check, SDK registry, workspace suites, bench-test, fuzz-test, fuzz-smoke |
+| `make asan` | 29 suites green |
+| `make ubsan` | 3 suites green |
+| `make corpus-amiga` | all portable programs match on hosted-amiga; vbcc and build-only legs warning-free |
+| `make differential` | 3/3 outputs match |
+| `make bench-shape` | m68k GCC, nix13, vbcc, and freestanding warning-free |
+| `make bench-compare REQUIRE="matrix:instructions:5 matrix:text:3"` | passed: matrix -9.6% instructions, -5.0% `.text`; no scored regression |
+| `make verify` | `verify: all legs passed` (`EXIT:0`) |
 
 ## Residual Opportunities
 

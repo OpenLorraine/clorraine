@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 27/32 tasks (84%)
+> **Progress**: 30/32 tasks (94%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -364,9 +364,9 @@ audit describe the final codegen commit.
 
 ### Step 5.4: Sanitizers
 
-- [ ] 5.4.1 Run `make asan`; record the suite count and result.
-- [ ] 5.4.2 Run `make ubsan`; record the suite count and result.
-- [ ] 5.4.3 If a sanitizer finding changes codegen, commit the fix, rerun
+- [x] 5.4.1 Run `make asan`; record the suite count and result.
+- [x] 5.4.2 Run `make ubsan`; record the suite count and result.
+- [x] 5.4.3 If a sanitizer finding changes codegen, commit the fix, rerun
       5.1 and 5.2 on the new clean commit, replace the head table and
       emission audit, and re-review the fix once.
 
@@ -402,22 +402,22 @@ audit describe the final codegen commit.
 
 ### Step 6.3: Full gates
 
-- [ ] 6.3.1 Run `make check`, `make asan`, `make ubsan`,
+- [x] 6.3.1 Run `make check`, `make asan`, `make ubsan`,
       `make corpus-amiga`, `make differential`, `make bench-shape`,
       `make bench-compare REQUIRE="<final requirements>"`, and `make verify`;
       record each final line in a scratch log outside the repository.
-- [ ] 6.3.2 If a gate is blocked, stop and report the exact blocker; do not
+- [x] 6.3.2 If a gate is blocked, stop and report the exact blocker; do not
       push a red tree.
 
 **Verify**: every gate green.
 
 ### Step 6.4: Record the gate evidence
 
-- [ ] 6.4.1 Fill the Final Acceptance table from the 6.3 logs.
-- [ ] 6.4.2 Set the PLAN-22 roadmap row to `Done` with the measured result.
-- [ ] 6.4.3 Review `git diff --cached`; commit
+- [x] 6.4.1 Fill the Final Acceptance table from the 6.3 logs.
+- [x] 6.4.2 Set the PLAN-22 roadmap row to `Done` with the measured result.
+- [x] 6.4.3 Review `git diff --cached`; commit
       `docs(plans): record the nested fill gate evidence`.
-- [ ] 6.4.4 Confirm `git status --porcelain` is empty.
+- [x] 6.4.4 Confirm `git status --porcelain` is empty.
 
 **Verify**: the acceptance table has no `pending` cell; the evidence commit
 exists; clean tree.
