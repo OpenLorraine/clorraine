@@ -42,8 +42,25 @@ echo "bench-shape: gcc build is warning-free"
 "${GCC}" "${GCC13_FLAGS[@]}" -c -o "${OUTDIR}/shapes13.o" "${OUTDIR}/shapes13.c"
 echo "bench-shape: gcc nix13 compile is warning-free"
 
-"${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/shapes-vbcc" "${OUTDIR}/shapes.c" \
-    -lamiga -lmieee > "${OUTDIR}/vbcc.log" 2>&1
+# The vbcc front end occasionally reports "No config file!" on its first
+# invocation in a fresh container even though /opt/amiga/bin/vc.config is
+# present. The same command succeeds on the next attempt; retry once and keep
+# any other failure fatal.
+run_vbcc() {
+    "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/shapes-vbcc" "${OUTDIR}/shapes.c" \
+        -lamiga -lmieee > "${OUTDIR}/vbcc.log" 2>&1
+}
+if ! run_vbcc; then
+    if grep -q 'No config file!' "${OUTDIR}/vbcc.log" \
+        && [ -f /opt/amiga/bin/vc.config ]; then
+        echo "bench-shape: retrying vbcc after the transient config probe" >&2
+        run_vbcc
+    else
+        echo "bench-shape: vbcc failed" >&2
+        cat "${OUTDIR}/vbcc.log" >&2
+        exit 1
+    fi
+fi
 if grep -i 'warning' "${OUTDIR}/vbcc.log" | grep -q 'shapes\.c'; then
     echo "bench-shape: vbcc emitted warnings in the emitted C" >&2
     cat "${OUTDIR}/vbcc.log" >&2
