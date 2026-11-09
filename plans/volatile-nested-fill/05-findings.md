@@ -73,8 +73,8 @@ the head is the fix commit.
 |---|---|
 | Base compiler | `7cdbb71` (`build/perf/base-clc`) |
 | Base SHA-256 / dirty | `2e7436f93edac998064aa284488b2245aa6aa565a9b02786d10c33a82951bbcd` / `false` |
-| Head compiler | `f7341e6` (compiler source `e0f3cbf`) |
-| Head SHA-256 / dirty | `a36bba44af24436f65289115549e27af22013cec29f9b0d13e7440c69e18759d` / `false` |
+| Head compiler | `fc6d1cb` (compiler source `e0f3cbf`) |
+| Head SHA-256 / dirty | `45b7e022cef1525be144d8bda516a5867f76559dccdad042add1858f19035121` / `false` |
 | `make bench-compare` (1% guard, no `REQUIRE`) | passed; every metric identical |
 
 | Benchmark | Base instructions | Head instructions | Base `.text` | Head `.text` | C bytes |
@@ -174,10 +174,10 @@ on the new clean commit.
 | `make check` | green (`EXIT:0`) on the final code |
 | `make asan` | 29 suites green |
 | `make ubsan` | 3 suites green |
-| `make corpus-amiga` | pending |
-| `make differential` | pending |
+| `make corpus-amiga` | all portable programs match; vbcc build-only warning-free |
+| `make differential` | 3/3 outputs match |
 | `make bench-shape` | gcc, nix13, vbcc, freestanding warning-free |
 | `make bench-base COMMIT=7cdbb71` / `make bench` / `make bench-compare` | base `7cdbb71`, head `f7341e6`, all metrics identical; compare passed |
-| `make verify` | pending |
+| `make verify` | `verify: all legs passed` (rerun after a transient vbcc `No config file!` flake in the first run) |
 | Emission audit | committed sources byte-identical; 9 volatile probes changed to per-leaf stores; whole-array/non-volatile controls unchanged |
 | Reviews | no open critical/major after the final re-checks |

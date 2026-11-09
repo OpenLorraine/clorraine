@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-09
 > **Last Updated**: 2026-11-09
-> **Progress**: 28/44 tasks (64%)
+> **Progress**: 30/44 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent
 > **Commit mode**: `--auto-commit` with pushes held until the full fix gate
@@ -184,11 +184,11 @@ green; commit exists.
       remaining limitations to `docs/known-limitations.md`.
 - [x] 4.3.1 Review `git diff --cached`; commit
       `docs(plans): close the volatile nested fill fix`; confirm a clean tree.
-- [ ] 4.4.1 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
+- [x] 4.4.1 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
       `make differential`, `make bench-shape`, `make bench-base
       COMMIT=7cdbb71`, `make bench`, `make bench-compare`, and `make verify`
       on the clean closeout commit; record each final line.
-- [ ] 4.5.1 Push `main`; confirm a clean tree and
+- [x] 4.5.1 Push `main`; confirm a clean tree and
       `git rev-list --count origin/main..HEAD` is 0.
 
 **Verify**: every fix gate green; pushed; tree clean.
