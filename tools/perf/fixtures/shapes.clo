@@ -2,7 +2,8 @@
 // a byte fill, an integer fill, a slice constant index, an adjusted-parameter
 // fill, a hidden-return fill, a constant division, and the guard, narrow
 // arithmetic, f32, and enum shapes (narrow consts, a narrow fill, an f32
-// const, an enum, and a guarded slice fill).
+// const, an enum, a guarded slice fill, and nested zero fills (two- and
+// three-dimensional, a prefix, a parameter, a hidden return, and a bool row).
 module bench.Shapes;
 
 const N: i32 = 64;
@@ -26,11 +27,38 @@ func pick(src: i32[], i: i32): i32 {
     return a[0];
 }
 
+func fillNested(borrow a: i32[8][8]): void {
+    a = [; [; 0]];
+}
+
+func makeNested(): i32[8][8] {
+    return [; [; 0]];
+}
+
+func makePrefix(): i32[16][8] {
+    return [
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1];
+        [; 0]
+    ];
+}
+
 func main(): i32 {
     let a: u8[N] = [; 1];
     let b: i32[N] = [; 7];
     let d: u8[20] = [2, 3; 4];
     let nf: u8[4] = [; u8(200) + u8(100)];
+    let n0: i32[8][8] = [; [; 0]];
+    let n1: i32[8][8] = makeNested();
+    let np: i32[16][8] = makePrefix();
+    let nb: bool[8][9] = [; [; false]];
+    fillNested(n1);
     let s: str = "abcd";
     let x: u8 = s[1];
     let r: i32 = 10 % 2;
@@ -42,5 +70,5 @@ func main(): i32 {
         total = total + b[i];
         i = i + 1;
     }
-    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M;
+    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M + n0[0][0] + n1[0][0] + np[0][0] + np[8][0] + i32(nb[0][0]);
 }

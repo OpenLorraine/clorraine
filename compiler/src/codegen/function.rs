@@ -24,6 +24,96 @@ const FILL_COMPACT_THRESHOLD: usize = 16;
 const FILL_LOOP_THRESHOLD: usize = 64;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
+/// True when a fill chain is a uniform constant zero.
+///
+/// The chain is an `ArrayLit` with no explicit elements at every nested level
+/// and a leaf whose width-correct constant value is zero. A top-level prefix
+/// before the fill is outside this predicate; the caller passes the fill value
+/// itself. `Materialize` wrappers are followed at every level. An explicit
+/// element list rejects the chain because the row is not uniform.
+fn uniform_zero_fill(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Materialize { value, .. } => uniform_zero_fill(value),
+        ValueKind::ArrayLit { elements, fill } if elements.is_empty() => {
+            fill.as_deref().is_some_and(|inner| {
+                uniform_zero_fill(inner) || zero_fill_leaf(inner)
+            })
+        }
+        _ => false,
+    }
+}
+
+/// True when a leaf fill value is the width-correct constant zero.
+///
+/// A `Materialize` wrapper is followed before the constant test; the constant
+/// helper itself does not unwrap one at the leaf.
+fn zero_fill_leaf(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Materialize { value, .. } => zero_fill_leaf(value),
+        _ => super::expr::constant_fill_integer(value) == Some(0),
+    }
+}
+
+/// True when the leaf type can be zeroed byte-wise.
+///
+/// Floats are excluded: their constant folding has separate accepted limits
+/// and the measured shape is an integer. Every admitted type has a non-zero
+/// width and an all-zero representation for zero.
+fn zero_fill_element(element: &Ty) -> bool {
+    matches!(
+        element.kind,
+        TyKind::Scalar(
+            crate::ast::ScalarType::I8
+                | crate::ast::ScalarType::I16
+                | crate::ast::ScalarType::I32
+                | crate::ast::ScalarType::U8
+                | crate::ast::ScalarType::U16
+                | crate::ast::ScalarType::U32
+                | crate::ast::ScalarType::Usize
+                | crate::ast::ScalarType::Isize
+                | crate::ast::ScalarType::Bool
+        )
+    )
+}
+
+/// True when a nested fill can become one `memset`.
+///
+/// `covered_rows` is the number of rows after the explicit prefix. A uniform
+/// zero fill with zero covered rows is still eligible: the caller emits
+/// nothing and the 64-slot threshold applies only to a non-empty region. A
+/// slice with a missing extent never compacts. The slot product uses
+/// `checked_mul`; an overflow rejects.
+fn nested_zero_fill(
+    fill: &Value,
+    element: &Ty,
+    extents: &[Option<usize>],
+    covered_rows: usize,
+) -> bool {
+    if extents.len() < 2
+        || extents.iter().any(|size| size.is_none())
+        || !zero_fill_element(element)
+        || !uniform_zero_fill(fill)
+    {
+        return false;
+    }
+    if covered_rows == 0 {
+        return true;
+    }
+    let mut row_slots = 1usize;
+    for extent in &extents[1..] {
+        let Some(size) = extent else {
+            return false;
+        };
+        let Some(next) = row_slots.checked_mul(*size) else {
+            return false;
+        };
+        row_slots = next;
+    }
+    covered_rows
+        .checked_mul(row_slots)
+        .is_some_and(|slots| slots >= FILL_LOOP_THRESHOLD)
+}
+
 use super::render::escape_c_string;
 use super::types::{declarator, function_declarator, is_struct_view};
 use super::{
@@ -4136,6 +4226,30 @@ impl<'a> Emitter<'a> {
         // A fill covers every index the prefix did not: `[a, b; fill]` fills
         // from the prefix length to the extent, and `[; fill]` fills them all.
         if let Some(element_ty) = &nested_ty {
+            // A uniform constant-zero row writes the same zero bytes to every
+            // covered slot, so one memset replaces the row temporary and its
+            // per-row copies. A full prefix emits nothing: the constant fill
+            // has no evaluation to preserve, even in a materialized caller
+            // that cannot use the compact form for its stores.
+            let nested_zero = nested_zero_fill(
+                fill,
+                element,
+                extents,
+                extent.saturating_sub(prefix),
+            );
+            if prefix >= extent && nested_zero {
+                return;
+            }
+            if compact && nested_zero {
+                let first = target.element(prefix);
+                self.push(&format!(
+                    "    memset({}, 0, {} * {});",
+                    first.address,
+                    extent - prefix,
+                    first.bytes
+                ));
+                return;
+            }
             // The fill expression evaluates once; the row value is then copied
             // to every covered row. A row has no C assignment form, so it
             // fills a row temporary once and memcpy copies it.
@@ -5093,5 +5207,111 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>, null_shape: &impl Fn(&
         | ValueKind::Path(_)
         | ValueKind::Aggregate
         | ValueKind::Temp(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::ScalarType;
+    use crate::ir::Value;
+
+    /// An `i32` literal value.
+    fn int(value: i128) -> Value {
+        Value::new(Ty::scalar(ScalarType::I32), ValueKind::Int(value))
+    }
+
+    /// An `f32` literal value.
+    fn float(value: f64) -> Value {
+        Value::new(Ty::scalar(ScalarType::F32), ValueKind::Float(value))
+    }
+
+    /// A one-extent row fill with an optional inner value.
+    fn array_fill(inner: Option<Value>) -> Value {
+        Value::new(
+            Ty::array(Ty::scalar(ScalarType::I32), vec![Some(9)]),
+            ValueKind::ArrayLit {
+                elements: Vec::new(),
+                fill: inner.map(Box::new),
+            },
+        )
+    }
+
+    /// A one-extent row filled with zero.
+    fn row_zero() -> Value {
+        array_fill(Some(int(0)))
+    }
+
+    /// A materialized wrapper around a value.
+    fn materialize(value: Value) -> Value {
+        Value::new(
+            value.ty.clone(),
+            ValueKind::Materialize {
+                temp: None,
+                destination: None,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
+                adopting: true,
+            },
+        )
+    }
+
+    #[test]
+    fn uniform_zero_accepts_zero_forms() {
+        assert!(uniform_zero_fill(&array_fill(Some(int(0)))));
+        assert!(uniform_zero_fill(&array_fill(Some(Value::new(
+            Ty::boolean(),
+            ValueKind::Bool(false),
+        )))));
+        assert!(uniform_zero_fill(&array_fill(Some(Value::new(
+            Ty::scalar(ScalarType::U8),
+            ValueKind::Char(0),
+        )))));
+    }
+
+    #[test]
+    fn uniform_zero_rejects_non_zero_and_non_uniform() {
+        assert!(!uniform_zero_fill(&array_fill(Some(int(7)))));
+        assert!(!uniform_zero_fill(&array_fill(Some(float(0.0)))));
+        let explicit = Value::new(
+            Ty::array(Ty::scalar(ScalarType::I32), vec![Some(9)]),
+            ValueKind::ArrayLit {
+                elements: vec![int(0)],
+                fill: None,
+            },
+        );
+        assert!(!uniform_zero_fill(&explicit));
+        assert!(!uniform_zero_fill(&int(0)));
+    }
+
+    #[test]
+    fn uniform_zero_follows_materialize_at_every_level() {
+        assert!(uniform_zero_fill(&array_fill(Some(materialize(int(0))))));
+        assert!(uniform_zero_fill(&materialize(row_zero())));
+    }
+
+    #[test]
+    fn nested_zero_fill_checks_the_extents_and_threshold() {
+        let element = Ty::scalar(ScalarType::I32);
+        let fill = row_zero();
+        assert!(nested_zero_fill(&fill, &element, &[Some(8), Some(8)], 8));
+        assert!(nested_zero_fill(&fill, &element, &[Some(8), Some(9)], 8));
+        assert!(!nested_zero_fill(&fill, &element, &[Some(7), Some(9)], 7));
+        assert!(!nested_zero_fill(&fill, &element, &[Some(8), None], 8));
+        assert!(!nested_zero_fill(&fill, &element, &[Some(8)], 8));
+        assert!(!nested_zero_fill(
+            &fill,
+            &Ty::scalar(ScalarType::F32),
+            &[Some(8), Some(8)],
+            8
+        ));
+        assert!(nested_zero_fill(&fill, &element, &[Some(8), Some(8)], 0));
+        assert!(!nested_zero_fill(
+            &fill,
+            &element,
+            &[Some(2), Some(2)],
+            usize::MAX
+        ));
     }
 }
