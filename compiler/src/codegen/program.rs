@@ -8,7 +8,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    Arg, BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece, Type,
+    Arg, BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, ScalarType, StructDecl,
+    TemplatePiece, Type, UnaryOp,
 };
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::load::Module;
@@ -1172,6 +1173,7 @@ impl<'a> Emitter<'a> {
             ));
             self.push("{");
             self.init_locals = 0;
+            self.init_templates = 0;
             self.init_owners.clear();
             self.init_literal_locals.clear();
             // An initializer resolves its names in its own module: a
@@ -1244,11 +1246,12 @@ impl<'a> Emitter<'a> {
     pub(super) fn emit_global_init(&mut self, module_name: &str, name: &str, value: &'a Expr) {
         self.emit_line_directive(value.span);
         let target = self.global_symbol(module_name, name);
-        let declared_ty = self
+        let global = self
             .globals
             .values()
-            .find(|global| global.module == module_name && global.name == name)
-            .map(|global| global.ty.clone());
+            .find(|global| global.module == module_name && global.name == name);
+        let declared_ty = global.map(|global| global.ty.clone());
+        let volatile = global.is_some_and(|global| global.volatile);
         // A view destination keeps the storage it points into for the
         // program's lifetime, so this initializer's owned values are retained
         // rather than released; every other destination copies its bytes.
@@ -1283,6 +1286,9 @@ impl<'a> Emitter<'a> {
         // fixed-array call result, so each one is bound into an init local
         // before the render.
         if let Some(declared) = &declared_ty {
+            if self.emit_constant_array_template(&target, declared, &lowered, volatile) {
+                return;
+            }
             if declared.is_fixed_array() && fills_element_wise(&lowered) {
                 self.emit_global_array_fill(&target, declared, &lowered);
                 return;
@@ -1828,6 +1834,96 @@ impl<'a> Emitter<'a> {
             }
         }
         read
+    }
+
+    /// Emits a module-level constant scalar array as one read-only template
+    /// plus a copy, when the shape is eligible.
+    ///
+    /// The shape is deliberately narrow: one fixed extent, a 2- or 4-byte
+    /// scalar leaf, a complete explicit list of guard-free constant values,
+    /// at least 16 elements and 64 bytes, and a non-volatile binding on a
+    /// non-freestanding profile. The target remains the writable global; the
+    /// copy runs at the same init position as the stores it replaces, so the
+    /// init order and any later mutation are unchanged. Every other shape
+    /// returns false and keeps the existing fill path.
+    fn emit_constant_array_template(
+        &mut self,
+        target: &str,
+        ty: &Ty,
+        value: &Value,
+        volatile: bool,
+    ) -> bool {
+        if volatile || matches!(self.profile, Profile::Freestanding) {
+            return false;
+        }
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return false;
+        };
+        if extents.len() != 1 {
+            return false;
+        }
+        let Some(extent) = extents[0] else {
+            return false;
+        };
+        if extent < 16 {
+            return false;
+        }
+        let element_ty = element.as_ref();
+        if !matches!(
+            element_ty.kind,
+            TyKind::Scalar(
+                ScalarType::I16
+                    | ScalarType::I32
+                    | ScalarType::U16
+                    | ScalarType::U32
+                    | ScalarType::Usize
+                    | ScalarType::Isize
+            )
+        ) {
+            return false;
+        }
+        let Some(element_size) = self.sema.table.size_of(element_ty) else {
+            return false;
+        };
+        let Some(bytes) = extent.checked_mul(element_size) else {
+            return false;
+        };
+        if bytes < 64 {
+            return false;
+        }
+        let ValueKind::ArrayLit {
+            elements,
+            fill: None,
+        } = &value.kind
+        else {
+            return false;
+        };
+        if elements.len() != extent {
+            return false;
+        }
+        if !elements.iter().all(|element| {
+            guard_free_constant(element)
+                && super::expr::constant_integer(element).is_some()
+        }) {
+            return false;
+        }
+        let name = format!("__cl_ctmpl_{}", self.init_templates);
+        self.init_templates += 1;
+        let array_ty = Ty::array(element.as_ref().clone(), vec![Some(extent)]);
+        let declaration = declarator(&array_ty, &name, &self.sema.table);
+        let values: Vec<String> = elements
+            .iter()
+            .map(|element| self.store_text(element, element_ty))
+            .collect();
+        self.push(&format!("    static const {declaration} = {{"));
+        for row in values.chunks(8) {
+            self.push(&format!("        {},", row.join(", ")));
+        }
+        self.push("    };");
+        self.push(&format!(
+            "    memcpy({target}, {name}, sizeof({target}));"
+        ));
+        true
     }
 
     /// Fills a fixed-array global element-wise.
@@ -4703,6 +4799,38 @@ fn qualified_callee_name(callee: &Expr) -> String {
     }
 }
 
+/// True when a value is a guard-free, effect-free constant shape.
+///
+/// The constant evaluator alone also folds division/remainder (including the
+/// `MIN / -1` trap), float-to-integer casts, conditionals, materialized
+/// temporaries, and short-circuit operands whose current emission carries a
+/// guard or an evaluated side effect. The data-template path removes the
+/// per-element statements, so it accepts only a literal, a non-float
+/// scalar-to-scalar cast, and `Neg`/`BitNot`/`Not` over another accepted
+/// value. Everything else keeps the existing guard-bearing path.
+fn guard_free_constant(value: &Value) -> bool {
+    fn non_float_scalar(ty: &Ty) -> bool {
+        matches!(
+            ty.kind,
+            TyKind::Scalar(scalar)
+                if !matches!(scalar, ScalarType::F32 | ScalarType::F64)
+        )
+    }
+    match &value.kind {
+        ValueKind::Int(_) | ValueKind::Bool(_) | ValueKind::Char(_) => true,
+        ValueKind::Cast { value: inner, .. } => {
+            non_float_scalar(&value.ty)
+                && non_float_scalar(&inner.ty)
+                && guard_free_constant(inner)
+        }
+        ValueKind::Unary {
+            op: UnaryOp::Neg | UnaryOp::BitNot | UnaryOp::Not,
+            operand,
+        } => guard_free_constant(operand),
+        _ => false,
+    }
+}
+
 /// True when a module array value has an element-wise fill form.
 ///
 /// A literal, a place (or a member or index projection over one), and a
@@ -4818,5 +4946,87 @@ pub(super) fn init_operand_is_pure(value: &Value) -> bool {
                 && fill.as_deref().map_or(true, init_operand_is_pure)
         }
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod guard_free_constant_tests {
+    use super::*;
+
+    fn int() -> Value {
+        Value::new(Ty::i32_ty(), ValueKind::Int(1))
+    }
+
+    fn f32_ty() -> Ty {
+        Ty {
+            kind: TyKind::Scalar(ScalarType::F32),
+            nullable: false,
+        }
+    }
+
+    #[test]
+    fn accepts_literals_casts_and_unaries() {
+        assert!(guard_free_constant(&int()));
+        assert!(guard_free_constant(&Value::new(
+            Ty::boolean(),
+            ValueKind::Bool(true)
+        )));
+        assert!(guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Cast {
+                to: "i32".to_owned(),
+                value: Box::new(int()),
+            }
+        )));
+        assert!(guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Unary {
+                op: UnaryOp::Neg,
+                operand: Box::new(int()),
+            }
+        )));
+        assert!(guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Unary {
+                op: UnaryOp::BitNot,
+                operand: Box::new(int()),
+            }
+        )));
+        assert!(guard_free_constant(&Value::new(
+            Ty::boolean(),
+            ValueKind::Unary {
+                op: UnaryOp::Not,
+                operand: Box::new(Value::new(Ty::boolean(), ValueKind::Bool(true))),
+            }
+        )));
+    }
+
+    #[test]
+    fn rejects_binary_float_conditional_and_place() {
+        assert!(!guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(int()),
+                right: Box::new(int()),
+            }
+        )));
+        assert!(!guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Cast {
+                to: "i32".to_owned(),
+                value: Box::new(Value::new(f32_ty(), ValueKind::Float(1.5))),
+            }
+        )));
+        assert!(!guard_free_constant(&Value::new(
+            Ty::i32_ty(),
+            ValueKind::Conditional {
+                condition: Box::new(Value::new(Ty::boolean(), ValueKind::Bool(true))),
+                then_value: Box::new(int()),
+                else_value: Box::new(int()),
+            }
+        )));
+        let place = Place::local("x");
+        assert!(!guard_free_constant(&Value::place(place)));
     }
 }

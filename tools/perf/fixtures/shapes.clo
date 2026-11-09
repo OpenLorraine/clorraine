@@ -4,7 +4,8 @@
 // arithmetic, f32, and enum shapes (narrow consts, a narrow fill, an f32
 // const, an enum, a guarded slice fill, nested zero fills (two- and
 // three-dimensional, a prefix, a parameter, a hidden return, and a bool row),
-// and volatile nested fills (a module array and an overlay field).
+// volatile nested fills (a module array and an overlay field), and a
+// module-level constant scalar table (a 64-entry i32 list).
 module bench.Shapes;
 
 const N: i32 = 64;
@@ -16,6 +17,7 @@ enum Mode: u8 { Off, On = 4, Ready }
 const M: i32 = i32(Mode.Ready);
 
 volatile let vg: i32[8][8] = [; [; 0]];
+let shapeTable: i32[64] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64];
 struct Overlay { a: volatile i32[2][3]; }
 
 func fillVolatile(): void {
@@ -88,5 +90,5 @@ func main(): i32 {
         total = total + b[i];
         i = i + 1;
     }
-    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M + n0[0][0] + n1[0][0] + np[0][0] + np[8][0] + i32(nb[0][0]) + vg[0][0];
+    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M + n0[0][0] + n1[0][0] + np[0][0] + np[8][0] + i32(nb[0][0]) + vg[0][0] + shapeTable[0] + shapeTable[63];
 }

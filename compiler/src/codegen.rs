@@ -149,6 +149,12 @@ pub(super) struct Emitter<'a> {
     /// `__cl_itmp<N>` locals; the counter resets per init function, so the
     /// numbering is stable per function.
     pub(super) init_locals: usize,
+    /// Constant-array data templates handed out in the current init function.
+    ///
+    /// A module initializer with a constant scalar array emits one block-scope
+    /// `__cl_ctmpl<N>` template per eligible global; the counter resets per
+    /// init function, so the names are stable and local to that function.
+    pub(super) init_templates: usize,
     /// The owning init locals of the current init function, in creation order.
     ///
     /// The release pass frees them in reverse order at the init function's
@@ -400,6 +406,7 @@ impl<'a> Emitter<'a> {
             resolved_temp_types: BTreeMap::new(),
             local_names: BTreeMap::new(),
             init_locals: 0,
+            init_templates: 0,
             init_owners: Vec::new(),
             init_literal_locals: BTreeSet::new(),
             init_global_literals: Vec::new(),
