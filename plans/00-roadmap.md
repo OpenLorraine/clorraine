@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-09
-> **Progress**: 568/570 rows done; 0 open; 2 Parked
+> **Progress**: 568/571 rows done; 1 executing; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -584,6 +584,7 @@
 | PLAN-21 | DX and adoption closeout | [01-requirements](dx-adoption-closeout/01-requirements.md) | [dx-adoption-closeout](dx-adoption-closeout/00-index.md) | Done | ✅ | 2026-11-08 | 56/56; fetch/detect SDK installer (29 tests), std-only `clorraine-lsp` (32 integration + 26 unit tests), VS Code extension `.vsix` with packaged-client smoke, `clorraine --doc` (9 spec + 4 unit tests), C-to-Clorraine guide; requirements preflight 15 findings, plan preflight 16, phase reviews closed; no new Rust crates; no spec, stdlib, ABI, runtime, or codegen changes; `make check`, `make asan` (28 suites), `make ubsan` (2 suites), `make corpus-amiga`, `make differential` (3/3), `make verify` (`verify: all legs passed`), `make demo-check`, `make vscode-check` green |
 | PLAN-22 | Generated-C nested fill closeout | — | [nested-fill-compaction](nested-fill-compaction/00-index.md) | Done | ✅ | 2026-11-09 | Matrix nested-zero fill compaction: -9.6% net instructions (10,959 → 9,908) and -5.0% `.text` (80,712 → 76,676), no scored regression; 21 impl + 13 spec + 4 helper unit cases; requirements preflight 33 findings, plan preflight 24 + 14 re-check, four phase reviews clean of critical/major; `make check`, `make asan` (29 suites), `make ubsan` (3 suites), `make corpus-amiga`, `make differential` (3/3), `make bench-shape`, `make bench-compare REQUIRE="matrix:instructions:5 matrix:text:3"`, and `make verify` (`verify: all legs passed`) green |
 | PLAN-23 | Volatile nested fill fix | — | [volatile-nested-fill](volatile-nested-fill/00-index.md) | Done | ✅ | 2026-11-09 | Fixed the invalid C for a nested fill into volatile storage: per-leaf copies at the fill-row, prefix-row, and run-time-indexed-element sites, impure prefix values evaluated once, shared core unchanged; 25 spec + 36 impl + 9 mutations; four codegen reviews and the full fix gate green |
+| PLAN-25 | Generated-C constant array closeout | [01-requirements](constant-array-initializer/01-requirements.md) | [constant-array-initializer](constant-array-initializer/00-index.md) | Executing | 🔄 | 2026-11-09 | Module-level constant scalar arrays emit one read-only template + `memcpy` instead of per-element stores; 2/4-byte elements at 16+ elements/64 bytes, 1-byte and freestanding excluded by measurement; Phase 1 baseline and the Phase 3 implementation are green; final gates and reviews pending |
 | PLAN-24 | v1.1.1 release closeout | — | [RELEASE.md](../RELEASE.md) | Done | ✅ | 2026-11-09 | Version `1.1.1`, changelog and notes, v1.1.1 runbook, release binaries and tarballs with `SHA256SUMS`, annotated `v1.1.1` tag; `make check`, `make asan` (29 suites), `make ubsan` (3 suites), `make corpus-amiga`, `make differential` (3/3), `make bench-shape`, `make bench-compare` (matrix -9.6% / -5.0% vs v1.1.0), `make verify` (`verify: all legs passed`), and `make vscode-check` green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.1 |
 
 ## Batch N accounting (2026-10-19)
@@ -591,7 +592,7 @@
 - **Active rows**: 22/22 Done — the 20 red rows are fixed with the per-phase evidence, and the two controls `DEF-427`/`DEF-447` are Done with the false-positive control evidence.
 - **Parked**: `DEF-425` was closed by the 2026-10-21 delegated ruling (the frozen BR-5 wins); `DEF-167` and `DEF-171` are now Done in `def-critical-major-closeout`.
 - **Filed during execution**: `DEF-449`..`DEF-483` (35 rows), each with a reproduction, base evidence, and a fix direction; `DEF-481` records the pre-existing call-arm read-base leak class, and `DEF-483` the scalar-`len` current-output fold.
-- **Roadmap totals (2026-10-19 snapshot)**: at that snapshot the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker (2026-11-09) reads 568/570 rows Done, 0 open, and 2 parked (`PLAN-06`, `PLAN-07`).
+- **Roadmap totals (2026-10-19 snapshot)**: at that snapshot the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker (2026-11-09) reads 568/571 rows Done, 1 executing (`PLAN-25`), and 2 parked (`PLAN-06`, `PLAN-07`).
 
 ## Scope decisions (v1.0)
 

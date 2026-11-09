@@ -3,9 +3,9 @@
 > **Feature**: A measured generated-C closeout for module-level constant scalar
 > array initializers: emit one block-scope `static const` data template and one
 > `memcpy` instead of one store per element.
-> **Status**: Plan preflighted — ready for execution.
+> **Status**: Executing — implementation green; final gates and reviews pending.
 > **Created**: 2026-11-09
-> **Last Updated**: 2026-11-09 21:42
+> **Last Updated**: 2026-11-09 23:10
 > **Base commit**: `v1.1.0` for the cumulative benchmark comparison; current
 > `main` for the isolated optimization comparison.
 > **Implements**: R1–R6

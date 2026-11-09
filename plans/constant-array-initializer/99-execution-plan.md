@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 23:15
-> **Progress**: 12/37 tasks (32%)
+> **Last Updated**: 2026-11-09 23:10
+> **Progress**: 17/37 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -122,11 +122,11 @@ before the implementation. ✅ (completed: 2026-11-09 23:15)
 **Objective**: Implement the guard-free predicate and the template emission,
 make the focused suites green, and measure the win.
 
-- [ ] 3.1.1 Add the `guard_free_constant` predicate and its unit cases in `compiler/src/codegen/program.rs`: literals and non-float scalar casts and `Neg`/`BitNot`/`Not` are accepted; Binary, float casts, conditionals, materialize, calls, places, and intrinsics are rejected.
-- [ ] 3.1.2 Add `emit_constant_array_template` and integrate it in `emit_global_init`: one extent, `elements.len() == extent`, 2/4-byte scalar leaf, the finalized threshold, not volatile, non-freestanding, extent-sized `static const` template with an explicit `__cl_ctmpl_<n>` counter, eight values per line, one `memcpy`, no per-element stores.
-- [ ] 3.1.3 Run the focused spec and impl suites; make the positive pins green and keep every exclusion pin green.
-- [ ] 3.1.4 Run `make bench-shape` (the fixture now exercises the template on hosted-amiga, nix13, and vbcc; freestanding keeps the stores) and `make check`; fix any C-validity or warning failure.
-- [ ] 3.1.5 Commit the implementation, the now-green tests, the fixture, the red/green evidence, the `PLAN-25` roadmap row (Executing), and the plan index (Executing) with the git-commit skill.
+- [x] 3.1.1 Add the `guard_free_constant` predicate and its unit cases in `compiler/src/codegen/program.rs`: literals and non-float scalar casts and `Neg`/`BitNot`/`Not` are accepted; Binary, float casts, conditionals, materialize, calls, places, and intrinsics are rejected. ✅ (completed: 2026-11-09 23:10)
+- [x] 3.1.2 Add `emit_constant_array_template` and integrate it in `emit_global_init`: one extent, `elements.len() == extent`, 2/4-byte scalar leaf, the finalized threshold, not volatile, non-freestanding, extent-sized `static const` template with an explicit `__cl_ctmpl_<n>` counter, eight values per line, one `memcpy`, no per-element stores. ✅ (completed: 2026-11-09 23:10)
+- [x] 3.1.3 Run the focused spec and impl suites; make the positive pins green and keep every exclusion pin green. ✅ (completed: 2026-11-09 23:10)
+- [x] 3.1.4 Run `make bench-shape` (the fixture now exercises the template on hosted-amiga, nix13, and vbcc; freestanding keeps the stores) and `make check`; fix any C-validity or warning failure. ✅ (completed: 2026-11-09 23:10)
+- [x] 3.1.5 Commit the implementation, the now-green tests, the fixture, the red/green evidence, the `PLAN-25` roadmap row (Executing), and the plan index (Executing) with the git-commit skill. ✅ (completed: 2026-11-09 23:10)
 - [ ] 3.1.6 Confirm the tree is clean and `head.json` will record `dirty=false`; run `make bench`; run the isolated comparison with `--require lookup:instructions:10 --require lookup:text:10` and the cumulative `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"`; record the tables and outcomes in `05-findings.md` (commit those findings before the next measured run).
 - [ ] 3.1.7 Dispatch the correctness reviewer, memory-safety auditor, emission-integrity auditor, and performance auditor on the Phase 3 diff with blast-radius and test-integrity packets; record verdicts.
 - [ ] 3.1.8 Resolve every critical/major finding; if a fix changes codegen, continue to Phase 4 with a fix commit.

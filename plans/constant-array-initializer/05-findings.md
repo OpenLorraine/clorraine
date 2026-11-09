@@ -156,7 +156,7 @@ output, including the isolated `--require` rows.
 | Status | Pins |
 |---|---|
 | Red on the pre-change compiler | `constant_array_initializer_spec_test`: 42 passed. `constant_array_initializer_impl_test`: 16 passed, 8 failed: `should_emit_one_template_and_memcpy_for_i32`, `should_emit_negative_and_typed_values`, `should_emit_u16_and_i16_templates`, `should_emit_usize_and_isize_templates`, `should_emit_the_template_for_each_hosted_profile`, `should_use_distinct_templates_and_keep_the_target_declaration`, `should_keep_the_memcpy_at_the_initializer_position`, `should_wrap_the_template_at_eight_values_per_line`. |
-| Green on the feature head | _pending_ |
+| Green on the feature head | `constant_array_initializer_spec_test`: 42 passed. `constant_array_initializer_impl_test`: 24 passed. `guard_free_constant_tests`: 2 passed. The head `lookup` probe is 12,842 instructions and 92,976 `.text` with equal output. |
 | Exclusion guards green on both | 16 implementation exclusions passed on the pre-change compiler; the 42 behaviour cases passed. |
 
 **Red command and identity:** `make -C docker exec CMD="RDC_CLC=/work/build/perf/isolated-base-clc
