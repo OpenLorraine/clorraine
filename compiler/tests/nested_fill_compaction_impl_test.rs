@@ -441,3 +441,47 @@ func main(): i32 {
     );
     assert_whole_array_memset("control-72", &emitted, "&(a[0])", "8 * sizeof(a[0])");
 }
+
+#[test]
+fn should_keep_a_float_cast_zero_leaf() {
+    let emitted = emit(
+        "float-cast",
+        r#"
+module impl.NestedFloatCast;
+func main(): i32 {
+    let a: i32[8][9] = [; [; i32(f32(0.0))]];
+    return a[0][0];
+}
+"#,
+    );
+    assert_absent("float-cast", &emitted, "memset(&(a[0]), 0,");
+    assert_contains("float-cast", &emitted, "__cl_fillrow");
+}
+
+#[test]
+fn should_emit_nothing_for_a_non_compact_full_prefix() {
+    let emitted = emit(
+        "field-full-prefix",
+        r#"
+module impl.NestedFieldFullPrefix;
+struct S { a: i32[8][8]; }
+func main(): i32 {
+    let row: i32[8] = [; 1];
+    let s: S = S { a: [
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2],
+        [2, 2, 2, 2, 2, 2, 2, 2]
+    ] };
+    s.a = [row, row, row, row, row, row, row, row; [; 0]];
+    return s.a[0][0];
+}
+"#,
+    );
+    assert_absent("field-full-prefix", &emitted, "__cl_fillrow");
+    assert_absent("field-full-prefix", &emitted, "memset(&(s.a[0]), 0,");
+}

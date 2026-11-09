@@ -24,6 +24,13 @@ const FILL_COMPACT_THRESHOLD: usize = 16;
 const FILL_LOOP_THRESHOLD: usize = 64;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
+use super::render::escape_c_string;
+use super::types::{declarator, function_declarator, is_struct_view};
+use super::{
+    is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
+    TakeCapture,
+};
+
 /// True when a fill chain is a uniform constant zero.
 ///
 /// The chain is an `ArrayLit` with no explicit elements at every nested level
@@ -113,13 +120,6 @@ fn nested_zero_fill(
         .checked_mul(row_slots)
         .is_some_and(|slots| slots >= FILL_LOOP_THRESHOLD)
 }
-
-use super::render::escape_c_string;
-use super::types::{declarator, function_declarator, is_struct_view};
-use super::{
-    is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
-    TakeCapture,
-};
 
 impl<'a> Emitter<'a> {
     // -- function emission ---------------------------------------------------
@@ -5268,6 +5268,36 @@ mod tests {
             Ty::scalar(ScalarType::U8),
             ValueKind::Char(0),
         )))));
+        assert!(uniform_zero_fill(&array_fill(Some(Value::new(
+            Ty::scalar(ScalarType::U32),
+            ValueKind::Int(0),
+        )))));
+        assert!(uniform_zero_fill(&array_fill(Some(Value::new(
+            Ty::scalar(ScalarType::I32),
+            ValueKind::Cast {
+                to: "i32".to_owned(),
+                value: Box::new(int(0)),
+            },
+        )))));
+        assert!(uniform_zero_fill(&array_fill(Some(Value::new(
+            Ty::scalar(ScalarType::I32),
+            ValueKind::Unary {
+                op: UnaryOp::Neg,
+                operand: Box::new(int(0)),
+            },
+        )))));
+    }
+
+    #[test]
+    fn uniform_zero_rejects_a_float_to_integer_cast() {
+        let cast = Value::new(
+            Ty::scalar(ScalarType::I32),
+            ValueKind::Cast {
+                to: "i32".to_owned(),
+                value: Box::new(float(0.0)),
+            },
+        );
+        assert!(!uniform_zero_fill(&array_fill(Some(cast))));
     }
 
     #[test]
