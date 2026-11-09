@@ -68,6 +68,24 @@ for name in "${PROGRAMS[@]}"; do
     fi
 done
 
+# The vbcc front end occasionally reports "No config file!" on its first
+# invocation in a fresh container even though /opt/amiga/bin/vc.config is
+# present. The same command succeeds on the next attempt; retry once and keep
+# any other failure fatal.
+retry_vbcc() {
+    local log="$1"
+    shift
+    if "$@" > "${log}" 2>&1; then
+        return 0
+    fi
+    if grep -q 'No config file!' "${log}" && [ -f /opt/amiga/bin/vc.config ]; then
+        echo "corpus-amiga: retrying vbcc after the transient config probe" >&2
+        "$@" > "${log}" 2>&1
+        return $?
+    fi
+    return 1
+}
+
 # The vbcc leg is build-only: it proves the same emitted C compiles with the
 # second toolchain from the compile matrix. Its output is captured and scanned
 # for warnings in the generated translation unit, because the leg must be
@@ -76,9 +94,13 @@ done
 # are outside this leg's contract.
 echo "corpus-amiga: file-copier: vbcc build-only"
 vbcc_log="${OUTDIR}/file-copier/vbcc.log"
-"${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/file-copier/program-vbcc" \
-    "${OUTDIR}/file-copier/program.c" -lamiga -lmieee 2>&1 | tee "${vbcc_log}"
-if grep -i 'warning' "${vbcc_log}" | grep -q 'program\.c'; then
+if ! retry_vbcc "${vbcc_log}" "${VC}" "${VBCC_FLAGS[@]}" \
+    -o "${OUTDIR}/file-copier/program-vbcc" \
+    "${OUTDIR}/file-copier/program.c" -lamiga -lmieee; then
+    echo "corpus-amiga: file-copier: vbcc build failed" >&2
+    cat "${vbcc_log}" >&2
+    status=1
+elif grep -i 'warning' "${vbcc_log}" | grep -q 'program\.c'; then
     echo "corpus-amiga: file-copier: vbcc emitted warnings in the emitted C" >&2
     status=1
 else
@@ -93,8 +115,8 @@ guide_c="${OUTDIR}/amigaguide-vbcc.c"
 guide_log="${OUTDIR}/amigaguide-vbcc.log"
 echo "corpus-amiga: amigaguide: vbcc build-only"
 "${CLC}" --profile hosted-amiga -o "${guide_c}" "${guide_src}"
-if "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/amigaguide-vbcc" \
-    "${guide_c}" -lamiga -lmieee > "${guide_log}" 2>&1; then
+if retry_vbcc "${guide_log}" "${VC}" "${VBCC_FLAGS[@]}" \
+    -o "${OUTDIR}/amigaguide-vbcc" "${guide_c}" -lamiga -lmieee; then
     if grep -i 'warning' "${guide_log}" | grep -q 'amigaguide-vbcc\.c'; then
         echo "corpus-amiga: amigaguide: vbcc emitted warnings in the emitted C" >&2
         status=1
@@ -128,8 +150,8 @@ else
     status=1
 fi
 echo "corpus-amiga: rtg: vbcc build-only"
-if "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/rtg-vbcc" \
-    "${rtg_vbcc_c}" -lamiga -lmieee > "${OUTDIR}/rtg-vbcc.log" 2>&1; then
+if retry_vbcc "${OUTDIR}/rtg-vbcc.log" "${VC}" "${VBCC_FLAGS[@]}" \
+    -o "${OUTDIR}/rtg-vbcc" "${rtg_vbcc_c}" -lamiga -lmieee; then
     if grep -i 'warning' "${OUTDIR}/rtg-vbcc.log" | grep -q 'rtg-vbcc\.c'; then
         echo "corpus-amiga: rtg: vbcc emitted warnings in the emitted C" >&2
         status=1
