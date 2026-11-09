@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-09
 > **Last Updated**: 2026-11-09
-> **Progress**: 22/44 tasks (50%)
+> **Progress**: 28/44 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent
 > **Commit mode**: `--auto-commit` with pushes held until the full fix gate
@@ -144,25 +144,25 @@ green; commit exists.
 > **Verify**: no scored regression against `7cdbb71`; no non-volatile
 > emission diff; no open critical/major finding; sanitizers green.
 
-- [ ] 3.1.1 Run `make bench-base COMMIT=7cdbb71`; record the base compiler
+- [x] 3.1.1 Run `make bench-base COMMIT=7cdbb71`; record the base compiler
       path, SHA-256, and `dirty=false`.
-- [ ] 3.1.2 Run `make bench`; record the head SHA-256 and `dirty=false`, then
+- [x] 3.1.2 Run `make bench`; record the head SHA-256 and `dirty=false`, then
       run `make bench-compare` with no `REQUIRE` (the 1% guard).
-- [ ] 3.2.1 Emit base and head C over the corpus, benchmarks, and Amiga
+- [x] 3.2.1 Emit base and head C over the corpus, benchmarks, and Amiga
       examples with the `7cdbb71` base compiler; diff and classify every
       hunk.
-- [ ] 3.3.1 Dispatch `correctness-reviewer` on the codegen diff.
-- [ ] 3.4.1 Dispatch read-only `memory-safety-auditor` on the volatile shapes.
-- [ ] 3.5.1 Dispatch read-only `emission-integrity-auditor` on the diff and
+- [x] 3.3.1 Dispatch `correctness-reviewer` on the codegen diff.
+- [x] 3.4.1 Dispatch read-only `memory-safety-auditor` on the volatile shapes.
+- [x] 3.5.1 Dispatch read-only `emission-integrity-auditor` on the diff and
       strict builds.
-- [ ] 3.6.1 Dispatch read-only `performance-auditor` on the non-volatile path
+- [x] 3.6.1 Dispatch read-only `performance-auditor` on the non-volatile path
       and the benchmark comparison.
-- [ ] 3.7.1 Merge findings; resolve all critical/major. The run-time index,
+- [x] 3.7.1 Merge findings; resolve all critical/major. The run-time index,
       impure prefix, and doc findings were fixed in the second code commit;
       rerun 2.3, 3.1, and 3.2 on the new clean commit and re-review the fix
       diff once.
-- [ ] 3.8.1 Run `make asan` and `make ubsan`; record the suite counts.
-- [ ] 3.9.1 Fill the findings ledger; commit
+- [x] 3.8.1 Run `make asan` and `make ubsan`; record the suite counts.
+- [x] 3.9.1 Fill the findings ledger; commit
       `docs(plans): record the volatile nested fill review`.
 
 **Verify**: reviews and sanitizers recorded; no blocking finding.
@@ -176,13 +176,13 @@ green; commit exists.
 > **Verify**: all fix gates green on the committed closeout tree; tree clean;
 > `origin/main..HEAD` zero.
 
-- [ ] 4.1.1 Fill the final acceptance table and the accepted limits in
+- [x] 4.1.1 Fill the final acceptance table and the accepted limits in
       [Findings](05-findings.md).
-- [ ] 4.2.1 Mark PLAN-23 `Done`; add the PLAN-24 release row as `Executing`;
+- [x] 4.2.1 Mark PLAN-23 `Done`; add the PLAN-24 release row as `Executing`;
       update the header (567/570, 1 open,
       `Active - v1.1.1 release closeout`); add the fixed statement and the
       remaining limitations to `docs/known-limitations.md`.
-- [ ] 4.3.1 Review `git diff --cached`; commit
+- [x] 4.3.1 Review `git diff --cached`; commit
       `docs(plans): close the volatile nested fill fix`; confirm a clean tree.
 - [ ] 4.4.1 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
       `make differential`, `make bench-shape`, `make bench-base

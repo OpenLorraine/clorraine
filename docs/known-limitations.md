@@ -143,6 +143,12 @@ conversion path. The following accepted-source edge cases remain. They are
 pre-existing, are not regressions from the closeout, and have no shared
 workaround beyond the notes here.
 
+The v1.1.1 patch fixes a function-body nested fill into `volatile` storage:
+the fill rows, place-valued and impure prefix rows, and run-time indexed
+elements now store each leaf through the volatile lvalue instead of calling
+`memcpy`. The remaining volatile-copy cases are listed with the other edge
+cases.
+
 | Edge case | Current behavior | Guidance |
 |---|---|---|
 | An imported enum or handle type name used as a cast (`import { E }`; `E(2)`, `Buffer(0)`) | The resolver treats the import as a value, so the call is emitted as a C function call. It can fail the strict C build with an implicit declaration. | Convert the value explicitly to the backing scalar, or declare the conversion in the same module. |
@@ -154,6 +160,11 @@ workaround beyond the notes here.
 | A statement pure conditional fill | The value expression, including its condition, is repeated for each element; a volatile condition is read once per element. | Use a temporary condition or a loop when the condition has a side effect. |
 | A module fill that covers no slot with an impure or struct value | The prepared local is not read; the strict build reports an unused variable. | Ensure the prefix covers at least one slot, or use a statement fill. |
 | A fixed-array row-place field | The row bounds guard is emitted twice. | No action; the first guard traps before the access. |
+| A whole-array assignment or move into a volatile array (`g = other`, a call result, a self-reading literal) | The shared fixed-array store core still emits `memcpy` into the volatile object; the strict host build rejects it. | Fill the array element by element, or copy through non-volatile storage. The nested fill itself is fixed in v1.1.1. |
+| A volatile array used as a copy source into a row temporary | The row-temporary fill still emits `memcpy` from the volatile source; the strict host build rejects it. | Copy through a non-volatile binding, or fill from the source directly where the shape allows. |
+| A member or element of a by-value struct or conditional rvalue used as a prefix row (`make().r`) | The row-temporary fill takes the address of the rvalue, which C rejects. | Bind the rvalue to a local first, then use its member or element. |
+| A struct-literal prefix element with a fixed-array field, into a volatile array | The struct-field store path does not carry the outer target's volatile qualifier, so it may emit `memcpy` into volatile storage. | Fill the field element by element. |
+| A `for borrow` alias over volatile storage, or a `borrow` call argument taken from a volatile field | The borrow conversion or the call argument discards the `volatile` qualifier before the fill; the strict build rejects it. | Access the volatile storage through its original lvalue or an explicit volatile intrinsic. |
 
 The enum member policy uses the target ABI layout for `sizeof`, so an enum
 macro agrees with the runtime C `sizeof`. A value-position `const` that reads
@@ -211,4 +222,4 @@ C-hook trampoline surfaces.
 | Installer integrity | The installer downloads nothing itself. The pinned image build verifies upstream archives where upstream publishes SHA-256 values; the installer's own gate is provenance, NDK presence, and tool versions. | Inspect `docker/versions.env` and `/opt/amiga/BUILD-PROVENANCE.txt`; rebuild with `make setup FETCH=1 YES=1`. |
 | VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
 | `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. Related links resolve a type through the referring module’s imports, then the first input module that declares it; an aliased or qualified reference to a same-named type in another module can point to the wrong page. | Read the source for member-level detail; use unambiguous type names across input modules. |
-| Release packaging | The v1.1.0 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`. | Build the server from source with `cargo build --workspace`. |
+| Release packaging | The v1.1.1 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`. | Build the server from source with `cargo build --workspace`. |

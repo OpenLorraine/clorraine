@@ -170,14 +170,14 @@ on the new clean commit.
 
 | Gate | Result |
 |---|---|
-| Focused suites | pending |
-| `make check` | pending |
-| `make asan` | pending |
-| `make ubsan` | pending |
+| Focused suites | green: spec 25/25, impl 36/36 |
+| `make check` | green (`EXIT:0`) on the final code |
+| `make asan` | 29 suites green |
+| `make ubsan` | 3 suites green |
 | `make corpus-amiga` | pending |
 | `make differential` | pending |
-| `make bench-shape` | pending |
-| `make bench-base COMMIT=7cdbb71` / `make bench` / `make bench-compare` | pending |
+| `make bench-shape` | gcc, nix13, vbcc, freestanding warning-free |
+| `make bench-base COMMIT=7cdbb71` / `make bench` / `make bench-compare` | base `7cdbb71`, head `f7341e6`, all metrics identical; compare passed |
 | `make verify` | pending |
-| Emission audit | pending |
-| Reviews | pending |
+| Emission audit | committed sources byte-identical; 9 volatile probes changed to per-leaf stores; whole-array/non-volatile controls unchanged |
+| Reviews | no open critical/major after the final re-checks |
