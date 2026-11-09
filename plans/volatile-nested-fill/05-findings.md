@@ -28,10 +28,10 @@ initializer is already element-wise and valid.
 
 | Status | Result |
 |---|---|
-| Behaviour cases on base | 13 passed, 10 failed (ST-V1..V10); the `memcpy` shapes fail the strict host build, and ST-V8 also observes the prefix call re-evaluated four times |
-| Emission pins on base | 24 passed, 10 failed (IP-V1..V6 and IP-V13..V16); every positive pin finds the destination `memcpy` it forbids |
-| Behaviour cases on head | 23/23 pass |
-| Emission pins on head | 34/34 pass |
+| Behaviour cases on base | 13 passed, 12 failed (ST-V1..V12); the `memcpy` shapes fail the strict host build |
+| Emission pins on base | 24 passed, 12 failed (IP-V1..V6 and IP-V13..V18); every positive pin finds the `memcpy` it forbids |
+| Behaviour cases on head | 25/25 pass |
+| Emission pins on head | 36/36 pass |
 | Integrity mutations | 8 mutations, each caught |
 
 Base failure shape (repeated per volatile case):
@@ -54,14 +54,14 @@ source was restored.
 
 | Mutation | Observed failure |
 |---|---|
-| Restore the fill-row `memcpy` | impl 24/34 (IP-V1..V6, IP-V13, IP-V15 fail); spec 13/23 (ST-V1..V7, ST-V9, ST-V10 fail) |
-| Fall the prefix row back to the shared core | impl 32/34 (IP-V5, IP-V14 fail); spec 21/23 (ST-V5, ST-V8 fail) |
-| Force `fill_target_volatile` false | impl 24/34 (the volatile place pins fail); spec 13/23 |
-| Force `fill_target_volatile` true | impl 26/34 (IP-V7 and the non-volatile compaction pins fail); spec stays green |
-| Make the `.len` guard unconditional | impl 33/34 (IP-V6 fails) |
-| Remove the copy recursion (one dimension only) | impl 33/34 (IP-V2 fails); spec 22/23 (ST-V2 fails) |
-| Treat an impure prefix value as stable | impl 33/34 (IP-V14 fails); spec 22/23 (ST-V8 fails with `calls: 4`) |
-| Disable the run-time index volatility | impl 32/34 (IP-V13, IP-V15 fail); spec 21/23 (ST-V7, ST-V9 fail) |
+| Restore the fill-row `memcpy` | impl 24/36 (12 fail); spec 13/25 (12 fail) |
+| Fall the prefix row back to the shared core | impl 32/36 (IP-V5, IP-V14, IP-V17, IP-V18 fail); spec 21/25 (ST-V5, ST-V8, ST-V11, ST-V12 fail) |
+| Force `fill_target_volatile` false | impl 24/36 (12 fail); spec 13/25 (12 fail) |
+| Force `fill_target_volatile` true | impl 28/36 (IP-V7 and the non-volatile compaction pins fail); spec stays green |
+| Make the `.len` guard unconditional | impl 35/36 (IP-V6 fails) |
+| Remove the copy recursion (one dimension only) | impl 35/36 (IP-V2 fails); spec 24/25 (ST-V2 fails) |
+| Treat an impure prefix value as stable | impl 35/36 (IP-V14 fails); spec 24/25 (ST-V8 fails at the strict build) |
+| Disable the run-time index volatility | impl 34/36 (IP-V13, IP-V15 fail); spec 23/25 (ST-V7, ST-V9 fail) |
 
 ## Benchmark Comparison
 
@@ -70,11 +70,21 @@ the head is the fix commit.
 
 | Item | Value |
 |---|---|
-| Base compiler | pending |
-| Base SHA-256 / dirty | pending |
-| Head compiler | pending |
-| Head SHA-256 / dirty | pending |
-| `make bench-compare` (1% guard, no `REQUIRE`) | pending |
+| Base compiler | `7cdbb71` (`build/perf/base-clc`) |
+| Base SHA-256 / dirty | `2e7436f93edac998064aa284488b2245aa6aa565a9b02786d10c33a82951bbcd` / `false` |
+| Head compiler | `0ae2be4` (compiler source `00f310b`) |
+| Head SHA-256 / dirty | `431b0418342fd4ae5bff6f3c9f04f6d9711034bb2372ab2f8e22e781edd368d4` / `false` |
+| `make bench-compare` (1% guard, no `REQUIRE`) | passed; every metric identical |
+
+| Benchmark | Base instructions | Head instructions | Base `.text` | Head `.text` | C bytes |
+|---|---:|---:|---:|---:|---:|
+| matrix | 9,908 | 9,908 | 76,676 | 76,676 | 311,168 |
+| moves | 45,205 | 45,205 | 76,896 | 76,896 | 313,173 |
+| sieve | 1,040,581 | 1,040,581 | 76,728 | 76,728 | 311,284 |
+| strings | 2,964,051 | 2,964,051 | 77,604 | 77,604 | 312,685 |
+
+The volatile fix does not touch a scored shape. The matrix win from PLAN-22 is
+present on both sides and cancels out.
 
 ## Emission Audit
 
@@ -83,14 +93,18 @@ not change any non-volatile unit.
 
 | Unit class | Expected | Observed |
 |---|---|---|
-| Committed corpus, benchmarks, Amiga examples | byte-identical | pending |
-| Volatile global nested fill probe | per-leaf stores, no destination `memcpy` | pending |
-| Volatile prefix place row probe | per-leaf stores, no destination `memcpy` | pending |
-| Volatile overlay field probe | per-leaf stores, no destination `memcpy` | pending |
-| Run-time indexed volatile element probe | per-leaf stores, no destination `memcpy` | pending |
-| Impure prefix row probe | one call, row temporary, per-leaf stores | pending |
-| Volatile pointer-field probe | per-leaf stores, no destination `memcpy` | pending |
-| Whole-array place copy `g = other` | unchanged `memcpy` (accepted limit, IP-V12) | pending |
+| Committed corpus, benchmarks, Amiga examples | byte-identical | byte-identical; zero diffs |
+| Volatile global 2D fill probe | per-leaf stores | 8 `memcpy` removed, 72 leaf stores |
+| Volatile global 3D fill probe | per-leaf stores | 2 removed, 24 added |
+| Volatile prefix place row probe | per-leaf stores | 4 removed, 16 added |
+| Volatile overlay field probe | per-leaf stores | 2 removed, 6 added |
+| Volatile field named `len` probe | per-leaf stores | 2 removed, 6 added |
+| Run-time indexed volatile global probe | per-leaf stores | 3 removed, 12 added |
+| Run-time indexed volatile field probe | per-leaf stores | 3 removed, 12 added |
+| Impure prefix row probe | one call, row temporary, per-leaf stores | one call; 9 removed, 23 added (`__cl_fillrow_2` + leaf stores) |
+| Volatile pointer-field probe | per-leaf stores | 2 removed, 6 added |
+| Whole-array place copy `g = other` | unchanged `memcpy` | byte-identical |
+| Non-volatile field and local probes | unchanged | byte-identical |
 
 ## Reviews
 
@@ -110,10 +124,14 @@ a non-defect.
 | RV-VOL-001: a run-time indexed whole-element target (`g[i]`, `regs.a[i]`) bypassed the volatility predicate and still emitted `memcpy` into volatile storage | MAJOR | The `StorePointer` fixed-array branch derives the flag from the addressed value tree; ST-V7/ST-V9 and IP-V13/IP-V15 pin the global and field forms |
 | RV-VOL-002: a `volatile raw` pointer field was said to make a non-volatile pointee volatile | MINOR | Investigated: the emitter spells the field `volatile T *p`, so the pointee is volatile and the per-leaf copy is the valid spelling. IP-V16 pins the shape; no predicate change |
 | RV-VOL-003: the copy helper's doc claimed "the same bytes" for a struct leaf, but C struct assignment leaves padding unspecified | MINOR | The doc now says "the same typed values" and notes the padding boundary |
-| MEM-001: the prefix wrapper rendered an impure value once into a C expression, then appended an element index per leaf, re-running a hidden call | MAJOR | The wrapper evaluates an impure value once into a row temporary with the shared core, then copies from it; ST-V8 counts one call and IP-V14 pins the single call and the temporary |
+| MEM-001: the prefix wrapper rendered an impure value once into a C expression, then appended an element index per leaf, re-running a hidden call | MAJOR | The wrapper evaluates an impure value once into a row temporary with the shared core, then copies from it; ST-V8 counts one call, IP-V14 pins the single call and the temporary, and the raw-pointer Member recheck is ASan-clean. A by-value rvalue Member is the separate RV2-VOL-002 limitation |
 | PRE-1 (emission audit): run-time indexed target | MAJOR pre-existing | Fixed by the same change as RV-VOL-001 |
 | PRE-2 (emission audit): a volatile array used as a copy source into the row temporary | MAJOR pre-existing | Recorded as a separate shared-core limitation; not a nested fill destination |
 | PRE-3 (emission audit): a whole-array copy *from* volatile storage | MINOR pre-existing | Recorded with the whole-array copy limitation |
+| RV2-VOL-001: a constant or pure-arithmetic index (`h[0]`, `h[k - 1]`, `h[usize(0)]`) was rejected as unstable, so a volatile-source prefix row went through a row temporary and copied from the volatile source with `memcpy` | MAJOR | `stable_storage_value` now accepts literal scalars and pure arithmetic; ST-V11/ST-V12 and IP-V17/IP-V18 pin the constant and arithmetic forms |
+| RV2-VOL-002: a prefix row that is a member or element of a by-value struct/conditional rvalue (`make().r`) takes the address of an rvalue in the row temporary | MAJOR pre-existing | Ruled out of scope: the shape is invalid C on the shipped base too, and it is a shared-core rvalue-materialization class, not a nested fill destination. Recorded in the accepted limits and known limitations |
+| RV2-VOL-003: the copy helper still said "same bytes"; the pointer-walk doc overgeneralized raw dereference | MINOR | The helper says "same typed values" and notes struct padding; the pointer doc distinguishes a plain raw dereference from a `volatile raw T` field |
+| RV2-VOL-004: the ledger's mutation lists and the MEM-001 coverage were imprecise | MINOR | The mutation matrix was rerun on the final tests; ST-V8 is described as a top-level call, the rvalue-member shape is recorded as a separate limitation, and the counts are updated |
 
 Both review-driven code changes were committed and the full fix gate is rerun
 on the new clean commit.
@@ -126,6 +144,7 @@ on the new clean commit.
 | A call result or self-reading literal copied into a volatile array still emits `memcpy` | Same shared store core; separate follow-up |
 | A volatile array used as a copy source into the row temporary still emits `memcpy` | The row temporary's fill uses the shared core; the source qualifier is a separate pre-existing class (PRE-2) |
 | A struct-literal prefix element with a fixed-array field still emits `memcpy` | The struct-field store path does not carry the outer target's volatility; a separate follow-up |
+| A prefix row that is a member or element of a by-value struct or conditional rvalue (`make().r`) takes the address of an rvalue in the row temporary | Pre-existing shared-core invalid C; the shipped base fails the same shape. Materializing the rvalue base is a separate follow-up |
 | A `for borrow` alias over volatile storage (global or field) fails at the borrow conversion | The qualifier is discarded at the loop header before the fill; a separate alias/pointer issue |
 | A `borrow` parameter bound to a volatile field fails at the call argument | The callee parameter type is non-volatile; the fill is not reached through a volatile type |
 | A `borrow` parameter bound to a volatile global is rejected (`E10038`) | Not representable; the checker forbids borrowing a global owner |

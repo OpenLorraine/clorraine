@@ -52,7 +52,9 @@ storage, a `borrow` parameter bound to a volatile field, an owning explicit row
 copy, and any language, grammar, ABI, runtime, stdlib, driver, LSP, or
 benchmark change. These are recorded as separate limitations or follow-ups. A
 conditional or call-valued prefix row is in scope: it is evaluated once into a
-row temporary.
+row temporary. A volatile array used as a directly indexed prefix row
+(`h[0]`, `h[k - 1]`) is in scope and copies leaf by leaf; a volatile source
+that must pass through a row temporary remains a separate limitation.
 
 ## Document Index
 

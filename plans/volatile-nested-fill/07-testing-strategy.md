@@ -35,6 +35,8 @@ Each running case emits host C, builds with
 | ST-V8 | An impure prefix row `g = [makeRow(p); [; 0]];` where `makeRow` increments a counter | `calls: 1 sum: 28` |
 | ST-V9 | Run-time indexed volatile overlay field `regs.a[i] = [; [; 9]];` | builds under strict host C; not run |
 | ST-V10 | `struct S { p: volatile raw Inner; }`; `regs.p.v = [; [; 0]];` | builds under strict host C; not run |
+| ST-V11 | Volatile destination filled from `h[0]`, `h[1]` where `h` is volatile | `sum: 36` |
+| ST-V12 | Volatile destination filled from `h[k - 1]` where `h` is volatile | `sum: 26` |
 
 ST-V1 is the reported defect. ST-V2 exercises the recursive copy. ST-V3
 exercises a struct leaf. ST-V4 exercises a literal prefix. ST-V5 exercises the
@@ -70,6 +72,8 @@ symbol.
 | IP-V14 | Positive | impure prefix row `makeRow(p)` | no destination `memcpy`; exactly one `_makeRow(p,` call; leaf stores from the row temporary |
 | IP-V15 | Positive | run-time indexed volatile overlay field `regs.a[i]` | no destination `memcpy`; `(*(&(regs->a[` and `)))[0][0] = __cl_fillrow_` present |
 | IP-V16 | Positive | `volatile raw` pointer field `regs.p.v` | no `memcpy(&(regs->p->v[`; `regs->p->v[0][0] = __cl_fillrow_1[0];` present |
+| IP-V17 | Positive | constant-indexed volatile source row `h[0]` | no destination `memcpy`; `g[0][0] = h[0][0];` present |
+| IP-V18 | Positive | arithmetic-indexed volatile source row `h[k - 1]` | no destination `memcpy`; the `h[(i32)((u32)k - (u32)1)][0]` leaf store present |
 
 IP-V7 and IP-V8 protect the non-volatile emission from the new flag. IP-V9
 through IP-V12 protect the other volatile spellings and the separate
@@ -95,7 +99,9 @@ whole-array class. IP-V13 through IP-V16 cover the review-driven shapes.
    - remove the copy recursion: IP-V2 fails;
    - treat an impure prefix value as stable: ST-V8 and IP-V14 fail;
    - disable the run-time index volatility: ST-V7/ST-V9 and IP-V13/IP-V15
-     fail.
+     fail;
+   - reject a constant or arithmetic index as stable: ST-V11/ST-V12 and
+     IP-V17/IP-V18 fail.
 5. Record every run in [Findings](05-findings.md).
 
 ## Strict-Shape Fixture

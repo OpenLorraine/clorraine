@@ -97,7 +97,11 @@ whole-array place copy is pinned so this fix cannot silently claim it.
   - ST-V8: an impure prefix row that must evaluate its call once;
   - ST-V9: a run-time indexed whole-element target on a volatile overlay
     field, built only;
-  - ST-V10: a `volatile raw` pointer field, built only.
+  - ST-V10: a `volatile raw` pointer field, built only;
+  - ST-V11: a volatile destination filled from constant-indexed volatile rows
+    (`h[0]`, `h[1]`);
+  - ST-V12: a volatile destination filled from an arithmetic-indexed volatile
+    row (`h[k - 1]`).
   Each running case emits host C, builds with
   `cc -std=c99 -O0 -g -Wall -Wextra -Werror` (plus the sanitizer flags when
   `RDC_ASAN`/`RDC_UBSAN` is set), runs it, and compares stdout. The suite
@@ -129,10 +133,14 @@ whole-array place copy is pinned so this fix cannot silently claim it.
   - IP-V15: a run-time indexed volatile overlay field: no destination
     `memcpy`, leaf stores;
   - IP-V16: a `volatile raw` pointer field: leaf stores, no destination
-    `memcpy`.
-- **R2.3 Red first.** The ten new behaviour cases fail on the base compiler
+    `memcpy`;
+  - IP-V17: a constant-indexed volatile source row: direct leaf stores, no
+    row temporary;
+  - IP-V18: an arithmetic-indexed volatile source row: direct leaf stores, no
+    row temporary.
+- **R2.3 Red first.** The twelve new behaviour cases fail on the base compiler
   because of the discarded qualifier (ST-V8 also shows the base's
-  re-evaluation); the ten new and changed emission pins fail on the base. The
+  re-evaluation); the twelve new and changed emission pins fail on the base. The
   guards pass on the base.
 - **R2.4 Test integrity.** Every new positive assertion fails when the volatile
   copy branches are reverted. Forcing the predicate false fails the volatile

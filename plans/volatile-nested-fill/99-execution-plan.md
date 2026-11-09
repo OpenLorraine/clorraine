@@ -80,17 +80,17 @@ publish ──> 5.7 publication record ──> 6.1 final report
 > **Verify**: the new behaviour cases fail to build on the base; the new pins
 > fail; the guards pass.
 
-- [x] 1.1.1 Add ST-V1..V10 to
+- [x] 1.1.1 Add ST-V1..V12 to
       `compiler/tests/nested_fill_compaction_spec_test.rs`, including the
       build-only overlay, field-index, and pointer-field cases, and update the
       file header: the existing cases pass on the base; the new volatile cases
       are deliberately red on the base.
 - [x] 1.2.1 Replace the legacy `should_keep_a_volatile_global_target` test
-      (old IP-11) with IP-V1..V16 in
+      (old IP-11) with IP-V1..V18 in
       `compiler/tests/nested_fill_compaction_impl_test.rs`, using the full
       mangled global symbols; IP-V12 pins the unchanged whole-array copy, and
-      IP-V13..V16 pin the runtime-index, impure-prefix, and pointer-field
-      shapes. The old IP-11 and the new IP-V11 are different pins.
+      IP-V13..V18 pin the runtime-index, impure-prefix, pointer-field, and
+      volatile-source index shapes. The old IP-11 and the new IP-V11 are different pins.
 - [x] 1.3.1 Run both focused suites on the unmodified compiler; record the
       exact failures in [Findings](05-findings.md).
 
@@ -121,7 +121,8 @@ publish ──> 5.7 publication record ──> 6.1 final report
 - [x] 2.4.1 Run the integrity mutations (revert each copy branch, remove the
       prefix wrapper, force the predicate false, force it true, remove the
       `.len` handling, remove the recursion, treat an impure prefix as
-      stable, disable the runtime-index volatility) and record each failure;
+      stable, disable the runtime-index volatility, reject a constant index
+      as stable) and record each failure;
       restore.
 - [x] 2.5.1 Add the volatile global and overlay-field shapes to
       `tools/perf/fixtures/shapes.clo`, call the overlay helper from `main`,

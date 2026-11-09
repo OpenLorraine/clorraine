@@ -233,13 +233,19 @@ fn emit_prefix_row_assign_to(&mut self, target: &ArrayTarget, ty: &Ty, value: &V
 }
 ```
 
-`stable_storage_value` is true for a place, a temporary, a member or element
-of one (with a stable index), a cast, or an address-of of one, and for a
-materialization that records a temp or destination. A call, a conditional, a
-call-returning member, or a call-valued index is not stable: appending an
-element index to its rendered text would re-run the effect once per leaf. The
-temporary path evaluates it exactly once with the shared core, then copies
-from the temporary.
+`stable_storage_value` is true for a place, a temporary, a literal scalar, a
+member or element of a stable value with a stable index, a pure unary/binary
+expression, a cast, or an address-of of one, and for a materialization that
+records a temp or destination. A call, a conditional, a call-returning member,
+or a call-valued index is not stable: appending an element index to its
+rendered text would re-run the effect once per leaf. The temporary path
+evaluates it exactly once with the shared core, then copies from the
+temporary.
+
+A constant or arithmetic index (`h[0]`, `h[k - 1]`) is therefore stable and
+copies a volatile source row leaf by leaf. Rejecting literal scalars would
+route the row through a temporary and copy from the volatile source with
+`memcpy`, which strict C rejects.
 
 The wrapper deliberately does not change `emit_fixed_array_assign_to`'s shared
 final branch: that branch is also reached by a whole-array assignment
