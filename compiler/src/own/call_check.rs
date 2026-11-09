@@ -131,7 +131,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the same judgments as the bare spelling: `len` reads its operand
         // through a view, and the view builders borrow their source.
         if let Some(intrinsic) = self.qualified_intrinsic_name(callee) {
-            self.check_qualified_intrinsic_call(&intrinsic, args, span);
+            self.check_qualified_intrinsic_call(&intrinsic, args);
             return;
         }
         // A non-name callee whose recorded type is callable — an inline lambda
@@ -458,9 +458,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// view over their first argument, so the source keeps the imported
     /// spelling's loan rules: a borrowed global or a possibly-null source
     /// reports. A fixed-array `len` operand is structural and is not read.
-    fn check_qualified_intrinsic_call(&mut self, name: &str, args: &'a [Arg], span: Span) {
+    fn check_qualified_intrinsic_call(&mut self, name: &str, args: &'a [Arg]) {
         if name == "len" {
-            for (index, arg) in args.iter().enumerate() {
+            for arg in args {
                 // The operand is a read even when its length folds, so a local
                 // used only here is used. The lowering still emits no read for
                 // a pure fixed-array place, which keeps the C unused marker.

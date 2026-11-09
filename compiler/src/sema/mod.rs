@@ -25,7 +25,7 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{ resolve_ty_with, substitute_instance, AbiLayout, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable, PlacePathStep };
+use crate::types::{ substitute_instance, AbiLayout, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable, PlacePathStep };
 
 pub(crate) mod call;
 mod expr;

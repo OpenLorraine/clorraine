@@ -1445,15 +1445,6 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Checks a call's arguments against a known parameter list.
-    ///
-    /// `callee` carries the call's name and span when the call names its
-    /// callee, so an arity mismatch reports through the same diagnostic every
-    /// other direct call uses; a call through a value passes `None`.
-    fn check_args(&mut self, args: &[Arg], params: &[Ty], callee: Option<(&str, Span)>) {
-        self.check_args_impl(args, params, &[], false, callee);
-    }
-
     /// Checks a call's arguments against a func-value parameter list.
     ///
     /// A call through a `func(...)` value keeps the modes its type carries, so

@@ -274,38 +274,6 @@ fn compile_two(tag: &str, first: &str, second: &str) -> (ScratchDir, Output, Pat
     (scratch, output, c_path)
 }
 
-/// Asserts two modules are accepted and their emitted C builds strictly.
-fn assert_accepted_two(tag: &str, first: &str, second: &str) {
-    let (scratch, output, c_path) = compile_two(tag, first, second);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{tag}: expected acceptance; stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let program = scratch.path().join("prog");
-    let built = Command::new("cc")
-        .args([
-            "-std=c99",
-            "-O0",
-            "-g",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-o",
-        ])
-        .arg(&program)
-        .arg(&c_path)
-        .output()
-        .expect("failed to spawn the host C compiler");
-    assert!(
-        built.status.success(),
-        "{tag}: the strict host C compiler rejected the emitted C; stderr:\n{}",
-        String::from_utf8_lossy(&built.stderr)
-    );
-    drop(scratch);
-}
-
 /// Asserts two modules are rejected with `code`.
 fn assert_rejected_two(tag: &str, first: &str, second: &str, code: &str) {
     let (scratch, output, c_path) = compile_two(tag, first, second);

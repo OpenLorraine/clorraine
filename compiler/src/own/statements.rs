@@ -1633,17 +1633,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect()
     }
 
-    /// Restores the pre-transient state of each fact.
-    pub(super) fn restore_facts(
-        &mut self,
-        facts: &[(super::place::NarrowOwner, Vec<ir::Projection>, bool)],
-        states: &[bool],
-    ) {
-        for ((owner, projections, non_null), held) in facts.iter().zip(states) {
-            self.apply_narrowing(owner, projections, if *held { *non_null } else { false });
-        }
-    }
-
     /// Restores facts after evaluating a right operand, dropping any fact the
     /// operand itself wrote.
     pub(super) fn restore_facts_after(

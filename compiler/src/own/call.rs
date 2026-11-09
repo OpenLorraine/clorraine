@@ -599,17 +599,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     self.materialize_value_type(value, closure_ty.clone())
                 };
-                let temp = match &temp_value.kind {
-                    ValueKind::Temp(temp) => *temp,
-                    ValueKind::Materialize {
-                        temp: Some(temp), ..
-                    } => *temp,
-                    _ => unreachable!("the closure is materialized into a temporary"),
-                };
                 hook_callbacks.push(LoweredHookCallback {
                     arg: position,
                     closure: callback.closure.clone(),
-                    temp,
                     environment: temp_value,
                 });
                 let callback_ty = hook
@@ -1434,8 +1426,6 @@ pub(super) struct LoweredHookCallback {
     pub arg: usize,
     /// The capturing closure's type.
     pub closure: crate::types::ClosureTy,
-    /// The statement temporary holding the two-word closure value.
-    pub temp: ir::TempId,
     /// The materialized closure value.
     ///
     /// An eager context holds a plain temporary; a guarded operand holds a

@@ -286,7 +286,7 @@ fn should_activate_the_sanitizer_suite_builds() {
     flags.extend(sanitizer_flags());
     flags.push("-no-pie");
 
-    let mut check = |name: &str, source: &str, needle: &str| {
+    let check = |name: &str, source: &str, needle: &str| {
         let c_path = scratch.path().join(format!("{name}.c"));
         std::fs::write(&c_path, source).expect("write the activation probe");
         let program = scratch.path().join(name);

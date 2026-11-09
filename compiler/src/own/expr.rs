@@ -1369,20 +1369,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.report_null_once(&name, span);
     }
 
-    /// Reports the possible-null rule for a lowered place value.
-    ///
-    /// A dot-call `len` receiver has already been lowered to a place, so the
-    /// null judgment uses that place's local or module root instead of an AST
-    /// expression.
-    pub(super) fn check_nonnull_value(&mut self, value: &Value, span: Span) {
-        let ValueKind::Place(place) = &value.kind else {
-            return;
-        };
-        if let crate::ir::PlaceBase::Global(id) = &place.base {
-            self.check_nonnull_global(id, &place.projections, span);
-        }
-    }
-
     /// Reports the possible-null rule for one binding path.
     ///
     /// The path is the narrowed key, so a nullable field reports only when

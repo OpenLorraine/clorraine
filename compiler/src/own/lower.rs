@@ -980,7 +980,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         match &expr.kind {
-            ExprKind::Call { callee, type_args, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 self.collect_initializer_lambdas(callee, sites);
                 for arg in args {
                     self.collect_initializer_lambdas(&arg.value, sites);
@@ -1472,7 +1472,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.walk_initializer_writes(target);
                 self.walk_initializer_writes(value);
             }
-            ExprKind::Call { callee, type_args, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 self.walk_initializer_writes(callee);
                 for arg in args {
                     self.walk_initializer_writes(&arg.value);
@@ -7090,7 +7090,7 @@ pub(super) fn contains_update(expr: &Expr) -> bool {
         } => contains_update(condition) || contains_update(then_value) || contains_update(else_value),
         ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => contains_update(value),
         ExprKind::Unsafe(inner) => contains_update(inner),
-        ExprKind::Call { callee, type_args, args } => {
+        ExprKind::Call { callee, args, .. } => {
             contains_update(callee) || args.iter().any(|arg| contains_update(&arg.value))
         }
         ExprKind::StructLiteral { fields, .. } => {
