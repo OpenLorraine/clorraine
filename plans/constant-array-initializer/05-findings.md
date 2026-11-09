@@ -32,7 +32,7 @@ remove the old files first and check the identity.
 |---|---|---|---|---|---|
 | Base (`v1.1.0`) | `build/perf/base-clc` | `eb0e2dae6049698dbd9aa5c77e7b2663c117893b13f66875257e44467199b0da` | `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` | `clc 1.1.0` | false |
 | Isolated base (benchmark commit) | `build/perf/isolated-base-clc` | `9f57815412bc322935da1c3ad284ba52801a7f94b666efd4ea705fb29c77c7e8` | `e2d3c760bb8fa23d3434bbc3d7e7be5289867978` | `clc 1.1.1` | false |
-| Final head (feature commit) | `target/debug/clc` | _pending_ | _pending_ | _pending_ | false |
+| Final head (feature commit) | `target/debug/clc` | `f8227b08597a9c7f54bd7995ccaeb20c0d64dd3c9d2a57520413a1ef153c06d4` | `25e2c8addc27a5209b8c5c0d6cff21b985bc71f2` (implementation `cef0b91`) | `clc 1.1.1` | false |
 
 **Base compiler source:** `v1.1.0` commit `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` (annotated tag object `c0e34568f423a1ff2994dddd6f2f654e50f338d6`) — record the exact full commit
 and the `clc --version` line.
@@ -69,10 +69,14 @@ provisional 16-element / 64-byte floor.
 | `u8[64]` | 64 | 64 | -48 | +55 | 1-byte exclusion |
 | `u8[128]` | 128 | 128 | -148 | +107 | 1-byte exclusion |
 | `u8[256]` | 256 | 256 | -340 | +211 | 1-byte exclusion |
+| `u16[32]` | 32 | 64 | -52 | +2 | 2-byte floor |
 | `u16[64]` | 64 | 128 | -148 | +5 | 2-byte included |
 | `u16[128]` | 128 | 256 | -344 | +7 | 2-byte included |
+| `i16[32]` | 32 | 64 | -56 | +2 | 2-byte floor |
 | `i16[64]` | 64 | 128 | -148 | +5 | 2-byte included |
 | `i32[256]` (all ones) | 256 | 1024 | -480 | +19 | sensitivity wash |
+| `i32[1024]` | 1024 | 4096 | -6,148 | +63 | code-size-only band |
+| `i32[1280]` | 1280 | 5120 | -22.75% | -1,268 | GCC bulk-memcpy win |
 
 **Final threshold:** at least 16 elements and 64 bytes for 2-byte and 4-byte
 elements. The 4-byte shape wins both metrics at 64 bytes; the 2-byte shape
@@ -124,21 +128,21 @@ Filled after the implementation and each fix pass.
 
 | Benchmark | Base `v1.1.0` | Isolated base | Head | Cumulative delta | Isolated delta | Output |
 |---|---:|---:|---:|---:|---:|---|
-| lookup | 13,653 | 13,653 | _pending_ | _pending_ | _pending_ | equal |
-| sieve | 1,040,581 | 1,040,581 | _pending_ | _pending_ | _pending_ | equal |
-| matrix | 10,959 | 9,908 | _pending_ | _pending_ | _pending_ | equal |
-| strings | 2,964,051 | 2,964,051 | _pending_ | _pending_ | _pending_ | equal |
-| moves | 45,205 | 45,205 | _pending_ | _pending_ | _pending_ | equal |
+| lookup | 13,653 | 13,653 | 9,470 | -30.6% | -30.6% | equal |
+| sieve | 1,040,581 | 1,040,581 | 1,040,581 | 0.0% | 0.0% | equal |
+| matrix | 10,959 | 9,908 | 9,908 | -9.6% | 0.0% | equal |
+| strings | 2,964,051 | 2,964,051 | 2,964,051 | 0.0% | 0.0% | equal |
+| moves | 45,205 | 45,205 | 45,205 | 0.0% | 0.0% | equal |
 
 ### `.text` and C bytes
 
 | Benchmark | Base `.text` | Isolated `.text` | Head `.text` | Isolated delta | Base C | Isolated C | Head C | Isolated C delta |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| lookup | 117,440 | 117,440 | _pending_ | _pending_ | 474,430 | 474,430 | _pending_ | _pending_ |
-| sieve | 76,728 | 76,728 | _pending_ | _pending_ | 311,284 | 311,284 | _pending_ | _pending_ |
-| matrix | 80,712 | 76,676 | _pending_ | _pending_ | 313,817 | 311,168 | _pending_ | _pending_ |
-| strings | 77,604 | 77,604 | _pending_ | _pending_ | 312,685 | 312,685 | _pending_ | _pending_ |
-| moves | 76,896 | 76,896 | _pending_ | _pending_ | 313,173 | 313,173 | _pending_ | _pending_ |
+| lookup | 117,440 | 117,440 | 92,976 | -20.8% | 474,430 | 474,430 | 340,503 | -28.2% |
+| sieve | 76,728 | 76,728 | 76,728 | 0.0% | 311,284 | 311,284 | 311,284 | 0.0% |
+| matrix | 80,712 | 76,676 | 76,676 | 0.0% | 313,817 | 311,168 | 311,168 | 0.0% |
+| strings | 77,604 | 77,604 | 77,604 | 0.0% | 312,685 | 312,685 | 312,685 | 0.0% |
+| moves | 76,896 | 76,896 | 76,896 | 0.0% | 313,173 | 313,173 | 313,173 | 0.0% |
 
 **Head identity:** record the feature commit, the clean/dirty flag, and the
 `clc` SHA-256. The head document is valid only if its commit equals the
@@ -148,15 +152,19 @@ feature head and `dirty` is false.
 (re-derived in Phase 1 if the committed measurements differ). Both the
 cumulative and isolated comparisons pass the same requirement.
 
-**Comparisons:** record the exact cumulative and isolated `bench.py compare`
-output, including the isolated `--require` rows.
+**Comparisons:** isolated compare passed (`lookup` -30.6% instructions,
+-20.8% `.text`, C bytes -28.2%; every other row 0.0%). Cumulative compare
+passed (`lookup` -30.6% / -20.8%; `matrix` -9.6% / -5.0% from the already-landed
+nested-fill work; no scored regression). Both requirement rows pass. The head
+document records the feature head `25e2c8a` with `dirty=false`; the compiler
+source is implementation commit `cef0b91`.
 
 ## Red/Green Pin Record
 
 | Status | Pins |
 |---|---|
 | Red on the pre-change compiler | `constant_array_initializer_spec_test`: 42 passed. `constant_array_initializer_impl_test`: 16 passed, 8 failed: `should_emit_one_template_and_memcpy_for_i32`, `should_emit_negative_and_typed_values`, `should_emit_u16_and_i16_templates`, `should_emit_usize_and_isize_templates`, `should_emit_the_template_for_each_hosted_profile`, `should_use_distinct_templates_and_keep_the_target_declaration`, `should_keep_the_memcpy_at_the_initializer_position`, `should_wrap_the_template_at_eight_values_per_line`. |
-| Green on the feature head | `constant_array_initializer_spec_test`: 42 passed. `constant_array_initializer_impl_test`: 24 passed. `guard_free_constant_tests`: 2 passed. The head `lookup` probe is 12,842 instructions and 92,976 `.text` with equal output. |
+| Green on the feature head | `constant_array_initializer_spec_test`: 42 passed. `constant_array_initializer_impl_test`: 32 passed. `guard_free_constant_tests`: 3 passed. The head `lookup` probe is 12,842 instructions and 92,976 `.text` with equal output. |
 | Exclusion guards green on both | 16 implementation exclusions passed on the pre-change compiler; the 42 behaviour cases passed. |
 
 **Red command and identity:** `make -C docker exec CMD="RDC_CLC=/work/build/perf/isolated-base-clc
@@ -183,7 +191,9 @@ this feature.
 
 **Benchmark-source audit:** `git diff v1.1.0..<feature-head> -- benchmarks/`
 shows the `lookup` addition; `git diff <benchmark-commit>..<feature-head> --
-benchmarks/` is empty. Record the source/expected SHA-256 values.
+benchmarks/` is empty. Source SHA-256:
+`program.clo c888c782e06513ef685fe66d9d823f152dabb027bc8f6f40460a96d881d46f0f`;
+`expected-output.txt 7675c31262c1d7a200445d4a25fc989f450e5c23b1e7f6b9adc2f45c0e78a445`.
 
 ## Accepted Limits
 
@@ -198,6 +208,8 @@ benchmarks/` is empty. Record the source/expected SHA-256 values.
 | 1-byte elements keep the stores | The measured u8 template costs +55/+107/+211 instructions at 64/128/256 bytes, above the 1% guard | R2.4, AR-11 |
 | `freestanding` keeps the stores | Byte-wise shim `memcpy`; no measured freestanding win | R2.1 |
 | Read-only template beside the writable global | The total binary is still smaller than the store run; the scored `.text`/instructions improve | R2.3 |
+| `__cl_itmp<N>` user-FFI shadowing is pre-existing | The same collision class exists for init locals; outside the constant-array template change and not reached by the repository programs | Recorded residual |
+| 2–5 KB 4-byte tables are code-size-only | At i32[1024] the template is +63 instructions (+1.18% in an init-dominated run) for -6,148 `.text` (-7.1%); at i32[1280] it is -1,268 instructions and -22.75% `.text`; the scored `lookup` 4,096-entry table wins both, and the 1% guard applies to scored benchmarks | R2.1, AR-11 |
 | Host time is advisory | Run-to-run spread is tens of percent | R4.2 |
 
 ## Rejected Candidates
@@ -215,9 +227,38 @@ benchmarks/` is empty. Record the source/expected SHA-256 values.
 
 ## Review Findings and Resolutions
 
-Filled after each phase review. List the reviewer, verdict, and every
-critical/major finding with its resolution. The final focused re-review must be
-clean of critical/major findings.
+### Phase 3 reviews (implementation `cef0b91`)
+
+| Review | Verdict | Findings |
+|---|---|---|
+| Correctness | clean of critical/major | RV-001 (MINOR): the division/remainder, conditional, full-prefix-fill, and byte-floor pins did not isolate their guards; RV-002 (MINOR): no exact typed-extreme or init-local pins, no Call/Intrinsic predicate cases; RV-003 (MINOR): the `init_templates` doc said `__cl_ctmpl<N>` instead of `__cl_ctmpl_<n>`. |
+| Memory safety | **no findings** | Focused ASan: 42 spec + 24 impl + 66 module-initializer + 25 nested-fill + 42 array-value cases clean; 30 probes and 3 front-end rejects clean; leak/OOB controls fired; head/base output equal. Full `make asan`/`make ubsan` run in Phase 4. |
+| Emission integrity | clean of critical/major | F-001 (MINOR): a user `ffi` symbol named `__cl_ctmpl_0` could be shadowed by the block-scope template; base compiles, head introduced the collision. All other 82 units byte-identical; only `lookup` and the shape fixture changed; 136/136 strict builds. |
+| Performance | clean of critical/major | PE-001 (MINOR): the 4-byte threshold admits a 2–5 KB band that is code-size-only at i32[1024] (+63 instructions, -6,148 `.text`); PE-002 (MINOR): the threshold table omitted the 64-byte 2-byte boundary and denominators; PE-003 (MINOR): the benchmark-source hash/diff record was still a placeholder. |
+
+**Resolutions:** F-001 fixed by advancing the template counter past any
+`is_taken_symbol` collision, with the `should_not_shadow_a_user_ffi_template_name`
+regression pin; RV-003 fixed in the `codegen.rs` doc; RV-001/RV-002 addressed
+by the Phase 4 hardening pins (constant Binary/conditional, full-prefix fill,
+`u16[16]` byte floor, exact cast spellings, init-local/template distinctness,
+Call/Intrinsic predicate cases); PE-002/PE-003 recorded below. PE-001 is
+accepted as a code-size-only trade-off for the 2–5 KB band, recorded in the
+accepted limits; the scored `lookup` table wins both metrics and the 1% guard
+applies to scored benchmarks.
+
+**Phase 4 focused re-reviews (`cef0b91..fd7fe30`):** correctness, memory
+safety, emission integrity, and performance each re-reviewed the fix diff.
+No critical/major finding. The correctness reviewer added RV-004 (exact cast
+spellings missing); the follow-up test commit `866104c` closes it. Memory
+safety re-ran the focused ASan recipe and the collision probes clean; emission
+integrity found 82/82 units byte-identical except the intended template and
+confirmed the collision probe now compiles and runs on host/m68k/vbcc;
+performance confirmed the benchmark emission and metrics are unchanged.
+
+**Pre-existing outside this change:** `__cl_itmp<N>` init locals have the same
+theoretical user-FFI shadowing class (`compiler/src/codegen/program.rs`); this
+predates the feature, is not reached by the corpus/benchmarks/examples, and is
+recorded as a residual defect rather than fixed here.
 
 ## Final Acceptance
 

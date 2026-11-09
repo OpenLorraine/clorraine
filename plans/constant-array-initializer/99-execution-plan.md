@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 23:10
-> **Progress**: 17/37 tasks (46%)
+> **Last Updated**: 2026-11-09 23:50
+> **Progress**: 23/37 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -158,12 +158,12 @@ passes.
 sanitizer legs. Phase 2 already writes the ST cases; Phase 4 adds only the
 negative/mutation controls and any case a review finds.
 
-- [ ] 4.1.1 Add the test-integrity controls: disable the fast path and confirm the positive pins fail; remove one exclusion at a time (short list, empty list, fill, guard-free, volatile, profile, 1-byte type, other type, threshold) and confirm the matching pin fails; add any review-driven case not already in ST-1..ST-46.
-- [ ] 4.1.2 Run `make asan` and `make ubsan`; fix any memory-safety or undefined-behavior finding.
-- [ ] 4.1.3 Run the focused behaviour suite under `RDC_ASAN` and `RDC_UBSAN`; confirm the address-taken mutation and guard cases are clean.
-- [ ] 4.1.4 If any codegen or test changed, commit the hardening/fix changes with the git-commit skill; otherwise record that no change was needed.
-- [ ] 4.1.5 If codegen changed, dispatch the same four reviewers on the Phase 4 diff; record verdicts.
-- [ ] 4.1.6 Resolve every critical/major finding; commit the fix (if any), the review records, the red/green and threshold findings, and the roadmap/index updates with the git-commit skill; confirm the tree is clean. If codegen changed, rebuild `clc`, rerun `make bench`, rerun both comparisons and the emission audit, then repeat 4.1.5/4.1.6.
+- [x] 4.1.1 Add the test-integrity controls: disable the fast path and confirm the positive pins fail; remove one exclusion at a time (short list, empty list, fill, guard-free, volatile, profile, 1-byte type, other type, threshold) and confirm the matching pin fails; add any review-driven case not already in ST-1..ST-46. ✅ (completed: 2026-11-09 23:50)
+- [x] 4.1.2 Run `make asan` and `make ubsan`; fix any memory-safety or undefined-behavior finding. ✅ (completed: 2026-11-09 23:50)
+- [x] 4.1.3 Run the focused behaviour suite under `RDC_ASAN` and `RDC_UBSAN`; confirm the address-taken mutation and guard cases are clean. ✅ (completed: 2026-11-09 23:50)
+- [x] 4.1.4 If any codegen or test changed, commit the hardening/fix changes with the git-commit skill; otherwise record that no change was needed. ✅ (completed: 2026-11-09 23:50)
+- [x] 4.1.5 If codegen changed, dispatch the same four reviewers on the Phase 4 diff; record verdicts. ✅ (completed: 2026-11-09 23:50)
+- [x] 4.1.6 Resolve every critical/major finding; commit the fix (if any), the review records, the red/green and threshold findings, and the roadmap/index updates with the git-commit skill; confirm the tree is clean. If codegen changed, rebuild `clc`, rerun `make bench`, rerun both comparisons and the emission audit, then repeat 4.1.5/4.1.6. ✅ (completed: 2026-11-09 23:50)
 
 **Deliverables**:
 - The hardening cases are committed.
