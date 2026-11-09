@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 21:42
-> **Progress**: 0/37 tasks (0%)
+> **Last Updated**: 2026-11-09 22:44
+> **Progress**: 2/37 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -59,8 +59,8 @@ documentation and roadmap and pushes.
 **Objective**: Make the plan and benchmark durable and establish the exact
 base and isolated baselines before any compiler change.
 
-- [ ] 1.1.1 Commit the plan documents (index, requirements, register, requirements preflight report, plan preflight report, current state, design, testing strategy, execution plan, findings skeleton) with the git-commit skill; no compiler file may change.
-- [ ] 1.1.2 Add `benchmarks/lookup/{program.clo,expected-output.txt,README.md}` and update `benchmarks/README.md` (table, scored count, baseline-location note); confirm the host output is `lookup: 134217728`; run the targeted smoke to `build/perf/lookup-smoke.json` (not `head.json`); commit the benchmark with the git-commit skill.
+- [x] 1.1.1 Commit the plan documents (index, requirements, register, requirements preflight report, plan preflight report, current state, design, testing strategy, execution plan, findings skeleton) with the git-commit skill; no compiler file may change. ✅ (completed: 2026-11-09 22:40)
+- [x] 1.1.2 Add `benchmarks/lookup/{program.clo,expected-output.txt,README.md}` and update `benchmarks/README.md` (table, scored count, baseline-location note); confirm the host output is `lookup: 134217728`; run the targeted smoke to `build/perf/lookup-smoke.json` (not `head.json`); commit the benchmark with the git-commit skill. ✅ (completed: 2026-11-09 22:44)
 - [ ] 1.1.3 Remove the stale `build/perf/base.json`, `build/perf/head.json`, and `build/perf/base-clc`; run `make check` on the clean benchmark commit and record the result; confirm the tree is clean.
 - [ ] 1.1.4 Run `make bench-base COMMIT=v1.1.0` and `make bench`; copy `build/perf/head.json` to `build/perf/isolated-head.json`; copy the current `target/debug/clc` to `build/perf/isolated-base-clc`; record the compiler identities, the `clc 1.1.0` base version line, the clean/dirty flags, and confirm each harness document has `dirty=false` and the expected commit.
 - [ ] 1.1.5 Measure the small-table boundary and the 256-entry sensitivity: use `build/perf/isolated-base-clc` on `i32[4]/i32[8]/i32[16]/i32[32]` and `u8[64]`, plus a 256-entry lookup variant; record `.text` and instructions against the store form in `05-findings.md`; finalize the threshold.
