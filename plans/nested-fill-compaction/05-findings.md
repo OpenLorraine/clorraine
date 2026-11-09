@@ -156,14 +156,19 @@ are final.
 
 | Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta | C bytes delta | Output |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| sieve | pending | pending | pending | pending | pending | pending | pending | equal |
-| matrix | pending | pending | pending | pending | pending | pending | pending | equal |
-| strings | pending | pending | pending | pending | pending | pending | pending | equal |
-| moves | pending | pending | pending | pending | pending | pending | pending | equal |
+| sieve | 1,040,581 | 1,040,581 | 0.0% | 76,728 | 76,728 | 0.0% | 0 | equal |
+| matrix | 10,959 | 9,908 | -9.6% | 80,712 | 76,676 | -5.0% | -2,649 (-0.8%) | equal |
+| strings | 2,964,051 | 2,964,051 | 0.0% | 77,604 | 77,604 | 0.0% | 0 | equal |
+| moves | 45,205 | 45,205 | 0.0% | 76,896 | 76,896 | 0.0% | 0 | equal |
 
-**Head identity:** pending.
+**Head identity:** commit `728455b8a272` (compiler source `923a25c`); compiler
+SHA-256
+`034cbc57c39bd98636bd340a3be7ba0b7973e620f6b531cc05f14da1a07afbe2`;
+`dirty=false`; calibration 3,372 instructions.
 
-**Verdict:** pending.
+**Verdict:** `make bench-compare REQUIRE="matrix:instructions:5
+matrix:text:3"` passed. Matrix is -9.6% instructions and -5.0% `.text`; no
+scored benchmark moved. The win reproduces the Phase 1 probe exactly.
 
 If any codegen change lands after the head measurement (a review fix or a
 sanitizer fix), the head document is stale. Re-run `make bench` and the
@@ -207,8 +212,12 @@ commit.
 
 | Unit class | Expected diff | Observed |
 |---|---|---|
-| Nested constant-zero fill | one `memset`, no row temporary | pending |
-| Everything else | byte-identical | pending |
+| Nested constant-zero fill | one `memset`, no row temporary | matrix only: 65 lines removed, one `memset` added |
+| Everything else | byte-identical | all 7 corpus, 5 benchmark, 25 Amiga example, and 6 fault programs identical; no skipped source |
+
+The audit command is in [Testing Strategy](07-testing-strategy.md#reproducible-audit-commands).
+The matrix hunk is exactly the row temporary, 32 scalar stores, and 32
+`memcpy` calls replaced by `memset(&(a[0]), 0, 32 * sizeof(a[0]));`.
 
 ## Accepted Limits
 
@@ -245,11 +254,10 @@ commit.
 
 ## Review Findings and Resolutions
 
-Filled after the phase reviews. No critical or major finding may remain open.
-
-| Finding | Severity | Resolution |
-|---|---|---|
-| pending | pending | pending |
+The four phase reviews are recorded in [Phase Reviews](#phase-reviews). No
+critical or major finding was raised. The minor findings RV-001..004 and
+PE-001..003 are resolved or recorded as accepted limits. The pre-existing
+volatile-target invalid C is documented as out of scope.
 
 ## Final Acceptance
 

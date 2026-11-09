@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 25/32 tasks (78%)
+> **Progress**: 27/32 tasks (84%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -382,7 +382,7 @@ audit describe the final codegen commit.
 
 ### Step 6.1: Findings ledger
 
-- [ ] 6.1.1 Fill the head/delta table, the emission audit, and the review
+- [x] 6.1.1 Fill the head/delta table, the emission audit, and the review
       findings in [Findings](05-findings.md). Leave the final acceptance gate
       rows pending until 6.4.
 
@@ -390,13 +390,13 @@ audit describe the final codegen commit.
 
 ### Step 6.2: Roadmap and docs commit
 
-- [ ] 6.2.1 Add the PLAN-22 roadmap row with status `Executing` and the
+- [x] 6.2.1 Add the PLAN-22 roadmap row with status `Executing` and the
       measured result; set it to `Done` only in 6.4 after the gates pass.
-- [ ] 6.2.2 Update the AGENTS `bench-compare` row; update
+- [x] 6.2.2 Update the AGENTS `bench-compare` row; update
       `docs/known-limitations.md` only if the measurement boundary changed.
-- [ ] 6.2.3 Review `git diff --cached`; commit
+- [x] 6.2.3 Review `git diff --cached`; commit
       `docs(plans): record the nested fill closeout`.
-- [ ] 6.2.4 Confirm `git status --porcelain` is empty.
+- [x] 6.2.4 Confirm `git status --porcelain` is empty.
 
 **Verify**: docs commit exists; clean tree; roadmap row consistent.
 

@@ -77,7 +77,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make bench` | Trace the benchmark suite in the pinned container and write `build/perf/head.json` |
 | `make bench-fast` | Same suite without the m68k trace; writes `build/perf/head-fast.json` |
 | `make bench-base COMMIT=…` | Build the base `clc` from a commit and write `build/perf/base.json`; retains `build/perf/base-clc` |
-| `make bench-compare` | Enforce the benchmark thresholds between `base.json` and `head.json` |
+| `make bench-compare` | Enforce the comparison invariants and any declared `REQUIRE` expectations between `base.json` and `head.json`; empty `REQUIRE` checks the 1% no-regression guard only |
 | `make bench-test` | Harness unit tests; also part of `make check` |
 | `make bench-shape` | Build the generated-C shape fixture with m68k GCC, vbcc, and the freestanding profile |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
