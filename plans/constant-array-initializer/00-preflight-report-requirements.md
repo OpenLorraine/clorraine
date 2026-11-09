@@ -35,7 +35,7 @@
 | Front-end-invalid shapes | zero extent E10226; slice E10200; handle/owned array E11106; untyped out-of-range literal E10202 |
 | The harness records compiler identity, C size, sections, host time, instructions | `tools/perf/bench.py` `compiler_identity`, `measure`, `size_sections`, `trace_vamos` |
 | The compare gate enforces output/identity and 1% no-regression | `tools/perf/bench.py` `command_compare` |
-| Base tag and current head | `v1.1.0` = `c0e34568f423a1ff2994dddd6f2f654e50f338d6`; current head = `a589353`; `v1.1.0..HEAD` changes 25 compiler files from the already-landed work |
+| Base tag and current head | `v1.1.0` commit = `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` (tag object `c0e34568f423a1ff2994dddd6f2f654e50f338d6`); current head = `a589353`; `v1.1.0..HEAD` changes 25 compiler files from the already-landed work |
 | Probe on the committed benchmark | `lookup` current 17,025 instructions / 117,440 `.text`; block-scope template 12,842 / 92,976; output `lookup: 134217728` equal |
 
 ## Findings and Rulings

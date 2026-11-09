@@ -33,7 +33,8 @@ command therefore works from the Cargo test working directory.
 >
 > **Eligibility floor:** every positive template case uses a module-level
 > `let` with at least 16 elements and at least 64 bytes under the checked type
-> table (`i32`/`u32`/`usize`/`isize` 4 bytes, `i16`/`u16` 2 bytes,
+> table; 1-byte `i8`/`u8`/`bool` tables are old-store controls because the
+> measured u8 template cost exceeds the 1% guard (`i32`/`u32`/`usize`/`isize` 4 bytes, `i16`/`u16` 2 bytes,
 > `i8`/`u8`/`bool` 1 byte). The small-table cases are deliberately labelled as
 > old-store controls. This keeps the positive and exclusion cases above the
 > threshold so each exclusion, not the threshold, is the reason a pin passes.
@@ -44,16 +45,16 @@ command therefore works from the Cargo test working directory.
 |---|---|---|---|
 | ST-1 | Module-level `let t: i32[32] = [1, 2, ..., 32];` print the sum | prints `528`; template + `memcpy`, no `t[i] =` stores | R2.1, R2.2, AR-04 |
 | ST-2 | `let t: i32[32] = [-1, -2, ..., -32];` print the sum | prints `-528`; negative values in the template | R2.1, R3.1 |
-| ST-3 | `let t: u8[64] = [1, 2, ..., 64];` print `u32` sum | prints `2080`; `u8` template | R2.1, R3.1 |
+| ST-3 | `let t: u8[64] = [1, 2, ..., 64];` print `u32` sum | prints `2080`; old stores, no template (1-byte exclusion) | R2.4, R3.1 |
 | ST-4 | `let t: u16[32]` with an explicit list of 32 `1000` values; print `u32` sum | prints `32000`; `u16` template | R2.1, R3.1 |
 | ST-5 | `let t: u32[16] = [u32(4294967295), 0, ..., 0];` print `t[0]` | prints `4294967295`; exact unsigned rendering | R2.1, R3.2 |
-| ST-6 | `let t: i8[64]` with an explicit list of 64 `1` values; print `i32` sum | prints `64`; `i8` template | R2.1, R3.1 |
+| ST-6 | `let t: i8[64]` with an explicit list of 64 `1` values; print `i32` sum | prints `64`; old stores, no template (1-byte exclusion) | R2.4, R3.1 |
 | ST-7 | `let t: i16[32]` with an explicit list of 32 `1` values; print `i32` sum | prints `32`; `i16` template | R2.1, R3.1 |
 | ST-8 | `let t: usize[32]` with an explicit list of 32 `1` values; print `usize` sum | prints `32`; `usize` template (32-bit typedef) | R2.1, R3.1 |
 | ST-9 | `let t: isize[32]` with an explicit list of 32 `-1` values; print `isize` sum | prints `-32`; `isize` template (32-bit typedef) | R2.1, R3.1 |
-| ST-10 | `let t: bool[64] = [true, false, ...]` (32 true, 32 false); count `true` | prints `32`; `bool` template | R2.1, R3.1 |
-| ST-11 | `let t: u8[64]` with the first four values `u8(300), u8(255), u8(256), u8(0)` and the rest zero; print `u32` sum | prints `299`; wrapping cast values in the template | R2.1, R3.1 |
-| ST-12 | `let t: i8[64]` with the first four values `i8(200), i8(-128), i8(127), i8(0)` and the rest zero; print `i32` sum | prints `-57`; wrapping cast values in the template | R2.1, R3.1 |
+| ST-10 | `let t: bool[64] = [true, false, ...]` (32 true, 32 false); count `true` | prints `32`; old stores, no template (1-byte exclusion) | R2.4, R3.1 |
+| ST-11 | `let t: u8[64]` with the first four values `u8(300), u8(255), u8(256), u8(0)` and the rest zero; print `u32` sum | prints `299`; old stores, no template (1-byte exclusion) | R2.4, R3.1 |
+| ST-12 | `let t: i8[64]` with the first four values `i8(200), i8(-128), i8(127), i8(0)` and the rest zero; print `i32` sum | prints `-57`; old stores, no template (1-byte exclusion) | R2.4, R3.1 |
 | ST-13 | A module-level `i32[32]` initialized `[1, ..., 32]`, then an `unsafe` raw-pointer write of `9` to `t[0]`; print the sum | prints `536`; the target is writable and the template does not alias it | R2.3, R2.5, AR-05 |
 | ST-14 | Module A declares `let t: i32[32] = [1, ..., 32];`; module B reads `A.t[0] + A.t[31]` | prints `33`; A initializes before B | R2.5 |
 | ST-15 | Module A declares the table; module B declares `let x: i32 = A.t[2];` | prints `3`; the dependency order is preserved | R2.5 |
@@ -77,7 +78,7 @@ command therefore works from the Cargo test working directory.
 | ST-33 | `let t: str[16] = ["aa", ..., "aa"];` print the sum of lengths | prints `32`; no template, the existing view path | R2.4 |
 | ST-34 | `let t: i32[32] = [2147483647, -2147483647, 0, ...];` print `t[0]` and `t[1]` | prints `2147483647` and `-2147483647`; template | R3.1, R3.2 |
 | ST-35 | `let t: usize[32]` with `usize(7)` first and zero elsewhere; `let u: isize[32]` with `isize(-7)` first and zero elsewhere; print both | prints `7` and `-7`; templates | R3.1, R3.2 |
-| ST-36 | `let t: bool[64]` with `bool(1)` first and false elsewhere; count `true` | prints `1`; template (scalar-to-scalar cast) | R2.1, R3.2 |
+| ST-36 | `let t: bool[64]` with `bool(1)` first and false elsewhere; count `true` | prints `1`; old stores, no template (1-byte exclusion) | R2.4, R3.2 |
 | ST-37 | `let t: i32[0] = [];` | `E10226`; no codegen | R2.4 |
 | ST-38 | `let t: i32[] = [1, 2, 3];` | `E10200`; no codegen | R2.4 |
 | ST-39 | A module-level handle/owned array element, e.g. a `String[2]` global literal | `E11106`; no codegen | R2.4 |

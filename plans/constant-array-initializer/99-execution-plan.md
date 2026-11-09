@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 22:48
-> **Progress**: 3/37 tasks (8%)
+> **Last Updated**: 2026-11-09 23:02
+> **Progress**: 6/37 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -62,14 +62,14 @@ base and isolated baselines before any compiler change.
 - [x] 1.1.1 Commit the plan documents (index, requirements, register, requirements preflight report, plan preflight report, current state, design, testing strategy, execution plan, findings skeleton) with the git-commit skill; no compiler file may change. ✅ (completed: 2026-11-09 22:40)
 - [x] 1.1.2 Add `benchmarks/lookup/{program.clo,expected-output.txt,README.md}` and update `benchmarks/README.md` (table, scored count, baseline-location note); confirm the host output is `lookup: 134217728`; run the targeted smoke to `build/perf/lookup-smoke.json` (not `head.json`); commit the benchmark with the git-commit skill. ✅ (completed: 2026-11-09 22:44)
 - [x] 1.1.3 Remove the stale `build/perf/base.json`, `build/perf/head.json`, and `build/perf/base-clc`; run `make check` on the clean benchmark commit and record the result; confirm the tree is clean. ✅ (completed: 2026-11-09 22:48)
-- [ ] 1.1.4 Run `make bench-base COMMIT=v1.1.0` and `make bench`; copy `build/perf/head.json` to `build/perf/isolated-head.json`; copy the current `target/debug/clc` to `build/perf/isolated-base-clc`; record the compiler identities, the `clc 1.1.0` base version line, the clean/dirty flags, and confirm each harness document has `dirty=false` and the expected commit.
-- [ ] 1.1.5 Measure the small-table boundary and the 256-entry sensitivity: use `build/perf/isolated-base-clc` on `i32[4]/i32[8]/i32[16]/i32[32]` and `u8[64]`, plus a 256-entry lookup variant; record `.text` and instructions against the store form in `05-findings.md`; finalize the threshold.
-- [ ] 1.1.6 Re-run the committed `lookup` probe with `build/perf/isolated-base-clc`: current emission vs a block-scope `static const` template plus `memcpy`; record the exact `.text`, raw/net instructions, output, commands, and artifact paths in `05-findings.md`.
+- [x] 1.1.4 Run `make bench-base COMMIT=v1.1.0` and `make bench`; copy `build/perf/head.json` to `build/perf/isolated-head.json`; copy the current `target/debug/clc` to `build/perf/isolated-base-clc`; record the compiler identities, the `clc 1.1.0` base version line, the clean/dirty flags, and confirm each harness document has `dirty=false` and the expected commit. ✅ (completed: 2026-11-09 23:02)
+- [x] 1.1.5 Measure the small-table boundary and the 256-entry sensitivity: use `build/perf/isolated-base-clc` on `i32[4]/i32[8]/i32[16]/i32[32]` and `u8[64]`, plus a 256-entry lookup variant; record `.text` and instructions against the store form in `05-findings.md`; finalize the threshold. ✅ (completed: 2026-11-09 23:02)
+- [x] 1.1.6 Re-run the committed `lookup` probe with `build/perf/isolated-base-clc`: current emission vs a block-scope `static const` template plus `memcpy`; record the exact `.text`, raw/net instructions, output, commands, and artifact paths in `05-findings.md`. ✅ (completed: 2026-11-09 23:02)
 - [ ] 1.1.7 Write the committed baseline table, threshold, three compiler identities, and benchmark sensitivity in `05-findings.md`; commit the baseline evidence with the git-commit skill.
 
 **Deliverables**:
 - The plan, benchmark, and baseline evidence are committed.
-- `build/perf/base.json`, `isolated-head.json`, `base-clc`, and `isolated-base-clc` exist with matching identities.
+- `base.json`/`base-clc` match the v1.1.0 document; `isolated-head.json`/`isolated-base-clc` match the benchmark commit. The two pairs deliberately differ.
 - `05-findings.md` has the real baseline table, not placeholders.
 
 **Verify**: `make check` green on the benchmark commit; the baseline documents
@@ -90,8 +90,8 @@ name `v1.1.0` and the benchmark commit; the probe output is equal.
 **Objective**: Encode the behavior and emission expectations before changing
 codegen, and prove the positive pins fail on the base.
 
-- [ ] 2.1.1 [spec-author] Write `compiler/tests/constant_array_initializer_spec_test.rs` from ST-1..ST-41 and ST-46; size every positive/exclusion table above the finalized threshold; carry the `RDC_ASAN`/`RDC_UBSAN` markers and add the sanitizer flags in the C builder; resolve a relative `RDC_CLC` against the workspace root; do not modify compiler code.
-- [ ] 2.1.2 [spec-author] Write `compiler/tests/constant_array_initializer_impl_test.rs` from ST-42..ST-45 and the emission assertions for ST-1..ST-41; use the finalized threshold sizes; do not modify compiler code.
+- [ ] 2.1.1 [spec-author] Write `compiler/tests/constant_array_initializer_spec_test.rs` from ST-1..ST-41 and ST-46; size every positive 2/4-byte table above the finalized threshold; keep the 1-byte tables as old-store controls; carry the `RDC_ASAN`/`RDC_UBSAN` markers and add the sanitizer flags in the C builder; resolve a relative `RDC_CLC` against the workspace root; do not modify compiler code.
+- [ ] 2.1.2 [spec-author] Write `compiler/tests/constant_array_initializer_impl_test.rs` from ST-42..ST-45 and the emission assertions for ST-1..ST-41; use the finalized 2/4-byte threshold sizes and the 1-byte old-store controls; do not modify compiler code.
 - [ ] 2.1.3 Add a **module-level** eligible one-extent explicit-list non-volatile `let` `i32[64]` table to `tools/perf/fixtures/shapes.clo`; have `main` read it; run `make bench-shape` to prove the fixture is valid before the implementation.
 - [ ] 2.1.4 Run both new suites against the pre-change compiler (`RDC_CLC="$PWD/build/perf/isolated-base-clc"`); record the positive-pin failures and the behavior-suite pass in `05-findings.md`.
 - [ ] 2.1.5 Record the red evidence in `05-findings.md`; keep the red tests uncommitted until the implementation makes them green. Do not create a standalone red commit.
@@ -123,7 +123,7 @@ before the implementation.
 make the focused suites green, and measure the win.
 
 - [ ] 3.1.1 Add the `guard_free_constant` predicate and its unit cases in `compiler/src/codegen/program.rs`: literals and non-float scalar casts and `Neg`/`BitNot`/`Not` are accepted; Binary, float casts, conditionals, materialize, calls, places, and intrinsics are rejected.
-- [ ] 3.1.2 Add `emit_constant_array_template` and integrate it in `emit_global_init`: one extent, `elements.len() == extent`, scalar leaf, the finalized threshold, not volatile, non-freestanding, extent-sized `static const` template with an explicit `__cl_ctmpl_<n>` counter, eight values per line, one `memcpy`, no per-element stores.
+- [ ] 3.1.2 Add `emit_constant_array_template` and integrate it in `emit_global_init`: one extent, `elements.len() == extent`, 2/4-byte scalar leaf, the finalized threshold, not volatile, non-freestanding, extent-sized `static const` template with an explicit `__cl_ctmpl_<n>` counter, eight values per line, one `memcpy`, no per-element stores.
 - [ ] 3.1.3 Run the focused spec and impl suites; make the positive pins green and keep every exclusion pin green.
 - [ ] 3.1.4 Run `make bench-shape` (the fixture now exercises the template on hosted-amiga, nix13, and vbcc; freestanding keeps the stores) and `make check`; fix any C-validity or warning failure.
 - [ ] 3.1.5 Commit the implementation, the now-green tests, the fixture, the red/green evidence, the `PLAN-25` roadmap row (Executing), and the plan index (Executing) with the git-commit skill.
@@ -158,7 +158,7 @@ passes.
 sanitizer legs. Phase 2 already writes the ST cases; Phase 4 adds only the
 negative/mutation controls and any case a review finds.
 
-- [ ] 4.1.1 Add the test-integrity controls: disable the fast path and confirm the positive pins fail; remove one exclusion at a time (short list, empty list, fill, guard-free, volatile, profile, type, threshold) and confirm the matching pin fails; add any review-driven case not already in ST-1..ST-46.
+- [ ] 4.1.1 Add the test-integrity controls: disable the fast path and confirm the positive pins fail; remove one exclusion at a time (short list, empty list, fill, guard-free, volatile, profile, 1-byte type, other type, threshold) and confirm the matching pin fails; add any review-driven case not already in ST-1..ST-46.
 - [ ] 4.1.2 Run `make asan` and `make ubsan`; fix any memory-safety or undefined-behavior finding.
 - [ ] 4.1.3 Run the focused behaviour suite under `RDC_ASAN` and `RDC_UBSAN`; confirm the address-taken mutation and guard cases are clean.
 - [ ] 4.1.4 If any codegen or test changed, commit the hardening/fix changes with the git-commit skill; otherwise record that no change was needed.

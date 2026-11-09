@@ -65,9 +65,11 @@ predicate is deliberately narrower than the general constant evaluator.
   codegen.
 - The declared type is `TyKind::Array` with exactly one extent; the extent is
   `Some(n)`, `n > 0`.
-- The leaf element type is one of `i8`, `i16`, `i32`, `u8`, `u16`, `u32`,
-  `usize`, `isize`, or `bool`. The check is an explicit list, not
-  `is_integer_scalar` (which excludes `bool`).
+- The leaf element type is a 2- or 4-byte non-float scalar: `i16`, `i32`,
+  `u16`, `u32`, `usize`, or `isize`. The check is an explicit list. 1-byte
+  `i8`/`u8`/`bool` elements are excluded because the measured u8 template
+  cost is +55/+107/+211 instructions at 64/128/256 bytes (above the 1%
+  guard), even though `.text` shrinks.
 - `n >= 16` and `n * size_of(element) >= 64` under the checked type table
   (`self.sema.table`; `usize`/`isize` are 32-bit typedefs on every profile),
   using `checked_mul`; an overflow or a smaller table falls back. Phase 1
@@ -172,6 +174,7 @@ also checks `self.profile`. This keeps the volatile semantics out of
 | Multi-extent array | Fall back to the existing per-row path | AR-04 |
 | Volatile binding | Fall back; never pass a volatile target to `memcpy` | AR-04 |
 | Float, struct, handle, owned, view element | Fall back; the predicate rejects it | AR-04 |
+| 1-byte scalar element (`i8`/`u8`/`bool`) | Fall back; the measured u8 template cost exceeds 1% | AR-04, AR-11 |
 | Guard-bearing element | Fall back; the guard-free predicate rejects it | AR-04 |
 | Module `const` explicit list | Front end rejects `E10224`; no codegen path | AR-04 |
 | Zero extent | Front end rejects `E10226`; no codegen path | AR-04 |

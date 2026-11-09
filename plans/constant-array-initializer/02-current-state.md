@@ -7,7 +7,7 @@
 
 | Item | Value |
 |---|---|
-| Base tag | `v1.1.0` (`c0e34568f423a1ff2994dddd6f2f654e50f338d6`) |
+| Base tag | `v1.1.0` commit `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` (annotated tag object `c0e34568f423a1ff2994dddd6f2f654e50f338d6`) |
 | Current head at audit | `a589353` |
 | Worktree | clean before the audit |
 | Branch | `main`, equal to `origin/main` |

@@ -110,14 +110,14 @@ Product scope, acceptance criteria, and the benchmark base remain user-owned.
 - **Status**: ✅ Resolved
 - **Authority**: AI — delegated by `--auto-design` (optimizer precondition;
   smallest viable design).
-- **Decision**: module-level `let`; one known extent > 0; non-float scalar
-  leaf including `bool`; a **complete** explicit element list with no fill;
-  every element guard-free and effect-free (integer/bool/char literal,
-  non-float integer cast, `Neg`/`BitNot`/`Not` only); at least 16 elements
-  and 64 bytes under the profile’s type table; not `volatile`; host,
-  hosted-amiga, or hosted-amiga-13.
-  Module `const` arrays, short/empty lists, freestanding multi-byte tables,
-  and guard-bearing elements are excluded.
+- **Decision**: module-level `let`; one known extent > 0; a 2- or 4-byte
+  non-float scalar leaf (`i16`, `i32`, `u16`, `u32`, `usize`, `isize`); a
+  **complete** explicit element list with no fill; every element guard-free
+  and effect-free (integer/bool/char literal, non-float integer cast,
+  `Neg`/`BitNot`/`Not` only); at least 16 elements and 64 bytes under the
+  profile’s type table; not `volatile`; host, hosted-amiga, or
+  hosted-amiga-13. Module `const` arrays, short/empty lists, 1-byte elements,
+  freestanding multi-byte tables, and guard-bearing elements are excluded.
 - **Evidence**: the measured `lookup` shape is exactly this. Fills already
   have their own compaction paths; multi-extent, float, struct, owned, and
   view elements have separate semantics; a zero extent is a front-end
@@ -248,3 +248,50 @@ Product scope, acceptance criteria, and the benchmark base remain user-owned.
       spending, credentials) was exercised by auto-design.
 - [x] Deferred machinery is absent from executable requirements.
 - [x] The register is referenced by the requirements document.
+
+### AR-11 — Runtime threshold and 1-byte elements (runtime)
+
+- **Status**: ✅ Resolved
+- **Authority**: AI — delegated by `--auto-design` (optimizer threshold and
+  eligibility; measured trade-off within the confirmed goal).
+- **Objective**: choose a lower bound and element set that never trades a
+  measured runtime regression for a code-size win.
+- **Decision**: require **at least 16 elements and 64 bytes** for 2-byte and
+  4-byte scalar elements (`i16`, `i32`, `u16`, `u32`, `usize`, `isize`).
+  Exclude 1-byte elements (`i8`, `u8`, `bool`): the measured u8 template cost
+  is +55 instructions at 64 bytes, +107 at 128 bytes, and +211 at 256 bytes
+  (1.2%–4% of the measured run), even though `.text` shrinks. The 2-byte
+  measurements are a `.text` win with +5/+7 instructions (≤0.2%); the 4-byte
+  measurements are wins on both metrics at 64 bytes and above.
+- **Evidence**: `build/perf/audit/threshold.py` with
+  `build/perf/isolated-base-clc`, `m68k-amigaos-size`, and
+  `vamos --instr-trace`:
+
+  | Shape | Bytes | `.text` delta | Instruction delta |
+  |---|---:|---:|---:|
+  | `i32[4]` | 16 | +20 | -1 |
+  | `i32[8]` | 32 | +44 | -1 |
+  | `i32[16]` | 64 | -20 | -14 |
+  | `i32[32]` | 128 | -80 | -27 |
+  | `i32[64]` | 256 | -212 | -57 |
+  | `u8[64]` | 64 | -48 | +55 |
+  | `u8[128]` | 128 | -148 | +107 |
+  | `u8[256]` | 256 | -340 | +211 |
+  | `u16[64]` | 128 | -148 | +5 |
+  | `u16[128]` | 256 | -344 | +7 |
+  | `i16[64]` | 128 | -148 | +5 |
+
+- **Rejected alternatives**: a uniform 64-byte floor (allows the u8 +1.2%
+  regression); a larger 1-byte threshold (the u8 regression grows with size);
+  a uniform 256-byte floor (still allows the u8 regression and delays the
+  four-byte win).
+- **Strongest counterargument**: 1-byte tables would get a `.text` win; the
+  goal prefers changes that reduce both metrics, and a code-size-only change
+  must justify its runtime trade-off. The measured u8 cost exceeds the 1%
+  guard, so the exclusion is the safer choice; a later per-type threshold
+  could revisit it.
+- **Confidence**: High — the measurements are deterministic and reproduce.
+- **Hardening**: the Phase 1 finding table and the performance review check
+  the measured boundary; the 1-byte shapes remain behavior/exclusion tests.
+- **Reopen triggers**: a 1-byte shape with an amortized runtime win, or a
+  benchmark that measures byte-table initialization.

@@ -58,10 +58,11 @@ module-level global array initializer path, the existing constant evaluator and
 `memcpy` spelling, two focused test suites, the shape fixture, the required
 reviews, and the documentation closeout.
 
-Eligibility is deliberately narrow: one extent, a non-float scalar leaf, a
-complete explicit list of guard-free constant elements, no fill, at least 16
-elements and 64 bytes under the profile’s type table, a non-`volatile`
-module-level `let`, and the host, hosted-amiga, or hosted-amiga-13 profile.
+Eligibility is deliberately narrow: one extent, a 2- or 4-byte non-float
+scalar leaf, a complete explicit list of guard-free constant elements, no
+fill, at least 16 elements and 64 bytes under the profile’s type table, a
+non-`volatile` module-level `let`, and the host, hosted-amiga, or
+hosted-amiga-13 profile.
 Everything else keeps its current spelling. The target
 global stays writable and keeps its address and initialization point, so no
 ABI, storage layout, module-order, or `unsafe` mutation behavior changes.
@@ -70,10 +71,11 @@ ABI, storage layout, module-order, or `unsafe` mutation behavior changes.
 function (init-order and address-taken risk); linker section/garbage-collection
 flags (a toolchain change, and the dead code is largely the out-of-scope
 runtime shim); whole-program dead-function elimination; function-local constant
-array literals; fill forms; short/empty lists; multi-extent arrays; float,
-struct, owned, and view elements; module-level `const` arrays (front-end
-`E10224`); freestanding multi-byte templates (byte-wise `memcpy`); new crates;
-build scripts; and any harness/schema change.
+array literals; fill forms; short/empty lists; multi-extent arrays; 1-byte
+scalar elements (`i8`/`u8`/`bool`, measured runtime regression); float, struct,
+owned, and view elements; module-level `const` arrays (front-end `E10224`);
+freestanding multi-byte templates (byte-wise `memcpy`); new crates; build
+scripts; and any harness/schema change.
 
 ## Document Index
 
@@ -96,7 +98,7 @@ build scripts; and any harness/schema change.
 |---|---|
 | Base commit | `v1.1.0` for the cumulative comparison; clean pre-codegen head for the isolated comparison |
 | Benchmark | `lookup`: 4,096-entry `i32` sine table (offset by 32768 to 1..65535), one scan, non-zero checksum |
-| Eligible shape | Module-level `let`, one extent, non-float scalar, complete explicit guard-free constant list, no fill, at least 16 elements and 64 bytes under the profile’s type table, not volatile, host/hosted-amiga/hosted-amiga-13 profiles |
+| Eligible shape | Module-level `let`, one extent, 2- or 4-byte non-float scalar, complete explicit guard-free constant list, no fill, at least 16 elements and 64 bytes under the profile’s type table, not volatile, host/hosted-amiga/hosted-amiga-13 profiles |
 | Emission | Extent-sized block-scope `static const` template + one `memcpy` at the existing init point |
 | Excluded | Static declaration initializer, linker flags, whole-program DCE, local/fill/short-list/multi-extent/float/struct/owned/const-array shapes, freestanding multi-byte templates |
 | Comparison requirements | Provisional `lookup:instructions:10 lookup:text:10`; re-derived in Phase 1 |

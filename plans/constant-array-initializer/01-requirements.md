@@ -139,9 +139,10 @@ attribution, and the benchmark-source diff/hash record.
     typedefs on every profile; the threshold is not target-width-dependent).
     Phase 1 measures the small-table boundary and finalizes the lower bound
     before Phase 2 sizes the tests; the 4,096-entry `lookup` table qualifies;
-  - the leaf element type is a non-float scalar: `i8`, `i16`, `i32`, `u8`,
-    `u16`, `u32`, `usize`, `isize`, or `bool` (an explicit list, because the
-    existing `is_integer_scalar` helper excludes `bool`);
+  - the leaf element type is a 2- or 4-byte non-float scalar: `i16`, `i32`,
+    `u16`, `u32`, `usize`, or `isize` (an explicit list; 1-byte `i8`/`u8`/
+    `bool` elements are excluded because the measured u8 template cost is
+    +55/+107/+211 instructions at 64/128/256 bytes, above the 1% guard);
   - the initializer is an array literal with an explicit element list, no
     fill form, and **`elements.len() == extent`**. A short or empty list is
     excluded because the current stores leave an omitted tail at the global’s
@@ -227,11 +228,13 @@ is unchanged on host and m68k.
   covers at least:
   - `i32[32]` positive and negative tables, including `i32(2147483647)` and
     `i32(-2147483647)`;
-  - `u8[64]`, `u16[32]`, `u32[16]` including `u32(4294967295)`, `i8[64]`
-    including `i8(-128)` and `i8(127)`, `i16[32]`, `usize[32]`, and
-    `isize[32]`;
-  - `bool[64]` tables and a `bool(1)` scalar-to-bool cast;
-  - typed wrapping casts such as `u8(300)` → 44 and `i8(200)` → -56;
+  - `u16[32]`, `u32[16]` including `u32(4294967295)`, `i16[32]`,
+    `usize[32]`, and `isize[32]` (2/4-byte template cases);
+  - `u8[64]`, `i8[64]` including `i8(-128)` and `i8(127)`, and `bool[64]`
+    tables, plus a `bool(1)` scalar-to-bool cast (1-byte old-store cases with
+    the correct output);
+  - typed wrapping casts such as `u8(300)` → 44 and `i8(200)` → -56 (1-byte
+    old-store cases);
   - an address-taken `i32[32]` table mutated after initialization;
   - a cross-module reader and a later initializer that reads the table;
   - a table initialized from a place (old stores, correct output);
@@ -264,17 +267,18 @@ is unchanged on host and m68k.
     `__cl_ctmpl_<n>` name (first `__cl_ctmpl_0`, then `__cl_ctmpl_1`), and its
     eight-values-per-line wrapping;
   - the exact typed values for `-1`, `i32(2147483647)`, `i32(-2147483647)`,
-    `i8(-128)`, `u8(255)`, `u32(4294967295)`, `usize(7)`, `isize(-7)`,
-    `bool`, and a positive value;
+    `u16(255)`, `u32(4294967295)`, `usize(7)`, `isize(-7)`, and a positive
+    value;
   - the `memcpy` with `sizeof(<global>)`;
   - the absence of per-element stores;
   - the target declaration remains `static`, writable, and the same type/size;
   - the `memcpy` position in `cl_init` relative to the replaced stores;
   - two globals in one module use distinct templates; a template name does not
     collide with a global or an earlier `__cl_itmp` init local;
-  - every reachable exclusion keeps the old stores and emits no template;
+  - every reachable exclusion keeps the old stores and emits no template,
+    including the 1-byte `i8`/`u8`/`bool` tables;
   - `host`, `hosted-amiga`, and `hosted-amiga-13` emit the template for a
-    multi-byte table, while `freestanding` emits no template.
+    2/4-byte table, while `freestanding` emits no template.
 - **R3.3 Red first.** The positive emission pins fail against the pre-change
   head compiler and pass on the feature head. Run them with the clean
   benchmark-commit compiler retained as `build/perf/isolated-base-clc` (or,

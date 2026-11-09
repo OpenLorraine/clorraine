@@ -20,21 +20,21 @@ remove the old files first and check the identity.
 
 | Benchmark | `instructions_net` | m68k `.text` `-O2` | C bytes | Host `-O2` median |
 |---|---:|---:|---:|---:|
-| lookup | _pending_ | _pending_ | _pending_ | _pending_ |
-| sieve | _pending_ | _pending_ | _pending_ | _pending_ |
-| matrix | _pending_ | _pending_ | _pending_ | _pending_ |
-| strings | _pending_ | _pending_ | _pending_ | _pending_ |
-| moves | _pending_ | _pending_ | _pending_ | _pending_ |
+| lookup | 13,653 | 117,440 | 474,430 | 0.65 ms |
+| sieve | 1,040,581 | 76,728 | 311,284 | 0.75 ms |
+| matrix | 10,959 | 80,712 | 313,817 | 0.63 ms |
+| strings | 2,964,051 | 77,604 | 312,685 | 1.20 ms |
+| moves | 45,205 | 76,896 | 313,173 | 0.67 ms |
 
 ### Compiler identities
 
 | Role | Path | SHA-256 | Commit | Version line | Dirty |
 |---|---|---|---|---|---|
-| Base (`v1.1.0`) | `build/perf/base-clc` | _pending_ | `c0e34568f423a1ff2994dddd6f2f654e50f338d6` | `clc 1.1.0` | false |
-| Isolated base (benchmark commit) | `build/perf/isolated-base-clc` | _pending_ | _pending_ | _pending_ | false |
+| Base (`v1.1.0`) | `build/perf/base-clc` | `eb0e2dae6049698dbd9aa5c77e7b2663c117893b13f66875257e44467199b0da` | `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` | `clc 1.1.0` | false |
+| Isolated base (benchmark commit) | `build/perf/isolated-base-clc` | `9f57815412bc322935da1c3ad284ba52801a7f94b666efd4ea705fb29c77c7e8` | `e2d3c760bb8fa23d3434bbc3d7e7be5289867978` | `clc 1.1.1` | false |
 | Final head (feature commit) | `target/debug/clc` | _pending_ | _pending_ | _pending_ | false |
 
-**Base compiler source:** `v1.1.0` (`c0e34568f423a1ff2994dddd6f2f654e50f338d6`) — record the exact full commit
+**Base compiler source:** `v1.1.0` commit `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` (annotated tag object `c0e34568f423a1ff2994dddd6f2f654e50f338d6`) — record the exact full commit
 and the `clc --version` line.
 
 **Isolated-base compiler:** the compiler built from the benchmark commit,
@@ -43,6 +43,13 @@ separate cumulative-base artifact.
 
 **Commands:** `make bench-base COMMIT=v1.1.0`, `make bench`, the isolated
 copy, and the isolated comparison.
+
+**Baseline execution note:** `make bench-base COMMIT=v1.1.0` built and retained
+`build/perf/base-clc` (`clc 1.1.0`). Its first full harness run then hit a
+stale-worktree race while a previous worktree was being removed; the base
+harness was rerun directly with the retained `build/perf/base-clc` and the
+same `c0bd6d05...` commit identity, writing the recorded `base.json`. No
+compiler or benchmark source changed between the two runs.
 
 ### Threshold measurement
 
@@ -54,16 +61,27 @@ provisional 16-element / 64-byte floor.
 
 | Shape | Elements | Bytes | `.text` vs stores | Instructions vs stores | Verdict |
 |---|---:|---:|---:|---:|---|
-| `i32[4]` | 4 | 16 | _pending_ | _pending_ | well below floor |
-| `i32[8]` | 8 | 32 | _pending_ | _pending_ | below-floor control |
-| `i32[16]` | 16 | 64 | _pending_ | _pending_ | candidate floor |
-| `i32[32]` | 32 | 128 | _pending_ | _pending_ | test floor |
-| `u8[64]` | 64 | 64 | _pending_ | _pending_ | test floor |
+| `i32[4]` | 4 | 16 | +20 | -1 | below floor |
+| `i32[8]` | 8 | 32 | +44 | -1 | below floor |
+| `i32[16]` | 16 | 64 | -20 | -14 | 4-byte floor |
+| `i32[32]` | 32 | 128 | -80 | -27 | test floor |
+| `i32[64]` | 64 | 256 | -212 | -57 | test floor |
+| `u8[64]` | 64 | 64 | -48 | +55 | 1-byte exclusion |
+| `u8[128]` | 128 | 128 | -148 | +107 | 1-byte exclusion |
+| `u8[256]` | 256 | 256 | -340 | +211 | 1-byte exclusion |
+| `u16[64]` | 64 | 128 | -148 | +5 | 2-byte included |
+| `u16[128]` | 128 | 256 | -344 | +7 | 2-byte included |
+| `i16[64]` | 64 | 128 | -148 | +5 | 2-byte included |
+| `i32[256]` (all ones) | 256 | 1024 | -480 | +19 | sensitivity wash |
 
-The final threshold is recorded after this table; the ST cases are sized from
-it before Phase 2. The 64-byte cases are at the floor, not “safely above”; the
-32-element `i32`/`usize`/`isize` cases are above it, and the `u32` case is 16
-elements (64 bytes).
+**Final threshold:** at least 16 elements and 64 bytes for 2-byte and 4-byte
+elements. The 4-byte shape wins both metrics at 64 bytes; the 2-byte shape
+wins `.text` with a ≤0.2% instruction cost; the 1-byte shape (`u8`/`i8`/
+`bool`) is excluded because its measured runtime cost is +55/+107/+211
+instructions at 64/128/256 bytes (above the 1% guard). The ST cases use
+`i32[32]` (128 bytes), `u32[16]` (64), `u16[32]` (64), `i16[32]` (64),
+`usize[32]` (128), and `isize[32]` (128); the 1-byte tables are old-store
+controls.
 
 ## Exploratory Probe
 
@@ -87,11 +105,12 @@ __cl_ctmpl_0[4096]` and one `memcpy`; build both with `m68k-amigaos-gcc
 ### Benchmark sensitivity
 
 The committed table is 4,096 entries, a realistic audio/graphics table size;
-the in-repo `cube` example uses a 256-entry display table. Phase 1 also records
-a 256-entry sensitivity probe of the same shape (without changing the committed
-benchmark) to show the `.text`/instruction win is not an artifact of the 4,096
-size. The benchmark is committed before the codegen change and its source is
-not modified afterward.
+the in-repo `cube` example uses a 256-entry display table. The Phase 1
+sensitivity probe (an `i32[256]` table, all ones) measures `.text` -480 and
+instructions +19: the code-size win exists at the cube’s scale, while the
+runtime is a sub-1% wash; the committed 4,096-entry sine table wins both
+metrics (-24,464 `.text`, -4,183 instructions). The benchmark is committed
+before the codegen change and its source is not modified afterward.
 
 The checksum is a plain sum of an offset sine table. It detects a skipped,
 zeroed, or partially copied template, but it is not permutation-sensitive; the
@@ -105,21 +124,21 @@ Filled after the implementation and each fix pass.
 
 | Benchmark | Base `v1.1.0` | Isolated base | Head | Cumulative delta | Isolated delta | Output |
 |---|---:|---:|---:|---:|---:|---|
-| lookup | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| sieve | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| matrix | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| strings | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| moves | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| lookup | 13,653 | 13,653 | _pending_ | _pending_ | _pending_ | equal |
+| sieve | 1,040,581 | 1,040,581 | _pending_ | _pending_ | _pending_ | equal |
+| matrix | 10,959 | 9,908 | _pending_ | _pending_ | _pending_ | equal |
+| strings | 2,964,051 | 2,964,051 | _pending_ | _pending_ | _pending_ | equal |
+| moves | 45,205 | 45,205 | _pending_ | _pending_ | _pending_ | equal |
 
 ### `.text` and C bytes
 
 | Benchmark | Base `.text` | Isolated `.text` | Head `.text` | Isolated delta | Base C | Isolated C | Head C | Isolated C delta |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| lookup | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| sieve | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| matrix | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| strings | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| moves | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| lookup | 117,440 | 117,440 | _pending_ | _pending_ | 474,430 | 474,430 | _pending_ | _pending_ |
+| sieve | 76,728 | 76,728 | _pending_ | _pending_ | 311,284 | 311,284 | _pending_ | _pending_ |
+| matrix | 80,712 | 76,676 | _pending_ | _pending_ | 313,817 | 311,168 | _pending_ | _pending_ |
+| strings | 77,604 | 77,604 | _pending_ | _pending_ | 312,685 | 312,685 | _pending_ | _pending_ |
+| moves | 76,896 | 76,896 | _pending_ | _pending_ | 313,173 | 313,173 | _pending_ | _pending_ |
 
 **Head identity:** record the feature commit, the clean/dirty flag, and the
 `clc` SHA-256. The head document is valid only if its commit equals the
@@ -169,7 +188,8 @@ benchmarks/` is empty. Record the source/expected SHA-256 values.
 | No fill or multi-extent shape | Existing fill compaction and multi-extent paths cover them | R2.4 |
 | No float, struct, handle, owned, or view element | Separate semantics; no measured need | R2.4 |
 | Guard-free elements only | `MIN / -1`, float casts, and short-circuit forms carry guards or unevaluated operands | R2.8 |
-| At least 16 elements and 64 bytes | Provisional measured lower bound; Phase 1 finalizes it | R2.1 |
+| At least 16 elements and 64 bytes for 2/4-byte elements | Measured lower bound; the 4-byte shape wins both metrics at 64 bytes, the 2-byte shape wins `.text` with a ≤0.2% instruction cost | R2.1, AR-11 |
+| 1-byte elements keep the stores | The measured u8 template costs +55/+107/+211 instructions at 64/128/256 bytes, above the 1% guard | R2.4, AR-11 |
 | `freestanding` keeps the stores | Byte-wise shim `memcpy`; no measured freestanding win | R2.1 |
 | Read-only template beside the writable global | The total binary is still smaller than the store run; the scored `.text`/instructions improve | R2.3 |
 | Host time is advisory | Run-to-run spread is tens of percent | R4.2 |
