@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-09
 > **Last Updated**: 2026-11-09
-> **Progress**: 0/43 tasks (0%)
+> **Progress**: 22/43 tasks (51%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent
 > **Commit mode**: `--auto-commit` with pushes held until the full fix gate
@@ -58,13 +58,13 @@ publish ──> 5.7 publication record ──> 6.1 final report
 > fixed here.
 > **Verify**: the preflight report has no open critical or major finding.
 
-- [ ] 0.1.1 Run the plan preflight against the repository; record every
+- [x] 0.1.1 Run the plan preflight against the repository; record every
       finding with severity, evidence, and ruling in
       `00-preflight-report.md`; re-check the critical and major findings after
       the revision.
-- [ ] 0.1.2 Resolve every critical and major finding; update the owning
+- [x] 0.1.2 Resolve every critical and major finding; update the owning
       document and record the verdict.
-- [ ] 0.2.1 Add the PLAN-23 roadmap row as `Executing`, update the progress
+- [x] 0.2.1 Add the PLAN-23 roadmap row as `Executing`, update the progress
       header (566/569, 1 open, `Active - volatile nested fill fix`), review
       `git diff --cached`, and commit
       `docs(plans): add the volatile nested fill plan`; confirm a clean tree.
@@ -80,17 +80,17 @@ publish ──> 5.7 publication record ──> 6.1 final report
 > **Verify**: the new behaviour cases fail to build on the base; the new pins
 > fail; the guards pass.
 
-- [ ] 1.1.1 Add ST-V1..V6 to
+- [x] 1.1.1 Add ST-V1..V6 to
       `compiler/tests/nested_fill_compaction_spec_test.rs`, including the
       build-only overlay case, and update the file header: the existing cases
       pass on the base; the new volatile cases are deliberately red on the
       base.
-- [ ] 1.2.1 Replace the legacy `should_keep_a_volatile_global_target` test
+- [x] 1.2.1 Replace the legacy `should_keep_a_volatile_global_target` test
       (old IP-11) with IP-V1..V12 in
       `compiler/tests/nested_fill_compaction_impl_test.rs`, using the full
       mangled global symbols; IP-V12 pins the unchanged whole-array copy. The
       old IP-11 and the new IP-V11 are different pins.
-- [ ] 1.3.1 Run both focused suites on the unmodified compiler; record the
+- [x] 1.3.1 Run both focused suites on the unmodified compiler; record the
       exact failures in [Findings](05-findings.md).
 
 **Verify**: base failures recorded; guards pass.
@@ -104,25 +104,25 @@ publish ──> 5.7 publication record ──> 6.1 final report
 > **Verify**: focused suites green; integrity mutations reproduce; strict
 > builds warning-free; `make check` green.
 
-- [ ] 2.1.1 Add `ArrayTarget::is_volatile`, propagate it through `element`,
+- [x] 2.1.1 Add `ArrayTarget::is_volatile`, propagate it through `element`,
       and compute it in `array_target` from a new `fill_target_volatile`
       predicate that mirrors `place()` for `.len` and walks `Raw` layers.
-- [ ] 2.2.1 Add `emit_volatile_array_copy` and branch the nested fill row copy
+- [x] 2.2.1 Add `emit_volatile_array_copy` and branch the nested fill row copy
       on `target.is_volatile`; guard the compact `memset` branch with
       `!target.is_volatile`.
-- [ ] 2.2.2 Add `emit_prefix_row_assign_to` and call it from the nested fill
+- [x] 2.2.2 Add `emit_prefix_row_assign_to` and call it from the nested fill
       element loop. The wrapper uses the per-leaf copy only for a volatile,
       duplicable, non-conditional, non-call prefix row; every other value
       falls back to the shared core. Do not change the shared final branch.
-- [ ] 2.3.1 Run both focused suites; all green.
-- [ ] 2.4.1 Run the integrity mutations (revert each copy branch, remove the
+- [x] 2.3.1 Run both focused suites; all green.
+- [x] 2.4.1 Run the integrity mutations (revert each copy branch, remove the
       prefix wrapper, force the predicate false, force it true, remove the
       `.len` handling, remove the recursion) and record each failure; restore.
-- [ ] 2.5.1 Add the volatile global and overlay-field shapes to
+- [x] 2.5.1 Add the volatile global and overlay-field shapes to
       `tools/perf/fixtures/shapes.clo`, call the overlay helper from `main`,
       and run `make bench-shape`.
-- [ ] 2.6.1 Run `make check`.
-- [ ] 2.7.1 Review `git diff --cached`; commit
+- [x] 2.6.1 Run `make check`.
+- [x] 2.7.1 Review `git diff --cached`; commit
       `fix(codegen): copy volatile nested fills element by element`;
       confirm a clean tree.
 

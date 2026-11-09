@@ -26,15 +26,40 @@ initializer is already element-wise and valid.
 
 ## Red/Green Record
 
-Filled after the tests are added and the fix lands.
-
 | Status | Result |
 |---|---|
-| Behaviour cases on base | pending |
-| Emission pins on base | pending |
-| Behaviour cases on head | pending |
-| Emission pins on head | pending |
-| Integrity mutations | pending |
+| Behaviour cases on base | 13 passed, 6 failed (ST-V1..V6); every failure is the strict host build rejecting `memcpy` into volatile storage |
+| Emission pins on base | 24 passed, 6 failed (IP-V1..V6); every positive pin finds the destination `memcpy` it forbids |
+| Behaviour cases on head | 19/19 pass |
+| Emission pins on head | 30/30 pass |
+| Integrity mutations | 6 mutations, each caught |
+
+Base failure shape (repeated per volatile case):
+
+```text
+error: passing argument 1 of 'memcpy' discards 'volatile' qualifier
+from pointer target type [-Werror=discarded-array-qualifiers]
+```
+
+The base-green guards are IP-V7 (non-volatile field `memcpy`), IP-V8 (local
+`memset`, covered by the existing compaction pin), IP-V9 (volatile one-extent
+stores), IP-V10 (volatile full prefix), IP-V11 (volatile explicit rows), and
+IP-V12 (whole-array place `memcpy`). They prove the fix does not widen beyond
+the two nested fill copy sites.
+
+### Test-Integrity Mutations
+
+Each mutation was applied to the fix, the focused suite was run, and the
+source was restored.
+
+| Mutation | Observed failure |
+|---|---|
+| Restore the fill-row `memcpy` | impl 24/30: IP-V1..V6 fail; spec 13/19: ST-V1..V6 fail to build |
+| Fall the prefix row back to the shared core | impl 29/30: IP-V5 fails |
+| Force `fill_target_volatile` false | impl 24/30: IP-V1..V6 fail |
+| Force `fill_target_volatile` true | impl 22/30: IP-V7 and the non-volatile compaction pins fail (8 total) |
+| Make the `.len` guard unconditional | impl 29/30: IP-V6 fails |
+| Remove the copy recursion (one dimension only) | impl 29/30: IP-V2 fails |
 
 ## Benchmark Comparison
 
@@ -93,6 +118,7 @@ No critical or major finding may remain open.
 |---|---|
 | Element-wise copy for the whole-array store core | Follow-up; needs its own design for self-read, conditional, and drop paths |
 | Volatility through alias and borrow indirection | Follow-up; needs the pointer/borrow types to carry the qualifier |
+| Volatility lookup keyed by simple struct name | Uses the existing `structs` map, which already keys field emission by simple name; a duplicate name across modules inherits that pre-existing type-table ambiguity |
 | Avoid the row temporary for a volatile constant-zero fill | Not needed for correctness; no measured need |
 
 ## Final Acceptance
