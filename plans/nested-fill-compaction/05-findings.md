@@ -151,12 +151,28 @@ Filled before and after the codegen change.
 
 | Status | Pins |
 |---|---|
-| Red on base (`b68dae5`) | pending |
-| Green on head | pending |
-| Behaviour oracle on base | pending |
+| Red on base (`b68dae5`) | IP-01, 02, 03, 04, 06, 15, 16, 17, 19, 20, 21 (10 test functions) |
+| Green on base | IP-05, 07, 08, 09, 10, 11, 12, 13, 14 (9 exclusion and regression guards) |
+| Behaviour oracle on base | 13 of 13 cases pass |
+| Behaviour oracle on head | 13 of 13 cases pass |
+| Emission pins on head | 19 of 19 cases pass |
 
-The red run is the unmodified compiler with the impl suite present. The
-behaviour suite must pass on both.
+**Base evidence:** the unmodified compiler emits `i32 __cl_fillrow_1[32]`, 32
+scalar zero stores, and 32 `memcpy` calls for matrix `[; [; 0]]`. The positive
+pins fail on that spelling; the exclusion guards pass.
+
+**Test-integrity mutations** (each applied to the fix, then restored):
+
+| Mutation | Observed failure |
+|---|---|
+| Disable the compaction branch and the full-prefix return | the 10 positive pins fail; the 9 guards pass |
+| Remove the `compact` requirement | the volatile-global and field-target guards fail |
+| Accept any constant instead of zero | the non-zero-fill guard fails |
+| Lower the threshold to 1 slot | the 63-slot boundary guard fails |
+
+The float guard is protected twice: the leaf type check and the zero constant
+test both reject it. The struct and explicit-row guards are structural: those
+fill shapes have no uniform constant-zero leaf.
 
 ## Emission Audit
 
@@ -182,6 +198,7 @@ commit.
 | Slice views with a missing extent do not compact | A fixed-array rule; a slice has no compile-time row count | R3.1 |
 | Closure-environment and compiler-temp targets inherit the compact gate | They name real storage and the existing gate admits them; no nested-fill fixture exists in those positions, so no separate pin is added | R3.1 |
 | Materialized, conditional-assignment, and self-read callers stay non-compact | The caller passes `compact=false`; the nested branch does not override it. A hidden-return conditional arm passes true and may compact; IP-19 pins it | R3.4 |
+| A volatile nested target keeps the per-row `memcpy` spelling | That spelling discards the volatile qualifier and is rejected by a strict host build; the defect is pre-existing at `b68dae5` and outside this change. The optimization does not compact it and does not fix it | R3.4 |
 | Host time stays advisory | Target metric is the deterministic m68k instruction count | R5.1 |
 | Strings cost stays in stdlib | Runtime and stdlib changes are out of scope | R5.2 |
 | Moves struct copies stay | Calls use the by-value ABI; elision is a separate ABI change | R5.2 |

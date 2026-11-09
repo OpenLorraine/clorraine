@@ -30,7 +30,6 @@ read the gitignored `build/perf/base-clc`.
 | ST-04 | `let a: i32[8][9] = [; [; 7]];` read every slot | 72 | all 7 (excluded path) |
 | ST-05 | `let a: u8[16][16] = [; [; 0]];` sum + one write/read | 256 | zero, then the written byte |
 | ST-06 | `let a: bool[8][8] = [; [; false]];` count true | 64 | zero |
-| ST-07 | A function-body assignment to a global volatile `i32[8][9]` | 72 | all zero; volatile spelling |
 | ST-08 | An `i32[8][9]` parameter filled with a nested zero | 72 | all zero |
 | ST-09 | A function returning `i32[8][9]` with a nested zero literal | 72 | all zero in the caller |
 | ST-10 | An address-taken `i32[8][9]` local with a nested zero fill | 72 | all zero through a raw pointer |
@@ -43,9 +42,11 @@ read the gitignored `build/perf/base-clc`.
 | ST-17 | A conditional return arm with a zero-fill `i32[8][8]` literal | 64 | all zero; hidden-return arm |
 
 The small cases (ST-12, ST-15) are controls. They prove the old spelling still
-produces correct values; they are not compaction expectations. ST-07 is a
-function-body assignment: a module-level initializer is emitted element-wise
-by `emit_global_array_fill` and does not reach the nested branch.
+produces correct values; they are not compaction expectations. ST-07 (volatile
+target) is not a behaviour case: the base compiler's per-row `memcpy` spelling
+discards the volatile qualifier and is rejected by a strict host build. That is
+a pre-existing defect outside this change, so IP-11 pins the emission only and
+the ID is reserved, not reused.
 
 ## Implementation Pins
 
@@ -67,7 +68,7 @@ itself is pinned by IP-05/IP-06.
 | IP-08 | Exclusion | `f32[8][9] = [; [; 0.0]]` | no whole-array `memset`; row spelling |
 | IP-09 | Exclusion | `R[8][9]` struct row | no whole-array `memset`; row spelling |
 | IP-10 | Exclusion | `i32[16][8] = [; [1,2,3,4,5,6,7,8]]` (row literal with explicit elements) | no whole-array `memset`; row spelling |
-| IP-11 | Exclusion | function-body assignment to a volatile global `i32[8][9]` | no whole-array `memset`; row spelling |
+| IP-11 | Exclusion (emission only) | function-body assignment to a volatile global `i32[8][9]` | no whole-array `memset`; row spelling pinned without a build because the old spelling is invalid C |
 | IP-12 | Exclusion | struct field `i32[8][9]` | no whole-array `memset`; row spelling |
 | IP-13 | Regression | one-extent `u8[8192] = [; 1]` | unchanged single `memset` |
 | IP-14 | Regression | one-extent `i32[100] = [; 0]` | unchanged loop compaction |
@@ -79,6 +80,9 @@ itself is pinned by IP-05/IP-06.
 | IP-20 | Positive | `i32[8][8]` with an `i32(0)` fill | one `memset` |
 | IP-21 | Control | zero-fill `i32[8][9]` (72 slots) | one `memset`; the same-size control for IP-07 |
 | IP-22 | Build | nested `bool[8][9]` zero fill in `shapes.clo` | m68k, vbcc, and freestanding build without a warning |
+
+A pin that says "one `memset`" counts the whole-array fill statement, not the
+runtime shim's own `memset` calls in the same translation unit.
 
 The `compact` flag is inherited from the existing gate. `EnvField` and `Temp`
 targets are allowed by that gate and name real storage; no separate fixture

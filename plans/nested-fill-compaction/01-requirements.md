@@ -161,8 +161,11 @@ spelling; every behaviour case prints the same output as the base compiler.
 
 - **R4.1 Behaviour suite.** `compiler/tests/nested_fill_compaction_spec_test.rs`
   covers: a 2D zero fill; a 3D zero fill; a prefix row followed by a zero fill;
-  a non-zero fill; a volatile target; a struct row; an address-taken array; an
-  array parameter; and a hidden return slot. Each case compiles, builds, runs,
+  a non-zero fill; a struct row; an address-taken array; an array parameter;
+  and a hidden return slot. The volatile target is an emission-only exclusion
+  (R4.2): the base compiler's per-row `memcpy` spelling discards the volatile
+  qualifier and is invalid C, a pre-existing defect outside this change. Each
+  case compiles, builds, runs,
   and compares against an expected output recorded from a run on the
   unmodified compiler at `b68dae5`. The suite itself spawns only the head
   compiler (`CARGO_BIN_EXE_clc`); it does not depend on the gitignored

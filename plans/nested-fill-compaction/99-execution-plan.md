@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 13/32 tasks (41%)
+> **Progress**: 22/32 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -224,32 +224,32 @@ is queued for the docs commit.
 
 ### Step 3.1: Specification suite
 
-- [ ] 3.1.1 Add `compiler/tests/nested_fill_compaction_spec_test.rs` with the
+- [x] 3.1.1 Add `compiler/tests/nested_fill_compaction_spec_test.rs` with the
       ST cases in [Testing Strategy](07-testing-strategy.md).
-- [ ] 3.1.2 Run it with the unmodified clone compiler; record green and
+- [x] 3.1.2 Run it with the unmodified clone compiler; record green and
       the observed output values that become the expected text.
 
 **Verify**: all ST cases pass before any compiler change.
 
 ### Step 3.2: Implementation suite
 
-- [ ] 3.2.1 Add `compiler/tests/nested_fill_compaction_impl_test.rs` with the
+- [x] 3.2.1 Add `compiler/tests/nested_fill_compaction_impl_test.rs` with the
       IP pins, including the 63/64 boundary and every exclusion.
 
 **Verify**: the suite compiles; it is not yet green.
 
 ### Step 3.3: Red run
 
-- [ ] 3.3.1 Run the impl suite against the unmodified compiler; record every
+- [x] 3.3.1 Run the impl suite against the unmodified compiler; record every
       failing pin and the exact observed old spelling.
 
 **Verify**: the expected IP pins fail; the behaviour suite stays green.
 
 ### Step 3.4: Test integrity
 
-- [ ] 3.4.1 Confirm each pin targets a distinct shape and that no assertion is
+- [x] 3.4.1 Confirm each pin targets a distinct shape and that no assertion is
       satisfied by the old emission (inspect the failure output).
-- [ ] 3.4.2 Record the plan to disable the compaction condition and to remove
+- [x] 3.4.2 Record the plan to disable the compaction condition and to remove
       each exclusion in turn after the fix.
 
 **Verify**: the red record lists each pin, its observed old emission, and the
@@ -265,57 +265,57 @@ planned exclusion-removal checks.
 
 ### Step 4.1: Helper
 
-- [ ] 4.1.1 Add the free uniform-zero predicate and the eligibility helper in
+- [x] 4.1.1 Add the free uniform-zero predicate and the eligibility helper in
       `compiler/src/codegen/function.rs`; use `constant_fill_integer`,
       `checked_mul`, and the existing `FILL_LOOP_THRESHOLD`.
-- [ ] 4.1.2 Add a `#[cfg(test)]` module in `codegen/function.rs` and unit-test
+- [x] 4.1.2 Add a `#[cfg(test)]` module in `codegen/function.rs` and unit-test
       the predicate's `0u`, `i32(0)`, `-0`, `false`, `Char(0)`, `Materialize`,
       non-zero, float-leaf, and `i32(f32(0.0))` cases.
-- [ ] 4.1.3 Unit-test the eligibility helper for 63/64 slots, a missing
+- [x] 4.1.3 Unit-test the eligibility helper for 63/64 slots, a missing
       extent, `usize` overflow, and `covered_rows == 0`.
 
 **Verify**: helper tests green; no behaviour change yet.
 
 ### Step 4.2: Emission branch
 
-- [ ] 4.2.1 Insert the compaction branch before the row-temporary block; emit
+- [x] 4.2.1 Insert the compaction branch before the row-temporary block; emit
       one `memset` with the first covered row address, the covered row count,
       and the row size.
-- [ ] 4.2.2 Update `tools/perf/fixtures/shapes.clo` with a nested zero fill
+- [x] 4.2.2 Update `tools/perf/fixtures/shapes.clo` with a nested zero fill
       above 64 slots, a nested `bool` zero fill, a prefix case, an
       array-parameter case, and a hidden return case.
-- [ ] 4.2.3 Run `cargo build --workspace`.
+- [x] 4.2.3 Run `cargo build --workspace`.
 
 **Verify**: build green; the shape fixture covers the new emission.
 
 ### Step 4.3: Focused green
 
-- [ ] 4.3.1 Run both focused suites; all green.
-- [ ] 4.3.2 Re-run the impl suite with the compaction condition disabled and
+- [x] 4.3.1 Run both focused suites; all green.
+- [x] 4.3.2 Re-run the impl suite with the compaction condition disabled and
       confirm the positive pins fail; restore.
-- [ ] 4.3.3 Remove each exclusion in turn (non-zero, float, struct, explicit
+- [x] 4.3.3 Remove each exclusion in turn (non-zero, float, struct, explicit
       row, volatile, field, threshold) and confirm its guard fails; restore.
-- [ ] 4.3.4 Run `make bench-shape`; strict C builds warning-free.
+- [x] 4.3.4 Run `make bench-shape`; strict C builds warning-free.
 
 **Verify**: focused suites green; both integrity checks reproduced;
 `bench-shape` green.
 
 ### Step 4.4: Emission self-check and commit
 
-- [ ] 4.4.1 Emit matrix with the head compiler; confirm one `memset`, no
+- [x] 4.4.1 Emit matrix with the head compiler; confirm one `memset`, no
       `__cl_fillrow`, and the expected count expression.
-- [ ] 4.4.2 Review `git diff --cached`; commit
+- [x] 4.4.2 Review `git diff --cached`; commit
       `perf(codegen): compact nested zero fills to one memset`.
 
 **Verify**: commit exists; tree clean; matrix emission matches the design.
 
 ### Step 4.5: Commit the pre-measurement records
 
-- [ ] 4.5.1 Fill the red/green record and the tooling-review verdict in
+- [x] 4.5.1 Fill the red/green record and the tooling-review verdict in
       [Findings](05-findings.md).
-- [ ] 4.5.2 Review `git diff --cached`; commit
+- [x] 4.5.2 Review `git diff --cached`; commit
       `docs(plans): record the nested fill red pins`.
-- [ ] 4.5.3 Confirm `git status --porcelain` is empty before the head
+- [x] 4.5.3 Confirm `git status --porcelain` is empty before the head
       benchmark.
 
 **Verify**: commit exists; clean tree.

@@ -173,7 +173,7 @@ must not be multiplied by the row count. IP-15 pins the parameter case.
 | Float leaf (`f32`/`f64`) | row temporary + copies; avoids the float-folding boundary |
 | Struct or aggregate leaf | row temporary + copies |
 | Row with explicit prefix elements (`[1, 2; 0]`) | row temporary + copies; the row is not uniform |
-| Volatile target, field, `DerefTemp` alias | `compact` is false; row temporary + copies |
+| Volatile target, field, `DerefTemp` alias | `compact` is false; row temporary + copies. The volatile spelling is pre-existing invalid C on the host (`memcpy` discards the qualifier); this change neither compacts nor fixes it |
 | Fewer than 64 covered leaf slots | row temporary + copies; avoids a small-case call overhead regression |
 | Impure fill (call, conditional) | row temporary + copies; the evaluate-once rule is unchanged |
 
