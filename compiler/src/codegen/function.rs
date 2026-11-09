@@ -874,6 +874,17 @@ impl<'a> Emitter<'a> {
                     // guards still run, but the aliasing copy and the clear
                     // are skipped.
                     let target_c = format!("(*({pointer_c}))");
+                    // A run-time element target arrives as an address-of
+                    // expression, not a `Place`; derive its storage qualifier
+                    // from the addressed value so a volatile element still
+                    // copies leaf by leaf.
+                    let storage_volatile = matches!(
+                        &pointer.kind,
+                        ValueKind::Unary {
+                            op: UnaryOp::AddressOf,
+                            operand,
+                        } if self.value_storage_volatile(operand)
+                    );
                     if value_names_storage(value) && value_is_stable_alias_source(value) {
                         let value_c = self.value(value);
                         if target_object_text(&target_c) == target_object_text(&value_c) {
@@ -888,7 +899,8 @@ impl<'a> Emitter<'a> {
                             self.push(&format!(
                                 "    if (((void *)&({target_c})) != ((void *)&({value_c}))) {{"
                             ));
-                            let target = ArrayTarget::object(&target_c);
+                            let mut target = ArrayTarget::object(&target_c);
+                            target.is_volatile = storage_volatile;
                             self.emit_fixed_array_assign_to(
                                 &target,
                                 &pointer_ty,
@@ -899,7 +911,8 @@ impl<'a> Emitter<'a> {
                             self.push("    }");
                         }
                     } else {
-                        let target = ArrayTarget::object(&target_c);
+                        let mut target = ArrayTarget::object(&target_c);
+                        target.is_volatile = storage_volatile;
                         self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true, literal_self_read);
                     }
                 } else if self.value_needs_struct_stores(value) {
@@ -4102,25 +4115,32 @@ impl<'a> Emitter<'a> {
     /// Stores one explicit prefix row of a nested fill.
     ///
     /// A volatile row destination copies leaf by leaf; every other value and
-    /// target keeps the shared fixed-array store core. The wrapper covers the
-    /// duplicable place form the prefix loop reaches. A conditional, call, or
-    /// owning value falls back to the core, whose volatile-copy classes are
-    /// recorded as separate limitations.
+    /// target keeps the shared fixed-array store core. A value that names
+    /// existing storage is copied leaf by leaf directly. A value that could
+    /// re-run a call or conditional is evaluated once into a row temporary
+    /// first, because appending an element index to a call expression would
+    /// evaluate the call once per leaf. An owning row falls back to the core;
+    /// its volatile-copy class is a separate limitation.
     fn emit_prefix_row_assign_to(&mut self, target: &ArrayTarget, ty: &Ty, value: &Value) {
-        let simple = !self.needs_drop(ty)
-            && !matches!(
-                &value.kind,
-                ValueKind::Conditional { .. }
-                    | ValueKind::Call { .. }
-                    | ValueKind::ClosureCall { .. }
-            );
-        if target.is_volatile && simple {
-            self.emit_guards(value);
-            let value_c = self.store_text(value, ty);
-            if value_c == target.text {
+        if target.is_volatile && !self.needs_drop(ty) {
+            if stable_storage_value(value) {
+                self.emit_guards(value);
+                let value_c = self.store_text(value, ty);
+                if value_c == target.text {
+                    return;
+                }
+                self.emit_volatile_array_copy(target, ty, &value_c);
                 return;
             }
-            self.emit_volatile_array_copy(target, ty, &value_c);
+            let row = self.unique_local("__cl_fillrow");
+            self.push(&format!(
+                "    {} = {};",
+                declarator(ty, &row, &self.sema.table),
+                self.empty_state(ty)
+            ));
+            let row_target = ArrayTarget::object(&row);
+            self.emit_fixed_array_assign_to(&row_target, ty, value, false, false);
+            self.emit_volatile_array_copy(target, ty, &row);
             return;
         }
         self.emit_fixed_array_assign_to(target, ty, value, false, false);
@@ -4177,18 +4197,12 @@ impl<'a> Emitter<'a> {
                         ty = Ty::usize_ty();
                         continue;
                     }
-                    let mut pointee = &ty;
-                    while let TyKind::Raw(inner) = &pointee.kind {
-                        pointee = inner.as_ref();
-                    }
-                    if let TyKind::Struct(name, _) = &pointee.kind {
-                        if self.structs.get(name).is_some_and(|decl| {
-                            decl.fields.iter().any(|declared| {
-                                &declared.name == field && declared.volatile
-                            })
-                        }) {
-                            return true;
-                        }
+                    // A volatile field is emitted as a C `volatile` member.
+                    // A `volatile raw T` field spells `volatile T *`, so a
+                    // member behind it is volatile too; the conservative
+                    // walk matches the emitted C.
+                    if self.struct_field_volatile(&ty, field) {
+                        return true;
                     }
                     ty = self.field_type(&ty, field);
                 }
@@ -4196,6 +4210,50 @@ impl<'a> Emitter<'a> {
             }
         }
         false
+    }
+
+    /// True when `field` is declared `volatile` on the struct behind `ty`.
+    ///
+    /// Raw pointer layers are stripped first: a field reached through a raw
+    /// pointer is still the declared field. A non-struct type has no field
+    /// declaration and is not volatile by this test.
+    fn struct_field_volatile(&self, ty: &Ty, field: &str) -> bool {
+        let mut pointee = ty;
+        while let TyKind::Raw(inner) = &pointee.kind {
+            pointee = inner.as_ref();
+        }
+        let TyKind::Struct(name, _) = &pointee.kind else {
+            return false;
+        };
+        self.structs.get(name).is_some_and(|decl| {
+            decl.fields
+                .iter()
+                .any(|declared| declared.name == field && declared.volatile)
+        })
+    }
+
+    /// True when a value names storage that is `volatile`-qualified in C.
+    ///
+    /// The pointer form of a run-time element target carries the element
+    /// expression, not a `Place`, so the nested fill derives volatility from
+    /// the value tree: a volatile global place, a declared volatile field, or
+    /// any element or member of one. A raw dereference does not add the
+    /// qualifier; the pointer type does not carry it.
+    fn value_storage_volatile(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(place) => self.fill_target_volatile(place),
+            ValueKind::Member { base, name } => {
+                self.struct_field_volatile(&base.ty, name)
+                    || self.value_storage_volatile(base)
+            }
+            ValueKind::Index { base, .. } => self.value_storage_volatile(base),
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand,
+            } => self.value_storage_volatile(operand),
+            ValueKind::Materialize { value, .. } => self.value_storage_volatile(value),
+            _ => false,
+        }
     }
 
     /// True when a covered scalar fill should use the compact form.
@@ -4966,6 +5024,30 @@ fn pointer_root_place(value: &Value) -> Option<&Place> {
             operand,
         } => pointer_root_place(operand),
         _ => None,
+    }
+}
+
+/// True when a value names existing storage without re-running an effect.
+///
+/// A place, a temporary, a member or element of one, and a cast or
+/// address-of of one are stable: appending an element index re-reads the same
+/// storage. A call, a conditional, or an arithmetic expression is not stable;
+/// re-reading it could re-run an effect. A materialization names the temporary
+/// the earlier lowering filled, so it is stable when it records a temp or a
+/// destination.
+fn stable_storage_value(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        ValueKind::Materialize {
+            temp, destination, ..
+        } => temp.is_some() || destination.is_some(),
+        ValueKind::Member { base, .. } => stable_storage_value(base),
+        ValueKind::Index { base, index } => {
+            stable_storage_value(base) && stable_storage_value(index)
+        }
+        ValueKind::Unary { op, operand } => !op.is_update() && stable_storage_value(operand),
+        ValueKind::Cast { value, .. } => stable_storage_value(value),
+        _ => false,
     }
 }
 

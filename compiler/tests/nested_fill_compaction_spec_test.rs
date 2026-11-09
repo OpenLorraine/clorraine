@@ -652,3 +652,102 @@ func main(): i32 {
 "#,
     );
 }
+
+#[test]
+fn should_fill_a_runtime_indexed_volatile_element() {
+    assert_output(
+        "volatile-index",
+        r#"
+module spec.NestedFillVolatileIndex;
+import { println } from std.io;
+volatile let g: i32[2][3][4] = [; [; [; 0]]];
+func main(): i32 {
+    let i: i32 = 1;
+    g[i] = [; [; 9]];
+    let total: i32 = 0;
+    let j: i32 = 0;
+    while (j < 3) {
+        let k: i32 = 0;
+        while (k < 4) {
+            total = total + g[1][j][k];
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 108\n",
+    );
+}
+
+#[test]
+fn should_evaluate_an_impure_prefix_row_once() {
+    assert_output(
+        "volatile-impure-prefix",
+        r#"
+module spec.NestedFillImpurePrefix;
+import { println } from std.io;
+volatile let g: i32[4][4] = [; [; 0]];
+func makeRow(counter: raw i32): i32[4] {
+    unsafe { *counter = *counter + 1; }
+    return [; 7];
+}
+func main(): i32 {
+    let calls: i32 = 0;
+    let p: raw i32 = unsafe &calls;
+    g = [makeRow(p); [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        let j: i32 = 0;
+        while (j < 4) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"calls: {calls} sum: {total}");
+    return 0;
+}
+"#,
+        "calls: 1 sum: 28\n",
+    );
+}
+
+#[test]
+fn should_build_a_runtime_indexed_volatile_field_fill() {
+    assert_builds(
+        "volatile-field-index",
+        r#"
+module spec.NestedFillVolatileFieldIndex;
+struct S { a: volatile i32[2][3][4]; }
+func fillField(i: i32): void {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe { regs.a[i] = [; [; 9]]; }
+}
+func main(): i32 {
+    fillField(1);
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn should_build_a_volatile_pointer_field_fill() {
+    assert_builds(
+        "volatile-pointer-field",
+        r#"
+module spec.NestedFillVolatilePointerField;
+struct Inner { v: i32[2][3]; }
+struct S { p: volatile raw Inner; }
+func main(): i32 {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe { regs.p.v = [; [; 0]]; }
+    return 0;
+}
+"#,
+    );
+}

@@ -715,3 +715,107 @@ func main(): i32 {
         "cl_impl_NestedWholeCopy_g[0][0] = other[0][0];",
     );
 }
+
+#[test]
+fn should_write_a_runtime_indexed_volatile_element_by_element() {
+    let emitted = emit(
+        "volatile-index",
+        r#"
+module impl.NestedVolatileIndex;
+volatile let g: i32[2][3][4] = [; [; [; 0]]];
+func main(): i32 {
+    let i: i32 = 1;
+    g[i] = [; [; 9]];
+    return g[1][0][0];
+}
+"#,
+    );
+    assert_absent(
+        "volatile-index",
+        &emitted,
+        "memcpy(&((*(&(cl_impl_NestedVolatileIndex_g[",
+    );
+    assert_contains("volatile-index", &emitted, "(*(&(cl_impl_NestedVolatileIndex_g[");
+    assert_contains("volatile-index", &emitted, ")))[0][0] = __cl_fillrow_");
+}
+
+#[test]
+fn should_evaluate_an_impure_prefix_row_once_into_a_temporary() {
+    let emitted = emit(
+        "volatile-impure-prefix",
+        r#"
+module impl.NestedImpurePrefix;
+volatile let g: i32[4][4] = [; [; 0]];
+func makeRow(counter: raw i32): i32[4] {
+    unsafe { *counter = *counter + 1; }
+    return [; 7];
+}
+func main(): i32 {
+    let calls: i32 = 0;
+    let p: raw i32 = unsafe &calls;
+    g = [makeRow(p); [; 0]];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent(
+        "volatile-impure-prefix",
+        &emitted,
+        "memcpy(&(cl_impl_NestedImpurePrefix_g[",
+    );
+    assert_eq!(
+        count(&emitted, "_makeRow(p,"),
+        1,
+        "volatile-impure-prefix: the prefix value must be evaluated once"
+    );
+    assert_contains(
+        "volatile-impure-prefix",
+        &emitted,
+        "cl_impl_NestedImpurePrefix_g[0][0] = __cl_fillrow_",
+    );
+}
+
+#[test]
+fn should_write_a_runtime_indexed_volatile_field_by_element() {
+    let emitted = emit(
+        "volatile-field-index",
+        r#"
+module impl.NestedFieldIndex;
+struct S { a: volatile i32[2][3][4]; }
+func fillField(i: i32): void {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe { regs.a[i] = [; [; 9]]; }
+}
+func main(): i32 {
+    fillField(1);
+    return 0;
+}
+"#,
+    );
+    assert_absent("volatile-field-index", &emitted, "memcpy(&((*(&(regs->a[");
+    assert_contains("volatile-field-index", &emitted, "(*(&(regs->a[");
+    assert_contains("volatile-field-index", &emitted, ")))[0][0] = __cl_fillrow_");
+}
+
+#[test]
+fn should_write_a_volatile_pointer_field_by_element() {
+    let emitted = emit(
+        "volatile-pointer-field",
+        r#"
+module impl.NestedPointerField;
+struct Inner { v: i32[2][3]; }
+struct S { p: volatile raw Inner; }
+func main(): i32 {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe { regs.p.v = [; [; 0]]; }
+    return 0;
+}
+"#,
+    );
+    assert_absent("volatile-pointer-field", &emitted, "memcpy(&(regs->p->v[");
+    assert_contains(
+        "volatile-pointer-field",
+        &emitted,
+        "regs->p->v[0][0] = __cl_fillrow_1[0];",
+    );
+}
