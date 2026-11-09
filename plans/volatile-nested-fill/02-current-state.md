@@ -94,6 +94,36 @@ Both copy sites are in the nested fill path and are in scope. The prefix row
 is fixed with a dedicated wrapper, because the shared fixed-array store core
 also serves whole-array copies that are not fills.
 
+An impure prefix row is a separate hazard: the first wrapper rendered the
+value once to a C expression and appended an element index per leaf, so a call
+hidden under a member or index ran once per leaf. The final wrapper evaluates
+an impure value once into a row temporary, then copies from it.
+
+### Run-time indexed elements
+
+A whole-element target with a run-time index is lowered to a pointer store:
+
+```clorraine
+volatile let g: i32[2][3][4] = [; [; [; 0]]];
+func main(): i32 {
+    let i: i32 = 1;
+    g[i] = [; [; 9]];
+    return g[1][0][0];
+}
+```
+
+The pointer expression is an address-of value, not a `Place`, so the original
+predicate did not see the volatile base. The emitted C copied with `memcpy`
+into `volatile i32 (*)[4]` and failed the strict build. The final fix derives
+the qualifier from the addressed value tree and copies leaf by leaf.
+
+### A volatile pointer field
+
+`struct S { p: volatile raw Inner; }` is emitted as `volatile Inner *p`, so the
+pointee is volatile. A member behind the pointer is volatile in the emitted C
+and takes the per-leaf copy. This is consistent with the C spelling, not a
+false positive.
+
 ### A field named `len`
 
 `len` is a structural member on a fixed array, but it is also a legal struct
@@ -122,18 +152,21 @@ a fixed array.
 | Volatile explicit rows `[[...], [...]]` | per-element stores | valid | unchanged |
 | Volatile full-prefix zero fill | nothing | valid | unchanged |
 | Whole-array copy `g = other` | `memcpy(&(cl_..._g), ...)` | rejected | separate known limitation; emission pinned by IP-V12 |
+| Volatile array used as a row-temporary copy source | `memcpy` from the volatile source | rejected | separate pre-existing shared-core limitation |
 | Struct-literal prefix with a fixed-array field | `memcpy` into the field | rejected | separate known limitation |
-| Conditional, call, or closure-call prefix row | the wrapper falls back to the shared core, which may `memcpy` | rejected | separate known limitation |
 | `for borrow row in g` or `in regs.a` | borrow conversion discards the qualifier before the fill | rejected | separate limitation; the fill is never reached |
 | `borrow` parameter bound to a volatile field (`fill(regs.a)`) | the call argument discards the qualifier | rejected | separate limitation; the callee's fill is not reached through a volatile type |
 | `borrow` parameter bound to a volatile global | checker rejects the borrow (`E10038`) | n/a | not representable |
 | Owning explicit row copy (no fill) | shared core may `memcpy` into a volatile field | possible | separate shared-core limitation; a move-only fill is rejected (`E10215`) and a module-level `volatile let` requires a duplicable type (`E11106`) |
 
+A conditional or call-valued prefix row is in scope: the wrapper evaluates it
+once into a row temporary and copies leaf by leaf.
+
 ## Root Cause
 
 `emit_array_assign` computes one `compact` flag from `fill_target_compactable`.
 That predicate returns false for a field projection, a `DerefTemp` alias, or a
-volatile module array, but a false flag means only "do not compact". Two copy
+volatile module array, but a false flag means only "do not compact". Three copy
 sites then always use `memcpy`:
 
 1. The nested fill branch creates a row temporary and copies each fill row
@@ -143,9 +176,13 @@ sites then always use `memcpy`:
    (`compiler/src/codegen/function.rs:2126-2149`). That branch is shared with
    whole-array copies (`g = other`), so the fix uses a dedicated prefix-row
    wrapper instead of changing the shared core.
+3. A run-time indexed whole-element target is lowered to
+   `Statement::StorePointer` (`compiler/src/codegen/function.rs:860-905`); its
+   fixed-array branch builds a target from the pointer expression, losing the
+   base place's volatility.
 
 `ArrayTarget` carries the C name, address, and byte count, but no volatility
-signal, so neither copy can distinguish a volatile destination.
+signal, so none of the copies can distinguish a volatile destination.
 
 ## Affected Code
 
@@ -178,4 +215,6 @@ signal, so neither copy can distinguish a volatile destination.
 | The copy changes non-volatile emission | The flag defaults to false; IP-V7 and IP-V8 pin the old spelling |
 | A struct-leaf copy is mishandled | ST-V3 fills a volatile array of plain structs |
 | A prefix place row is missed | ST-V5 and IP-V5 pin the place row and the fill rows |
+| An impure prefix value is re-evaluated per leaf | ST-V8 counts one call; IP-V14 pins the single call and the temporary |
+| A run-time indexed element target is missed | ST-V7/ST-V9 and IP-V13/IP-V15 pin the global and field forms |
 | Out-of-scope volatile copies are mistaken for fixed | The known limitations list each remaining shape and its separate cause |

@@ -45,12 +45,14 @@ the separate PLAN-24 roadmap row; Phase 5 of the execution plan is its
 checklist and follows `RELEASE.md`.
 
 Out of scope: whole-array assignment or move copies into a volatile array
-(`g = other`, a call result, a self-reading literal), struct-literal prefix
-elements with a fixed-array field, a conditional, call, or closure-call prefix
-row, a nested fill through a `for borrow` alias over volatile storage, a
-`borrow` parameter bound to a volatile field, an owning explicit row copy, and
-any language, grammar, ABI, runtime, stdlib, driver, LSP, or benchmark change.
-These are recorded as separate limitations or follow-ups.
+(`g = other`, a call result, a self-reading literal), a volatile array used as
+a copy source into a row temporary, struct-literal prefix elements with a
+fixed-array field, a nested fill through a `for borrow` alias over volatile
+storage, a `borrow` parameter bound to a volatile field, an owning explicit row
+copy, and any language, grammar, ABI, runtime, stdlib, driver, LSP, or
+benchmark change. These are recorded as separate limitations or follow-ups. A
+conditional or call-valued prefix row is in scope: it is evaluated once into a
+row temporary.
 
 ## Document Index
 
@@ -70,9 +72,9 @@ These are recorded as separate limitations or follow-ups.
 | Decision | Value |
 |---|---|
 | Base commit | `7cdbb71`; plan docs committed before the change |
-| Fix sites | nested fill row copy and the prefix-row wrapper |
+| Fix sites | fill rows, prefix rows (stable or one-time temporary), and run-time indexed elements |
 | Volatility signal | `ArrayTarget::is_volatile`, computed from the place |
-| Copy spelling | one store per leaf through the destination lvalue |
+| Copy spelling | one store per leaf through the destination lvalue; impure prefix values evaluate once |
 | Non-volatile path | unchanged `memcpy` / `memset` |
 | Shared fixed-array core | unchanged; whole-array copies remain a separate limit |
 | Benchmark base | fresh `7cdbb71` compiler; bare 1% comparison |
