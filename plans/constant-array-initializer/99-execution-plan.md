@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 23:08
-> **Progress**: 7/37 tasks (19%)
+> **Last Updated**: 2026-11-09 23:15
+> **Progress**: 12/37 tasks (32%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -82,7 +82,7 @@ name `v1.1.0` and the benchmark commit; the probe output is equal.
 > **Phase baseline tree**: the benchmark commit (no compiler change).
 > **Lenses**: compiler and language; test integrity.
 > **Reasoning**: high — the tests are the immutable oracle and must be red
-> before the implementation.
+> before the implementation. ✅ (completed: 2026-11-09 23:15)
 
 ### Step 2.1: Write the tests first
 
@@ -90,11 +90,11 @@ name `v1.1.0` and the benchmark commit; the probe output is equal.
 **Objective**: Encode the behavior and emission expectations before changing
 codegen, and prove the positive pins fail on the base.
 
-- [ ] 2.1.1 [spec-author] Write `compiler/tests/constant_array_initializer_spec_test.rs` from ST-1..ST-41 and ST-46; size every positive 2/4-byte table above the finalized threshold; keep the 1-byte tables as old-store controls; carry the `RDC_ASAN`/`RDC_UBSAN` markers and add the sanitizer flags in the C builder; resolve a relative `RDC_CLC` against the workspace root; do not modify compiler code.
-- [ ] 2.1.2 [spec-author] Write `compiler/tests/constant_array_initializer_impl_test.rs` from ST-42..ST-45 and the emission assertions for ST-1..ST-41; use the finalized 2/4-byte threshold sizes and the 1-byte old-store controls; do not modify compiler code.
-- [ ] 2.1.3 Add a **module-level** eligible one-extent explicit-list non-volatile `let` `i32[64]` table to `tools/perf/fixtures/shapes.clo`; have `main` read it; run `make bench-shape` to prove the fixture is valid before the implementation.
-- [ ] 2.1.4 Run both new suites against the pre-change compiler (`RDC_CLC="$PWD/build/perf/isolated-base-clc"`); record the positive-pin failures and the behavior-suite pass in `05-findings.md`.
-- [ ] 2.1.5 Record the red evidence in `05-findings.md`; keep the red tests uncommitted until the implementation makes them green. Do not create a standalone red commit.
+- [x] 2.1.1 [spec-author] Write `compiler/tests/constant_array_initializer_spec_test.rs` from ST-1..ST-41 and ST-46; size every positive 2/4-byte table above the finalized threshold; keep the 1-byte tables as old-store controls; carry the `RDC_ASAN`/`RDC_UBSAN` markers and add the sanitizer flags in the C builder; resolve a relative `RDC_CLC` against the workspace root; do not modify compiler code. ✅ (completed: 2026-11-09 23:15)
+- [x] 2.1.2 [spec-author] Write `compiler/tests/constant_array_initializer_impl_test.rs` from ST-42..ST-45 and the emission assertions for ST-1..ST-41; use the finalized 2/4-byte threshold sizes and the 1-byte old-store controls; do not modify compiler code. ✅ (completed: 2026-11-09 23:15)
+- [x] 2.1.3 Add a **module-level** eligible one-extent explicit-list non-volatile `let` `i32[64]` table to `tools/perf/fixtures/shapes.clo`; have `main` read it; run `make bench-shape` to prove the fixture is valid before the implementation. ✅ (completed: 2026-11-09 23:15)
+- [x] 2.1.4 Run both new suites against the pre-change compiler (`RDC_CLC="$PWD/build/perf/isolated-base-clc"`); record the positive-pin failures and the behavior-suite pass in `05-findings.md`. ✅ (completed: 2026-11-09 23:15)
+- [x] 2.1.5 Record the red evidence in `05-findings.md`; keep the red tests uncommitted until the implementation makes them green. Do not create a standalone red commit. ✅ (completed: 2026-11-09 23:15)
 
 **Deliverables**:
 - Both suites exist and build.
@@ -103,7 +103,7 @@ codegen, and prove the positive pins fail on the base.
 
 **Verify**: the red run is recorded; every exclusion pin passes on the base;
 the fixture is valid on every `bench-shape` leg; no red test is committed
-before the implementation.
+before the implementation. ✅ (completed: 2026-11-09 23:15)
 
 ---
 
