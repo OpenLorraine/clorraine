@@ -23,38 +23,38 @@ and design are unchanged (AR-22).
 
 ### Must Have
 
-- [ ] R1 — A `clorraine` binary exists in the `compiler/` crate; `clc` and the
+- [x] R1 — A `clorraine` binary exists in the `compiler/` crate; `clc` and the
   frozen specification are unchanged (AR-2, AR-22).
-- [ ] R2 — The commands are `run FILE…`, `build FILE…`, and `emit FILE…` (AR-3).
-- [ ] R3 — The profiles are `host` (default) and `hosted-amiga` (AR-4, AR-8).
-- [ ] R4 — Runners: `host` executes the binary natively; `hosted-amiga` uses
+- [x] R2 — The commands are `run FILE…`, `build FILE…`, and `emit FILE…` (AR-3).
+- [x] R3 — The profiles are `host` (default) and `hosted-amiga` (AR-4, AR-8).
+- [x] R4 — Runners: `host` executes the binary natively; `hosted-amiga` uses
   `vamos` by default and FS-UAE behind `--emulator` (AR-5).
-- [ ] R5 — FS-UAE cannot be launched from the SDK `dev` container, so
+- [x] R5 — FS-UAE cannot be launched from the SDK `dev` container, so
   `--emulator` prints the exact host command and exits 0; no Docker socket is
   added (AR-6).
-- [ ] R6 — The emitted C and build artifacts live under
+- [x] R6 — The emitted C and build artifacts live under
   `build/clorraine/<stem>/<profile>/` and are hidden by default; `emit` is the
   C escape hatch (AR-9, AR-12).
-- [ ] R7 — A C-compiler failure on the emitted C is reported as an internal
+- [x] R7 — A C-compiler failure on the emitted C is reported as an internal
   compiler error with the C path and the target compiler's first error; exit 1
   (AR-10).
-- [ ] R8 — `run` streams the program's stdout (Amiga CR stripped) and exits
+- [x] R8 — `run` streams the program's stdout (Amiga CR stripped) and exits
   with the program's own code; `--capture` writes it to `out.txt` instead
   (AR-11, AR-25).
-- [ ] R9 — The driver is an SDK-container tool: outside the container it prints
+- [x] R9 — The driver is an SDK-container tool: outside the container it prints
   guidance and exits 2, and a missing tool names the tool and the SDK remedy
   with exit 1 (AR-7, AR-23, AR-24).
-- [ ] R10 — The flag surface is `-p/--profile`, `--release`, `--emit-c`,
+- [x] R10 — The flag surface is `-p/--profile`, `--release`, `--emit-c`,
   `--emulator`, `--capture`, `-o` (emit only), `-h/--help`, `-V/--version`; an
   unknown flag is a usage error, exit 2 (AR-26).
-- [ ] R11 — Root `make run FILE=…` and `make build FILE=…` pass through to the
+- [x] R11 — Root `make run FILE=…` and `make build FILE=…` pass through to the
   driver inside the container (AR-14).
 
 ### Should Have
 
-- [ ] R12 — Debug is the default build (`-O0 -g`); `--release` selects `-O2`
+- [x] R12 — Debug is the default build (`-O0 -g`); `--release` selects `-O2`
   (AR-19).
-- [ ] R13 — One or more `.clo` files may be given; all are passed to `clc`, and
+- [x] R13 — One or more `.clo` files may be given; all are passed to `clc`, and
   the artifact stem is the first file's stem (AR-18).
 
 ### Won't Have (Out of Scope)
@@ -102,17 +102,17 @@ AR-21, AR-22).
 
 ## Acceptance Criteria
 
-1. [ ] `clorraine run hello.clo` builds and runs on `host` and prints the
+1. [x] `clorraine run hello.clo` builds and runs on `host` and prints the
    program's output, with no C toolchain detail shown.
-2. [ ] `clorraine run --profile hosted-amiga` builds with `m68k-amigaos-gcc` and
+2. [x] `clorraine run --profile hosted-amiga` builds with `m68k-amigaos-gcc` and
    runs under `vamos`; `--emulator` prints the FS-UAE host command.
-3. [ ] `clorraine emit [ -o OUT.c ] hello.clo` yields the same C that `clc`
+3. [x] `clorraine emit [ -o OUT.c ] hello.clo` yields the same C that `clc`
    produces for the same inputs.
-4. [ ] A Clorraine diagnostic is shown unchanged and exits 1; a C-build failure
+4. [x] A Clorraine diagnostic is shown unchanged and exits 1; a C-build failure
    is reported as an internal compiler error and exits 1.
-5. [ ] `run` propagates the program's exit code; `--capture` writes `out.txt`.
-6. [ ] The compiler's public behaviour and the specification are unchanged.
-7. [ ] `make check` and `make verify` stay green, including the new driver
+5. [x] `run` propagates the program's exit code; `--capture` writes `out.txt`.
+6. [x] The compiler's public behaviour and the specification are unchanged.
+7. [x] `make check` and `make verify` stay green, including the new driver
    tests.
-8. [ ] `AGENTS.md` documents the driver; `plans/00-roadmap.md` carries the new
+8. [x] `AGENTS.md` documents the driver; `plans/00-roadmap.md` carries the new
    `PLAN-02` row.

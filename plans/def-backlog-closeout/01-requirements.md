@@ -19,44 +19,44 @@ behavior.
 
 ### Must Have
 
-- [ ] R1 — DEF-63: `flag && sink(mkv().a)` is accepted and, when the guard is true, transfers the
+- [x] R1 — DEF-63: `flag && sink(mkv().a)` is accepted and, when the guard is true, transfers the
   taken field to the callee, zeroes the emptied slot in the guard, and releases the call result's
   remaining fields exactly once; when the guard is false, nothing leaks and nothing double-frees
   (AR-8, 03-01 §1).
-- [ ] R2 — DEF-64: `Box<T> { v: mk()[i] }` (concrete and generic) emits the root call, evaluates the
+- [x] R2 — DEF-64: `Box<T> { v: mk()[i] }` (concrete and generic) emits the root call, evaluates the
   run-time index once, empties the `i`-th slot, and releases the result exactly once; the emitted C
   builds and runs (AR-9, 03-01 §2).
-- [ ] R3 — DEF-66: the let-store form `let s: T = slice(mk(), 0, 2)[i]`, the take form, and the
+- [x] R3 — DEF-66: the let-store form `let s: T = slice(mk(), 0, 2)[i]`, the take form, and the
   return form are probed on the current compiler first; each form that misbehaves is fixed by
   teaching the place derivation about the slice intrinsic root, and each clean form gets a
   regression pin closing the roadmap row as already-fixed (AR-2, 03-01 §3).
-- [ ] R4 — DEF-65: a `borrow` out-slot of a nullable owned type (`String?`, `File?`, `str?`,
+- [x] R4 — DEF-65: a `borrow` out-slot of a nullable owned type (`String?`, `File?`, `str?`,
   `T[]?`) is lowered as a pointer when its argument is an exact-typed place; a non-null incoming
   slot is dropped exactly once by the callee's assignment and the caller observes the new value;
   an argument that would need an implicit conversion or nullability widening into the slot is
   rejected (E10200), because a converted temporary cannot carry the write back; the null-start
   case is unchanged; duplicable struct borrows keep their deliberate by-value path (AR-3, 03-03).
-- [ ] R5 — DEF-67: an ownerless owned call result consumed as a borrow argument inside a larger
+- [x] R5 — DEF-67: an ownerless owned call result consumed as a borrow argument inside a larger
   expression (`i32(len(stringOf("abc")))`, the dot `len` form, and `slice`-argument forms) is bound
   and released exactly once at statement end or return; guarded operands defer correctly and no
   double release appears where a destination adopts the value (AR-6, 03-02).
-- [ ] R6 — DEF-68: a `return` inside a `defer` block in a do-while body receives the condition
+- [x] R6 — DEF-68: a `return` inside a `defer` block in a do-while body receives the condition
   temporaries' releases; direct early returns, `while` bodies, and break/fall-through paths are
   unchanged and no release is appended outside the loop (AR-7, 03-04).
-- [ ] R7 — DEF-69: a lambda that reads a binding from an enclosing function or lambda without
+- [x] R7 — DEF-69: a lambda that reads a binding from an enclosing function or lambda without
   listing it reports the approved `E10405`; listed captures, capture-less lambdas reading
   module-level globals/functions, and the existing move/write capture diagnostics are unchanged;
   an inner lambda must list an outer lambda's capture to read it (AR-4, AR-5, AR-13, AR-14,
   03-05).
-- [ ] R8 — Workflow: every phase's spec cases that describe memory behavior are proven with a
+- [x] R8 — Workflow: every phase's spec cases that describe memory behavior are proven with a
   deterministic host-ASan probe at task time, not only at review (AR-15).
-- [ ] R9 — Close-out: a probe runner under `build/def-backlog-closeout-probes/` reproduces each
+- [x] R9 — Close-out: a probe runner under `build/def-backlog-closeout-probes/` reproduces each
   original defect as fixed, following the previous plan's runner pattern (AR-15).
-- [ ] R10 — Specification change: the only `spec/` edits are the `E10405` registry row, its
+- [x] R10 — Specification change: the only `spec/` edits are the `E10405` registry row, its
   compile-fail golden, and the `ASSERTED_CODES` entry (AR-4, AR-13).
-- [ ] R11 — Documentation: the `AGENTS.md` test map gains the new suites, and the roadmap rows
+- [x] R11 — Documentation: the `AGENTS.md` test map gains the new suites, and the roadmap rows
   DEF-63 – DEF-69 are set to Done with fresh timestamps (AR-15).
-- [ ] R12 — No regression: unaffected programs keep their emitted C, `make check` is green at every
+- [x] R12 — No regression: unaffected programs keep their emitted C, `make check` is green at every
   phase, and `make verify` is green at close-out.
 
 ### Won't Have (Out of Scope)
@@ -111,16 +111,16 @@ behavior.
 
 ## Acceptance Criteria
 
-1. [ ] All seven defects (DEF-63 – DEF-69) are fixed or, for DEF-66, proven already fixed with
+1. [x] All seven defects (DEF-63 – DEF-69) are fixed or, for DEF-66, proven already fixed with
    regression pins; every R1 – R7 behavior is covered by at least one specification test and one
    implementation test.
-2. [ ] The host-ASan probe matrix in `07-testing-strategy.md` is clean for every fixed shape.
-3. [ ] `make check` is green at every phase; `make verify` is green at close-out.
-4. [ ] The only `spec/` changes are the approved `E10405` row, golden, and `ASSERTED_CODES` entry;
+2. [x] The host-ASan probe matrix in `07-testing-strategy.md` is clean for every fixed shape.
+3. [x] `make check` is green at every phase; `make verify` is green at close-out.
+4. [x] The only `spec/` changes are the approved `E10405` row, golden, and `ASSERTED_CODES` entry;
    `spec/check.sh` passes.
-5. [ ] The close-out probe runner reproduces each original defect as fixed and exits zero.
-6. [ ] Unaffected programs keep their emitted C (emission-integrity review finds no unintended
+5. [x] The close-out probe runner reproduces each original defect as fixed and exits zero.
+6. [x] Unaffected programs keep their emitted C (emission-integrity review finds no unintended
    differences).
-7. [ ] `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete.
-8. [ ] Every phase review is dispatched per the `AGENTS.md` matrix with blast-radius and
+7. [x] `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete.
+8. [x] Every phase review is dispatched per the `AGENTS.md` matrix with blast-radius and
    test-integrity steps; no open critical or major finding remains.

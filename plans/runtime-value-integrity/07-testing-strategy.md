@@ -145,12 +145,12 @@ the func-pointer declarator where the module already tests declarators.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] AddressSanitizer probes clean with leak detection on
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] AddressSanitizer probes clean with leak detection on

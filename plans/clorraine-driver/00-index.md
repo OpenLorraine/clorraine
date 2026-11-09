@@ -1,7 +1,7 @@
 # Clorraine build/run driver (`clorraine`) Implementation Plan
 
 > **Feature**: A developer driver that builds and runs Clorraine programs, hiding the C toolchain by default
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-23 00:11
 > **Implements**: (none — standalone plan; no upstream RD exists)
 > **CodeOps Artifact Schema**: 1

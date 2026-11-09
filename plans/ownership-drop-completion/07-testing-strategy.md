@@ -112,11 +112,11 @@ None. The oracle uses the real host C compiler and the real runtime shim.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a specification rule or an AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] `make check` passes after every task; `make verify` passes before completion
-- [ ] No regressions in existing tests or the corpus
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a specification rule or an AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] `make check` passes after every task; `make verify` passes before completion
+- [x] No regressions in existing tests or the corpus

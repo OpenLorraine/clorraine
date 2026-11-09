@@ -259,16 +259,16 @@ the real emulator. No network or external service is involved.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-1 – ST-16) defined with concrete input/output pairs
-- [ ] ST-1 pins E10012 for the explicit cast/condition spellings and keeps the annotated-let control
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written before implementation
-- [ ] Specification tests verified to fail before implementation, with the base leak or diagnostic
+- [x] All specification test cases (ST-1 – ST-16) defined with concrete input/output pairs
+- [x] ST-1 pins E10012 for the explicit cast/condition spellings and keeps the annotated-let control
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written before implementation
+- [x] Specification tests verified to fail before implementation, with the base leak or diagnostic
       recorded for ST-2 – ST-5
-- [ ] All specification tests pass after implementation
-- [ ] Implementation tests written for the new release paths
-- [ ] `make check`, `make asan`, `make differential`, and `make verify` pass
-- [ ] `make asan` runs each suite serially and reports the discovered count
-- [ ] The DX plan is 28/28, its verification is green, and `spec/14-diagnostics.md` is re-reviewed
-- [ ] The PLAN-13 slice is Done and both programs match an independent expected-output oracle
-- [ ] No regressions in the existing suites
+- [x] All specification tests pass after implementation
+- [x] Implementation tests written for the new release paths
+- [x] `make check`, `make asan`, `make differential`, and `make verify` pass
+- [x] `make asan` runs each suite serially and reports the discovered count
+- [x] The DX plan is 28/28, its verification is green, and `spec/14-diagnostics.md` is re-reviewed
+- [x] The PLAN-13 slice is Done and both programs match an independent expected-output oracle
+- [x] No regressions in the existing suites

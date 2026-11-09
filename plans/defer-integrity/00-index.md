@@ -6,7 +6,7 @@
 > skipped on the fall-through path when the scope also continues (DEF-86), the earlier returning
 > defer nested inside a later defer's guard and never firing (DEF-87), and the deferred return
 > reading its own local after the drop (DEF-88).
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-09 15:32
 > **Implements**: DEF-84, DEF-85, DEF-86, DEF-87, DEF-88
 > **CodeOps Artifact Schema**: 1

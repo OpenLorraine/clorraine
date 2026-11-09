@@ -112,13 +112,13 @@ None. The compiler, the host C compiler, and the sanitizer are real.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry; justified passes are documented
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (or recorded as justified passes)
-- [ ] Red-phase evidence recorded with the host-ASan command for the leak-only cases
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] The migrated flat-name pins pass with the row-typed key
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry; justified passes are documented
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (or recorded as justified passes)
+- [x] Red-phase evidence recorded with the host-ASan command for the leak-only cases
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] The migrated flat-name pins pass with the row-typed key

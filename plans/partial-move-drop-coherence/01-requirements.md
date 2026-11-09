@@ -21,16 +21,16 @@ diagnostic, and edits no `spec/` file. It makes the implementation match
 
 ### Must Have
 
-- [ ] R1 — A value-consuming read of an owned (non-duplicable) place nested in an aggregate literal is lowered as a move that zeroes the source, so the source is emptied before the literal is built. `AR-1`, `AR-3`.
-- [ ] R2 — A struct-literal reassignment whose RHS moves a field out of the assignment target (`b = Box<String> { value: b.value };`) frees the value exactly once. `AR-2`.
-- [ ] R3 — The temporary-binding form (`let t = b.value; b = Box<String> { value: t };`) frees the value exactly once. `AR-2`.
-- [ ] R4 — A consumed non-duplicable literal field is recorded as moved in the ownership flow, so a second read of the same field reports `E10020`, a deeper-than-top-level path reports `E10026`, and a field of a borrowed parameter reports `E10034`. A field whose type mentions a type parameter is skipped by both the mark and the lowering. `AR-14`, `AR-15`.
-- [ ] R5 — Generic and non-generic owning structs behave identically (`Box<String>` and `Label`/`String`). `AR-11`.
-- [ ] R6 — The assignment lowering is unchanged: the existing drop-then-store fast path and the borrow behavior (`f = Dup(borrow f)`) are preserved. `AR-3`, `AR-12`.
+- [x] R1 — A value-consuming read of an owned (non-duplicable) place nested in an aggregate literal is lowered as a move that zeroes the source, so the source is emptied before the literal is built. `AR-1`, `AR-3`.
+- [x] R2 — A struct-literal reassignment whose RHS moves a field out of the assignment target (`b = Box<String> { value: b.value };`) frees the value exactly once. `AR-2`.
+- [x] R3 — The temporary-binding form (`let t = b.value; b = Box<String> { value: t };`) frees the value exactly once. `AR-2`.
+- [x] R4 — A consumed non-duplicable literal field is recorded as moved in the ownership flow, so a second read of the same field reports `E10020`, a deeper-than-top-level path reports `E10026`, and a field of a borrowed parameter reports `E10034`. A field whose type mentions a type parameter is skipped by both the mark and the lowering. `AR-14`, `AR-15`.
+- [x] R5 — Generic and non-generic owning structs behave identically (`Box<String>` and `Label`/`String`). `AR-11`.
+- [x] R6 — The assignment lowering is unchanged: the existing drop-then-store fast path and the borrow behavior (`f = Dup(borrow f)`) are preserved. `AR-3`, `AR-12`.
 
 ### Should Have
 
-- [ ] R7 — A multi-field move (`s = S { a: s.a, b: s.b };`) moves each field once. `AR-14`.
+- [x] R7 — A multi-field move (`s = S { a: s.a, b: s.b };`) moves each field once. `AR-14`.
 
 ### Won't Have (Out of Scope)
 
@@ -85,9 +85,9 @@ diagnostic, and edits no `spec/` file. It makes the implementation match
 
 ## Acceptance Criteria
 
-1. [ ] R1–R7 satisfied; DEF-11 no longer reproduces (a clean run with no double-free abort).
-2. [ ] The moved-out source is zeroed in the emitted C for the struct-literal and temporary forms.
-3. [ ] `make check` passes on every task; final `make verify` passes.
-4. [ ] The assignment fast path is preserved (no emitted-C change for a non-reading RHS).
-5. [ ] No `spec/` file is modified.
-6. [ ] The roadmap records DEF-11 fixed and the plan is marked Done; PLAN-10 Phase 4 resumes.
+1. [x] R1–R7 satisfied; DEF-11 no longer reproduces (a clean run with no double-free abort).
+2. [x] The moved-out source is zeroed in the emitted C for the struct-literal and temporary forms.
+3. [x] `make check` passes on every task; final `make verify` passes.
+4. [x] The assignment fast path is preserved (no emitted-C change for a non-reading RHS).
+5. [x] No `spec/` file is modified.
+6. [x] The roadmap records DEF-11 fixed and the plan is marked Done; PLAN-10 Phase 4 resumes.

@@ -92,10 +92,10 @@ new corpus program (AR-3).
 
 ## Acceptance Criteria
 
-1. [ ] `make check` is green, including the new `graphics_spec_test.rs` and `graphics_impl_test.rs`.
-2. [ ] `make verify` runs the graphics corpus program under FS-UAE and its captured output matches `spec/tests/corpus/graphics/expected-output.txt`.
-3. [ ] Under `--profile host`, the graphics corpus program is rejected with `E11200`.
-4. [ ] The emitted C and the hosted-amiga shim compile with zero warnings under the profile's flags.
-5. [ ] `spec/check.sh` stays green; the two appendices document the surface.
-6. [ ] `demo/story.sh` produces the story with a graphics chapter.
-7. [ ] `plans/00-roadmap.md` carries the `PLAN-08` row linking this plan.
+1. [x] `make check` is green, including the new `graphics_spec_test.rs` and `graphics_impl_test.rs`.
+2. [x] `make verify` runs the graphics corpus program under FS-UAE and its captured output matches `spec/tests/corpus/graphics/expected-output.txt`.
+3. [x] Under `--profile host`, the graphics corpus program is rejected with `E11200`.
+4. [x] The emitted C and the hosted-amiga shim compile with zero warnings under the profile's flags.
+5. [x] `spec/check.sh` stays green; the two appendices document the surface.
+6. [x] `demo/story.sh` produces the story with a graphics chapter.
+7. [x] `plans/00-roadmap.md` carries the `PLAN-08` row linking this plan.

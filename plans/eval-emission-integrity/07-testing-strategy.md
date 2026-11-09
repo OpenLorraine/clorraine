@@ -140,12 +140,12 @@ existing profile harness.
 None — the real compiler binary and the host `cc` are used.
 
 ## Verification Checklist
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation where the baseline misbehaves (red phase; passing pins recorded with justification)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] Host ASan probes clean for the memory cases
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation where the baseline misbehaves (red phase; passing pins recorded with justification)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] Host ASan probes clean for the memory cases

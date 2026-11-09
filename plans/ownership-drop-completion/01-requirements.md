@@ -17,46 +17,46 @@ staged. This feature makes the implementation match `spec/03-ownership.md`,
 
 ### Must Have
 
-- [ ] **R1 — Shape rule (AR-5):** a fixed array (`TyKind::Array` with every
+- [x] **R1 — Shape rule (AR-5):** a fixed array (`TyKind::Array` with every
   extent present) is an *owned aggregate*; a slice (at least one extent omitted)
   is a *view*. One predicate expresses the slice case, and the fixed array is its
   complement.
-- [ ] **R2 — Classification (AR-5, AR-23):** `borrow::is_view`,
+- [x] **R2 — Classification (AR-5, AR-23):** `borrow::is_view`,
   `borrow::is_elided_view`, and `borrow::is_nullable_capable` treat a fixed array
   as owned (not a view), and a slice as a view. `borrow::is_lend_candidate` is
   **unchanged**: a fixed array is borrowed storage a returned view may borrow, so
   it stays a candidate (PF-006). `TypeTable::duplicable` treats a slice as
   duplicable regardless of its element (AR-22).
-- [ ] **R3 — Fixed-array return (AR-9):** `func pair(): String[N] { ... return
+- [x] **R3 — Fixed-array return (AR-9):** `func pair(): String[N] { ... return
   [a, b]; }` compiles and returns by value; it is not a view return and needs no
   elision candidate (`spec/08-arrays-strings.md` section 6). Because C cannot
   return an array, this requires the by-value lowering in
   [03-04](03-04-fixed-array-return.md); classification alone is not enough.
-- [ ] **R4 — Element moves (AR-6):** in both the ownership walk and the lowering,
+- [x] **R4 — Element moves (AR-6):** in both the ownership walk and the lowering,
   an array-literal element is consumed exactly like a struct-literal field: an
   owned (non-duplicable) place moves and its source is emptied; a duplicable place
   copies; a type that still mentions a generic parameter is left to the
   instantiation.
-- [ ] **R5 — Fixed-array drop (AR-7):** at scope exit a fixed array drops its
+- [x] **R5 — Fixed-array drop (AR-7):** at scope exit a fixed array drops its
   elements first-to-last. A fixed array of duplicable elements emits no drop.
-- [ ] **R6 — Growable drop and `E90000` (AR-2, AR-3, AR-7):** a growable `Array<T>`
+- [x] **R6 — Growable drop and `E90000` (AR-2, AR-3, AR-7):** a growable `Array<T>`
   drops its elements first-to-last and then frees its buffer. The
   `Array<move-only>` trigger for `E90000` is removed, so `Array<Buffer>` and
   `Array<String>` are accepted. The stale staged golden is removed and `E90000`
   stays a dormant fallback (AR-3).
-- [ ] **R7 — Fill guard (AR-10):** a fill literal (`[x; fill]` or `[; fill]`)
+- [x] **R7 — Fill guard (AR-10):** a fill literal (`[x; fill]` or `[; fill]`)
   whose element type is not duplicable is rejected under the existing `E10215`
   code; the fill form cannot repeat a move-only value.
-- [ ] **R8 — View fields (AR-4):** `E10205` rejects a field whose type is `str`
+- [x] **R8 — View fields (AR-4):** `E10205` rejects a field whose type is `str`
   or a slice (`T[]`), at any nullability. It keeps accepting `cstring`,
   `static str`, `raw`, `func`, handles, structs, and fixed arrays.
-- [ ] **R10 — `set` drops the replaced element (AR-25):** once
+- [x] **R10 — `set` drops the replaced element (AR-25):** once
   `Array<move-only>` is accepted (R6), `xs.set(i, take v)` must drop the old
   element before storing `v`, as `spec/appendix-stdlib.md:62` requires.
 
 ### Should Have
 
-- [ ] **R9 — No regressions:** every existing `spec/` test, Rust suite, and the
+- [x] **R9 — No regressions:** every existing `spec/` test, Rust suite, and the
   corpus stays green.
 
 ### Won't Have (Out of Scope)
@@ -105,8 +105,8 @@ a use-after-free and a double-free (AR-16).
 
 ## Acceptance Criteria
 
-1. [ ] R1–R10 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
-2. [ ] `make check` is green after every task; `make verify` is green before completion (AR-13).
-3. [ ] No dead code: the removed `E90000` trigger leaves no unused function, and no stale helper remains.
-4. [ ] The two `spec/` text edits (AR-10, AR-20) are present and consistent with the code.
-5. [ ] Documentation updated: the plan state and the `E90000` un-staging note.
+1. [x] R1–R10 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
+2. [x] `make check` is green after every task; `make verify` is green before completion (AR-13).
+3. [x] No dead code: the removed `E90000` trigger leaves no unused function, and no stale helper remains.
+4. [x] The two `spec/` text edits (AR-10, AR-20) are present and consistent with the code.
+5. [x] Documentation updated: the plan state and the `E90000` un-staging note.

@@ -20,49 +20,49 @@ remain out of scope.
 
 ### Must Have
 
-- [ ] **R1 — Release-blocking residuals.** Make the explicit `bool(null)`/`!null` spellings report
+- [x] **R1 — Release-blocking residuals.** Make the explicit `bool(null)`/`!null` spellings report
   E10012 (user ruling 2026-11-01), and fix the nested fill, multi-element view-array, initializer
   field call-root, and indexed module-view leaks. Each fix carries a specification test and an
   ASan probe; accepted residuals are documented in `docs/known-limitations.md` (AR-4, AR-14). The
   already-correct `let b: bool = null;` control stays unchanged.
-- [ ] **R2 — Stable v1.0 specification.** Review the frozen v0.4 text, update stale statements,
+- [x] **R2 — Stable v1.0 specification.** Review the frozen v0.4 text, update stale statements,
   record the E10012 null-cast exception, and mark the v1.0 chapters `stable (v1.0)`.
   `./spec/check.sh` stays green; no semantic change beyond the AR-4 conformance fix (AR-6).
-- [ ] **R3 — `make asan`.** A target runs every test file that honours `RDC_ASAN`, one bounded
+- [x] **R3 — `make asan`.** A target runs every test file that honours `RDC_ASAN`, one bounded
   process per suite with serial tests and a `-no-pie` ASan `cc` wrapper, so the container's PIE
   startup failure cannot abort the batch (AR-11).
-- [ ] **R4 — `make differential`.** A fixed runner emits the three host-portable corpus programs
+- [x] **R4 — `make differential`.** A fixed runner emits the three host-portable corpus programs
   for host and hosted-amiga, runs both, and diffs their stdout. The target joins `make verify` as
   a convenience gate over the same recorded outputs the corpus already pins; it is not an
   independent signal (AR-10).
-- [ ] **R5 — Host-only CI.** GitHub Actions runs `./spec/check.sh` and
+- [x] **R5 — Host-only CI.** GitHub Actions runs `./spec/check.sh` and
   `cargo test --workspace` on pushes and pull requests. m68k-only tests skip when the cross
   toolchain is absent; `make verify` remains local (AR-9).
-- [ ] **R6 — DX slice.** Execute the existing `plans/clorraine-dx/` plan to 28/28. The DX plan
+- [x] **R6 — DX slice.** Execute the existing `plans/clorraine-dx/` plan to 28/28. The DX plan
   owns its tasks and ST cases; this programme only gates on its completion.
-- [ ] **R7 — PLAN-13 acceptance.** After the user records the two programme names and licence
+- [x] **R7 — PLAN-13 acceptance.** After the user records the two programme names and licence
   audit at the Phase 5 gate, create and execute a PLAN-13 plan for `std.amiga.exec` plus those two
   allowlisted console programs. The two programs build and run on hosted-amiga against an
   independent expected-output oracle; every implementation, porting, and FFI gap they expose is
   fixed, while a gap that needs a language-surface change stops for a user ruling (AR-8, AR-13).
-- [ ] **R8 — MIT licence and metadata.** Add the MIT `LICENSE`, set the Cargo package licence and
+- [x] **R8 — MIT licence and metadata.** Add the MIT `LICENSE`, set the Cargo package licence and
   version `1.0.0`, update the README licence section, and set `tools/demo/package.json` to MIT
   with a full manifest audit (AR-5).
-- [ ] **R9 — Release preparation.** Write `RELEASE.md` with the release checklist and the AR-12
+- [x] **R9 — Release preparation.** Write `RELEASE.md` with the release checklist and the AR-12
   decision. AR-12 is resolved to v1.0.0 source + Linux x86_64 binary tarball; the 45-task main
   plan closes production-ready, and publication is the separate conditional publish sub-plan.
-- [ ] **R10 — Final production gate.** `make check`, `make verify`, `make asan`, and
+- [x] **R10 — Final production gate.** `make check`, `make verify`, `make asan`, and
   `make differential` pass; the DX plan is Done; PLAN-13 is Done; the spec is stable; CI is green
   or locally validated with the deferred run recorded; the licence, release checklist, and
   known-limitations documents exist.
 
 ### Should Have
 
-- [ ] **R11 — Documentation sync.** Update `AGENTS.md` with the new targets, workflow, and
+- [x] **R11 — Documentation sync.** Update `AGENTS.md` with the new targets, workflow, and
   `docs/known-limitations.md`; update the roadmap with PLAN-15.
-- [ ] **R12 — Release notes.** In the conditional publish sub-plan, add concise v1.0 release
+- [x] **R12 — Release notes.** In the conditional publish sub-plan, add concise v1.0 release
   notes and a changelog entry.
-- [ ] **R13 — Host-binary smoke test.** In the conditional publish sub-plan, build the Linux
+- [x] **R13 — Host-binary smoke test.** In the conditional publish sub-plan, build the Linux
   x86_64 binary and run `clc --version` (asserting the exact output `clc 1.0.0`) and a
   hello-world compile. aarch64 release artifacts are deferred to PLAN-07; aarch64
   developer-machine builds remain supported.
@@ -129,20 +129,20 @@ remain out of scope.
 
 ## Acceptance Criteria
 
-1. [ ] All seven phases and 45 main-plan tasks are complete; the 2 conditional publish tasks are
+1. [x] All seven phases and 45 main-plan tasks are complete; the 2 conditional publish tasks are
    complete or explicitly blocked.
-2. [ ] `make check` passes.
-3. [ ] `make verify` reports all legs passed.
-4. [ ] `make asan` passes.
-5. [ ] `make differential` passes.
-6. [ ] The v1.0 spec chapters are `stable (v1.0)` and `./spec/check.sh` passes.
-7. [ ] The DX plan is 28/28 and its verification is green.
-8. [ ] The PLAN-13 slice is Done and both programs match an independent expected-output oracle.
-9. [ ] The host-only CI workflow is green on the final commit, or its two commands are validated
+2. [x] `make check` passes.
+3. [x] `make verify` reports all legs passed.
+4. [x] `make asan` passes.
+5. [x] `make differential` passes.
+6. [x] The v1.0 spec chapters are `stable (v1.0)` and `./spec/check.sh` passes.
+7. [x] The DX plan is 28/28 and its verification is green.
+8. [x] The PLAN-13 slice is Done and both programs match an independent expected-output oracle.
+9. [x] The host-only CI workflow is green on the final commit, or its two commands are validated
    locally and the deferred CI run is recorded when no external push is authorized.
-10. [ ] MIT `LICENSE`, Cargo metadata, README licence text, and `tools/demo/package.json` MIT
+10. [x] MIT `LICENSE`, Cargo metadata, README licence text, and `tools/demo/package.json` MIT
     metadata are present.
-11. [ ] `docs/known-limitations.md` records the accepted residuals.
-12. [ ] `RELEASE.md` records the AR-12 decision (v1.0.0, source + x86_64 tarball); the conditional
+11. [x] `docs/known-limitations.md` records the accepted residuals.
+12. [x] `RELEASE.md` records the AR-12 decision (v1.0.0, source + x86_64 tarball); the conditional
     publish sub-plan produces the artifact, smoke test, checksums, release notes, and changelog
     entry, or records why publication is blocked.

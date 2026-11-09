@@ -168,7 +168,21 @@ bounded by the task-size criteria in the make-plan quality checklist)
 **Reference**: [01-requirements.md](01-requirements.md) R1 – R9 · AR-11, AR-13
 **Objective**: Record the close-out evidence and mark PLAN-12 done.
 
-- [ ] 4.1.1 Trace R1 – R9 to the passing ST cases and record the acceptance evidence in this document
+- [x] 4.1.1 Trace R1 – R9 to the passing ST cases and record the acceptance evidence in this document ✅ (completed: 2026-11-09) — every requirement maps to the green `non_lexical_lifetimes_spec_test` suite (60+ cases; representative cases below), which runs in `make check`:
+
+| Requirement | Representative passing ST cases |
+|---|---|
+| R1 — Last-use regions | `should_accept_a_move_after_the_views_last_use`; `should_report_e10022_once_when_a_use_follows_the_move`; `should_report_e10031_once_when_a_use_follows_the_mutation`; `should_report_e10032_once_when_a_second_exclusive_lend_is_live` |
+| R2 — Loan identity and alias fidelity | `should_accept_a_move_after_every_alias_use`; `should_report_e10022_when_an_alias_use_follows_the_move` |
+| R3 — Use and access coverage | `should_accept_a_rebind_that_reads_the_view_in_the_same_statement`; `should_report_e10031_when_the_view_is_used_after_a_same_statement_rebind`; `should_accept_a_defer_that_uses_the_view_on_the_exit_edge`; `should_accept_a_move_after_a_branch_only_use` |
+| R4 — Origin containment | `should_report_e10030_when_a_use_follows_the_owners_scope`; `should_report_e10030_when_a_loop_local_view_escapes_after_the_loop`; `should_report_e10030_when_a_break_edge_defers_a_rebind`; `should_report_e10030_when_a_continue_edge_carries_a_loan_to_the_body_top` |
+| R5 — Precision coverage | `should_report_e10022_when_a_use_after_the_branch_is_reachable_from_the_move`; `should_report_e10031_when_a_loop_back_edge_reaches_the_use`; `should_accept_a_defer_that_owns_and_uses_its_view_before_release`; `should_report_e10030_when_an_element_loop_local_view_escapes`; `should_report_e10030_when_a_for_c_back_edge_view_is_used_at_the_body_top` |
+| R6 — Monotonicity and regressions | `should_accept_a_loop_local_owner_used_within_each_iteration`; `should_accept_a_move_after_an_in_loop_borrow_whose_use_stays_in_the_loop`; the corpus and every existing suite stay green in `make check` |
+| R7 — Spec and ledger coherence | the amendments in `03-03-spec-amendment.md`; the rewritten golden still rejects with `E10031`; `./spec/check.sh` green |
+| R8 — No new surface | no syntax, diagnostic code, message, help, or span change; `./spec/check.sh` green |
+| R9 — Clean implementation | the lexical `Loans` state and its rules are removed with their tests migrated; `cargo test --workspace` green with no new warnings |
+
+The focused suite is green on the current tree (`make check`, 2026-11-09); the plan's 22/22 tasks and the Done roadmap row are the closeout record.
 - [x] 4.1.2 Set the `PLAN-12` row on `plans/00-roadmap.md` to Done and link it; update `AGENTS.md` only if a durable fact changed ✅ (completed: 2026-09-27 20:51) — the roadmap row is Done with the 22/22 summary; `AGENTS.md` gained the two NLL test-file entries in the test naming map
 - [x] 4.1.3 Final phase gate (`make check`) and close-out commit ✅ (completed: 2026-09-27 21:00) — close-out review completed (F11r fixed; DEF-13/DEF-14 filed); `make check` green (60 spec + 7 unit + 8 implementation tests, 22 binaries, no warnings) and `make verify` green (`verify: all legs passed`); close-out commits `397a6e3` and this one
 

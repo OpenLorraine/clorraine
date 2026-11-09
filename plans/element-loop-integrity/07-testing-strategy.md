@@ -121,14 +121,14 @@ the exit code or the rejection. Two helpers are added for this plan: a bounded r
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation where the
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation where the
   defect applies (ST-1 – ST-8, ST-14 – ST-18, ST-21), and the pre-passing cases
   (ST-9 – ST-13, ST-19 – ST-20) recorded as expected
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] `make verify` green before completion; host ASan probes clean
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] `make verify` green before completion; host ASan probes clean

@@ -121,12 +121,12 @@ None. The `clc` binary and the host C compiler are real objects.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec rule, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] `make verify` green before completion
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec rule, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] `make verify` green before completion

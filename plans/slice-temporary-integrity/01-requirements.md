@@ -102,12 +102,12 @@ strict-build and sanitizer coverage.
 
 ## Acceptance Criteria
 
-1. [ ] R1 – R7 each carry specification tests that are red on the pre-fix tree and green after the
+1. [x] R1 – R7 each carry specification tests that are red on the pre-fix tree and green after the
        fix, run under host AddressSanitizer where memory safety is at stake.
-2. [ ] No new leak, double free, use-after-free, wrong slot, order reversal, or invalid C in any
+2. [x] No new leak, double free, use-after-free, wrong slot, order reversal, or invalid C in any
        phase's probe matrix.
-3. [ ] `make check` green after every phase; `make verify` green at plan completion.
-4. [ ] Base-vs-head emission sweep: no unintended byte diffs; every diff traces to a requirement.
-5. [ ] Phase reviews complete with no open critical/major finding; the affected implementation
+3. [x] `make check` green after every phase; `make verify` green at plan completion.
+4. [x] Base-vs-head emission sweep: no unintended byte diffs; every diff traces to a requirement.
+5. [x] Phase reviews complete with no open critical/major finding; the affected implementation
        shape pins are migrated (R8).
-6. [ ] `AGENTS.md` test-naming map and the roadmap are updated.
+6. [x] `AGENTS.md` test-naming map and the roadmap are updated.

@@ -23,34 +23,34 @@ golden whose program NLL accepts.
 
 ### Must Have
 
-- [ ] **R1 — Last-use regions (AR-3, AR-4):** a loan is live at a point iff the
+- [x] **R1 — Last-use regions (AR-3, AR-4):** a loan is live at a point iff the
   loan's creation reaches the point and one of the loan's uses is reachable
   from it. `E10022` (move), `E10031` (write), and `E10032` (loan request) are
   decided against the regions, not against a lexical scope.
-- [ ] **R2 — Loan identity and alias fidelity (AR-5):** every view value
+- [x] **R2 — Loan identity and alias fidelity (AR-5):** every view value
   carries a loan id; copies and derived views share the id, and a use through
   any alias extends the same region.
-- [ ] **R3 — Use and access coverage (AR-6, AR-7):** every access through a
+- [x] **R3 — Use and access coverage (AR-6, AR-7):** every access through a
   view value counts as a use — reads, writable-view writes, derivations,
   arguments, returns, and `defer` uses — and events are ordered by evaluation
   order, including inside one statement.
-- [ ] **R4 — Origin containment (AR-8):** `E10030` fires iff a use of a loan is
+- [x] **R4 — Origin containment (AR-8):** `E10030` fires iff a use of a loan is
   reachable from an owner-release point (scope exit, return cleanup,
   `break`/`continue` cleanup), and is reported at the loan's creation span with
   the existing message and help. A view whose last use precedes its owner's
   scope end is accepted.
-- [ ] **R5 — Precision coverage (AR-15):** branches, loops, early returns,
+- [x] **R5 — Precision coverage (AR-15):** branches, loops, early returns,
   `defer` blocks, element loops, standard-library view helpers, implicit
   `String` widening, and generic instances all follow the same region rules.
-- [ ] **R6 — Monotonicity and regressions (AR-16):** every program v1 accepts
+- [x] **R6 — Monotonicity and regressions (AR-16):** every program v1 accepts
   stays accepted; the corpus and every existing test suite stay green.
-- [ ] **R7 — Spec and ledger coherence (AR-2):** `spec/16-borrow-rules.md`,
+- [x] **R7 — Spec and ledger coherence (AR-2):** `spec/16-borrow-rules.md`,
   `spec/lineage.md`, `spec/decisions.md` (O11), and
   `spec/03-ownership.md:229` describe the model v2 implements; the flipping
   golden is rewritten to a shape that still rejects; no other golden changes.
-- [ ] **R8 — No new surface (AR-1, AR-22):** no syntax, no new diagnostic code,
+- [x] **R8 — No new surface (AR-1, AR-22):** no syntax, no new diagnostic code,
   no message/help/span change; every non-liveness ownership rule is unchanged.
-- [ ] **R9 — Clean implementation (AR-10):** the lexical `Loans` state, its
+- [x] **R9 — Clean implementation (AR-10):** the lexical `Loans` state, its
   duplicate conflict rules, and its lexical `E10030` check are removed with
   their tests migrated; no dead code remains.
 
@@ -112,18 +112,18 @@ remain sound under the same memory model.
 
 ## Acceptance Criteria
 
-1. [ ] R1–R9 implemented, each traced to a passing `ST-` case in
+1. [x] R1–R9 implemented, each traced to a passing `ST-` case in
    `07-testing-strategy.md`, with the close-out evidence recorded in
    `99-execution-plan.md`.
-2. [ ] `make check` is green after every task; `make verify` is green before
+2. [x] `make check` is green after every task; `make verify` is green before
    completion (AR-13).
-3. [ ] The spec amendments of `03-03-spec-amendment.md` are present, reviewed,
+3. [x] The spec amendments of `03-03-spec-amendment.md` are present, reviewed,
    and consistent with the code; the rewritten golden still fails with
    `E10031`.
-4. [ ] No dead code: the lexical `Loans` set and its rules are gone, and no
+4. [x] No dead code: the lexical `Loans` set and its rules are gone, and no
    unused parameter, function, or module remains.
-5. [ ] Every pre-existing test that the model no longer rejects was rewritten
+5. [x] Every pre-existing test that the model no longer rejects was rewritten
    to still pin its rule, and each rewrite is recorded in
    `99-execution-plan.md` (AR-11).
-6. [ ] Documentation updated: the plan state, the roadmap row, and
+6. [x] Documentation updated: the plan state, the roadmap row, and
    `AGENTS.md` only if a durable fact changed.

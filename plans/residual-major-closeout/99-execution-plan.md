@@ -92,8 +92,8 @@ control.
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`; the strict-build probes
 
 **Deliverables**:
-- [ ] ST-1..ST-6 red then green (`DEF-209` as the green control)
-- [ ] The origin suites and the pinned oracles stay green
+- [x] ST-1..ST-6 red then green (`DEF-209` as the green control)
+- [x] The origin suites and the pinned oracles stay green
 
 ---
 
@@ -139,8 +139,8 @@ judgment with their controls.
 **Verify**: `make check`; the element cases under `RDC_ASAN=1`; the strict builds
 
 **Deliverables**:
-- [ ] ST-7..ST-10 red then green (or the pinned report outcome where the case is a rejection)
-- [ ] The element-loop origin pins and the `checker_conformance` oracle stay green
+- [x] ST-7..ST-10 red then green (or the pinned report outcome where the case is a rejection)
+- [x] The element-loop origin pins and the `checker_conformance` oracle stay green
 
 ---
 
@@ -182,8 +182,8 @@ member typing, and the `toCString` acceptance.
 **Verify**: `make check`; the pinned `checker_conformance` phrase/conversion cases
 
 **Deliverables**:
-- [ ] ST-11..ST-12 red then green (or the pinned reject/accept outcome)
-- [ ] The stdlib and the `checker_conformance` oracle stay green
+- [x] ST-11..ST-12 red then green (or the pinned reject/accept outcome)
+- [x] The stdlib and the `checker_conformance` oracle stay green
 
 ---
 
@@ -227,8 +227,8 @@ the `ffi` result's declared type.
 **Verify**: `make check`; the ffi/intrinsic origin cases
 
 **Deliverables**:
-- [ ] ST-13..ST-14 red then green (or the registered park)
-- [ ] The legal instances and the `checker_conformance` oracle stay green
+- [x] ST-13..ST-14 red then green (or the registered park)
+- [x] The legal instances and the `checker_conformance` oracle stay green
 
 ---
 
@@ -272,8 +272,8 @@ hosted-amiga) and the capture source at the nullable out-slot store.
 **Verify**: `make check`; `RDC_ASAN=1`; the hosted-amiga build
 
 **Deliverables**:
-- [ ] ST-15..ST-16 red then green
-- [ ] The pinned null rules stay green; the hosted-amiga leg passes
+- [x] ST-15..ST-16 red then green
+- [x] The pinned null rules stay green; the hosted-amiga leg passes
 
 ---
 
@@ -318,8 +318,8 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 **Verify**: `make check`; the freestanding host/m68k legs; the emission differential
 
 **Deliverables**:
-- [ ] ST-17..ST-20 red then green
-- [ ] The shim's other freestanding cases and the origin suites stay green
+- [x] ST-17..ST-20 red then green
+- [x] The shim's other freestanding cases and the origin suites stay green
 
 ---
 
@@ -333,18 +333,18 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 
 - [x] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
       the ASan suites; record the evidence ✅ (completed: 2026-10-17 21:40; `make check` exit 0; **`make verify` all legs passed** — the hosted-amiga cross-toolchain builds and the six runtime-fault programs match; the focused suites green (the checker-conformance spec 133, the phase-6 suites 57/24, 50/35, 48/30, 17, the load unit 11); the emission differentials clean; the host/hosted-amiga/freestanding legs verified per phase; the log under `/tmp/opencode/k-verify.log`)
-- [ ] 7.1.2 Update the roadmap rows: the 20 rows move to Done with per-row evidence
+- [x] 7.1.2 Update the roadmap rows: the 20 rows move to Done with per-row evidence
       (`DEF-209` recorded as incidentally fixed with its control pins); the six older parked
       rows stay open (AR-2); the batch-J follow-ons stay untouched
-- [ ] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
+- [x] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
       `00-index.md`
 
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 20 rows accounted for: Done with evidence (or the registered park/control outcomes)
-- [ ] The six older parked rows' rulings collected (AR-2)
-- [ ] The plan marked Complete
+- [x] The 20 rows accounted for: Done with evidence (or the registered park/control outcomes)
+- [x] The six older parked rows' rulings collected (AR-2)
+- [x] The plan marked Complete
 
 ---
 
@@ -397,9 +397,9 @@ duty pattern P4 exercises.
 
 **Feature is complete when:**
 
-1. [ ] All phases completed
-2. [ ] All verification passing (`make check`; `make verify` at close-out)
-3. [ ] No warnings/errors; no dead code
-4. [ ] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
-5. [ ] Documentation updated (the roadmap rows and the findings ledger)
-6. [ ] Code reviewed (every phase's declared lenses)
+1. [x] All phases completed
+2. [x] All verification passing (`make check`; `make verify` at close-out)
+3. [x] No warnings/errors; no dead code
+4. [x] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
+5. [x] Documentation updated (the roadmap rows and the findings ledger)
+6. [x] Code reviewed (every phase's declared lenses)

@@ -1,7 +1,7 @@
 # Volatile Nested Fill Fix (PLAN-23)
 
 > **Feature**: Make a nested fixed-array fill into `volatile` storage emit valid C by copying each row leaf by leaf instead of calling `memcpy` through a volatile-qualified object.
-> **Status**: Preflight clean (three passes); execution ready
+> **Status**: Done — 44/44 tasks; volatile nested fills fixed; v1.1.1 released (2026-11-09).
 > **Created**: 2026-11-09
 > **Last Updated**: 2026-11-09
 > **Base commit**: `7cdbb71`

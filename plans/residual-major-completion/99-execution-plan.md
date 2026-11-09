@@ -116,8 +116,8 @@ controls.
 emission differential
 
 **Deliverables**:
-- [ ] ST-1, ST-3, ST-4 red then green; ST-2 is the green control and the six direct-name fixtures stay green
-- [ ] The origin suites and the batch-L identity oracles stay green
+- [x] ST-1, ST-3, ST-4 red then green; ST-2 is the green control and the six direct-name fixtures stay green
+- [x] The origin suites and the batch-L identity oracles stay green
 
 ---
 
@@ -173,8 +173,8 @@ the hosted-amiga emission for `DEF-365`/`368`; the freestanding compile for `DEF
 no-import `m364_control_fs` on hosted-amiga and freestanding
 
 **Deliverables**:
-- [ ] ST-5..ST-8 red then green
-- [ ] The origin conversion/element pins and the batch-L `DEF-345`/`351` oracles stay green
+- [x] ST-5..ST-8 red then green
+- [x] The origin conversion/element pins and the batch-L `DEF-345`/`351` oracles stay green
 
 ---
 
@@ -235,8 +235,8 @@ count), the qualified type path, and the folded negated literal matrix.
 ASan control; the hosted-amiga leg for `DEF-384`/`385`; the `DEF-386` matrix on host
 
 **Deliverables**:
-- [ ] ST-9..ST-12 red then green
-- [ ] The batch-L literal/conversion oracles stay green
+- [x] ST-9..ST-12 red then green
+- [x] The batch-L literal/conversion oracles stay green
 
 ---
 
@@ -300,8 +300,8 @@ bounds fault) and the conditional-base member store rejection, including the `un
 the strict builds; the hosted-amiga compile of the accepted store forms (AR-28)
 
 **Deliverables**:
-- [ ] ST-13..ST-14 red then green; the five conditional forms and the unsafe-wrapped **conditional** forms reject with one `E10221`; the unsafe **raw-prefix** forms are accepted with a store-emitting read-back; the bounds trap `E11211` stays green
-- [ ] The batch-L store/literal origin pins stay green
+- [x] ST-13..ST-14 red then green; the five conditional forms and the unsafe-wrapped **conditional** forms reject with one `E10221`; the unsafe **raw-prefix** forms are accepted with a store-emitting read-back; the bounds trap `E11211` stays green
+- [x] The batch-L store/literal origin pins stay green
 
 ---
 
@@ -356,8 +356,8 @@ form, conditional arm), and the borrow-element conditional take control.
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan probes
 
 **Deliverables**:
-- [ ] ST-15..ST-16 red then green; ST-17 stays the green control
-- [ ] The batch-L `DEF-315` loan matrix stays green
+- [x] ST-15..ST-16 red then green; ST-17 stays the green control
+- [x] The batch-L `DEF-315` loan matrix stays green
 
 ---
 
@@ -417,8 +417,8 @@ conditional positions and the guarded take's consumed source and deferred pointe
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan probes
 
 **Deliverables**:
-- [ ] ST-18..ST-19 red then green (all five `DEF-375` shapes read back 12; both `DEF-376` selections)
-- [ ] The batch-L `DEF-329`/guarded-take oracles stay green
+- [x] ST-18..ST-19 red then green (all five `DEF-375` shapes read back 12; both `DEF-376` selections)
+- [x] The batch-L `DEF-329`/guarded-take oracles stay green
 
 ---
 
@@ -475,8 +475,8 @@ included) and the owning nested conditional's deferred carrier/fill.
 hosted-amiga leg
 
 **Deliverables**:
-- [ ] ST-20..ST-21 red then green
-- [ ] The batch-L phase-5 laziness/literal pins stay green
+- [x] ST-20..ST-21 red then green
+- [x] The batch-L phase-5 laziness/literal pins stay green
 
 ---
 
@@ -507,9 +507,9 @@ hosted-amiga leg
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 20 rows accounted for: 18 Done with evidence plus 2 controls Done
-- [ ] Every in-execution filed row checked (incidental vs open); the next-batch count recomputed
-- [ ] The plan marked Complete; the specialist check recorded
+- [x] The 20 rows accounted for: 18 Done with evidence plus 2 controls Done
+- [x] Every in-execution filed row checked (incidental vs open); the next-batch count recomputed
+- [x] The plan marked Complete; the specialist check recorded
 
 ---
 
@@ -575,9 +575,9 @@ The phases run 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 in order.
 
 **Feature is complete when:**
 
-1. [ ] All phases completed
-2. [ ] All verification passing (`make check`; `make verify` at close-out)
-3. [ ] No warnings/errors; no dead code
-4. [ ] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
-5. [ ] Documentation updated (the roadmap rows and the findings ledger)
-6. [ ] Code reviewed (every phase's declared lenses)
+1. [x] All phases completed
+2. [x] All verification passing (`make check`; `make verify` at close-out)
+3. [x] No warnings/errors; no dead code
+4. [x] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
+5. [x] Documentation updated (the roadmap rows and the findings ledger)
+6. [x] Code reviewed (every phase's declared lenses)

@@ -22,7 +22,7 @@ guard that already exists (AR-4).
 
 ### Must Have
 
-- [ ] R1 — DEF-100: a whole-binding self-assign through a parameter-typed lend root
+- [x] R1 — DEF-100: a whole-binding self-assign through a parameter-typed lend root
   (`copySelf<T>(borrow slot: T) { slot = slot; }`) is judged per substituted type: a nullable
   instance is rejected `E10020` (the concrete out-slot self-assign diagnostic — nullability takes
   precedence even when the substitution is also a view, `raw`, or `cstring`), an owning
@@ -30,20 +30,20 @@ guard that already exists (AR-4).
   non-nullable duplicable, view, or unknown instance stays accepted; one report per site — the
   first offending instance in instantiation order.
   Source: spec/03 OW-16, spec/14 E10020/E10034 · AR-2, AR-7.
-- [ ] R2 — DEF-102: the runtime-indexed element self-assign on a nullable out-slot root
+- [x] R2 — DEF-102: the runtime-indexed element self-assign on a nullable out-slot root
   (`if (xs != null) { xs[i] = xs[i]; }`) is rejected `E10020`; the conservative comparison (any
   two runtime-indexed projections on the same root compare equal) is documented and pinned; a
   distinct-constant pair (`xs[1] = xs[0]`) stays accepted.
   Source: spec/03 E10020 rule · AR-4.
-- [ ] R3 — DEF-101: a direct whole-slot return (`func cid(borrow v: String?): String? { return v; }`)
+- [x] R3 — DEF-101: a direct whole-slot return (`func cid(borrow v: String?): String? { return v; }`)
   transfers the value to the caller and empties the caller's slot; the caller observes a null slot
   and the returned value; the run is ASan-clean (no double free, no leak).
   Source: spec/06 §4 out-parameter ownership, spec/16 in-out slot · AR-3.
-- [ ] R4 — DEF-105: an element store through a possibly-null view requires the same non-null
+- [x] R4 — DEF-105: an element store through a possibly-null view requires the same non-null
   narrowing the read path requires; without it the store is rejected `E10010` ("value '…' may be
   null here"); a narrowed base and a non-nullable view stay accepted.
   Source: spec/decisions T8/D9, spec/02 TY-6 · AR-5.
-- [ ] R5 — DEF-106: a constant-index element store into a dynamically-bounded view emits the
+- [x] R5 — DEF-106: a constant-index element store into a dynamically-bounded view emits the
   `E11211` bounds trap before the store, exactly as the read path and the runtime-index store path
   do — in every store form (plain assignment, compound assignment, update, and the row store);
   the guard statement is constructed only when a level's base has a dynamic bound, and a
@@ -52,7 +52,7 @@ guard that already exists (AR-4).
 
 ### Should Have
 
-- [ ] R6 — Each fix ships with specification tests proving the corrected behavior (red where the
+- [x] R6 — Each fix ships with specification tests proving the corrected behavior (red where the
   baseline is wrong; green pins where the baseline is already right) and implementation tests
   pinning the observable internal shapes listed in
   [07-testing-strategy.md](07-testing-strategy.md). Source: AR-11.
@@ -108,12 +108,12 @@ guard that already exists (AR-4).
 
 ## Acceptance Criteria
 
-1. [ ] R1–R5 verified by the specification tests ST-1 – ST-30 (P1 extension ST-23 – ST-27, P3
+1. [x] R1–R5 verified by the specification tests ST-1 – ST-30 (P1 extension ST-23 – ST-27, P3
    extension ST-28 – ST-30; [07-testing-strategy.md](07-testing-strategy.md)); the red-phase cases
    fail at the plan baseline and pass after the fix.
-2. [ ] Every memory-relevant accepted shape is ASan-clean on the host (`RDC_ASAN` probes).
-3. [ ] `make check` green per phase; `make verify` green before the plan is marked complete.
-4. [ ] No regression in the existing suites, including the pinned borrow-generic-integrity
+2. [x] Every memory-relevant accepted shape is ASan-clean on the host (`RDC_ASAN` probes).
+3. [x] `make check` green per phase; `make verify` green before the plan is marked complete.
+4. [x] No regression in the existing suites, including the pinned borrow-generic-integrity
    rejections (ST-11, ST-12 guards).
-5. [ ] Emitted C stays deterministic (byte-identical re-emission), and the review's base-versus-head
+5. [x] Emitted C stays deterministic (byte-identical re-emission), and the review's base-versus-head
    emission diff stays within the plan's modification set (AR-13).

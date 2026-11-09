@@ -1,7 +1,7 @@
 # Zero-Defect Closeout Implementation Plan
 
 > **Feature**: Close every remaining open defect in `plans/00-roadmap.md` so the repository can resume feature work on a zero-open-DEF baseline.
-> **Status**: Executing — Phase 0 complete (30 stale/incidental rows closed; 84 open: 5 critical + 7 major + 72 minor); Phase 1 is next.
+> **Status**: Done — 114/114 DEF rows closed; 57/57 tasks; `make check` and `make verify` green (2026-11-09 closeout).
 > **Created**: 2026-10-28
 > **Defects**: DEF-544, DEF-545, DEF-546, DEF-547, DEF-548, DEF-549, DEF-550, DEF-551, DEF-552, DEF-553, DEF-554, DEF-555, DEF-556, DEF-557, DEF-190, DEF-191, DEF-192, DEF-193, DEF-195, DEF-246, DEF-247, DEF-248, DEF-249, DEF-383, DEF-414, DEF-417, DEF-420, DEF-467, DEF-483, DEF-542, DEF-169, DEF-173, DEF-174, DEF-198, DEF-203, DEF-205, DEF-212, DEF-214, DEF-236, DEF-239, DEF-240, DEF-241, DEF-244, DEF-254, DEF-349, DEF-382, DEF-387, DEF-388, DEF-389, DEF-404, DEF-405, DEF-419, DEF-250, DEF-252, DEF-311, DEF-312, DEF-354, DEF-370, DEF-422, DEF-434, DEF-444, DEF-463, DEF-474, DEF-484, DEF-490, DEF-491, DEF-492, DEF-494, DEF-524, DEF-530, DEF-194, DEF-199, DEF-200, DEF-201, DEF-202, DEF-206, DEF-208, DEF-217, DEF-218, DEF-221, DEF-222, DEF-223, DEF-224, DEF-225, DEF-226, DEF-227, DEF-228, DEF-234, DEF-253, DEF-263, DEF-313, DEF-320, DEF-324, DEF-325, DEF-326, DEF-327, DEF-328, DEF-330, DEF-334, DEF-352, DEF-355, DEF-358, DEF-392, DEF-393, DEF-438, DEF-482, DEF-500, DEF-210, DEF-314, DEF-316, DEF-317, DEF-318, DEF-319, DEF-321
 > **CodeOps Artifact Schema**: 1

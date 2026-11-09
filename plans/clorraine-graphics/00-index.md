@@ -1,7 +1,7 @@
 # Clorraine Amiga Graphics Implementation Plan
 
 > **Feature**: A minimal Amiga graphics surface for the hosted-amiga standard library: an owned custom screen and filled/line drawing.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-24 14:37
 > **Implements**: — (standalone feature; tracked as roadmap `PLAN-08`)
 > **CodeOps Artifact Schema**: 1

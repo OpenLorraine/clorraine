@@ -17,35 +17,35 @@ addition is the `RequiresStorableSlot` duty record and its audit, following the 
 
 ### Must Have
 
-- [ ] R1 — A whole-binding store into a non-nullable non-duplicable `borrow` parameter is
+- [x] R1 — A whole-binding store into a non-nullable non-duplicable `borrow` parameter is
   rejected `E10034` (concrete spelling). Source: spec/03 OW-16, spec/06 FN-7 · AR-2, AR-13.
-- [ ] R2 — The same store in a generic body is rejected `E10034` when any instantiation owns;
+- [x] R2 — The same store in a generic body is rejected `E10034` when any instantiation owns;
   one report per site (the first offending instance). A duplicable instantiation stays accepted.
   Source: spec/03 OW-16 · AR-2, PF-006.
-- [ ] R3 — The nullable out-slot exemption is preserved: stores into `borrow T?` parameters
+- [x] R3 — The nullable out-slot exemption is preserved: stores into `borrow T?` parameters
   (including the `T[]?` instance) stay accepted. Source: spec/16 out-parameter carve-out · AR-2.
-- [ ] R4 — `slot = slot` on an out-slot parameter — whole-binding and exact projected
+- [x] R4 — `slot = slot` on an out-slot parameter — whole-binding and exact projected
   (`slot[0] = slot[0]`) — is rejected `E10020`, the message the local moved-value rule uses.
   Source: spec/03 E10020 rule · AR-8, PF-005.
-- [ ] R5 — A nullable `borrow` parameter (out-slot) does not warn `W10001`; a non-nullable
+- [x] R5 — A nullable `borrow` parameter (out-slot) does not warn `W10001`; a non-nullable
   duplicable lend still does. Source: spec/decisions D9, spec/16 writable-lend rules · AR-9.
-- [ ] R6 — `Wrap<String>` and `Wrap<String?>` (and every other keyed spelling that carries a
+- [x] R6 — `Wrap<String>` and `Wrap<String?>` (and every other keyed spelling that carries a
   nullable type argument) produce distinct C symbols; accepted source builds strict. Source:
   spec/07 §9 · AR-4.
-- [ ] R7 — Top-level function-instance symbol spellings are unchanged by R6; nested nullable
+- [x] R7 — Top-level function-instance symbol spellings are unchanged by R6; nested nullable
   type arguments gain the `Q` marker (an expected fixing diff — they collide today). Source:
   spec/17 §7 · AR-4, AR-6, PF-003.
-- [ ] R8 — `==`/`!=` accept a view with `null` in either order, so a nullable view narrows; the
+- [x] R8 — `==`/`!=` accept a view with `null` in either order, so a nullable view narrows; the
   non-nullable view-versus-`null` form is accepted; slice-view `==` slice-view and ordering stay
   `E10222` (`str`/`static str`/`cstring` already compare — pre-existing, out of scope). Source:
   spec/decisions T8, spec/02 TY-6 · AR-7, PF-010.
-- [ ] R9 — A func-typed parameter named like a module lender no longer makes the may-lend gate
+- [x] R9 — A func-typed parameter named like a module lender no longer makes the may-lend gate
   leak the owned call result; the result is bound and released once. Source: spec/03 loan rules ·
   AR-3.
 
 ### Should Have
 
-- [ ] R10 — Each fix ships with a specification test proving the corrected behavior (red where
+- [x] R10 — Each fix ships with a specification test proving the corrected behavior (red where
   the baseline is wrong, green pins where the baseline is already right) and an implementation
   test pinning the observable internal shapes listed in
   [07-testing-strategy.md](07-testing-strategy.md). Source: AR-12, PF-015.
@@ -91,13 +91,13 @@ addition is the `RequiresStorableSlot` duty record and its audit, following the 
 
 ## Acceptance Criteria
 
-1. [ ] The six verified repros of [02-current-state.md](02-current-state.md) behave as required
+1. [x] The six verified repros of [02-current-state.md](02-current-state.md) behave as required
    by R1–R9.
-2. [ ] `compiler/tests/borrow_generic_integrity_spec_test.rs` is green with its red phase
+2. [x] `compiler/tests/borrow_generic_integrity_spec_test.rs` is green with its red phase
    recorded.
-3. [ ] `compiler/tests/borrow_generic_integrity_impl_test.rs` is green.
-4. [ ] Host-ASan probes for the P1 store shapes and the P4 leak shape report no leak, double
+3. [x] `compiler/tests/borrow_generic_integrity_impl_test.rs` is green.
+4. [x] Host-ASan probes for the P1 store shapes and the P4 leak shape report no leak, double
    free, or invalid free (`RDC_ASAN=1` in the container; PF-007).
-5. [ ] `make check` is green after every phase; `make verify` passes every leg at final
+5. [x] `make check` is green after every phase; `make verify` passes every leg at final
    acceptance (AR-12).
-6. [ ] No change under `spec/` (AR-10).
+6. [x] No change under `spec/` (AR-10).

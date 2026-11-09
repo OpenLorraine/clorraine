@@ -1,7 +1,7 @@
 # Clorraine Demo Video Toolkit Implementation Plan
 
 > **Feature**: A TypeScript toolkit that renders Clorraine demonstration videos from a scene script: HTML/CSS cards, Shiki-highlighted source with a Clorraine grammar, real-terminal command scenes, and FS-UAE emulator captures in a branded frame.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-24 21:35
 > **Implements**: — (standalone feature; tracked as roadmap `PLAN-09`)
 > **CodeOps Artifact Schema**: 1

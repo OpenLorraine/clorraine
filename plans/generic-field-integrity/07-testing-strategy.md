@@ -106,12 +106,12 @@ None.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a `spec/` rule or diagnostic registry entry
-- [ ] Regression tests written BEFORE implementation
-- [ ] Regression tests verified to FAIL before implementation (red phase)
-- [ ] All regression tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests (non-generic emitted C unchanged)
-- [ ] No `spec/` or `*_spec_test.rs` file modified
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a `spec/` rule or diagnostic registry entry
+- [x] Regression tests written BEFORE implementation
+- [x] Regression tests verified to FAIL before implementation (red phase)
+- [x] All regression tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests (non-generic emitted C unchanged)
+- [x] No `spec/` or `*_spec_test.rs` file modified

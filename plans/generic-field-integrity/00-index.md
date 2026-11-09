@@ -1,7 +1,7 @@
 # Generic Field Integrity Implementation Plan
 
 > **Feature**: Substitute a struct instance's type arguments into its field types consistently across the checker, ownership, and emitter.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-25
 > **Implements**: DEF-06, DEF-07, DEF-08, DEF-09, DEF-10
 > **CodeOps Artifact Schema**: 1

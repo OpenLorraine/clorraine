@@ -161,13 +161,13 @@ DEF-48 and DEF-49 probes are recorded in the execution plan as the red-phase evi
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Every defect has a failing pre-fix observation (invalid C for DEF-46/47; recorded ASan
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Every defect has a failing pre-fix observation (invalid C for DEF-46/47; recorded ASan
       probe for DEF-48/49)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] AddressSanitizer probes clean (close-out)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] AddressSanitizer probes clean (close-out)

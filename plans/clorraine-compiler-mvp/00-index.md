@@ -1,7 +1,7 @@
 # Clorraine Compiler MVP Implementation Plan
 
 > **Feature**: The first Clorraine compiler: a Rust program (`clc`) that compiles the corpus subset of the frozen specification to one C99 translation unit, with the validation corpus, the four accepted Phase 2 spikes, the standard-library slice, and the golden test suites.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-17 23:56
 > **Implements**: none (standalone plan; the requirements source is the frozen specification `spec/`, v0.4)
 > **CodeOps Artifact Schema**: 1

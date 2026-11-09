@@ -18,14 +18,14 @@ reports.
 
 ### Must Have
 
-- [ ] **R1 — Arm roots and per-instance duty** (`DEF-257`, `DEF-258`, `DEF-260`, `DEF-264`;
+- [x] **R1 — Arm roots and per-instance duty** (`DEF-257`, `DEF-258`, `DEF-260`, `DEF-264`;
   `DEF-259` incidental): a projection of a mixed conditional moves the selected member per
   *instance* (generics included); a conditional-of-projections binds the fresh arm's root so its
   sibling fields release; a guarded `take` of a conditional projection releases exactly once via
   the eager carrier; a struct-literal field whose value projects an ownerless root binds that root
   in guarded positions too. (`DEF-259`'s struct-literal arm root is incidentally closed at the
   planning baseline and stays a green control — AR-23.)
-- [ ] **R2 — View derivation and owners** (`DEF-261`, `DEF-266`, `DEF-267`, `DEF-279`; `DEF-268`
+- [x] **R2 — View derivation and owners** (`DEF-261`, `DEF-266`, `DEF-267`, `DEF-279`; `DEF-268`
   incidentally closed): a view-returning call records its argument derivation — a call-wrapped
   conditional's *every* arm and a chained view-returning callee included; a view-element array in
   an argument or field position binds or retains each temporary element's backing; the `str[N]`
@@ -34,24 +34,24 @@ reports.
   backing keeps exactly one `E10035`; the reversed-order conditional view return is accepted,
   strict-builds, and runs clean. (`DEF-268`, incidentally fixed by the batch-H emission work —
   AR-25; the one-report rule — AR-26.)
-- [ ] **R3 — Escaping stores** (`DEF-265`, `DEF-269`, `DEF-276`, `DEF-280`): a view stored where
+- [x] **R3 — Escaping stores** (`DEF-265`, `DEF-269`, `DEF-276`, `DEF-280`): a view stored where
   it outlives its backing is rejected per destination kind — a global or field accepts module-level
   static owners only (`E10033`; a parameter-backed store stays rejected), a `borrow T?` out-slot
   accepts static and parameter-backed owners and otherwise reports `E10030`; the view-array store
   to a global struct field and the lambda capture of a `str[N]` build strictly; a local view-array
   element store is accepted only when the backing's scope covers the array's (a loop-iteration or
   nested-scope backing reports `E10030`), with the binding path's owner loan recorded.
-- [ ] **R4 — Guarded and discarded literal positions** (`DEF-262`, `DEF-270`, `DEF-271`): a
+- [x] **R4 — Guarded and discarded literal positions** (`DEF-262`, `DEF-270`, `DEF-271`): a
   conditional literal receiver in a loop condition does not give one field two owners (the
   struct-literal and array-literal forms); a discarded struct-literal arm materializes its fresh
   fields while its place-valued fields stay reads (the alias model); a discarded conditional's
   fresh projection arm binds its receiver root.
-- [ ] **R5 — Fixed-array conditional arms and projections** (`DEF-272`, `DEF-275`): a
+- [x] **R5 — Fixed-array conditional arms and projections** (`DEF-272`, `DEF-275`): a
   fixed-array conditional arm routes through the per-arm destination store (the compiler contract's
   hidden out-parameter ABI, `spec/17-codegen.md:59-84`); a fixed-array projection of a conditional
   root binds each arm's root and renders the per-arm address form; a `for`-iterable projection
   routes through the projection preparation.
-- [ ] **R6 — Update order completion** (`DEF-273`, `DEF-274`, `DEF-277`, `DEF-278`): an assignment
+- [x] **R6 — Update order completion** (`DEF-273`, `DEF-274`, `DEF-277`, `DEF-278`): an assignment
   target's location and index parts are pinned before the right-hand side's update, and an
   update-containing right-hand side pins at its own source position; an update-containing literal
   field or element is pinned at its source position; the dot receiver and a loop-condition operand
@@ -105,15 +105,15 @@ reports.
 
 ## Acceptance Criteria
 
-1. [ ] Every implemented row is closed with a reproduction that flips (red before, green after)
+1. [x] Every implemented row is closed with a reproduction that flips (red before, green after)
    and a suite pin that fails without the fix; `DEF-259` and `DEF-268` close incidentally with
    their probe evidence (green controls).
-2. [ ] Every ownership fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop and
+2. [x] Every ownership fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop and
    early-exit variants where the shape is re-executed.
-3. [ ] The strict build passes for every accepted shape in scope; the corpus differential shows
+3. [x] The strict build passes for every accepted shape in scope; the corpus differential shows
    only intended deltas.
-4. [ ] No behavior change outside the in-scope rows; the batch-H suites stay green.
-5. [ ] `make check` green on every phase; `make verify` green at close-out.
-6. [ ] The roadmap's 23 handled rows are accounted for: 21 close as Done with their evidence and
+4. [x] No behavior change outside the in-scope rows; the batch-H suites stay green.
+5. [x] `make check` green on every phase; `make verify` green at close-out.
+6. [x] The roadmap's 23 handled rows are accounted for: 21 close as Done with their evidence and
    `DEF-259`/`DEF-268` close with their incidental notes; the six older parked rows stay open with
    their rulings collected (AR-2).

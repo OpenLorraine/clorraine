@@ -19,24 +19,24 @@ language feature, no `spec/` change, no new dependency.
 
 ### Must Have
 
-- [ ] **R1 (DEF-84):** A `continue` or `break` inside a deferred block reaches the loop's
+- [x] **R1 (DEF-84):** A `continue` or `break` inside a deferred block reaches the loop's
   corresponding exit edge; the emitted unit builds under the strict C99 contract
   (`-std=c99 -Wall -Wextra -Werror`); the deferred copy never swallows the enclosing loop or
   emits a `goto` to a never-defined label. (AR-6)
-- [ ] **R2 (DEF-85):** A `return` inside a deferred block evaluates its value, runs the remaining
+- [x] **R2 (DEF-85):** A `return` inside a deferred block evaluates its value, runs the remaining
   cleanup of the scope whose cleanup is executing (its later-registered actions excluded, its
   earlier ones included) and then the outer scopes' cleanup, and returns that value exactly once;
   no self-jump and no hang on the function-scope, switch-arm, and outer-droppable shapes. (AR-5)
-- [ ] **R3 (DEF-86):** A deferred block runs on **every** exit edge of its scope: the normal end,
+- [x] **R3 (DEF-86):** A deferred block runs on **every** exit edge of its scope: the normal end,
   `return`, `break`, and `continue`, including the fall-through path when the scope also contains
   a continue edge and when an early return leaves the scope. (AR-7)
-- [ ] **R4 (DEF-87):** Multiple defers in one scope run in reverse registration order on every
+- [x] **R4 (DEF-87):** Multiple defers in one scope run in reverse registration order on every
   exit path; an earlier returning defer fires on every path that reaches its scope exit,
   regardless of a later defer's guarded early exit. (AR-7)
-- [ ] **R5 (DEF-88):** A `return` inside a scope with inline cleanup (a deferred block's own
+- [x] **R5 (DEF-88):** A `return` inside a scope with inline cleanup (a deferred block's own
   scope, or a loop body) evaluates its value before any cleanup that releases storage the value
   reads; the defer-local and the loop-local shapes are host-AddressSanitizer clean. (AR-8)
-- [ ] **R6 (regression):** Programs that do not exercise the five shapes keep byte-identical
+- [x] **R6 (regression):** Programs that do not exercise the five shapes keep byte-identical
   emission where the design says so (defer-free programs, byte-identical except the accepted
   removal of lone `#line` directives for empty cleanup scopes; single-site defers without loop
   edges or returns); every existing specification and implementation suite stays green; the
@@ -44,7 +44,7 @@ language feature, no `spec/` change, no new dependency.
 
 ### Should Have
 
-- [ ] The deferred block's effects are checked on every exit edge (the checker's defer entry
+- [x] The deferred block's effects are checked on every exit edge (the checker's defer entry
   survives later cleanup sites), so a deferred move or loan is visible on each path. (AR-7)
 
 ### Won't Have (Out of Scope)
@@ -97,12 +97,12 @@ language feature, no `spec/` change, no new dependency.
 
 ## Acceptance Criteria
 
-1. [ ] All ST cases in [07-testing-strategy.md](07-testing-strategy.md) are red at their phase
+1. [x] All ST cases in [07-testing-strategy.md](07-testing-strategy.md) are red at their phase
    baseline for the recorded reason and green at the phase's end.
-2. [ ] The implementation suites pin the new emission shapes and the red/green edge cases.
-3. [ ] Host AddressSanitizer is clean on every changed shape and on the probe matrix; the strict
+2. [x] The implementation suites pin the new emission shapes and the red/green edge cases.
+3. [x] Host AddressSanitizer is clean on every changed shape and on the probe matrix; the strict
    host build accepts every accepted program.
-4. [ ] `make check` is green after every phase; `make verify` reports all legs passed at the end.
-5. [ ] No new warnings; no dead code; the corpus emission sweep shows only traced, intended diffs.
-6. [ ] The roadmap rows for DEF-84 – DEF-88 move to Done; the AGENTS.md test-naming map records
+4. [x] `make check` is green after every phase; `make verify` reports all legs passed at the end.
+5. [x] No new warnings; no dead code; the corpus emission sweep shows only traced, intended diffs.
+6. [x] The roadmap rows for DEF-84 – DEF-88 move to Done; the AGENTS.md test-naming map records
    the new suites.

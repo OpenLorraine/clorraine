@@ -86,8 +86,8 @@ element loans, the stale literal-carrier loan, and the all-null composite store.
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`; the strict-build probes
 
 **Deliverables**:
-- [ ] ST-1..ST-7 red then green (the cross-frame case or its recorded park per AR-6)
-- [ ] The batch-I suites and the pinned oracles stay green
+- [x] ST-1..ST-7 red then green (the cross-frame case or its recorded park per AR-6)
+- [x] The batch-I suites and the pinned oracles stay green
 
 ---
 
@@ -125,8 +125,8 @@ taken arm, the discarded residual-owning root, and the bare discarded literal.
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-8..ST-11 red then green
-- [ ] The batch-I discard/guard pins stay green
+- [x] ST-8..ST-11 red then green
+- [x] The batch-I discard/guard pins stay green
 
 ---
 
@@ -174,8 +174,8 @@ landed controls.
 **Verify**: `make check`; the emission differential; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-12..ST-19 red then green (the critical `DEF-303` included)
-- [ ] The emission differential shows only intended deltas; the direct spellings byte-identical
+- [x] ST-12..ST-19 red then green (the critical `DEF-303` included)
+- [x] The emission differential shows only intended deltas; the direct spellings byte-identical
 
 ---
 
@@ -220,8 +220,8 @@ evaluation, and the bare raw-deref store.
 **Verify**: `make check`; the strict builds on both toolchains; the batch-H update pins
 
 **Deliverables**:
-- [ ] ST-20..ST-24 red then green (or the `DEF-294` control outcome with its evidence, AR-10)
-- [ ] The batch-H update pins stay green; the controls byte-identical
+- [x] ST-20..ST-24 red then green (or the `DEF-294` control outcome with its evidence, AR-10)
+- [x] The batch-H update pins stay green; the controls byte-identical
 
 ---
 
@@ -262,8 +262,8 @@ the generated-owner phrase, and the conditional-iterable move mark.
 **Verify**: `make check`; the oracle suites
 
 **Deliverables**:
-- [ ] ST-25..ST-27 red then green
-- [ ] `callable_release_integrity`'s exactly-one `E10030` pin and the `checker_conformance`
+- [x] ST-25..ST-27 red then green
+- [x] `callable_release_integrity`'s exactly-one `E10030` pin and the `checker_conformance`
       phrase test stay green
 
 ---
@@ -286,9 +286,9 @@ the generated-owner phrase, and the conditional-iterable move mark.
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 27 rows accounted for: Done with evidence (or the registered park/control outcomes)
-- [ ] The six older parked rows' rulings collected (AR-2)
-- [ ] The plan marked Complete
+- [x] The 27 rows accounted for: Done with evidence (or the registered park/control outcomes)
+- [x] The six older parked rows' rulings collected (AR-2)
+- [x] The plan marked Complete
 
 ---
 
@@ -334,9 +334,9 @@ preparation A touches); the vertical order is the executable sequence — the ph
 
 **Feature is complete when:**
 
-1. [ ] All phases completed
-2. [ ] All verification passing (`make check`; `make verify` at close-out)
-3. [ ] No warnings/errors; no dead code
-4. [ ] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
-5. [ ] Documentation updated (the roadmap rows and the findings ledger)
-6. [ ] Code reviewed (every phase's declared lenses)
+1. [x] All phases completed
+2. [x] All verification passing (`make check`; `make verify` at close-out)
+3. [x] No warnings/errors; no dead code
+4. [x] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
+5. [x] Documentation updated (the roadmap rows and the findings ledger)
+6. [x] Code reviewed (every phase's declared lenses)

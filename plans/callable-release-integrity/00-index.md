@@ -4,7 +4,7 @@
 > name-collision double-free, the missing effect modes for func-typed fields/globals/params/lambda
 > parameters, five owned-release holes, the func-signature type key, the duplicate `ClEnv_0`
 > definition, and the null-`String` widening segfault.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-10 19:53
 > **Implements**: DEF-138, DEF-139, DEF-140, DEF-141, DEF-155, DEF-156, DEF-157, DEF-158,
 > DEF-159, DEF-163, DEF-164, DEF-165, DEF-166

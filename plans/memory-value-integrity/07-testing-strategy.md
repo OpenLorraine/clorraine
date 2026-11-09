@@ -189,17 +189,17 @@
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (the controls verified green
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (the controls verified green
       first — AR-27, AR-28)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests (the origin suites, the frozen spec suites, the batch-I–M
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests (the origin suites, the frozen spec suites, the batch-I–M
       oracles)
-- [ ] The controls (`DEF-427`, `DEF-447`) pin the closure evidence: the view-length matrix and the
+- [x] The controls (`DEF-427`, `DEF-447`) pin the closure evidence: the view-length matrix and the
       filed literal are green; the filed byte probe is accepted and sanitizer-clean, with the exact
       output in the implementation pin
-- [ ] Test coverage meets goals
+- [x] Test coverage meets goals

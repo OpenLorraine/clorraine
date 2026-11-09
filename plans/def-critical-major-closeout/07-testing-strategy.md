@@ -152,22 +152,22 @@ the real test surface.
 
 ## Verification Checklist
 
-- [ ] All 35 ST rows have concrete input/output pairs, an exact expected
+- [x] All 35 ST rows have concrete input/output pairs, an exact expected
   diagnostic/value/trace, and a source.
-- [ ] A red-phase evidence table (command, base commit, observed failure) is
+- [x] A red-phase evidence table (command, base commit, observed failure) is
   recorded in `05-findings.md` for every active row. ST-12 and any
   `DEF-506`/`DEF-507` stale close under AR-16 are the documented green pins and
   carry a HEAD proof instead of a red phase.
-- [ ] Every accepted control has an unsafe twin or a named safety pin. Every
+- [x] Every accepted control has an unsafe twin or a named safety pin. Every
   source that takes an address or dereferences a raw pointer writes the exact
   `unsafe { ... }` context, so a red phase fails for the defect and never for
   `E10600`/`E10601`.
-- [ ] ASAN/LSan is run for every memory-class row, including `DEF-458` and
+- [x] ASAN/LSan is run for every memory-class row, including `DEF-458` and
   `DEF-464`'s destination-read control.
-- [ ] Strict C is run for every emission-class row, including the `DEF-522`
+- [x] Strict C is run for every emission-class row, including the `DEF-522`
   read/return form and the `DEF-461` address-of spelling.
-- [ ] `make check` and `make verify` pass at each phase close.
-- [ ] Accepted changed outputs have determinism pins.
-- [ ] No spec or golden change without approval (AR-11); the `DEF-167` stage test
+- [x] `make check` and `make verify` pass at each phase close.
+- [x] Accepted changed outputs have determinism pins.
+- [x] No spec or golden change without approval (AR-11); the `DEF-167` stage test
   uses the parse-only mode and the `DEF-416` collision is recorded as a
   conservative limitation.

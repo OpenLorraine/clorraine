@@ -117,14 +117,14 @@ the compiler, the specification, or the standard library.
 
 ## Acceptance Criteria
 
-1. [ ] `make demo` regenerates `demo/demo-full.mp4`, `demo/demo.gif`, `demo/emulator.mp4`,
+1. [x] `make demo` regenerates `demo/demo-full.mp4`, `demo/demo.gif`, `demo/emulator.mp4`,
    and `demo/poster.png` from `demo/story.ts`.
-2. [ ] `make demo-check` passes (`tsc --noEmit` + `node --test` with coverage).
-3. [ ] `demo/story.sh`, `demo/show-source.sh`, and `demo/tape/*.tape` are deleted; the
+2. [x] `make demo-check` passes (`tsc --noEmit` + `node --test` with coverage).
+3. [x] `demo/story.sh`, `demo/show-source.sh`, and `demo/tape/*.tape` are deleted; the
    tracked `demo/*.mp4` and `demo/demo.gif` are untracked.
-4. [ ] The README embeds `demo/poster.png` and links to the generated video.
-5. [ ] `demo/clorraine.vim` and a refactored `demo/record-emulator.sh` remain.
-6. [ ] No change to the compiler, `Cargo.toml`, `spec/`, or `stdlib/`.
-7. [ ] `new examples/hello/hello.clo` writes a renderable scaffold.
-8. [ ] The strict-profile phase reviews cover input validation and the edge cases in
+4. [x] The README embeds `demo/poster.png` and links to the generated video.
+5. [x] `demo/clorraine.vim` and a refactored `demo/record-emulator.sh` remain.
+6. [x] No change to the compiler, `Cargo.toml`, `spec/`, or `stdlib/`.
+7. [x] `new examples/hello/hello.clo` writes a renderable scaffold.
+8. [x] The strict-profile phase reviews cover input validation and the edge cases in
    this document (PF-022).

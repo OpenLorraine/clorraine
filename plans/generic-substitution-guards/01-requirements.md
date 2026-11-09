@@ -16,25 +16,25 @@ already forbid both programs; the implementation misses them.
 
 ### Must Have
 
-- [ ] **R1 — View-field guard at the instance (AR-2, AR-4):** for every recorded
+- [x] **R1 — View-field guard at the instance (AR-2, AR-4):** for every recorded
   generic struct instance, a field whose declared type mentions a type parameter
   and whose substituted type is `str` or a slice reports `E10205` with the
   frozen message and help. A nullable substituted view is rejected the same way.
   `static str`, `cstring`, `raw`, `func`, handles, and fixed arrays stay
   accepted, exactly as the declaration-site check decides them.
-- [ ] **R2 — Fill guard at the instance (AR-2):** for every recorded generic
+- [x] **R2 — Fill guard at the instance (AR-2):** for every recorded generic
   function instance, a fill literal whose declared type mentions a type
   parameter and whose substituted base element is concrete and not duplicable
   reports `E10215` with the frozen message and help. The duplicable
   instantiation stays accepted, and an inferred type argument is audited exactly
   like an explicit one.
-- [ ] **R3 — Scoped to substituted types (AR-7, AR-17, PF-004):** the audit
+- [x] **R3 — Scoped to substituted types (AR-7, AR-17, PF-004):** the audit
   examines only a declared type that mentions a type parameter, so it never
   re-reports a declaration-site case; the declaration-site guards themselves are
   unchanged. A concrete illegal field or fill is owned by the type checker,
   which stops the ownership stage before the audit runs, so the two can never
   report the same site.
-- [ ] **R4 — Deterministic coverage of the recorded set (AR-8, AR-9, AR-19):**
+- [x] **R4 — Deterministic coverage of the recorded set (AR-8, AR-9, AR-19):**
   every concrete instance the monomorphization records is audited — explicit and
   inferred type arguments, locals, parameters, returns, globals, and
   temporaries. One error is reported per illegal instance-field or instance, in
@@ -42,21 +42,21 @@ already forbid both programs; the implementation misses them.
   call's result type, a nested instance reached only from an IR-discovered outer
   instance, a lifted lambda body) are a separate pre-existing
   instance-discovery gap, kept out of scope (AR-19).
-- [ ] **R5 — Audit boundary (AR-11, AR-19):** the audit runs over the recorded
+- [x] **R5 — Audit boundary (AR-11, AR-19):** the audit runs over the recorded
   `Item::Func` instances. `comptime` generics are `E90001`; an uninstantiated
   generic is not checked and emits nothing. A fill inside a lifted lambda body
   reachable from an instance is a separate pre-existing monomorphization gap,
   kept out of scope (AR-19).
-- [ ] **R6 — No regressions (AR-12):** every existing `spec/` test, Rust suite,
+- [x] **R6 — No regressions (AR-12):** every existing `spec/` test, Rust suite,
   corpus program, and profile stays green; a valid program emits byte-identical
   C.
-- [ ] **R7 — No frozen-artifact change (AR-12):** no `spec/` chapter, registry
+- [x] **R7 — No frozen-artifact change (AR-12):** no `spec/` chapter, registry
   row, golden, or standard-library source changes; no CLI, ABI, or profile
   contract changes.
 
 ### Should Have
 
-- [ ] **R8 — Diagnostic parity (AR-3, PF-005):** each new diagnostic reuses the
+- [x] **R8 — Diagnostic parity (AR-3, PF-005):** each new diagnostic reuses the
   exact text and help of its declaration-site twin, so no `spec/14` text edit is
   needed. For `E10215` that is the fill help
   `a fill cannot repeat a move-only element; construct each element`
@@ -116,8 +116,8 @@ rejecting a double-free program and a view-field escape before code generation
 
 ## Acceptance Criteria
 
-1. [ ] R1–R8 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
-2. [ ] `make check` is green after every task; `make verify` is green before completion (AR-16).
-3. [ ] No dead code: the module has no unused helper, and the declaration-site guards are untouched.
-4. [ ] No `spec/`, `stdlib/`, or corpus source changes (AR-12).
-5. [ ] Documentation updated: the plan state and the `DEF-12` roadmap status.
+1. [x] R1–R8 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
+2. [x] `make check` is green after every task; `make verify` is green before completion (AR-16).
+3. [x] No dead code: the module has no unused helper, and the declaration-site guards are untouched.
+4. [x] No `spec/`, `stdlib/`, or corpus source changes (AR-12).
+5. [x] Documentation updated: the plan state and the `DEF-12` roadmap status.

@@ -102,14 +102,14 @@ instantiation.
 
 ## Acceptance Criteria
 
-1. [ ] Every Must Have requirement has at least one specification test case in
+1. [x] Every Must Have requirement has at least one specification test case in
    `07-testing-strategy.md` and passes.
-2. [ ] The previously excluded/skipped goldens (`E10303`, `E10304`, `E10306`,
+2. [x] The previously excluded/skipped goldens (`E10303`, `E10304`, `E10306`,
    `E10400`-`E10404`) are asserted, `E90002` has no trigger, and
    `./spec/check.sh` is green.
-3. [ ] `make check` and `make verify` are green end to end in the SDK container.
-4. [ ] Emitted C for the new surfaces compiles under the hosted-amiga GCC and
+3. [x] `make check` and `make verify` are green end to end in the SDK container.
+4. [x] Emitted C for the new surfaces compiles under the hosted-amiga GCC and
    vbcc legs, and the MMIO wrapper runs under `vamos`/FS-UAE.
-5. [ ] Same source and flags still produce byte-identical C (determinism suite).
-6. [ ] `AGENTS.md`, the authorized spec chapters, and `plans/00-roadmap.md` are
+5. [x] Same source and flags still produce byte-identical C (determinism suite).
+6. [x] `AGENTS.md`, the authorized spec chapters, and `plans/00-roadmap.md` are
    current.

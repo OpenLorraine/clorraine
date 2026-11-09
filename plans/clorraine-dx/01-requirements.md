@@ -15,32 +15,32 @@ and a canonical, complete TextMate grammar for editor highlighting. PLAN-05's re
 
 ### Must Have
 
-- [ ] R1 — `clc --explain <CODE>` and `clorraine --explain <CODE>` (and the `--explain=<CODE>`
+- [x] R1 — `clc --explain <CODE>` and `clorraine --explain <CODE>` (and the `--explain=<CODE>`
   joined form) print the code's registry entry to stdout and exit 0, without requiring a profile
   or an input file (AR-2, AR-3, AR-4).
-- [ ] R2 — An unknown code prints `usage error: unknown diagnostic code '<code>'` on stderr and
+- [x] R2 — An unknown code prints `usage error: unknown diagnostic code '<code>'` on stderr and
   exits 2; a missing value prints `usage error: --explain needs a value` and exits 2 (AR-3).
-- [ ] R3 — `--diagnostics=json` on both binaries renders every diagnostic as one JSON object per
+- [x] R3 — `--diagnostics=json` on both binaries renders every diagnostic as one JSON object per
   line on stderr (AR-5). Any other value is a usage error.
-- [ ] R4 — Each object carries `code, severity, message, help, file, line, column, endLine,
+- [x] R4 — Each object carries `code, severity, message, help, file, line, column, endLine,
   endColumn` in that order, 1-based positions, `null` where a field is absent (AR-6).
-- [ ] R5 — Under JSON mode, every driver-level error (usage, environment, internal compiler
+- [x] R5 — Under JSON mode, every driver-level error (usage, environment, internal compiler
   error) is one object with `code: null` and `severity: "error"` (AR-7).
-- [ ] R6 — Without the flags, the human output, stream choice, and exit codes are byte-identical
+- [x] R6 — Without the flags, the human output, stream choice, and exit codes are byte-identical
   to today (AR-5).
-- [ ] R7 — `spec/14-diagnostics.md` gains the twelve approved help texts; no other spec edit
+- [x] R7 — `spec/14-diagnostics.md` gains the twelve approved help texts; no other spec edit
   (AR-10).
-- [ ] R8 — `editors/clorraine.tmLanguage.json` is the canonical grammar; the demo toolkit
+- [x] R8 — `editors/clorraine.tmLanguage.json` is the canonical grammar; the demo toolkit
   consumes that file and no duplicate exists (AR-8).
-- [ ] R9 — The grammar covers every `keyword` and `reserved_builtin` term of
+- [x] R9 — The grammar covers every `keyword` and `reserved_builtin` term of
   `spec/grammar.ebnf.md` and keeps `scopeName: source.clorraine` and `fileTypes: ["clo"]`
   (AR-9).
 
 ### Should Have
 
-- [ ] R10 — Both CLIs' help surfaces document the new flags (`clorraine --help`; `clc` has no
+- [x] R10 — Both CLIs' help surfaces document the new flags (`clorraine --help`; `clc` has no
   help text today and gains none) (AR-1, AR-3).
-- [ ] R11 — The JSON schema is additive-only: consumers ignore unknown keys, and a future
+- [x] R11 — The JSON schema is additive-only: consumers ignore unknown keys, and a future
   breaking change would introduce a new `--diagnostics` value rather than reshaping an object
   (data-and-migration lens).
 
@@ -97,14 +97,14 @@ and a canonical, complete TextMate grammar for editor highlighting. PLAN-05's re
 
 ## Acceptance Criteria
 
-1. [ ] All specification and implementation tests pass; `make check`, `make verify`, and
+1. [x] All specification and implementation tests pass; `make check`, `make verify`, and
    `make demo-check` are green.
-2. [ ] `clorraine --explain E10034` and `clc --explain=E10034` render the committed registry text
+2. [x] `clorraine --explain E10034` and `clc --explain=E10034` render the committed registry text
    for that code; unknown codes exit 2.
-3. [ ] `--diagnostics=json` emits exactly the schema in 03-02 for errors, warnings, and driver
+3. [x] `--diagnostics=json` emits exactly the schema in 03-02 for errors, warnings, and driver
    errors; default output is byte-identical.
-4. [ ] Every `keyword`/`reserved_builtin` term appears in `editors/clorraine.tmLanguage.json`;
+4. [x] Every `keyword`/`reserved_builtin` term appears in `editors/clorraine.tmLanguage.json`;
    the demo toolkit loads it from that path.
-5. [ ] All 114 registry rows carry a help text.
-6. [ ] Documentation updated (AGENTS.md commands and layout).
-7. [ ] Phase reviews recorded; roadmap synced.
+5. [x] All 114 registry rows carry a help text.
+6. [x] Documentation updated (AGENTS.md commands and layout).
+7. [x] Phase reviews recorded; roadmap synced.

@@ -135,9 +135,9 @@ projection, and the element-store nested fill, with their direct controls.
 strict builds
 
 **Deliverables**:
-- [ ] ST-1..ST-4 red then green; the direct controls stay green; the constant sibling stays clean
-- [ ] The `DEF-431`/`DEF-435` verification-branch outcome is recorded (incidental or fix)
-- [ ] The batch-M loan matrix and the `E10031` controls stay green
+- [x] ST-1..ST-4 red then green; the direct controls stay green; the constant sibling stays clean
+- [x] The `DEF-431`/`DEF-435` verification-branch outcome is recorded (incidental or fix)
+- [x] The batch-M loan matrix and the `E10031` controls stay green
 
 ---
 
@@ -202,8 +202,8 @@ call-mediated view result, with their direct controls and the `k = 0` variant.
 strict builds
 
 **Deliverables**:
-- [ ] ST-5..ST-7 red then green; the direct controls stay green
-- [ ] The `DEF-430` direct-runtime-fill outcome is recorded (intended delta or filed residual)
+- [x] ST-5..ST-7 red then green; the direct controls stay green
+- [x] The `DEF-430` direct-runtime-fill outcome is recorded (intended delta or filed residual)
 
 ---
 
@@ -630,9 +630,9 @@ output; P6 and P7 are independent. The execution order stays
 
 **Feature is complete when:**
 
-1. [ ] All phases completed
-2. [ ] All verification passing (`make check`; `make verify` at close-out)
-3. [ ] No warnings/errors; no dead code
-4. [ ] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
-5. [ ] Documentation updated (the roadmap rows and the findings ledger)
-6. [ ] Code reviewed (every phase's declared lenses)
+1. [x] All phases completed
+2. [x] All verification passing (`make check`; `make verify` at close-out)
+3. [x] No warnings/errors; no dead code
+4. [x] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
+5. [x] Documentation updated (the roadmap rows and the findings ledger)
+6. [x] Code reviewed (every phase's declared lenses)

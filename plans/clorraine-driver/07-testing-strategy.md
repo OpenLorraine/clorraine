@@ -97,12 +97,12 @@ a bogus tool path — no mocking framework.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) are defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement or an AR entry
-- [ ] Specification tests are written BEFORE implementation
-- [ ] Specification tests are verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Unit tests cover parsing, environment, command assembly, and the ICE shape
-- [ ] The injection-prevention case (ST-DRV-17) passes
-- [ ] `make check` and `make verify` remain green
-- [ ] `clc`'s existing spec tests are unchanged and still pass (no regression)
+- [x] All specification test cases (ST-*) are defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement or an AR entry
+- [x] Specification tests are written BEFORE implementation
+- [x] Specification tests are verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Unit tests cover parsing, environment, command assembly, and the ICE shape
+- [x] The injection-prevention case (ST-DRV-17) passes
+- [x] `make check` and `make verify` remain green
+- [x] `clc`'s existing spec tests are unchanged and still pass (no regression)

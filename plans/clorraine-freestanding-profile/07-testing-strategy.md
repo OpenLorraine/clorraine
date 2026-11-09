@@ -130,12 +130,12 @@ of depending on the host machine.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output
-- [ ] Every ST case traces to a requirement or AR entry
-- [ ] Specification tests written before implementation
-- [ ] Specification tests verified to fail before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests (`host` and `hosted-amiga` unchanged)
-- [ ] Test coverage meets goals
+- [x] All specification test cases (ST-*) defined with concrete input/output
+- [x] Every ST case traces to a requirement or AR entry
+- [x] Specification tests written before implementation
+- [x] Specification tests verified to fail before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests (`host` and `hosted-amiga` unchanged)
+- [x] Test coverage meets goals

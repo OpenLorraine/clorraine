@@ -171,11 +171,11 @@ oracle. No test writes outside its temporary root.
 
 ## Verification Checklist
 
-- [ ] All ST cases defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement or component decision
-- [ ] Specification tests written before implementation
-- [ ] Red phase recorded for every phase
-- [ ] All specification tests pass after implementation
-- [ ] Implementation tests cover edge cases and internals
-- [ ] No regressions in existing suites
-- [ ] `make check`, `make demo-check`, `make vscode-check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, and `make verify` green
+- [x] All ST cases defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement or component decision
+- [x] Specification tests written before implementation
+- [x] Red phase recorded for every phase
+- [x] All specification tests pass after implementation
+- [x] Implementation tests cover edge cases and internals
+- [x] No regressions in existing suites
+- [x] `make check`, `make demo-check`, `make vscode-check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, and `make verify` green

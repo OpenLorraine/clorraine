@@ -3,7 +3,7 @@
 > **Feature**: Close the seven open critical defects left by the memory/value batches, plus the
 > generated-owner lifetime ruling. The scope is `DEF-449`, `DEF-450`, `DEF-451`, `DEF-452`,
 > `DEF-453`, `DEF-459`, `DEF-468`, and `DEF-469` from `plans/00-roadmap.md`.
-> **Status**: Planning
+> **Status**: Done — 26/26 tasks; all eight rows closed; final gate green (2026-11-09 closeout).
 > **Created**: 2026-10-19
 > **Planning baseline**: `d19a467` (the batch-N close-out commit).
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`).

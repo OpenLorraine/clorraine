@@ -130,14 +130,14 @@ external service is mocked.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-1 – ST-27) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, 03 doc, spec rule, AR entry, or PF finding
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase; memory cases through
+- [x] All specification test cases (ST-1 – ST-27) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, 03 doc, spec rule, AR entry, or PF finding
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase; memory cases through
   the documented host ASan probe)
-- [ ] All specification tests pass after implementation (green phase; memory cases through
+- [x] All specification tests pass after implementation (green phase; memory cases through
   `RDC_ASAN` or the close-out probes)
-- [ ] Implementation tests written for emitted shapes, report counts, and determinism
-- [ ] All unit / integration tests pass (`make check`)
-- [ ] No regressions in existing tests (including the migrated `apply<T>` programs)
-- [ ] Close-out host sanitizer run probes clean (5) and rejection probes correct (2)
+- [x] Implementation tests written for emitted shapes, report counts, and determinism
+- [x] All unit / integration tests pass (`make check`)
+- [x] No regressions in existing tests (including the migrated `apply<T>` programs)
+- [x] Close-out host sanitizer run probes clean (5) and rejection probes correct (2)

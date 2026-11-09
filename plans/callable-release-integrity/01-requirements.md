@@ -16,44 +16,44 @@ No specification text changes and no new diagnostic codes (AR-11); one user-deci
 
 ### Must Have
 
-- [ ] R1 (DEF-138) — A source local spelled like a generated owner (`__cl_owned0`) is an ordinary
+- [x] R1 (DEF-138) — A source local spelled like a generated owner (`__cl_owned0`) is an ordinary
   local: the accepted program builds, runs under ASan clean, and every binding keeps its own
   identity (AR-2, AR-3).
-- [ ] R2 (DEF-139) — A call through a func-typed field of a temporary receiver (`H { … }.call(5)`,
+- [x] R2 (DEF-139) — A call through a func-typed field of a temporary receiver (`H { … }.call(5)`,
   `makeH().call(5)`) releases the receiver's owned sibling fields (ASan-clean) (AR-7).
-- [ ] R3 (DEF-140) — Two `func`-signature instances of one generic struct (`Holder<func(i32):
+- [x] R3 (DEF-140) — Two `func`-signature instances of one generic struct (`Holder<func(i32):
   i32>` and `Holder<func(u32): u32>`) emit two distinct struct definitions and build under the
   strict flags (AR-4).
-- [ ] R4 (DEF-141) — A possibly-null `String` used through the implicit `str` widening without a
+- [x] R4 (DEF-141) — A possibly-null `String` used through the implicit `str` widening without a
   narrowing check reports `E10010`; the narrowed and non-nullable spellings build and run
   (AR-9).
-- [ ] R5 (DEF-155) — A func-typed field call behaves exactly like its module twin: `take` moves
+- [x] R5 (DEF-155) — A func-typed field call behaves exactly like its module twin: `take` moves
   (caller emptied), `borrow` records the lend the twin records, and an owned temporary argument
   materializes and releases (AR-6).
-- [ ] R6 (DEF-156) — A module-level func-typed global applies its own signature's modes (move-out
+- [x] R6 (DEF-156) — A module-level func-typed global applies its own signature's modes (move-out
   and marker check for `take`; temporary release for owned arguments) (AR-6).
-- [ ] R7 (DEF-157) — A `Param`-typed callee applies the instantiated signature's modes at each
+- [x] R7 (DEF-157) — A `Param`-typed callee applies the instantiated signature's modes at each
   owning instance; a binding that shadows a same-named `take` module function reports no false
   `E10020` (AR-6).
-- [ ] R8 (DEF-158) — A `defer` body materializes owned temporaries: the view backing and the
+- [x] R8 (DEF-158) — A `defer` body materializes owned temporaries: the view backing and the
   func-value temporary spellings release exactly once per execution (ASan-clean) (AR-7).
-- [ ] R9 (DEF-159) — A conditional view projection whose taken arm needs an owner releases that
+- [x] R9 (DEF-159) — A conditional view projection whose taken arm needs an owner releases that
   arm's backing (the two filed spellings ASan-clean; the both-call spelling unchanged) (AR-7).
-- [ ] R10 (DEF-163) — A fixed array of view elements returned from a temporary reports the same
+- [x] R10 (DEF-163) — A fixed array of view elements returned from a temporary reports the same
   diagnostics as the equivalent single-view return spelling (`E10036` family) (AR-8).
-- [ ] R11 (DEF-164) — A discarded owned call statement releases its result (ASan-clean) (AR-7).
-- [ ] R12 (DEF-165) — An inline capturing lambda emits one environment struct definition per
+- [x] R11 (DEF-164) — A discarded owned call statement releases its result (ASan-clean) (AR-7).
+- [x] R12 (DEF-165) — An inline capturing lambda emits one environment struct definition per
   unique (site, instance) and builds (AR-5).
-- [ ] R13 (DEF-166) — A lambda's parameters are unmarked lends: the filed expression-bodied shape
+- [x] R13 (DEF-166) — A lambda's parameters are unmarked lends: the filed expression-bodied shape
   reports the same single `E10034` its block-bodied spelling and its module twin report (at the
   owning instance through the per-instance duty), and a closure call's owned temporary argument
   releases on the caller's side (ASan-clean) (AR-6, AR-17).
 
 ### Should Have
 
-- [ ] R14 — Programs outside the defect shapes keep byte-identical emission where pinned, and no
+- [x] R14 — Programs outside the defect shapes keep byte-identical emission where pinned, and no
   accepted non-defect program changes behavior (the corpus and strict-build sweeps prove it).
-- [ ] R15 — Every row's reproduction is re-derived red at HEAD before its fix lands (AR-14).
+- [x] R15 — Every row's reproduction is re-derived red at HEAD before its fix lands (AR-14).
 
 ### Won't Have (Out of Scope)
 
@@ -103,11 +103,11 @@ No specification text changes and no new diagnostic codes (AR-11); one user-deci
 
 ## Acceptance Criteria
 
-1. [ ] All specification and implementation tests pass; `make check` and `make verify` are green.
-2. [ ] Each of the 13 defects' reproductions is red at the pre-fix head and green after; the ASan
+1. [x] All specification and implementation tests pass; `make check` and `make verify` are green.
+2. [x] Each of the 13 defects' reproductions is red at the pre-fix head and green after; the ASan
    runs (host) are clean for every accepted defect shape.
-3. [ ] The strict builds pass for every accepted unit; no head-only C build failure.
-4. [ ] No spec text or diagnostic-registry change in the diff.
-5. [ ] Phase reviews recorded in the findings ledger; no blocking finding left open.
-6. [ ] Roadmap rows DEF-138 – DEF-141, DEF-155 – DEF-159, DEF-163 – DEF-166 set Done with evidence;
+3. [x] The strict builds pass for every accepted unit; no head-only C build failure.
+4. [x] No spec text or diagnostic-registry change in the diff.
+5. [x] Phase reviews recorded in the findings ledger; no blocking finding left open.
+6. [x] Roadmap rows DEF-138 – DEF-141, DEF-155 – DEF-159, DEF-163 – DEF-166 set Done with evidence;
    the loop continues to batch F.

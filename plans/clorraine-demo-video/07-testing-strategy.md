@@ -101,12 +101,12 @@ The emulator environment (Docker, FS-UAE, Kickstart) is never required by tests.
 
 ## Verification Checklist
 
-- [ ] All ST cases defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written before implementation
-- [ ] Specification tests verified to fail before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] `make demo-check` passes (`tsc --noEmit` + `node --test --experimental-test-coverage`)
-- [ ] The opt-in smoke render passes with `ffprobe` checks
-- [ ] No regressions in the existing `make check` suite
+- [x] All ST cases defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written before implementation
+- [x] Specification tests verified to fail before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] `make demo-check` passes (`tsc --noEmit` + `node --test --experimental-test-coverage`)
+- [x] The opt-in smoke render passes with `ffprobe` checks
+- [x] No regressions in the existing `make check` suite

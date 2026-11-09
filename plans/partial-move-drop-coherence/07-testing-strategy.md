@@ -96,12 +96,12 @@ None. The deleter is the real `FreeString`, observed through the run oracle.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a `spec/` rule or the diagnostics registry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Every move-out form runs cleanly (no double free)
-- [ ] Implementation tests written for internals
-- [ ] No regressions in existing tests (assignment fast path preserved)
-- [ ] No `spec/` file modified
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a `spec/` rule or the diagnostics registry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Every move-out form runs cleanly (no double free)
+- [x] Implementation tests written for internals
+- [x] No regressions in existing tests (assignment fast path preserved)
+- [x] No `spec/` file modified

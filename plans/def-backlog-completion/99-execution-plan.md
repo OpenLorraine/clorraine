@@ -74,8 +74,8 @@ task-size criteria: each task is independently testable and reviewable)
 > ST-21, ST-22, ST-23 (accepted instead of `E10034`), ST-26 (one `E10020`, no `E10034`).
 
 **Deliverables**:
-- [ ] Specification suite with ST-1 – ST-11 and ST-20 – ST-26
-- [ ] Red-phase evidence recorded in this plan
+- [x] Specification suite with ST-1 – ST-11 and ST-20 – ST-26
+- [x] Red-phase evidence recorded in this plan
 
 **Verify**: `make check` (the new suite compiles; expected failures recorded)
 
@@ -117,9 +117,9 @@ element reads move before release.
 > move-out pin stay green.
 
 **Deliverables**:
-- [ ] Duty machinery and the four fixes
-- [ ] Spec suite green
-- [ ] No `spec/` file changed
+- [x] Duty machinery and the four fixes
+- [x] Spec suite green
+- [x] No `spec/` file changed
 
 **Verify**: `make check`
 
@@ -168,8 +168,8 @@ element reads move before release.
 > (spec 21/21, impl 8/8). DEF-66 records the filed slice-view residual.
 
 **Deliverables**:
-- [ ] Implementation suite for Phase 1
-- [ ] All verification passing
+- [x] Implementation suite for Phase 1
+- [x] All verification passing
 
 **Verify**: `make check`
 
@@ -200,8 +200,8 @@ element reads move before release.
 > results (AR-14).
 
 **Deliverables**:
-- [ ] Specification cases ST-12 – ST-15
-- [ ] Red-phase evidence recorded
+- [x] Specification cases ST-12 – ST-15
+- [x] Red-phase evidence recorded
 
 **Verify**: `make check`
 
@@ -225,8 +225,8 @@ element reads move before release.
 > early return carries the condition temporary's null-safe release before `return`.
 
 **Deliverables**:
-- [ ] Release append implemented
-- [ ] Spec suite green
+- [x] Release append implemented
+- [x] Spec suite green
 
 **Verify**: `make check`
 
@@ -259,8 +259,8 @@ element reads move before release.
 > temporaries, and that `while`/`for`/guard paths are unaffected.
 
 **Deliverables**:
-- [ ] Implementation suite for Phase 2
-- [ ] All verification passing
+- [x] Implementation suite for Phase 2
+- [x] All verification passing
 
 **Verify**: `make check`
 
@@ -289,8 +289,8 @@ element reads move before release.
 > `((f).fn((f).env, ))`. ST-18 passes: the non-generic caller keeps `ClClosure_0` everywhere.
 
 **Deliverables**:
-- [ ] Specification cases ST-16 – ST-19 and ST-27
-- [ ] Red-phase evidence recorded
+- [x] Specification cases ST-16 – ST-19 and ST-27
+- [x] Red-phase evidence recorded
 
 **Verify**: `make check`
 
@@ -318,9 +318,9 @@ element reads move before release.
 > first walk, because a closure-only argument has no type parameter to mark it unresolved.
 
 **Deliverables**:
-- [ ] Key relocation, stamping, and renderer fix
-- [ ] Spec suite green
-- [ ] `own` does not import `codegen`
+- [x] Key relocation, stamping, and renderer fix
+- [x] Spec suite green
+- [x] `own` does not import `codegen`
 
 **Verify**: `make check`
 
@@ -362,8 +362,8 @@ element reads move before release.
 > byte-identical re-emission.
 
 **Deliverables**:
-- [ ] Implementation suite for Phase 3
-- [ ] All verification passing
+- [x] Implementation suite for Phase 3
+- [x] All verification passing
 
 **Verify**: `make check`
 

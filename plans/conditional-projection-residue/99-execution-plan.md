@@ -263,8 +263,8 @@ literal, dot-receiver, loop-condition, and owning-argument order cases.
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 23 handled rows accounted for: 21 Done with evidence; `DEF-259` and `DEF-268` closed with their incidental notes; the six older parked rows stay open with their rulings listed (AR-2)
-- [ ] The plan marked Complete
+- [x] The 23 handled rows accounted for: 21 Done with evidence; `DEF-259` and `DEF-268` closed with their incidental notes; the six older parked rows stay open with their rulings listed (AR-2)
+- [x] The plan marked Complete
 
 ---
 

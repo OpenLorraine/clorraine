@@ -116,11 +116,11 @@ None. The host volatile test uses a real local address; no external is mocked
 
 ## Verification Checklist
 
-- [ ] All ST cases defined with concrete input/output pairs
-- [ ] Every ST case traces to a spec/ledger/AR source
-- [ ] Specification tests written before implementation and verified red
-- [ ] All specification tests pass after implementation (green)
-- [ ] Implementation tests cover edge cases and internals
-- [ ] `make check` passes; `make verify` passes at each phase end
-- [ ] No regressions in the existing suites
-- [ ] `./spec/check.sh` passes after the spec edits
+- [x] All ST cases defined with concrete input/output pairs
+- [x] Every ST case traces to a spec/ledger/AR source
+- [x] Specification tests written before implementation and verified red
+- [x] All specification tests pass after implementation (green)
+- [x] Implementation tests cover edge cases and internals
+- [x] `make check` passes; `make verify` passes at each phase end
+- [x] No regressions in the existing suites
+- [x] `./spec/check.sh` passes after the spec edits

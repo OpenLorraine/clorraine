@@ -4,7 +4,7 @@
 > func-typed globals, dot-call receivers, generic instances), aggregate emission (struct stores,
 > `str` view wraps, `len` folds), the missing release of owning init temporaries, the missing
 > write-mutability checks over initializer expressions, and one body-side slice-typedef gap.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-11 02:10
 > **Implements**: DEF-130, DEF-131, DEF-132, DEF-133, DEF-134, DEF-135, DEF-137, DEF-143, DEF-152
 > **CodeOps Artifact Schema**: 1

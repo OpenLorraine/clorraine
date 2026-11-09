@@ -18,32 +18,32 @@ spelling was fixed in the preceding batch and the body spelling was noted then.
 
 ### Must Have
 
-- [ ] **R1 (DEF-131).** A lambda-literal callee in an initializer builds under the strict C
+- [x] **R1 (DEF-131).** A lambda-literal callee in an initializer builds under the strict C
   flags and runs; its lifted function and callable identity are emitted like a body lambda's.
-- [ ] **R2 (DEF-131).** A call through a func-typed module global in an initializer spells the
+- [x] **R2 (DEF-131).** A call through a func-typed module global in an initializer spells the
   global's mangled C symbol.
-- [ ] **R3 (DEF-132).** A generic function or callable call in an initializer declares and uses
+- [x] **R3 (DEF-132).** A generic function or callable call in an initializer declares and uses
   its instance (no implicit declaration at the strict build).
-- [ ] **R4 (DEF-133).** A callable-field (dot) call in an initializer passes its receiver like
+- [x] **R4 (DEF-133).** A callable-field (dot) call in an initializer passes its receiver like
   the body spelling.
-- [ ] **R5 (DEF-134).** A struct literal with a fixed-array field from a place or call result in
+- [x] **R5 (DEF-134).** A struct literal with a fixed-array field from a place or call result in
   an initializer emits a valid store (statement form with `memcpy` where the body does).
-- [ ] **R6 (DEF-135).** A `str`-typed module binding initialized from a template or owned
+- [x] **R6 (DEF-135).** A `str`-typed module binding initialized from a template or owned
   `String` value receives the view wrapper (`cl_string_view`).
-- [ ] **R7 (DEF-143).** A qualified dot-`len` on a fixed-array field in an initializer folds to
+- [x] **R7 (DEF-143).** A qualified dot-`len` on a fixed-array field in an initializer folds to
   the declared extent (never a silent `0`).
-- [ ] **R8 (DEF-130).** Every owning temporary a module initializer binds releases exactly once
+- [x] **R8 (DEF-130).** Every owning temporary a module initializer binds releases exactly once
   at the init function's end; the three filed leak shapes are host-ASan-clean.
-- [ ] **R9 (DEF-152).** Initializer expressions run the write-mutability checks: a write through
+- [x] **R9 (DEF-152).** Initializer expressions run the write-mutability checks: a write through
   a `const` global reports `E10023`, an immutable-view write reports its code, matching the
   function-body reports.
-- [ ] **R10 (DEF-137).** A written slice type argument (`sizeof(i32[])`) in a function body
+- [x] **R10 (DEF-137).** A written slice type argument (`sizeof(i32[])`) in a function body
   defines its slice typedef, like the initializer spelling.
 
 ### Should Have
 
-- [ ] The fixes are shape-gated: unaffected initializers re-emit byte-identically (R11).
-- [ ] Each mirrored contract keeps one definition where practical; where the init path must
+- [x] The fixes are shape-gated: unaffected initializers re-emit byte-identically (R11).
+- [x] Each mirrored contract keeps one definition where practical; where the init path must
   duplicate a body predicate, the duplication is named in the design doc.
 
 ### Won't Have (Out of Scope)
@@ -89,10 +89,10 @@ spelling was fixed in the preceding batch and the body spelling was noted then.
 
 ## Acceptance Criteria
 
-1. [ ] Every R1 – R10 acceptance item holds with spec tests written first (red at the batch
+1. [x] Every R1 – R10 acceptance item holds with spec tests written first (red at the batch
    base, green at the head).
-2. [ ] `make check` green (all suites) and `make verify` all legs passed at close-out.
-3. [ ] The existing initializer pins are unchanged (byte-identity for unaffected shapes).
-4. [ ] No new diagnostic code, no `spec/` change.
-5. [ ] `AGENTS.md` test map and `plans/00-roadmap.md` synced; the plan closed with its review
+2. [x] `make check` green (all suites) and `make verify` all legs passed at close-out.
+3. [x] The existing initializer pins are unchanged (byte-identity for unaffected shapes).
+4. [x] No new diagnostic code, no `spec/` change.
+5. [x] `AGENTS.md` test map and `plans/00-roadmap.md` synced; the plan closed with its review
    evidence.

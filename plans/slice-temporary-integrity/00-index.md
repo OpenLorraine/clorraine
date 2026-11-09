@@ -4,7 +4,7 @@
 > critical multi-extent slice view mis-typing (DEF-70), the aggregate-literal consume order/fill
 > gaps (DEF-72, DEF-73, DEF-74), the unbound non-direct-call roots and receivers (DEF-71, DEF-89),
 > and the invalid call-indexed element-store spelling (DEF-75).
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-08 07:36
 > **Implements**: DEF-70, DEF-71, DEF-72, DEF-73, DEF-74, DEF-75, DEF-89
 > **CodeOps Artifact Schema**: 1

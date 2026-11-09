@@ -1,7 +1,7 @@
 # Closure Integrity Implementation Plan
 
 > **Feature**: Fix the six closure/callable defects (DEF-92, DEF-93, DEF-94, DEF-104, DEF-109, DEF-110) so capture lists, captured owners, and callable values behave per the frozen rules.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-10 10:35
 > **Implements**: DEF-92, DEF-93, DEF-94, DEF-104, DEF-109, DEF-110
 > **CodeOps Artifact Schema**: 1

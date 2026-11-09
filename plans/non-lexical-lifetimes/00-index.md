@@ -1,7 +1,7 @@
 # Non-Lexical Lifetimes Implementation Plan
 
 > **Feature**: Replace the version-1 conservative lexical loan model with non-lexical lifetimes (RFC 2094): a loan is live from its creation to its last use on any path, not to the end of the scope that owns the derived view.
-> **Status**: Planning Complete
+> **Status**: Done — 22/22 tasks; R1–R9 traced; `make check` and `make verify` green (2026-11-09 closeout).
 > **Created**: 2026-09-27 01:17
 > **Implements**: PLAN-12
 > **CodeOps Artifact Schema**: 1

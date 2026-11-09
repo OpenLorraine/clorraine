@@ -214,18 +214,18 @@ dividend is still stored once and the division is still tested.
 
 ## Verification Checklist
 
-- [ ] Every ST case traces to R4–R7 or a cross-cutting requirement.
-- [ ] The spec suite passes on the base compiler before implementation.
-- [ ] The fix-pass additions (ST-43–ST-50) are green; the impl suite has 34 pins.
-- [ ] The impl suite's red pins (IP-1, IP-2, IP-3, IP-5, IP-6, IP-7, IP-9,
+- [x] Every ST case traces to R4–R7 or a cross-cutting requirement.
+- [x] The spec suite passes on the base compiler before implementation.
+- [x] The fix-pass additions (ST-43–ST-50) are green; the impl suite has 34 pins.
+- [x] The impl suite's red pins (IP-1, IP-2, IP-3, IP-5, IP-6, IP-7, IP-9,
       IP-10, IP-14, IP-15, IP-17, IP-20) fail on the base compiler.
-- [ ] The green pins (IP-4, IP-8, IP-11, IP-12, IP-13, IP-16, IP-18, IP-19)
+- [x] The green pins (IP-4, IP-8, IP-11, IP-12, IP-13, IP-16, IP-18, IP-19)
       pass on the base and after the change.
-- [ ] The impl suite is green after implementation.
-- [ ] `make bench-base`, `make bench`, and `make bench-compare` produce the
+- [x] The impl suite is green after implementation.
+- [x] `make bench-base`, `make bench`, and `make bench-compare` produce the
       recorded evidence and pass R1.5 plus the R4.8/R5.7 sieve targets.
-- [ ] `make bench-test` passes in the pinned container and is part of
+- [x] `make bench-test` passes in the pinned container and is part of
       `make check`.
-- [ ] `make check`, `make asan`, `make corpus-amiga`, `make differential`, and
+- [x] `make check`, `make asan`, `make corpus-amiga`, `make differential`, and
       `make verify` are green.
-- [ ] No file under `spec/` is edited.
+- [x] No file under `spec/` is edited.

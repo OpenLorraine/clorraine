@@ -119,13 +119,13 @@ assumption as `clorraine_driver_spec_test.rs`).
 
 ## Verification Checklist
 
-- [ ] All 21 specification test cases (ST-1 – ST-21) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase per phase: ST-1 – ST-7
+- [x] All 21 specification test cases (ST-1 – ST-21) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase per phase: ST-1 – ST-7
   before Phase 1's code, ST-8 – ST-15 and ST-20 – ST-21 before Phase 2's, ST-16 – ST-19 before
   Phase 3's)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] `make check`, `make verify`, and `make demo-check` pass
-- [ ] No regressions in existing tests (the default human output is unchanged, R6)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] `make check`, `make verify`, and `make demo-check` pass
+- [x] No regressions in existing tests (the default human output is unchanged, R6)

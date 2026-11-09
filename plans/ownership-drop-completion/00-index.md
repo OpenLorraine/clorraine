@@ -1,7 +1,7 @@
 # Ownership and Drop Model Completion Implementation Plan
 
 > **Feature**: Make a fixed array an owned aggregate rather than a view, give fixed and growable arrays owning-element drop glue, and close the view-typed-field check.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-26 14:03
 > **Implements**: PLAN-11
 > **CodeOps Artifact Schema**: 1

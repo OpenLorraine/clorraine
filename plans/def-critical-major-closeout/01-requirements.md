@@ -16,22 +16,22 @@ so the plan tracks 35 DEF rows. The 101 minor rows are outside this plan
 
 ### Must Have
 
-- [ ] R1 — Batch A: `DEF-543` no longer accepts a same-frame conditional write
+- [x] R1 — Batch A: `DEF-543` no longer accepts a same-frame conditional write
   that launders a local view into an out-slot.
-- [ ] R2 — Batch B: the eleven raw/conditional store and alias defects
+- [x] R2 — Batch B: the eleven raw/conditional store and alias defects
   (`DEF-454`, `455`, `456`, `457`, `458`, `460`, `461`, `462`, `464`, `465`,
   `466`) no longer produce a use-after-free, double-free, lost store, or
   silently wrong value.
-- [ ] R3 — Batch C: the conditional materialization/read-base rows
+- [x] R3 — Batch C: the conditional materialization/read-base rows
   (`DEF-470` revalidation, `471`, `472`, `473`, `475`, `476`, `477`, `478`,
   `479`, `480`, `481`) emit valid C, evaluate in source order, and release or
   retain every owned root exactly once.
-- [ ] R4 — Batch D: the generic/null/conditional parity rows (`DEF-411`,
+- [x] R4 — Batch D: the generic/null/conditional parity rows (`DEF-411`,
   `412`, `413`, `415`, `505`, `506`, `507`, `513`, `522`) match their concrete
   twins: safe programs are accepted, unsafe programs are rejected with the
   concrete twin's count (one report per site, or one per nullable arm for a
   same-arm nullable conditional), and accepted programs emit valid C.
-- [ ] R5 — Batch E: `DEF-167` and `DEF-171`'s in-scope forms no longer accept a
+- [x] R5 — Batch E: `DEF-167` and `DEF-171`'s in-scope forms no longer accept a
   program whose C build fails; `DEF-416` reports the cross-module same-simple-name type
   collision with one `E11101` at the second declaration instead of collapsing
   the two types into one table entry. `DEF-171` covers the function-body,
@@ -39,25 +39,25 @@ so the plan tracks 35 DEF rows. The 101 minor rows are outside this plan
   `E10224`. R-6 resolved the `spec/04` §16 / `spec/13` §1 conflict in favor of
   `spec/04`: a module-level `let embed` reports `E10213`, and the `spec/13`
   sentence is recorded as a frozen inconsistency.
-- [ ] R6 — Every active DEF has a specification regression derived from its
+- [x] R6 — Every active DEF has a specification regression derived from its
   concrete twin or frozen spec, written before the fix and verified red.
   `DEF-470` is the stale green pin (ST-12). A Phase 0 revalidation that closes
   `DEF-506` or `DEF-507` as stale under AR-16 gets a green HEAD pin instead of a
   red one; the `05-findings.md` proof records why. These green pins are the only
   exemptions from the red rule.
-- [ ] R7 — Each fix has an implementation/ASAN/strict-build control where its
+- [x] R7 — Each fix has an implementation/ASAN/strict-build control where its
   class needs one; accepted outputs that change are re-emitted deterministically.
-- [ ] R8 — Each roadmap row is marked Done through the roadmap skill with its
+- [x] R8 — Each roadmap row is marked Done through the roadmap skill with its
   commit and evidence at phase close; no row is closed without a reproducing
   test or a current-HEAD proof. The phase record is added to `05-findings.md`.
-- [ ] R9 — `make check` and `make verify` pass at the end of every phase and at
+- [x] R9 — `make check` and `make verify` pass at the end of every phase and at
   the end of the program.
 
 ### Should Have
 
-- [ ] R10 — Fixes reuse the existing ownership, instance-audit, and codegen
+- [x] R10 — Fixes reuse the existing ownership, instance-audit, and codegen
   helpers; no generalized summary subsystem (AR-12).
-- [ ] R11 — Each batch stays reviewable as its own commit series, with the
+- [x] R11 — Each batch stays reviewable as its own commit series, with the
   phase and task markers kept current.
 
 ### Won't Have (Out of Scope)
@@ -117,18 +117,18 @@ size and does not run over the corpus twice.
 
 ## Acceptance Criteria
 
-1. [ ] All 34 active DEF rows are Done, and `DEF-470` is closed as stale with
+1. [x] All 34 active DEF rows are Done, and `DEF-470` is closed as stale with
    current-HEAD evidence; the plan tracks 35 DEF rows including the stale close.
-2. [ ] Each active DEF has a failing-before/passing-after specification test.
+2. [x] Each active DEF has a failing-before/passing-after specification test.
    ST-12 is the green stale pin for `DEF-470`; a `DEF-506`/`DEF-507` stale close
    under AR-16 is a green HEAD pin with its `05-findings.md` proof. No other row
    is exempt from the red rule.
-3. [ ] Memory rows are ASAN/LSan clean on their accepted controls and reject the
+3. [x] Memory rows are ASAN/LSan clean on their accepted controls and reject the
    unsafe reproduction.
-4. [ ] Emission rows build under the strict C leg and preserve corpus output.
-5. [ ] No open critical or major DEF remains in `plans/00-roadmap.md`; the
+4. [x] Emission rows build under the strict C leg and preserve corpus output.
+5. [x] No open critical or major DEF remains in `plans/00-roadmap.md`; the
    roadmap rows are synced through the roadmap skill.
-6. [ ] `make check` and `make verify` pass; review findings are closed or
+6. [x] `make check` and `make verify` pass; review findings are closed or
    explicitly recorded.
-7. [ ] No new warnings, dead code, or spec change without approval; `DEF-416` is
+7. [x] No new warnings, dead code, or spec change without approval; `DEF-416` is
    a documented conservative collision limit, not a spec amendment.

@@ -148,13 +148,13 @@ None; the tests use the real compiler and the real C toolchain.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a specification section or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] Off-host build-only compile of a borrow-element program (freestanding leg)
-- [ ] `make check` green after every GREEN task (RED tasks fail for the defect reason); `make verify` green before completion
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a specification section or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] Off-host build-only compile of a borrow-element program (freestanding leg)
+- [x] `make check` green after every GREEN task (RED tasks fail for the defect reason); `make verify` green before completion

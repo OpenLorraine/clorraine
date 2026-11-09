@@ -1,6 +1,6 @@
 # Execution Plan — Memory and Borrow Critical Closeout (Batch O)
 
-> **Progress**: 24/26 tasks
+> **Progress**: 26/26 tasks
 > **Rows**: `DEF-449`, `DEF-450`, `DEF-451`, `DEF-452`, `DEF-453`, `DEF-459`, `DEF-468`, `DEF-469`
 > **Baseline**: `d19a467`
 > **Layout**: flat (`plans/<feature>/99-execution-plan.md`)
@@ -96,6 +96,6 @@
 > **Lenses**: correctness, semantics
 
 - [x] 4.1.1 Record the generated-owner ruling and add the green same-statement/later-fill control
-- [ ] 4.1.2 Run `make check`, `make verify`, the focused ASan legs, and the emission differentials
-- [ ] 4.1.3 Update the roadmap rows (`DEF-449`, `450`, `451`, `453`, `459`, `468`, `469` Done;
-      `DEF-452` Done with the ruling), the ledger, and the plan status; push
+- [x] 4.1.2 Run `make check`, `make verify`, the focused ASan legs, and the emission differentials ✅ (closed 2026-11-09) — the current tree is green: `make check` and `make verify` (`verify: all legs passed`), `make asan` 29/29 (including the borrower/store and eval-emission suites), `make ubsan` 3/3, and the base/head emission audit over the corpus, benchmarks, and Amiga examples is byte-identical outside the intended volatile probes (the post-Batch-O changes are documented in their own plans).
+- [x] 4.1.3 Update the roadmap rows (`DEF-449`, `450`, `451`, `453`, `459`, `468`, `469` Done;
+      `DEF-452` Done with the ruling), the ledger, and the plan status; push ✅ (all eight roadmap rows are `Done` in `plans/00-roadmap.md`; the plan progress is 26/26)

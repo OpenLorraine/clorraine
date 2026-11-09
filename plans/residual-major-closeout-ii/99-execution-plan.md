@@ -91,8 +91,8 @@ non-null controls.
 **Verify**: `make check`; the view cases under `RDC_ASAN=1`; the strict-build probes
 
 **Deliverables**:
-- [ ] ST-1..ST-3 red then green (the non-null twins as controls)
-- [ ] The origin suites and the pinned oracles stay green
+- [x] ST-1..ST-3 red then green (the non-null twins as controls)
+- [x] The origin suites and the pinned oracles stay green
 
 ---
 
@@ -134,8 +134,8 @@ conditional/non-local place bases with their controls.
 **Verify**: `make check`; the focused suites; the strict builds
 
 **Deliverables**:
-- [ ] ST-4..ST-6 red then green
-- [ ] The batch-K element cases and the `checker_conformance` oracle stay green
+- [x] ST-4..ST-6 red then green
+- [x] The batch-K element cases and the `checker_conformance` oracle stay green
 
 ---
 
@@ -179,8 +179,8 @@ duplicable out-slot, and the capture pair control.
 **Verify**: `make check`; the element cases under `RDC_ASAN=1`; the strict builds
 
 **Deliverables**:
-- [ ] ST-7..ST-9 red then green; ST-10 stays the green control
-- [ ] The element-loop origin pins and the `checker_conformance` oracle stay green
+- [x] ST-7..ST-9 red then green; ST-10 stays the green control
+- [x] The element-loop origin pins and the `checker_conformance` oracle stay green
 
 ---
 
@@ -220,8 +220,8 @@ ST-11..ST-12 · AR-3, AR-5
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-11..ST-12 red then green (ASan/LSan-clean)
-- [ ] The loan/carrier origin pins stay green
+- [x] ST-11..ST-12 red then green (ASan/LSan-clean)
+- [x] The loan/carrier origin pins stay green
 
 ---
 
@@ -262,8 +262,8 @@ ST-13..ST-14 · AR-6
 **Verify**: `make check`; the guard cases under `RDC_ASAN=1`; the strict builds
 
 **Deliverables**:
-- [ ] ST-13..ST-14 red then green (ST-13 the frozen `E10221` rejection)
-- [ ] The batch-J literal/store origin pins stay green
+- [x] ST-13..ST-14 red then green (ST-13 the frozen `E10221` rejection)
+- [x] The batch-J literal/store origin pins stay green
 
 ---
 
@@ -306,8 +306,8 @@ ST-15..ST-17 · AR-8
 **Verify**: `make check`; the conversion/`ffi` origin cases; the compile-only strict builds
 
 **Deliverables**:
-- [ ] ST-15..ST-16 red then green; ST-17 stays the green control (per-spelling table)
-- [ ] The legal instances and the `checker_conformance` oracle stay green
+- [x] ST-15..ST-16 red then green; ST-17 stays the green control (per-spelling table)
+- [x] The legal instances and the `checker_conformance` oracle stay green
 
 ---
 
@@ -351,8 +351,8 @@ member.
 **Verify**: `make check`; the strict builds
 
 **Deliverables**:
-- [ ] ST-18..ST-20 red then green (or the registered AR-7 park)
-- [ ] The batch-K member pins and the `checker_conformance` oracle stay green
+- [x] ST-18..ST-20 red then green (or the registered AR-7 park)
+- [x] The batch-K member pins and the `checker_conformance` oracle stay green
 
 ---
 
@@ -398,8 +398,8 @@ checker typing.
 **Verify**: `make check`; the identity matrix and the profile legs
 
 **Deliverables**:
-- [ ] ST-21..ST-23 red then green (or the registered AR-13 park)
-- [ ] The `k18` matrix and the origin suites stay green
+- [x] ST-21..ST-23 red then green (or the registered AR-13 park)
+- [x] The `k18` matrix and the origin suites stay green
 
 ---
 
@@ -422,9 +422,9 @@ checker typing.
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 23 rows accounted for: 21 Done with evidence plus 2 incidental fixes with controls
-- [ ] The parked rows' rulings collected (AR-2)
-- [ ] The plan marked Complete
+- [x] The 23 rows accounted for: 21 Done with evidence plus 2 incidental fixes with controls
+- [x] The parked rows' rulings collected (AR-2)
+- [x] The plan marked Complete
 
 ---
 
@@ -476,9 +476,9 @@ independent but reviewed after the instance work so their fixes ride the settled
 
 **Feature is complete when:**
 
-1. [ ] All phases completed
-2. [ ] All verification passing (`make check`; `make verify` at close-out)
-3. [ ] No warnings/errors; no dead code
-4. [ ] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
-5. [ ] Documentation updated (the roadmap rows and the findings ledger)
-6. [ ] Code reviewed (every phase's declared lenses)
+1. [x] All phases completed
+2. [x] All verification passing (`make check`; `make verify` at close-out)
+3. [x] No warnings/errors; no dead code
+4. [x] Security hardened — not applicable beyond the compiler's own input validation (unchanged)
+5. [x] Documentation updated (the roadmap rows and the findings ledger)
+6. [x] Code reviewed (every phase's declared lenses)

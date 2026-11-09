@@ -1,7 +1,7 @@
 # Store-Emission Integrity Implementation Plan
 
 > **Feature**: Fix the four open major defects (DEF-113, DEF-114, DEF-115, DEF-116) so accepted source compiles, builds, and releases storage correctly.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-10 08:02
 > **Implements**: DEF-113, DEF-114, DEF-115, DEF-116
 > **CodeOps Artifact Schema**: 1

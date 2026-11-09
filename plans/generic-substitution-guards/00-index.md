@@ -1,7 +1,7 @@
 # Generic Substitution Guards Implementation Plan
 
 > **Feature**: Audit a program's concrete instantiations so a `str` or slice substituted into a struct field reports `E10205`, and a move-only type substituted into an array fill reports `E10215`, instead of compiling.
-> **Status**: Planning Complete
+> **Status**: Done — 13/13 tasks; DEF-12 closed (2026-09-26); plan and roadmap rows complete.
 > **Created**: 2026-09-26
 > **Implements**: DEF-12
 > **CodeOps Artifact Schema**: 1

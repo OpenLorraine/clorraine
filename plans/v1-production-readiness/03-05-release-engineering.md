@@ -101,16 +101,16 @@ repository = "https://github.com/OpenLorraine/clorraine"
 ```markdown
 ## v1.0 release checklist
 
-- [ ] AR-12 recorded: v1.0.0, source + x86_64 tarball; Cargo `version` matches
-- [ ] `make check` green
-- [ ] `make verify` all legs passed
-- [ ] `make asan` green (serial suites)
-- [ ] `make differential` green
-- [ ] MIT LICENSE, Cargo metadata, and demo manifest/lockfile MIT present
-- [ ] `docs/known-limitations.md` current and linked from `README.md` and `spec/README.md`
-- [ ] source tag created
-- [ ] Linux x86_64 binary built and smoke-tested; exact `clc 1.0.0`; aarch64 deferred to PLAN-07
-- [ ] SHA256SUMS, release notes, and `CHANGELOG.md` entry attached
+- [x] AR-12 recorded: v1.0.0, source + x86_64 tarball; Cargo `version` matches
+- [x] `make check` green
+- [x] `make verify` all legs passed
+- [x] `make asan` green (serial suites)
+- [x] `make differential` green
+- [x] MIT LICENSE, Cargo metadata, and demo manifest/lockfile MIT present
+- [x] `docs/known-limitations.md` current and linked from `README.md` and `spec/README.md`
+- [x] source tag created
+- [x] Linux x86_64 binary built and smoke-tested; exact `clc 1.0.0`; aarch64 deferred to PLAN-07
+- [x] SHA256SUMS, release notes, and `CHANGELOG.md` entry attached
 ```
 
 ## Error Handling

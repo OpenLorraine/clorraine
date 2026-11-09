@@ -26,30 +26,30 @@ the `E10042` registry row and its golden, which the user explicitly authorized (
 
 ### Must Have
 
-- [ ] **R1 (DEF-113)** — a whole-value conditional store into a non-nullable `borrow` parameter
+- [x] **R1 (DEF-113)** — a whole-value conditional store into a non-nullable `borrow` parameter
   that owns storage is rejected with exactly one `E10034` naming the target, for the concrete
   and the generic spellings alike; the judgment is per instance for a still-parameter-typed slot
   (owning → rejected, duplicable → accepted); the nullable out-slot conditional stays accepted
   (AR-4, AR-5).
-- [ ] **R2 (DEF-114)** — any write to an element of a `str` or `static str` view is rejected with
+- [x] **R2 (DEF-114)** — any write to an element of a `str` or `static str` view is rejected with
   exactly one new `E10042`, for plain, compound, and update forms over parameter, local, field,
   and module-level bases; whole-view rebinds, element reads, and writes through a `borrow`-derived
   `u8[]` view stay accepted (AR-6, AR-7).
-- [ ] **R3 (DEF-115)** — the emitted C defines every typedef before its uses: a slice of a user
+- [x] **R3 (DEF-115)** — the emitted C defines every typedef before its uses: a slice of a user
   struct or enum builds under the strict flags, and a struct that embeds an enum builds; closure
   environments that capture a slice stay valid (AR-8).
-- [ ] **R4 (DEF-116)** — a module-level fixed-array initializer is emitted element-wise (flat,
+- [x] **R4 (DEF-116)** — a module-level fixed-array initializer is emitted element-wise (flat,
   nested, fill, place-copy, and conditional values), and a module-level compiler-intrinsic call
   (`slice`) is lowered to the intrinsic view construction with operand-once evaluation and the
   existing bounds guards (AR-9, AR-10, AR-11, AR-18).
 
 ### Should Have
 
-- [ ] **R5** — byte-identical re-emission: compiling an accepted program twice produces identical
+- [x] **R5** — byte-identical re-emission: compiling an accepted program twice produces identical
   translation units (the existing determinism convention).
-- [ ] **R6** — the memory cases of R1 are ASan-clean on the host probes, and the accepted
+- [x] **R6** — the memory cases of R1 are ASan-clean on the host probes, and the accepted
   alternative spellings keep running (AR-13).
-- [ ] **R7** — the new `E10042` golden participates in `./spec/check.sh`, and `spec/` changes are
+- [x] **R7** — the new `E10042` golden participates in `./spec/check.sh`, and `spec/` changes are
   limited to the authorized modification set (AR-12).
 
 ### Won't Have (Out of Scope)
@@ -99,11 +99,11 @@ the `E10042` registry row and its golden, which the user explicitly authorized (
 
 ## Acceptance Criteria
 
-1. [ ] All four Must-Have requirements verified by their specification suites (ST cases in
+1. [x] All four Must-Have requirements verified by their specification suites (ST cases in
    [07-testing-strategy.md](07-testing-strategy.md) traced to their sources).
-2. [ ] `make check` green after every phase; `make verify` green at close-out.
-3. [ ] Host ASan probes clean for the R1 memory cases; the accepted alternatives run.
-4. [ ] `./spec/check.sh` green with the new `E10042` golden; no other `spec/` change.
-5. [ ] No warnings under `-Wall -Wextra -Werror` for every covered emitted unit.
-6. [ ] No dead code; no new dependencies; the workspace stays std-only.
-7. [ ] The four roadmap rows link this plan and advance appropriately.
+2. [x] `make check` green after every phase; `make verify` green at close-out.
+3. [x] Host ASan probes clean for the R1 memory cases; the accepted alternatives run.
+4. [x] `./spec/check.sh` green with the new `E10042` golden; no other `spec/` change.
+5. [x] No warnings under `-Wall -Wextra -Werror` for every covered emitted unit.
+6. [x] No dead code; no new dependencies; the workspace stays std-only.
+7. [x] The four roadmap rows link this plan and advance appropriately.

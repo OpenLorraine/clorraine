@@ -4,7 +4,7 @@
 > members, `cstring` crossings), generic-instance judgments (parameter iterables, value-form
 > member reads, the conditional `len` fold), null-shaped values, diagnostic hygiene — plus two
 > emission-guard fixes and three plan-created companion rows in the same mechanisms.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-11 15:20
 > **Implements**: DEF-136, DEF-142, DEF-144, DEF-145, DEF-146, DEF-147, DEF-148, DEF-149,
 > DEF-150, DEF-151, DEF-153, DEF-154, DEF-160, DEF-161, DEF-162, DEF-213 (gated on a ruling),

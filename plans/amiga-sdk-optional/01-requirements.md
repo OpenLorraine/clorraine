@@ -122,11 +122,11 @@ evidence at the row’s baseline.
 
 ## Acceptance Criteria
 
-1. [ ] All 20 in-scope rows are `done` with acceptance and evidence; RTG remains out-of-scope.
-2. [ ] `make check` passes with 0 failures.
-3. [ ] `make verify` passes headlessly, including the new gates.
-4. [ ] `make sdk-registry` passes; Bundle 9 shows 20 in-scope done / 21 total including RTG.
-5. [ ] Every new module has a spec test, an impl test, a profile rejection test, and an appendix
+1. [x] All 20 in-scope rows are `done` with acceptance and evidence; RTG remains out-of-scope.
+2. [x] `make check` passes with 0 failures.
+3. [x] `make verify` passes headlessly, including the new gates.
+4. [x] `make sdk-registry` passes; Bundle 9 shows 20 in-scope done / 21 total including RTG.
+5. [x] Every new module has a spec test, an impl test, a profile rejection test, and an appendix
    export check.
-6. [ ] Issue #10 is regenerated, updated, and closed; issue #11 remains the RTG backlog.
-7. [ ] No media, decrypted ROM, or scratch artifact remains in the repository.
+6. [x] Issue #10 is regenerated, updated, and closed; issue #11 remains the RTG backlog.
+7. [x] No media, decrypted ROM, or scratch artifact remains in the repository.

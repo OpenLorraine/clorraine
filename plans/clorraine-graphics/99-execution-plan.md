@@ -75,7 +75,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 1.1.2 Confirm the red phase for ST-2 only: the test fails because the modules are unresolved (ST-5 cannot demonstrate red before the module exists) ✅ (completed: 2026-09-24 14:53)
 
 **Deliverables**:
-- [ ] `graphics_spec_test.rs` exists and fails for the expected reason
+- [x] `graphics_spec_test.rs` exists and fails for the expected reason
 
 **Verify**: `make check`
 
@@ -93,7 +93,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 1.2.5 Green phase: ST-2 and ST-5 pass; the existing `stdlib` unit tests (ST-3, ST-6) pass ✅ (completed: 2026-09-24 14:55)
 
 **Deliverables**:
-- [ ] Both modules registered; spec tests green
+- [x] Both modules registered; spec tests green
 
 **Verify**: `make check`
 
@@ -118,7 +118,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 1.3.4 Verify the `title` lifetime contract (PF-004): confirm whether `OpenScreen` copies or retains `DefaultTitle`, then document in the module/requirements that the caller's `title` must outlive the screen ✅ (completed: 2026-09-24 14:56; `Screen.Title` is a `STRPTR`, so Intuition retains the pointer, not a copy)
 
 **Deliverables**:
-- [ ] Shim compiles warning-free; a hosted-amiga program links and builds
+- [x] Shim compiles warning-free; a hosted-amiga program links and builds
 
 **Verify**: `make check`
 
@@ -133,7 +133,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 1.4.2 Phase verification ✅ (completed: 2026-09-24 15:01; `make check` 15/15 green and `make verify` all legs passed after AR-36 option A)
 
 **Deliverables**:
-- [ ] Impl tests pass; no regressions
+- [x] Impl tests pass; no regressions
 
 **Verify**: `make check` then `make verify`
 
@@ -154,7 +154,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 2.1.2 Create `spec/tests/corpus/graphics/README.md` (coverage, warning audit, hand-check record) ✅ (completed: 2026-09-24 15:16)
 
 **Deliverables**:
-- [ ] The corpus program builds for hosted-amiga and prints the golden
+- [x] The corpus program builds for hosted-amiga and prints the golden
 
 **Verify**: `make check`
 
@@ -169,7 +169,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 2.2.2 Add the graphics build-only section to `docker/scripts/corpus-amiga.sh` ✅ (completed: 2026-09-24 15:18)
 
 **Deliverables**:
-- [ ] `make corpus-amiga` builds the graphics binary; the host-rejection test passes
+- [x] `make corpus-amiga` builds the graphics binary; the host-rejection test passes
 
 **Verify**: `make check` then `make corpus-amiga`
 
@@ -183,7 +183,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 2.3.1 Extend `docker/scripts/corpus-fs-uae.sh` to run the graphics program with `RUN_CAPTURE=1`, wait for the `graphics: ok` sentinel, and diff the golden (factor the shared sentinel/diff logic so interrupt-counter still works) ✅ (completed: 2026-09-24 15:19; both legs match under FS-UAE)
 
 **Deliverables**:
-- [ ] `make corpus-fs-uae` passes both legs
+- [x] `make corpus-fs-uae` passes both legs
 
 **Verify**: `make corpus-fs-uae`
 
@@ -197,7 +197,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 2.4.1 Phase verification ✅ (completed: 2026-09-24 15:20; `make check` 15/15 and `make verify` all legs, including the graphics FS-UAE leg)
 
 **Deliverables**:
-- [ ] All corpus and spec tests pass; no regressions
+- [x] All corpus and spec tests pass; no regressions
 
 **Verify**: `make check` then `make verify`
 
@@ -219,7 +219,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 3.1.4 Update `AGENTS.md` for the new surface: the two test files in the test naming map, and the two stdlib modules plus shim in the layout notes (PF-006) ✅ (completed: 2026-09-24 19:16)
 
 **Deliverables**:
-- [ ] Both appendices document the surface; `./spec/check.sh` passes
+- [x] Both appendices document the surface; `./spec/check.sh` passes
 
 **Verify**: `make check`
 
@@ -241,7 +241,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 - [x] 4.1.4 Final verification of the whole feature ✅ (completed: 2026-09-24 20:55; `make check` 15/15 and `make verify` all legs, graphics FS-UAE leg included)
 
 **Deliverables**:
-- [ ] `demo/demo-full.mp4` includes the graphics chapter
+- [x] `demo/demo-full.mp4` includes the graphics chapter
 
 **Verify**: `make verify`
 

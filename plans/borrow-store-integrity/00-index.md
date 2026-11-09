@@ -1,7 +1,7 @@
 # Borrow-Store Integrity Implementation Plan
 
 > **Feature**: Fix the five open write-path defects (DEF-100, DEF-101, DEF-102, DEF-105, DEF-106) to the frozen specification's rules.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-10 00:34
 > **Implements**: DEF-100, DEF-101, DEF-102, DEF-105, DEF-106
 > **CodeOps Artifact Schema**: 1

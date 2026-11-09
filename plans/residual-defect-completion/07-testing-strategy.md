@@ -107,12 +107,12 @@ None. All tests use the real compiler and the host C toolchain; no mocks.
 
 ## Verification Checklist
 
-- [ ] All specification test cases (ST-*) defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement or AR entry
-- [ ] Specification tests written BEFORE implementation, phase by phase
-- [ ] Specification tests verified to FAIL before implementation (red phase)
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] All unit / integration / E2E tests pass
-- [ ] No regressions in existing tests
-- [ ] Sanitizer probes record the pre-fix failure and are clean post-fix
+- [x] All specification test cases (ST-*) defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement or AR entry
+- [x] Specification tests written BEFORE implementation, phase by phase
+- [x] Specification tests verified to FAIL before implementation (red phase)
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] All unit / integration / E2E tests pass
+- [x] No regressions in existing tests
+- [x] Sanitizer probes record the pre-fix failure and are clean post-fix

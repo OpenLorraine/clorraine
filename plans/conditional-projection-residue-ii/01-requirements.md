@@ -19,7 +19,7 @@ registry edit (AR-2).
 
 ### Must Have
 
-- [ ] **R1 — View owners, loans, and stores** (`DEF-281`, `DEF-285`, `DEF-286`, `DEF-287`,
+- [x] **R1 — View owners, loans, and stores** (`DEF-281`, `DEF-285`, `DEF-286`, `DEF-287`,
   `DEF-288`, `DEF-290`, `DEF-291`): a duplicable projection over a residual-owning fresh root
   binds the root for its residual release in the take, return, and read positions (the selected
   value stays a copy); a runtime-index element store of a view routes through the constant
@@ -30,13 +30,13 @@ registry edit (AR-2).
   path does; the literal-carrier loan is dropped when the field or the whole carrier is
   overwritten; an all-null composite view store is accepted (an empty storage-atom set names no
   storage).
-- [ ] **R2 — Guarded, discarded, and carrier roots** (`DEF-284`, `DEF-292`, `DEF-293`, `DEF-297`):
+- [x] **R2 — Guarded, discarded, and carrier roots** (`DEF-284`, `DEF-292`, `DEF-293`, `DEF-297`):
   a guarded argument whose view element wraps a fresh call root binds the call root for its
   residual release and runs no call on the skipped path; a conditional carrier literal's taken
   arm binds its fresh element root for the local's frame; a discarded arm's release need is
   judged by the root's residual ownership, not only the selected type; the bare discarded
   all-fresh literal statement materializes and releases its fields.
-- [ ] **R3 — Fixed-array and literal emissions** (`DEF-298`, `DEF-299`, `DEF-300`, `DEF-302`,
+- [x] **R3 — Fixed-array and literal emissions** (`DEF-298`, `DEF-299`, `DEF-300`, `DEF-302`,
   `DEF-303`, `DEF-304`, `DEF-305`, `DEF-306`): a fixed-array field initialized from a
   conditional value and a conditional root projected into a literal field route through the
   per-arm destination store; a guarded `len` over a literal view-array field emits the
@@ -46,7 +46,7 @@ registry edit (AR-2).
   constructors through the per-arm destination store; `fixed_array_field_needs_stores` descends
   array-literal elements; the nested conditional-arm projection distributes at the element-read
   base.
-- [ ] **R4 — Loop conditions, update order, and store lowering** (`DEF-294`, `DEF-295`, `DEF-308`,
+- [x] **R4 — Loop conditions, update order, and store lowering** (`DEF-294`, `DEF-295`, `DEF-308`,
   `DEF-309`, `DEF-310`): a loop-condition receiver with mixed arms pins its receiver position
   (the strict build passes on both toolchains, or the row closes as a control with the
   re-measured evidence); a loop-condition member projection of a fresh root binds the root once
@@ -54,7 +54,7 @@ registry edit (AR-2).
   their updates inside the guard path (the per-iteration `Materialize` fill precedent); the
   array fill expression is evaluated once, before the element loop; a bare raw-deref store
   target lowers and the write lands.
-- [ ] **R5 — Diagnostics and marks** (`DEF-282`, `DEF-283`, `DEF-307`): a nested fresh
+- [x] **R5 — Diagnostics and marks** (`DEF-282`, `DEF-283`, `DEF-307`): a nested fresh
   conditional at a mixed view return reports once at its span, and a downstream consequence
   report is withheld where the callee-side judgment already reports (the one-report boundary);
   a deferred mixed view return renders the pinned `a compiler-generated owner` phrase; the
@@ -105,20 +105,20 @@ registry edit (AR-2).
 
 ## Acceptance Criteria
 
-1. [ ] Every one of the 27 rows is closed with a reproduction that flips (red before, green
+1. [x] Every one of the 27 rows is closed with a reproduction that flips (red before, green
    after) and a suite pin that fails without the fix; the landed partial fixes (`DEF-306`'s
    store/return/iterable distribution, `DEF-308`'s plain loop-condition sibling) stay green as
    pinned controls (AR-3, AR-5).
-2. [ ] Every ownership fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop and
+2. [x] Every ownership fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop and
    early-exit variants where the shape is re-executed.
-3. [ ] The strict build passes for every accepted shape in scope on the pinned container; the
+3. [x] The strict build passes for every accepted shape in scope on the pinned container; the
    `DEF-294` shape is measured on both toolchains and the outcome recorded (AR-10).
-4. [ ] No behavior change outside the in-scope rows; the batch-I residue suites, the batch-H
+4. [x] No behavior change outside the in-scope rows; the batch-I residue suites, the batch-H
    suites, and the `callable_release_integrity` oracle stay green.
-5. [ ] `make check` green on every phase; `make verify` green at close-out.
-6. [ ] The roadmap's 27 rows are accounted for (Done with per-row evidence); the six older
+5. [x] `make check` green on every phase; `make verify` green at close-out.
+6. [x] The roadmap's 27 rows are accounted for (Done with per-row evidence); the six older
    parked rows stay open with their rulings listed (AR-2); the batch-I rows already closed stay
    untouched.
-7. [ ] No spec, registry, or golden changes; the new cases only append to the batch-I suite
+7. [x] No spec, registry, or golden changes; the new cases only append to the batch-I suite
    pair (AR-12); the `AGENTS.md` test-map note updates at close-out only if its wording needs
    the batch mention.

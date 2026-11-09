@@ -1,7 +1,7 @@
 # Borrow/Generic Integrity Implementation Plan
 
 > **Feature**: Fix the six open borrow/generic defects (DEF-77, DEF-78, DEF-79, DEF-81, DEF-82, DEF-83) to the frozen specification's rules.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-09 20:23
 > **Implements**: DEF-77, DEF-78, DEF-79, DEF-81, DEF-82, DEF-83
 > **CodeOps Artifact Schema**: 1

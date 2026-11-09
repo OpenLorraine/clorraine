@@ -1,7 +1,7 @@
 # Codegen Ownership Safety Implementation Plan
 
 > **Feature**: Fix the borrow-element alias double free (DEF-13) and the shadowing miscompile (DEF-14) in the ownership checker and C emitter
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-27
 > **Implements**: DEF-13, DEF-14
 > **CodeOps Artifact Schema**: 1

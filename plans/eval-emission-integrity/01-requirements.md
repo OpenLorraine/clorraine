@@ -20,85 +20,85 @@ limitation.
 
 ### Must Have — Phase 1: module-initializer integrity
 
-- [ ] R1 (DEF-117): a fixed-array-returning call in any module-initializer position (whole value,
+- [x] R1 (DEF-117): a fixed-array-returning call in any module-initializer position (whole value,
       element/member projection, user-fn argument, intrinsic argument, conditional arm) binds
       through a hidden destination and the unit builds; the function-body path is unchanged.
-- [ ] R2 (DEF-121): a module initializer evaluates every impure guard operand exactly once — the
+- [x] R2 (DEF-121): a module initializer evaluates every impure guard operand exactly once — the
       guard and the store share the materialized operand (`let v: u8 = s[idx()];` with a counting
       `idx` builds, bounds-checks, and runs once).
-- [ ] R3 (DEF-122): a slice-typed binding initialized from an array literal is rejected with
+- [x] R3 (DEF-122): a slice-typed binding initialized from an array literal is rejected with
       `E10200` at the checker (module and function-body spellings); `slice(array, lo, hi)`
       initialization stays accepted.
 
 ### Must Have — Phase 2: strict-build emission shapes
 
-- [ ] R4 (DEF-76): a generic call whose fixed-array result feeds `len` emits no set-but-unused
+- [x] R4 (DEF-76): a generic call whose fixed-array result feeds `len` emits no set-but-unused
       local; the unit builds under `-Wall -Wextra -Werror`, matching the concrete path.
-- [ ] R5 (DEF-97): the same class in the `codegen_run_spec_test` recording (reproduced first) is
+- [x] R5 (DEF-97): the same class in the `codegen_run_spec_test` recording (reproduced first) is
       fixed together with R4 and the affected suite builds green.
-- [ ] R6 (DEF-80): an owned struct's empty return emits a `cl_zero_<ClType>` helper call, never a
+- [x] R6 (DEF-80): an owned struct's empty return emits a `cl_zero_<ClType>` helper call, never a
       compound literal (spec/17-codegen.md:19-23); the view zero-helpers stay.
-- [ ] R7 (DEF-90): every freestanding unit with a `bool` (including module-initializer locals)
+- [x] R7 (DEF-90): every freestanding unit with a `bool` (including module-initializer locals)
       builds under `-ffreestanding -Werror`; the freestanding preamble (or shim) provides the type.
-- [ ] R8 (DEF-98): a view passed to an uncontracted extern parameter coerces to its pointer — the
+- [x] R8 (DEF-98): a view passed to an uncontracted extern parameter coerces to its pointer — the
       prototype stays `APTR` and the call passes `.ptr` (or the equivalent); the strict build
       passes and the ABI table is unchanged.
-- [ ] R9 (DEF-112): a source binding named `__env`, `__cl_ret`, `__cl_tmpN`, `__cl_ownedN`, or
+- [x] R9 (DEF-112): a source binding named `__env`, `__cl_ret`, `__cl_tmpN`, `__cl_ownedN`, or
       `__cl_itmpN` de-duplicates against the generated spellings and the unit builds; no new
       rejections are introduced.
-- [ ] R10 (DEF-120): a multi-extent row slice of a user struct emits its typedef after the struct
+- [x] R10 (DEF-120): a multi-extent row slice of a user struct emits its typedef after the struct
       definitions (pointer-element slices stay before), so `-Werror` builds pass; the emission
       order record from the store-emission plan is revised with the new evidence.
-- [ ] R11 (DEF-128): a call of a callable-bound parameter's struct field builds and runs (the
+- [x] R11 (DEF-128): a call of a callable-bound parameter's struct field builds and runs (the
       emission resolves the field through the instance field/closure call path, not an unqualified
       free-call spelling).
 
 ### Must Have — Phase 3: value typing and checker conformance
 
-- [ ] R12 (DEF-99): the growable-slice `len` fold-to-zero is reproduced first, then fixed (the
+- [x] R12 (DEF-99): the growable-slice `len` fold-to-zero is reproduced first, then fixed (the
       same class as R13 where they agree).
-- [ ] R13 (DEF-111): `len(b.s)` inside a generic body with `b: T` substituted to a struct reads
+- [x] R13 (DEF-111): `len(b.s)` inside a generic body with `b: T` substituted to a struct reads
       the instance field's real length, not the fallback `0`.
-- [ ] R14 (DEF-108): `let x = null;` keeps the nullable inference and the unit builds (the
+- [x] R14 (DEF-108): `let x = null;` keeps the nullable inference and the unit builds (the
       declaration and `null` spelling agree); the accepted pairing with a view (`if (x == xs)`)
       keeps its behavior.
-- [ ] R15 (DEF-107): `str`/`static str` pair equality reports `E10222` (the null-pair exemption
+- [x] R15 (DEF-107): `str`/`static str` pair equality reports `E10222` (the null-pair exemption
       and the `cstring` pointer comparison stay); the untyped-operand spelling reports too.
-- [ ] R16 (DEF-118): a `str` element loop reports the new `E10043` at the loop (reads and
+- [x] R16 (DEF-118): a `str` element loop reports the new `E10043` at the loop (reads and
       write-through spellings); fixed-array and slice loops are unchanged.
-- [ ] R17 (DEF-129): a member call on a bare type-parameter receiver reports `E10212` at the
+- [x] R17 (DEF-129): a member call on a bare type-parameter receiver reports `E10212` at the
       callee (one report per site); struct/enum receivers and callable-bound members are
       unchanged.
 
 ### Must Have — Phase 4: write-mutability rules
 
-- [ ] R18 (DEF-119, user-ruled): a value-position update goes through the statement-form checks —
+- [x] R18 (DEF-119, user-ruled): a value-position update goes through the statement-form checks —
       `E10023` on `const`, `E10024` on read-only parameters, `E10042` on writable-lend `str` —
       with exactly one report per site; statement forms are unchanged.
-- [ ] R19 (DEF-124, user-ruled): a `cstring` element write reports `E10042`; the registry row
+- [x] R19 (DEF-124, user-ruled): a `cstring` element write reports `E10042`; the registry row
       gains the `cstring` wording; whole-view rebinds and writable slice writes stay accepted.
 
 ### Must Have — Phase 5: ownership lifetimes and releases
 
-- [ ] R20 (DEF-95, user-ruled): a view bound from an owned projection temporary takes a
+- [x] R20 (DEF-95, user-ruled): a view bound from an owned projection temporary takes a
       binding-scoped owner that releases at the binding's scope end — the per-iteration leak is
       gone (ASan-clean) and the shape stays accepted.
-- [ ] R21 (DEF-96): when a deferred `break`/`continue` preempts a pending ordinary owned return,
+- [x] R21 (DEF-96): when a deferred `break`/`continue` preempts a pending ordinary owned return,
       the abandoned value releases on the preemption edge; ordinary returns keep byte-identical
       emission where no preemption is reachable.
-- [ ] R22 (DEF-125): a func-value call applies its own func type's parameter modes, so an owned
+- [x] R22 (DEF-125): a func-value call applies its own func type's parameter modes, so an owned
       temporary argument binds and releases once (ASan-clean); the module-callee identity gate
       stays.
-- [ ] R23 (DEF-126, ruled consequence): a block-bodied lambda return or take of a by-value
+- [x] R23 (DEF-126, ruled consequence): a block-bodied lambda return or take of a by-value
       generic capture reports the ruled `E10401` (not `E10034`); the closure batch's block-body
       pin is updated deliberately.
-- [ ] R24 (DEF-127): a conditional capture return (`c ? x : x`) reports `E10401` in the
+- [x] R24 (DEF-127): a conditional capture return (`c ? x : x`) reports `E10401` in the
       expression-body, concrete, take-argument, and `[borrow x]` spellings, one report per site;
       the double-free is gone.
 
 ### Must Have — closure
 
-- [ ] R25 (DEF-103, user-ruled): the `Q`-marker collision stays as the documented fail-closed
+- [x] R25 (DEF-103, user-ruled): the `Q`-marker collision stays as the documented fail-closed
       limitation; the row closes with its evidence (marker site, recursion, top-level analogue,
       fail-closed proof) and no code change.
 
@@ -143,10 +143,10 @@ limitation.
 
 ## Acceptance Criteria
 
-1. [ ] All 25 requirements verified by the ST cases in [07](07-testing-strategy.md); R2 and
+1. [x] All 25 requirements verified by the ST cases in [07](07-testing-strategy.md); R2 and
        R20–R22 and R24 additionally by host ASan probes.
-2. [ ] The E10043 golden and the E10042/E10212 wording changes are live; `./spec/check.sh` and
+2. [x] The E10043 golden and the E10042/E10212 wording changes are live; `./spec/check.sh` and
        the compile-fail driver green.
-3. [ ] No regression: `make check` green per phase; the batch's suites plus the existing closure,
+3. [x] No regression: `make check` green per phase; the batch's suites plus the existing closure,
        store-emission, borrow-generic, defer, slice-temporary, and freestanding suites stay green.
-4. [ ] `make verify` legs passed at close-out; DEF-103's closure recorded with its evidence.
+4. [x] `make verify` legs passed at close-out; DEF-103's closure recorded with its evidence.

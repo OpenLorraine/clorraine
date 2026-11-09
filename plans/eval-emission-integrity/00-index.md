@@ -1,7 +1,7 @@
 # Evaluation and Emission Integrity Implementation Plan
 
 > **Feature**: Close 24 defects across module-initializer emission, strict-build emission shapes, checker conformance, write-mutability rules, and ownership releases, plus the DEF-103 documented-limitation closure.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-10-10 12:06
 > **Implements**: DEF-95, DEF-96, DEF-97, DEF-98, DEF-99, DEF-103 (closure), DEF-107, DEF-108, DEF-111, DEF-112, DEF-117, DEF-118, DEF-119, DEF-120, DEF-121, DEF-122, DEF-124, DEF-125, DEF-126, DEF-127, DEF-128, DEF-129, DEF-76, DEF-80, DEF-90
 > **CodeOps Artifact Schema**: 1

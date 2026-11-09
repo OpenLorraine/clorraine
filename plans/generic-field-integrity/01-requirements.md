@@ -21,17 +21,17 @@ frozen specification and the already-recorded expectations for DEF-06…DEF-10.
 
 ### Must Have
 
-- [ ] R1 — A field read of an instantiated generic struct yields the field type with the instance's arguments substituted, in the checker, the ownership stage, and the emitter (DEF-05 follow-up; DEF-10). `AR-13`.
-- [ ] R2 — An overlay (volatile) type reached through a generic struct field is rejected by value with `E10207`, matching the non-generic case (DEF-06). `AR-9`.
-- [ ] R3 — A generic struct whose substituted field list contains a handle is move-only; a second use reports `E10020` (DEF-07). `AR-10`.
-- [ ] R4 — The emitter drops a generic struct's handle field on scope exit (DEF-08). `AR-11`.
-- [ ] R5 — A generic zero value (`Point {}`, `Pair<Pair<i32>> {}`) emits valid C and compiles (DEF-09). `AR-2`, `AR-12`.
-- [ ] R6 — `sizeof` and `offsetof` of a generic instance fold to the concrete size/offset (DEF-10). `AR-13`.
-- [ ] R7 — The substitution logic lives in exactly one shared place and every field-read site uses it (AR-3, AR-6). `AR-3`, `AR-6`.
+- [x] R1 — A field read of an instantiated generic struct yields the field type with the instance's arguments substituted, in the checker, the ownership stage, and the emitter (DEF-05 follow-up; DEF-10). `AR-13`.
+- [x] R2 — An overlay (volatile) type reached through a generic struct field is rejected by value with `E10207`, matching the non-generic case (DEF-06). `AR-9`.
+- [x] R3 — A generic struct whose substituted field list contains a handle is move-only; a second use reports `E10020` (DEF-07). `AR-10`.
+- [x] R4 — The emitter drops a generic struct's handle field on scope exit (DEF-08). `AR-11`.
+- [x] R5 — A generic zero value (`Point {}`, `Pair<Pair<i32>> {}`) emits valid C and compiles (DEF-09). `AR-2`, `AR-12`.
+- [x] R6 — `sizeof` and `offsetof` of a generic instance fold to the concrete size/offset (DEF-10). `AR-13`.
+- [x] R7 — The substitution logic lives in exactly one shared place and every field-read site uses it (AR-3, AR-6). `AR-3`, `AR-6`.
 
 ### Should Have
 
-- [ ] R8 — The ownership stage's raw-pointer member access and the checker's field reads share the same substitution so a raw record's field is typed, not `Unknown` (DEF-10). `AR-13`.
+- [x] R8 — The ownership stage's raw-pointer member access and the checker's field reads share the same substitution so a raw record's field is typed, not `Unknown` (DEF-10). `AR-13`.
 
 ### Won't Have (Out of Scope)
 
@@ -75,9 +75,9 @@ frozen specification and the already-recorded expectations for DEF-06…DEF-10.
 
 ## Acceptance Criteria
 
-1. [ ] R1–R8 satisfied; DEF-06…DEF-10 no longer reproduce.
-2. [ ] Every field-read stage calls the shared helper; no duplicated zip-substitute block remains in the touched sites.
-3. [ ] `make check` passes on every task; final `make verify` passes.
-4. [ ] A non-generic program's emitted C is unchanged (no regression in the existing suites).
-5. [ ] No `spec/` file and no `*_spec_test.rs` file is modified.
-6. [ ] The roadmap records DEF-06…DEF-10 as fixed and the plan is marked Done.
+1. [x] R1–R8 satisfied; DEF-06…DEF-10 no longer reproduce.
+2. [x] Every field-read stage calls the shared helper; no duplicated zip-substitute block remains in the touched sites.
+3. [x] `make check` passes on every task; final `make verify` passes.
+4. [x] A non-generic program's emitted C is unchanged (no regression in the existing suites).
+5. [x] No `spec/` file and no `*_spec_test.rs` file is modified.
+6. [x] The roadmap records DEF-06…DEF-10 as fixed and the plan is marked Done.

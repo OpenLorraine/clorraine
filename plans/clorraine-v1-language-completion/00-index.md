@@ -1,7 +1,7 @@
 # Clorraine v1 language completion Implementation Plan
 
 > **Feature**: Complete the v1 language surfaces the corpus-subset MVP staged out: generics, lambdas (stages 1-4), and volatile intrinsics with the per-chip MMIO wrappers.
-> **Status**: Planning Complete
+> **Status**: Done — plan and roadmap rows complete (2026-11-09 closeout).
 > **Created**: 2026-09-24 19:15
 > **Implements**: (none — standalone plan; the requirements source is the frozen specification `spec/`, v0.4)
 > **CodeOps Artifact Schema**: 1

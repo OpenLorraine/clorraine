@@ -98,9 +98,9 @@ reviews.
 - [x] 1.1.6 Record the committed base/head baseline, exact commands, and toolchain identity in `05-findings.md`; confirm R3.2 selection triggers ✅ (completed: 2026-11-07 04:09)
 
 **Deliverables**:
-- [ ] A committed harness, suite, and base/head path
-- [ ] A green `make bench-test` and `make bench-fast`
-- [ ] The committed baseline in `05-findings.md`
+- [x] A committed harness, suite, and base/head path
+- [x] A green `make bench-test` and `make bench-fast`
+- [x] The committed baseline in `05-findings.md`
 
 ---
 
@@ -129,8 +129,8 @@ reviews.
 - [x] 2.2.1 [spec-author] Add `compiler/tests/generated_c_optimization_impl_test.rs` with IP-1–IP-19; run it and record every pin's base status in `05-findings.md` ✅ (completed: 2026-11-07 04:09)
 
 **Deliverables**:
-- [ ] A green behavior oracle and a complete emission suite
-- [ ] The red/green list recorded in `05-findings.md`
+- [x] A green behavior oracle and a complete emission suite
+- [x] The red/green list recorded in `05-findings.md`
 
 ---
 
@@ -153,8 +153,8 @@ reviews.
 - [x] 3.1.4 Run `make bench` and `make bench-compare` for the sieve delta; record the base/head values in `05-findings.md` ✅ (completed: 2026-11-07 04:09)
 
 **Deliverables**:
-- [ ] R4 implemented with the address-taken guard
-- [ ] The sieve instruction delta recorded
+- [x] R4 implemented with the address-taken guard
+- [x] The sieve instruction delta recorded
 
 ---
 
@@ -177,8 +177,8 @@ reviews.
 - [x] 4.1.4 Run `make bench` and `make bench-compare` for `.text` and C bytes; record the sieve delta in `05-findings.md` ✅ (completed: 2026-11-07 04:09)
 
 **Deliverables**:
-- [ ] R5 implemented for one-extent scalar statement fills
-- [ ] The `.text` and C-size deltas recorded
+- [x] R5 implemented for one-extent scalar statement fills
+- [x] The `.text` and C-size deltas recorded
 
 ---
 
@@ -201,8 +201,8 @@ reviews.
 - [x] 5.1.4 Run `make bench` and `make bench-compare`; confirm no instruction, `.text`, or `c_bytes` regression ✅ (completed: 2026-11-07 04:09)
 
 **Deliverables**:
-- [ ] R6/R7 implemented with trap preservation
-- [ ] The no-regression evidence recorded
+- [x] R6/R7 implemented with trap preservation
+- [x] The no-regression evidence recorded
 
 ---
 

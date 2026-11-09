@@ -94,10 +94,10 @@ None — real binaries, real compiler, host ASan inside the pinned container.
 
 ## Verification Checklist
 
-- [ ] All 13 specification cases defined with concrete input/output pairs
-- [ ] Every case traces to a requirement or AR entry
-- [ ] Specification tests written BEFORE implementation; red phase recorded per phase
-- [ ] Specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for internals and edge cases
-- [ ] `make check` and `make verify` pass; the strict-build sweep shows no head-only failure
-- [ ] No regressions: byte-identity outside the intended deltas
+- [x] All 13 specification cases defined with concrete input/output pairs
+- [x] Every case traces to a requirement or AR entry
+- [x] Specification tests written BEFORE implementation; red phase recorded per phase
+- [x] Specification tests pass after implementation (green phase)
+- [x] Implementation tests written for internals and edge cases
+- [x] `make check` and `make verify` pass; the strict-build sweep shows no head-only failure
+- [x] No regressions: byte-identity outside the intended deltas

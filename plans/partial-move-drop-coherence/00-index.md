@@ -1,7 +1,7 @@
 # Partial-Move / Drop Coherence Implementation Plan
 
 > **Feature**: Make a value-consuming move of an owned place nested in an aggregate literal zero its source, so a later drop or reassignment of the source cannot free a value the destination owns.
-> **Status**: Planning Complete
+> **Status**: Done — 10/10 tasks; DEF-11 fixed (2026-09-26); plan and roadmap rows complete.
 > **Created**: 2026-09-25
 > **Implements**: DEF-11
 > **CodeOps Artifact Schema**: 1

@@ -22,36 +22,36 @@ casts at the mutable raw destination (AR-7), `DEF-357` defers the extent fold to
 
 ### Must Have
 
-- [ ] **R1 — Nullable-view arms and initializer view stores** (`DEF-335`, `DEF-336`, `DEF-337`):
+- [x] **R1 — Nullable-view arms and initializer view stores** (`DEF-335`, `DEF-336`, `DEF-337`):
   a nullable-owned conditional at a view destination guards each arm's nullness at every
   widening position — the conditional arm (`conditional_arm`), the call argument, and the
   initializer store member projection — so a null selection carries the destination's zero view
   instead of `cl_string_view(NULL)`, and every position builds strictly and runs without a null
   dereference.
-- [ ] **R2 — The walk's projected-argument resolver** (`DEF-338`, `DEF-340`, `DEF-342`): the
+- [x] **R2 — The walk's projected-argument resolver** (`DEF-338`, `DEF-340`, `DEF-342`): the
   monomorphization walk records the instance of a call whose projected argument roots at a
   local-headed qualified receiver, a statement temporary, or a conditional/non-local place base,
   using one shared resolver that follows the same projections the emitter follows; the emitted C
   declares and calls the keyed instance.
-- [ ] **R3 — Instance substitution and element surfaces** (`DEF-339`, `DEF-345`, `DEF-353`,
+- [x] **R3 — Instance substitution and element surfaces** (`DEF-339`, `DEF-345`, `DEF-353`,
   plus the `DEF-341` control): an element store through a borrow element drops the overwritten
   owner at the substituted destination; a substituted element used in a concrete conversion or
   member position is judged per instance (accepted where the concrete twin is accepted, frozen
   rejection where it is not); a duplicable `borrow out` instance keeps its write-through store;
   the capture pair stays rejected with the frozen `E10401` at both spellings.
-- [ ] **R4 — Ownership transfer judgments** (`DEF-315`, `DEF-329`): a view-like fixed-array copy
+- [x] **R4 — Ownership transfer judgments** (`DEF-315`, `DEF-329`): a view-like fixed-array copy
   transfers (or judges) its element loans exactly as the single-view twin does, so a later
   element store into the copy reports the shared-loan conflict instead of writing freed storage;
   an owned read of a raw pointee routes through the ordinary owned read's move/duplicate
   judgment, so a second owner is created only when the language allows one.
-- [ ] **R5 — Store emission: conditional bases and guarded view literals** (`DEF-322`,
+- [x] **R5 — Store emission: conditional bases and guarded view literals** (`DEF-322`,
   `DEF-323`): an element store through a conditional or projected base reports the frozen
   `E10221` place rejection exactly as the scalar member twin does (Ch 04 §4 / EX-14; the per-arm
   route is parked, AR-6/PF-001), so the store is never silently dropped and the RHS side effects
   never run; a guarded conditional of call-filled view-array literals materializes like its
   scalar/owned twins, so the `take` spelling passes the hidden destinations and the plain
   spelling evaluates only the taken arm.
-- [ ] **R6 — Call conversions and `ffi` typing** (`DEF-344`, `DEF-351`, plus the `DEF-350`
+- [x] **R6 — Call conversions and `ffi` typing** (`DEF-344`, `DEF-351`, plus the `DEF-350`
   control): an inferred call whose argument is null-shaped while a sibling argument fixes the
   parameter to a concrete non-nullable type reports the frozen null rule (the count rule settled
   per site); a substituted destination at a concrete `cstring`/`str`/`raw` conversion position —
@@ -59,12 +59,12 @@ casts at the mutable raw destination (AR-7), `DEF-357` defers the extent fold to
   as an explicit argument — reports the frozen `E10200` once per site while the legal instances
   stay accepted; the `ffi` view/slice result keeps its fixed ABI-pointer typing with the
   spellings pinned as controls.
-- [ ] **R7 — Member typing on concrete paths** (`DEF-346`, `DEF-347`, `DEF-348`): an unknown
+- [x] **R7 — Member typing on concrete paths** (`DEF-346`, `DEF-347`, `DEF-348`): an unknown
   member on a concrete base (a fixed array's `.ptr`/`.len`, an unknown view member) reports the
   frozen `E10212` instead of emitting invalid C; a view `.ptr` read at a mutable raw destination
   emits the sanctioned member cast (the AR-7 fallback is the conversion duty); a `raw E` member
   read routes through the enum rule so the concrete and instance paths agree.
-- [ ] **R8 — Module/global identity and the const folder** (`DEF-356`, `DEF-357`, `DEF-359`):
+- [x] **R8 — Module/global identity and the const folder** (`DEF-356`, `DEF-357`, `DEF-359`):
   an aliased import of a func-typed global and a qualified value-head path (the cross-module
   struct-global field) resolve the global's own identity and emit its symbol; the
   self-qualified and plain spellings stay accepted controls; a `sizeof` used in a type-level
@@ -117,21 +117,21 @@ casts at the mutable raw destination (AR-7), `DEF-357` defers the extent fold to
 
 ## Acceptance Criteria
 
-1. [ ] Every one of the 21 red rows is closed with a reproduction that flips (red before, green
+1. [x] Every one of the 21 red rows is closed with a reproduction that flips (red before, green
    after) and a suite pin that fails without the fix; `DEF-341` and `DEF-350` stay fixed as
    pinned controls (AR-3, AR-5).
-2. [ ] Every ownership/handle fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop
+2. [x] Every ownership/handle fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop
    and early-exit variants where the shape is re-executed; every store-dropping fix reads the
    stored value back.
-3. [ ] The strict build passes for every accepted shape in scope on the pinned container (the
+3. [x] The strict build passes for every accepted shape in scope on the pinned container (the
    `ffi` externs compile-only with their recorded stubs where applicable); the freestanding and
    hosted-amiga legs stay green for their rows.
-4. [ ] No behavior change outside the in-scope rows; the origin suites and the batch-H/I/J/K
+4. [x] No behavior change outside the in-scope rows; the origin suites and the batch-H/I/J/K
    oracles stay green.
-5. [ ] `make check` green on every phase; `make verify` green at close-out.
-6. [ ] The roadmap's 23 rows are accounted for: 21 Done with per-row evidence and 2 recorded as
+5. [x] `make check` green on every phase; `make verify` green at close-out.
+6. [x] The roadmap's 23 rows are accounted for: 21 Done with per-row evidence and 2 recorded as
    incidentally fixed with their control pins; the six older parked rows stay open (AR-2); the
    minors stay untouched.
-7. [ ] No spec, registry, or golden changes; the new cases append to the origin suites only
+7. [x] No spec, registry, or golden changes; the new cases append to the origin suites only
    (AR-9); the `AGENTS.md` test map updates at close-out only if its wording needs the batch
    mention.

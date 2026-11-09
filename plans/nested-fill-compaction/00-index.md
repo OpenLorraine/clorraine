@@ -1,7 +1,7 @@
 # Nested Fill Compaction (PLAN-22)
 
 > **Feature**: A measured follow-up to the generated-C optimization programme: parameterize the benchmark comparison gate, then compact a nested constant-zero fixed-array fill into one `memset`.
-> **Status**: Requirements and plan preflights clean; execution ready
+> **Status**: Done — 32/32 tasks; measured matrix win; `make verify` green (2026-11-09 closeout).
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-08
 > **Base commit**: `b68dae5`
