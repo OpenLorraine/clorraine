@@ -257,9 +257,9 @@ func main(): i32 {
 }
 
 #[test]
-fn should_keep_a_volatile_global_target() {
+fn should_write_a_volatile_global_nested_fill_element_by_element() {
     let emitted = emit(
-        "volatile",
+        "volatile-2d",
         r#"
 module impl.NestedVolatile;
 volatile let g: i32[8][9] = [; [; 0]];
@@ -269,12 +269,22 @@ func main(): i32 {
 }
 "#,
     );
-    assert_absent("volatile", &emitted, "memset(&(g[0]), 0,");
-    assert_contains("volatile", &emitted, "__cl_fillrow");
+    assert_absent("volatile-2d", &emitted, "memcpy(&(cl_impl_NestedVolatile_g[");
+    assert_absent("volatile-2d", &emitted, "memset(&(cl_impl_NestedVolatile_g[");
+    assert_contains(
+        "volatile-2d",
+        &emitted,
+        "cl_impl_NestedVolatile_g[0][0] = __cl_fillrow_1[0];",
+    );
+    assert_contains(
+        "volatile-2d",
+        &emitted,
+        "cl_impl_NestedVolatile_g[7][8] = __cl_fillrow_1[8];",
+    );
 }
 
 #[test]
-fn should_keep_a_field_target() {
+fn should_keep_a_non_volatile_field_copy() {
     let emitted = emit(
         "field",
         r#"
@@ -288,7 +298,8 @@ func main(): i32 {
 "#,
     );
     assert_absent("field", &emitted, "memset(&(s.a[0]), 0,");
-    assert_contains("field", &emitted, "__cl_fillrow");
+    assert_contains("field", &emitted, "memcpy(&(s.a[0]), &(__cl_fillrow_");
+    assert_absent("field", &emitted, "s.a[0][0] = __cl_fillrow_");
 }
 
 #[test]
@@ -484,4 +495,223 @@ func main(): i32 {
     );
     assert_absent("field-full-prefix", &emitted, "__cl_fillrow");
     assert_absent("field-full-prefix", &emitted, "memset(&(s.a[0]), 0,");
+}
+
+#[test]
+fn should_write_a_volatile_three_dimensional_fill_element_by_element() {
+    let emitted = emit(
+        "volatile-3d",
+        r#"
+module impl.NestedVolatile3;
+volatile let g: i32[2][3][4] = [; [; [; 0]]];
+func main(): i32 {
+    g = [; [; [; 7]]];
+    return g[0][0][0];
+}
+"#,
+    );
+    assert_absent("volatile-3d", &emitted, "memcpy(&(cl_impl_NestedVolatile3_g[");
+    assert_contains(
+        "volatile-3d",
+        &emitted,
+        "cl_impl_NestedVolatile3_g[0][0][0] = __cl_fillrow_",
+    );
+    assert_contains(
+        "volatile-3d",
+        &emitted,
+        "cl_impl_NestedVolatile3_g[1][2][3] = __cl_fillrow_",
+    );
+}
+
+#[test]
+fn should_write_a_volatile_overlay_field_element_by_element() {
+    let emitted = emit(
+        "volatile-field",
+        r#"
+module impl.NestedVolatileField;
+struct S { a: volatile i32[2][3]; }
+func main(): i32 {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe {
+        regs.a = [; [; 0]];
+    }
+    return 0;
+}
+"#,
+    );
+    assert_absent("volatile-field", &emitted, "memcpy(&(regs->a[");
+    assert_contains(
+        "volatile-field",
+        &emitted,
+        "regs->a[0][0] = __cl_fillrow_1[0];",
+    );
+    assert_contains(
+        "volatile-field",
+        &emitted,
+        "regs->a[1][2] = __cl_fillrow_1[2];",
+    );
+}
+
+#[test]
+fn should_write_a_volatile_struct_fill_element_by_element() {
+    let emitted = emit(
+        "volatile-struct",
+        r#"
+module impl.NestedVolatileStruct;
+struct R { v: i32; }
+volatile let g: R[2][3] = [; [; R { v: 0 }]];
+func main(): i32 {
+    g = [; [; R { v: 7 }]];
+    return g[0][0].v;
+}
+"#,
+    );
+    assert_absent("volatile-struct", &emitted, "memcpy(&(cl_impl_NestedVolatileStruct_g[");
+    assert_contains(
+        "volatile-struct",
+        &emitted,
+        "cl_impl_NestedVolatileStruct_g[0][0] = __cl_fillrow_1[0];",
+    );
+}
+
+#[test]
+fn should_write_a_volatile_place_prefix_element_by_element() {
+    let emitted = emit(
+        "volatile-prefix",
+        r#"
+module impl.NestedPrefixPlace;
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    let row: i32[4] = [; 1];
+    g = [row, row; [; 0]];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent("volatile-prefix", &emitted, "memcpy(&(cl_impl_NestedPrefixPlace_g[");
+    assert_contains(
+        "volatile-prefix",
+        &emitted,
+        "cl_impl_NestedPrefixPlace_g[0][0] = row[0];",
+    );
+    assert_contains(
+        "volatile-prefix",
+        &emitted,
+        "cl_impl_NestedPrefixPlace_g[2][0] = __cl_fillrow_1[0];",
+    );
+}
+
+#[test]
+fn should_write_a_volatile_field_named_len_element_by_element() {
+    let emitted = emit(
+        "volatile-len",
+        r#"
+module impl.NestedVolatileLen;
+struct S { len: volatile i32[2][3]; }
+func main(): i32 {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe {
+        regs.len = [; [; 0]];
+    }
+    return 0;
+}
+"#,
+    );
+    assert_absent("volatile-len", &emitted, "memcpy(&(regs->len[");
+    assert_contains(
+        "volatile-len",
+        &emitted,
+        "regs->len[0][0] = __cl_fillrow_1[0];",
+    );
+}
+
+#[test]
+fn should_keep_a_volatile_one_extent_fill() {
+    let emitted = emit(
+        "volatile-one",
+        r#"
+module impl.NestedVolatile1;
+volatile let g: i32[8] = [; 0];
+func main(): i32 {
+    g = [; 0];
+    return g[0];
+}
+"#,
+    );
+    assert_absent("volatile-one", &emitted, "memset(&(cl_impl_NestedVolatile1_g[0])");
+    assert_contains("volatile-one", &emitted, "cl_impl_NestedVolatile1_g[0] = 0;");
+}
+
+#[test]
+fn should_keep_a_volatile_full_prefix_empty() {
+    let emitted = emit(
+        "volatile-full-prefix",
+        r#"
+module impl.NestedVolatileFullPrefix;
+volatile let g: i32[8][8] = [; [; 0]];
+func main(): i32 {
+    g = [
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1];
+        [; 0]
+    ];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent("volatile-full-prefix", &emitted, "__cl_fillrow");
+    assert_absent(
+        "volatile-full-prefix",
+        &emitted,
+        "memset(&(cl_impl_NestedVolatileFullPrefix_g[",
+    );
+}
+
+#[test]
+fn should_keep_volatile_explicit_rows_direct() {
+    let emitted = emit(
+        "volatile-rows",
+        r#"
+module impl.NestedVolatileRows;
+volatile let g: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+func main(): i32 {
+    g = [[7, 8, 9], [10, 11, 12]];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent("volatile-rows", &emitted, "__cl_fillrow");
+    assert_contains("volatile-rows", &emitted, "cl_impl_NestedVolatileRows_g[0][0] = 7;");
+}
+
+#[test]
+fn should_keep_the_whole_array_copy_unchanged() {
+    let emitted = emit(
+        "volatile-whole-copy",
+        r#"
+module impl.NestedWholeCopy;
+volatile let g: i32[2][2] = [; [; 0]];
+func main(): i32 {
+    let other: i32[2][2] = [; [; 1]];
+    g = other;
+    return g[0][0];
+}
+"#,
+    );
+    assert_contains(
+        "volatile-whole-copy",
+        &emitted,
+        "memcpy(&(cl_impl_NestedWholeCopy_g), &(other)",
+    );
+    assert_absent(
+        "volatile-whole-copy",
+        &emitted,
+        "cl_impl_NestedWholeCopy_g[0][0] = other[0][0];",
+    );
 }

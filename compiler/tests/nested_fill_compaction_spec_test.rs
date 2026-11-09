@@ -1,8 +1,10 @@
 //! Behaviour oracle for nested constant-zero fixed-array fills.
 //!
-//! Every case compiles a program, builds it on the host with a strict C
-//! compiler, runs it, and compares the output. The cases pass on the base
-//! compiler and must keep passing; the emitted-shape pins live in the
+//! Every running case compiles a program, builds it on the host with a strict
+//! C compiler, runs it, and compares the output. The original cases pass on
+//! the base compiler and must keep passing. The volatile-storage cases are
+//! deliberately red on the base: the base emits `memcpy` into a volatile
+//! object, which strict C rejects. The emitted-shape pins live in the
 //! implementation suite.
 
 // This suite participates in the host sanitizer legs. The constants are the
@@ -115,6 +117,15 @@ fn assert_output(tag: &str, source: &str, expected: &str) {
     let (code, stdout, stderr) = run_program(tag, source);
     assert_eq!(code, 0, "{tag}: exit {code}; stderr:\n{stderr}");
     assert_eq!(stdout, expected, "{tag}: unexpected stdout");
+}
+
+/// Builds a program but does not run it.
+///
+/// The volatile overlay case writes through a raw register address that is not
+/// a real host object, so only the strict C validity can be checked.
+fn assert_builds(tag: &str, source: &str) {
+    let (scratch, emitted) = emit(tag, source);
+    let _program = build_host(tag, &scratch, &emitted);
 }
 
 #[test]
@@ -475,5 +486,169 @@ func main(): i32 {
 }
 "#,
         "sum: 0\n",
+    );
+}
+
+#[test]
+fn should_zero_a_volatile_global_nested_fill() {
+    assert_output(
+        "volatile-2d",
+        r#"
+module spec.NestedFillVolatile;
+import { println } from std.io;
+volatile let g: i32[8][9] = [; [; 0]];
+func main(): i32 {
+    g = [; [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 8) {
+        let j: i32 = 0;
+        while (j < 9) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 0\n",
+    );
+}
+
+#[test]
+fn should_fill_a_volatile_global_three_dimensional_array() {
+    assert_output(
+        "volatile-3d",
+        r#"
+module spec.NestedFillVolatile3;
+import { println } from std.io;
+volatile let g: i32[2][3][4] = [; [; [; 0]]];
+func main(): i32 {
+    g = [; [; [; 7]]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        let j: i32 = 0;
+        while (j < 3) {
+            let k: i32 = 0;
+            while (k < 4) {
+                total = total + g[i][j][k];
+                k = k + 1;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 168\n",
+    );
+}
+
+#[test]
+fn should_fill_a_volatile_global_struct_array() {
+    assert_output(
+        "volatile-struct",
+        r#"
+module spec.NestedFillVolatileStruct;
+import { println } from std.io;
+struct R { v: i32; }
+volatile let g: R[2][3] = [; [; R { v: 0 }]];
+func main(): i32 {
+    g = [; [; R { v: 9 }]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        let j: i32 = 0;
+        while (j < 3) {
+            total = total + g[i][j].v;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 54\n",
+    );
+}
+
+#[test]
+fn should_keep_a_volatile_literal_prefix_and_zero_the_tail() {
+    assert_output(
+        "volatile-literal-prefix",
+        r#"
+module spec.NestedFillVolatilePrefix;
+import { println } from std.io;
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    g = [[1, 2, 3, 4], [5, 6, 7, 8]; [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        let j: i32 = 0;
+        while (j < 4) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 36\n",
+    );
+}
+
+#[test]
+fn should_fill_a_volatile_place_prefix_and_zero_the_tail() {
+    assert_output(
+        "volatile-place-prefix",
+        r#"
+module spec.NestedFillVolatilePlacePrefix;
+import { println } from std.io;
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    let row: i32[4] = [; 1];
+    g = [row, row; [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        let j: i32 = 0;
+        while (j < 4) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 8\n",
+    );
+}
+
+#[test]
+fn should_build_a_volatile_overlay_field_fill() {
+    assert_builds(
+        "volatile-overlay",
+        r#"
+module spec.NestedFillVolatileOverlay;
+struct S { a: volatile i32[2][3]; }
+func main(): i32 {
+    let regs: raw S = raw S(0x00DFF000);
+    unsafe {
+        regs.a = [; [; 0]];
+    }
+    return 0;
+}
+"#,
     );
 }

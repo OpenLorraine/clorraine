@@ -2,8 +2,9 @@
 // a byte fill, an integer fill, a slice constant index, an adjusted-parameter
 // fill, a hidden-return fill, a constant division, and the guard, narrow
 // arithmetic, f32, and enum shapes (narrow consts, a narrow fill, an f32
-// const, an enum, a guarded slice fill, and nested zero fills (two- and
-// three-dimensional, a prefix, a parameter, a hidden return, and a bool row).
+// const, an enum, a guarded slice fill, nested zero fills (two- and
+// three-dimensional, a prefix, a parameter, a hidden return, and a bool row),
+// and volatile nested fills (a module array and an overlay field).
 module bench.Shapes;
 
 const N: i32 = 64;
@@ -13,6 +14,21 @@ const F: f32 = (f32(16777216.0) + f32(1.0)) - f32(16777216.0);
 
 enum Mode: u8 { Off, On = 4, Ready }
 const M: i32 = i32(Mode.Ready);
+
+volatile let vg: i32[8][8] = [; [; 0]];
+struct Overlay { a: volatile i32[2][3]; }
+
+func fillVolatile(): void {
+    let row: i32[8] = [; 1];
+    vg = [row, row; [; 0]];
+}
+
+func fillOverlay(): void {
+    let regs: raw Overlay = raw Overlay(0x00DFF000);
+    unsafe {
+        regs.a = [; [; 0]];
+    }
+}
 
 func fill(borrow a: u8[N]): void {
     a = [; 1];
@@ -59,6 +75,8 @@ func main(): i32 {
     let np: i32[16][8] = makePrefix();
     let nb: bool[8][9] = [; [; false]];
     fillNested(n1);
+    fillVolatile();
+    fillOverlay();
     let s: str = "abcd";
     let x: u8 = s[1];
     let r: i32 = 10 % 2;
@@ -70,5 +88,5 @@ func main(): i32 {
         total = total + b[i];
         i = i + 1;
     }
-    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M + n0[0][0] + n1[0][0] + np[0][0] + np[8][0] + i32(nb[0][0]);
+    return total + i32(a[0]) + i32(d[0]) + i32(x) + r + i32(c[0]) + i32(nf[0]) + i32(U8W) + i32(U16W) + i32(F) + M + n0[0][0] + n1[0][0] + np[0][0] + np[8][0] + i32(nb[0][0]) + vg[0][0];
 }

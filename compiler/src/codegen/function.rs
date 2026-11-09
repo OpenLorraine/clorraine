@@ -24,7 +24,7 @@ const FILL_COMPACT_THRESHOLD: usize = 16;
 const FILL_LOOP_THRESHOLD: usize = 64;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
-use super::render::escape_c_string;
+use super::render::{element_type, escape_c_string};
 use super::types::{declarator, function_declarator, is_struct_view};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
@@ -4072,6 +4072,60 @@ impl<'a> Emitter<'a> {
         self.emit_array_assign_to(&target, ty, elements, fill, compact);
     }
 
+    /// Copies a fixed array one leaf at a time through the destination lvalues.
+    ///
+    /// A `volatile` destination cannot be passed to `memcpy`: the call discards
+    /// the qualifier. Writing every deepest element keeps each store a volatile
+    /// access, in row-major order, and copies the same bytes for a scalar or
+    /// struct leaf. Only arrays recurse; a struct is one assignable value.
+    fn emit_volatile_array_copy(&mut self, target: &ArrayTarget, ty: &Ty, source: &str) {
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return;
+        };
+        let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+        if extents.len() <= 1 {
+            for index in 0..extent {
+                self.push(&format!(
+                    "    {}[{index}] = {source}[{index}];",
+                    target.text
+                ));
+            }
+            return;
+        }
+        let inner = Ty::array((**element).clone(), extents[1..].to_vec());
+        for index in 0..extent {
+            let sub = target.element(index);
+            self.emit_volatile_array_copy(&sub, &inner, &format!("{source}[{index}]"));
+        }
+    }
+
+    /// Stores one explicit prefix row of a nested fill.
+    ///
+    /// A volatile row destination copies leaf by leaf; every other value and
+    /// target keeps the shared fixed-array store core. The wrapper covers the
+    /// duplicable place form the prefix loop reaches. A conditional, call, or
+    /// owning value falls back to the core, whose volatile-copy classes are
+    /// recorded as separate limitations.
+    fn emit_prefix_row_assign_to(&mut self, target: &ArrayTarget, ty: &Ty, value: &Value) {
+        let simple = !self.needs_drop(ty)
+            && !matches!(
+                &value.kind,
+                ValueKind::Conditional { .. }
+                    | ValueKind::Call { .. }
+                    | ValueKind::ClosureCall { .. }
+            );
+        if target.is_volatile && simple {
+            self.emit_guards(value);
+            let value_c = self.store_text(value, ty);
+            if value_c == target.text {
+                return;
+            }
+            self.emit_volatile_array_copy(target, ty, &value_c);
+            return;
+        }
+        self.emit_fixed_array_assign_to(target, ty, value, false, false);
+    }
+
     /// True when a fill target can use the compact form.
     ///
     /// A field projection may name a `volatile` member, and a `volatile`
@@ -4094,6 +4148,54 @@ impl<'a> Emitter<'a> {
             }
         }
         true
+    }
+
+    /// True when a fill target's storage is `volatile`-qualified in C.
+    ///
+    /// Volatility is declared on a module-level `let` or on a struct field.
+    /// A `memcpy` into either discards the qualifier, so a nested fill copies
+    /// such a target one leaf at a time. A field reached through a raw pointer
+    /// is tested through the pointee struct. `.len` is the structural length
+    /// only on a fixed array; on a struct it is an ordinary field.
+    fn fill_target_volatile(&self, place: &Place) -> bool {
+        if let PlaceBase::Global(id) = &place.base {
+            if self.globals.get(id).is_some_and(|global| global.volatile) {
+                return true;
+            }
+        }
+        let mut ty = self.substitute(&self.place_base_type(&place.base));
+        for projection in &place.projections {
+            match projection {
+                ir::Projection::Field(field) => {
+                    if field == "len"
+                        && matches!(
+                            &ty.kind,
+                            TyKind::Array { extents, .. }
+                                if extents.iter().all(Option::is_some)
+                        )
+                    {
+                        ty = Ty::usize_ty();
+                        continue;
+                    }
+                    let mut pointee = &ty;
+                    while let TyKind::Raw(inner) = &pointee.kind {
+                        pointee = inner.as_ref();
+                    }
+                    if let TyKind::Struct(name, _) = &pointee.kind {
+                        if self.structs.get(name).is_some_and(|decl| {
+                            decl.fields.iter().any(|declared| {
+                                &declared.name == field && declared.volatile
+                            })
+                        }) {
+                            return true;
+                        }
+                    }
+                    ty = self.field_type(&ty, field);
+                }
+                _ => ty = element_type(&ty),
+            }
+        }
+        false
     }
 
     /// True when a covered scalar fill should use the compact form.
@@ -4157,9 +4259,9 @@ impl<'a> Emitter<'a> {
                         self.emit_array_assign_to(&sub, element_ty, elements, fill, compact);
                     }
                     // A whole row that is not a literal has no scalar form; it
-                    // travels through the fixed-array store core, one dimension
-                    // in.
-                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false, false),
+                    // travels through the fixed-array store wrapper, one
+                    // dimension in.
+                    _ => self.emit_prefix_row_assign_to(&sub, element_ty, value),
                 }
                 continue;
             }
@@ -4240,7 +4342,7 @@ impl<'a> Emitter<'a> {
             if prefix >= extent && nested_zero {
                 return;
             }
-            if compact && nested_zero {
+            if compact && !target.is_volatile && nested_zero {
                 let first = target.element(prefix);
                 self.push(&format!(
                     "    memset({}, 0, {} * {});",
@@ -4276,10 +4378,14 @@ impl<'a> Emitter<'a> {
             }
             for index in prefix..extent {
                 let sub = target.element(index);
-                self.push(&format!(
-                    "    memcpy({}, &({row}), {});",
-                    sub.address, sub.bytes
-                ));
+                if target.is_volatile {
+                    self.emit_volatile_array_copy(&sub, element_ty, &row);
+                } else {
+                    self.push(&format!(
+                        "    memcpy({}, &({row}), {});",
+                        sub.address, sub.bytes
+                    ));
+                }
             }
             if prefix >= extent {
                 self.push(&format!("    if (sizeof({row})) {{ }}"));
@@ -4466,15 +4572,20 @@ impl<'a> Emitter<'a> {
     /// already is the array's address and the byte count comes from the
     /// element type instead.
     fn array_target(&self, place: &Place, c_name: &str) -> ArrayTarget {
+        let is_volatile = self.fill_target_volatile(place);
         if self.is_array_param_place(place) {
             let ty = self.substitute(&place.ty);
             return ArrayTarget {
                 text: c_name.to_owned(),
                 address: c_name.to_owned(),
                 bytes: self.array_param_bytes(c_name, &ty),
+                is_volatile,
             };
         }
-        ArrayTarget::object(c_name)
+        ArrayTarget {
+            is_volatile,
+            ..ArrayTarget::object(c_name)
+        }
     }
 
     /// The address of a fixed-array copy source.
@@ -4565,6 +4676,12 @@ pub(super) struct ArrayTarget {
     pub(super) address: String,
     /// The C expression for the array's byte count.
     pub(super) bytes: String,
+    /// True when the C storage is `volatile`-qualified.
+    ///
+    /// A `memcpy` into a volatile object discards the qualifier, so the
+    /// nested fill copies such a target one leaf at a time. A local, a
+    /// temporary, a parameter, and a return slot are never volatile.
+    is_volatile: bool,
 }
 
 impl ArrayTarget {
@@ -4574,6 +4691,7 @@ impl ArrayTarget {
             text: text.to_owned(),
             address: format!("&({text})"),
             bytes: format!("sizeof({text})"),
+            is_volatile: false,
         }
     }
 
@@ -4587,12 +4705,16 @@ impl ArrayTarget {
             text: text.to_owned(),
             address: text.to_owned(),
             bytes,
+            is_volatile: false,
         }
     }
 
     /// The target of one element or row inside this array object.
     fn element(&self, index: usize) -> Self {
-        Self::object(&format!("{}[{}]", self.text, index))
+        Self {
+            is_volatile: self.is_volatile,
+            ..Self::object(&format!("{}[{}]", self.text, index))
+        }
     }
 }
 
