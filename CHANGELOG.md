@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.1.1] - 2026-11-09
+
+### Fixed
+
+- A function-body nested fixed-array fill into `volatile` storage now stores
+  each element through the volatile lvalue instead of calling `memcpy`. The
+  fix covers fill rows, place-valued and impure prefix rows, and run-time
+  indexed elements. Accepted source such as `volatile let g: i32[8][9]` with
+  `g = [; [; 0]];` now builds under strict C on host, m68k GCC, vbcc, and the
+  freestanding profile.
+
+### Changed
+
+- The generated-C benchmark closeout: the matrix benchmark's nested zero fill
+  compacts to one `memset`, reducing streamed guest instructions by 9.6% and
+  `.text` by 5.0% on that benchmark, with no scored regression.
+
+### Verification
+
+`make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
+`make differential`, `make bench-shape`, `make bench-compare`, and
+`make verify` pass for v1.1.1. `make verify` prints `verify: all legs passed`.
+
 ## [1.1.0] - 2026-11-08
 
 ### Added
