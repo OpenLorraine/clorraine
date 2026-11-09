@@ -28,7 +28,8 @@ closeout; it follows `RELEASE.md` and is not part of PLAN-23's requirements.
 
 Out of scope: whole-array assignment or move copies into a volatile array
 (`g = other`, a call result, a self-reading literal), a volatile array used as
-a copy *source* into a row temporary, struct-literal prefix elements with a
+a copy *source* into a row temporary, a member or element of a by-value struct
+or conditional rvalue (`make().r`), struct-literal prefix elements with a
 fixed-array field, a nested fill through a `for borrow` alias over volatile
 storage, a `borrow` parameter bound to a volatile field, owning explicit
 elements, and any language, ABI, runtime, stdlib, driver, LSP, or benchmark
@@ -59,10 +60,13 @@ whole-array place copy is pinned so this fix cannot silently claim it.
   extent).
 - **R1.3 Prefix spelling.** A volatile prefix row whose value names existing
   storage is copied leaf by leaf directly. A value that could re-run an effect
-  (a call, a conditional, a call-returning member, a call-valued index, or a
+  (a call returning the row, a conditional, a call-valued index, or a
   materialization of one) is evaluated once into a row temporary first, then
-  copied leaf by leaf. No prefix copy emits `memcpy` into a volatile
-  destination.
+  copied leaf by leaf. A member or element of a *by-value* struct or
+  conditional rvalue (`make().r`) is **not** covered: the shared core takes the
+  address of the rvalue, which C rejects. It is a pre-existing class and is
+  recorded as a separate limitation. No in-scope prefix copy emits `memcpy`
+  into a volatile destination.
 - **R1.4 Unchanged non-volatile path.** A non-volatile target keeps the current
   spelling: one `memset` for a compacted uniform zero fill, otherwise a row
   temporary plus one `memcpy` per covered row. The prefix-row copy keeps its
@@ -139,9 +143,9 @@ whole-array place copy is pinned so this fix cannot silently claim it.
   - IP-V18: an arithmetic-indexed volatile source row: direct leaf stores, no
     row temporary.
 - **R2.3 Red first.** The twelve new behaviour cases fail on the base compiler
-  because of the discarded qualifier (ST-V8 also shows the base's
-  re-evaluation); the twelve new and changed emission pins fail on the base. The
-  guards pass on the base.
+  because of the discarded qualifier; the twelve new and changed emission pins
+  fail on the base. The guards pass on the base. The base run is spec 13/25
+  and impl 24/36.
 - **R2.4 Test integrity.** Every new positive assertion fails when the volatile
   copy branches are reverted. Forcing the predicate false fails the volatile
   pins; forcing it true fails the non-volatile field guard. Making an impure

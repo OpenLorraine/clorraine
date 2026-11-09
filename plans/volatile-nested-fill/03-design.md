@@ -236,11 +236,17 @@ fn emit_prefix_row_assign_to(&mut self, target: &ArrayTarget, ty: &Ty, value: &V
 `stable_storage_value` is true for a place, a temporary, a literal scalar, a
 member or element of a stable value with a stable index, a pure unary/binary
 expression, a cast, or an address-of of one, and for a materialization that
-records a temp or destination. A call, a conditional, a call-returning member,
-or a call-valued index is not stable: appending an element index to its
-rendered text would re-run the effect once per leaf. The temporary path
-evaluates it exactly once with the shared core, then copies from the
-temporary.
+records a temp or destination. A call returning the row, a conditional, or a
+call-valued index is not stable: appending an element index to its rendered
+text would re-run the effect once per leaf. The temporary path evaluates it
+exactly once with the shared core, then copies from the temporary.
+
+A member or element of a *by-value* struct or conditional rvalue (`make().r`)
+is a separate pre-existing class: the shared core takes the address of the
+rvalue, which C rejects. It is out of scope and recorded in the accepted
+limits and known limitations. The raw-pointer member form (`getptr().r`) is
+handled: the pointer dereference gives an lvalue, and the value is evaluated
+once.
 
 A constant or arithmetic index (`h[0]`, `h[k - 1]`) is therefore stable and
 copies a volatile source row leaf by leaf. Rejecting literal scalars would

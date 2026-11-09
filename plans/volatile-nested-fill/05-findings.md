@@ -62,6 +62,7 @@ source was restored.
 | Remove the copy recursion (one dimension only) | impl 35/36 (IP-V2 fails); spec 24/25 (ST-V2 fails) |
 | Treat an impure prefix value as stable | impl 35/36 (IP-V14 fails); spec 24/25 (ST-V8 fails at the strict build) |
 | Disable the run-time index volatility | impl 34/36 (IP-V13, IP-V15 fail); spec 23/25 (ST-V7, ST-V9 fail) |
+| Reject literal scalars as stable (constant/arithmetic source index) | impl 34/36 (IP-V17, IP-V18 fail); spec 23/25 (ST-V11, ST-V12 fail) |
 
 ## Benchmark Comparison
 
@@ -72,8 +73,8 @@ the head is the fix commit.
 |---|---|
 | Base compiler | `7cdbb71` (`build/perf/base-clc`) |
 | Base SHA-256 / dirty | `2e7436f93edac998064aa284488b2245aa6aa565a9b02786d10c33a82951bbcd` / `false` |
-| Head compiler | `0ae2be4` (compiler source `00f310b`) |
-| Head SHA-256 / dirty | `431b0418342fd4ae5bff6f3c9f04f6d9711034bb2372ab2f8e22e781edd368d4` / `false` |
+| Head compiler | `f7341e6` (compiler source `e0f3cbf`) |
+| Head SHA-256 / dirty | `a36bba44af24436f65289115549e27af22013cec29f9b0d13e7440c69e18759d` / `false` |
 | `make bench-compare` (1% guard, no `REQUIRE`) | passed; every metric identical |
 
 | Benchmark | Base instructions | Head instructions | Base `.text` | Head `.text` | C bytes |
@@ -132,6 +133,9 @@ a non-defect.
 | RV2-VOL-002: a prefix row that is a member or element of a by-value struct/conditional rvalue (`make().r`) takes the address of an rvalue in the row temporary | MAJOR pre-existing | Ruled out of scope: the shape is invalid C on the shipped base too, and it is a shared-core rvalue-materialization class, not a nested fill destination. Recorded in the accepted limits and known limitations |
 | RV2-VOL-003: the copy helper still said "same bytes"; the pointer-walk doc overgeneralized raw dereference | MINOR | The helper says "same typed values" and notes struct padding; the pointer doc distinguishes a plain raw dereference from a `volatile raw T` field |
 | RV2-VOL-004: the ledger's mutation lists and the MEM-001 coverage were imprecise | MINOR | The mutation matrix was rerun on the final tests; ST-V8 is described as a top-level call, the rvalue-member shape is recorded as a separate limitation, and the counts are updated |
+| RV3-VOL-001: the by-value rvalue-member prefix was excluded only in the findings ledger while the requirements appeared to cover it | MAJOR scope conflict | The requirements, index, and design now explicitly exclude a member or element of a by-value struct or conditional rvalue; it is pre-existing invalid C on the shipped base and is recorded in known limitations. The raw-pointer member form is fixed |
+| RV3-VOL-002: the `stable_storage_value` doc still said arithmetic is not stable | MINOR | The doc now distinguishes effect-free scalar expressions from calls, conditionals, rvalue members, and updates |
+| RV3-VOL-003: the 05/07/01 mutation lists and the benchmark identity were stale | MINOR | The 05 ledger has nine mutation rows matching 07; the ST-V8 base description is corrected; the benchmark identity is the final `f7341e6`/`e0f3cbf` |
 
 Both review-driven code changes were committed and the full fix gate is rerun
 on the new clean commit.

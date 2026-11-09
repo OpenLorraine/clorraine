@@ -83,25 +83,22 @@ whole-array class. IP-V13 through IP-V16 cover the review-driven shapes.
 
 1. Add the behaviour cases and pins; do not change the compiler.
 2. Run both focused suites on the base. Record:
-   - ST-V1..V10 fail (strict C for the `memcpy` shapes; ST-V8 also shows the
-     prefix call re-evaluated four times);
-   - IP-V1..V6 and IP-V13..V16 fail (destination `memcpy` present, leaf
-     stores absent);
+   - ST-V1..V12 fail (strict C for the `memcpy` shapes);
+   - IP-V1..V6 and IP-V13..V18 fail (the `memcpy` the pin forbids is
+     present, or the leaf store is absent);
    - IP-V7..V12 pass.
-3. Implement the fix. Both suites pass.
+   The base run is spec 13/25 and impl 24/36.
+3. Implement the fix. Both suites pass (spec 25/25, impl 36/36).
 4. Test integrity, each applied and restored:
-   - restore the `memcpy` fill-row copy: ST-V1..V7 fail and IP-V1..V4,
-     IP-V13, IP-V15 fail;
-   - remove the prefix wrapper: ST-V5 and IP-V5 fail;
-   - make `fill_target_volatile` return false: the volatile place pins fail;
-   - make it return true: IP-V7 and the non-volatile compaction pins fail;
-   - make the `.len` guard unconditional: IP-V6 fails;
-   - remove the copy recursion: IP-V2 fails;
-   - treat an impure prefix value as stable: ST-V8 and IP-V14 fail;
-   - disable the run-time index volatility: ST-V7/ST-V9 and IP-V13/IP-V15
-     fail;
-   - reject a constant or arithmetic index as stable: ST-V11/ST-V12 and
-     IP-V17/IP-V18 fail.
+   - restore the `memcpy` fill-row copy: impl 24/36, spec 13/25;
+   - remove the prefix wrapper: impl 32/36, spec 21/25;
+   - make `fill_target_volatile` return false: impl 24/36, spec 13/25;
+   - make it return true: impl 28/36, spec 25/25;
+   - make the `.len` guard unconditional: impl 35/36;
+   - remove the copy recursion: impl 35/36, spec 24/25;
+   - treat an impure prefix value as stable: impl 35/36, spec 24/25;
+   - disable the run-time index volatility: impl 34/36, spec 23/25;
+   - reject literal scalars as stable: impl 34/36, spec 23/25.
 5. Record every run in [Findings](05-findings.md).
 
 ## Strict-Shape Fixture

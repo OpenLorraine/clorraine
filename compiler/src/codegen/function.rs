@@ -5032,12 +5032,14 @@ fn pointer_root_place(value: &Value) -> Option<&Place> {
 
 /// True when a value names existing storage without re-running an effect.
 ///
-/// A place, a temporary, a member or element of one, and a cast or
-/// address-of of one are stable: appending an element index re-reads the same
-/// storage. A call, a conditional, or an arithmetic expression is not stable;
-/// re-reading it could re-run an effect. A materialization names the temporary
-/// the earlier lowering filled, so it is stable when it records a temp or a
-/// destination.
+/// A place, a temporary, a member or element of a stable value with a stable
+/// index, an effect-free scalar expression (a literal, a cast, or a pure
+/// unary/binary over stable operands), and an address-of of one are stable:
+/// appending an element index re-reads the same storage or the same value. A
+/// call, a conditional, an update, or a member/element of a by-value rvalue is
+/// not stable; re-reading it could re-run an effect or take an address of a
+/// value with no address. A materialization names the temporary the earlier
+/// lowering filled, so it is stable when it records a temp or a destination.
 fn stable_storage_value(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Place(_) | ValueKind::Temp(_) => true,

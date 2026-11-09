@@ -46,7 +46,8 @@ checklist and follows `RELEASE.md`.
 
 Out of scope: whole-array assignment or move copies into a volatile array
 (`g = other`, a call result, a self-reading literal), a volatile array used as
-a copy source into a row temporary, struct-literal prefix elements with a
+a copy source into a row temporary, a member or element of a by-value struct
+or conditional rvalue (`make().r`), struct-literal prefix elements with a
 fixed-array field, a nested fill through a `for borrow` alias over volatile
 storage, a `borrow` parameter bound to a volatile field, an owning explicit row
 copy, and any language, grammar, ABI, runtime, stdlib, driver, LSP, or
