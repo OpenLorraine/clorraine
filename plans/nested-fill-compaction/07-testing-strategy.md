@@ -80,6 +80,8 @@ itself is pinned by IP-05/IP-06.
 | IP-20 | Positive | `i32[8][8]` with an `i32(0)` fill | one `memset` |
 | IP-21 | Control | zero-fill `i32[8][9]` (72 slots) | one `memset`; the same-size control for IP-07 |
 | IP-22 | Build | nested `bool[8][9]` zero fill in `shapes.clo` | m68k, vbcc, and freestanding build without a warning |
+| IP-23 | Exclusion (emission only) | `i32[8][9] = [; [; i32(f32(0.0))]]` | no whole-array `memset`; row spelling; the float-to-integer cast is not a constant zero |
+| IP-24 | Boundary/positive | field-target full prefix `i32[8][8]` | no `__cl_fillrow`, no marker, no memset; the zero-covered return is outside the `compact` flag |
 
 A pin that says "one `memset`" counts the whole-array fill statement, not the
 runtime shim's own `memset` calls in the same translation unit.

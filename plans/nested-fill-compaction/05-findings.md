@@ -122,6 +122,31 @@ gate phase is clean.
 the declared 5%/3% requirement on the flat pair exits 1 with both named
 failures.
 
+## Phase Reviews
+
+Four independent reviews ran on the codegen commit `85d0fde`:
+
+| Review | Verdict | Evidence |
+|---|---|---|
+| Correctness | no critical/major; four minor | diff `85d0fde^..85d0fde`; focused suites 19/19 and 13/13; base red run 10/9 |
+| Memory safety | no findings | 40+ host ASan probes (locals, parameters, return slots, prefixes, 3D/4D, bool/u8/u16/i8, closure env, temps, generics, address-taken); all clean, base behavior equal |
+| Emission integrity | no findings | base/head diff over 7 corpus, 5 benchmark, 25 Amiga example, 6 fault programs, 76 probes; one matrix hunk (65 removed, 1 added); host/m68k/vbcc/freestanding strict builds; no unexplained diff |
+| Performance | land; three minor + one info | matrix -9.6% / -5.0%; no scored regression; independent threshold and byte-leaf runs |
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| RV-001: no float-to-integer cast leaf pin | MINOR | Added `uniform_zero_rejects_a_float_to_integer_cast`, `0u`/`i32(0)`/`-0` unit cases, and IP-23 (`i32[8][9] = [; [; i32(f32(0.0))]]` keeps the old spelling) |
+| RV-002: the full-prefix early return is outside `compact`, contradicting the design snippet and unpinned for a non-compact target | MINOR | The design now shows the early return outside the flag; IP-24 pins a field-target full prefix with no `__cl_fillrow` and no memset |
+| RV-003: the shape fixture comment claimed a 3D case it did not add; two new front-end diagnostics | MINOR | Corrected the comment to two-dimensional; the two front-end diagnostics are recorded as accepted fixture noise (the strict C legs are warning-free) |
+| RV-004: helpers sat between the import groups | MINOR | Moved all helpers below the `use` block |
+| PE-001: 64-slot exact fills may add 6-7 instructions while saving `.text` | MINOR | Recorded as an accepted limit; the 72+ shapes win both metrics and the scored matrix covers 1,024 slots |
+| PE-002: byte leaves are neutral to +6 instructions | MINOR | Recorded as an accepted limit; the measured shape is `i32` |
+| PE-003: matrix overwrites the zero fill before reading it | INFO | Recorded in the attribution: the win is the emitted fill cost, not a live-data saving |
+
+The pre-existing volatile-target invalid C is reported separately by both the
+memory and emission auditors; base and head emit byte-identical `memcpy`
+spellings and both fail the strict host build. It stays an accepted limit.
+
 ## Head and Delta
 
 Filled after the codegen commit with `make bench` and
@@ -151,11 +176,11 @@ Filled before and after the codegen change.
 
 | Status | Pins |
 |---|---|
-| Red on base (`b68dae5`) | IP-01, 02, 03, 04, 06, 15, 16, 17, 19, 20, 21 (10 test functions) |
-| Green on base | IP-05, 07, 08, 09, 10, 11, 12, 13, 14 (9 exclusion and regression guards) |
+| Red on base (`b68dae5`) | IP-01, 02, 03, 04, 06, 15, 16, 17, 19, 20, 21, 24 (11 test functions) |
+| Green on base | IP-05, 07, 08, 09, 10, 11, 12, 13, 14, 23 (10 exclusion and regression guards) |
 | Behaviour oracle on base | 13 of 13 cases pass |
 | Behaviour oracle on head | 13 of 13 cases pass |
-| Emission pins on head | 19 of 19 cases pass |
+| Emission pins on head | 21 of 21 cases pass |
 
 **Base evidence:** the unmodified compiler emits `i32 __cl_fillrow_1[32]`, 32
 scalar zero stores, and 32 `memcpy` calls for matrix `[; [; 0]]`. The positive
@@ -197,8 +222,11 @@ commit.
 | A non-empty covered region below 64 leaf slots keeps the row temporary | Avoid a small-case call/replacement regression; the threshold does not apply when `prefix >= extent`, where a uniform zero fill emits nothing | R3.1 |
 | Slice views with a missing extent do not compact | A fixed-array rule; a slice has no compile-time row count | R3.1 |
 | Closure-environment and compiler-temp targets inherit the compact gate | They name real storage and the existing gate admits them; no nested-fill fixture exists in those positions, so no separate pin is added | R3.1 |
-| Materialized, conditional-assignment, and self-read callers stay non-compact | The caller passes `compact=false`; the nested branch does not override it. A hidden-return conditional arm passes true and may compact; IP-19 pins it | R3.4 |
+| Materialized, conditional-assignment, and self-read callers stay non-compact | The caller passes `compact=false`; the nested branch does not override it for stores. A hidden-return conditional arm passes true and may compact; IP-19 pins it. The zero-covered early return is outside the flag and emits nothing for any target; IP-24 pins a non-compact full prefix | R3.4 |
 | A volatile nested target keeps the per-row `memcpy` spelling | That spelling discards the volatile qualifier and is rejected by a strict host build; the defect is pre-existing at `b68dae5` and outside this change. The optimization does not compact it and does not fix it | R3.4 |
+| An exactly 64-slot nested fill may add 6-7 instructions while saving about 216 B `.text` | The independent 64-slot probes measure +7 (`i32[8][8]`), +6 (`i32[64][1]`), and -70 (`i32[1][64]`). The 72-slot and larger shapes win both metrics. 64 is kept as a code-size-preferring boundary; the scored matrix covers 1,024 slots | R3.1 |
+| Byte leaves are neutral to +6 instructions with smaller `.text` | The measured shape is `i32`; `u8[8][16]` measures +4, `u8[16][16]` +6, both with smaller `.text`. Admitted for code size and consistency, not a measured runtime win | R3.1 |
+| The matrix benchmark overwrites its zero fill before reading it | The 9.6% measures the emitted fill cost, not a live-data saving. The benchmark is unchanged; changing it would tune the benchmark to the optimization | R5.2 |
 | Host time stays advisory | Target metric is the deterministic m68k instruction count | R5.1 |
 | Strings cost stays in stdlib | Runtime and stdlib changes are out of scope | R5.2 |
 | Moves struct copies stay | Calls use the by-value ABI; elision is a separate ABI change | R5.2 |

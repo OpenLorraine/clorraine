@@ -4,7 +4,7 @@
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-08
 > **Last Updated**: 2026-11-09
-> **Progress**: 22/32 tasks (69%)
+> **Progress**: 25/32 tasks (78%)
 > **CodeOps Artifact Schema**: 1
 > **Execution mode**: inline primary agent with `--auto-design` for eligible technical choices
 > **Commit mode**: `--auto-commit` with pushes held until the final gate
@@ -330,9 +330,9 @@ planned exclusion-removal checks.
 
 ### Step 5.1: Head benchmark
 
-- [ ] 5.1.1 Run `make bench`; record the head identity, SHA-256, and
+- [x] 5.1.1 Run `make bench`; record the head identity, SHA-256, and
       `dirty=false`.
-- [ ] 5.1.2 Run
+- [x] 5.1.2 Run
       `make bench-compare REQUIRE="<final requirements>"`; the final
       requirements are recorded in Phase 1 after the clean probe. Record the
       table and the verdict.
@@ -342,21 +342,21 @@ hashes equal.
 
 ### Step 5.2: Emission audit
 
-- [ ] 5.2.1 Emit base and head C over all seven corpus programs, the
+- [x] 5.2.1 Emit base and head C over all seven corpus programs, the
       benchmarks, and the Amiga examples; diff.
-- [ ] 5.2.2 Classify every diff; record unexplained diffs as blockers.
+- [x] 5.2.2 Classify every diff; record unexplained diffs as blockers.
 
 **Verify**: every diff is a nested zero fill; no unexplained unit.
 
 ### Step 5.3: Phase reviews
 
-- [ ] 5.3.1 Dispatch `correctness-reviewer` and `performance-auditor` on the
+- [x] 5.3.1 Dispatch `correctness-reviewer` and `performance-auditor` on the
       codegen diff.
-- [ ] 5.3.2 Dispatch read-only `memory-safety-auditor` and
+- [x] 5.3.2 Dispatch read-only `memory-safety-auditor` and
       `emission-integrity-auditor` on the same diff.
-- [ ] 5.3.3 Merge findings; record rulings; resolve all critical/major; re-review
+- [x] 5.3.3 Merge findings; record rulings; resolve all critical/major; re-review
       the fix diff once.
-- [ ] 5.3.4 If any codegen change landed, commit it, rerun 5.1 and 5.2 on the
+- [x] 5.3.4 If any codegen change landed, commit it, rerun 5.1 and 5.2 on the
       new clean commit, and replace the head table and emission audit.
 
 **Verify**: no open critical/major finding; the head document and emission

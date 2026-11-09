@@ -131,10 +131,16 @@ its own unit cases for 63/64 slots, a missing extent, `usize` overflow, and
 Immediately before the existing row-temporary block in the nested branch:
 
 ```rust
-if compact && self.nested_zero_fill(fill, element, extents, extent.saturating_sub(prefix)) {
-    if prefix >= extent {
-        return;
-    }
+let nested_zero = nested_zero_fill(
+    fill,
+    element,
+    extents,
+    extent.saturating_sub(prefix),
+);
+if prefix >= extent && nested_zero {
+    return;
+}
+if compact && nested_zero {
     let first = target.element(prefix);
     self.push(&format!(
         "    memset({}, 0, {} * {});",
@@ -148,8 +154,11 @@ if compact && self.nested_zero_fill(fill, element, extents, extent.saturating_su
 
 The eligibility helper returns true for a uniform zero fill with zero covered
 rows and returns false only when a non-empty region is below the threshold.
-The `prefix >= extent` return is therefore reachable and emits nothing; a
-non-zero or impure fill keeps the existing temporary and marker.
+The `prefix >= extent` return is **outside** the `compact` gate: a zero-covered
+fill writes no store, so even a field, alias, volatile, or materialized target
+emits nothing. The prefix stores themselves still run. A non-zero or impure
+fill keeps the existing temporary and marker. IP-24 pins the non-compact full
+prefix.
 
 `ArrayTarget::element(prefix)` already produces the correct spelling for a
 plain object, an adjusted array parameter, and a hidden return slot:
