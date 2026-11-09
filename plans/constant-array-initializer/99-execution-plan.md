@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 23:02
-> **Progress**: 6/37 tasks (16%)
+> **Last Updated**: 2026-11-09 23:08
+> **Progress**: 7/37 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -65,7 +65,7 @@ base and isolated baselines before any compiler change.
 - [x] 1.1.4 Run `make bench-base COMMIT=v1.1.0` and `make bench`; copy `build/perf/head.json` to `build/perf/isolated-head.json`; copy the current `target/debug/clc` to `build/perf/isolated-base-clc`; record the compiler identities, the `clc 1.1.0` base version line, the clean/dirty flags, and confirm each harness document has `dirty=false` and the expected commit. ✅ (completed: 2026-11-09 23:02)
 - [x] 1.1.5 Measure the small-table boundary and the 256-entry sensitivity: use `build/perf/isolated-base-clc` on `i32[4]/i32[8]/i32[16]/i32[32]` and `u8[64]`, plus a 256-entry lookup variant; record `.text` and instructions against the store form in `05-findings.md`; finalize the threshold. ✅ (completed: 2026-11-09 23:02)
 - [x] 1.1.6 Re-run the committed `lookup` probe with `build/perf/isolated-base-clc`: current emission vs a block-scope `static const` template plus `memcpy`; record the exact `.text`, raw/net instructions, output, commands, and artifact paths in `05-findings.md`. ✅ (completed: 2026-11-09 23:02)
-- [ ] 1.1.7 Write the committed baseline table, threshold, three compiler identities, and benchmark sensitivity in `05-findings.md`; commit the baseline evidence with the git-commit skill.
+- [x] 1.1.7 Write the committed baseline table, threshold, three compiler identities, and benchmark sensitivity in `05-findings.md`; commit the baseline evidence with the git-commit skill. ✅ (completed: 2026-11-09 23:08)
 
 **Deliverables**:
 - The plan, benchmark, and baseline evidence are committed.
