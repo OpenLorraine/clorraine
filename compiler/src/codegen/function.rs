@@ -4089,8 +4089,10 @@ impl<'a> Emitter<'a> {
     ///
     /// A `volatile` destination cannot be passed to `memcpy`: the call discards
     /// the qualifier. Writing every deepest element keeps each store a volatile
-    /// access, in row-major order, and copies the same bytes for a scalar or
-    /// struct leaf. Only arrays recurse; a struct is one assignable value.
+    /// access, in row-major order, and copies the same typed values for a
+    /// scalar or struct leaf; struct padding after an assignment is
+    /// unspecified, as it is for any C assignment. Only arrays recurse; a
+    /// struct is one assignable value.
     fn emit_volatile_array_copy(&mut self, target: &ArrayTarget, ty: &Ty, source: &str) {
         let TyKind::Array { element, extents } = &ty.kind else {
             return;
@@ -4237,8 +4239,9 @@ impl<'a> Emitter<'a> {
     /// The pointer form of a run-time element target carries the element
     /// expression, not a `Place`, so the nested fill derives volatility from
     /// the value tree: a volatile global place, a declared volatile field, or
-    /// any element or member of one. A raw dereference does not add the
-    /// qualifier; the pointer type does not carry it.
+    /// any element or member of one. A plain raw dereference does not add the
+    /// qualifier. A `volatile raw T` field is different: the emitter spells it
+    /// `volatile T *`, so the field predicate already marks the pointee.
     fn value_storage_volatile(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(place) => self.fill_target_volatile(place),
@@ -5038,6 +5041,17 @@ fn pointer_root_place(value: &Value) -> Option<&Place> {
 fn stable_storage_value(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        // Literal scalars have no effect to repeat. They are the common
+        // constant index in a volatile-source row such as `h[0]`; rejecting
+        // them would route the row through a temporary and copy from the
+        // volatile source with `memcpy`.
+        ValueKind::Int(_)
+        | ValueKind::Char(_)
+        | ValueKind::Bool(_)
+        | ValueKind::Float(_)
+        | ValueKind::Null
+        | ValueKind::Str(_)
+        | ValueKind::Path(_) => true,
         ValueKind::Materialize {
             temp, destination, ..
         } => temp.is_some() || destination.is_some(),
@@ -5046,6 +5060,9 @@ fn stable_storage_value(value: &Value) -> bool {
             stable_storage_value(base) && stable_storage_value(index)
         }
         ValueKind::Unary { op, operand } => !op.is_update() && stable_storage_value(operand),
+        ValueKind::Binary { left, right, .. } => {
+            stable_storage_value(left) && stable_storage_value(right)
+        }
         ValueKind::Cast { value, .. } => stable_storage_value(value),
         _ => false,
     }

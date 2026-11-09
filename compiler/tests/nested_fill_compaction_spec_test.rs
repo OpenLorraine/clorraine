@@ -751,3 +751,62 @@ func main(): i32 {
 "#,
     );
 }
+
+#[test]
+fn should_fill_a_volatile_destination_from_constant_indexed_volatile_rows() {
+    assert_output(
+        "volatile-source-const",
+        r#"
+module spec.NestedFillVolatileSourceConst;
+import { println } from std.io;
+volatile let h: i32[2][4] = [[1, 2, 3, 4], [5, 6, 7, 8]];
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    g = [h[0], h[1]; [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        let j: i32 = 0;
+        while (j < 4) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 36\n",
+    );
+}
+
+#[test]
+fn should_fill_a_volatile_destination_from_an_arithmetic_indexed_volatile_row() {
+    assert_output(
+        "volatile-source-index",
+        r#"
+module spec.NestedFillVolatileSourceIndex;
+import { println } from std.io;
+volatile let h: i32[2][4] = [[1, 2, 3, 4], [5, 6, 7, 8]];
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    let k: i32 = 2;
+    g = [h[k - 1]; [; 0]];
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        let j: i32 = 0;
+        while (j < 4) {
+            total = total + g[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println($"sum: {total}");
+    return 0;
+}
+"#,
+        "sum: 26\n",
+    );
+}

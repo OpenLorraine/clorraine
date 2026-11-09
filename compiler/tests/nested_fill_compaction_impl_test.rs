@@ -819,3 +819,56 @@ func main(): i32 {
         "regs->p->v[0][0] = __cl_fillrow_1[0];",
     );
 }
+
+#[test]
+fn should_copy_a_constant_indexed_volatile_source_row_directly() {
+    let emitted = emit(
+        "volatile-source-const",
+        r#"
+module impl.VolatileSourceConst;
+volatile let h: i32[2][4] = [[1, 2, 3, 4], [5, 6, 7, 8]];
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    g = [h[0], h[1]; [; 0]];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent(
+        "volatile-source-const",
+        &emitted,
+        "memcpy(&(cl_impl_VolatileSourceConst_g[",
+    );
+    assert_contains(
+        "volatile-source-const",
+        &emitted,
+        "cl_impl_VolatileSourceConst_g[0][0] = cl_impl_VolatileSourceConst_h[0][0];",
+    );
+}
+
+#[test]
+fn should_copy_an_arithmetic_indexed_volatile_source_row_directly() {
+    let emitted = emit(
+        "volatile-source-index",
+        r#"
+module impl.VolatileSourceIndex;
+volatile let h: i32[2][4] = [[1, 2, 3, 4], [5, 6, 7, 8]];
+volatile let g: i32[4][4] = [; [; 0]];
+func main(): i32 {
+    let k: i32 = 2;
+    g = [h[k - 1]; [; 0]];
+    return g[0][0];
+}
+"#,
+    );
+    assert_absent(
+        "volatile-source-index",
+        &emitted,
+        "memcpy(&(cl_impl_VolatileSourceIndex_g[",
+    );
+    assert_contains(
+        "volatile-source-index",
+        &emitted,
+        "cl_impl_VolatileSourceIndex_g[0][0] = cl_impl_VolatileSourceIndex_h[(i32)((u32)k - (u32)1)][0];",
+    );
+}
