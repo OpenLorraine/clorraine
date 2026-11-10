@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 00:25
-> **Progress**: 25/40 tasks (62%)
+> **Last Updated**: 2026-11-11 00:45
+> **Progress**: 40/40 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -123,20 +123,20 @@ open critical/major finding.
 - [x] 3.1.6 Dispatch the pre-publication claim review (changelog, notes,
   runbook against `05-findings.md` and `build/perf/*.json`); fix every
   critical/major finding ✅ (completed: 2026-11-11 00:25)
-- [ ] 3.1.7 Commit C2 (`docs(release): record the v1.1.2 gates`); assert the
+- [x] 3.1.7 Commit C2 (`docs(release): record the v1.1.2 gates`); assert the
   diff from C1 is documentation-only; run a final `make check` and both
-  `--version` assertions
-- [ ] 3.1.8 Create the annotated `v1.1.2` tag locally on C2
-- [ ] 3.1.9 Assert a clean tree and `HEAD == v1.1.2^{commit}`; build
+  `--version` assertions ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.8 Create the annotated `v1.1.2` tag locally on C2 ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.9 Assert a clean tree and `HEAD == v1.1.2^{commit}`; build
   `cargo build --release --workspace`; run the hello-world program with both
-  release binaries
-- [ ] 3.1.10 Package the source and binary tarballs and `SHA256SUMS`; run the
-  archive audit and `sha256sum -c`
-- [ ] 3.1.11 Push `main` and the tag (only after the artifact audit passes)
-- [ ] 3.1.12 Create the draft GitHub release; upload the three assets; verify
-  `isDraft` and the asset names, sizes, and states
-- [ ] 3.1.13 Publish the release; confirm the page lists the notes and all
-  three assets; record the URL
+  release binaries ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.10 Package the source and binary tarballs and `SHA256SUMS`; run the
+  archive audit and `sha256sum -c` ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.11 Push `main` and the tag (only after the artifact audit passes) ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.12 Create the draft GitHub release; upload the three assets; verify
+  `isDraft` and the asset names, sizes, and states ✅ (completed: 2026-11-11 00:35)
+- [x] 3.1.13 Publish the release; confirm the page lists the notes and all
+  three assets; record the URL ✅ (completed: 2026-11-11 00:35)
 
 **Verify**: the tag is on C2; the artifacts match the recorded hashes and pass
 the audit; the published release has exactly three assets.
@@ -152,21 +152,21 @@ the audit; the published release has exactly three assets.
 
 **Reference**: [00-index](00-index.md) · AR-16/AR-17 · R7 · RT-25–RT-28
 
-- [ ] 4.1.1 Update `RELEASE.md` with the publication status, URL, asset sizes,
-  and SHA-256 values; move v1.1.1 to a historical section
-- [ ] 4.1.2 Update `05-findings.md` with the publication record, final
-  numbers, review rulings, and accepted limits
-- [ ] 4.1.3 Mark PLAN-27 Done; set the roadmap to 571/573, 0 open, 2 parked;
-  update the totals note
-- [ ] 4.1.4 Refresh `codeops/specialist-check.json` to 74 plan folders and
-  update `AGENTS.md`
-- [ ] 4.1.5 Dispatch the final correctness review of the release record and
-  claims
-- [ ] 4.1.6 Fix every critical/major finding and rerun the affected checks
-- [ ] 4.1.7 Commit C3 (`docs(release): record the v1.1.2 publication`); push;
-  confirm a clean tree and `main == origin/main`
-- [ ] 4.1.8 Final verification: tag on `origin`, release assets visible, plan
-  40/40 Done
+- [x] 4.1.1 Update `RELEASE.md` with the publication status, URL, asset sizes,
+  and SHA-256 values; move v1.1.1 to a historical section ✅ (completed: 2026-11-11 00:35)
+- [x] 4.1.2 Update `05-findings.md` with the publication record, final
+  numbers, review rulings, and accepted limits ✅ (completed: 2026-11-11 00:35)
+- [x] 4.1.3 Mark PLAN-27 Done; set the roadmap to 571/573, 0 open, 2 parked;
+  update the totals note ✅ (completed: 2026-11-11 00:35)
+- [x] 4.1.4 Refresh `codeops/specialist-check.json` to 74 plan folders and
+  update `AGENTS.md` ✅ (completed: 2026-11-11 00:35)
+- [x] 4.1.5 Dispatch the final correctness review of the release record and
+  claims ✅ (completed: 2026-11-11 00:40)
+- [x] 4.1.6 Fix every critical/major finding and rerun the affected checks ✅ (completed: 2026-11-11 00:40)
+- [x] 4.1.7 Commit C3 (`docs(release): record the v1.1.2 publication`); push;
+  confirm a clean tree and `main == origin/main` ✅ (completed: 2026-11-11 00:45)
+- [x] 4.1.8 Final verification: tag on `origin`, release assets visible, plan
+  40/40 Done ✅ (completed: 2026-11-11 00:45)
 
 **Verify**: `git status -sb`, `git ls-remote --tags origin v1.1.2`,
 `gh release view v1.1.2`, and the plan progress.

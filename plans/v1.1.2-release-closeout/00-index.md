@@ -3,7 +3,7 @@
 > **Feature**: Publish a patch release containing the landed constant-array
 > and build-flag wins, with the full gate, checksummed artifacts, and the
 > established runbook.
-> **Status**: Executing — Phase 3 record and claim review complete; tag pending
+> **Status**: Done — v1.1.2 published; full gate green
 > **Created**: 2026-11-10
 > **Last Updated**: 2026-11-11
 > **Implements**: R1–R7

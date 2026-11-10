@@ -7,8 +7,8 @@
 - Eligible module-level constant scalar array initializers (2- or 4-byte
   non-float leaf, complete guard-free constant list, at least 16 elements and
   64 bytes, no `volatile`) emit one read-only data template and one copy
-  instead of one store per element. Byte, short, `const`, fill, multi-extent,
-  struct/view/float, and freestanding arrays keep the stores. Isolated under the
+  instead of one store per element. Byte, short/empty lists, `const`, fill,
+  multi-extent, struct/view/float, and freestanding arrays keep the stores. Isolated under the
   old flags, `lookup` net instructions fell 13,653 → 9,470 (−30.6%), `.text`
   117,440 → 92,976 (−20.8%), and emitted C 474,430 → 340,503 bytes (−28.2%).
   Against v1.1.1 on `hosted-amiga`, with the shipped flags applied to both

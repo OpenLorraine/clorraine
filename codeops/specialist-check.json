@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-10T10:08:23+01:00",
+  "checkedAt": "2026-11-11T00:35:22+01:00",
   "plans": [
     "amiga-library-surface",
     "amiga-rtg",
@@ -73,6 +73,7 @@
     "store-emission-integrity",
     "v1-production-readiness",
     "v1.1-language-surfaces",
+    "v1.1.2-release-closeout",
     "volatile-nested-fill"
   ]
 }

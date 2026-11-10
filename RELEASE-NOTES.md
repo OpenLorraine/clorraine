@@ -10,9 +10,9 @@ language and command-line surface are unchanged.
 - **Eligible constant arrays become data.** A module-level fixed array with a
   2- or 4-byte non-float scalar leaf, a complete guard-free constant list, at
   least 16 elements and 64 bytes, and no `volatile` now emits one read-only
-  data template and one copy instead of one store per element. Byte, short,
-  `const`, fill, multi-extent, struct/view/float, and freestanding arrays keep
-  the stores; the conditions are recorded in `docs/known-limitations.md` §13.
+  data template and one copy instead of one store per element. Byte,
+  short/empty lists, `const`, fill, multi-extent, struct/view/float, and
+  freestanding arrays keep the stores; the conditions are recorded in `docs/known-limitations.md` §13.
   On the `lookup` benchmark, isolated under the previous flags, net
   instructions fell 13,653 → 9,470 (−30.6%), `.text`
   117,440 → 92,976 (−20.8%), and emitted C 474,430 → 340,503 bytes (−28.2%).
@@ -24,8 +24,8 @@ language and command-line surface are unchanged.
   benchmarks are `.text` 57.1–69.3% smaller and their stripped binaries
   64.2–74.7% smaller; host stripped release binaries fall 20.6–36.5%; the
   `hosted-amiga-13` audit set falls 49.1–88.9% in `.text`; calibration falls
-  3,372 → 2,928 on 2.0 and 3,348 → 2,947 on 1.3. The two GCC release
-  rows in the frozen compile matrix match the new commands.
+  3,372 → 2,928 instructions on 2.0 and 3,348 → 2,947 on 1.3. The two GCC
+  release rows in the frozen compile matrix match the new commands.
 - **Release programs are stripped; tools and debug builds are not.** The
   `clc` and `clorraine` binaries keep their symbols. Debug builds keep
   symbols. Freestanding and non-Linux host program builds keep the `-O2` line
@@ -71,7 +71,8 @@ remaining libnix constructors still run on both m68k profiles.
 
 MIT. Third-party notices, including the Hamurabi port, are in
 `THIRD_PARTY_NOTICES.md`. The binary tarball includes that file and
-`docs/known-limitations.md`, so the links in this document resolve.
+`docs/known-limitations.md`, so the licence and limitations links in the
+shipped README resolve; the other README links point to the source tree.
 
 No NDK, ROM, Workbench media, or other restrictively licensed third-party file
 is redistributed in the source or binary release artifacts.

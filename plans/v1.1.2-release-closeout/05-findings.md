@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Executing — Phase 3 record and claim review complete; tag pending
+> **Status**: Done — v1.1.2 published; full gate green
 
 ## Purpose
 
@@ -106,7 +106,7 @@ flags on both trees: `lookup` binary 82,544 → 41,740 (−49.4%), `.text`
 (116,584 → 41,740) for this comparison; that row is the same-compiler flag
 effect.
 
-**Calibration and net runtime:** calibration falls 3,372 → 2,928 on 2.0 and
+**Calibration and net runtime:** calibration falls 3,372 → 2,928 instructions on 2.0 and
 3,348 → 2,947 on 1.3. Scored net instructions are unchanged by the flags
 (`lookup` 9,470, matrix 9,908, moves 45,205, sieve 1,040,581, strings
 2,964,051 in the flag audit); the constant-array change is what improves
@@ -176,12 +176,39 @@ All gates ran on `74d4380` (C1) with a clean tree.
 
 ## Tag and Artifacts
 
-_Pending Phase 3._ Gated commit, evidence commit, tag object, artifact names,
-sizes, SHA-256 values, and the archive audit.
+| Item | Value |
+|---|---|
+| Gated commit (C1) | `74d4380a540bf609f46f005c882dd4ee2c06f371` |
+| Evidence/tag commit (C2) | `ed439aeec465663c3141bd32ad7f81805e96820e` |
+| Tag | annotated `v1.1.2`, object `5beec9342a8a78f6e69fb4af07752e0b961c6c81` |
+| C1 → C2 diff | 8 documentation/plan files; no compiler, spec, stdlib, or runtime source |
+| Source tarball | 5,135,518 bytes; `44337730938d6dfa767370d325380aeae337fb350c4f6e476d286a6141139194` |
+| Linux x86_64 tarball | 4,489,640 bytes; `52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe` |
+| `SHA256SUMS` | 195 bytes; covers both tarballs |
+
+The source archive uses the `clorraine-1.1.2/` prefix and contains no
+`.git/`, `build/`, `target/`, `docker/.env`, `docker/compose.override.yaml`,
+ROM, ADF/HDF, or NDK content. The binary archive contains the eight intended
+files: `clc`, `clorraine`, `LICENSE`, `README.md`, `RELEASE-NOTES.md`,
+`CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`, and `docs/known-limitations.md`.
+`sha256sum -c SHA256SUMS` passes for both tarballs; the extracted binaries are
+Linux x86_64 ELF and not stripped.
 
 ## Publication
 
-_Pending Phase 3/4._ Draft asset verification, published URL, and final status.
+The release was created as a draft, verified (`isDraft: true`, three assets
+with the expected names and sizes), then published on 2026-11-11:
+
+**URL:** <https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2>
+
+| Asset | Size (bytes) | SHA-256 |
+|---|---:|---|
+| `clorraine-1.1.2-src.tar.gz` | 5,135,518 | `44337730938d6dfa767370d325380aeae337fb350c4f6e476d286a6141139194` |
+| `clorraine-1.1.2-linux-x86_64.tar.gz` | 4,489,640 | `52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe` |
+| `SHA256SUMS` | 195 | covers both tarballs |
+
+The repository is private; "published" means a non-draft GitHub release
+visible to repository users. The release notes are the release body.
 
 ## Review Rulings
 
@@ -212,6 +239,18 @@ unchanged benchmarks and confirmed the C bytes are identical.
 No false public numeric claim or gate claim was found. The review identified
 missing or overbroad record text, all corrected before C2.
 
+### Final review
+
+| Finding | Severity | Area | Ruling |
+|---|---|---|---|
+| FR2-001 | MAJOR | premature `40/40`/Done/clean-tree claim | fixed — the roadmap stays Executing at 36/40 until C3; success criteria 1, 9, and 10 stay open |
+| FR2-002 | MINOR | "short" read as short arrays | fixed — "short/empty lists" in the changelog and notes; the published body was updated |
+| FR2-003 | MINOR | calibration unit omitted | fixed — "instructions" added to the notes, runbook, and findings |
+| FR2-004 | INFO | licence-link scope | fixed — the notes now say only the licence and limitations links resolve in the tarball; other README links are source-tree links |
+
+The reviewer independently verified the tag, both archives, the published
+assets, and the release body. It found no false number or false gate claim.
+
 ## Accepted Limits
 
 | Limit | Evidence / workaround |
@@ -224,3 +263,4 @@ missing or overbroad record text, all corrected before C2.
 | Host timing is advisory | `bench-compare` enforces output, net instructions, and `.text`; host wall time is printed but not compared. |
 | The repository is private | "Published" means a non-draft GitHub release visible to repository users, not a public internet release. |
 | Pre-existing freestanding spec-row wording | The freestanding release row says "same line with `-O2` in place of `-O0 -g`"; the driver omits debug warnings. Only the two GCC rows were authorized to change. |
+| Tag snapshot vs corrected release body | The C2 tag snapshot contains the earlier "short" wording and the pre-publication runbook. The tag is immutable; the published release body was corrected after publication and is the user-facing record. |

@@ -25,10 +25,11 @@ The version of record is set in `compiler/Cargo.toml` and mirrored in
 and its lock are bumped with the release. The release is manual; release
 automation is out of scope.
 
-**Publication status (2026-11-11):** **pending** — the release is authorized.
-The evidence commit is tagged after the gates; the artifacts are built and
-audited from that tag; the publication commit records the URL, asset sizes,
-hashes, and final status.
+**Publication status (2026-11-11):** **published** as
+[v1.1.2](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2). The
+annotated tag `v1.1.2` (tag object `5beec93`, commit `ed439ae`) points at the
+evidence commit; the source tarball, Linux x86_64 tarball, `SHA256SUMS`, and
+the release notes are published.
 
 ## Pre-release gates
 
@@ -71,7 +72,7 @@ Gate evidence for the gated commit:
 | `make differential` | 3/3 programs match |
 | `make bench-shape` | m68k GCC, GCC nix13, vbcc, and freestanding shapes are warning-free |
 | `make bench-base` / `make bench` / `make bench-compare` | base v1.1.1 (`2d1eb30`, `dirty: false`); head `74d4380` (`dirty: false`); lookup 13,653 → 9,470 instructions (−30.6%), `.text` 64,328 → 39,904 (−38.0%); both requirements PASS; other scored benchmarks unchanged |
-| `make bench-flags` | `runs: 2`; base/head/flags identities clean; five scored benchmarks `.text` 57.1–69.3%, binaries 64.2–74.7%; host binaries 20.6–36.5%; 1.3 audit set 49.1–88.9%; calibration 3,372 → 2,928 (2.0) / 3,348 → 2,947 (1.3); constructors and repeat pass |
+| `make bench-flags` | `runs: 2`; base/head/flags identities clean; five scored benchmarks `.text` 57.1–69.3%, binaries 64.2–74.7%; host binaries 20.6–36.5%; 1.3 audit set 49.1–88.9%; calibration 3,372 → 2,928 instructions (2.0) / 3,348 → 2,947 (1.3); constructors and repeat pass |
 | `make verify` | exit 0; `verify: all legs passed` |
 | `make vscode-check` | exit 0; extension type-check, tests, `.vsix` package audit, and packaged-client smoke passed (Node 22.23.3) |
 
@@ -147,22 +148,22 @@ Workbench media, `build/` output, `target/` output, `docker/.env`, or
 These steps run only after the user authorizes publication; the authorization
 for v1.1.2 is recorded in the release decision.
 
-- [ ] Push `main` and the annotated tag `v1.1.2` after the archive audit
-- [ ] Create the release as a draft:
+- [x] Push `main` and the annotated tag `v1.1.2` after the archive audit
+- [x] Create the release as a draft:
       `gh release create v1.1.2 --draft --title "Clorraine v1.1.2" --notes-file RELEASE-NOTES.md build/release/v1.1.2/clorraine-1.1.2-src.tar.gz build/release/v1.1.2/clorraine-1.1.2-linux-x86_64.tar.gz build/release/v1.1.2/SHA256SUMS`
-- [ ] Verify `gh release view v1.1.2 --json isDraft,assets`: `isDraft: true`
+- [x] Verify `gh release view v1.1.2 --json isDraft,assets`: `isDraft: true`
       and exactly three assets with the expected names and sizes
-- [ ] Publish: `gh release edit v1.1.2 --draft=false`
-- [ ] Confirm the published page lists the notes and all three checksummed
-      assets; record the URL and the asset table below
+- [x] Publish: `gh release edit v1.1.2 --draft=false`
+- [x] Confirm the published page lists the notes and all three checksummed
+      assets; the URL and asset table are below
 
 Published assets:
 
 | Asset | Size (bytes) | SHA-256 |
 | ----- | -----------: | ------- |
-| `clorraine-1.1.2-src.tar.gz` | recorded after publication | recorded after publication |
-| `clorraine-1.1.2-linux-x86_64.tar.gz` | recorded after publication | recorded after publication |
-| `SHA256SUMS` | recorded after publication | covers both tarballs |
+| `clorraine-1.1.2-src.tar.gz` | 5,135,518 | `44337730938d6dfa767370d325380aeae337fb350c4f6e476d286a6141139194` |
+| `clorraine-1.1.2-linux-x86_64.tar.gz` | 4,489,640 | `52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe` |
+| `SHA256SUMS` | 195 | covers both tarballs |
 
 If publication is blocked, the tag and artifacts stay unpublished, the exact
 names and SHA-256 values are reported, and the blocker is recorded here.
