@@ -32,7 +32,7 @@ remove the old files first and check the identity.
 |---|---|---|---|---|---|
 | Base (`v1.1.0`) | `build/perf/base-clc` | `eb0e2dae6049698dbd9aa5c77e7b2663c117893b13f66875257e44467199b0da` | `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` | `clc 1.1.0` | false |
 | Isolated base (benchmark commit) | `build/perf/isolated-base-clc` | `9f57815412bc322935da1c3ad284ba52801a7f94b666efd4ea705fb29c77c7e8` | `e2d3c760bb8fa23d3434bbc3d7e7be5289867978` | `clc 1.1.1` | false |
-| Final head (feature commit) | `target/debug/clc` | `f8227b08597a9c7f54bd7995ccaeb20c0d64dd3c9d2a57520413a1ef153c06d4` | `25e2c8addc27a5209b8c5c0d6cff21b985bc71f2` (implementation `cef0b91`) | `clc 1.1.1` | false |
+| Final head (feature commit) | `target/debug/clc` | `08efe2e350bf179f862b0767663796cabf7fdb3aa55e866a171ee40b564fab37` | `82877aba573bd0d0619f7130270eecbcb71359a9` (implementation `cef0b91`, fix `fd7fe30`, exact pins `866104c`) | `clc 1.1.1` | false |
 
 **Base compiler source:** `v1.1.0` commit `c0bd6d05fe2a985874fddcce9cd07d5100b89e2f` (annotated tag object `c0e34568f423a1ff2994dddd6f2f654e50f338d6`) — record the exact full commit
 and the `clc --version` line.
@@ -156,8 +156,9 @@ cumulative and isolated comparisons pass the same requirement.
 -20.8% `.text`, C bytes -28.2%; every other row 0.0%). Cumulative compare
 passed (`lookup` -30.6% / -20.8%; `matrix` -9.6% / -5.0% from the already-landed
 nested-fill work; no scored regression). Both requirement rows pass. The head
-document records the feature head `25e2c8a` with `dirty=false`; the compiler
-source is implementation commit `cef0b91`.
+document records the feature head `82877ab` with `dirty=false`; the compiler
+source is implementation `cef0b91` plus the collision fix `fd7fe30` and the
+exact-cast pins `866104c`.
 
 ## Red/Green Pin Record
 
@@ -255,6 +256,14 @@ integrity found 82/82 units byte-identical except the intended template and
 confirmed the collision probe now compiles and runs on host/m68k/vbcc;
 performance confirmed the benchmark emission and metrics are unchanged.
 
+**Final focused re-review (Phase 5):** clean of critical/major. RV-005
+(test completeness: the exact-cast case used short lists) was fixed by
+`4e6e1d1`, making the u16/usize/isize tables full 32-entry templates and
+asserting the template. The final acceptance evidence is green:
+`make check`, `make asan` 30 suites, `make ubsan` 4 suites, `make corpus-amiga`,
+`make differential` 3/3, `make bench-shape`, both benchmark comparisons, and
+`make verify` (`verify: all legs passed`).
+
 **Pre-existing outside this change:** `__cl_itmp<N>` init locals have the same
 theoretical user-FFI shadowing class (`compiler/src/codegen/program.rs`); this
 predates the feature, is not reached by the corpus/benchmarks/examples, and is
@@ -264,23 +273,26 @@ recorded as a residual defect rather than fixed here.
 
 | Gate | Result |
 |---|---|
-| `make check` | _pending_ |
-| `make asan` | _pending_ |
-| `make ubsan` | _pending_ |
-| `make corpus-amiga` | _pending_ |
-| `make differential` | _pending_ |
-| `make bench-shape` | _pending_ |
-| `make bench` (full suite, head commit, `dirty=false`) | _pending_ |
-| isolated `bench.py compare --require ...` | _pending_ |
-| `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"` | _pending_ |
-| `make verify` | _pending_ |
-| targeted `lookup` smoke (`build/perf/lookup-smoke.json`) | _pending_ |
+| `make check` | green: 130 test-result groups, including 32 impl + 42 spec; fuzz smoke 28/28 host, 16/16 sanitizer/target, 0 failures |
+| `make asan` | green: 30 suites, including the 42-case constant-array suite |
+| `make ubsan` | green: 4 suites, including the 42-case constant-array suite |
+| `make corpus-amiga` | green: all portable programs match on hosted-amiga; vbcc/build-only legs warning-free |
+| `make differential` | green: 3/3 programs match |
+| `make bench-shape` | green: hosted-amiga, nix13, vbcc, and freestanding warning-free |
+| `make bench` (full suite, head commit, `dirty=false`) | green: head `82877ab`, `dirty=false`; `lookup` 9,470 / 92,976 |
+| isolated `bench.py compare --require ...` | passed: `lookup` -30.6% instructions, -20.8% `.text`; every other row 0.0% |
+| `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"` | passed: `lookup` -30.6% / -20.8%; `matrix` -9.6% / -5.0% from prior work; no scored regression |
+| `make verify` | green on the final run: `verify: all legs passed`. Two earlier runs hit environmental FS-UAE screen-capture flakes (paddle, text); each direct rerun passed and the emitted C is byte-identical base/head; the corpus-amiga vbcc transient is fixed by the bounded retry `ac92308`. |
+| targeted `lookup` smoke (`build/perf/lookup-smoke.json`) | passed on the pre-change compiler: output `lookup: 134217728`, 13,653 / 117,440; the final full-suite head run records the same output at 9,470 / 92,976 |
 
 ## Residual Opportunities
 
 | Opportunity | Evidence | Disposition |
 |---|---|---|
 | Function-local constant tables | Separate path; no benchmark | Residual |
+| 1-byte tables | The measured template cost is above 1%; a store-packing-aware rule could revisit | Residual |
+| 2–5 KB 4-byte band | Code-size-only at i32[1024]; a size-aware cap could skip the band | Residual |
+| `__cl_itmp` user-FFI shadowing | Pre-existing collision class outside this change; not reached by the repository programs | Residual defect |
 | Short/empty lists | Tail policy needed | Residual |
 | Fill forms with constant values | Existing compaction | Residual |
 | Module `const` arrays | `E10224` | Out of scope |

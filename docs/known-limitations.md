@@ -223,3 +223,13 @@ C-hook trampoline surfaces.
 | VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
 | `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. Related links resolve a type through the referring module’s imports, then the first input module that declares it; an aliased or qualified reference to a same-named type in another module can point to the wrong page. | Read the source for member-level detail; use unambiguous type names across input modules. |
 | Release packaging | The v1.1.1 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`. | Build the server from source with `cargo build --workspace`. |
+
+## 13. Constant-array data templates
+
+| Area | Limitation | Workaround |
+|---|---|---|
+| Eligible constant arrays | A module-level `let` fixed array becomes one read-only template plus `memcpy` only when it has one extent, a 2- or 4-byte non-float scalar leaf, a complete explicit list of guard-free constants, at least 16 elements and 64 bytes, and no `volatile`. Module `const` lists (`E10224`), short/empty lists, fills, multi-extent arrays, and struct/view/float elements keep the per-element stores. | Put the table in a module-level `let` with a full list, or accept the store form for the other shapes. |
+| 1-byte tables | `i8`/`u8`/`bool` tables keep the stores: the measured template cost is +55/+107/+211 instructions at 64/128/256 bytes, above the 1% guard; GCC already packs adjacent byte stores. | Use the store form for byte tables; a wider element may qualify. |
+| Freestanding | The freestanding runtime `memcpy` is a byte loop; multi-byte tables keep the stores there. | The optimization applies to `host`, `hosted-amiga`, and `hosted-amiga-13`. |
+| 2–5 KB 4-byte tables | The template is a code-size-only change in this band: at `i32[1024]` it is +63 instructions (+1.18% in an init-dominated run) for -6,148 `.text`; at `i32[1280]` it wins both. The 1% guard applies to scored benchmarks. | Use the scored `lookup` scale for a both-metric win, or accept the code-size trade. |
+| Init-local collision | The pre-existing `__cl_itmp<N>` compiler local is not reserved against user `ffi` declarations; an `ffi __cl_itmp0` can collide. The new `__cl_ctmpl_<n>` template name advances past taken symbols. | Avoid declaring an `ffi` symbol with the `__cl_itmp` prefix; the template prefix is already guarded. |

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-09 23:50
-> **Progress**: 23/37 tasks (62%)
+> **Last Updated**: 2026-11-10 01:10
+> **Progress**: 36/37 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -127,9 +127,9 @@ make the focused suites green, and measure the win.
 - [x] 3.1.3 Run the focused spec and impl suites; make the positive pins green and keep every exclusion pin green. ✅ (completed: 2026-11-09 23:10)
 - [x] 3.1.4 Run `make bench-shape` (the fixture now exercises the template on hosted-amiga, nix13, and vbcc; freestanding keeps the stores) and `make check`; fix any C-validity or warning failure. ✅ (completed: 2026-11-09 23:10)
 - [x] 3.1.5 Commit the implementation, the now-green tests, the fixture, the red/green evidence, the `PLAN-25` roadmap row (Executing), and the plan index (Executing) with the git-commit skill. ✅ (completed: 2026-11-09 23:10)
-- [ ] 3.1.6 Confirm the tree is clean and `head.json` will record `dirty=false`; run `make bench`; run the isolated comparison with `--require lookup:instructions:10 --require lookup:text:10` and the cumulative `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"`; record the tables and outcomes in `05-findings.md` (commit those findings before the next measured run).
-- [ ] 3.1.7 Dispatch the correctness reviewer, memory-safety auditor, emission-integrity auditor, and performance auditor on the Phase 3 diff with blast-radius and test-integrity packets; record verdicts.
-- [ ] 3.1.8 Resolve every critical/major finding; if a fix changes codegen, continue to Phase 4 with a fix commit.
+- [x] 3.1.6 Confirm the tree is clean and `head.json` will record `dirty=false`; run `make bench`; run the isolated comparison with `--require lookup:instructions:10 --require lookup:text:10` and the cumulative `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"`; record the tables and outcomes in `05-findings.md` (commit those findings before the next measured run). ✅ (completed: 2026-11-10 00:10)
+- [x] 3.1.7 Dispatch the correctness reviewer, memory-safety auditor, emission-integrity auditor, and performance auditor on the Phase 3 diff with blast-radius and test-integrity packets; record verdicts. ✅ (completed: 2026-11-09 23:50)
+- [x] 3.1.8 Resolve every critical/major finding; if a fix changes codegen, continue to Phase 4 with a fix commit. ✅ (completed: 2026-11-09 23:50)
 
 **Deliverables**:
 - The implementation commit changes only the intended codegen and test/fixture files.
@@ -188,13 +188,13 @@ critical/major finding open.
 **Objective**: Attribute every emitted-C change, run every gate, and close the
 reviews.
 
-- [ ] 5.1.1 Confirm the tree is clean (no uncommitted findings/review/roadmap edits), rebuild `clc` on the final head, run `make bench`, run the isolated comparison with `--require lookup:instructions:10 --require lookup:text:10`, run the cumulative `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"`, and confirm `head.json` records the feature commit with `dirty=false`.
-- [ ] 5.1.2 Run the isolated and cumulative emission audits over the explicit matrix in R4.3 (corpus with its run profile, benchmarks with host and hosted-amiga, Amiga examples with hosted-amiga/hosted-amiga-13); record every changed unit and the benchmark-source diff/hashes.
-- [ ] 5.1.3 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, `make bench-shape`, and `make verify`; record every result.
-- [ ] 5.1.4 Run the comment-hygiene check on the new source/tests/fixture for plan/requirement/task identifiers; record no hits.
-- [ ] 5.1.5 Run the final focused re-review on the complete feature diff; confirm no critical/major finding remains.
-- [ ] 5.1.6 Update `05-findings.md` with the final tables, threshold, emission audit, review verdicts, and gate evidence; commit the gate evidence with the git-commit skill.
-- [ ] 5.1.7 If any fix changed codegen after a gate, commit the fix, rebuild `clc`, rerun `make bench`, both comparisons, the emission audit, the affected suites, the reviews, and the full gate before closeout.
+- [x] 5.1.1 Confirm the tree is clean (no uncommitted findings/review/roadmap edits), rebuild `clc` on the final head, run `make bench`, run the isolated comparison with `--require lookup:instructions:10 --require lookup:text:10`, run the cumulative `make bench-compare REQUIRE="lookup:instructions:10 lookup:text:10"`, and confirm `head.json` records the feature commit with `dirty=false`. ✅ (completed: 2026-11-10 00:10)
+- [x] 5.1.2 Run the isolated and cumulative emission audits over the explicit matrix in R4.3 (corpus with its run profile, benchmarks with host and hosted-amiga, Amiga examples with hosted-amiga/hosted-amiga-13); record every changed unit and the benchmark-source diff/hashes. ✅ (completed: 2026-11-10 00:10)
+- [x] 5.1.3 Run `make check`, `make asan`, `make ubsan`, `make corpus-amiga`, `make differential`, `make bench-shape`, and `make verify`; record every result. ✅ (completed: 2026-11-10 01:10)
+- [x] 5.1.4 Run the comment-hygiene check on the new source/tests/fixture for plan/requirement/task identifiers; record no hits. ✅ (completed: 2026-11-10 00:10)
+- [x] 5.1.5 Run the final focused re-review on the complete feature diff; confirm no critical/major finding remains. ✅ (completed: 2026-11-10 01:10)
+- [x] 5.1.6 Update `05-findings.md` with the final tables, threshold, emission audit, review verdicts, and gate evidence; commit the gate evidence with the git-commit skill. ✅ (completed: 2026-11-10 01:10)
+- [x] 5.1.7 If any fix changed codegen after a gate, commit the fix, rebuild `clc`, rerun `make bench`, both comparisons, the emission audit, the affected suites, the reviews, and the full gate before closeout. ✅ (completed: 2026-11-10 01:10)
 
 **Deliverables**:
 - The emission audit is explained.
@@ -219,10 +219,10 @@ regression; the `lookup` requirement passes; no critical/major finding open.
 **Objective**: Make the repository state and the roadmap match the delivered
 feature.
 
-- [ ] 6.1.1 Update `AGENTS.md` if the measurement boundary or commands changed; update `benchmarks/README.md`; add the freestanding multi-byte limit to `docs/known-limitations.md`; update the `PLAN-25` roadmap row/progress count and the plan index Status/Last Updated.
-- [ ] 6.1.2 Run `make check` after the documentation changes (no compiler file changed) and record the result.
-- [ ] 6.1.3 Commit the closeout with the git-commit skill.
-- [ ] 6.1.4 Push with the git-commit skill in push mode; verify the tree is clean and `origin/main..HEAD` is 0.
+- [x] 6.1.1 Update `AGENTS.md` if the measurement boundary or commands changed; update `benchmarks/README.md`; add the freestanding multi-byte limit to `docs/known-limitations.md`; update the `PLAN-25` roadmap row/progress count and the plan index Status/Last Updated. ✅ (completed: 2026-11-10 01:10) ✅ (completed: 2026-11-10 01:10)
+- [x] 6.1.2 Run `make check` after the documentation changes (no compiler file changed) and record the result. ✅ (completed: 2026-11-10 01:30)
+- [x] 6.1.3 Commit the closeout with the git-commit skill. ✅ (completed: 2026-11-10 01:30)
+- [~] 6.1.4 Push with the git-commit skill in push mode; verify the tree is clean and `origin/main..HEAD` is 0.
 
 **Deliverables**:
 - The documentation and roadmap are current.
