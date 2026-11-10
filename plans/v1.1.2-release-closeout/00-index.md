@@ -3,9 +3,9 @@
 > **Feature**: Publish a patch release containing the landed constant-array
 > and build-flag wins, with the full gate, checksummed artifacts, and the
 > established runbook.
-> **Status**: Plan preflighted — ready for execution
+> **Status**: Executing — Phase 3 record and claim review complete; tag pending
 > **Created**: 2026-11-10
-> **Last Updated**: 2026-11-10
+> **Last Updated**: 2026-11-11
 > **Implements**: R1–R7
 > **CodeOps Artifact Schema**: 1
 
@@ -14,7 +14,8 @@ users, without adding language, ABI, spec, stdlib, or CLI surface.
 
 ## Overview
 
-`main` is 31 commits past the published `v1.1.1`. The user-visible changes are
+`main` carries 31 pre-plan commits plus this plan's record commits past the
+published `v1.1.1`. The user-visible changes are
 the constant-array emission (PLAN-25) and the release flag/DCE/strip work
 (PLAN-26). The rest is planning, tests, tooling, and one behavior-neutral
 compiler cleanup (`902ef30`).

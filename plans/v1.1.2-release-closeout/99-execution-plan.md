@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 22:52
-> **Progress**: 8/40 tasks (20%)
+> **Last Updated**: 2026-11-11 00:25
+> **Progress**: 25/40 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -74,29 +74,29 @@ exist.
 **Reference**: [03-01](03-01-version-and-docs.md) · [03-02](03-02-gates-and-publication.md) · R1/R4 · RT-1–RT-16
 
 - [x] 2.1.1 Bump `compiler/Cargo.toml`, regenerate `Cargo.lock`, bump
-  `tools/vscode/package.json` and `package-lock.json` ✅ (completed: 2026-11-10 22:52)
-- [x] 2.1.2 Update the `README.md` current-release line ✅ (completed: 2026-11-10 22:52)
+  `tools/vscode/package.json` and `package-lock.json` ✅ (completed: 2026-11-10 22:49)
+- [x] 2.1.2 Update the `README.md` current-release line ✅ (completed: 2026-11-10 22:49)
 - [x] 2.1.3 `cargo build --release --workspace`; assert `clc 1.1.2`,
-  `clorraine 1.1.2`, ELF, `not stripped`, and run the hello-world checks ✅ (completed: 2026-11-10 22:52)
-- [ ] 2.1.4 Commit C1 (`chore(release): bump the version to 1.1.2`); do not
-  push before the gates
-- [ ] 2.1.5 Delete stale `build/perf/{base,head,flags}.json` and
-  `build/perf/base-clc`; assert a clean tree
-- [ ] 2.1.6 Run `make check`
-- [ ] 2.1.7 Run `make asan` and `make ubsan`
-- [ ] 2.1.8 Run `make corpus-amiga`, `make differential`, and
-  `make bench-shape`
-- [ ] 2.1.9 Run `make bench-base COMMIT=v1.1.1`, `make bench`, and
-  `make bench-compare REQUIRE="lookup:instructions:20 lookup:text:20"`
-- [ ] 2.1.10 Run `make bench-flags`; assert `runs: 2`, clean identity, and all
-  checks pass
-- [ ] 2.1.11 Run `make verify`; assert `verify: all legs passed` and check
-  `git status` for unintended RTG capture changes
-- [ ] 2.1.12 Run `make vscode-check`
-- [ ] 2.1.13 Record the gated commit, all identities, measurement tables, and
-  gate results in `05-findings.md`
-- [ ] 2.1.14 Dispatch the end-of-phase correctness review (version surfaces,
-  identities, gate evidence); fix every critical/major finding before C2
+  `clorraine 1.1.2`, ELF, `not stripped`, and run the hello-world checks ✅ (completed: 2026-11-10 22:49)
+- [x] 2.1.4 Commit C1 (`chore(release): bump the version to 1.1.2`); do not
+  push before the gates ✅ (completed: 2026-11-10 22:49)
+- [x] 2.1.5 Delete stale `build/perf/{base,head,flags}.json` and
+  `build/perf/base-clc`; assert a clean tree ✅ (completed: 2026-11-10 22:50)
+- [x] 2.1.6 Run `make check` ✅ (completed: 2026-11-10 22:55)
+- [x] 2.1.7 Run `make asan` and `make ubsan` ✅ (completed: 2026-11-10 23:01)
+- [x] 2.1.8 Run `make corpus-amiga`, `make differential`, and
+  `make bench-shape` ✅ (completed: 2026-11-10 23:01)
+- [x] 2.1.9 Run `make bench-base COMMIT=v1.1.1`, `make bench`, and
+  `make bench-compare REQUIRE="lookup:instructions:20 lookup:text:20"` ✅ (completed: 2026-11-10 23:10)
+- [x] 2.1.10 Run `make bench-flags`; assert `runs: 2`, clean identity, and all
+  checks pass ✅ (completed: 2026-11-10 23:35)
+- [x] 2.1.11 Run `make verify`; assert `verify: all legs passed` and check
+  `git status` for unintended RTG capture changes ✅ (completed: 2026-11-10 23:56)
+- [x] 2.1.12 Run `make vscode-check` ✅ (completed: 2026-11-10 23:57)
+- [x] 2.1.13 Record the gated commit, all identities, measurement tables, and
+  gate results in `05-findings.md` ✅ (completed: 2026-11-10 23:57)
+- [x] 2.1.14 Dispatch the end-of-phase correctness review (version surfaces,
+  identities, gate evidence); fix every critical/major finding before C2 ✅ (completed: 2026-11-11 00:05)
 
 **Verify**: every gate green; identity assertions pass; the review has no
 open critical/major finding.
@@ -112,17 +112,17 @@ open critical/major finding.
 
 **Reference**: [03-01](03-01-version-and-docs.md) · [03-02](03-02-gates-and-publication.md) · R2/R3/R5/R6 · RT-17–RT-24
 
-- [ ] 3.1.1 Add the `[1.1.2]` changelog entry with the measured values
-- [ ] 3.1.2 Rewrite `RELEASE-NOTES.md` for v1.1.2
-- [ ] 3.1.3 Rewrite `RELEASE.md` through the pre-publication state
-  (decision, gates, artifacts, publication checklist, failure handling)
-- [ ] 3.1.4 Generalize the LSP packaging sentence in
-  `docs/known-limitations.md` §12
-- [ ] 3.1.5 Complete the measurement, gate, and scope sections of
-  `05-findings.md`
-- [ ] 3.1.6 Dispatch the pre-publication claim review (changelog, notes,
+- [x] 3.1.1 Add the `[1.1.2]` changelog entry with the measured values ✅ (completed: 2026-11-11 00:06)
+- [x] 3.1.2 Rewrite `RELEASE-NOTES.md` for v1.1.2 ✅ (completed: 2026-11-11 00:06)
+- [x] 3.1.3 Rewrite `RELEASE.md` through the pre-publication state
+  (decision, gates, artifacts, publication checklist, failure handling) ✅ (completed: 2026-11-11 00:06)
+- [x] 3.1.4 Generalize the LSP packaging sentence in
+  `docs/known-limitations.md` §12 ✅ (completed: 2026-11-11 00:06)
+- [x] 3.1.5 Complete the measurement, gate, and scope sections of
+  `05-findings.md` ✅ (completed: 2026-11-11 00:06)
+- [x] 3.1.6 Dispatch the pre-publication claim review (changelog, notes,
   runbook against `05-findings.md` and `build/perf/*.json`); fix every
-  critical/major finding
+  critical/major finding ✅ (completed: 2026-11-11 00:25)
 - [ ] 3.1.7 Commit C2 (`docs(release): record the v1.1.2 gates`); assert the
   diff from C1 is documentation-only; run a final `make check` and both
   `--version` assertions

@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.1.2] - 2026-11-11
+
+### Changed
+
+- Eligible module-level constant scalar array initializers (2- or 4-byte
+  non-float leaf, complete guard-free constant list, at least 16 elements and
+  64 bytes, no `volatile`) emit one read-only data template and one copy
+  instead of one store per element. Byte, short, `const`, fill, multi-extent,
+  struct/view/float, and freestanding arrays keep the stores. Isolated under the
+  old flags, `lookup` net instructions fell 13,653 → 9,470 (−30.6%), `.text`
+  117,440 → 92,976 (−20.8%), and emitted C 474,430 → 340,503 bytes (−28.2%).
+  Against v1.1.1 on `hosted-amiga`, with the shipped flags applied to both
+  trees, `lookup` `.text` fell 64,328 → 39,904 (−38.0%) and the binary
+  82,544 → 41,740 (−49.4%).
+- Release programs on Linux host, `hosted-amiga`, and `hosted-amiga-13` build
+  with `-O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s`; the two
+  GCC release rows in `spec/17-codegen.md` §13 match. Release programs are
+  stripped; debug builds, freestanding, and non-Linux host program builds keep
+  symbols. The same-compiler flag audit measures the five `hosted-amiga`
+  scored benchmarks at `.text` 57.1–69.3% and binaries 64.2–74.7% smaller;
+  host binaries fall 20.6–36.5%; the `hosted-amiga-13` audit set falls
+  49.1–88.9% in `.text`. Calibration falls 3,372 → 2,928 instructions on 2.0
+  and 3,348 → 2,947 on 1.3. Scored net instructions are unchanged by the
+  flags.
+- The constant-array template uses a collision-free symbol, so it cannot
+  shadow a user `ffi` symbol. The collision existed only in unreleased builds.
+- The Linux x86_64 tarball contains `clc` and `clorraine`, not
+  `clorraine-lsp`; build the server from source with
+  `cargo build --workspace`.
+
+### Verification
+
+`make check`, `make asan`, `make ubsan`, `make corpus-amiga`,
+`make differential`, `make bench-shape`, `make bench-base COMMIT=v1.1.1`,
+`make bench`, `make bench-compare REQUIRE="lookup:instructions:20
+lookup:text:20"`, `make bench-flags`, `make verify`, and `make vscode-check`
+pass for v1.1.2. `make verify` prints `verify: all legs passed`.
+
 ## [1.1.1] - 2026-11-09
 
 ### Fixed

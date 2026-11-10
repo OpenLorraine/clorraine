@@ -222,7 +222,7 @@ C-hook trampoline surfaces.
 | Installer integrity | The installer downloads nothing itself. The pinned image build verifies upstream archives where upstream publishes SHA-256 values; the installer's own gate is provenance, NDK presence, and tool versions. | Inspect `docker/versions.env` and `/opt/amiga/BUILD-PROVENANCE.txt`; rebuild with `make setup FETCH=1 YES=1`. |
 | VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
 | `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. Related links resolve a type through the referring module’s imports, then the first input module that declares it; an aliased or qualified reference to a same-named type in another module can point to the wrong page. | Read the source for member-level detail; use unambiguous type names across input modules. |
-| Release packaging | The v1.1.1 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`. | Build the server from source with `cargo build --workspace`. |
+| Release packaging | The Linux x86_64 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`; it also includes `THIRD_PARTY_NOTICES.md` and `docs/known-limitations.md`. | Build the language server from source with `cargo build --workspace`. |
 
 ## 13. Constant-array data templates
 
@@ -239,4 +239,6 @@ C-hook trampoline surfaces.
 | Area | Limitation | Workaround |
 |---|---|---|
 | Release programs | Programs built by `clorraine build --release` on Linux host, `hosted-amiga`, or `hosted-amiga-13` are optimized, section-GC'd, and stripped; function names are absent from the artifact. Freestanding and non-Linux host release builds keep symbols. | Build without `--release` for a symbol-bearing artifact; use the release build for size and the debug build for diagnosis. |
-| Link-time collection | `--gc-sections` removes unreachable runtime/shim sections, including the unused libnix `__amigapath`/`environ` constructors. No current standard-library API observes that state. | If a future API needs environment or path state, add a targeted keep and re-run the flag audit. |
+| Link-time collection | `--gc-sections` removes unreachable runtime/shim sections, including the unused libnix `__amigapath`/`environ` constructor objects and their init entries. No current standard-library API observes that state. | If a future API needs environment or path state, add a targeted keep and re-run the flag audit. |
+| Host attribution | The host release-binary reduction includes symbol removal; scored host `.text` falls 19.7–59.9% (calibration falls 80.2%), while the file size falls 20.6–36.5%. | Compare `.text` for code size and the stripped file for the shipped artifact. |
+| Non-GNU Linux | The host predicate selects Linux, not the linker family; a non-GNU linker on Linux would receive GNU-only flags. The tested and shipped host is the pinned GNU toolchain. | Use a GNU-compatible linker or extend the predicate with a linker probe. |
