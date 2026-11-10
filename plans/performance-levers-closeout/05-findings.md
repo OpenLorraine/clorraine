@@ -334,12 +334,11 @@ audit was re-run after the fix.
   size mode, [#22](https://github.com/OpenLorraine/clorraine/issues/22) macOS
   dead-strip, [#23](https://github.com/OpenLorraine/clorraine/issues/23)
   freestanding strip/GC.
-- The audit artifact `build/perf/flags.json` records `clc` commit `e3fdbf3`
-  and SHA-256 `0618657c…`; the harness tree had uncommitted plan notes at run
-  time (`dirty: true`), but the compiler binary is the final head. The scored
-  base/head documents are clean (`dirty: false`).
-- Final feature code: `29b85fb`; the closeout commit is the final branch
-  state, and `main` equals `origin/main` after the final push.
+- The final `build/perf/flags.json` was regenerated on a clean tree and records
+  `clc` commit `a13b6cb`, SHA-256 `0618657c…`, `dirty: false`, `runs: 2`, and
+  passing floors, constructors, and repeat checks.
+- Final feature code: `29b85fb`; the closeout/document commits are the final
+  branch state, and `main` equals `origin/main` after the final push.
 
 ## Final Numbers
 
