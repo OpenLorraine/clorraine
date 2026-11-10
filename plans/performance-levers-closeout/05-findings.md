@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Executing — Phases 1–3 complete (reviews passed); scored comparison pending
+> **Status**: Executing — Phase 4 complete; closeout pending
 
 ## Purpose
 
@@ -177,7 +177,7 @@ development (`dirty: true`). The final scored comparison records the clean
 - `__amigapath.o`: `.text`, `.bss`, `.list___INIT_LIST__`
 - `environ.o`: `.text`, `.data`, `.bss`, `.list___INIT_LIST__`
 
-The audit's `constructor_proof()` now asserts the remaining init-list loop and
+The audit's `constructor_proof()` now asserts the shared init-list walk and
 every remaining `___init*` constructor in the GC calibration trace. It maps
 the `m68k-amigaos-nm` symbols through the trace's HUNK load base. The proof is
 recorded in `flags.json` for both m68k profiles.
@@ -186,7 +186,7 @@ recorded in `flags.json` for both m68k profiles.
 
 | Symbol | Range | Trace hits |
 |---|---|---:|
-| `__Exit` (init-list loop) | 0x7c–0xd4 | 823 |
+| `__Exit` (shared init-list walk) | 0x7c–0xd4 | 823 |
 | `___initstdio` | 0x802–0x950 | 82 |
 | `___initcpp` | 0xef8–0xf34 | 7 |
 | `___initlibraries` | 0x104e–0x10ac | 40 |
@@ -196,19 +196,41 @@ recorded in `flags.json` for both m68k profiles.
 
 | Symbol | Range | Trace hits |
 |---|---|---:|
-| `__Exit` (init-list loop) | 0x7c–0xd4 | 823 |
+| `__Exit` (shared init-list walk) | 0x7c–0xd4 | 823 |
 | `___initstdio` | 0x64e–0x7b0 | 80 |
 | `___initcpp` | 0xeb0–0xeec | 7 |
 | `___initlibraries` | 0x1006–0x1064 | 25 |
 | `___initmalloc` | 0x12e6–0x132a | 14 |
 
-The 444-instruction 2.0 reduction (401 on 1.3) is the two removed constructor
-bodies, not a skipped loop. The remaining constructors execute before `main`.
+The 823 count is the whole `__Exit` range, including its short prologue; the
+four constructor hit counts are the entry proof. The 444-instruction 2.0
+reduction (401 on 1.3) is the two removed constructor bodies, not a skipped
+walk. The remaining constructors execute before `main`.
 
 ## Scored Comparison
 
-_Pending Phase 4._ `base.json` from `f9d5be8` and `head.json` from the final
-head, with the full compiler hash, `dirty == false`, and the compare table.
+| Item | Value |
+|---|---|
+| Base compiler | `f9d5be8d66474f00162ef78fc32ef83bae84aeda` (post-PLAN-25 `clc 1.1.1`), `dirty: false` |
+| Head compiler | `e3fdbf33a4ee0a88ec80c8c2227479d01a9c4ef3` (`clc 1.1.1`), `dirty: false` |
+| Base binary SHA-256 | `6e4c2298e4ec5c30d07aaa83487a1147e331365942c435e289813d13ca7dedfb` |
+| Head binary SHA-256 | `0618657cf8b5e47b8786f8aa2194f0a89217879d8b2cf6946c08866c049c8610` |
+| Shipped flags | `-O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s` on both sides |
+
+`make bench-compare` passed with zero deltas — the expected result because this
+feature changes no emitted C.
+
+| Benchmark | Base net ins | Head net ins | Δ | Base `.text` | Head `.text` | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| lookup | 9,470 | 9,470 | 0.0% | 39,904 | 39,904 | 0.0% |
+| matrix | 9,908 | 9,908 | 0.0% | 23,608 | 23,608 | 0.0% |
+| moves | 45,205 | 45,205 | 0.0% | 23,632 | 23,632 | 0.0% |
+| sieve | 1,040,581 | 1,040,581 | 0.0% | 23,832 | 23,832 | 0.0% |
+| strings | 2,964,051 | 2,964,051 | 0.0% | 24,196 | 24,196 | 0.0% |
+
+The calibration raw count is 2,928 on both sides (down from 3,372 under the
+old flags). `lookup`'s `m68k_release_bytes` is 41,740; the head document
+records the field for every scored benchmark.
 
 ## Gate Evidence
 
@@ -216,12 +238,26 @@ head, with the full compiler hash, `dirty == false`, and the compare table.
 
 | Gate | Result |
 |---|---|
-| `make bench-test` | 75 tests, OK |
+| `make bench-test` | 77 tests, OK |
 | `make bench-flags` | two identical runs; floors, constructor, and repeat checks pass; `runs: 2`; `build/perf/flags.json` |
 | `make bench-shape` | nix20 link, nix13 compile, vbcc, freestanding all warning-free |
 | `make sdk-advanced-build` | debug copies at `build/amiga-sdk/{workbench,services}-debug`; release at the default paths (27,560 / 34,996 bytes) |
 | `make sdk-a600-services` | OK — `wb: ok ...; svc: ok ...` on the release binaries |
 | `make sdk-a1200-workbench` | OK — report lines plus the Workbench capture and AppIcon goldens |
+
+### Phase 4
+
+| Gate | Result |
+|---|---|
+| `make bench-base COMMIT=f9d5be8` | base compiler `f9d5be8…`, `dirty: false`, shipped flags |
+| `make bench` | head compiler `e3fdbf3…`, `dirty: false`, `m68k_release_bytes` recorded |
+| `make bench-compare` | passed, zero output/instruction/`.text` deltas |
+| `make check` | passed (spec check, registry, workspace tests, bench-test, fuzz-test, fuzz-smoke `cases=28 failures=0`) |
+| `make asan` | 30 suites passed |
+| `make ubsan` | 4 suites passed |
+| `make corpus-amiga` | all portable programs match on hosted-amiga; build-only legs built |
+| `make differential` | 3/3 output matches |
+| `make verify` | `verify: all legs passed` |
 
 ## Review Rulings
 
@@ -263,6 +299,18 @@ rows match the actual release vector.
 The emission re-check found no findings; it confirmed zero emitted-C differences
 and flagged only that the cited `flags.json` predated the `runs` field. The
 audit was re-run after the fix.
+
+### Final Review
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| FR-001 | 4 | MINOR | `--repeat` >2 ran only twice | fixed — the loop runs every requested repeat and compares each to the first; a `--repeat 3` test covers it |
+| FR-002 | 4 | MINOR | missing constructor proof passed | fixed — a missing `constructors` key fails; the synthetic clean matrix carries both profiles and all four names |
+| FR-003 | 4 | MINOR | `__Exit` range labelled as the `_start` loop | fixed — renamed `init_list_walk`; the findings state the 823 is the `__Exit` range and the constructor hits are the proof |
+| FR-004 | 4 | MINOR | 1.3 old vector not exact | fixed — the exact nix13 old and GC vectors are pinned, including the Rust `AMIGA_13_BASE` composition |
+| FR-005 | 4 | OBSERVATION | over-named output test | fixed — renamed to the single-variant check |
+| FR-006 | 4 | OBSERVATION | status/roadmap bookkeeping | fixed in the closeout — statuses, roadmap, and the final gate table updated |
+| EM-F | 4 | — | final base/head emission diff | no findings — 668 profile runs, 155 accepted units byte-identical; strict builds clean |
 
 ## Accepted Limits
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 13:50
-> **Progress**: 29/44 tasks (66%)
+> **Last Updated**: 2026-11-10 14:55
+> **Progress**: 39/44 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -214,32 +214,32 @@ repeatable floor gate.
 
 **Objective**: prove no regression and no safety loss on the final head.
 
-- [ ] 4.1.1 Regenerate `base.json` from `f9d5be8` with the updated harness and
+- [x] 4.1.1 Regenerate `base.json` from `f9d5be8` with the updated harness and
   assert the full compiler hash and the harness-tree `dirty == false` —
-  `build/perf/base.json`
-- [ ] 4.1.2 Run `make bench` and `make bench-compare`; record the table and
-  the base/head identity — `build/perf/head.json`, `05-findings.md`
-- [ ] 4.1.3 Run `make check` and record the result — gate log
-- [ ] 4.1.4 Run `make asan` and `make ubsan` — gate logs
-- [ ] 4.1.5 Run `make corpus-amiga` and `make differential` — gate logs
-- [ ] 4.1.6 Run `make verify` and record `verify: all legs passed` — gate log
-- [ ] 4.1.7 Dispatch the final phase reviews: correctness reviewer,
+  `build/perf/base.json` ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.2 Run `make bench` and `make bench-compare`; record the table and
+  the base/head identity — `build/perf/head.json`, `05-findings.md` ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.3 Run `make check` and record the result — gate log ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.4 Run `make asan` and `make ubsan` — gate logs ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.5 Run `make corpus-amiga` and `make differential` — gate logs ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.6 Run `make verify` and record `verify: all legs passed` — gate log ✅ (completed: 2026-11-10 14:52)
+- [x] 4.1.7 Dispatch the final phase reviews: correctness reviewer,
   emission-integrity auditor (base/head emitted-C diff and strict C build),
   and a design challenge on the measurement/attribution design — review
-  packets
-- [ ] 4.1.8 Fix every critical/major finding, rerun the affected gates, and
-  record the rulings — `05-findings.md`
-- [ ] 4.1.9 Re-run the audit and the full gate after any fix; a missed floor
-  stops the landing — gate logs
-- [ ] 4.1.10 Add `make bench-flags` to the findings' gate evidence and to the
+  packets ✅ (completed: 2026-11-10 14:55)
+- [x] 4.1.8 Fix every critical/major finding, rerun the affected gates, and
+  record the rulings — `05-findings.md` ✅ (completed: 2026-11-10 14:55)
+- [x] 4.1.9 Re-run the audit and the full gate after any fix; a missed floor
+  stops the landing — gate logs ✅ (completed: 2026-11-10 14:55)
+- [x] 4.1.10 Add `make bench-flags` to the findings' gate evidence and to the
   final gate record; keep it out of the host-only CI — `05-findings.md`,
-  `AGENTS.md`
+  `AGENTS.md` ✅ (completed: 2026-11-10 14:55)
 
 **Deliverables**:
-- [ ] `bench-compare` passes with equal output and no >1% regression.
-- [ ] The audit floors pass with the exact measured values recorded.
-- [ ] The full gate is green.
-- [ ] No open critical/major review finding.
+- [x] `bench-compare` passes with equal output and no >1% regression.
+- [x] The audit floors pass with the exact measured values recorded.
+- [x] The full gate is green.
+- [x] No open critical/major review finding.
 
 **Verify**: `make verify` plus the gate list in R4.7.
 

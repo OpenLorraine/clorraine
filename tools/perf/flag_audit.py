@@ -380,10 +380,10 @@ def constructor_proof(profile: str, binary: Path) -> dict[str, object]:
     proof = {
         "profile": profile,
         "base": base,
-        "init_loop": hits(exits[0]),
+        "init_list_walk": hits(exits[0]),
         "constructors": constructors,
     }
-    if proof["init_loop"] == 0 or any(count == 0 for count in constructors.values()):
+    if proof["init_list_walk"] == 0 or any(count == 0 for count in constructors.values()):
         raise AuditError(f"an init-list constructor did not run: {proof}")
     return proof
 
@@ -392,7 +392,7 @@ def check_constructor(matrix: dict) -> list[str]:
     """Return the constructor-proof failures; an empty list means pass."""
     proofs = matrix.get("constructors")
     if proofs is None:
-        return []
+        return ["constructors: missing proof"]
     if not isinstance(proofs, dict):
         raise AuditError("matrix has malformed constructors")
     failures: list[str] = []
@@ -401,8 +401,8 @@ def check_constructor(matrix: dict) -> list[str]:
         if not isinstance(proof, dict):
             failures.append(f"{profile}: missing constructor proof")
             continue
-        if int(proof.get("init_loop", 0)) <= 0:
-            failures.append(f"{profile}: the init-list loop did not run")
+        if int(proof.get("init_list_walk", 0)) <= 0:
+            failures.append(f"{profile}: the init-list walk did not run")
         constructors = proof.get("constructors", {})
         if not isinstance(constructors, dict):
             failures.append(f"{profile}: malformed constructor list")
@@ -519,9 +519,9 @@ def main(argv: list[str] | None = None) -> int:
         work_root = bench.BUILD / "flags"
         first = run_matrix(clc, work_root)
         differences: list[str] = []
-        if args.repeat > 1:
-            second = run_matrix(clc, work_root)
-            differences = compare_repeats(first, second)
+        for _ in range(args.repeat - 1):
+            following = run_matrix(clc, work_root)
+            differences.extend(compare_repeats(first, following))
         failures = check_floors(first)
         constructor_failures = check_constructor(first)
         first["runs"] = args.repeat

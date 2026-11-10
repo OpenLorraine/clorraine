@@ -71,7 +71,11 @@ def matrix(entries: dict[str, dict]) -> dict:
 
 
 def clean_matrix() -> dict:
-    """A matrix where every floor passes."""
+    """A matrix where every floor and constructor check passes."""
+    proof = {
+        "init_list_walk": 1,
+        "constructors": {name: 1 for name in flag_audit.REQUIRED_CONSTRUCTORS},
+    }
     return matrix(
         {
             "hosted-amiga/calibration": entry(
@@ -91,7 +95,15 @@ def clean_matrix() -> dict:
                 new_bin=1552,
             ),
         }
-    )
+    ) | {
+        "constructors": {
+            profile: {
+                "init_list_walk": proof["init_list_walk"],
+                "constructors": dict(proof["constructors"]),
+            }
+            for profile in flag_audit.M68K_PROFILES
+        }
+    }
 
 
 class FloorTests(unittest.TestCase):
@@ -175,7 +187,7 @@ class VectorTests(unittest.TestCase):
         host = flag_audit.profile_spec("host")
         self.assertEqual(host["new"], flag_audit.bench.HOST_RELEASE)
         self.assertEqual(host["old"], ["-std=c99", "-O2"])
-        self.assertEqual(host["gc"], host["new"][:-1])
+        self.assertEqual(host["gc"], host["old"] + flag_audit.GC_FLAGS)
 
         m20 = flag_audit.profile_spec("hosted-amiga")
         self.assertEqual(m20["new"], flag_audit.bench.M68K_RELEASE)
@@ -183,14 +195,18 @@ class VectorTests(unittest.TestCase):
             m20["old"],
             ["-std=c99", "-mcrt=nix20", "-m68000", "-fwrapv", "-O2"],
         )
-        self.assertEqual(m20["gc"], m20["new"][:-1])
+        self.assertEqual(m20["gc"], m20["old"] + flag_audit.GC_FLAGS)
 
         m13 = flag_audit.profile_spec("hosted-amiga-13")
         self.assertEqual(
             m13["new"],
             [flag.replace("-mcrt=nix20", "-mcrt=nix13") for flag in flag_audit.bench.M68K_RELEASE],
         )
-        self.assertIn("-mcrt=nix13", m13["old"])
+        self.assertEqual(
+            m13["old"],
+            ["-std=c99", "-mcrt=nix13", "-m68000", "-fwrapv", "-O2"],
+        )
+        self.assertEqual(m13["gc"], m13["old"] + flag_audit.GC_FLAGS)
 
         free = flag_audit.profile_spec("freestanding")
         self.assertEqual(free["old"], free["new"])
@@ -212,6 +228,7 @@ class VectorTests(unittest.TestCase):
             m13["new"],
             rust_const("AMIGA_13_BASE") + rust_const("M68K_RELEASE_FLAGS"),
         )
+        self.assertEqual(m13["old"], rust_const("AMIGA_13_BASE") + ["-O2"])
         free = flag_audit.profile_spec("freestanding")
         self.assertEqual(
             free["new"],
@@ -241,13 +258,19 @@ class ConstructorTests(unittest.TestCase):
         constructors.update(overrides)
         return {
             "constructors": {
-                profile: {"init_loop": 1, "constructors": dict(constructors)}
+                profile: {"init_list_walk": 1, "constructors": dict(constructors)}
                 for profile in flag_audit.M68K_PROFILES
             }
         }
 
     def test_a_clean_proof_passes(self) -> None:
         self.assertEqual(flag_audit.check_constructor(self._proof()), [])
+
+    def test_a_missing_proof_is_reported(self) -> None:
+        self.assertEqual(
+            flag_audit.check_constructor({"programs": {}}),
+            ["constructors: missing proof"],
+        )
 
     def test_a_missing_profile_is_reported(self) -> None:
         proof = self._proof()
@@ -278,7 +301,7 @@ class ConstructorTests(unittest.TestCase):
              mock.patch.object(flag_audit, "trace_pcs", return_value=[0x260C, 0x2688, 0x2E0E]):
             proof = flag_audit.constructor_proof("hosted-amiga", Path("x"))
         self.assertEqual(proof["base"], 0x260C)
-        self.assertGreater(proof["init_loop"], 0)
+        self.assertGreater(proof["init_list_walk"], 0)
         self.assertGreater(proof["constructors"]["___initstdio"], 0)
 
     def test_a_missing_readelf_is_an_audit_error(self) -> None:
@@ -333,6 +356,15 @@ class MainTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertTrue(written[0]["checks"][-1]["passed"])
 
+    def test_repeat_three_runs_three_matrices(self) -> None:
+        with mock.patch.object(flag_audit, "run_matrix", return_value=clean_matrix()) as run, \
+             mock.patch.object(flag_audit.bench, "write_json"):
+            status = flag_audit.main(
+                ["run", "--repeat", "3", "--check", "--out", "build/perf/test.json"]
+            )
+        self.assertEqual(status, 0)
+        self.assertEqual(run.call_count, 3)
+
 
 class ErrorTests(unittest.TestCase):
     """Malformed audit inputs fail with a clear audit error."""
@@ -375,7 +407,7 @@ class OutputTests(unittest.TestCase):
     def test_the_expected_output_passes(self) -> None:
         self.assertEqual(self._measure("expected\n")["output"], "expected\n")
 
-    def test_a_wrong_output_fails_even_when_both_variants_match(self) -> None:
+    def test_a_wrong_output_fails(self) -> None:
         with self.assertRaises(flag_audit.AuditError):
             self._measure("wrong\n")
 
