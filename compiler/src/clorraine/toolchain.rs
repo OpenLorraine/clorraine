@@ -7,7 +7,10 @@
 //! literal argument.
 //!
 //! The `host` flags mirror the project's established host build; the
-//! `hosted-amiga` flags are the GCC development and release lines.
+//! `hosted-amiga` flags are the GCC development and release lines. Release
+//! builds on Linux and the Amiga profiles add section garbage collection and
+//! strip the artifact; the freestanding profile and non-Linux hosts keep the
+//! plain `-O2` line, and debug builds keep their symbols.
 
 use std::path::Path;
 
@@ -46,16 +49,28 @@ const AMIGA_13_BASE: &[&str] = &["-std=c99", "-mcrt=nix13", "-m68000", "-fwrapv"
 /// Debug optimization flags.
 const DEBUG_FLAGS: &[&str] = &["-O0", "-g"];
 
-/// Release flags for a Linux host; the seam starts at the current behavior.
-const HOST_RELEASE_GNU: &[&str] = &["-O2"];
+/// Release flags for a Linux host: optimize, section-GC, and strip.
+const HOST_RELEASE_GNU: &[&str] = &[
+    "-O2",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+];
 
-/// Release flags for a host without the pinned GNU linker.
+/// Release flags for a host without the pinned GNU linker: optimize only.
 const HOST_RELEASE_FALLBACK: &[&str] = &["-O2"];
 
 /// Release flags shared by the two Amiga profiles.
-const M68K_RELEASE_FLAGS: &[&str] = &["-O2"];
+const M68K_RELEASE_FLAGS: &[&str] = &[
+    "-O2",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+];
 
-/// Release flags for the freestanding m68k and host-run tools.
+/// Release flags for the freestanding m68k and host-run tools: unchanged.
 const FREESTANDING_RELEASE_FLAGS: &[&str] = &["-O2"];
 
 /// Warning flags for a debug build; warnings are errors.
@@ -90,8 +105,7 @@ const FREESTANDING_LIBS: &[&str] = &["-lg"];
 
 /// Selects the host release flags by linker family.
 ///
-/// The seam is a pure function so both outcomes run on the Linux test host;
-/// the value is filled in when the shipped flags are wired.
+/// The seam is a pure function so both outcomes run on the Linux test host.
 fn host_release_flags(gnu_linker: bool) -> &'static [&'static str] {
     if gnu_linker {
         HOST_RELEASE_GNU
@@ -263,9 +277,28 @@ mod tests {
             command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -O0 -g -Wall -Wextra -Werror -o prog out.c"
         );
+        let expected_release = if host_is_linux() {
+            "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c"
+        } else {
+            "cc -std=c99 -O2 -o prog out.c"
+        };
         assert_eq!(
             command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
-            "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c"
+            expected_release
+        );
+    }
+
+    #[test]
+    fn the_non_linux_host_release_line_is_plain_o2() {
+        let tool = Tool {
+            program: "cc",
+            base: HOST_BASE,
+            release: host_release_flags(false),
+            libs: &[],
+        };
+        assert_eq!(
+            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -O2 -o prog out.c"
         );
     }
 

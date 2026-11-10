@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 10:56
-> **Progress**: 9/44 tasks (20%)
+> **Last Updated**: 2026-11-10 11:02
+> **Progress**: 17/44 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -106,34 +106,34 @@ show the expected red failures; the baseline files exist.
 
 **Objective**: make the release command match the requirements and the spec.
 
-- [ ] 2.1.1 Fill the four release slices, `Tool.release`, and the pure
+- [x] 2.1.1 Fill the four release slices, `Tool.release`, and the pure
   `host_release_flags(gnu_linker)` / `host_is_linux()` seam; update the two
   `build.rs` test-double fields — `compiler/src/clorraine/toolchain.rs`,
-  `compiler/src/clorraine/build.rs`
-- [ ] 2.1.2 Make `command()` use `tool.release`; give the freestanding m68k and
+  `compiler/src/clorraine/build.rs` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.2 Make `command()` use `tool.release`; give the freestanding m68k and
   host-run tools `FREESTANDING_RELEASE_FLAGS`; remove the global
-  `RELEASE_FLAGS` — `compiler/src/clorraine/toolchain.rs`
-- [ ] 2.1.3 Update the module/`Tool` docs to the new matrix —
-  `compiler/src/clorraine/toolchain.rs`
-- [ ] 2.1.4 Update only the two GCC release rows in the compile matrix and add
+  `RELEASE_FLAGS` — `compiler/src/clorraine/toolchain.rs` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.3 Update the module/`Tool` docs to the new matrix —
+  `compiler/src/clorraine/toolchain.rs` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.4 Update only the two GCC release rows in the compile matrix and add
   the ST-8 spec-row pin — `spec/17-codegen.md` §13,
-  `compiler/tests/clorraine_driver_spec_test.rs` (AR-19)
-- [ ] 2.1.5 Update the `--release` help and `Options.release` doc with the
-  freestanding/non-Linux exclusion — `compiler/src/clorraine/cli.rs`
-- [ ] 2.1.6 Run the focused Rust and driver tests for ST-1–ST-8 and ST-22 and
+  `compiler/tests/clorraine_driver_spec_test.rs` (AR-19) ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.5 Update the `--release` help and `Options.release` doc with the
+  freestanding/non-Linux exclusion — `compiler/src/clorraine/cli.rs` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.6 Run the focused Rust and driver tests for ST-1–ST-8 and ST-22 and
   make them green — `compiler/src/clorraine/toolchain.rs`,
-  `compiler/tests/clorraine_driver_spec_test.rs`
-- [ ] 2.1.7 Record the exact vectors, the spec diff, and the pre-existing
-  freestanding row wording discrepancy in the findings — `05-findings.md`
-- [ ] 2.1.8 Dispatch the end-of-phase correctness and emission-integrity
+  `compiler/tests/clorraine_driver_spec_test.rs` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.7 Record the exact vectors, the spec diff, and the pre-existing
+  freestanding row wording discrepancy in the findings — `05-findings.md` ✅ (completed: 2026-11-10 11:02)
+- [x] 2.1.8 Dispatch the end-of-phase correctness and emission-integrity
   reviews (blast radius and test integrity included) and fix every
-  critical/major finding — review packets, `05-findings.md`
+  critical/major finding — review packets, `05-findings.md` ✅ (completed: 2026-11-10 11:02)
 
 **Deliverables**:
-- [ ] Every command vector matches 03-01 exactly.
-- [ ] Debug commands are byte-identical to the old lines.
-- [ ] Freestanding m68k and host-run release stay `-O2`.
-- [ ] Only the two authorized spec rows changed.
+- [x] Every command vector matches 03-01 exactly.
+- [x] Debug commands are byte-identical to the old lines.
+- [x] Freestanding m68k and host-run release stay `-O2`.
+- [x] Only the two authorized spec rows changed.
 
 **Verify**: `cargo test -p clc --lib toolchain::tests`,
 `cargo test -p clc --test clorraine_driver_spec_test`, and

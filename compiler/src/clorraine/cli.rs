@@ -40,7 +40,8 @@ pub struct Options {
     pub command: Command,
     /// Target profile; `host` unless `--profile` overrides it.
     pub profile: Profile,
-    /// Optimize with `-O2` instead of the debug `-O0 -g`.
+    /// Optimize with `-O2`; Linux and Amiga release builds also section-GC
+    /// and strip, while freestanding/non-Linux and debug keep symbols.
     pub release: bool,
     /// Print the generated C after a build or before a run.
     pub emit_c: bool,
@@ -85,7 +86,7 @@ Commands:
 
 Options:
   -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
-      --release                       Optimize (-O2) instead of debug (-O0 -g)
+      --release                       Optimize (-O2); strip + section-GC on Linux/Amiga; freestanding/non-Linux and debug keep symbols
       --emit-c                        Print the generated C after building
       --emulator                      Amiga run: use FS-UAE (host handoff)
       --capture                       Write program stdout to out.txt; print its path

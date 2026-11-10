@@ -388,9 +388,9 @@ Exact command lines (the input object is the generated single `.c` file):
 | Target | Command |
 |---|---|
 | GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |
-| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o demo demo.c -lamiga -lm` |
+| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o demo demo.c -lamiga -lm` |
 | GCC 1.3 debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |
-| GCC 1.3 release | `m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -o demo demo.c -lamiga -lm` |
+| GCC 1.3 release | `m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o demo demo.c -lamiga -lm` |
 | vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga -lmieee` |
 | freestanding build/link (m68k) | `m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lg` |
 | freestanding release build/link (m68k) | the same line with `-O2` in place of `-O0 -g` |

@@ -479,10 +479,11 @@ fn a_path_with_shell_metacharacters_is_passed_literally() {
     );
 }
 
-/// The compile matrix's release rows match the shipped flags; every other row
-/// stays exactly as it was.
+/// The two GCC release rows match the shipped flags; the other six rows are
+/// pinned unchanged, with the freestanding row's pre-existing wording recorded
+/// in the findings.
 #[test]
-fn the_compile_matrix_has_the_shipped_release_rows() {
+fn the_two_gcc_release_rows_match_the_shipped_flags() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/17-codegen.md");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()));

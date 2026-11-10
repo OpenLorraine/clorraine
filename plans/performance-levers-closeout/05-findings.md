@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Baseline pending — filled during execution
+> **Status**: Executing — Phases 1–2 complete; measurement pending
 
 ## Purpose
 
@@ -99,6 +99,36 @@ the expected reasons.
 The freestanding release vectors and every debug vector passed in the red run:
 those lines are intentionally unchanged.
 
+## Release Flag Change
+
+The release command is per-profile after Phase 2:
+
+| Profile / mode | Vector |
+|---|---|
+| host Linux release | `cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c` |
+| host non-Linux release | `cc -std=c99 -O2 -o prog out.c` |
+| host debug | unchanged `-O0 -g -Wall -Wextra -Werror` |
+| hosted-amiga release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm` |
+| hosted-amiga-13 release | the same with `-mcrt=nix13` |
+| freestanding m68k release | `m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2 -o prog out.c -lg` |
+| freestanding host-run release | `cc -std=c99 -ffreestanding -fno-builtin [-nostdlib] -O2 -o prog out.c` |
+
+The frozen compile matrix changed exactly two rows (`spec/17-codegen.md:391`
+and `:393`); the debug, vbcc, and freestanding rows are byte-identical. A
+driver spec test pins all eight rows.
+
+The `--release` help and `Options.release` doc now name the Linux/Amiga
+strip+GC set and the freestanding/non-Linux/debug symbol exceptions.
+
+**Pre-existing discrepancy recorded, not edited:** the freestanding release
+row says "the same line with `-O2` in place of `-O0 -g`", which would retain
+the debug warning flags, while the driver's release line omits warnings. The
+user authorized only the two GCC release rows; the freestanding row stays as
+it is.
+
+**Green:** `cargo test -p clc --lib toolchain::tests` 12 passed;
+`cargo test -p clc --test clorraine_driver_spec_test` 15 passed.
+
 ## Audit Matrix
 
 _Pending Phase 3._ The matrix is produced by `make bench-flags` and recorded
@@ -141,10 +171,36 @@ release Workbench gates, and the 1.3 release corpus.
 
 ## Review Rulings
 
-_Pending Phase 4._ Correctness, emission integrity, and design challenge
-findings with their rulings.
+### Phase 2
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-201 | 2 | MINOR | toolchain doc comment | fixed — stale "filled in" clause removed |
+| RV-202 | 2 | MINOR | host command test | fixed — platform-conditional host vector plus a composed non-Linux fallback test |
+| RV-203 | 2 | MINOR | plan progress | fixed — Phase 2 tasks and progress updated |
+| RV-204 | 2 | MINOR | driver spec test doc/name | fixed — scoped to the two GCC release rows |
+| EM-2 | 2 | — | base/head emission diff | no findings — 235 sources and 248 profile runs had zero C/status/output differences |
+
+The two reviewers found no critical or major issue. The emission auditor
+confirmed the driver change produces byte-identical C and that the two spec
+rows match the actual release vector.
 
 ## Accepted Limits
 
 _Pending Phase 5._ Freestanding exclusion, non-Linux fallback, stripped
 release symbols, and any residual risk.
+
+**Recorded pre-existing limits (not caused by this feature):**
+
+- A freestanding floating-point program needs target math bases; a minimal
+  `f32` compare fails to link at both the base and the head with the same
+  emitted C. `docker/scripts/bench-shape.sh` already treats freestanding as
+  compile-only for this reason.
+- The freestanding release spec row says "the same line with `-O2` in place
+  of `-O0 -g`", which would retain warnings; the driver's freestanding release
+  line omits warnings. Only the two GCC rows are authorized to change (AR-19),
+  so the row is pinned as-is and the mismatch is recorded here.
+- Host byte counts are path-sensitive while symbols are present; the audit
+  rebuilds each variant in one fixed path and the shipped build is stripped.
+- A non-Linux host was not available to boot; the fallback is pinned by unit
+  tests only.
