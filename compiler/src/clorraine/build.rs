@@ -159,6 +159,7 @@ mod tests {
         let tool = Tool {
             program: "false",
             base: &[],
+            release: &["-O2"],
             libs: &[],
         };
         let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))
@@ -181,6 +182,7 @@ mod tests {
         let tool = Tool {
             program: "clorraine-no-such-compiler",
             base: &[],
+            release: &["-O2"],
             libs: &[],
         };
         let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))

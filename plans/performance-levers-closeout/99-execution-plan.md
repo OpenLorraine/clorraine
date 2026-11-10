@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 10:11
-> **Progress**: 0/44 tasks (0%)
+> **Last Updated**: 2026-11-10 10:50
+> **Progress**: 2/44 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -54,14 +54,14 @@ regression guard with a `f9d5be8` base.
 **Objective**: capture the pre-change evidence and prove every new test fails
 before the implementation.
 
-- [ ] 1.1.1 Record the clean head, the `clc` SHA-256, and preserve the current
+- [x] 1.1.1 Record the clean head, the `clc` SHA-256, and preserve the current
   `build/perf/{base,head}.json` as historical evidence before anything is
-  overwritten — `build/perf/`
-- [ ] 1.1.2 Land the behavior-neutral test seams: the four release constants
+  overwritten — `build/perf/` ✅ (completed: 2026-11-10 10:46)
+- [x] 1.1.2 Land the behavior-neutral test seams: the four release constants
   with the current `-O2` values, `Tool.release`, the pure
   `host_release_flags(bool)`, the two `build.rs` test-double fields, and a
   `flag_audit` module skeleton with documented function signatures — no
-  shipped behavior changes yet
+  shipped behavior changes yet ✅ (completed: 2026-11-10 10:50)
 - [ ] 1.1.3 [spec-author] Write the Rust command-vector tests for ST-1–ST-7
   (release/debug per profile, both host predicate outcomes, both freestanding
   host-run branches) — `compiler/src/clorraine/toolchain.rs`

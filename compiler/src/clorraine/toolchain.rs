@@ -20,6 +20,8 @@ pub struct Tool {
     pub program: &'static str,
     /// Flags that are the same in debug and release.
     pub base: &'static [&'static str],
+    /// Release-only flags; the debug line is the same for every profile.
+    pub release: &'static [&'static str],
     /// Link libraries; empty for the host profile.
     pub libs: &'static [&'static str],
 }
@@ -44,8 +46,17 @@ const AMIGA_13_BASE: &[&str] = &["-std=c99", "-mcrt=nix13", "-m68000", "-fwrapv"
 /// Debug optimization flags.
 const DEBUG_FLAGS: &[&str] = &["-O0", "-g"];
 
-/// Release optimization flags.
-const RELEASE_FLAGS: &[&str] = &["-O2"];
+/// Release flags for a Linux host; the seam starts at the current behavior.
+const HOST_RELEASE_GNU: &[&str] = &["-O2"];
+
+/// Release flags for a host without the pinned GNU linker.
+const HOST_RELEASE_FALLBACK: &[&str] = &["-O2"];
+
+/// Release flags shared by the two Amiga profiles.
+const M68K_RELEASE_FLAGS: &[&str] = &["-O2"];
+
+/// Release flags for the freestanding m68k and host-run tools.
+const FREESTANDING_RELEASE_FLAGS: &[&str] = &["-O2"];
 
 /// Warning flags for a debug build; warnings are errors.
 ///
@@ -77,27 +88,48 @@ const FREESTANDING_HOST_FALLBACK_BASE: &[&str] =
 /// The freestanding m68k link libraries (the self-contained soft-float runtime).
 const FREESTANDING_LIBS: &[&str] = &["-lg"];
 
+/// Selects the host release flags by linker family.
+///
+/// The seam is a pure function so both outcomes run on the Linux test host;
+/// the value is filled in when the shipped flags are wired.
+fn host_release_flags(gnu_linker: bool) -> &'static [&'static str] {
+    if gnu_linker {
+        HOST_RELEASE_GNU
+    } else {
+        HOST_RELEASE_FALLBACK
+    }
+}
+
+/// True on the Linux host, whose pinned linker accepts `--gc-sections`.
+fn host_is_linux() -> bool {
+    cfg!(target_os = "linux")
+}
+
 /// Returns the C compiler for a profile.
 pub fn tool(profile: Profile) -> Tool {
     match profile {
         Profile::Host => Tool {
             program: "cc",
             base: HOST_BASE,
+            release: host_release_flags(host_is_linux()),
             libs: &[],
         },
         Profile::HostedAmiga => Tool {
             program: "m68k-amigaos-gcc",
             base: AMIGA_BASE,
+            release: M68K_RELEASE_FLAGS,
             libs: AMIGA_LIBS,
         },
         Profile::HostedAmiga13 => Tool {
             program: "m68k-amigaos-gcc",
             base: AMIGA_13_BASE,
+            release: M68K_RELEASE_FLAGS,
             libs: AMIGA_LIBS,
         },
         Profile::Freestanding => Tool {
             program: "m68k-amigaos-gcc",
             base: FREESTANDING_BUILD_BASE,
+            release: FREESTANDING_RELEASE_FLAGS,
             libs: FREESTANDING_LIBS,
         },
     }
@@ -130,6 +162,7 @@ pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
             } else {
                 FREESTANDING_HOST_FALLBACK_BASE
             },
+            release: FREESTANDING_RELEASE_FLAGS,
             libs: &[],
         }),
     }
@@ -144,7 +177,7 @@ pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
 pub fn command(tool: &Tool, release: bool, c_path: &Path, bin_path: &Path) -> Vec<String> {
     let mut args = vec![tool.program.to_owned()];
     args.extend(tool.base.iter().map(|flag| (*flag).to_owned()));
-    let mode = if release { RELEASE_FLAGS } else { DEBUG_FLAGS };
+    let mode = if release { tool.release } else { DEBUG_FLAGS };
     args.extend(mode.iter().map(|flag| (*flag).to_owned()));
     if !release {
         args.extend(WARNINGS.iter().map(|flag| (*flag).to_owned()));
