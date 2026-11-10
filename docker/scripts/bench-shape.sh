@@ -24,8 +24,8 @@ case "${OUTDIR}" in
 esac
 FIXTURE="${FIXTURE:-tools/perf/fixtures/shapes.clo}"
 
-GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -Wall -Wextra -Werror)
-GCC13_FLAGS=(-std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -Wall -Wextra -Werror)
+GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -Wall -Wextra -Werror)
+GCC13_FLAGS=(-std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wall -Wextra -Werror)
 VBCC_FLAGS=(+aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include)
 FREESTANDING_FLAGS=(-std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2 -Wall -Wextra -Werror)
 

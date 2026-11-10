@@ -55,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -115,6 +115,9 @@ bench-base:
 
 bench-compare:
 	$(DOCKER_MAKE) exec CMD="python3 tools/perf/bench.py compare $(addprefix --require ,$(REQUIRE)) build/perf/base.json build/perf/head.json"
+
+bench-flags:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && python3 tools/perf/flag_audit.py run --check --out build/perf/flags.json"
 
 bench-test:
 	$(DOCKER_MAKE) exec CMD="python3 -m unittest discover -s tools/perf/tests -t tools/perf -v"
@@ -289,10 +292,15 @@ sdk-a500-exec:
 	docker/scripts/a500-exec-smoke.sh build/clorraine/exec-demo/hosted-amiga-13/exec-demo
 
 # Advanced 2.0+ build: the Workbench and services demos plus the two test-only
-# fixtures. The gates below boot A600/KS2.05 and A1200/KS3.1 directory hard
-# drives; the A1200 gate also compares the native Workbench capture.
+# fixtures. The demos are compiled once with the debug warning line (a
+# developer copy is kept under build/amiga-sdk) and then rebuilt with the
+# shipped release flags, which the A600/A1200 gates run. The gates boot
+# A600/KS2.05 and A1200/KS3.1 directory hard drives; the A1200 gate also
+# compares the native Workbench capture.
 sdk-advanced-build:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga examples/amiga/services.clo && ./target/debug/clorraine build --profile hosted-amiga examples/amiga/workbench.clo"
+	$(DOCKER_MAKE) exec CMD="mkdir -p build/amiga-sdk && cp build/clorraine/workbench/hosted-amiga/workbench build/amiga-sdk/workbench-debug && cp build/clorraine/services/hosted-amiga/services build/amiga-sdk/services-debug"
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga examples/amiga/services.clo && ./target/debug/clorraine build --release --profile hosted-amiga examples/amiga/workbench.clo"
 	$(DOCKER_MAKE) exec CMD="m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -Wall -Wextra -Werror -o build/amiga-sdk/workbench-start docker/scripts/workbench-start.c -lamiga -lm"
 	$(DOCKER_MAKE) exec CMD="m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -Wall -Wextra -Werror -o build/amiga-sdk/workbench-post docker/scripts/workbench-post.c -lamiga -lm"
 

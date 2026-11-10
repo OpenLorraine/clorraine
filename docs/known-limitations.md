@@ -233,3 +233,10 @@ C-hook trampoline surfaces.
 | Freestanding | The freestanding runtime `memcpy` is a byte loop; multi-byte tables keep the stores there. | The optimization applies to `host`, `hosted-amiga`, and `hosted-amiga-13`. |
 | 2–5 KB 4-byte tables | The template is a code-size-only change in this band: at `i32[1024]` it is +63 instructions (+1.18% in an init-dominated run) for -6,148 `.text`; at `i32[1280]` it wins both. The 1% guard applies to scored benchmarks. | Use the scored `lookup` scale for a both-metric win, or accept the code-size trade. |
 | Init-local collision | The pre-existing `__cl_itmp<N>` compiler local is not reserved against user `ffi` declarations; an `ffi __cl_itmp0` can collide. The new `__cl_ctmpl_<n>` template name advances past taken symbols. | Avoid declaring an `ffi` symbol with the `__cl_itmp` prefix; the template prefix is already guarded. |
+
+## 14. Release build symbols
+
+| Area | Limitation | Workaround |
+|---|---|---|
+| Release programs | Programs built by `clorraine build --release` on Linux host, `hosted-amiga`, or `hosted-amiga-13` are optimized, section-GC'd, and stripped; function names are absent from the artifact. Freestanding and non-Linux host release builds keep symbols. | Build without `--release` for a symbol-bearing artifact; use the release build for size and the debug build for diagnosis. |
+| Link-time collection | `--gc-sections` removes unreachable runtime/shim sections, including the unused libnix `__amigapath`/`environ` constructors. No current standard-library API observes that state. | If a future API needs environment or path state, add a targeted keep and re-run the flag audit. |

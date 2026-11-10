@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 11:02
-> **Progress**: 17/44 tasks (39%)
+> **Last Updated**: 2026-11-10 13:50
+> **Progress**: 29/44 tasks (66%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -154,48 +154,48 @@ show the expected red failures; the baseline files exist.
 **Objective**: make the harness describe the shipped build and add the
 repeatable floor gate.
 
-- [ ] 3.1.1 Update `HOST_RELEASE`/`M68K_RELEASE`, add `binary_bytes`, and
+- [x] 3.1.1 Update `HOST_RELEASE`/`M68K_RELEASE`, add `binary_bytes`, and
   record `m68k_release_bytes` for scored programs —
-  `tools/perf/bench.py`
-- [ ] 3.1.2 Fill the audit skeleton: CLI (`run`, `--repeat`, `--check`,
+  `tools/perf/bench.py` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.2 Fill the audit skeleton: CLI (`run`, `--repeat`, `--check`,
   `--out`), the `"<profile>/<program>"` key, `clc`/`toolchain` identity, and
-  the old/GC/new variant model — `tools/perf/flag_audit.py`
-- [ ] 3.1.3 Add the emit/build/run stage: private per-program run directory,
+  the old/GC/new variant model — `tools/perf/flag_audit.py` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.3 Add the emit/build/run stage: private per-program run directory,
   corpus expected-output reader, host/`vamos` execution, section sizes, and
-  instruction traces — `tools/perf/flag_audit.py`
-- [ ] 3.1.4 Add the exact-integer floor checks: every group, every miss,
-  freestanding equality, JSON written before exit 1 — `tools/perf/flag_audit.py`
-- [ ] 3.1.5 Add the two-run repeat comparator, the `bench-flags` target,
+  instruction traces — `tools/perf/flag_audit.py` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.4 Add the exact-integer floor checks: every group, every miss,
+  freestanding equality, JSON written before exit 1 — `tools/perf/flag_audit.py` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.5 Add the two-run repeat comparator, the `bench-flags` target,
   `.PHONY`, and one `AGENTS.md` command-table row — `tools/perf/flag_audit.py`,
-  `Makefile`, `AGENTS.md`
-- [ ] 3.1.6 Make the harness/audit tests green (ST-9–ST-14) and add the
+  `Makefile`, `AGENTS.md` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.6 Make the harness/audit tests green (ST-9–ST-14) and add the
   malformed-matrix/missing-tool impl cases —
-  `tools/perf/tests/test_bench.py`, `tools/perf/tests/test_flag_audit.py`
-- [ ] 3.1.7 Add the shipped flags to the warning-bearing nix20 shape line and
+  `tools/perf/tests/test_bench.py`, `tools/perf/tests/test_flag_audit.py` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.7 Add the shipped flags to the warning-bearing nix20 shape line and
   the section flags to the nix13 compile-only line —
-  `docker/scripts/bench-shape.sh` (ST-18)
-- [ ] 3.1.8 Keep the debug Workbench/services build, `mkdir -p build/amiga-sdk`,
+  `docker/scripts/bench-shape.sh` (ST-18) ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.8 Keep the debug Workbench/services build, `mkdir -p build/amiga-sdk`,
   copy the debug binaries to `build/amiga-sdk/*-debug`, and add the release
-  build to the default paths — `Makefile` `sdk-advanced-build` (ST-20)
-- [ ] 3.1.9 Update the benchmark README, known-limitations, and the
+  build to the default paths — `Makefile` `sdk-advanced-build` (ST-20) ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.9 Update the benchmark README, known-limitations, and the
   production-readiness register entry — `benchmarks/README.md`,
   `docs/known-limitations.md`,
-  `plans/v1-production-readiness/00-ambiguity-register.md`
-- [ ] 3.1.10 Run the real audit twice, assert every R3 floor plus the host
+  `plans/v1-production-readiness/00-ambiguity-register.md` ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.10 Run the real audit twice, assert every R3 floor plus the host
   `.symtab` absence, and record the full matrix, the 1.3 outputs, the
   freestanding GC probe, and the constructor trace proof —
-  `build/perf/flags.json`, `05-findings.md` (ST-15–ST-17, ST-21)
-- [ ] 3.1.11 Run the release Workbench/services gates and record the report
-  lines and goldens — `build/amiga-sdk/`, `05-findings.md` (ST-20)
-- [ ] 3.1.12 Dispatch the end-of-phase correctness review, emission-integrity
+  `build/perf/flags.json`, `05-findings.md` (ST-15–ST-17, ST-21) ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.11 Run the release Workbench/services gates and record the report
+  lines and goldens — `build/amiga-sdk/`, `05-findings.md` (ST-20) ✅ (completed: 2026-11-10 11:30)
+- [x] 3.1.12 Dispatch the end-of-phase correctness review, emission-integrity
   review, and design challenge; fix every critical/major finding before the
-  scored measurement — review packets, `05-findings.md`
+  scored measurement — review packets, `05-findings.md` ✅ (completed: 2026-11-10 13:50)
 
 **Deliverables**:
-- [ ] `make bench-flags` passes twice identically.
-- [ ] `make bench-shape` is warning-free.
-- [ ] The release Workbench/services gates pass.
-- [ ] The 1.3 corpus outputs match.
+- [x] `make bench-flags` passes twice identically.
+- [x] `make bench-shape` is warning-free.
+- [x] The release Workbench/services gates pass.
+- [x] The 1.3 corpus outputs match.
 
 **Verify**: `make bench-flags`, `make bench-shape`, `make sdk-a600-services`,
 `make sdk-a1200-workbench`.

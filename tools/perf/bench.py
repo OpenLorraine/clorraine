@@ -36,9 +36,22 @@ DEFAULT_RUNS = 30
 # The m68k compile matrix used by the repository.
 M68K_BASE = ["-std=c99", "-mcrt=nix20", "-m68000", "-fwrapv"]
 HOST_DEBUG = ["-std=c99", "-O0", "-g", "-Wall", "-Wextra", "-Werror"]
-HOST_RELEASE = ["-std=c99", "-O2"]
+HOST_RELEASE = [
+    "-std=c99",
+    "-O2",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+]
 M68K_DEBUG = M68K_BASE + ["-O0", "-g", "-Wall", "-Wextra", "-Werror"]
-M68K_RELEASE = M68K_BASE + ["-O2"]
+M68K_RELEASE = M68K_BASE + [
+    "-O2",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+]
 
 # Timeouts in seconds. A trace is much slower than a normal run.
 EMIT_TIMEOUT = 120
@@ -219,6 +232,14 @@ def size_sections(binary: Path) -> dict[str, int]:
     return parse_size_output(
         run_command(["m68k-amigaos-size", str(binary)], timeout=60)
     )
+
+
+def binary_bytes(path: Path) -> int:
+    """Return a linked artifact's file size, or fail loudly when missing."""
+    try:
+        return path.stat().st_size
+    except OSError as error:
+        raise HarnessError(f"missing artifact: {path}") from error
 
 
 def build_step(
@@ -415,19 +436,28 @@ def measure(
         "c_lines": amiga_c.read_text(encoding="utf-8", errors="replace").count("\n"),
         "host_c_bytes": host_c.stat().st_size,
         "host_c_lines": host_c.read_text(encoding="utf-8", errors="replace").count("\n"),
-        "host_debug_bytes": host_debug_bin.stat().st_size,
-        "host_release_bytes": host_release_bin.stat().st_size,
+        "host_debug_bytes": binary_bytes(host_debug_bin),
+        "host_release_bytes": binary_bytes(host_release_bin),
         "host_debug_ns": host_debug_ns,
         "host_release_ns": host_best_ns,
         "host_release_median_ns": host_median_ns,
         "m68k_debug": size_sections(amiga_debug_bin),
         "m68k_release": size_sections(amiga_release_bin),
+        "m68k_release_bytes": binary_bytes(amiga_release_bin),
         "instructions_raw": instructions,
         "duration_ms": amiga_duration_ns // 1_000_000,
         "trace_duration_ms": (
             trace_duration_ns // 1_000_000 if trace_duration_ns is not None else None
         ),
-        "output_sha256": hashlib.sha256(expected.encode()).hexdigest(),
+        "output_sha256": hashlib.sha256(amiga_output.encode()).hexdigest(),
+    }
+
+
+def calibration_summary(measured: dict[str, object]) -> dict[str, object]:
+    """Keep only the two calibration fields the result document needs."""
+    return {
+        "instructions": measured["instructions_raw"],
+        "host_release_ns": measured["host_release_ns"],
     }
 
 
@@ -457,10 +487,11 @@ def command_run(args: argparse.Namespace) -> int:
     BUILD.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=BUILD, prefix=args.label + "-") as temporary:
         run_root = Path(temporary)
-        calibration = measure(
+        measured_calibration = measure(
             clc, CALIBRATION, run_root / CALIBRATION, runs, trace=not args.no_trace
         )
-        calibration_instructions = calibration["instructions_raw"]
+        calibration = calibration_summary(measured_calibration)
+        calibration_instructions = calibration["instructions"]
         if calibration_instructions is None and not args.no_trace:
             raise HarnessError("calibration produced no instruction count")
         results: dict[str, object] = {}
@@ -496,10 +527,7 @@ def command_run(args: argparse.Namespace) -> int:
             "m68k_debug": " ".join(M68K_DEBUG),
             "m68k_release": " ".join(M68K_RELEASE),
         },
-        "calibration": {
-            "instructions": calibration_instructions,
-            "host_release_ns": calibration["host_release_ns"],
-        },
+        "calibration": calibration,
         "benchmarks": results,
     }
     write_json(document, output)

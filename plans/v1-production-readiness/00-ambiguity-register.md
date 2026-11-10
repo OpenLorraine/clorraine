@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine v1.0 Production Readiness
 
-> **Status**: ✅ GATE PASSED — all 16 items resolved or explicitly deferred
-> **Last Updated**: 2026-11-07
+> **Status**: ✅ GATE PASSED — all 17 items resolved or explicitly deferred
+> **Last Updated**: 2026-11-10
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
 |---|----------|-----------------|-------------------|---------------|--------|
@@ -21,6 +21,7 @@
 | AR-14 | UX & presentation | Where should accepted residuals be documented? | A: `docs/known-limitations.md` / B: `README.md` only / C: no document / D: other | **A** — a dedicated `docs/known-limitations.md`, linked from the README | ✅ Resolved |
 | AR-15 | Naming & terminology | What names should the new artifacts use? | A: proposed names / B: other names | **A** — plan `v1-production-readiness`; tests `v1_production_readiness_{spec,impl}_test.rs`; targets `make asan`, `make differential`; scripts `docker/scripts/asan-suite.sh`, `docker/scripts/differential-seed.sh`; workflow `.github/workflows/check.yml`; document `docs/known-limitations.md` | ✅ Resolved |
 | AR-16 | Measurement | Which target-side metric does `make bench` use? | A: `vamos` instruction count + linked section sizes / B: FS-UAE wall time / C: FS-UAE cycle counter / D: none | **A** — guest instruction count plus section sizes; host time is advisory. FS-UAE has no stable headless cycle counter in the pinned version, and wall time includes boot and display work. The measurement boundary is recorded in `docs/known-limitations.md` §9. | ✅ Resolved — added 2026-11-07 |
+| AR-17 | UX & presentation | Should release programs keep symbols? | A: strip release programs on Linux/Amiga / B: keep symbols everywhere / C: strip only when requested | **A** — release programs on Linux host, `hosted-amiga`, and `hosted-amiga-13` are optimized, section-GC'd, and stripped; freestanding and non-Linux host release builds keep symbols; debug builds keep symbols. Recorded in `docs/known-limitations.md` §14. | ✅ Resolved 2026-11-10 — PLAN-26 |
 
 ## Resolution Notes
 

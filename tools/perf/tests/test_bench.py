@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from decimal import Decimal
 from pathlib import Path
 
@@ -446,6 +447,49 @@ class FakeCompilerTests(unittest.TestCase):
             finally:
                 bench.TRACE_TIMEOUT = previous_timeout
                 os.environ["PATH"] = previous_path
+
+
+class MeasureTests(unittest.TestCase):
+    """The result document records the linked release artifact size."""
+
+    def test_measure_records_the_m68k_release_file_size(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def fake_emit(clc, profile, source, output: Path) -> None:
+                output.write_text("/* c */\n", encoding="utf-8")
+
+            def fake_build(argv: list[str], timeout: int, cwd=None) -> None:
+                binary = Path(argv[argv.index("-o") + 1])
+                binary.write_bytes(b"0123456789")
+
+            expected = "x\n"
+            with mock.patch.object(bench, "emit", side_effect=fake_emit), \
+                 mock.patch.object(bench, "build_step", side_effect=fake_build), \
+                 mock.patch.object(bench, "run_host", return_value=expected), \
+                 mock.patch.object(bench, "run_vamos", return_value=expected), \
+                 mock.patch.object(bench, "time_host", return_value=(1, 1)), \
+                 mock.patch.object(
+                     bench,
+                     "size_sections",
+                     return_value={"text": 1, "data": 2, "bss": 3},
+                 ), \
+                 mock.patch.object(bench, "trace_vamos", return_value=(expected, 10)), \
+                 mock.patch.object(bench, "expected_output", return_value=expected):
+                result = bench.measure(Path("clc"), "calibration", root, 1, True)
+        self.assertEqual(result["m68k_release_bytes"], 10)
+
+    def test_the_calibration_summary_keeps_two_fields(self) -> None:
+        self.assertEqual(
+            bench.calibration_summary(
+                {
+                    "instructions_raw": 3,
+                    "host_release_ns": 4,
+                    "m68k_release_bytes": 5,
+                }
+            ),
+            {"instructions": 3, "host_release_ns": 4},
+        )
 
 
 class ReleaseFlagTests(unittest.TestCase):

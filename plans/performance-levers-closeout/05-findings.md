@@ -2,7 +2,7 @@
 
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Executing — Phases 1–2 complete; measurement pending
+> **Status**: Executing — Phases 1–3 complete (reviews passed); scored comparison pending
 
 ## Purpose
 
@@ -131,8 +131,43 @@ it is.
 
 ## Audit Matrix
 
-_Pending Phase 3._ The matrix is produced by `make bench-flags` and recorded
-here; the JSON stays under `build/perf/` (gitignored).
+`make bench-flags` ran the old/GC/shipped set twice; every non-timing record
+was identical, the repeat check passed, and every floor and constructor check
+passed. The matrix is in
+`build/perf/flags.json`; the values below are the first run, verified identical to the second.
+
+| Program | old `.text` | new `.text` | Δ | old file | new file | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| hosted-amiga/calibration | 76,368 | 5,960 | −92.2% | 99,948 | 7,328 | −92.7% |
+| hosted-amiga/sieve | 76,728 | 23,832 | −68.9% | 100,332 | 25,676 | −74.4% |
+| hosted-amiga/matrix | 76,676 | 23,608 | −69.2% | 100,276 | 25,444 | −74.6% |
+| hosted-amiga/strings | 77,604 | 24,196 | −68.8% | 101,500 | 26,080 | −74.3% |
+| hosted-amiga/moves | 76,896 | 23,632 | −69.3% | 100,632 | 25,460 | −74.7% |
+| hosted-amiga/lookup | 92,976 | 39,904 | −57.1% | 116,584 | 41,740 | −64.2% |
+| hosted-amiga-13/calibration | 53,432 | 5,908 | −88.9% | 67,368 | 7,272 | −89.2% |
+| hosted-amiga-13/sieve | 53,792 | 23,780 | −55.8% | 67,748 | 25,620 | −62.2% |
+| hosted-amiga-13/buffer-container | 54,540 | 24,820 | −54.5% | 68,776 | 26,848 | −61.0% |
+| hosted-amiga-13/file-copier | 55,296 | 28,152 | −49.1% | 69,672 | 30,512 | −56.2% |
+| hosted-amiga-13/string-parser | 55,072 | 24,932 | −54.7% | 69,376 | 26,972 | −61.1% |
+| hosted-amiga-13/volatile-mmio | 53,512 | 5,944 | −88.9% | 67,532 | 7,312 | −89.2% |
+| host/calibration | 7,796 | 1,543 | −80.2% | 18,384 | 14,480 | −21.2% |
+| host/sieve | 8,298 | 3,518 | −57.6% | 22,520 | 14,536 | −35.5% |
+| host/matrix | 8,168 | 3,385 | −58.6% | 22,512 | 14,536 | −35.4% |
+| host/strings | 9,863 | 3,994 | −59.5% | 22,904 | 14,536 | −36.5% |
+| host/moves | 8,419 | 3,379 | −59.9% | 22,648 | 14,536 | −35.8% |
+| host/lookup | 24,348 | 19,550 | −19.7% | 38,944 | 30,920 | −20.6% |
+| freestanding/freestanding | 208 | 208 | 0.0% | 1,552 | 1,552 | 0.0% |
+
+The freestanding GC probe (not the shipped row) is 232 `.text` / 1,576 bytes;
+the shipped `-O2` row stays exactly 208 / 1,552.
+
+The scored net instruction count is unchanged: `lookup` is 9,470 on both the
+old and shipped variants (12,842/12,398 raw minus 3,372/2,928 calibration).
+The host release binaries have no `.symtab` section; debug builds do.
+
+The `clc` identity in `flags.json` is the working-tree build during
+development (`dirty: true`). The final scored comparison records the clean
+`f9d5be8` base and final head identities separately.
 
 ## Constructor and Section Audit
 
@@ -142,20 +177,33 @@ here; the JSON stays under `build/perf/` (gitignored).
 - `__amigapath.o`: `.text`, `.bss`, `.list___INIT_LIST__`
 - `environ.o`: `.text`, `.data`, `.bss`, `.list___INIT_LIST__`
 
-The remaining `___INIT_LIST__` walk and constructor bodies still run. The GC
-calibration trace has 2,928 instructions and load base `0x260c`; mapping the
-`nm` symbols through that base gives:
+The audit's `constructor_proof()` now asserts the remaining init-list loop and
+every remaining `___init*` constructor in the GC calibration trace. It maps
+the `m68k-amigaos-nm` symbols through the trace's HUNK load base. The proof is
+recorded in `flags.json` for both m68k profiles.
 
-| Symbol | File address | Trace hits |
-|---|---:|---:|
-| `__Exit` (init-list loop) | 0x7c | 823 |
-| `___initstdio` | 0x802 | 82 |
-| `___initcpp` | 0xef8 | 233 |
-| `___initlibraries` | 0x104e | 113 |
-| `___initmalloc` | 0x132e | 97 |
+**hosted-amiga** (load base 0x260c, 2,928 trace instructions):
 
-The 444-instruction reduction is the two removed constructor bodies, not a
-skipped loop. The remaining constructors execute before `main`.
+| Symbol | Range | Trace hits |
+|---|---|---:|
+| `__Exit` (init-list loop) | 0x7c–0xd4 | 823 |
+| `___initstdio` | 0x802–0x950 | 82 |
+| `___initcpp` | 0xef8–0xf34 | 7 |
+| `___initlibraries` | 0x104e–0x10ac | 40 |
+| `___initmalloc` | 0x132e–0x1372 | 14 |
+
+**hosted-amiga-13** (load base 0x260c, the 13 calibration trace):
+
+| Symbol | Range | Trace hits |
+|---|---|---:|
+| `__Exit` (init-list loop) | 0x7c–0xd4 | 823 |
+| `___initstdio` | 0x64e–0x7b0 | 80 |
+| `___initcpp` | 0xeb0–0xeec | 7 |
+| `___initlibraries` | 0x1006–0x1064 | 25 |
+| `___initmalloc` | 0x12e6–0x132a | 14 |
+
+The 444-instruction 2.0 reduction (401 on 1.3) is the two removed constructor
+bodies, not a skipped loop. The remaining constructors execute before `main`.
 
 ## Scored Comparison
 
@@ -164,10 +212,16 @@ head, with the full compiler hash, `dirty == false`, and the compare table.
 
 ## Gate Evidence
 
-_Pending Phase 4._ `make check`, `make asan`, `make ubsan`, `make
-corpus-amiga`, `make differential`, `make bench-shape`, `make bench-base`,
-`make bench`, `make bench-compare`, `make bench-flags`, `make verify`, the
-release Workbench gates, and the 1.3 release corpus.
+### Phase 3
+
+| Gate | Result |
+|---|---|
+| `make bench-test` | 75 tests, OK |
+| `make bench-flags` | two identical runs; floors, constructor, and repeat checks pass; `runs: 2`; `build/perf/flags.json` |
+| `make bench-shape` | nix20 link, nix13 compile, vbcc, freestanding all warning-free |
+| `make sdk-advanced-build` | debug copies at `build/amiga-sdk/{workbench,services}-debug`; release at the default paths (27,560 / 34,996 bytes) |
+| `make sdk-a600-services` | OK — `wb: ok ...; svc: ok ...` on the release binaries |
+| `make sdk-a1200-workbench` | OK — report lines plus the Workbench capture and AppIcon goldens |
 
 ## Review Rulings
 
@@ -184,6 +238,31 @@ release Workbench gates, and the 1.3 release corpus.
 The two reviewers found no critical or major issue. The emission auditor
 confirmed the driver change produces byte-identical C and that the two spec
 rows match the actual release vector.
+
+### Phase 3
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-301 / DC-304 | 3 | MAJOR | cross-language flag check | fixed — the audit derives host/2.0/1.3 from the harness vectors; VectorTests compare all four profiles to the Rust base/release constants |
+| RV-302 / DC-301 | 3 | MAJOR | expected-output oracle | fixed — every run is compared to the committed expected output; a both-variants-wrong test fails |
+| RV-303 / DC-302 / DC-303 | 3 | MAJOR | constructor proof | fixed — `constructor_proof()` runs `nm` + a `vamos` trace, maps the HUNK base, and asserts the init loop and every remaining `___init*` constructor on both m68k profiles; `check_constructor()` fails the gate |
+| RV-304 | 3 | MAJOR | `m68k_release_bytes` test | fixed — a mocked `measure()` test and a calibration-summary test |
+| RV-305 | 3 | MAJOR | gate failure contract | fixed — tests cover `--check` exit 1, JSON-before-exit, repeat failure, default repeat 2, and missing `readelf` |
+| RV-306 | 3 | MINOR | freestanding binary-only change | fixed — a binary-only synthetic case fails |
+| RV-307 | 3 | MINOR | status/artifact | fixed — status/date updated; `flags.json` now records `runs: 2` and a passed repeat check |
+| RV-308 | 3 | MINOR | trace-hit table | fixed — exact `nm` ranges and hits for 2.0 and 1.3 |
+| DC-305 | 3 | MINOR | compare scope | accepted — the scored guard remains `.text` + net instructions; the README now calls it a regression guard and the independent base/head C diff is the emission proof |
+| DC-306 | 3 | MINOR | base identity echo | accepted — the full `f9d5be8` hash is asserted in the findings; `dirty` is documented as harness-tree cleanliness |
+| DC-307 | 3 | MINOR | repeat independence | accepted — the repeat proves same-condition determinism; `runs: 2` and the repeat check are recorded |
+| DC-308 | 3 | MINOR | host/13 evidence | partly fixed — host `.text/.data/.bss` are now measured; the 13 constructor proof is recorded; the relative floors remain tied to the frozen matrix |
+| DC-309 | 3 | MINOR | audit gate layer | accepted — `make bench-flags` is a release-evidence gate, not a host-CI leg; the final gate records it |
+| DC-310 | 3 | OBSERVATION | audit error paths | fixed — missing `vamos`/`size` are reported as audit errors; the freestanding row is build-only by design |
+| DC-311 | 3 | OBSERVATION | audit data model | fixed — `c_bytes` and host sections are recorded |
+| DC-312 | 3 | OBSERVATION | output hash | fixed — `bench.measure` hashes the actual m68k stdout |
+
+The emission re-check found no findings; it confirmed zero emitted-C differences
+and flagged only that the cited `flags.json` predated the `runs` field. The
+audit was re-run after the fix.
 
 ## Accepted Limits
 
