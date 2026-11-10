@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10
-> **Progress**: 0/40 tasks (0%)
+> **Last Updated**: 2026-11-10 22:48
+> **Progress**: 5/40 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -46,18 +46,18 @@ push and publish, then close the plan. No product code changes.
 
 **Reference**: [02](02-current-state.md) · AR-01/AR-03/AR-16
 
-- [ ] 1.1.1 Add the PLAN-27 roadmap row at `Plan Preflighted` and commit the
-  plan folder, this report, and the row
-- [ ] 1.1.2 Fetch and assert `main == origin/main`; record the pre-release
+- [x] 1.1.1 Add the PLAN-27 roadmap row at `Plan Preflighted` and commit the
+  plan folder, this report, and the row ✅ (completed: 2026-11-10 22:48)
+- [x] 1.1.2 Fetch and assert `main == origin/main`; record the pre-release
   head, the `v1.1.1` tag object/commit, the version surfaces, and preserve the
-  current `build/perf` evidence
-- [ ] 1.1.3 Confirm `v1.1.1` builds and compiles the current benchmark set
-  (including the post-v1.1.1 `lookup` benchmark) in the pinned container
-- [ ] 1.1.4 Classify the 31 pre-plan commits since v1.1.1 (product,
+  current `build/perf` evidence ✅ (completed: 2026-11-10 22:48)
+- [x] 1.1.3 Confirm `v1.1.1` builds and compiles the current benchmark set
+  (including the post-v1.1.1 `lookup` benchmark) in the pinned container ✅ (completed: 2026-11-10 22:48)
+- [x] 1.1.4 Classify the 31 pre-plan commits since v1.1.1 (product,
   behavior-neutral, tooling, records) and record the release scope in
-  `05-findings.md`
-- [ ] 1.1.5 Confirm the only current-version statements are the allowlisted
-  files and no repository test pins `1.1.1` as the current version
+  `05-findings.md` ✅ (completed: 2026-11-10 22:48)
+- [x] 1.1.5 Confirm the only current-version statements are the allowlisted
+  files and no repository test pins `1.1.1` as the current version ✅ (completed: 2026-11-10 22:48)
 
 **Verify**: `git status -sb` clean; the plan commit exists; the baseline notes
 exist.
