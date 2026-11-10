@@ -571,16 +571,18 @@ fn should_emit_the_exact_typed_cast_values() {
         r#"
 module spec.ConstArrayImplTypedExact;
 let a: i32[32] = [i32(2147483647), i32(-2147483647), {zeros}];
-let b: u16[32] = [u16(255), {zeros}];
+let b: u16[32] = [u16(255), {zeros31}];
 let c: u32[16] = [u32(4294967295), {zeros15}];
-let d: usize[32] = [usize(7), {zeros}];
-let e: isize[32] = [isize(-7), {zeros}];
+let d: usize[32] = [usize(7), {zeros31}];
+let e: isize[32] = [isize(-7), {zeros31}];
 func main(): i32 {{ return 0; }}
 "#,
         zeros = rep("0", 30),
+        zeros31 = rep("0", 31),
         zeros15 = rep("0", 15)
     );
     let emitted = emit("impl-typed-exact", &source);
+    assert_template("impl-typed-exact", &emitted);
     assert_contains("impl-typed-exact", &emitted, "(i32)(2147483647)");
     assert_contains("impl-typed-exact", &emitted, "(i32)((i32)(-(u32)2147483647))");
     assert_contains("impl-typed-exact", &emitted, "(u16)(255)");
