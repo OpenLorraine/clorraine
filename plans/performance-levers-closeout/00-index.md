@@ -3,7 +3,7 @@
 > **Feature**: Ship the measured build-flag win — section garbage collection
 > plus release stripping on `host` (Linux), `hosted-amiga`, and
 > `hosted-amiga-13` — without changing emitted C, runtime behavior, or safety.
-> **Status**: Plan preflighted — ready for execution
+> **Status**: Done — 44/44 tasks; full gate green
 > **Created**: 2026-11-10
 > **Last Updated**: 2026-11-10
 > **Base**: current `main` head `f9d5be8` (post-PLAN-25; `clc 1.1.1`)

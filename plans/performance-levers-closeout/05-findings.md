@@ -314,20 +314,42 @@ audit was re-run after the fix.
 
 ## Accepted Limits
 
-_Pending Phase 5._ Freestanding exclusion, non-Linux fallback, stripped
-release symbols, and any residual risk.
+| Limit | Evidence / workaround |
+|---|---|
+| Freestanding release keeps `-O2` and symbols | GC grew the 208-byte image to 232; strip-only is 244; provisional ABI. Reopen with #23. |
+| Non-Linux host keeps `-O2` | `-Wl,--gc-sections` is GNU; the fallback is unit-tested, not booted. Reopen with #22. |
+| Release programs are stripped | Linux/Amiga release builds lose function names; a debug build is the symbol-bearing artifact (`docs/known-limitations.md` §14). |
+| Constructor collection | `__amigapath.o`/`environ.o` and their `___initamigapath`/`___fillenviron` entries are removed; the four remaining constructors are proven on both m68k profiles. A future API that needs environment/path state needs a targeted `KEEP` and a fresh audit. |
+| Audit is a release gate | `make bench-flags` is not in the host-only CI or `make verify`; run it at release/closeout. The vectors and failure paths are unit-tested. |
+| Host attribution is strip-dominated | Host `.text` is measured but only the file-size floor is gated; the host win includes symbol removal. |
+| 1.3 native-video/audio/input/layers release paths | Those demos remain debug-gated; the A500 release gates cover assets/gui/exec/diskfont, and the 1.3 constructor proof covers the shared init path. |
+| Non-GNU Linux host | The predicate checks Linux, not the linker family; a non-GNU Linux linker would need the fallback. |
+| Pre-existing freestanding float link | A freestanding floating-point program needs target math bases; base and head fail identically. The shape gate is compile-only. |
+| Freestanding spec-row wording | The release row says "same line with `-O2` in place of `-O0 -g`"; the driver omits debug warnings. Only the two GCC rows were authorized. |
 
-**Recorded pre-existing limits (not caused by this feature):**
+## Closeout
 
-- A freestanding floating-point program needs target math bases; a minimal
-  `f32` compare fails to link at both the base and the head with the same
-  emitted C. `docker/scripts/bench-shape.sh` already treats freestanding as
-  compile-only for this reason.
-- The freestanding release spec row says "the same line with `-O2` in place
-  of `-O0 -g`", which would retain warnings; the driver's freestanding release
-  line omits warnings. Only the two GCC rows are authorized to change (AR-19),
-  so the row is pinned as-is and the mismatch is recorded here.
-- Host byte counts are path-sensitive while symbols are present; the audit
-  rebuilds each variant in one fixed path and the shipped build is stripped.
-- A non-Linux host was not available to boot; the fallback is pinned by unit
-  tests only.
+- Deferred issues: [#20](https://github.com/OpenLorraine/clorraine/issues/20)
+  LTO/LTO+GC, [#21](https://github.com/OpenLorraine/clorraine/issues/21) opt-in
+  size mode, [#22](https://github.com/OpenLorraine/clorraine/issues/22) macOS
+  dead-strip, [#23](https://github.com/OpenLorraine/clorraine/issues/23)
+  freestanding strip/GC.
+- The audit artifact `build/perf/flags.json` records `clc` commit `e3fdbf3`
+  and SHA-256 `0618657c…`; the harness tree had uncommitted plan notes at run
+  time (`dirty: true`), but the compiler binary is the final head. The scored
+  base/head documents are clean (`dirty: false`).
+- Final feature code: `29b85fb`; the closeout commit is the final branch
+  state, and `main` equals `origin/main` after the final push.
+
+## Final Numbers
+
+| Metric | Result |
+|---|---|
+| Scored m68k `.text` | 57.1–69.3% smaller (lookup 92,976 → 39,904; calibration 76,368 → 5,960) |
+| Scored m68k stripped binary | 64.2–74.7% smaller (lookup 116,584 → 41,740) |
+| Host release binary | 20.6–36.5% smaller (lookup 38,944 → 30,920) |
+| 1.3 corpus `.text` | 49.1–88.9% smaller |
+| Calibration raw instructions | 3,372 → 2,928 (−13.2%) |
+| Scored net instructions | unchanged (lookup 9,470; sieve 1,040,581) |
+| Emitted C | byte-identical base/head |
+| Freestanding image | unchanged (208 `.text` / 1,552 bytes) |

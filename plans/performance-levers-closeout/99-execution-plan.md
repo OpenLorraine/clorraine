@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 14:55
-> **Progress**: 39/44 tasks (89%)
+> **Last Updated**: 2026-11-10 15:46
+> **Progress**: 44/44 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -257,18 +257,18 @@ repeatable floor gate.
 
 **Objective**: leave a complete, honest record and the next options.
 
-- [ ] 5.1.1 Complete `05-findings.md`: audit matrix, constructor audit, exact
+- [x] 5.1.1 Complete `05-findings.md`: audit matrix, constructor audit, exact
   values, gate evidence, review rulings, accepted limits, and the two
   comparisons — `05-findings.md`
-- [ ] 5.1.2 Register the four deferred issues (LTO/LTO+GC, opt-in
+- [x] 5.1.2 Register the four deferred issues (LTO/LTO+GC, opt-in
   `-Os`/`--size`, macOS `-dead_strip`, freestanding strip/GC) with the
   `performance`, `deferred`, and `enhancement` labels — GitHub issues
-- [ ] 5.1.3 Mark PLAN-26 Done on the roadmap and update the progress counter
-  to 570/572, 0 open, 2 parked — `plans/00-roadmap.md`
-- [ ] 5.1.4 Commit the final change with the git-commit skill, then push in
-  push mode; confirm `main` equals `origin/main` and the tree is clean
-- [ ] 5.1.5 Remove the probe scratch under `build/perf/probe/` and any
-  temporary artifacts; keep only the evidence the findings cite
+- [x] 5.1.3 Mark PLAN-26 Done on the roadmap and update the progress counter
+  to 570/572, 0 open, 2 parked — `plans/00-roadmap.md` ✅ (completed: 2026-11-10 15:00)
+- [x] 5.1.4 Commit the final change with the git-commit skill, then push in
+  push mode; confirm `main` equals `origin/main` and the tree is clean ✅ (completed: 2026-11-10 15:46)
+- [x] 5.1.5 Remove the probe scratch under `build/perf/probe/` and any
+  temporary artifacts; keep only the evidence the findings cite ✅ (completed: 2026-11-10 15:46)
 
 **Deliverables**:
 - [ ] The findings are complete and reproducible.
