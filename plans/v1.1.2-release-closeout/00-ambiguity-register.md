@@ -283,7 +283,8 @@ when every gate is green.
 - **Decision**: use four commits and a tag:
   0. `docs(plans): add the v1.1.2 release plan` — the plan folder and roadmap
      row.
-  1. `chore(release): bump the version to 1.1.2` — version surfaces only.
+  1. `chore(release): bump the version to 1.1.2` — version surfaces and plan
+     progress only; no product code.
   2. Run every gate on that commit; the measurement JSON names it.
   3. `docs(release): record the v1.1.2 gates` — changelog, release notes,
      runbook, findings, and plan. This is docs-only relative to the gated

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 22:48
-> **Progress**: 5/40 tasks (12%)
+> **Last Updated**: 2026-11-10 22:52
+> **Progress**: 8/40 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -73,11 +73,11 @@ exist.
 
 **Reference**: [03-01](03-01-version-and-docs.md) · [03-02](03-02-gates-and-publication.md) · R1/R4 · RT-1–RT-16
 
-- [ ] 2.1.1 Bump `compiler/Cargo.toml`, regenerate `Cargo.lock`, bump
-  `tools/vscode/package.json` and `package-lock.json`
-- [ ] 2.1.2 Update the `README.md` current-release line
-- [ ] 2.1.3 `cargo build --release --workspace`; assert `clc 1.1.2`,
-  `clorraine 1.1.2`, ELF, `not stripped`, and run the hello-world checks
+- [x] 2.1.1 Bump `compiler/Cargo.toml`, regenerate `Cargo.lock`, bump
+  `tools/vscode/package.json` and `package-lock.json` ✅ (completed: 2026-11-10 22:52)
+- [x] 2.1.2 Update the `README.md` current-release line ✅ (completed: 2026-11-10 22:52)
+- [x] 2.1.3 `cargo build --release --workspace`; assert `clc 1.1.2`,
+  `clorraine 1.1.2`, ELF, `not stripped`, and run the hello-world checks ✅ (completed: 2026-11-10 22:52)
 - [ ] 2.1.4 Commit C1 (`chore(release): bump the version to 1.1.2`); do not
   push before the gates
 - [ ] 2.1.5 Delete stale `build/perf/{base,head,flags}.json` and

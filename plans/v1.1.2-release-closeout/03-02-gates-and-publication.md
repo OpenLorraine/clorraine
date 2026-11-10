@@ -14,7 +14,7 @@ GitHub release. It changes no product code.
 ```
 C0  docs(plans): add the v1.1.2 release plan          (plan folder + roadmap row)
     |
-C1  chore(release): bump the version to 1.1.2        (version surfaces only)
+C1  chore(release): bump the version to 1.1.2        (version surfaces + plan progress)
     |  clean tree; full gate; measurement JSON names C1; review
     v
 C2  docs(release): record the v1.1.2 gates            (changelog, notes, runbook, findings)

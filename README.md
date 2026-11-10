@@ -51,7 +51,7 @@ committed; `demo/poster.png` is the one checked-in still.
 
 ## Status
 
-Clorraine v1.1.1 is the current release. The reproducible Docker toolchain, the
+Clorraine v1.1.2 is the current release. The reproducible Docker toolchain, the
 stable v1.0 specification, and the approved v1.1 language surfaces are in place:
 `clc` compiles the corpus subset and the v1.1 surfaces to one C99 translation
 unit for the `host`, `hosted-amiga`, `hosted-amiga-13`, and `freestanding`
