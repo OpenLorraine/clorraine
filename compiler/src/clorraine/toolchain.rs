@@ -265,8 +265,17 @@ mod tests {
         );
         assert_eq!(
             command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
-            "cc -std=c99 -O2 -o prog out.c"
+            "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c"
         );
+    }
+
+    #[test]
+    fn the_host_release_flags_follow_the_linker_family() {
+        assert_eq!(
+            host_release_flags(true),
+            &["-O2", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-s"]
+        );
+        assert_eq!(host_release_flags(false), &["-O2"]);
     }
 
     #[test]
@@ -283,7 +292,7 @@ mod tests {
         let tool = tool(Profile::HostedAmiga);
         assert_eq!(
             command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
-            "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o prog out.c -lamiga -lm"
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
         );
     }
 
@@ -296,7 +305,7 @@ mod tests {
         );
         assert_eq!(
             command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
-            "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -o prog out.c -lamiga -lm"
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
         );
     }
 
@@ -355,6 +364,10 @@ mod tests {
             command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lg"
         );
+        assert_eq!(
+            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2 -o prog out.c -lg"
+        );
     }
 
     #[test]
@@ -365,10 +378,18 @@ mod tests {
             command(&syscalls, false, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O0 -g -Wall -Wextra -Werror -o prog out.c"
         );
+        assert_eq!(
+            command(&syscalls, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O2 -o prog out.c"
+        );
         let fallback = run_tool(Profile::Freestanding, false).expect("freestanding has a run tool");
         assert_eq!(
             command(&fallback, false, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -O0 -g -Wall -Wextra -Werror -o prog out.c"
+        );
+        assert_eq!(
+            command(&fallback, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -O2 -o prog out.c"
         );
     }
 

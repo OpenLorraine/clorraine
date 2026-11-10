@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -445,6 +446,58 @@ class FakeCompilerTests(unittest.TestCase):
             finally:
                 bench.TRACE_TIMEOUT = previous_timeout
                 os.environ["PATH"] = previous_path
+
+
+class ReleaseFlagTests(unittest.TestCase):
+    """The scored harness and the driver describe the same shipped build."""
+
+    def test_harness_release_vectors_are_the_shipped_set(self) -> None:
+        shipped = [
+            "-O2",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wl,--gc-sections",
+            "-s",
+        ]
+        self.assertEqual(bench.HOST_RELEASE, ["-std=c99", *shipped])
+        self.assertEqual(bench.M68K_RELEASE, bench.M68K_BASE + shipped)
+
+    def test_driver_constants_match_the_harness(self) -> None:
+        shipped = [
+            "-O2",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wl,--gc-sections",
+            "-s",
+        ]
+        self.assertEqual(
+            ["-std=c99", *rust_release("HOST_RELEASE_GNU")], bench.HOST_RELEASE
+        )
+        self.assertEqual(
+            bench.M68K_BASE + rust_release("M68K_RELEASE_FLAGS"), bench.M68K_RELEASE
+        )
+        self.assertEqual(rust_release("HOST_RELEASE_FALLBACK"), ["-O2"])
+        self.assertEqual(rust_release("FREESTANDING_RELEASE_FLAGS"), ["-O2"])
+        self.assertEqual(rust_release("M68K_RELEASE_FLAGS"), shipped)
+
+    def test_binary_bytes_reads_and_wraps_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "artifact"
+            path.write_bytes(b"abc")
+            self.assertEqual(bench.binary_bytes(path), 3)
+            with self.assertRaises(bench.HarnessError):
+                bench.binary_bytes(Path(temporary) / "missing")
+
+
+def rust_release(name: str) -> list[str]:
+    """Read one release-constant string slice from the driver source."""
+    source = (bench.ROOT / "compiler/src/clorraine/toolchain.rs").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(rf"const {name}: &\[&str\] = &\[(.*?)\];", source, re.S)
+    if match is None:
+        raise AssertionError(f"missing Rust constant: {name}")
+    return re.findall(r'"([^"]+)"', match.group(1))
 
 
 if __name__ == "__main__":

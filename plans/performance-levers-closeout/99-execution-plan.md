@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 10:50
-> **Progress**: 2/44 tasks (5%)
+> **Last Updated**: 2026-11-10 10:49
+> **Progress**: 7/44 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -61,19 +61,19 @@ before the implementation.
   with the current `-O2` values, `Tool.release`, the pure
   `host_release_flags(bool)`, the two `build.rs` test-double fields, and a
   `flag_audit` module skeleton with documented function signatures — no
-  shipped behavior changes yet ✅ (completed: 2026-11-10 10:50)
-- [ ] 1.1.3 [spec-author] Write the Rust command-vector tests for ST-1–ST-7
+  shipped behavior changes yet ✅ (completed: 2026-11-10 10:48)
+- [x] 1.1.3 [spec-author] Write the Rust command-vector tests for ST-1–ST-7
   (release/debug per profile, both host predicate outcomes, both freestanding
-  host-run branches) — `compiler/src/clorraine/toolchain.rs`
-- [ ] 1.1.4 [spec-author] Write the harness tests for ST-9–ST-11 —
-  `tools/perf/tests/test_bench.py`
-- [ ] 1.1.5 [spec-author] Write the audit floor/repeatability tests for
-  ST-12–ST-14 — `tools/perf/tests/test_flag_audit.py`
-- [ ] 1.1.6 [spec-author] Write the spec-row and CLI help tests for ST-8 and
-  ST-22 — `compiler/tests/clorraine_driver_spec_test.rs`
-- [ ] 1.1.7 Run the focused red set and record the exact failures; vector tests
+  host-run branches) — `compiler/src/clorraine/toolchain.rs` ✅ (completed: 2026-11-10 10:49)
+- [x] 1.1.4 [spec-author] Write the harness tests for ST-9–ST-11 —
+  `tools/perf/tests/test_bench.py` ✅ (completed: 2026-11-10 10:49)
+- [x] 1.1.5 [spec-author] Write the audit floor/repeatability tests for
+  ST-12–ST-14 — `tools/perf/tests/test_flag_audit.py` ✅ (completed: 2026-11-10 10:49)
+- [x] 1.1.6 [spec-author] Write the spec-row and CLI help tests for ST-8 and
+  ST-22 — `compiler/tests/clorraine_driver_spec_test.rs` ✅ (completed: 2026-11-10 10:49)
+- [x] 1.1.7 Run the focused red set and record the exact failures; vector tests
   must fail on the expected value, and the new audit module is expected to
-  fail at its skeleton boundary — `build/perf/`
+  fail at its skeleton boundary — `build/perf/` ✅ (completed: 2026-11-10 10:49)
 - [ ] 1.1.8 Capture the old-flags probe matrix, the rejected candidates
   (`-O3`, `-Os`, frame-pointer, LTO, LTO+GC, host unwind), the freestanding
   GC probe (208 → 232 bytes), and the constructor/section audit (removed

@@ -478,3 +478,50 @@ fn a_path_with_shell_metacharacters_is_passed_literally() {
         "weird-name: the translation unit is emitted for the literal path"
     );
 }
+
+/// The compile matrix's release rows match the shipped flags; every other row
+/// stays exactly as it was.
+#[test]
+fn the_compile_matrix_has_the_shipped_release_rows() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/17-codegen.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()));
+    let rows: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            (line.starts_with("| GCC ")
+                || line.starts_with("| vbcc ")
+                || line.starts_with("| freestanding "))
+                && (line.contains("demo.c") || line.starts_with("| freestanding release "))
+        })
+        .collect();
+    let expected = vec![
+        "| GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |",
+        "| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o demo demo.c -lamiga -lm` |",
+        "| GCC 1.3 debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |",
+        "| GCC 1.3 release | `m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o demo demo.c -lamiga -lm` |",
+        "| vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga -lmieee` |",
+        "| freestanding build/link (m68k) | `m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lg` |",
+        "| freestanding release build/link (m68k) | the same line with `-O2` in place of `-O0 -g` |",
+        "| freestanding host run | `cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O0 -g -Wall -Wextra -Werror -o demo demo.c` |",
+    ];
+    assert_eq!(rows, expected, "the compile matrix must match the shipped rows");
+}
+
+/// The release help names the profiles that are stripped and the ones that
+/// keep symbols.
+#[test]
+fn the_release_help_names_the_stripped_and_symbol_profiles() {
+    let scratch = ScratchDir::new("release-help");
+    let output = run_driver(scratch.path(), &["--help"]);
+    assert_exit("release-help", &output, 0);
+    let help = stdout(&output);
+    assert!(
+        help.contains("strip + section-GC on Linux/Amiga"),
+        "release-help: the stripped profiles must be named, got:\n{help}"
+    );
+    assert!(
+        help.contains("freestanding/non-Linux and debug keep symbols"),
+        "release-help: the symbol-bearing profiles must be named, got:\n{help}"
+    );
+}
