@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-10 10:49
-> **Progress**: 7/44 tasks (16%)
+> **Last Updated**: 2026-11-10 10:56
+> **Progress**: 9/44 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -74,14 +74,14 @@ before the implementation.
 - [x] 1.1.7 Run the focused red set and record the exact failures; vector tests
   must fail on the expected value, and the new audit module is expected to
   fail at its skeleton boundary — `build/perf/` ✅ (completed: 2026-11-10 10:49)
-- [ ] 1.1.8 Capture the old-flags probe matrix, the rejected candidates
+- [x] 1.1.8 Capture the old-flags probe matrix, the rejected candidates
   (`-O3`, `-Os`, frame-pointer, LTO, LTO+GC, host unwind), the freestanding
   GC probe (208 → 232 bytes), and the constructor/section audit (removed
   `__amigapath.o`/`environ.o` entries; remaining list; `_start` loop and a
   remaining constructor in the `vamos` trace) — `build/perf/` and
-  `05-findings.md`
-- [ ] 1.1.9 Write the baseline section of the findings: old flags, old sizes,
-  old instructions, constructor evidence, and the base identity — `05-findings.md`
+  `05-findings.md` ✅ (completed: 2026-11-10 10:56)
+- [x] 1.1.9 Write the baseline section of the findings: old flags, old sizes,
+  old instructions, constructor evidence, and the base identity — `05-findings.md` ✅ (completed: 2026-11-10 10:56)
 
 **Deliverables**:
 - [ ] All red tests fail for the expected reason, not a compile/syntax error.
