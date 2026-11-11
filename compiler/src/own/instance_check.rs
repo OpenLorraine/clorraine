@@ -64,6 +64,7 @@ pub fn check(
     check_opaque_member_uses(program, sema, mono, diagnostics);
     check_opaque_conditionals(program, sema, mono, diagnostics);
     check_len_operand_requirements(program, mono, diagnostics);
+    check_template_placeholder_requirements(program, mono, diagnostics);
     check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
@@ -2492,6 +2493,140 @@ fn check_len_operand_requirements(
                     .with_help("check `!= null` before the use"),
                 );
                 reported.insert(key);
+                break;
+            }
+        }
+    }
+}
+
+/// Reports a generic template placeholder's substituted surface.
+///
+/// The declaration cannot judge a placeholder whose type is still a parameter.
+/// Each instance substitutes the bindings: a non-formattable type reports
+/// `E10500`, a nullable type reports `E10010` unless the declaration narrowed
+/// it, and a conditional's arms are judged separately so two narrowed nullable
+/// arms stay accepted. One site reports once — its first offending instance;
+/// an arm is its own site.
+fn check_template_placeholder_requirements(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut reported = std::collections::BTreeSet::new();
+    for requirement in mono.template_placeholder_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let mut instance_reported = false;
+            if requirement.arms.is_empty() {
+                let key = (
+                    requirement.function.clone(),
+                    requirement.span.file,
+                    requirement.span.start,
+                    requirement.span.end,
+                );
+                if reported.contains(&key) {
+                    break;
+                }
+                let ty = crate::types::substitute(&requirement.ty, &bindings);
+                if ty.is_unknown() || crate::types::contains_param(&ty) {
+                    continue;
+                }
+                if !crate::sema::formattable(&ty) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10500",
+                            format!("type '{}' is not formattable", ty.display()),
+                            requirement.span,
+                        )
+                        .with_help("convert with `text`, `toHex`, or `toDecimal`"),
+                    );
+                    reported.insert(key);
+                    break;
+                }
+                if ty.nullable && !requirement.narrowed {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10010",
+                            format!("value '{}' may be null here", requirement.name),
+                            requirement.span,
+                        )
+                        .with_help("check `!= null` before the use"),
+                    );
+                    reported.insert(key);
+                    break;
+                }
+            } else {
+                let mut arm_e10500_reported = false;
+                for arm in &requirement.arms {
+                    let arm_key = (
+                        requirement.function.clone(),
+                        arm.span.file,
+                        arm.span.start,
+                        arm.span.end,
+                    );
+                    if reported.contains(&arm_key) {
+                        continue;
+                    }
+                    let arm_ty = crate::types::substitute(&arm.ty, &bindings);
+                    // A null-shaped arm carries the null literal's opaque type.
+                    // It is an unnarrowed possible-null placeholder value, so
+                    // it reports E10010 exactly as the concrete conditional
+                    // arm does.
+                    if arm_ty.is_unknown() && arm_ty.nullable {
+                        if !arm.narrowed {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "E10010",
+                                    format!("value '{}' may be null here", arm.name),
+                                    arm.span,
+                                )
+                                .with_help("check `!= null` before the use"),
+                            );
+                            reported.insert(arm_key);
+                            instance_reported = true;
+                        }
+                        continue;
+                    }
+                    if arm_ty.is_unknown() || crate::types::contains_param(&arm_ty) {
+                        continue;
+                    }
+                    if !crate::sema::formattable(&arm_ty) {
+                        // The concrete conditional reports one E10500 for the
+                        // whole placeholder, not one per arm.
+                        if !arm_e10500_reported {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "E10500",
+                                    format!("type '{}' is not formattable", arm_ty.display()),
+                                    arm.span,
+                                )
+                                .with_help("convert with `text`, `toHex`, or `toDecimal`"),
+                            );
+                            arm_e10500_reported = true;
+                            instance_reported = true;
+                        }
+                    } else if arm_ty.nullable && !arm.narrowed {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10010",
+                                format!("value '{}' may be null here", arm.name),
+                                arm.span,
+                            )
+                            .with_help("check `!= null` before the use"),
+                        );
+                        reported.insert(arm_key);
+                        instance_reported = true;
+                    }
+                }
+            }
+            if instance_reported {
                 break;
             }
         }

@@ -496,21 +496,23 @@ func main(): i32 {
     assert_output("alias", source, "abcdef1\n");
 }
 
-/// A null view is an empty byte piece, never the scalar zero.
+/// A non-null empty view is an empty byte piece, never the scalar zero.
+///
+/// The null-view spelling is now E10010 (the placeholder requires a narrowed
+/// value), so this pins the empty-piece behavior with a valid empty owner.
 #[test]
-fn a_null_view_prints_empty() {
-    let source = r#"module spec.tdf.nullview;
+fn an_empty_view_prints_empty() {
+    let source = r#"module spec.tdf.emptyview;
 import { println } from std.io;
+import { String, stringOf } from std.text;
 func main(): i32 {
-    let s: String? = null;
-    let v: str? = s;
-    if (v == null) {
-        println($"[{v}]");
-    }
+    let s: String = stringOf("");
+    let v: str = s;
+    println($"[{v}]");
     return 0;
 }
 "#;
-    assert_output("nullview", source, "[]\n");
+    assert_output("emptyview", source, "[]\n");
 }
 
 /// The explicit converters are unchanged.

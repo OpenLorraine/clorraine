@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-11
-> **Progress**: 573/575 rows done; 0 open; 2 Parked
+> **Progress**: 573/576 rows done; 1 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -590,13 +590,14 @@
 | PLAN-24 | v1.1.1 release closeout | — | [RELEASE.md](../RELEASE.md) | Done | ✅ | 2026-11-09 | Version `1.1.1`, changelog and notes, v1.1.1 runbook, release binaries and tarballs with `SHA256SUMS`, annotated `v1.1.1` tag; `make check`, `make asan` (29 suites), `make ubsan` (3 suites), `make corpus-amiga`, `make differential` (3/3), `make bench-shape`, `make bench-compare` (matrix -9.6% / -5.0% vs v1.1.0), `make verify` (`verify: all legs passed`), and `make vscode-check` green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.1 |
 | PLAN-28 | String integer formatting throughput | [01-requirements](string-integer-formatting/01-requirements.md) | [string-integer-formatting](string-integer-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 30/30; `cl_text_i32`/`cl_text_u32` write decimal digits directly into the String block in both profiles; `strings` −49.8% net instructions (2,964,051 → 1,489,187) and −0.7% `.text`, every scored output equal, no 1% regression; allocations unchanged at 6,003 (follow-up #25); ASan 31 suites, UBSan 5, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; pre-existing `text` arity defect filed as #24 |
 | PLAN-29 | Direct template formatting | [01-requirements](template-direct-formatting/01-requirements.md) | [template-direct-formatting](template-direct-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 26/26; integer/bool template placeholders use 12-byte typed parts written directly into the destination; String/str copy at part construction for evaluation-order safety; `strings` 1,489,187 → 1,221,232 net (−18.0%), `.text` 24,020 → 23,972, allocations 6,003 → 2,003; all outputs equal and every scored metric within 1%; ASan 32, UBSan 6, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; #25 and #19 closed; pre-existing template defects #26 |
+| PLAN-30 | Template placeholder integrity (#26) | [01-requirements](template-placeholder-integrity/01-requirements.md) | [template-placeholder-integrity](template-placeholder-integrity/00-index.md) | Plan Created | 📋 | 2026-11-11 | #26: nullable placeholder E10010, once-only source-order evaluation, copy before a sibling move; generic, guarded, loop-condition, and module-initializer variants included; no spec/ABI change; full gate + 1% scored guard against `8b4bff2` |
 
 ## Batch N accounting (2026-10-19)
 
 - **Active rows**: 22/22 Done — the 20 red rows are fixed with the per-phase evidence, and the two controls `DEF-427`/`DEF-447` are Done with the false-positive control evidence.
 - **Parked**: `DEF-425` was closed by the 2026-10-21 delegated ruling (the frozen BR-5 wins); `DEF-167` and `DEF-171` are now Done in `def-critical-major-closeout`.
 - **Filed during execution**: `DEF-449`..`DEF-483` (35 rows), each with a reproduction, base evidence, and a fix direction; `DEF-481` records the pre-existing call-arm read-base leak class, and `DEF-483` the scalar-`len` current-output fold.
-- **Roadmap totals (2026-10-19 snapshot)**: at that snapshot the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The current tracker (2026-11-11) reads 571/573 rows Done, 0 open, and 2 parked (`PLAN-06`, `PLAN-07`).
+- **Roadmap totals (2026-10-19 snapshot)**: at that snapshot the tracker held 472 `DEF-` rows: 332 Done, 139 open, and 1 Deferred (`DEF-425`). The pre-PLAN-30 tracker (2026-11-11) read 573/575 rows Done, 0 open, and 2 parked (`PLAN-06`, `PLAN-07`).
 
 ## Scope decisions (v1.0)
 

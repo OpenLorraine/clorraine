@@ -180,6 +180,23 @@ impl Diagnostics {
         }
     }
 
+    /// True when an error with `code` is already recorded at `span`.
+    ///
+    /// Two stages can judge the same source occurrence on different paths; the
+    /// first kept diagnostic wins, while a speculative report that the caller
+    /// discarded does not suppress the reporting pass.
+    pub fn has_error_at(&self, code: &str, span: Span) -> bool {
+        self.items.iter().any(|diagnostic| {
+            diagnostic.code == code
+                && matches!(diagnostic.severity, Severity::Error)
+                && diagnostic.span.is_some_and(|recorded| {
+                    recorded.file == span.file
+                        && recorded.start == span.start
+                        && recorded.end == span.end
+                })
+        })
+    }
+
     /// Records a diagnostic unless the error cap is already reached.
     pub fn push(&mut self, diagnostic: Diagnostic) {
         match diagnostic.severity {

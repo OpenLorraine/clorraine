@@ -29,6 +29,7 @@ use crate::types::{ substitute_instance, AbiLayout, CaptureInfo, CaptureMode, Cl
 
 pub(crate) mod call;
 mod expr;
+pub(crate) use expr::formattable;
 mod init_cycle;
 mod items;
 mod ops;

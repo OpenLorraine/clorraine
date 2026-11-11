@@ -258,6 +258,45 @@ pub struct RequiresLenOperand {
     pub base: Option<String>,
 }
 
+/// One arm of a conditional template placeholder.
+///
+/// The declaration records each arm's written type and flow state, so the
+/// instance audit can accept two nullable arms that the body narrowed and
+/// report the one that it did not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplatePlaceholderArm {
+    /// The arm's type as written at the declaration.
+    pub ty: Ty,
+    /// The arm's span, which identifies the site with the function.
+    pub span: Span,
+    /// True when the declaration's flow already narrowed the arm.
+    pub narrowed: bool,
+    /// The written binding or call name, for the diagnostic text.
+    pub name: String,
+}
+
+/// A template placeholder whose declared type still mentions a parameter.
+///
+/// The declaration cannot judge formattability or nullability while the type
+/// is a parameter. The instance audit substitutes the bindings, reports
+/// `E10500` for a non-formattable type and `E10010` for a nullable one the
+/// declaration did not narrow, and judges a conditional's arms separately.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresTemplatePlaceholder {
+    /// The generic function whose template defers the judgment.
+    pub function: String,
+    /// The placeholder type as written at the declaration.
+    pub ty: Ty,
+    /// The placeholder's span, which identifies the site with the function.
+    pub span: Span,
+    /// True when the declaration's flow already narrowed the placeholder.
+    pub narrowed: bool,
+    /// The written binding, call, field, or `value` name.
+    pub name: String,
+    /// The arms of a conditional placeholder; empty otherwise.
+    pub arms: Vec<TemplatePlaceholderArm>,
+}
+
 /// A body's obligation that a lend may only be moved into an owned position
 /// when the instance's type is duplicable.
 ///
@@ -643,6 +682,7 @@ pub struct Monomorphization {
     view_return_requirements: Vec<RequiresViewReturnCandidates>,
     conditional_narrowing_requirements: Vec<RequiresConditionalArmNarrowing>,
     len_operand_requirements: Vec<RequiresLenOperand>,
+    template_placeholder_requirements: Vec<RequiresTemplatePlaceholder>,
 }
 
 impl Monomorphization {
@@ -745,6 +785,16 @@ impl Monomorphization {
     /// Every recorded `len` operand duty.
     pub fn len_operand_requirements(&self) -> &[RequiresLenOperand] {
         &self.len_operand_requirements
+    }
+
+    /// Records a template placeholder the instance audit must judge.
+    pub fn require_template_placeholder(&mut self, requirement: RequiresTemplatePlaceholder) {
+        self.template_placeholder_requirements.push(requirement);
+    }
+
+    /// Every recorded template placeholder duty.
+    pub fn template_placeholder_requirements(&self) -> &[RequiresTemplatePlaceholder] {
+        &self.template_placeholder_requirements
     }
 
     /// Records a copy obligation the generic body owes.

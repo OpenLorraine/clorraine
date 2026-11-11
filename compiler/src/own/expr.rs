@@ -1124,6 +1124,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for piece in pieces {
                     if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
                         self.eval(inner);
+                        // A placeholder requires a concrete formattable
+                        // value, so the nullable-use rule applies exactly as
+                        // it does in the module-initializer walk. A narrowed
+                        // value passes; a generic value defers to the
+                        // per-instance duty.
+                        let expected = Ty {
+                            kind: TyKind::Str,
+                            nullable: false,
+                        };
+                        self.check_value_into(inner, &expected, inner.span);
+                        self.record_template_placeholder(inner);
                     }
                 }
             }
@@ -1343,6 +1354,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The ownership walk and the lowering can both judge the same site; the
     /// frozen rule reports once per source position.
     fn report_null_once(&mut self, name: &str, span: Span) {
+        if self.diagnostics.has_error_at("E10010", span) {
+            return;
+        }
         self.error(
             "E10010",
             format!("value '{name}' may be null here"),
@@ -1506,6 +1520,78 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn expr_is_narrowed(&self, expr: &Expr) -> bool {
         self.plain_binding(expr)
             .is_some_and(|(id, projections)| self.state.place(id).is_narrowed(&projections))
+    }
+
+    /// Records the per-instance duty for a placeholder whose type mentions a
+    /// parameter.
+    ///
+    /// The declaration cannot judge formattability or nullability while the
+    /// type is a parameter. The instance audit substitutes the bindings and
+    /// applies E10500/E10010. A conditional records each arm separately, so
+    /// two nullable arms that the body narrowed stay accepted.
+    fn record_template_placeholder(&mut self, expr: &'a Expr) {
+        let ty = self.ty(expr);
+        if !(ty.is_param() || crate::types::contains_param(&ty)) {
+            return;
+        }
+        let key = (expr.span.start, expr.span.end);
+        if !self.recorded_template_placeholders.insert(key) {
+            return;
+        }
+        let arms = match &expr.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => vec![
+                ir::TemplatePlaceholderArm {
+                    ty: self.ty(then_value),
+                    span: then_value.span,
+                    narrowed: self.expr_is_narrowed(then_value),
+                    name: self.placeholder_name(then_value),
+                },
+                ir::TemplatePlaceholderArm {
+                    ty: self.ty(else_value),
+                    span: else_value.span,
+                    narrowed: self.expr_is_narrowed(else_value),
+                    name: self.placeholder_name(else_value),
+                },
+            ],
+            _ => Vec::new(),
+        };
+        self.template_placeholder_requirements
+            .push(ir::RequiresTemplatePlaceholder {
+                function: self.decl.name.clone(),
+                ty,
+                span: expr.span,
+                narrowed: self.expr_is_narrowed(expr),
+                name: self.placeholder_name(expr),
+                arms,
+            });
+    }
+
+    /// The name a placeholder diagnostic uses.
+    ///
+    /// A place-rooted read names its root binding, matching
+    /// `check_nonnull_place`; a call-rooted member names its field; a call
+    /// names `name()`.
+    fn placeholder_name(&self, expr: &Expr) -> String {
+        if let Some((id, _)) = self.plain_binding(expr) {
+            return self.bindings[id].name.clone();
+        }
+        if let Some(PlaceTarget::Global(id, _)) = self.place_target(expr) {
+            return id.name.clone();
+        }
+        if let ExprKind::Member { name, .. } = &expr.kind {
+            return name.clone();
+        }
+        if let ExprKind::Call { callee, .. } = &expr.kind {
+            return self
+                .callee_name(callee)
+                .map(|name| format!("{name}()"))
+                .unwrap_or_else(|| "call()".to_owned());
+        }
+        "value".to_owned()
     }
 
     /// True when a destination carries the empty state without a `?` suffix.

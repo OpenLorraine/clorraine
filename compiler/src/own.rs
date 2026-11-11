@@ -358,6 +358,7 @@ pub fn check(
     let mut view_return_duties = Vec::new();
     let mut conditional_narrowing_duties = Vec::new();
     let mut len_operand_duties = Vec::new();
+    let mut template_placeholder_duties = Vec::new();
     let mut take_view_requirements: Vec<TakeViewRequirement> = Vec::new();
     let mut take_call_arguments: Vec<TakeCallArgument> = Vec::new();
     let mut function_value_uses: BTreeSet<String> = BTreeSet::new();
@@ -397,6 +398,7 @@ pub fn check(
                     view_returns,
                     conditional_narrowing,
                     len_operands,
+                    template_placeholders,
                     take_requirements,
                     take_calls,
                     value_uses,
@@ -418,6 +420,7 @@ pub fn check(
                 view_return_duties.extend(view_returns);
                 conditional_narrowing_duties.extend(conditional_narrowing);
                 len_operand_duties.extend(len_operands);
+                template_placeholder_duties.extend(template_placeholders);
                 take_view_requirements.extend(take_requirements);
                 take_call_arguments.extend(take_calls);
                 function_value_uses.extend(value_uses);
@@ -551,6 +554,9 @@ pub fn check(
     }
     for duty in len_operand_duties {
         monomorphization.require_len_operand(duty);
+    }
+    for duty in template_placeholder_duties {
+        monomorphization.require_template_placeholder(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     // The IR walk records struct instances a declaration-only walk cannot
@@ -1012,6 +1018,15 @@ struct FunctionChecker<'a, 'd> {
     /// another; the declaration records the site and the audit applies the
     /// frozen length surface after substitution.
     len_operand_requirements: Vec<ir::RequiresLenOperand>,
+    /// The template placeholders this body owes its instances.
+    ///
+    /// A placeholder whose type is still a parameter has no formattability or
+    /// nullability at the declaration; the instance audit substitutes the
+    /// bindings and applies E10500/E10010, judging a conditional's arms
+    /// separately.
+    template_placeholder_requirements: Vec<ir::RequiresTemplatePlaceholder>,
+    /// Template placeholder sites already recorded, so one site owes one duty.
+    recorded_template_placeholders: BTreeSet<(u32, u32)>,
     /// Take view stores deferred to the call-site summary.
     take_view_requirements: Vec<TakeViewRequirement>,
     /// Take-view sites already recorded, so one store site reports once.
@@ -1115,6 +1130,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             view_return_requirements: Vec::new(),
             conditional_narrowing_requirements: Vec::new(),
             len_operand_requirements: Vec::new(),
+            template_placeholder_requirements: Vec::new(),
+            recorded_template_placeholders: BTreeSet::new(),
             take_view_requirements: Vec::new(),
             recorded_take_escapes: BTreeSet::new(),
             take_call_arguments: Vec::new(),
@@ -1203,6 +1220,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresViewReturnCandidates>,
         Vec<ir::RequiresConditionalArmNarrowing>,
         Vec<ir::RequiresLenOperand>,
+        Vec<ir::RequiresTemplatePlaceholder>,
         Vec<TakeViewRequirement>,
         Vec<TakeCallArgument>,
         BTreeSet<String>,
@@ -1263,6 +1281,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.view_return_requirements,
             self.conditional_narrowing_requirements,
             self.len_operand_requirements,
+            self.template_placeholder_requirements,
             self.take_view_requirements,
             self.take_call_arguments,
             self.function_value_uses,

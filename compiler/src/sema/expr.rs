@@ -1761,8 +1761,12 @@ impl Checker<'_, '_> {
     /// Types a template: `String` with placeholders, `str` without.
     ///
     /// Every placeholder must hold a formattable type: `str`, `static str`,
-    /// `String`, or a scalar (integers, floats, and `bool`). An opaque type is
-    /// left alone because the layer cannot name it.
+    /// `String`, or a scalar (integers, floats, and `bool`). A bare type
+    /// parameter is left to the per-instance duty. An **opaque member or
+    /// index** (a recorded projection over a parameter, such as `x.name`) is
+    /// rejected here with E10500: the declaration cannot name its type and
+    /// emitting a nonexistent converter would fail the C build. A null-shaped
+    /// placeholder keeps its separate path.
     fn check_template(&mut self, pieces: &[TemplatePiece]) -> Ty {
         let mut has_placeholder = false;
         let mut first_placeholder = None;
@@ -1773,7 +1777,26 @@ impl Checker<'_, '_> {
                     first_placeholder = Some(expr.span);
                 }
                 let ty = self.check_value(expr, None);
-                if !ty.is_unknown() && !ty.is_param() && !formattable(&ty) {
+                // A concrete non-formattable type is E10500. An opaque member
+                // or index expression is rejected too, rather than emitting a
+                // nonexistent converter at the instance. The gate uses the
+                // recorded projection, so an Unknown left by an earlier
+                // concrete error (for example `n.foo` on an i32) does not add
+                // a second diagnostic. The null literal keeps its separate
+                // path and is excluded.
+                let opaque = ty.is_unknown()
+                    && !ty.nullable
+                    && matches!(
+                        expr.kind,
+                        ExprKind::Member { .. }
+                            | ExprKind::Index { .. }
+                            | ExprKind::Qualified(_)
+                    )
+                    && self.opaque_projections.iter().any(|projection| {
+                        projection.span.start >= expr.span.start
+                            && projection.span.end <= expr.span.end
+                    });
+                if (!ty.is_unknown() && !ty.is_param() && !formattable(&ty)) || opaque {
                     self.error(
                         "E10500",
                         format!("type '{}' is not formattable", ty.display()),
@@ -1861,7 +1884,7 @@ fn volatile_scalar(name: &str) -> Option<ScalarType> {
 }
 
 /// True when a type may appear in a template placeholder.
-fn formattable(ty: &Ty) -> bool {
+pub(crate) fn formattable(ty: &Ty) -> bool {
     match &ty.kind {
         TyKind::Str | TyKind::StaticStr => true,
         TyKind::Handle(name) => name == "String",
