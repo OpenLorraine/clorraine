@@ -44,6 +44,12 @@ The plan tests those four paths. `bytes(h.name)` returns an empty slice and
 of R3 and are not claimed as tested. A NULL cstring is not a printable C string,
 so callers must check it as the empty state (existing cstring behavior).
 
+A zero-state `String` widened to `String?` compares equal to `null`, because
+both use the all-zero bit pattern; `clone(h.name)` returns a fresh, non-null
+empty String because it allocates. That identity is the existing O7/TY-8
+behavior and this plan does not change it; the runtime accessors only make the
+read safe (AR-3).
+
 ## 2. Discarded Template and For-Step Cleanup
 
 ### 2.1 Rule

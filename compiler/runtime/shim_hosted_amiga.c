@@ -889,15 +889,22 @@ void cl_string_append(void *handle, APTR src, ULONG n)
     cl_string_bytes(string)[string->len] = '\0';
 }
 
-/* The first payload byte of a string; the trailing NUL makes it a C string. */
+/* The first payload byte of a string; the trailing NUL makes it a C string.
+ * The all-zero handle is the empty state (O7), so its pointer is NULL. */
 void *cl_string_ptr(void *handle)
 {
+    if (handle == NULL) {
+        return NULL;
+    }
     return cl_string_bytes((cl_string_block *)handle);
 }
 
-/* The number of live payload bytes in a string. */
+/* The number of live payload bytes in a string. The zero state is empty. */
 ULONG cl_string_len(void *handle)
 {
+    if (handle == NULL) {
+        return 0;
+    }
     return ((cl_string_block *)handle)->len;
 }
 
@@ -918,10 +925,14 @@ static void *cl_string_from(const void *bytes, ULONG n)
 }
 
 /* Copy a whole string block into a fresh, independent block. The caller owns
- * the copy and releases it through the string deleter. */
+ * the copy and releases it through the string deleter. The all-zero handle is
+ * the empty state (O7), so its copy is an empty string. */
 void *cl_string_copy(void *handle)
 {
     cl_string_block *string = (cl_string_block *)handle;
+    if (string == NULL) {
+        return cl_string_new(0);
+    }
     return cl_string_from(cl_string_bytes(string), string->len);
 }
 

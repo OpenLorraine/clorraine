@@ -116,7 +116,7 @@ output for every red case.
 | IT-5 | A discarded template statement emits an owning temporary and a release in the same block |
 | IT-6 | A for-step template emits the release inside the step block |
 | IT-7 | The adopted aggregate emits `cl_zero` then a fieldwise store into the fresh temporary and a plain struct assignment; no invalid aggregate assignment |
-| IT-8 | The aggregate shape is the same on host and hosted-amiga, and builds under `-Werror` |
+| IT-8 | The aggregate shape is the same on host and hosted-amiga; the host twin builds under `-Werror` (ST-21) |
 | IT-9 | The #26 ordered-lowering pins are unchanged: one copy per String/str placeholder, the part adopts it, `$text` never appears |
 | IT-10 | The literal-only and pure-scalar template shapes are unchanged |
 

@@ -1993,14 +1993,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_pure_value(&value) {
             return;
         }
-        // A bare call result has no literal field to materialize, so bind an
-        // owning result to a statement temporary the pending release frees.
-        // The expression-statement route handles its own calls; this covers a
-        // call reached through a discard-only position such as a structural
-        // `len` operand.
+        // A bare call or template result has no literal field to materialize,
+        // so bind an owning result to a statement temporary the pending
+        // release frees. The expression-statement route handles its own calls;
+        // this covers a call reached through a discard-only position such as a
+        // structural `len` operand, and a discarded template result.
         if matches!(
             &value.kind,
-            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::Template(_)
         ) && self.discard_binds_owner(&value.ty)
         {
             self.bind_discarded_owner(value);
@@ -2820,13 +2820,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A C initializer list leaves its operands' order unspecified, and a
     /// template copy emits a statement at its own field, so every earlier
     /// operand of such a literal binds where it stands. A duplicable value or
-    /// an update uses the plain statement temporary. An owning call binds to an
-    /// adopting `Statement::Adopt` temporary: the literal stores the handle and
-    /// a loop re-entry must not release a value the literal now owns. A
-    /// fixed-array value keeps the existing element-wise store path. An owning
-    /// aggregate (`StructLit`/`ArrayLit`) stays inline because its structured
-    /// store has no no-pre-drop form; a value that already names a place keeps
-    /// its consuming move, and a guarded operand keeps its deferred fill.
+    /// an update uses the plain statement temporary. An owning call or an
+    /// owning non-fixed `StructLit` binds to an adopting `Statement::Adopt`
+    /// temporary: the literal stores the handle/fields and a loop re-entry must
+    /// not release a value the literal now owns. A fixed-array value keeps the
+    /// existing element-wise store path. A non-owning aggregate or an `ArrayLit`
+    /// stays inline; a value that already names a place keeps its consuming
+    /// move, and a guarded operand keeps its deferred fill.
     fn pin_literal_operand(&mut self, value: Value) -> Value {
         if self.defer_move_outs > 0 || self.in_loop_condition {
             return self.pin_update_value(value);
@@ -2847,15 +2847,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return value;
         }
-        // A pinned owning call is adopted: the literal stores its handle, and
-        // a loop re-entry must not release a value the literal now owns. An
-        // owning aggregate keeps its inline value: its structured store has no
-        // no-pre-drop form, and pinning it would emit an invalid aggregate
-        // assignment. A fixed array keeps the existing store path, which
-        // handles the element-wise copy and move.
+        // A pinned owning call or aggregate is adopted: the literal stores its
+        // handle/fields, and a loop re-entry must not release a value the
+        // literal now owns. A fixed array keeps the existing store path, which
+        // handles the element-wise copy and move. A non-owning aggregate keeps
+        // its inline value.
         if value.ty.is_fixed_array() {
             self.materialize_value(value)
         } else if matches!(value.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+            && (self.owns_drop(&value.ty) || self.maybe_owns(&value.ty))
+        {
+            self.materialize_adopted_operand(value)
+        } else if matches!(value.kind, ValueKind::StructLit { .. })
             && (self.owns_drop(&value.ty) || self.maybe_owns(&value.ty))
         {
             self.materialize_adopted_operand(value)

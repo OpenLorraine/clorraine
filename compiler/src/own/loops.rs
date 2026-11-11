@@ -330,7 +330,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 checker.state = state;
                 checker.switch_to(step_block);
                 for step in &decl.step {
+                    let release_floor = checker.pending_releases.len();
                     checker.check_expr_statement(step);
+                    checker.drain_pending_releases(release_floor);
                 }
             }
             checker.exits.pop();
@@ -392,7 +394,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.state = Self::merge(self.state.clone(), state);
         }
         for step in &decl.step {
+            let release_floor = self.pending_releases.len();
             self.check_expr_statement(step);
+            self.drain_pending_releases(release_floor);
         }
         if !self.is_terminated() {
             self.terminate(Terminator::Goto(head));

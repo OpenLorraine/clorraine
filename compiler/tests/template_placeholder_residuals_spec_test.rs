@@ -193,6 +193,25 @@ fn assert_rejected(tag: &str, source: &str, code: &str, names: &[&str]) {
     );
 }
 
+/// Builds with ASan and asserts a clean exit with no leak report.
+fn assert_leak_free(tag: &str, source: &str, expected: &str) {
+    let (scratch, emitted) = emit(tag, source);
+    let program = build_host(tag, &scratch, &emitted, true);
+    let output = run_program(&program);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected exit 0 under ASan; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected,
+        "{tag}: unexpected stdout"
+    );
+    assert_no_sanitizer_report(tag, &output);
+}
+
 fn assert_no_sanitizer_report(tag: &str, output: &Output) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -471,4 +490,270 @@ func main(): i32 {
 }
 "#;
     assert_rejected("cstringcond", source, "E10010", &["'q'"]);
+}
+
+// -- Zero-state String handle ----------------------------------------------
+
+/// ST-11: a zero-state String field formats as the empty String.
+#[test]
+fn st11_zero_state_placeholder_formats_empty() {
+    let source = r#"module spec.tpr.zerostate;
+import { println } from std.io;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    println($"{h.name}");
+    return 0;
+}
+"#;
+    assert_output("zerostate", source, "\n");
+}
+
+/// ST-12: the implicit String-to-str widening of a zero state prints empty.
+#[test]
+fn st12_zero_state_direct_print_formats_empty() {
+    let source = r#"module spec.tpr.zeroprint;
+import { println } from std.io;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    println(h.name);
+    return 0;
+}
+"#;
+    assert_output("zeroprint", source, "\n");
+}
+
+/// ST-13: len of the zero state is zero.
+#[test]
+fn st13_zero_state_len_is_zero() {
+    let source = r#"module spec.tpr.zerolen;
+import { println } from std.io;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    println($"{len(h.name)}");
+    return 0;
+}
+"#;
+    assert_output("zerolen", source, "0\n");
+}
+
+/// ST-14: clone of the zero state is an empty String.
+#[test]
+fn st14_zero_state_clone_formats_empty() {
+    let source = r#"module spec.tpr.zeroclone;
+import { println } from std.io;
+import { clone } from std.text;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    println($"{clone(h.name)}");
+    return 0;
+}
+"#;
+    assert_output("zeroclone", source, "\n");
+}
+
+/// ST-15: the explicit text converter of the zero state prints empty.
+#[test]
+fn st15_zero_state_text_formats_empty() {
+    let source = r#"module spec.tpr.zerotext;
+import { println } from std.io;
+import { text } from std.fmt;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    println($"{text(h.name)}");
+    return 0;
+}
+"#;
+    assert_output("zerotext", source, "\n");
+}
+
+// -- Discarded template and for-step cleanup -------------------------------
+
+/// ST-16: a bare discarded template result is released.
+#[test]
+fn st16_discarded_template_is_leak_free() {
+    let source = r#"module spec.tpr.discard;
+import { println } from std.io;
+func main(): i32 {
+    $"{1}";
+    println("done");
+    return 0;
+}
+"#;
+    assert_leak_free("discard", source, "done\n");
+}
+
+/// ST-17: a template in a for step is evaluated once per iteration and freed.
+#[test]
+fn st17_for_step_template_is_leak_free() {
+    let source = r#"module spec.tpr.forstep;
+import { println } from std.io;
+func main(): i32 {
+    for (let i: i32 = 0; i < 3; $"{i}", i = i + 1) {
+        println($"{i}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forstep", source, "0\n1\n2\n");
+}
+
+/// ST-18: an owning call discarded in a for step is released.
+#[test]
+fn st18_for_step_owning_call_is_leak_free() {
+    let source = r#"module spec.tpr.forcall;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+func mkString(): String { return stringOf("x"); }
+func main(): i32 {
+    for (let i: i32 = 0; i < 3; mkString(), i = i + 1) { }
+    println("done");
+    return 0;
+}
+"#;
+    assert_leak_free("forcall", source, "done\n");
+}
+
+/// ST-19: the step cleanup also runs on a `continue` edge.
+#[test]
+fn st19_for_step_continue_is_leak_free() {
+    let source = r#"module spec.tpr.forcontinue;
+import { println } from std.io;
+func main(): i32 {
+    for (let i: i32 = 0; i < 3; $"{i}", i = i + 1) {
+        if (i == 1) { continue; }
+        println($"{i}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forcontinue", source, "0\n2\n");
+}
+
+// -- Owning aggregate literal order ----------------------------------------
+
+/// ST-20: an owning aggregate field evaluates before a later placeholder copy.
+#[test]
+fn st20_owning_aggregate_field_order() {
+    let source = r#"module spec.tpr.aggstring;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct Inner { a: String; }
+struct P { inner: Inner; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func mkString(): String { return stringOf($"{mark(1)}"); }
+func main(): i32 {
+    let p: P = P { inner: Inner { a: mkString() }, b: $"{mark(2)}" };
+    println($"{seq}");
+    println(p.b);
+    return 0;
+}
+"#;
+    assert_output("aggstring", source, "12\n2\n");
+}
+
+/// ST-21: the same order with a fixed-array field inside the aggregate.
+#[test]
+fn st21_owning_aggregate_fixed_array_order() {
+    let source = r#"module spec.tpr.aggarr;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct InnerA { a: String[2]; }
+struct PA { inner: InnerA; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func mkPair(): String[2] { return [stringOf($"{mark(1)}"), stringOf("x")]; }
+func main(): i32 {
+    let p: PA = PA { inner: InnerA { a: mkPair() }, b: $"{mark(2)}" };
+    println($"{seq}");
+    println(p.b);
+    return 0;
+}
+"#;
+    assert_output("aggarr", source, "12\n2\n");
+}
+
+/// ST-22: the adopted String aggregate field survives loop re-entry.
+#[test]
+fn st22_owning_aggregate_loop() {
+    let source = r#"module spec.tpr.aggloop;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct Inner { a: String; }
+struct P { inner: Inner; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func mkString(): String { return stringOf($"{mark(1)}"); }
+func main(): i32 {
+    let sum: usize = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: P = P { inner: Inner { a: mkString() }, b: $"{i}" };
+        sum = sum + len(p.inner.a) + len(p.b);
+        i = i + 1;
+    }
+    println($"{sum}");
+    return 0;
+}
+"#;
+    assert_leak_free("aggloop", source, "6\n");
+}
+
+/// ST-23: the adopted fixed-array aggregate field survives loop re-entry.
+#[test]
+fn st23_owning_aggregate_fixed_array_loop() {
+    let source = r#"module spec.tpr.aggarrloop;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct InnerA { a: String[2]; }
+struct PA { inner: InnerA; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func mkPair(): String[2] { return [stringOf($"{mark(1)}"), stringOf("x")]; }
+func main(): i32 {
+    let sum: usize = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: PA = PA { inner: InnerA { a: mkPair() }, b: $"{i}" };
+        sum = sum + len(p.inner.a[0]) + len(p.b);
+        i = i + 1;
+    }
+    println($"{sum}");
+    return 0;
+}
+"#;
+    assert_leak_free("aggarrloop", source, "6\n");
+}
+
+/// ST-27: an owned conditional aggregate field survives loop re-entry.
+#[test]
+fn st27_owning_conditional_aggregate_loop() {
+    let source = r#"module spec.tpr.aggcondloop;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct InnerC { a: String; }
+struct PC { inner: InnerC; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func mkString(): String { return stringOf($"{mark(1)}"); }
+func mkOther(): String { return stringOf("z"); }
+func main(): i32 {
+    let flag: bool = true;
+    let sum: usize = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: PC = PC { inner: InnerC { a: flag ? mkString() : mkOther() }, b: $"{i}" };
+        sum = sum + len(p.inner.a) + len(p.b);
+        i = i + 1;
+    }
+    println($"{sum}");
+    return 0;
+}
+"#;
+    assert_leak_free("aggcondloop", source, "6\n");
 }

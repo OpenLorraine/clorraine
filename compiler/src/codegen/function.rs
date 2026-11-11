@@ -700,6 +700,21 @@ impl<'a> Emitter<'a> {
         match statement {
             Statement::Adopt { target, value } => {
                 self.emit_line_directive(span);
+                // A struct value whose fields need stores (a fixed-array field,
+                // an owned conditional, a deferred fill) fills the fresh
+                // temporary field by field. The temporary is zeroed first, so
+                // every fieldwise pre-drop sees the empty state on a loop
+                // re-entry; the outer literal has already adopted the previous
+                // iteration's values.
+                let ty = self.substitute(&target.ty);
+                if let ValueKind::StructLit { name, fields } = &value.kind {
+                    if self.struct_literal_needs_stores(name, fields) {
+                        let target_c = self.place(target);
+                        self.push(&format!("    cl_zero(&{target_c});"));
+                        self.emit_struct_literal_fields(&target_c, &ty, fields);
+                        return;
+                    }
+                }
                 // An adopted copy may carry an index, slice, division, or
                 // float-cast guard; every other store emits its guards first.
                 self.emit_guards(value);

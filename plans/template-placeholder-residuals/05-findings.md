@@ -124,7 +124,85 @@ for the `text(null)` follow-up at closeout.
 
 ## 2. Phase 2 — Runtime and Ownership Residuals
 
-_Pending._
+### 2.1 Red Evidence (phase-start `bde6e9b`)
+
+The Phase 2 cases were added before the changes. On the Phase 1 compiler,
+11 failed:
+
+- Zero state: `st11`–`st15` (SIGSEGV in `cl_string_copy`/`cl_string_view`).
+- Discard/step: `st16` (20-byte leak), `st17` (60-byte leak), `st18` and
+  `st19` (leaks).
+- Aggregate order: `st20` and `st21` (`21 != 12`).
+
+The guards passed: `st22`, `st23`, and `st27` (the inline aggregate has the
+right length sum on the base; they guard the fix's zero-fill against a
+double-free).
+
+### 2.2 Implementation
+
+- `compiler/runtime/shim_host.c` and `shim_hosted_amiga.c`: `cl_string_ptr`
+  returns NULL for the zero handle, `cl_string_len` returns 0, and
+  `cl_string_copy` returns an empty String. `FreeString` was already null-safe.
+- `compiler/src/own/lower.rs::lower_discarded`: an owned `Template` result is
+  bound to a statement temporary like a bare call result.
+- `compiler/src/own/loops.rs::check_for_c`: each step expression records a
+  release floor and drains after evaluation, in both the speculative and
+  reporting passes.
+- `compiler/src/own/lower.rs::pin_literal_operand`: an owning non-fixed
+  `StructLit` is adopted through `materialize_adopted_operand`.
+- `compiler/src/codegen/function.rs::Statement::Adopt`: a `StructLit` whose
+  fields need stores emits `cl_zero` and the fieldwise store into the fresh
+  temporary; otherwise it keeps the plain assignment.
+
+### 2.3 Green Evidence
+
+`template_placeholder_residuals_spec_test` 30/30 (30/30 under ASan);
+`..._impl_test` 10/10; #26 41/41; #25 15/15 spec + 5/5 impl; `make check`
+green (fuzz-smoke 28/0). The aggregate loop cases (`st22`, `st23`, `st27`) run
+under ASan with no double free.
+
+### 2.4 Phase Review
+
+| Review | Verdict | Findings |
+|--------|---------|----------|
+| Correctness | no 🔴/🟠; 3 🟡 | RV-001/002/003 fixed |
+| Semantics | no 🔴/🟠; 2 🟡 | SR-001 documented; SR-002 fixed |
+| Memory safety | clean | 30/30 ASan + UBSan; all aggregate loop/reassign/take/discard probes clean; one pre-existing `cl_panic` UBSan finding |
+| Emission integrity | clean | corpus user C identical; 18 host + 23 Amiga + 14 freestanding TUs warning-free; `bench-shape` green; one doc-only minor |
+
+**RV-001/SR-002 — stale pin doc.** The `pin_literal_operand` rustdoc now says
+an owning non-fixed `StructLit` is adopted and a fixed array keeps the store
+path.
+
+**RV-002 — Amiga shim comments.** The three accessors now state the O7 zero
+state, and `cl_string_copy` uses `cl_string_new(0)` like the host shim.
+
+**RV-003 — IT-8 description.** It now says the aggregate shape matches on both
+profiles and the host twin builds under `-Werror` (ST-21), matching the test.
+
+**SR-001 — zero-state String vs `String?` null.** A zero-state `String`
+widened to `String?` compares equal to `null` (both are the zero bit pattern);
+`clone` returns a fresh non-null empty String. This is the existing O7/TY-8
+behavior; 03-02 §1.3 documents it and the runtime change does not alter it.
+
+**Pre-existing residuals (not caused by this phase).** These are recorded for
+the closeout follow-up:
+- A for-step **assignment** of an owning value
+  (`for (...; s = $"{i}", ...)`) keeps the compact C for header and leaks the
+  old `s` value; the discarded-expression and owning-call steps are fixed.
+- A template in a for **init** expression list is checked but not lowered, so
+  its effects do not run.
+- A non-`needs_stores` aggregate's own field order still relies on the C
+  initializer's declaration order; the phase fixes the outer order and the
+  fieldwise path.
+- `cl_panic` passes a NULL message with length 0 to `fwrite`, which UBSan
+  reports; base-identical.
+
+### 2.5 Green after fixes
+
+`template_placeholder_residuals_spec_test` 30/30 (30/30 ASan and UBSan);
+`..._impl_test` 10/10; #26 41/41; #25 15/15 spec + 5/5 impl; `make check`
+green.
 
 ## 3. Acceptance
 

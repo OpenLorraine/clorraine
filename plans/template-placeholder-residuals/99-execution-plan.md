@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 22:25
-> **Progress**: 12/38 tasks (32%)
+> **Last Updated**: 2026-11-11 23:46
+> **Progress**: 29/38 tasks (76%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -108,35 +108,35 @@ specifications are [03-01](03-01-type-diagnostics.md) and
 **Reference**: [03-02](03-02-lowering-and-runtime.md) · [07](07-testing-strategy.md) ST-11–ST-23, ST-27 · AR-3–AR-6, AR-18, AR-19, AR-24
 **Objective**: Pin the zero-state, discard/step, and aggregate-order behavior.
 
-- [ ] 2.1.1 [spec-author] Add ST-11–ST-15 (zero-state placeholder, direct print, len, clone, text) — `compiler/tests/template_placeholder_residuals_spec_test.rs`
-- [ ] 2.1.2 [spec-author] Add ST-16–ST-19 (discarded template, for-step template, owning call, continue edge) — `compiler/tests/template_placeholder_residuals_spec_test.rs`
-- [ ] 2.1.3 [spec-author] Add ST-20–ST-23 and ST-27 (aggregate String field, fixed-array field, loop, nested, owning conditional field) — `compiler/tests/template_placeholder_residuals_spec_test.rs`
-- [ ] 2.1.4 Run the suite against the Phase 1 head and record the red evidence; label the guards — verify: the failure log names each red case
+- [x] 2.1.1 [spec-author] Add ST-11–ST-15 (zero-state placeholder, direct print, len, clone, text) — `compiler/tests/template_placeholder_residuals_spec_test.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.1.2 [spec-author] Add ST-16–ST-19 (discarded template, for-step template, owning call, continue edge) — `compiler/tests/template_placeholder_residuals_spec_test.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.1.3 [spec-author] Add ST-20–ST-23 and ST-27 (aggregate String field, fixed-array field, loop, nested, owning conditional field) — `compiler/tests/template_placeholder_residuals_spec_test.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.1.4 Run the suite against the Phase 1 head and record the red evidence; label the guards — verify: the failure log names each red case ✅ (completed: 2026-11-11 23:03)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02 §1–§3](03-02-lowering-and-runtime.md) · AR-3–AR-6, AR-8, AR-9, AR-12, AR-19
 **Objective**: Make the zero state safe, release discarded templates, drain the step, and adopt an owning aggregate at its source position.
 
-- [ ] 2.2.1 Make `cl_string_ptr`, `cl_string_len`, and `cl_string_copy` null-safe in the host shim — `compiler/runtime/shim_host.c`
-- [ ] 2.2.2 Mirror the three helpers in the Amiga shim — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.3 Bind an owned `Template` result in `lower_discarded` — `compiler/src/own/lower.rs`
-- [ ] 2.2.4 Add the release floor and drain around each for-step expression in both step loops — `compiler/src/own/loops.rs`
-- [ ] 2.2.5 Pin an owning non-fixed `StructLit` through `materialize_adopted_operand` — `compiler/src/own/lower.rs`
-- [ ] 2.2.6 Add the no-pre-drop structured `StructLit` store to the `Statement::Adopt` arm — `compiler/src/codegen/function.rs`
-- [ ] 2.2.7 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_spec_test`
+- [x] 2.2.1 Make `cl_string_ptr`, `cl_string_len`, and `cl_string_copy` null-safe in the host shim — `compiler/runtime/shim_host.c` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.2 Mirror the three helpers in the Amiga shim — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.3 Bind an owned `Template` result in `lower_discarded` — `compiler/src/own/lower.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.4 Add the release floor and drain around each for-step expression in both step loops — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.5 Pin an owning non-fixed `StructLit` through `materialize_adopted_operand` — `compiler/src/own/lower.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.6 Add the no-pre-drop structured `StructLit` store to the `Statement::Adopt` arm — `compiler/src/codegen/function.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.2.7 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_spec_test` ✅ (completed: 2026-11-11 23:03)
 
 ### Step 2.3: Impl Tests and Hardening
 
 **Reference**: [07 §3–§4](07-testing-strategy.md) IT-3–IT-10 · AR-3–AR-6, AR-22
 **Objective**: Pin the emission and prove the sanitizer safety.
 
-- [ ] 2.3.1 Add IT-3–IT-10 to the impl suite — `compiler/tests/template_placeholder_residuals_impl_test.rs`
-- [ ] 2.3.2 Run the #26 and #25 suites; confirm IT-9/IT-10 pins are unchanged and update only an intended pin — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test --test template_placeholder_integrity_impl_test --test template_direct_formatting_spec_test --test template_direct_formatting_impl_test`
-- [ ] 2.3.3 Run the new spec suite under ASan; no report and no leak — verify: `RDC_ASAN=1 cargo test -p clc --test template_placeholder_residuals_spec_test`
-- [ ] 2.3.4 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md`
-- [ ] 2.3.5 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict
-- [ ] 2.3.6 `make check` green — verify: `make check`
+- [x] 2.3.1 Add IT-3–IT-10 to the impl suite — `compiler/tests/template_placeholder_residuals_impl_test.rs` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.3.2 Run the #26 and #25 suites; confirm IT-9/IT-10 pins are unchanged and update only an intended pin — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test --test template_placeholder_integrity_impl_test --test template_direct_formatting_spec_test --test template_direct_formatting_impl_test` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.3.3 Run the new spec suite under ASan; no report and no leak — verify: `RDC_ASAN=1 cargo test -p clc --test template_placeholder_residuals_spec_test` ✅ (completed: 2026-11-11 23:03)
+- [x] 2.3.4 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-11 23:46)
+- [x] 2.3.5 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-11 23:46)
+- [x] 2.3.6 `make check` green — verify: `make check` ✅ (completed: 2026-11-11 23:46)
 
 **Deliverables**:
 - [ ] The zero state formats as an empty String on host and Amiga
