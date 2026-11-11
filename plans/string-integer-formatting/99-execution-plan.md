@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 09:39
-> **Progress**: 0/30 tasks (0%)
+> **Last Updated**: 2026-11-11 09:50
+> **Progress**: 2/30 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -57,8 +57,8 @@ findings, roadmap, and follow-up issue.
 **Objective**: make the plan durable and measure the clean base before any
 shim change.
 
-- [ ] 1.1.1 Commit the plan documents (index, requirements, register, current state, component spec, findings, testing strategy, execution plan) with the git-commit skill; no compiler or runtime file may change.
-- [ ] 1.1.2 Confirm `git status --porcelain` is empty, `main == origin/main`, and run `make check` on the plan commit; record the result in `05-findings.md` §1.
+- [x] 1.1.1 Commit the plan documents (index, requirements, register, current state, component spec, findings, testing strategy, execution plan) with the git-commit skill; no compiler or runtime file may change. ✅ (completed: 2026-11-11 09:46)
+- [x] 1.1.2 Confirm `git status --porcelain` is empty, `main == origin/main`, and run `make check` on the plan commit; record the result in `05-findings.md` §1. ✅ (completed: 2026-11-11 09:50)
 - [ ] 1.1.3 Build the base compiler from `8f07e40` with `make bench-base COMMIT=8f07e40`; record the compiler path, SHA-256, version, and `dirty` flag, and confirm `build/perf/base.json` names the expected commit.
 - [ ] 1.1.4 Run `make bench` on the plan commit and copy the document to a retained pre-change file; confirm every scored output matches and that the base and pre-change instruction/text values agree within the harness's determinism (otherwise record the difference and re-run once).
 - [ ] 1.1.5 Record the pre-plan probe (attribution, selected and rejected probe tables, allocation count, the out-of-scope codegen probe) in `05-findings.md` §2 with the exact commands and artifact paths; commit the findings with the git-commit skill.

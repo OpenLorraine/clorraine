@@ -161,11 +161,12 @@ All scored benchmarks, selected probe:
 | matrix | 9,908 | 9,412 | −5.0% | 23,608 | 23,460 | −0.6% |
 | strings | 2,964,051 | 1,464,668 | −50.6% | 24,196 | 24,080 | −0.5% |
 | moves | 45,205 | 44,659 | −1.2% | 23,632 | 23,484 | −0.6% |
-| lookup | 13,653 | 8,824 | −35.4% | 64,328 | 39,756 | −38.2% |
+| lookup | 9,470 | 8,824 | −6.8% | 39,904 | 39,756 | −0.4% |
 
 Every output was equal to `expected-output.txt`. The `lookup` win is the
 startup formatting of its final line: the base pays the `vfprintf` setup even
-for one integer.
+for one integer. The base values are the current `8f07e40` emission (the
+v1.1.2 constant-array work already lowered `lookup` before this feature).
 
 ### Codegen probe (out of scope, follow-up evidence)
 

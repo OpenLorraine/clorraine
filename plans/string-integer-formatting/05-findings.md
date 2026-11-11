@@ -15,9 +15,10 @@ measurement in Phase 4. Values are never estimated; a missing value is
 | Base commit | `8f07e408975d9ad090392712030d2e2761d19437` |
 | Compiler version | `clc 1.1.2` |
 | Compiler SHA-256 | pending (Phase 1) |
-| Worktree | clean (`git status --porcelain` empty) |
+| Worktree | clean before the plan commit; only plan-document edits after it |
 | Toolchain | pinned SDK container; m68k GCC 16.2.0b, libnix `nix20`, `vamos` 0.8.1 |
 | Base document | `build/perf/base.json` (Phase 1) |
+| `make check` on the plan commit | passed (2026-11-11 09:50; spec, registry, setup, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
 
 ## 2. Pre-Plan Probe
 
