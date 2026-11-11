@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 10:05
-> **Progress**: 5/30 tasks (17%)
+> **Last Updated**: 2026-11-11 10:42
+> **Progress**: 14/30 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -85,10 +85,10 @@ shim change.
 **Objective**: encode every boundary and the zero-formatter-call contract
 before changing a shim.
 
-- [ ] 2.1.1 [spec-author] Write the behavior half of `compiler/tests/string_integer_formatting_spec_test.rs` from ST-1 – ST-19; build each case with the strict host flags, assert the exact output, and support `RDC_CLC` for the later pre-change comparison; do not modify compiler or runtime code.
-- [ ] 2.1.2 [spec-author] Add ST-20 – ST-24 to the same suite: the 2,000-iteration checksum, the `--wrap=snprintf` counter stub, and the ASan/UBSan cases with their `RDC_ASAN`/`RDC_UBSAN` markers and scratch-directory cleanup.
-- [ ] 2.1.3 Run the suite against the pre-change compiler (the plan commit) and record the exact command, compiler identity, and every failure in `05-findings.md` §3; ST-21 must report a nonzero count.
-- [ ] 2.1.4 Record the intentional no-change oracle: ST-1 – ST-20 and ST-22 – ST-24 pass on the base; explain why in `05-findings.md` §3. Do not weaken a failing red case; confirm `make asan` and `make ubsan` discovery includes the new suite (the markers are present).
+- [x] 2.1.1 [spec-author] Write the behavior half of `compiler/tests/string_integer_formatting_spec_test.rs` from ST-1 – ST-19; build each case with the strict host flags, assert the exact output, and support `RDC_CLC` for the later pre-change comparison; do not modify compiler or runtime code. ✅ (completed: 2026-11-11 10:15)
+- [x] 2.1.2 [spec-author] Add ST-20 – ST-24 to the same suite: the 2,000-iteration checksum, the `--wrap=snprintf` counter stub, and the ASan/UBSan cases with their `RDC_ASAN`/`RDC_UBSAN` markers and scratch-directory cleanup. ✅ (completed: 2026-11-11 10:15)
+- [x] 2.1.3 Run the suite against the pre-change compiler (the plan commit) and record the exact command, compiler identity, and every failure in `05-findings.md` §3; ST-21 must report a nonzero count. ✅ (completed: 2026-11-11 10:15)
+- [x] 2.1.4 Record the intentional no-change oracle: ST-1 – ST-20 and ST-22 – ST-24 pass on the base; explain why in `05-findings.md` §3. Do not weaken a failing red case; confirm `make asan` and `make ubsan` discovery includes the new suite (the markers are present). ✅ (completed: 2026-11-11 10:15)
 
 **Deliverables**:
 - Both suites exist and build.
@@ -112,11 +112,11 @@ before changing a shim.
 **Objective**: implement the shared decimal writer and the two converter
 bodies in both `String` shims.
 
-- [ ] 3.1.1 Add the `INT_MAX`/`UINT_MAX` width guard, `cl_format_u32`, and `cl_format_i32` to `compiler/runtime/shim_host.c`, and replace `cl_text_i32`/`cl_text_u32` with the direct-write bodies that set `len`/`cap` and the NUL; keep the doc comments factual about the maximum width and the `INT_MIN` magnitude.
-- [ ] 3.1.2 Apply the same guard, helper, and bodies to `compiler/runtime/shim_hosted_amiga.c` with `LONG`/`ULONG` parameters; keep the freestanding shim untouched.
-- [ ] 3.1.3 Run the new spec suite; it must pass (green). If a behavior case fails, fix the shim, never the expectation.
-- [ ] 3.1.4 Write `compiler/tests/string_integer_formatting_impl_test.rs` after the implementation: host emission contains `cl_format_i32`/`cl_format_u32` and no integer `snprintf(buffer` in the converter bodies; the float converter still calls `snprintf`; the Amiga emission has the same helpers; a literal-only template still emits `cl_str(...)`; two emissions are byte-identical.
-- [ ] 3.1.5 Run the implementation suite green and update `05-findings.md` §3 with the result and the exact head commit.
+- [x] 3.1.1 Add the `INT_MAX`/`UINT_MAX` width guard, `cl_format_u32`, and `cl_format_i32` to `compiler/runtime/shim_host.c`, and replace `cl_text_i32`/`cl_text_u32` with the direct-write bodies that set `len`/`cap` and the NUL; keep the doc comments factual about the maximum width and the `INT_MIN` magnitude. ✅ (completed: 2026-11-11 10:35)
+- [x] 3.1.2 Apply the same guard, helper, and bodies to `compiler/runtime/shim_hosted_amiga.c` with `LONG`/`ULONG` parameters; keep the freestanding shim untouched. ✅ (completed: 2026-11-11 10:35)
+- [x] 3.1.3 Run the new spec suite; it must pass (green). If a behavior case fails, fix the shim, never the expectation. ✅ (completed: 2026-11-11 10:36)
+- [x] 3.1.4 Write `compiler/tests/string_integer_formatting_impl_test.rs` after the implementation: host emission contains `cl_format_i32`/`cl_format_u32` and no integer `snprintf(buffer` in the converter bodies; the float converter still calls `snprintf`; the Amiga emission has the same helpers; a literal-only template still emits `cl_str(...)`; two emissions are byte-identical. ✅ (completed: 2026-11-11 10:38)
+- [x] 3.1.5 Run the implementation suite green and update `05-findings.md` §3 with the result and the exact head commit. ✅ (completed: 2026-11-11 10:42)
 
 **Deliverables**:
 - Both shims compile warning-free.

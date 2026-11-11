@@ -53,9 +53,29 @@ probe.
 
 | Case | Base result | Head result | Note |
 |---|---|---|---|
-| ST-21 (`snprintf` count) | pending | pending | the red case |
-| ST-1 – ST-20, ST-22 – ST-24 | pending | pending | intentional no-change oracle |
-| Impl pins (written after the implementation) | pending | pending | attributability check on the base |
+| ST-21 (`snprintf` count) | `hex=0x4` — failed as expected | `hex=0x0` — passed | the red case; zero formatter calls |
+| ST-1 – ST-20, ST-22 – ST-24 | 8 tests passed | 8 tests passed | intentional no-change oracle |
+| Impl pins (written after the implementation) | pending | 5 tests passed | attributability check on the base |
+
+Green commands: `cargo test -p clc --test
+string_integer_formatting_spec_test --test
+string_integer_formatting_impl_test -- --test-threads=1` (9 + 5 passed) and
+`cargo test --workspace` (all suites, including the new ones).
+
+Two existing implementation suites search the whole translation unit for the
+spellings `do {` and `} else {` to pin a program-body shape. The decimal
+writer avoids both spellings (the digit loop is a `while` with an
+unconditional first pass, and the sign branch has no `else`), so those suites
+keep their intended scope without a test change. No existing test was
+modified.
+
+Red command: `cargo test -p clc --test
+string_integer_formatting_spec_test -- --test-threads=1` against the
+compiler built from `828453a`; the suite reported 8 passed, 1 failed, with
+`left: "hex=0x4"` against `right: "hex=0x0"`.
+
+`make asan`/`make ubsan` discovery: both markers are present in the suite
+(`grep -l RDC_ASAN compiler/tests/*.rs` and `RDC_UBSAN` include it).
 
 ## 4. Final Base/Head Measurement
 

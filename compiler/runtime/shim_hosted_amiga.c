@@ -964,26 +964,73 @@ void *cl_string_concat(const ClStrPart *parts, ULONG count)
     return string;
 }
 
+/* The decimal writer assumes the modeled 32-bit `int`; a target with a wider
+ * or narrower int must fail the build instead of silently truncating text. */
+#if INT_MAX != 2147483647 || UINT_MAX != 4294967295u
+#error "the decimal formatter assumes a 32-bit int and unsigned int"
+#endif
+
+/* Write `value` as unsigned decimal digits at `dst` and return the count.
+ *
+ * The digits are produced least-significant first, then copied into reading
+ * order. The buffer holds the ten digits of `UINT_MAX`. */
+static ULONG cl_format_u32(unsigned char *dst, unsigned int value)
+{
+    unsigned char digits[10];
+    ULONG count = 0;
+    /* `count == 0` makes the first pass unconditional, so zero prints "0". */
+    while (value != 0 || count == 0) {
+        digits[count++] = (unsigned char)('0' + (value % 10u));
+        value /= 10u;
+    }
+    ULONG index;
+    for (index = 0; index < count; index++) {
+        dst[index] = digits[count - 1 - index];
+    }
+    return count;
+}
+
+/* Write a signed decimal at `dst` and return the count.
+ *
+ * `0u - (unsigned int)value` produces the magnitude of `INT_MIN` without
+ * signed overflow; negating in signed arithmetic would be undefined. */
+static ULONG cl_format_i32(unsigned char *dst, int value)
+{
+    ULONG written = 0;
+    unsigned int magnitude = (unsigned int)value;
+    if (value < 0) {
+        dst[written++] = '-';
+        magnitude = 0u - magnitude;
+    }
+    return written + cl_format_u32(dst + written, magnitude);
+}
+
 /* The text converters build the same String layout the templates desugar to,
- * so a template and an explicit `text` call format a value identically. */
+ * so a template and an explicit `text` call format a value identically.
+ *
+ * The integer converters allocate the maximum decimal width and write the
+ * digits in place: `len` and `cap` are then set to the written count, so the
+ * block's logical capacity is exact and the trailing NUL closes the payload. */
 void *cl_text_i32(LONG value)
 {
-    char buffer[24];
-    int written = snprintf(buffer, sizeof buffer, "%ld", (long)value);
-    if (written < 0) {
-        cl_trap("E1", "text formatting failed");
-    }
-    return cl_string_from(buffer, (ULONG)written);
+    cl_string_block *string = (cl_string_block *)cl_string_new(11);
+    unsigned char *dst = cl_string_bytes(string);
+    ULONG written = (ULONG)cl_format_i32(dst, (int)value);
+    string->len = written;
+    string->cap = written;
+    dst[written] = '\0';
+    return string;
 }
 
 void *cl_text_u32(ULONG value)
 {
-    char buffer[24];
-    int written = snprintf(buffer, sizeof buffer, "%lu", (unsigned long)value);
-    if (written < 0) {
-        cl_trap("E1", "text formatting failed");
-    }
-    return cl_string_from(buffer, (ULONG)written);
+    cl_string_block *string = (cl_string_block *)cl_string_new(10);
+    unsigned char *dst = cl_string_bytes(string);
+    ULONG written = (ULONG)cl_format_u32(dst, (unsigned int)value);
+    string->len = written;
+    string->cap = written;
+    dst[written] = '\0';
+    return string;
 }
 
 /* Six significant digits: `%g` is the C default-precision spelling of that. */
