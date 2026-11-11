@@ -40,7 +40,7 @@ reported 9 passed, 4 failed: allocint 3, allocstring 2, allocstr 2,
 allocbool 2 (all expected 1). The float, literal-only, and explicit-text
 deltas already match.
 
-Green commands: `cargo test -p clc --test
+Head commit: `ef03479`. Green commands: `cargo test -p clc --test
 template_direct_formatting_spec_test --test
 template_direct_formatting_impl_test -- --test-threads=1` (13 + 5 passed), the
 existing `string_integer_formatting` suites (9 + 5), and
