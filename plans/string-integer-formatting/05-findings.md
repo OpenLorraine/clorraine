@@ -55,7 +55,7 @@ probe.
 |---|---|---|---|
 | ST-21 (`snprintf` count) | `hex=0x4` — failed as expected | `hex=0x0` — passed | the red case; zero formatter calls |
 | ST-1 – ST-20, ST-22 – ST-24 | 8 tests passed | 8 tests passed | intentional no-change oracle |
-| Impl pins (written after the implementation) | pending | 5 tests passed | attributability check on the base |
+| Impl pins (written after the implementation) | 2 passed, 3 failed | 5 tests passed | the three new-helper pins fail on the base; the literal-only and determinism pins pass |
 
 Green commands: `cargo test -p clc --test
 string_integer_formatting_spec_test --test
@@ -87,26 +87,52 @@ make bench
 make bench-compare
 ```
 
+Head `be2f9d7` (`dirty=false`), base `8f07e40` (`dirty=false`).
+
 | Benchmark | Base instructions | Head | Delta | Base `.text` | Head | Delta | Output |
 |---|---:|---:|---:|---:|---:|---:|---|
-| sieve | pending | pending | pending | pending | pending | pending | pending |
-| matrix | pending | pending | pending | pending | pending | pending | pending |
-| strings | pending | pending | pending | pending | pending | pending | pending |
-| moves | pending | pending | pending | pending | pending | pending | pending |
-| lookup | pending | pending | pending | pending | pending | pending | pending |
+| sieve | 1,040,581 | 1,040,152 | −0.04% | 23,832 | 23,720 | −0.5% | equal |
+| matrix | 9,908 | 9,431 | −4.8% | 23,608 | 23,496 | −0.5% | equal |
+| strings | 2,964,051 | 1,489,187 | **−49.8%** | 24,196 | 24,020 | −0.7% | equal |
+| moves | 45,205 | 44,680 | −1.2% | 23,632 | 23,520 | −0.5% | equal |
+| lookup | 9,470 | 8,849 | −6.6% | 39,904 | 39,792 | −0.3% | equal |
 
-Allocation count on `strings`: pending.
+`make bench-compare`: passed, every output hash equal, every metric within the
+1% guard. Emitted C bytes are +0.6% on every benchmark (advisory): the new
+shim body is slightly longer than the two removed `snprintf` call sites, while
+`.text` shrinks because the formatter no longer pulls in more of the library.
+
+Allocation count on `strings`: **6,003** (unchanged), split as 3 per iteration
+(two converter blocks + one builder block) and 3 outside the loop. The final
+host counter build printed `AUDIT alloc=6003 free=6003` and
+`strings: 0x3F9A6`.
+
+The final `strings` count is 24,519 instructions above the pre-plan probe
+(1,489,187 vs 1,464,668). The difference is the clearer loop shape: the digit
+pass uses `while (value != 0 || count == 0)` and the sign branch initializes
+the magnitude before the test. The measured win remains far above the 30%
+floor.
 
 ## 5. Sanitizers and Cross-Profile
 
 | Leg | Result |
 |---|---|
-| New suite, plain `cargo test` | pending |
-| New suite under `make asan` | pending |
-| New suite under `make ubsan` | pending |
-| `make bench-shape` (GCC, vbcc, freestanding) | pending |
-| `make check` | pending |
-| `make verify` | pending |
+| New suites, plain `cargo test` | spec 9/9, impl 5/5 |
+| `cargo test --workspace` | passed |
+| New suite under `make asan` | passed; the run discovered 31 suites including this one |
+| New suite under `make ubsan` | passed; the run discovered 5 suites including this one |
+| `make bench-shape` (GCC, vbcc, freestanding, nix13) | passed, all legs warning-free |
+| Target boundary program under `vamos` | equal to the host output |
+| Emitted-C diff base vs head | one hunk at line 966; only the two converter bodies changed |
+| Base-compiler attribution | spec 8 passed / ST-21 failed `hex=0x4`; impl 2 passed / 3 new-helper pins failed |
+| `make check` | pending (Phase 5) |
+| `make verify` | pending (Phase 5) |
+
+The emitted-C diff proves the program, template calls, and every other shim
+section are byte-identical. The target boundary program covered `INT_MIN`,
+`INT_MAX`, `UINT_MAX`, `0`, adjacent placeholders, `usize` max, and
+`toDecimal`/`toHex`; its `hosted-amiga` output under `vamos` matched the host
+output exactly.
 
 ## 6. Review Outcomes
 

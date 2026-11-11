@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 10:42
-> **Progress**: 14/30 tasks (47%)
+> **Last Updated**: 2026-11-11 11:11
+> **Progress**: 23/30 tasks (77%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -139,13 +139,13 @@ bodies in both `String` shims.
 **Reference**: R5, R6, AR-12, AR-13, AR-14 · `05-findings.md` §4–§5
 **Objective**: prove the win, the no-regression guard, and the safety legs.
 
-- [ ] 4.1.1 Run `make bench` and `make bench-compare`; record the full base/head table, output equality, and the `strings` delta in `05-findings.md` §4. The change is rejected if `strings` misses −30% or any scored metric exceeds the 1% guard.
-- [ ] 4.1.2 Re-run the allocation-count probe on the head and record 6,003 (or the measured value) and the per-iteration split in `05-findings.md` §4 and §7.
-- [ ] 4.1.3 Run `make asan` and `make ubsan`; confirm the new suite runs in both legs and record the results in `05-findings.md` §5.
-- [ ] 4.1.4 Run `make bench-shape`; confirm the host, hosted-amiga, hosted-amiga-13, vbcc, and freestanding legs are clean; record in `05-findings.md` §5.
-- [ ] 4.1.5 Record the emitted-C diff evidence: the host and Amiga emissions differ only in the shim converter bodies, no template call or program-body line changed; record the exact files and line ranges.
-- [ ] 4.1.6 Build a boundary program (`INT_MIN`, `INT_MAX`, `UINT_MAX`, `0`, adjacent placeholders) for `hosted-amiga`, run it under `vamos`, and compare its output with the host build; record the result, so the target-side boundary path is exercised rather than only compiled.
-- [ ] 4.1.7 Run the spec suite against the recorded pre-change compiler one more time; confirm ST-21 still reports a nonzero count and the no-change cases still pass. Run the impl suite there too and record that it fails only on the new-helper pins (attributability evidence, not a red-phase requirement).
+- [x] 4.1.1 Run `make bench` and `make bench-compare`; record the full base/head table, output equality, and the `strings` delta in `05-findings.md` §4. The change is rejected if `strings` misses −30% or any scored metric exceeds the 1% guard. ✅ (completed: 2026-11-11 10:50)
+- [x] 4.1.2 Re-run the allocation-count probe on the head and record 6,003 (or the measured value) and the per-iteration split in `05-findings.md` §4 and §7. ✅ (completed: 2026-11-11 10:52)
+- [x] 4.1.3 Run `make asan` and `make ubsan`; confirm the new suite runs in both legs and record the results in `05-findings.md` §5. ✅ (completed: 2026-11-11 11:05)
+- [x] 4.1.4 Run `make bench-shape`; confirm the host, hosted-amiga, hosted-amiga-13, vbcc, and freestanding legs are clean; record in `05-findings.md` §5. ✅ (completed: 2026-11-11 11:07)
+- [x] 4.1.5 Record the emitted-C diff evidence: the host and Amiga emissions differ only in the shim converter bodies, no template call or program-body line changed; record the exact files and line ranges. ✅ (completed: 2026-11-11 11:09)
+- [x] 4.1.6 Build a boundary program (`INT_MIN`, `INT_MAX`, `UINT_MAX`, `0`, adjacent placeholders) for `hosted-amiga`, run it under `vamos`, and compare its output with the host build; record the result, so the target-side boundary path is exercised rather than only compiled. ✅ (completed: 2026-11-11 11:10)
+- [x] 4.1.7 Run the spec suite against the recorded pre-change compiler one more time; confirm ST-21 still reports a nonzero count and the no-change cases still pass. Run the impl suite there too and record that it fails only on the new-helper pins (attributability evidence, not a red-phase requirement). ✅ (completed: 2026-11-11 11:11)
 
 **Deliverables**:
 - The final benchmark table with output hashes.
