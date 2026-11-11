@@ -6,7 +6,7 @@
 > session's `--auto-design` authorization)
 > **Root invocation ID**: `template-direct-2026-11-11`
 > **Policy version**: 1
-> **Status**: ✅ GATE PASSED — all 12 items resolved
+> **Status**: ✅ GATE PASSED — all 13 items resolved
 > **Last Updated**: 2026-11-11 12:00
 
 Auto-design active — eligible technical decisions are delegated and recorded.
@@ -73,11 +73,13 @@ component, and the explicit next step is to implement #25 under the full gate.
 - **Status**: ✅ Resolved
 - **Authority**: AI — delegated by --auto-design
 - **Eligibility**: lowering mechanism for existing formattable types.
-- **Decision**: `i8/i16/i32/isize` → kind 0; `u8/u16/u32/usize` → kind 1;
-  `str`/`static str` → a borrowed byte part; `String` → a borrowed byte part
-  through `cl_str_part_string` (no copy); `bool` → `cl_str_part_bool`
-  (static "true"/"false" bytes); `f32/f64` → `cl_str_part_f64` (the existing
-  `%g` converter, owned and freed by the builder). The fallback for any other
+- **Decision**: `i8/i16/i32/isize` → kind 2; `u8/u16/u32/usize` → kind 3;
+  `str`/`static str` → an owned copy built at part construction
+  (`cl_str_part_owned(cl_text_str(...))`), so a sibling placeholder cannot
+  release the bytes before the builder reads them; `String` → the same owned
+  copy through `cl_string_copy`; `bool` → `cl_str_part_bool` (static
+  "true"/"false" bytes); `f32/f64` → `cl_str_part_f64` (the existing `%g`
+  converter, owned and freed by the builder). The fallback for any other
   handled type keeps `cl_str_part_owned(cl_text_...)`.
 - **Evidence**: the spec's formattable set is exactly these types
   (`spec/04-expressions.md` §12); the existing `text_call` already normalizes
@@ -85,9 +87,9 @@ component, and the explicit next step is to implement #25 under the full gate.
 - **Rejected alternatives**: hand-formatting floats into the destination
   (would change the `%g` contract); copying a `String` placeholder (the
   allocation this feature removes).
-- **Strongest counterargument**: borrowing a `String` placeholder changes the
-  old copy; the source is still alive through the full expression and the
-  result is independent because the builder copies the bytes.
+- **Strongest counterargument**: copying keeps the old two allocations for
+  String/str templates. The borrow was measured unsafe when a sibling can
+  release the source (AR-13); the integer and bool win is unaffected.
 - **Confidence**: High.
 - **Hardening**: ownership and lifetime probes; the existing owned-placeholder
   test.
@@ -99,11 +101,14 @@ component, and the explicit next step is to implement #25 under the full gate.
 - **Status**: ✅ Resolved
 - **Authority**: AI — delegated by --auto-design
 - **Eligibility**: performance mechanism.
-- **Decision**: a template with no float placeholder makes exactly one
-  allocation (the result). A template with a float placeholder makes two (the
-  `%g` temporary plus the result); the temporary is freed by the builder.
-- **Evidence**: the probe's `strings` count is 2,002 total allocations
-  (2,000 results + 2 outside the loop), down from 6,003.
+- **Decision**: a template with integer and bool placeholders makes exactly
+  one allocation (the result). A String or str placeholder copies at part
+  construction, so it makes two (the copy plus the result). A float
+  placeholder makes two (the `%g` temporary plus the result); the builder
+  frees the owned piece.
+- **Evidence**: the final `strings` count is 2,003 total allocations
+  (2,000 results + three outside the loop, including the String copy for
+  `toHex`), down from 6,003. The probe's 2,002 assumed the unsafe borrow.
 - **Rejected alternatives**: pooling the float temporary (unsafe if the result
   escapes); hand-formatting floats (contract risk).
 - **Strongest counterargument**: float templates keep an extra allocation;
@@ -232,3 +237,37 @@ component, and the explicit next step is to implement #25 under the full gate.
   `cl_str_part_f64`, `CL_STR_KIND_I32`, `CL_STR_KIND_U32`.
 - **Evidence**: the repo's `<feature>_spec_test.rs` convention.
 - **Confidence**: High.
+
+### AR-13 (runtime) — String/str borrow is unsafe; zero view collides with the scalar kind
+
+- **Status**: ✅ Resolved
+- **Authority**: AI — delegated by --auto-design (correctness fix inside the
+  accepted allocation scope; no language-rule change).
+- **Trigger**: the emission-integrity review found a new heap-use-after-free:
+  a borrowed `String`/`str` part kept a pointer while a sibling placeholder
+  released the source through a `borrow String?` out-slot, and the builder
+  read the freed bytes. The same review found a zero/NULL `str` view
+  (`ptr == NULL, len == 0`) was read as scalar kind 0 and printed `"0"`.
+- **Decision**: copy `String`/`str` placeholders when the part is built
+  (`cl_str_part_owned(cl_string_copy(...))` and
+  `cl_str_part_owned(cl_text_str(...))`), restoring the previous
+  evaluation-order safety. Change the scalar kind codes to 2/3 and treat
+  `ptr == NULL && len >= 2` as scalar; a `ptr == NULL, len == 0` piece is the
+  empty byte piece. Add a null-view behavior case and an ASan alias regression.
+- **Evidence**: the alias repro `$"{s}{reset(s)}"` printed `abcdef1` on both
+  base and fixed head under ASan; the broken head printed `z\0…` and reported
+  a heap-use-after-free. The null-view repro `let v: str? = null; $"[{v}]"`
+  prints `[]` on the fixed head; the broken head printed `[0]`.
+- **Rejected alternatives**: a borrow-checker language change (outside the
+  issue and the plan); a sentinel non-NULL pointer for empty views (more
+  machinery than the non-colliding kind codes); keeping the borrow and
+  declaring the UAF acceptable (not acceptable).
+- **Strongest counterargument**: the `String`/`str` copy keeps two
+  allocations for those templates, so the plan no longer removes every
+  temporary. The integer and bool allocation win — the measured `strings`
+  hot path — remains; the `strings` count is 2,003 instead of 2,002.
+- **Confidence**: High — both repros are fixed and the ASan/UBSan probes are
+  clean.
+- **Hardening**: the fix diff is re-reviewed by the three reviewers.
+- **Reopen triggers**: a borrow-checker change later makes the borrow sound,
+  or a new alias probe finds another path.

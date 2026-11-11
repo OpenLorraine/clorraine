@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 12:45
-> **Progress**: 11/26 tasks (42%)
+> **Last Updated**: 2026-11-11 13:16
+> **Progress**: 19/26 tasks (73%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes only after the final
 > gate.
@@ -82,12 +82,12 @@
 **Reference**: R5, R6, AR-08, AR-09
 **Objective**: measure the allocation and instruction win and complete the emission proof.
 
-- [ ] 4.1.1 Run `make bench` and `make bench-compare`; record the final table, outputs, allocation count, and the 1% guard in `05-findings.md` §4.
-- [ ] 4.1.2 Run the allocation-count probe on the head; confirm the two-integer template is 1 and `strings` is near 2,002; record the split.
-- [ ] 4.1.3 Run `make asan` and `make ubsan`; confirm the new suite is in both legs; record in §5.
-- [ ] 4.1.4 Run `make bench-shape`; confirm host, Amiga, nix13, vbcc, and freestanding legs are clean.
-- [ ] 4.1.5 Build a boundary program for `hosted-amiga`, run it under `vamos`, and compare it with the host output.
-- [ ] 4.1.6 Record the base/head emitted-C diff for the host and Amiga profiles; confirm only the template call and the shim builder changed.
+- [x] 4.1.1 Run `make bench` and `make bench-compare`; record the final table, outputs, allocation count, and the 1% guard in `05-findings.md` §4. ✅ (completed: 2026-11-11 12:55)
+- [x] 4.1.2 Run the allocation-count probe on the head; confirm the two-integer template is 1 and `strings` is near 2,002; record the split. ✅ (completed: 2026-11-11 12:57)
+- [x] 4.1.3 Run `make asan` and `make ubsan`; confirm the new suite is in both legs; record in §5. ✅ (completed: 2026-11-11 13:10)
+- [x] 4.1.4 Run `make bench-shape`; confirm host, Amiga, nix13, vbcc, and freestanding legs are clean. ✅ (completed: 2026-11-11 13:12)
+- [x] 4.1.5 Build a boundary program for `hosted-amiga`, run it under `vamos`, and compare it with the host output. ✅ (completed: 2026-11-11 13:14)
+- [x] 4.1.6 Record the base/head emitted-C diff for the host and Amiga profiles; confirm only the template call and the shim builder changed. ✅ (completed: 2026-11-11 13:16)
 
 **Verify**: `make bench-compare` passed; sanitizer and shape legs green.
 

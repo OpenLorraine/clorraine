@@ -15,9 +15,11 @@ Both shims replace the 12-byte `{ptr, len, owned}` part with a 12-byte union
 part:
 
 ```c
-/* Kind codes for a scalar piece: `len` holds the code and `ptr` is NULL. */
-#define CL_STR_KIND_I32 0u
-#define CL_STR_KIND_U32 1u
+/* Kind codes for a scalar piece: `len` holds the code and `ptr` is NULL.
+ * The codes start at 2 so a zero/NULL view (ptr == NULL, len == 0) is never
+ * read as a scalar. */
+#define CL_STR_KIND_I32 2u
+#define CL_STR_KIND_U32 3u
 
 typedef struct cl_str_part {
     const unsigned char *ptr;
@@ -33,10 +35,10 @@ typedef struct cl_str_part {
 | Piece | `ptr` | `len` | `value` |
 |---|---|---|---|
 | Literal | static bytes | byte count | `.owned = NULL` |
-| `str`/`static str` | view pointer | view length | `.owned = NULL` |
-| `String` | string payload | string length | `.owned = NULL` |
-| `i8`…`isize` | `NULL` | `CL_STR_KIND_I32` | `.i` |
-| `u8`…`usize` | `NULL` | `CL_STR_KIND_U32` | `.u` |
+| `str`/`static str` | copy payload | copy length | `.owned = handle` |
+| `String` | copy payload | copy length | `.owned = handle` |
+| `i8`…`isize` | `NULL` | `CL_STR_KIND_I32` (2) | `.i` |
+| `u8`…`usize` | `NULL` | `CL_STR_KIND_U32` (3) | `.u` |
 | `bool` | static `"true"`/`"false"` | 4/5 | `.owned = NULL` |
 | `f32`/`f64` | `%g` payload | byte count | `.owned = handle` |
 
@@ -55,19 +57,37 @@ static ClStrPart cl_str_part_owned(void *string)
     return part;
 }
 
-static ClStrPart cl_str_part_string(void *string)
+static ClStrPart cl_str_part_bytes(const unsigned char *ptr, unsigned int len)
 {
     ClStrPart part;
-    part.ptr = (const unsigned char *)cl_string_ptr(string);
-    part.len = cl_string_len(string);
+    part.ptr = ptr;
+    part.len = len;
     part.value.owned = NULL;
+    return part;
+}
+
+static ClStrPart cl_str_part_i32(int value)
+{
+    ClStrPart part;
+    part.ptr = NULL;
+    part.len = CL_STR_KIND_I32;
+    part.value.i = value;
+    return part;
+}
+
+static ClStrPart cl_str_part_u32(unsigned int value)
+{
+    ClStrPart part;
+    part.ptr = NULL;
+    part.len = CL_STR_KIND_U32;
+    part.value.u = value;
     return part;
 }
 
 static ClStrPart cl_str_part_bool(int value)
 {
-    static const unsigned char truth[4] = "true";
-    static const unsigned char falsehood[5] = "false";
+    static const unsigned char truth[5] = "true";
+    static const unsigned char falsehood[6] = "false";
     ClStrPart part;
     part.ptr = value ? truth : falsehood;
     part.len = value ? 4u : 5u;
@@ -83,8 +103,10 @@ static ClStrPart cl_str_part_f64(double value)
 }
 ```
 
-`cl_str_part_string` borrows; the result builder copies the bytes before the
-full expression ends, so the source stays valid (AR-03). `cl_str_part_f64`
+`str` and `String` placeholders are copied at part construction
+(`cl_str_part_owned(cl_text_str(...))` / `cl_str_part_owned(cl_string_copy(...))`),
+so a sibling placeholder cannot release the source before the builder reads it
+(AR-03, AR-13). `cl_str_part_f64`
 keeps the documented `%g` text and its one temporary (AR-04).
 
 ## Builder
@@ -99,7 +121,7 @@ void *cl_string_concat(const ClStrPart *parts, unsigned int count)
     unsigned int total = 0;
     for (index = 0; index < count; index++) {
         unsigned int extra = parts[index].len;
-        if (parts[index].ptr == NULL) {
+        if (parts[index].ptr == NULL && parts[index].len >= CL_STR_KIND_I32) {
             extra = parts[index].len == CL_STR_KIND_I32 ? 11u : 10u;
         }
         unsigned int next = total + extra;
@@ -113,7 +135,7 @@ void *cl_string_concat(const ClStrPart *parts, unsigned int count)
     unsigned int len = 0;
     for (index = 0; index < count; index++) {
         const ClStrPart *part = &parts[index];
-        if (part->ptr == NULL) {
+        if (part->ptr == NULL && part->len >= CL_STR_KIND_I32) {
             if (part->len == CL_STR_KIND_I32) {
                 len += cl_format_i32(dst + len, part->value.i);
                 continue;
@@ -151,27 +173,20 @@ body.
 
 ```c
 s = cl_string_concat((ClStrPart[]){
-    { (const u8 *)"token-", 6u, { .owned = NULL } },
-    { NULL, CL_STR_KIND_U32, { .u = (unsigned int)((u32)(i)) } },
-    { (const u8 *)"-", 1u, { .owned = NULL } },
-    { NULL, CL_STR_KIND_U32, { .u = (unsigned int)((u32)((i * (u32)(3)))) } }
+    cl_str_part_bytes((const u8 *)"token-", 6u),
+    cl_str_part_u32((u32)(i)),
+    cl_str_part_bytes((const u8 *)"-", 1u),
+    cl_str_part_u32((u32)((i * (u32)(3))))
 }, 4u);
 ```
 
-A `String` placeholder:
-
-```c
-cl_str_part_string(s)
-```
-
-A `str` placeholder:
-
-```c
-{ (const u8 *)(v).ptr, (unsigned int)(v).len, { .owned = NULL } }
-```
-
+A `String` placeholder: `cl_str_part_owned(cl_string_copy(s))`.
+A `str` placeholder: `cl_str_part_owned(cl_text_str((v).ptr, (v).len))`.
 A bool placeholder: `cl_str_part_bool((int)(b))`.
 A float placeholder: `cl_str_part_f64((double)(f))`.
+
+No program-body designated initializer is emitted; the union and kind are set
+by the shim helpers (AR-13, RV-002).
 A literal-only template stays `cl_str("...")` with no builder call.
 
 ## Codegen Change
@@ -181,13 +196,14 @@ no-placeholder path. For placeholders it matches the substituted type:
 
 | Type | Emitted part |
 |---|---|
-| `Str`, `StaticStr` | direct borrowed byte part |
-| `Handle("String")` | `cl_str_part_string(<value>)` |
-| scalar i8/i16/i32/isize | `{ NULL, CL_STR_KIND_I32, { .i = (int)((i32)(<value>)) } }` |
-| scalar u8/u16/u32/usize | `{ NULL, CL_STR_KIND_U32, { .u = (unsigned int)((u32)(<value>)) } }` |
+| `Str`, `StaticStr` | `cl_str_part_owned(cl_text_str(...))` |
+| `Handle("String")` | `cl_str_part_owned(cl_string_copy(<value>))` |
+| scalar i8/i16/i32/isize | `cl_str_part_i32((i32)(<value>))` |
+| scalar u8/u16/u32/usize | `cl_str_part_u32((u32)(<value>))` |
 | scalar bool | `cl_str_part_bool((int)(<value>))` |
 | scalar f32/f64 | `cl_str_part_f64((double)(<value>))` |
 | any other handled type | `cl_str_part_owned(<text_call>)` |
+| literal | `cl_str_part_bytes((const u8 *)"...", Nu)` |
 
 `text_call` and the explicit `text`/`toDecimal` converters are unchanged.
 

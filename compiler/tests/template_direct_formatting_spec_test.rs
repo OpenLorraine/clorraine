@@ -233,9 +233,10 @@ func main(): i32 {
     assert_allocation_delta("allocint", source, "1");
 }
 
-/// A `String` placeholder borrows the source; only the result allocates.
+/// A `String` placeholder copies its bytes at part construction for safety;
+/// the copy and the result allocate.
 #[test]
-fn a_string_placeholder_is_borrowed() {
+fn a_string_placeholder_copies_for_safety() {
     let source = r#"module spec.tdf.allocstring;
 import { println } from std.io;
 import { stringOf } from std.text;
@@ -251,12 +252,13 @@ func main(): i32 {
     return 0;
 }
 "#;
-    assert_allocation_delta("allocstring", source, "1");
+    assert_allocation_delta("allocstring", source, "2");
 }
 
-/// A `str` placeholder borrows the view; only the result allocates.
+/// A `str` placeholder copies its view at part construction for safety;
+/// the copy and the result allocate.
 #[test]
-fn a_str_placeholder_is_borrowed() {
+fn a_str_placeholder_copies_for_safety() {
     let source = r#"module spec.tdf.allocstr;
 import { println } from std.io;
 ffi testlib { func cl_test_malloc_calls(): i32; }
@@ -271,7 +273,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    assert_allocation_delta("allocstr", source, "1");
+    assert_allocation_delta("allocstr", source, "2");
 }
 
 /// A bool placeholder is formatted into the result; only the result allocates.
@@ -469,6 +471,23 @@ func main(): i32 {
         "xy",
         "ownedloop: the source was not reusable"
     );
+}
+
+/// A null view is an empty byte piece, never the scalar zero.
+#[test]
+fn a_null_view_prints_empty() {
+    let source = r#"module spec.tdf.nullview;
+import { println } from std.io;
+func main(): i32 {
+    let s: String? = null;
+    let v: str? = s;
+    if (v == null) {
+        println($"[{v}]");
+    }
+    return 0;
+}
+"#;
+    assert_output("nullview", source, "[]\n");
 }
 
 /// The explicit converters are unchanged.

@@ -311,10 +311,10 @@ static unsigned int cl_format_i32(unsigned char *dst, int value);
 void *cl_text_f64(double value);
 
 /* Kind codes for a scalar piece: `len` holds the code and `ptr` is NULL.
- * A byte piece points at borrowed bytes; an owned byte piece (a formatted
- * float) also carries the handle the builder releases. */
-#define CL_STR_KIND_I32 0u
-#define CL_STR_KIND_U32 1u
+ * The codes start above the byte lengths a zero view can collide with, so a
+ * `ptr == NULL, len == 0` piece is the empty byte piece, not a scalar. */
+#define CL_STR_KIND_I32 2u
+#define CL_STR_KIND_U32 3u
 
 typedef struct cl_str_part {
     const unsigned char *ptr;
@@ -337,14 +337,32 @@ static inline ClStrPart cl_str_part_owned(void *string)
     return part;
 }
 
-/* Borrow a String as a template piece. The builder copies the bytes before
- * the full expression ends, so the source stays valid and is not consumed. */
-static inline ClStrPart cl_str_part_string(void *string)
+/* A borrowed byte piece. A zero-length view is valid here; the scalar kinds
+ * start at 2 so it is never read as a scalar. */
+static inline ClStrPart cl_str_part_bytes(const unsigned char *ptr, unsigned int len)
 {
     ClStrPart part;
-    part.ptr = (const unsigned char *)cl_string_ptr(string);
-    part.len = cl_string_len(string);
+    part.ptr = ptr;
+    part.len = len;
     part.value.owned = NULL;
+    return part;
+}
+
+static inline ClStrPart cl_str_part_i32(int value)
+{
+    ClStrPart part;
+    part.ptr = NULL;
+    part.len = CL_STR_KIND_I32;
+    part.value.i = value;
+    return part;
+}
+
+static inline ClStrPart cl_str_part_u32(unsigned int value)
+{
+    ClStrPart part;
+    part.ptr = NULL;
+    part.len = CL_STR_KIND_U32;
+    part.value.u = value;
     return part;
 }
 
@@ -369,17 +387,19 @@ static inline ClStrPart cl_str_part_f64(double value)
 
 /* Concatenate template pieces into one owned string.
  *
- * The first pass reserves the maximum width of every piece (11 bytes for an
- * i32, 10 for a u32, the exact length for bytes). The second pass writes the
- * digits or copies the bytes, then sets `len` and `cap` to the written count
- * so the block's logical capacity is exact and a later append still traps. */
+ * The first pass reserves the maximum width of every scalar piece (11 bytes
+ * for an i32, 10 for a u32) and the exact length of every byte piece. The
+ * second pass writes the digits or copies the bytes, then sets `len` and `cap`
+ * to the written count so a later append still traps. The bytes a `String` or
+ * `str` placeholder needs are copied at part construction, before a sibling
+ * placeholder can release the source. */
 void *cl_string_concat(const ClStrPart *parts, unsigned int count)
 {
     unsigned int index;
     unsigned int total = 0;
     for (index = 0; index < count; index++) {
         unsigned int extra = parts[index].len;
-        if (parts[index].ptr == NULL) {
+        if (parts[index].ptr == NULL && parts[index].len >= CL_STR_KIND_I32) {
             extra = parts[index].len == CL_STR_KIND_I32 ? 11u : 10u;
         }
         unsigned int next = total + extra;
@@ -393,7 +413,7 @@ void *cl_string_concat(const ClStrPart *parts, unsigned int count)
     unsigned int len = 0;
     for (index = 0; index < count; index++) {
         const ClStrPart *part = &parts[index];
-        if (part->ptr == NULL) {
+        if (part->ptr == NULL && part->len >= CL_STR_KIND_I32) {
             if (part->len == CL_STR_KIND_I32) {
                 len += cl_format_i32(dst + len, part->value.i);
                 continue;

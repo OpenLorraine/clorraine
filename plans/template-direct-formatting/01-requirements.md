@@ -34,29 +34,35 @@ builder API or allocator; the freestanding profile; versioning or a release.
 
 ### R1 — One result allocation per non-float template
 
-- A template with integer, bool, or string placeholders allocates exactly one
+- A template with integer or bool placeholders allocates exactly one
   `String` (the result).
+- A template with a `str` or `String` placeholder copies the bytes when the
+  part is built, so it allocates the copy plus the result. The copy keeps the
+  previous evaluation-order safety when a sibling placeholder releases the
+  source.
 - A template with a float placeholder may allocate the existing `%g`
   temporary plus the result; the builder frees the temporary.
-- No converter `String` is created for an integer, bool, `str`, or `String`
-  placeholder.
+- No converter `String` is created for an integer or bool placeholder.
 
 ### R2 — Output is byte-identical
 
 - Every template output is unchanged: decimal boundaries, adjacent
-  placeholders, literal text, empty `str`, `String`, bool, and float.
+  placeholders, literal text, empty `str` (including a null view, which is
+  empty), `String`, bool, and float.
 - The existing `string_integer_formatting` behavior suite and the frozen
   spec/corpus goldens stay green.
 
 ### R3 — Ownership and lifetime
 
-- A `String` placeholder is borrowed for the duration of the full expression
-  and the result copies its bytes; the source is not consumed, freed, or
-  invalidated.
+- A `String` or `str` placeholder copies its bytes when the piece is built,
+  before a sibling placeholder can release the source; the source is not
+  consumed or freed by the piece.
 - An owned temporary from a call (for example `text(7)`) remains alive until
-  the end of the statement, after the builder copies it.
+  the end of the statement; the copy is independent.
 - The builder frees every owned piece exactly once.
-- ASan with leak detection and UBSan with recovery disabled are clean.
+- ASan with leak detection and UBSan with recovery disabled are clean; the
+  `$"{s}{reset(s)}"` alias case matches the base output (`abcdef1`) under
+  ASan.
 
 ### R4 — Emission and ABI
 
@@ -98,17 +104,18 @@ builder API or allocator; the freestanding profile; versioning or a release.
 |---|---|---|---|
 | Implement #25 | Yes | The active directive says #19's allocation component is unresolved | AR-01 |
 | Part shape | 12-byte union | Measured probe; preserves the compound-literal footprint | AR-02 |
-| Scalar kinds | `len` code 0/1 | One array, no second field | AR-02 |
-| String/str | Borrow | Removes the copy and is lifetime-safe | AR-03 |
+| Scalar kinds | `len` code 2/3 | One array; a zero view has `len == 0` and is never a scalar | AR-02, AR-13 |
+| String/str | Copy at part construction | The borrow was not safe against a sibling release | AR-03, AR-13 |
 | Float | Existing `%g` temp | Preserves the documented output | AR-03, AR-04 |
 | Capacity | Max reserve, exact logical cap | One pass, append behavior preserved | AR-05 |
 
 ## Acceptance Criteria
 
 1. [ ] A two-integer-placeholder template makes one allocation; the red probe
-       on the base makes three.
+       on the base makes three. A String/str template makes two on both, and a
+       null view prints empty.
 2. [ ] Every `07-testing-strategy.md` case passes.
-3. [ ] `strings` allocations are near 2,002 and net instructions are below
+3. [ ] `strings` allocations are near 2,003 and net instructions are below
        1,489,187; every other benchmark is inside the 1% guard and every
        output hash is equal.
 4. [ ] ASan and UBSan are clean.

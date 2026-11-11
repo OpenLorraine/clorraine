@@ -116,12 +116,18 @@ func main(): i32 {
 fn the_host_template_uses_typed_parts() {
     let emitted = emit("host-parts", "host", MIXED, "host.c");
     let line = template_line("host-parts", &emitted);
-    assert_contains("host-parts", line, "NULL, CL_STR_KIND_I32");
-    assert_contains("host-parts", line, "NULL, CL_STR_KIND_U32");
-    assert_contains("host-parts", line, "cl_str_part_string(");
+    assert_contains("host-parts", line, "cl_str_part_i32(");
+    assert_contains("host-parts", line, "cl_str_part_u32(");
+    assert_contains("host-parts", line, "cl_str_part_owned(cl_string_copy(");
+    assert_contains("host-parts", line, "cl_str_part_owned(cl_text_str(");
+    assert_contains("host-parts", line, "cl_str_part_bytes(");
     assert_contains("host-parts", line, "cl_str_part_bool(");
     assert_contains("host-parts", line, "cl_str_part_f64(");
-    assert_contains("host-parts", &emitted, "#define CL_STR_KIND_I32 0u");
+    assert_contains("host-parts", &emitted, "#define CL_STR_KIND_I32 2u");
+    assert!(
+        !line.contains(".owned =") && !line.contains(".i =") && !line.contains(".u ="),
+        "host-parts: the program body must not use designated initializers"
+    );
 }
 
 /// The integer placeholders no longer call the converters; the explicit path
@@ -137,14 +143,6 @@ fn the_integer_placeholders_do_not_call_the_converters() {
     assert!(
         !line.contains("cl_text_u32("),
         "no-converter: a u32 placeholder still calls the converter"
-    );
-    assert!(
-        !line.contains("cl_text_str("),
-        "no-converter: a str placeholder still copies through the converter"
-    );
-    assert!(
-        !line.contains("cl_string_copy("),
-        "no-converter: a String placeholder still copies"
     );
 
     let explicit = r#"module spec.tdfi.explicit;
@@ -164,10 +162,10 @@ func main(): i32 {
 fn the_amiga_template_uses_typed_parts() {
     let emitted = emit("amiga-parts", "hosted-amiga", MIXED, "amiga.c");
     let line = template_line("amiga-parts", &emitted);
-    assert_contains("amiga-parts", line, "NULL, CL_STR_KIND_I32");
-    assert_contains("amiga-parts", line, "NULL, CL_STR_KIND_U32");
-    assert_contains("amiga-parts", line, "cl_str_part_string(");
-    assert_contains("amiga-parts", &emitted, "#define CL_STR_KIND_I32 0u");
+    assert_contains("amiga-parts", line, "cl_str_part_i32(");
+    assert_contains("amiga-parts", line, "cl_str_part_u32(");
+    assert_contains("amiga-parts", line, "cl_str_part_owned(cl_string_copy(");
+    assert_contains("amiga-parts", &emitted, "#define CL_STR_KIND_I32 2u");
 }
 
 /// A literal-only template is still a plain view with no builder call.

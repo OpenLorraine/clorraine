@@ -1611,10 +1611,12 @@ impl<'a> Emitter<'a> {
     /// allocates nothing. A template with a placeholder is an owned `String`.
     /// Integer placeholders become scalar pieces that the shim formats
     /// directly into the result, so they allocate no temporary `String`; a
-    /// `str` or `String` placeholder borrows its bytes for the full
-    /// expression, and a `bool` piece points at static text. A `float` keeps
-    /// the documented `%g` conversion and its one temporary. Any other
-    /// formattable type falls back to the explicit converter.
+    /// `bool` piece points at static text. A `str` or `String` placeholder is
+    /// copied when the piece is built, before a sibling placeholder can
+    /// release its source, which keeps the evaluation-order safety of the
+    /// previous lowering. A `float` keeps the documented `%g` conversion and
+    /// its one temporary. Any other formattable type falls back to the
+    /// explicit converter.
     fn template(&self, pieces: &[ValuePiece]) -> String {
         let has_placeholder = pieces
             .iter()
@@ -1633,7 +1635,7 @@ impl<'a> Emitter<'a> {
             match piece {
                 ValuePiece::Literal(text) if text.is_empty() => {}
                 ValuePiece::Literal(text) => parts.push(format!(
-                    "{{ (const u8 *){}, {}u, {{ .owned = NULL }} }}",
+                    "cl_str_part_bytes((const u8 *){}, {}u)",
                     escape_c_string(text.as_bytes()),
                     text.len()
                 )),
@@ -1642,24 +1644,24 @@ impl<'a> Emitter<'a> {
                     let value = self.value(inner);
                     let part = match &ty.kind {
                         TyKind::Str | TyKind::StaticStr => format!(
-                            "{{ (const u8 *)({value}).ptr, (unsigned int)({value}).len, {{ .owned = NULL }} }}"
+                            "cl_str_part_owned(cl_text_str(({value}).ptr, ({value}).len))"
                         ),
                         TyKind::Handle(name) if name == "String" => {
-                            format!("cl_str_part_string({value})")
+                            format!("cl_str_part_owned(cl_string_copy({value}))")
                         }
                         TyKind::Scalar(scalar) => match scalar {
                             ScalarType::I8
                             | ScalarType::I16
                             | ScalarType::I32
-                            | ScalarType::Isize => format!(
-                                "{{ NULL, CL_STR_KIND_I32, {{ .i = (int)((i32)({value})) }} }}"
-                            ),
+                            | ScalarType::Isize => {
+                                format!("cl_str_part_i32((i32)({value}))")
+                            }
                             ScalarType::U8
                             | ScalarType::U16
                             | ScalarType::U32
-                            | ScalarType::Usize => format!(
-                                "{{ NULL, CL_STR_KIND_U32, {{ .u = (unsigned int)((u32)({value})) }} }}"
-                            ),
+                            | ScalarType::Usize => {
+                                format!("cl_str_part_u32((u32)({value}))")
+                            }
                             ScalarType::Bool => format!("cl_str_part_bool((int)({value}))"),
                             ScalarType::F32 | ScalarType::F64 => {
                                 format!("cl_str_part_f64((double)({value}))")
