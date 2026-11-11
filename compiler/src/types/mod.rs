@@ -1054,18 +1054,35 @@ pub fn scalar_cast_allowed(from: &Ty, to: &Ty) -> bool {
 /// through [`unify_numeric`], exactly as the declaration accepts it.
 pub fn conditional_result(then_ty: &Ty, else_ty: &Ty) -> Option<Ty> {
     if then_ty.kind == else_ty.kind {
-        return Some(then_ty.clone());
+        return Some(settle_conditional(then_ty, else_ty, then_ty.clone()));
     }
     if let Some(unified) = unify_numeric(then_ty, else_ty) {
-        return Some(unified);
+        return Some(settle_conditional(then_ty, else_ty, unified));
     }
     if implicit_conversion(else_ty, then_ty) {
-        return Some(then_ty.clone());
+        return Some(settle_conditional(then_ty, else_ty, then_ty.clone()));
     }
     if implicit_conversion(then_ty, else_ty) {
-        return Some(else_ty.clone());
+        return Some(settle_conditional(then_ty, else_ty, else_ty.clone()));
     }
     None
+}
+
+/// Carries the nullable flag of a non-null-shaped arm into a settled result.
+///
+/// A null-shaped arm sets the flag only when the settled result is a handle
+/// or `Box`: such a result has the concrete nullable type `T?`, and the
+/// ordinary possible-null rule then judges the use. With a
+/// view/raw/cstring/slice result the null is the empty state and the result
+/// stays non-nullable. A scalar is left to the existing null-arm rule.
+fn settle_conditional(then_ty: &Ty, else_ty: &Ty, mut result: Ty) -> Ty {
+    let null_arm = is_null_shaped(then_ty) || is_null_shaped(else_ty);
+    let then_nullable = then_ty.nullable && !is_null_shaped(then_ty);
+    let else_nullable = else_ty.nullable && !is_null_shaped(else_ty);
+    let handle_result = matches!(result.kind, TyKind::Handle(_) | TyKind::Box(_));
+    result.nullable =
+        result.nullable || then_nullable || else_nullable || (null_arm && handle_result);
+    result
 }
 
 /// True when a conditional's null arm must report at its context.

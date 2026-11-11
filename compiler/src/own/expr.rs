@@ -1268,6 +1268,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The check covers projected places too, so a nullable struct field is
     /// reported unless that exact field path was narrowed.
     pub(super) fn check_nonnull_expr(&mut self, expr: &Expr, span: Span) {
+        // A conditional's nullability comes from its arms. An index, `len`, or
+        // other direct operand check must judge each nullable arm, exactly as
+        // the store path does, so a flow-narrowed arm is accepted instead of
+        // reporting the whole conditional. A conditional whose static type is
+        // a bare `cstring` is empty-capable as a whole; the whole-value check
+        // below reports once instead of treating each bare arm as a separate
+        // use.
+        if let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        {
+            if self.recorded_ty(expr).is_some_and(|ty| ty.nullable) {
+                let then_ty = self.recorded_ty(then_value).unwrap_or_else(Ty::unknown);
+                let else_ty = self.recorded_ty(else_value).unwrap_or_else(Ty::unknown);
+                let then_needs = then_ty.nullable || matches!(then_ty.kind, TyKind::CString);
+                let else_needs = else_ty.nullable || matches!(else_ty.kind, TyKind::CString);
+                if then_needs || else_needs {
+                    if then_needs {
+                        self.check_nonnull_expr(then_value, then_value.span);
+                    }
+                    if else_needs {
+                        self.check_nonnull_expr(else_value, else_value.span);
+                    }
+                    return;
+                }
+            }
+        }
         if let Some((id, projections)) = self.plain_binding(expr) {
             self.check_nonnull_place(id, &projections, span);
             return;

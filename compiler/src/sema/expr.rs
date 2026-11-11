@@ -1782,8 +1782,10 @@ impl Checker<'_, '_> {
                 // nonexistent converter at the instance. The gate uses the
                 // recorded projection, so an Unknown left by an earlier
                 // concrete error (for example `n.foo` on an i32) does not add
-                // a second diagnostic. The null literal keeps its separate
-                // path and is excluded.
+                // a second diagnostic. A null-shaped placeholder has no
+                // concrete formattable type, so it reports the same E10500 at
+                // the placeholder instead of emitting `cl_text_unknown`.
+                let null_shaped = crate::types::is_null_shaped(&ty);
                 let opaque = ty.is_unknown()
                     && !ty.nullable
                     && matches!(
@@ -1796,7 +1798,14 @@ impl Checker<'_, '_> {
                         projection.span.start >= expr.span.start
                             && projection.span.end <= expr.span.end
                     });
-                if (!ty.is_unknown() && !ty.is_param() && !formattable(&ty)) || opaque {
+                if null_shaped {
+                    self.error(
+                        "E10500",
+                        "type 'null' is not formattable",
+                        "convert with `text`, `toHex`, or `toDecimal`",
+                        expr.span,
+                    );
+                } else if (!ty.is_unknown() && !ty.is_param() && !formattable(&ty)) || opaque {
                     self.error(
                         "E10500",
                         format!("type '{}' is not formattable", ty.display()),

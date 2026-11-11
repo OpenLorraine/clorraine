@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-11
-> **Progress**: 574/576 rows done; 0 active; 2 Parked
+> **Progress**: 574/577 rows done; 1 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -591,6 +591,7 @@
 | PLAN-28 | String integer formatting throughput | [01-requirements](string-integer-formatting/01-requirements.md) | [string-integer-formatting](string-integer-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 30/30; `cl_text_i32`/`cl_text_u32` write decimal digits directly into the String block in both profiles; `strings` −49.8% net instructions (2,964,051 → 1,489,187) and −0.7% `.text`, every scored output equal, no 1% regression; allocations unchanged at 6,003 (follow-up #25); ASan 31 suites, UBSan 5, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; pre-existing `text` arity defect filed as #24 |
 | PLAN-29 | Direct template formatting | [01-requirements](template-direct-formatting/01-requirements.md) | [template-direct-formatting](template-direct-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 26/26; integer/bool template placeholders use 12-byte typed parts written directly into the destination; String/str copy at part construction for evaluation-order safety; `strings` 1,489,187 → 1,221,232 net (−18.0%), `.text` 24,020 → 23,972, allocations 6,003 → 2,003; all outputs equal and every scored metric within 1%; ASan 32, UBSan 6, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; #25 and #19 closed; pre-existing template defects #26 |
 | PLAN-30 | Template placeholder integrity (#26) | [01-requirements](template-placeholder-integrity/01-requirements.md) | [template-placeholder-integrity](template-placeholder-integrity/00-index.md) | Done | ✅ | 2026-11-11 | 37/37; null placeholders E10010, opaque/non-formattable generic placeholders E10500, once-only source-order evaluation, copy before a sibling move; generic/guarded/loop/module variants; 41 spec + 15 impl cases, ASan 33 suites, UBSan 7, `bench-shape`, `bench-compare` zero deltas, `make check`, `make verify` all legs; #26 closed; residual issue #27 filed |
+| PLAN-31 | Template placeholder residuals (#27) | [01-requirements](template-placeholder-residuals/01-requirements.md) | [template-placeholder-residuals](template-placeholder-residuals/00-index.md) | Plan Preflighted | 🔬 | 2026-11-11 | #27: null literal E10500, mixed-conditional nullability, zero-state String read safety, discarded-template and for-step cleanup, owning aggregate literal order; no language surface/ABI change; full gate + 1% scored guard against `b6f12d8`; preflight passed (3 critical, 12 major, 8 minor resolved) |
 
 ## Batch N accounting (2026-10-19)
 
