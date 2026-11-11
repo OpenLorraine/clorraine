@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 12:00
-> **Progress**: 0/26 tasks (0%)
+> **Last Updated**: 2026-11-11 12:05
+> **Progress**: 1/26 tasks (4%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes only after the final
 > gate.
@@ -35,7 +35,7 @@
 **Reference**: R6, AR-08
 **Objective**: fix the shim-only base before changing codegen.
 
-- [ ] 1.1.1 Commit the plan documents with the git-commit skill; no compiler or runtime file may change.
+- [x] 1.1.1 Commit the plan documents with the git-commit skill; no compiler or runtime file may change. ✅ (completed: 2026-11-11 12:05)
 - [ ] 1.1.2 Run `make bench-base COMMIT=00eb6bc` and confirm `build/perf/base.json` names the commit with `dirty=false`; record the compiler SHA-256 in `05-findings.md` §1.
 - [ ] 1.1.3 Run `make bench` on the plan commit and `make bench-compare`; record the zero-delta baseline and the allocation count.
 
