@@ -109,15 +109,15 @@ language surface and changes no runtime helper.
 
 ## Acceptance Criteria
 
-1. [ ] All must-have requirements R1–R8 are verified by the ST cases in
+1. [x] All must-have requirements R1–R8 are verified by the ST cases in
    [07-testing-strategy.md](07-testing-strategy.md).
-2. [ ] The four #26 reproductions plus the generic, guarded, loop-condition,
+2. [x] The four #26 reproductions plus the generic, guarded, loop-condition,
    and module-initializer variants behave as specified under the host build
    and under AddressSanitizer.
-3. [ ] `make check`, `make asan`, `make ubsan`, `make verify`,
+3. [x] `make check`, `make asan`, `make ubsan`, `make verify`,
    `make bench-shape`, and `make bench` + `make bench-compare` are green.
-4. [ ] All scored benchmark outputs are equal; no scored metric regresses by
+4. [x] All scored benchmark outputs are equal; no scored metric regresses by
    more than 1%.
-5. [ ] No critical or major review finding remains open.
-6. [ ] The plan's findings ledger, the roadmap row, and issue #26 reflect the
+5. [x] No critical or major review finding remains open.
+6. [x] The plan's findings ledger, the roadmap row, and issue #26 reflect the
    delivered evidence.

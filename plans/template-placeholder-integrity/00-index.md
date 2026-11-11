@@ -5,7 +5,7 @@
 > E10500, each placeholder evaluates once at its source position, and a
 > string placeholder's bytes are copied before a later sibling can move or
 > release its source.
-> **Status**: Planning Complete
+> **Status**: Done — 37/37; full gate green
 > **Created**: 2026-11-11 14:08
 > **Implements**: R1–R8
 > **CodeOps Artifact Schema**: 1

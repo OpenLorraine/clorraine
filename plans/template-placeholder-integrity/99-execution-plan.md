@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 17:25
-> **Progress**: 28/37 tasks (76%)
+> **Last Updated**: 2026-11-11 17:50
+> **Progress**: 37/37 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -155,21 +155,21 @@ behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [07 §4–§5](07-testing-strategy.md) · AR-16
 **Objective**: Prove the complete acceptance surface and the performance budget.
 
-- [ ] 3.1.1 `make asan` all suites green — verify: the runner's summary
-- [ ] 3.1.2 `make ubsan` all suites green — verify: the runner's summary
-- [ ] 3.1.3 `make bench-base COMMIT=8b4bff2`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output
-- [ ] 3.1.4 `make bench-shape` green — verify: the four shape legs
-- [ ] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed`
+- [x] 3.1.1 `make asan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-11 17:45)
+- [x] 3.1.2 `make ubsan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-11 17:45)
+- [x] 3.1.3 `make bench-base COMMIT=8b4bff2`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output ✅ (completed: 2026-11-11 17:45)
+- [x] 3.1.4 `make bench-shape` green — verify: the four shape legs ✅ (completed: 2026-11-11 17:45)
+- [x] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed` ✅ (completed: 2026-11-11 17:45)
 
 ### Step 3.2: Closeout
 
 **Reference**: [01 §Acceptance](01-requirements.md) · AR-16
 **Objective**: Record the evidence and sync the project state.
 
-- [ ] 3.2.1 Write `plans/template-placeholder-integrity/05-findings.md` with the baseline/head metrics, red evidence, review outcomes, and the gate results — `plans/template-placeholder-integrity/05-findings.md`
-- [ ] 3.2.2 Update the existing PLAN-30 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md`
-- [ ] 3.2.3 Close issue #26 with the delivered evidence and the residual note (AR-18) — GitHub issue #26 via `gh issue close --comment`
-- [ ] 3.2.4 File the follow-up issue for the `$"{null}"` placeholder ICE (AR-21) — GitHub via `gh issue create`
+- [x] 3.2.1 Write `plans/template-placeholder-integrity/05-findings.md` with the baseline/head metrics, red evidence, review outcomes, and the gate results — `plans/template-placeholder-integrity/05-findings.md` ✅ (completed: 2026-11-11 17:45)
+- [x] 3.2.2 Update the existing PLAN-30 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md` ✅ (completed: 2026-11-11 17:50)
+- [x] 3.2.3 Close issue #26 with the delivered evidence and the residual issue reference (#27) — GitHub issue #26 via `gh issue close --comment` ✅ (completed: 2026-11-11 17:50)
+- [x] 3.2.4 File the follow-up issue for the pre-existing template residuals (AR-21; #27) — GitHub via `gh issue create` ✅ (completed: 2026-11-11 17:50)
 
 **Deliverables**:
 - [ ] The full gate is green

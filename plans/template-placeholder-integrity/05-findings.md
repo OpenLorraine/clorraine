@@ -166,7 +166,7 @@ case; its UAF is visible under ASan.
 `..._impl_test` 14/14; `template_direct_formatting_spec_test` 15/15 after the
 intended emission-pin update in `template_direct_formatting_impl_test`;
 `template_direct_formatting_impl_test` 5/5; `make check`
-green. The `an_alias_sibling_does_not_free_a_placeholder_source` and
+green (the final counts after the review fixes are 41/41 and 15/15, §2.5). The `an_alias_sibling_does_not_free_a_placeholder_source` and
 `owned_placeholders_in_a_loop_are_leak_free` regressions from the first draft
 were found by the existing suite and fixed by the `Adopt` store.
 
@@ -226,4 +226,55 @@ the full gate runs in Phase 3.
 
 ## 3. Acceptance
 
-_Pending._
+### 3.1 Gate Results
+
+| Gate | Result |
+|------|--------|
+| `make check` | green (spec check, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
+| `make asan` | 33 suites green |
+| `make ubsan` | 7 suites green |
+| `make bench-shape` | gcc, nix13, vbcc, freestanding warning-free |
+| `make verify` | `verify: all legs passed` (FS-UAE A500/A600/A1200/A4000 legs, corpus, differential, fault legs) |
+
+### 3.2 Benchmark (`8b4bff2` → `96e7b1a`)
+
+`make bench-compare` passed with every scored output equal:
+
+| Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta |
+|-----------|-------------------|-------------------|-------|--------------|--------------|-------|
+| lookup | 8,779 | 8,779 | +0.0% | 39,884 | 39,884 | +0.0% |
+| matrix | 9,361 | 9,361 | +0.0% | 23,592 | 23,592 | +0.0% |
+| moves | 44,630 | 44,630 | +0.0% | 23,684 | 23,684 | +0.0% |
+| sieve | 1,040,081 | 1,040,081 | +0.0% | 23,816 | 23,816 | +0.0% |
+| strings | 1,221,232 | 1,221,232 | +0.0% | 23,972 | 23,972 | +0.0% |
+
+The `strings` C bytes move by +134 (0.0%) from the copy temp; instructions and
+`.text` are unchanged because its hot loop uses only pure scalar placeholders.
+This is the plan's neutral expectation; no scored regression, no claimed
+performance win.
+
+### 3.3 Final Test Inventory
+
+- `template_placeholder_integrity_spec_test`: 41 behavior cases, 41/41 plain,
+  ASan, and UBSan.
+- `template_placeholder_integrity_impl_test`: 15 emission/diagnostic cases.
+- `template_direct_formatting_spec_test`: 15/15; `..._impl_test`: 5/5 after
+  the intended copy-temp/adoption pins.
+- `make check` includes the full workspace suite.
+
+### 3.4 Residuals and Follow-up
+
+The closeout filed #27 for the pre-existing residuals recorded in AR-21: the bare `$"{null}"` ICE, the mixed-nullability conditional
+(`String` / `String?`), the zero-state String field placeholder, the
+template-in-a-`for`-step leak, and the owning aggregate literal field order.
+None is caused by this plan; each reproduces on the base or is untouched by
+the changed paths.
+
+### 3.5 Review Outcome
+
+All critical/major review findings were fixed and re-reviewed:
+- Phase 1: nullable/opaque/generic-duty reviews (RV-001, SR-001, SR-003,
+  SR-004 fixed; RV-005 accepted coverage note).
+- Phase 2: the Adopt guard, the literal pin double-free/invalid C, and the
+  test-integrity gap (RV-001/RV-002/SR-001/SR-002 fixed).
+No open critical/major finding remains.
