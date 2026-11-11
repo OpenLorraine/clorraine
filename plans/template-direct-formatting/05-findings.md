@@ -9,7 +9,9 @@
 |---|---|
 | Base commit | `00eb6bc` (shim-only formatter) |
 | Compiler | `clc 1.1.2` |
-| Base metrics | pending (Phase 1) |
+| Base metrics | `strings` 1,489,187 net, 24,020 `.text`, 6,003 allocations |
+| Base compiler SHA-256 | `12fc41714314…` (full value in `build/perf/base.json`) |
+| Base/pre-change compare | passed, every metric `+0.0%`; harness `dirty=false` |
 | Worktree | clean |
 
 ## 2. Probe
@@ -22,11 +24,38 @@ line: `strings` 1,132,051 net instructions and 2,002 allocations, versus
 
 | Case | Base result | Head result | Note |
 |---|---|---|---|
-| ST-1 allocation delta | pending | pending | expected 3 on base, 1 on head |
-| ST-2/ST-3/ST-4 deltas | pending | pending | 2 on base, 1 on head |
-| ST-5 float delta | pending | pending | 2 on both |
-| Impl pins | pending | pending | written after the implementation |
-| No-change cases | pending | pending | ST-6 – ST-8, ST-10, ST-11, ST-13, ST-15 |
+| ST-1 two integers | `3` | `1` — passed | the allocation win |
+| ST-2 `String` | `2` | `1` — passed | borrow, no copy |
+| ST-3 `str` | `2` | `1` — passed | borrow, no copy |
+| ST-4 bool | `2` | `1` — passed | static text part |
+| ST-5 float | `2` — passed | `2` — passed | unchanged `%g` temporary |
+| ST-6 literal-only | `0` — passed | `0` — passed | view only |
+| ST-7 explicit `text` | `1` — passed | `1` — passed | converter unchanged |
+| Impl pins | pending | 5 passed | written after the implementation |
+| No-change cases | 6 passed | 6 passed | independent, once, benchmark loop, sanitizers, owned loop, explicit conversions |
+
+Red command: `cargo test -p clc --test
+template_direct_formatting_spec_test -- --test-threads=1` against `00eb6bc`
+reported 9 passed, 4 failed: allocint 3, allocstring 2, allocstr 2,
+allocbool 2 (all expected 1). The float, literal-only, and explicit-text
+deltas already match.
+
+Green commands: `cargo test -p clc --test
+template_direct_formatting_spec_test --test
+template_direct_formatting_impl_test -- --test-threads=1` (13 + 5 passed), the
+existing `string_integer_formatting` suites (9 + 5), and
+`cargo test --workspace`.
+
+Two implementation details were fixed during the green run: the part helpers
+are `static inline` so an unused placeholder type does not fail
+`-Werror=unused-function`, and the bool text arrays include their NUL so GCC
+16's `-Wunterminated-string-initialization` accepts them.
+
+One existing emission pin changed with the intended lowering:
+`element_loop_integrity_impl_test` asserted `cl_string_copy(arr[0])` for a
+`String` element placeholder. The test's intent — the element is not bound as
+a second owner and the result is released once — is preserved; the positive
+pin now reads `cl_str_part_string(arr[0])`. No spec-test assertion changed.
 
 ## 4. Final Measurement
 

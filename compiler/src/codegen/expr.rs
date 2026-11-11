@@ -1608,11 +1608,13 @@ impl<'a> Emitter<'a> {
     /// Renders a template as a string builder call, or a plain literal.
     ///
     /// A template with no placeholder is a `str` view of its literal bytes and
-    /// allocates nothing. A template with a placeholder is an owned `String`,
-    /// so its literal segments and converted placeholders become pieces for the
-    /// shim builder, which concatenates them and takes over the owned pieces.
-    /// Placeholders convert through [`Self::text_call`], the same conversion an
-    /// explicit `text` call uses.
+    /// allocates nothing. A template with a placeholder is an owned `String`.
+    /// Integer placeholders become scalar pieces that the shim formats
+    /// directly into the result, so they allocate no temporary `String`; a
+    /// `str` or `String` placeholder borrows its bytes for the full
+    /// expression, and a `bool` piece points at static text. A `float` keeps
+    /// the documented `%g` conversion and its one temporary. Any other
+    /// formattable type falls back to the explicit converter.
     fn template(&self, pieces: &[ValuePiece]) -> String {
         let has_placeholder = pieces
             .iter()
@@ -1631,12 +1633,44 @@ impl<'a> Emitter<'a> {
             match piece {
                 ValuePiece::Literal(text) if text.is_empty() => {}
                 ValuePiece::Literal(text) => parts.push(format!(
-                    "{{ (const u8 *){}, {}u, NULL }}",
+                    "{{ (const u8 *){}, {}u, {{ .owned = NULL }} }}",
                     escape_c_string(text.as_bytes()),
                     text.len()
                 )),
                 ValuePiece::Placeholder(inner) => {
-                    parts.push(format!("cl_str_part_owned({})", self.text_call(Some(inner))));
+                    let ty = self.substitute(&inner.ty);
+                    let value = self.value(inner);
+                    let part = match &ty.kind {
+                        TyKind::Str | TyKind::StaticStr => format!(
+                            "{{ (const u8 *)({value}).ptr, (unsigned int)({value}).len, {{ .owned = NULL }} }}"
+                        ),
+                        TyKind::Handle(name) if name == "String" => {
+                            format!("cl_str_part_string({value})")
+                        }
+                        TyKind::Scalar(scalar) => match scalar {
+                            ScalarType::I8
+                            | ScalarType::I16
+                            | ScalarType::I32
+                            | ScalarType::Isize => format!(
+                                "{{ NULL, CL_STR_KIND_I32, {{ .i = (int)((i32)({value})) }} }}"
+                            ),
+                            ScalarType::U8
+                            | ScalarType::U16
+                            | ScalarType::U32
+                            | ScalarType::Usize => format!(
+                                "{{ NULL, CL_STR_KIND_U32, {{ .u = (unsigned int)((u32)({value})) }} }}"
+                            ),
+                            ScalarType::Bool => format!("cl_str_part_bool((int)({value}))"),
+                            ScalarType::F32 | ScalarType::F64 => {
+                                format!("cl_str_part_f64((double)({value}))")
+                            }
+                        },
+                        _ => format!(
+                            "cl_str_part_owned({})",
+                            self.text_call(Some(inner))
+                        ),
+                    };
+                    parts.push(part);
                 }
             }
         }

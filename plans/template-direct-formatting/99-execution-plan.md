@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 12:05
-> **Progress**: 1/26 tasks (4%)
+> **Last Updated**: 2026-11-11 12:45
+> **Progress**: 11/26 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes only after the final
 > gate.
@@ -36,8 +36,8 @@
 **Objective**: fix the shim-only base before changing codegen.
 
 - [x] 1.1.1 Commit the plan documents with the git-commit skill; no compiler or runtime file may change. ✅ (completed: 2026-11-11 12:05)
-- [ ] 1.1.2 Run `make bench-base COMMIT=00eb6bc` and confirm `build/perf/base.json` names the commit with `dirty=false`; record the compiler SHA-256 in `05-findings.md` §1.
-- [ ] 1.1.3 Run `make bench` on the plan commit and `make bench-compare`; record the zero-delta baseline and the allocation count.
+- [x] 1.1.2 Run `make bench-base COMMIT=00eb6bc` and confirm `build/perf/base.json` names the commit with `dirty=false`; record the compiler SHA-256 in `05-findings.md` §1. ✅ (completed: 2026-11-11 12:12)
+- [x] 1.1.3 Run `make bench` on the plan commit and `make bench-compare`; record the zero-delta baseline and the allocation count. ✅ (completed: 2026-11-11 12:14)
 
 **Verify**: `make check` green on the plan commit; base and pre-change documents equal.
 
@@ -50,9 +50,9 @@
 **Reference**: R1–R3, AR-07 · `07-testing-strategy.md` ST-1 – ST-15
 **Objective**: pin the allocation contract before changing the lowering.
 
-- [ ] 2.1.1 [spec-author] Write `compiler/tests/template_direct_formatting_spec_test.rs` ST-1 – ST-15: the `--wrap=malloc` counter, the allocation deltas, the boundary outputs, the source-reuse case, the call-once case, ASan/UBSan markers, and `RDC_CLC` support.
-- [ ] 2.1.2 Run the suite against `00eb6bc` and record the red deltas (ST-1/2/3/4 expected 3/2/2/2) and the no-change passes in `05-findings.md` §3.
-- [ ] 2.1.3 Confirm the suite is discovered by `make asan` and `make ubsan`; do not run the full legs yet.
+- [x] 2.1.1 [spec-author] Write `compiler/tests/template_direct_formatting_spec_test.rs` ST-1 – ST-15: the `--wrap=malloc` counter, the allocation deltas, the boundary outputs, the source-reuse case, the call-once case, ASan/UBSan markers, and `RDC_CLC` support. ✅ (completed: 2026-11-11 12:25)
+- [x] 2.1.2 Run the suite against `00eb6bc` and record the red deltas (ST-1/2/3/4 expected 3/2/2/2) and the no-change passes in `05-findings.md` §3. ✅ (completed: 2026-11-11 12:27)
+- [x] 2.1.3 Confirm the suite is discovered by `make asan` and `make ubsan`; do not run the full legs yet. ✅ (completed: 2026-11-11 12:28)
 
 **Verify**: the red run is recorded; no compiler or shim file changed.
 
@@ -65,11 +65,11 @@
 **Reference**: R1–R5, AR-02 – AR-06 · `03-template-lowering.md`
 **Objective**: implement the typed part and the direct builder in both shims and the codegen.
 
-- [ ] 3.1.1 Change `compiler/src/codegen/expr.rs::template` to emit the typed parts (scalars, borrowed `str`/`String`, bool, float) while keeping the literal-only path and `text_call` unchanged.
-- [ ] 3.1.2 Replace `ClStrPart`, the helpers, and `cl_string_concat` in `compiler/runtime/shim_host.c`; move the decimal helpers above the builder.
-- [ ] 3.1.3 Apply the same builder and helpers to `compiler/runtime/shim_hosted_amiga.c`; keep the freestanding shim untouched.
-- [ ] 3.1.4 Run the new spec suite green and the existing `string_integer_formatting` suites green.
-- [ ] 3.1.5 Write `compiler/tests/template_direct_formatting_impl_test.rs` after the implementation and run it green; record the head commit and the green result in `05-findings.md` §3.
+- [x] 3.1.1 Change `compiler/src/codegen/expr.rs::template` to emit the typed parts (scalars, borrowed `str`/`String`, bool, float) while keeping the literal-only path and `text_call` unchanged. ✅ (completed: 2026-11-11 12:45)
+- [x] 3.1.2 Replace `ClStrPart`, the helpers, and `cl_string_concat` in `compiler/runtime/shim_host.c`; make the decimal helpers callable from the builder through prototypes. ✅ (completed: 2026-11-11 12:45)
+- [x] 3.1.3 Apply the same builder and helpers to `compiler/runtime/shim_hosted_amiga.c`; keep the freestanding shim untouched. ✅ (completed: 2026-11-11 12:45)
+- [x] 3.1.4 Run the new spec suite green and the existing `string_integer_formatting` suites green. ✅ (completed: 2026-11-11 12:45)
+- [x] 3.1.5 Write `compiler/tests/template_direct_formatting_impl_test.rs` after the implementation and run it green; record the head commit and the green result in `05-findings.md` §3. ✅ (completed: 2026-11-11 12:45)
 
 **Verify**: `cargo test --workspace` green.
 

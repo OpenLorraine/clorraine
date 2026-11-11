@@ -238,9 +238,9 @@ func main(): i32 {
 /// A template placeholder over an element does not bind the element itself.
 ///
 /// The placeholder's concatenation allocates its own result, so exactly one
-/// owned temporary (the result) is bound and released. The element read feeds
-/// a copy into the result instead of being bound as a second owner, which the
-/// pre-fix shape did with an `__cl_owned0 = arr[0];` assignment.
+/// owned temporary (the result) is bound and released. The element read is
+/// borrowed into the result instead of being bound as a second owner, which
+/// the pre-fix shape did with an `__cl_owned0 = arr[0];` assignment.
 #[test]
 fn should_bind_only_the_placeholder_result_when_an_element_is_printed() {
     let source = r#"module codegen.elem.impl3;
@@ -261,8 +261,8 @@ func main(): i32 {
         "ei3: the element read must not be bound to an owned temporary"
     );
     assert!(
-        emitted.contains("cl_string_copy(arr[0])"),
-        "ei3: the element should feed the placeholder result by copy"
+        emitted.contains("cl_str_part_string(arr[0])"),
+        "ei3: the element should be borrowed into the placeholder result"
     );
     assert!(
         emitted.contains("FreeString(__cl_owned0)"),

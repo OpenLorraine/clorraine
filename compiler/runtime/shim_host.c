@@ -304,13 +304,26 @@ void *cl_string_copy(void *handle)
     return cl_string_from(cl_string_bytes(string), string->len);
 }
 
-/* One piece of a template. A literal piece borrows static bytes and has no
- * `owned` handle; a converted placeholder piece owns a freshly built string
- * that the builder releases once the bytes are appended. */
+/* The decimal writer is defined below the builder; these prototypes keep the
+ * builder's write path above its callers. */
+static unsigned int cl_format_u32(unsigned char *dst, unsigned int value);
+static unsigned int cl_format_i32(unsigned char *dst, int value);
+void *cl_text_f64(double value);
+
+/* Kind codes for a scalar piece: `len` holds the code and `ptr` is NULL.
+ * A byte piece points at borrowed bytes; an owned byte piece (a formatted
+ * float) also carries the handle the builder releases. */
+#define CL_STR_KIND_I32 0u
+#define CL_STR_KIND_U32 1u
+
 typedef struct cl_str_part {
     const unsigned char *ptr;
     unsigned int len;
-    void *owned;
+    union {
+        void *owned;
+        int i;
+        unsigned int u;
+    } value;
 } ClStrPart;
 
 /* Wrap an owned string as a template piece. The builder takes the string over
@@ -320,30 +333,85 @@ static inline ClStrPart cl_str_part_owned(void *string)
     ClStrPart part;
     part.ptr = (const unsigned char *)cl_string_ptr(string);
     part.len = cl_string_len(string);
-    part.owned = string;
+    part.value.owned = string;
     return part;
+}
+
+/* Borrow a String as a template piece. The builder copies the bytes before
+ * the full expression ends, so the source stays valid and is not consumed. */
+static inline ClStrPart cl_str_part_string(void *string)
+{
+    ClStrPart part;
+    part.ptr = (const unsigned char *)cl_string_ptr(string);
+    part.len = cl_string_len(string);
+    part.value.owned = NULL;
+    return part;
+}
+
+/* A bool piece points at the static text; no allocation is needed. */
+static inline ClStrPart cl_str_part_bool(int value)
+{
+    static const unsigned char truth[5] = "true";
+    static const unsigned char falsehood[6] = "false";
+    ClStrPart part;
+    part.ptr = value ? truth : falsehood;
+    part.len = value ? 4u : 5u;
+    part.value.owned = NULL;
+    return part;
+}
+
+/* A float piece keeps the documented `%g` conversion and its one temporary;
+ * the builder releases the temporary after copying the bytes. */
+static inline ClStrPart cl_str_part_f64(double value)
+{
+    return cl_str_part_owned(cl_text_f64(value));
 }
 
 /* Concatenate template pieces into one owned string.
  *
- * The total length is the sum of the piece lengths, so the builder reserves
- * exactly that size once and every append fits. Each owned piece is released
- * after its bytes are copied, which keeps a placeholder's converted string
- * from leaking: the compiler does not drop unnamed temporaries. */
+ * The first pass reserves the maximum width of every piece (11 bytes for an
+ * i32, 10 for a u32, the exact length for bytes). The second pass writes the
+ * digits or copies the bytes, then sets `len` and `cap` to the written count
+ * so the block's logical capacity is exact and a later append still traps. */
 void *cl_string_concat(const ClStrPart *parts, unsigned int count)
 {
     unsigned int index;
     unsigned int total = 0;
     for (index = 0; index < count; index++) {
-        total += parts[index].len;
+        unsigned int extra = parts[index].len;
+        if (parts[index].ptr == NULL) {
+            extra = parts[index].len == CL_STR_KIND_I32 ? 11u : 10u;
+        }
+        unsigned int next = total + extra;
+        if (next < total) {
+            cl_trap("E1", "string too large");
+        }
+        total = next;
     }
-    void *string = cl_string_new(total);
+    cl_string_block *string = (cl_string_block *)cl_string_new(total);
+    unsigned char *dst = cl_string_bytes(string);
+    unsigned int len = 0;
     for (index = 0; index < count; index++) {
-        cl_string_append(string, (void *)parts[index].ptr, parts[index].len);
-        if (parts[index].owned != NULL) {
-            cl_free(parts[index].owned);
+        const ClStrPart *part = &parts[index];
+        if (part->ptr == NULL) {
+            if (part->len == CL_STR_KIND_I32) {
+                len += cl_format_i32(dst + len, part->value.i);
+                continue;
+            }
+            len += cl_format_u32(dst + len, part->value.u);
+            continue;
+        }
+        if (part->len != 0) {
+            memcpy(dst + len, part->ptr, (size_t)part->len);
+        }
+        len += part->len;
+        if (part->value.owned != NULL) {
+            cl_free(part->value.owned);
         }
     }
+    string->len = len;
+    string->cap = len;
+    dst[len] = '\0';
     return string;
 }
 
