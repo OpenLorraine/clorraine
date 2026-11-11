@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 11:11
-> **Progress**: 23/30 tasks (77%)
+> **Last Updated**: 2026-11-11 11:48
+> **Progress**: 30/30 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes are held to the final
 > gate and performed with the git-commit skill in push mode.
@@ -169,10 +169,10 @@ bodies in both `String` shims.
 **Objective**: close the correctness and memory-safety reviews, then run the
 full acceptance gate.
 
-- [ ] 5.1.1 Dispatch the correctness reviewer with a packet covering the two shims, the helper algorithm, the boundary proofs, the template interactions, and a blast-radius step (every caller of `cl_text_i32`/`cl_text_u32`, both profiles, and the explicit-conversion paths).
-- [ ] 5.1.2 Dispatch the read-only memory-safety auditor with a packet covering the direct write, the capacity proof, `INT_MIN`, the NUL, and the ASan probes; require one reproduction per finding.
-- [ ] 5.1.3 Resolve every critical/major finding with an authorized ruling, apply the fix, and rerun the affected suites and measurement legs.
-- [ ] 5.1.4 Run `make check`, `make bench-compare`, and `make verify` on the final head; record the leg results in `05-findings.md` §5–§6.
+- [x] 5.1.1 Dispatch the correctness reviewer with a packet covering the two shims, the helper algorithm, the boundary proofs, the template interactions, and a blast-radius step (every caller of `cl_text_i32`/`cl_text_u32`, both profiles, and the explicit-conversion paths). ✅ (completed: 2026-11-11 11:25)
+- [x] 5.1.2 Dispatch the read-only memory-safety auditor with a packet covering the direct write, the capacity proof, `INT_MIN`, the NUL, and the ASan probes; require one reproduction per finding. ✅ (completed: 2026-11-11 11:25)
+- [x] 5.1.3 Resolve every critical/major finding with an authorized ruling, apply the fix, and rerun the affected suites and measurement legs. ✅ (completed: 2026-11-11 11:27)
+- [x] 5.1.4 Run `make check`, `make bench-compare`, and `make verify` on the final head; record the leg results in `05-findings.md` §5–§6. ✅ (completed: 2026-11-11 11:35)
 
 **Deliverables**:
 - Both reviews recorded with verdicts.
@@ -193,11 +193,11 @@ full acceptance gate.
 **Reference**: R7, R8, AR-15, AR-16, AR-17
 **Objective**: make the evidence durable and leave the residual visible.
 
-- [ ] 6.1.1 Complete `05-findings.md`: final table, allocation split, sanitizer results, review verdicts, residual.
-- [ ] 6.1.2 Update `plans/00-roadmap.md`: add the plan row with stage `Done`, the 29/29 count, the `strings` delta, and the gate summary.
-- [ ] 6.1.3 Open the follow-up GitHub issue for the codegen direct-to-destination lowering with the probe evidence and the scope note; record the issue number in `05-findings.md` §7 and the roadmap.
-- [ ] 6.1.4 Update `docs/known-limitations.md` only if the residual allocation behavior is user-visible; otherwise record "no change" in the findings. Do not add planning identifiers to `docs/`.
-- [ ] 6.1.5 Commit the documentation, roadmap, and findings with the git-commit skill; verify the tree is clean and push with the git-commit skill in push mode only after the final gate.
+- [x] 6.1.1 Complete `05-findings.md`: final table, allocation split, sanitizer results, review verdicts, residual. ✅ (completed: 2026-11-11 11:40)
+- [x] 6.1.2 Update `plans/00-roadmap.md`: add the plan row with stage `Done`, the 30/30 count, the `strings` delta, and the gate summary. ✅ (completed: 2026-11-11 11:41)
+- [x] 6.1.3 Open the follow-up GitHub issue for the codegen direct-to-destination lowering with the probe evidence and the scope note; record the issue number in `05-findings.md` §7 and the roadmap. ✅ (completed: 2026-11-11 11:42)
+- [x] 6.1.4 Update `docs/known-limitations.md` only if the residual allocation behavior is user-visible; otherwise record "no change" in the findings. Do not add planning identifiers to `docs/`. ✅ (completed: 2026-11-11 11:43)
+- [x] 6.1.5 Commit the documentation, roadmap, and findings with the git-commit skill; verify the tree is clean and push with the git-commit skill in push mode only after the final gate. ✅ (completed: 2026-11-11 11:48)
 
 **Deliverables**:
 - Findings, roadmap, and follow-up issue are complete.

@@ -123,10 +123,12 @@ floor.
 | New suite under `make ubsan` | passed; the run discovered 5 suites including this one |
 | `make bench-shape` (GCC, vbcc, freestanding, nix13) | passed, all legs warning-free |
 | Target boundary program under `vamos` | equal to the host output |
-| Emitted-C diff base vs head | one hunk at line 966; only the two converter bodies changed |
+| Emitted-C diff base vs head | one hunk per profile; only the two converter bodies changed: `build/perf/audit/emit-base.c` vs `emit-head.c` (Amiga) at line 966, and the host emission at line 349 |
 | Base-compiler attribution | spec 8 passed / ST-21 failed `hex=0x4`; impl 2 passed / 3 new-helper pins failed |
-| `make check` | pending (Phase 5) |
-| `make verify` | pending (Phase 5) |
+| `make check` | passed (spec, registry, setup, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
+| `make verify` | passed, `verify: all legs passed` (all FS-UAE, corpus, differential, fault, and shape legs) |
+| Correctness review | no phase-blocking findings; RV-001 resolved; pre-existing issue #24 filed |
+| Memory-safety review | no findings; bounds, ownership, ASan, and UBSan clean |
 
 The emitted-C diff proves the program, template calls, and every other shim
 section are byte-identical. The target boundary program covered `INT_MIN`,
@@ -138,14 +140,32 @@ output exactly.
 
 | Review | Verdict | Findings |
 |---|---|---|
-| Correctness reviewer | pending | pending |
-| Memory-safety auditor | pending | pending |
+| Correctness reviewer | no phase-blocking findings | RV-001 (🟡 MINOR, bookkeeping) resolved: the progress line now matches the checked task count, and the emission evidence names both profiles and line ranges. One pre-existing defect (P-1, `text` arity) was reproduced on the base compiler and filed as issue #24; it is not caused by this phase. |
+| Memory-safety auditor | no findings | Direct-write bounds, `len`/`cap`, `INT_MIN`, ownership, ASan/LSan, and UBSan probes are clean; three negative controls (out-of-bounds, double free, leak) prove the instrumentation is active. |
+
+The correctness reviewer independently reproduced the benchmark table, the
+base red attribution, the 200,000-value `snprintf` differential, the target
+boundary output, and the allocation count. The memory-safety auditor measured
+the i32 block as 20 bytes and the u32 block as 19 bytes, proving the NUL sits
+on the last valid byte for `INT_MIN`/`UINT_MAX`; `cl_string_append` still
+traps after a conversion because `cap == len`.
 
 ## 7. Residual and Follow-Up
 
 - Allocations per `strings` run stay at 6,003 in this plan (one builder plus
-  two converter temporaries per iteration, three outside the loop).
+  two converter temporaries per iteration, three outside the loop). The
+  logical capacity of each converter block is exact (`cap == len`); the
+  physical allocation may carry up to 7 spare payload bytes, which is not
+  observable through the block API.
 - The codegen direct-to-destination lowering would remove two of the three
-  per-iteration allocations and measure 1,132,051 net instructions on the
-  probe. It is outside issue #19's scope (AR-01, AR-05) and is recorded as a
-  follow-up issue at closeout (AR-16).
+  per-iteration allocations and measured 1,132,051 net instructions on the
+  probe. It is outside issue #19's scope (AR-01, AR-05) and is recorded as
+  follow-up issue **#25**
+  (https://github.com/OpenLorraine/clorraine/issues/25).
+- The correctness review found a pre-existing `text` arity defect (zero and
+  two arguments are accepted; a second argument's side effect is dropped on
+  the base compiler). It is not caused by this change and is tracked as
+  **#24** (https://github.com/OpenLorraine/clorraine/issues/24).
+- `docs/known-limitations.md`: no change. The allocation count and the
+  physical slack are not user-visible language behavior, and every observable
+  conversion output is unchanged.

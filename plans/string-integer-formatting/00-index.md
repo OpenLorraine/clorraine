@@ -3,7 +3,7 @@
 > **Feature**: Replace `snprintf`-based integer formatting in the two `String`
 > runtime shims with a direct decimal writer that fills the string block in
 > place.
-> **Status**: Planning Complete
+> **Status**: Done — 30/30; full gate green
 > **Created**: 2026-11-11
 > **Implements**: R1–R8
 > **CodeOps Artifact Schema**: 1
