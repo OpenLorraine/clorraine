@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-11
-> **Progress**: 572/574 rows done; 0 open; 2 Parked
+> **Progress**: 572/575 rows done; 0 open; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -589,6 +589,7 @@
 | PLAN-26 | Build-flag and binary-size closeout | [01-requirements](performance-levers-closeout/01-requirements.md) | [performance-levers-closeout](performance-levers-closeout/00-index.md) | Done | ✅ | 2026-11-10 | 44/44; section GC + release strip on host Linux, hosted-amiga, hosted-amiga-13; scored m68k `.text` −57.1–69.3%, stripped binaries −64.2–74.7%, host binaries −20.6–36.5%, 1.3 audit set −49.1–88.9%; calibration 3,372 → 2,928 instructions; scored net unchanged; emitted C byte-identical; spec §13 two authorized rows; constructor proof on both m68k profiles; `make check`, `asan` (30), `ubsan` (4), `corpus-amiga`, `differential` (3/3), `bench-shape`, `bench-compare` (zero deltas), `bench-flags` (runs 2, all checks), `verify` (all legs passed), A600/A1200 release gates; issues #20–#23 |
 | PLAN-24 | v1.1.1 release closeout | — | [RELEASE.md](../RELEASE.md) | Done | ✅ | 2026-11-09 | Version `1.1.1`, changelog and notes, v1.1.1 runbook, release binaries and tarballs with `SHA256SUMS`, annotated `v1.1.1` tag; `make check`, `make asan` (29 suites), `make ubsan` (3 suites), `make corpus-amiga`, `make differential` (3/3), `make bench-shape`, `make bench-compare` (matrix -9.6% / -5.0% vs v1.1.0), `make verify` (`verify: all legs passed`), and `make vscode-check` green; published as https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.1 |
 | PLAN-28 | String integer formatting throughput | [01-requirements](string-integer-formatting/01-requirements.md) | [string-integer-formatting](string-integer-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 30/30; `cl_text_i32`/`cl_text_u32` write decimal digits directly into the String block in both profiles; `strings` −49.8% net instructions (2,964,051 → 1,489,187) and −0.7% `.text`, every scored output equal, no 1% regression; allocations unchanged at 6,003 (follow-up #25); ASan 31 suites, UBSan 5, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; pre-existing `text` arity defect filed as #24 |
+| PLAN-29 | Direct template formatting | [01-requirements](template-direct-formatting/01-requirements.md) | [template-direct-formatting](template-direct-formatting/00-index.md) | Plan Preflighted | 🔬 | 2026-11-11 | 0/26; preflight passed with notes; typed 12-byte template parts format integers directly into the destination and borrow str/String, removing two of three allocations; probe strings 1,489,187 → 1,132,051 and 6,003 → 2,002 allocations |
 
 ## Batch N accounting (2026-10-19)
 
