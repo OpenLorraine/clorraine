@@ -425,7 +425,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // language evaluates fields in source order, so the update and
                 // every later field's read of the same place must travel
                 // through temporaries.
-                let pin_fields = fields.iter().any(|field| contains_update(&field.value));
+                let pin_fields = fields.iter().any(|field| contains_update(&field.value))
+                    || fields
+                        .iter()
+                        .any(|field| contains_template_placeholder(&field.value));
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
@@ -554,7 +557,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return literal;
             }
             ExprKind::ArrayLiteral { elements, fill } => {
-                let pin_elements = elements.iter().any(contains_update);
+                let pin_elements = elements.iter().any(contains_update)
+                    || elements.iter().any(contains_template_placeholder)
+                    || fill.as_deref().is_some_and(contains_template_placeholder);
                 ValueKind::ArrayLit {
                     // As for a struct literal, a deferred operand leaves its
                     // element sources in place; the arm's store moves the
@@ -751,24 +756,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     type_arg,
                 }
             }
-            ExprKind::Template(pieces) => ValueKind::Template(
-                pieces
-                    .iter()
-                    .map(|piece| match piece {
-                        TemplatePiece::Literal(bytes) => ValuePiece::Literal(
-                            String::from_utf8_lossy(bytes).into_owned(),
-                        ),
-                        TemplatePiece::Placeholder(inner) => {
-                            // An owned placeholder is copied into the template
-                            // builder, so the source is released by the scope
-                            // cleanup; otherwise it leaks. A view or scalar
-                            // placeholder owns nothing and is left inline.
-                            let value = self.lower_value(inner);
-                            ValuePiece::Placeholder(self.materialize_owned_argument(value, false))
-                        }
-                    })
-                    .collect(),
-            ),
+            ExprKind::Template(pieces) => {
+                ValueKind::Template(self.lower_template_pieces(pieces))
+            }
             ExprKind::Lambda { params, body, .. } => {
                 return self.lower_lambda(expr, &ty, params, body);
             }
@@ -2133,7 +2123,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
                 ValuePiece::Literal(_) => false,
-                ValuePiece::Placeholder(inner) => Self::contains_discard_then(inner),
+                ValuePiece::Placeholder { value: inner, .. } => Self::contains_discard_then(inner),
             }),
             ValueKind::Materialize { value: inner, .. } => {
                 Self::contains_discard_then(inner)
@@ -2262,7 +2252,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             ValuePiece::Literal(String::from_utf8_lossy(bytes).into_owned())
                         }
                         crate::ast::TemplatePiece::Placeholder(inner) => {
-                            ValuePiece::Placeholder(self.lower_len_operand_effects_value(inner))
+                            ValuePiece::Placeholder {
+                                value: self.lower_len_operand_effects_value(inner),
+                                owned: false,
+                            }
                         }
                     })
                     .collect();
@@ -2822,18 +2815,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Pins one literal operand at its source position when the literal
-    /// contains an update.
+    /// contains an update or a template placeholder.
     ///
-    /// A C initializer list leaves its operands' order unspecified, so every
-    /// operand of an update-containing literal binds where it stands. A
-    /// duplicable value or an update uses the plain statement temporary. An
-    /// owning value with no place of its own — a fresh call, a literal, or an
-    /// array literal — binds to a transfer temporary the literal copies: the
-    /// temporary carries no release, so the literal's own cleanup stays the
-    /// sole owner, and the binding runs at the operand's position, where a
-    /// later operand's pin cannot hoist above it. A value that already names a
-    /// place keeps its consuming move, and a guarded operand keeps its deferred
-    /// fill.
+    /// A C initializer list leaves its operands' order unspecified, and a
+    /// template copy emits a statement at its own field, so every earlier
+    /// operand of such a literal binds where it stands. A duplicable value or
+    /// an update uses the plain statement temporary. An owning call binds to an
+    /// adopting `Statement::Adopt` temporary: the literal stores the handle and
+    /// a loop re-entry must not release a value the literal now owns. A
+    /// fixed-array value keeps the existing element-wise store path. An owning
+    /// aggregate (`StructLit`/`ArrayLit`) stays inline because its structured
+    /// store has no no-pre-drop form; a value that already names a place keeps
+    /// its consuming move, and a guarded operand keeps its deferred fill.
     fn pin_literal_operand(&mut self, value: Value) -> Value {
         if self.defer_move_outs > 0 || self.in_loop_condition {
             return self.pin_update_value(value);
@@ -2854,7 +2847,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return value;
         }
-        self.materialize_value(value)
+        // A pinned owning call is adopted: the literal stores its handle, and
+        // a loop re-entry must not release a value the literal now owns. An
+        // owning aggregate keeps its inline value: its structured store has no
+        // no-pre-drop form, and pinning it would emit an invalid aggregate
+        // assignment. A fixed array keeps the existing store path, which
+        // handles the element-wise copy and move.
+        if value.ty.is_fixed_array() {
+            self.materialize_value(value)
+        } else if matches!(value.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+            && (self.owns_drop(&value.ty) || self.maybe_owns(&value.ty))
+        {
+            self.materialize_adopted_operand(value)
+        } else if matches!(value.kind, ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. }) {
+            value
+        } else {
+            self.materialize_value(value)
+        }
+    }
+
+    /// Stores an owning operand at its source position without a previous-value
+    /// release.
+    ///
+    /// The consumer (a literal field or a template part) adopts the value. The
+    /// temporary is a non-owning alias: a loop re-entry overwrites it without
+    /// freeing the storage the consumer already owns.
+    fn materialize_adopted_operand(&mut self, value: Value) -> Value {
+        let ty = self.materialized_ty(&value);
+        if !(self.owns_drop(&ty) || self.maybe_owns(&ty)) {
+            return self.materialize_value(value);
+        }
+        let temp = self.new_temp(ty.clone());
+        let target = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        self.emit(Statement::Adopt { target, value });
+        Value::new(ty, ValueKind::Temp(temp))
     }
 
     /// Defers a loop-condition operand to a per-iteration fill.
@@ -3428,6 +3458,180 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
         }
         self.materialize_value(value)
+    }
+
+    /// Lowers a template's pieces in source order.
+    ///
+    /// A string-like placeholder is copied to an owned `String` at its own
+    /// position, before a later sibling can move or release the source. A
+    /// scalar keeps its direct part unless it has effects or precedes a later
+    /// effect, in which case it is stored at its position. The `owned` flag on
+    /// the piece tells the emitter to adopt the copy instead of copying again.
+    fn lower_template_pieces(&mut self, pieces: &'a [TemplatePiece]) -> Vec<ValuePiece> {
+        let effectful: Vec<bool> = pieces
+            .iter()
+            .map(|piece| match piece {
+                TemplatePiece::Placeholder(inner) => {
+                    super::call::expression_has_effects(inner)
+                }
+                TemplatePiece::Literal(_) => false,
+            })
+            .collect();
+        let last_effect = effectful.iter().rposition(|&effect| effect);
+        let mut lowered = Vec::with_capacity(pieces.len());
+        for (index, piece) in pieces.iter().enumerate() {
+            let lowered_piece = match piece {
+                TemplatePiece::Literal(bytes) => {
+                    ValuePiece::Literal(String::from_utf8_lossy(bytes).into_owned())
+                }
+                TemplatePiece::Placeholder(inner) => {
+                    let value = self.lower_value(inner);
+                    let value = self.materialize_owned_argument(value, false);
+                    // A projection over a fresh root reads through a stable
+                    // temporary, so a field or view is not re-evaluated.
+                    let value = self.bind_member_receiver(value);
+                    if self.speculative_lowering {
+                        ValuePiece::Placeholder {
+                            value,
+                            owned: false,
+                        }
+                    } else {
+                        let ty = self.ty(inner);
+                        if Self::template_placeholder_is_string_like(&ty) {
+                            let value = if Self::template_source_needs_evaluation(&value) {
+                                self.materialize_at_position(value)
+                            } else {
+                                value
+                            };
+                            let copy = self.internal_text_copy(value);
+                            // The part adopts the copy. An eager position
+                            // stores it with an `Adopt` statement at this
+                            // source position, so a later sibling's hoisted
+                            // mutation cannot run first and a loop re-entry
+                            // does not pre-drop a value the builder freed. A
+                            // guarded position uses the adopting fill.
+                            let copy = self.materialize_adopted_copy(copy);
+                            ValuePiece::Placeholder {
+                                value: copy,
+                                owned: true,
+                            }
+                        } else if effectful[index] || last_effect.is_some_and(|last| index < last)
+                        {
+                            ValuePiece::Placeholder {
+                                value: self.materialize_scalar_at_position(value),
+                                owned: false,
+                            }
+                        } else {
+                            ValuePiece::Placeholder {
+                                value,
+                                owned: false,
+                            }
+                        }
+                    }
+                }
+            };
+            lowered.push(lowered_piece);
+        }
+        lowered
+    }
+
+    /// True when a placeholder's value is copied into the template builder.
+    fn template_placeholder_is_string_like(ty: &Ty) -> bool {
+        ty.is_param()
+            || ty.is_unknown()
+            || matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
+            || matches!(&ty.kind, TyKind::Handle(name) if name == "String")
+    }
+
+    /// True when a string-like source must be stored before the copy.
+    ///
+    /// A direct fresh call is evaluated once. A view over an impure root (a
+    /// view projection over a call, a view conditional, a raw dereference of an
+    /// impure pointer) is also stored once; a view owns nothing, so its
+    /// temporary is a cheap non-owning copy. An owning projection and an owning
+    /// conditional were already bound by the ownership walk.
+    fn template_source_needs_evaluation(value: &Value) -> bool {
+        matches!(
+            value.kind,
+            ValueKind::Call { .. }
+                | ValueKind::ClosureCall { .. }
+                | ValueKind::Intrinsic { .. }
+        ) || (is_view_like(&value.ty) && !is_pure_value(value))
+    }
+
+    /// Stores a value at its source position.
+    ///
+    /// An eager position emits a statement; a guarded position defers the fill
+    /// to the path that evaluates the operand.
+    fn materialize_at_position(&mut self, value: Value) -> Value {
+        if self.defer_move_outs == 0 {
+            self.materialize_value(value)
+        } else {
+            self.materialize_guard_operand(value)
+        }
+    }
+
+    /// Stores a scalar at its source position.
+    ///
+    /// A scalar owns nothing, so the deferred carrier registers no release.
+    fn materialize_scalar_at_position(&mut self, value: Value) -> Value {
+        if self.defer_move_outs == 0 {
+            self.materialize_value(value)
+        } else {
+            self.materialize_forced(value, false)
+        }
+    }
+
+    /// Binds a template copy into an adopted temporary.
+    ///
+    /// An eager position emits an [`Statement::Adopt`] at the placeholder's
+    /// source position: the copy is made before a later sibling's hoisted
+    /// mutation, and a loop re-entry does not pre-drop a value the builder
+    /// already freed. A guarded position uses the adopting fill.
+    fn materialize_adopted_copy(&mut self, value: Value) -> Value {
+        if self.defer_move_outs > 0 {
+            return self.materialize_forced(value, true);
+        }
+        self.materialize_adopted_operand(value)
+    }
+
+    /// Binds a value into a deferred compiler temporary.
+    ///
+    /// Unlike [`Self::materialize_guard_operand`] this stores even a pure value,
+    /// so a pure scalar read before a later effect keeps its source position.
+    /// The carrier takes no part in the ownership walk; `adopting` marks a copy
+    /// the template part consumes.
+    fn materialize_forced(&mut self, value: Value, adopting: bool) -> Value {
+        let ty = self.materialized_ty(&value);
+        let temp = self.new_temp(ty.clone());
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp: Some(temp),
+                destination: None,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
+                adopting,
+            },
+        )
+    }
+
+    /// Builds the internal text-conversion call a template copy uses.
+    ///
+    /// The emitter maps the reserved `$text` callee to its existing converter,
+    /// so the concrete type decides the copy spelling at instantiation. The
+    /// sentinel never appears in the emitted C.
+    fn internal_text_copy(&self, value: Value) -> Value {
+        Value::new(
+            Ty::handle("String"),
+            ValueKind::Call {
+                callee: "$text".to_owned(),
+                type_args: Vec::new(),
+                args: vec![value],
+                receiver: None,
+            },
+        )
     }
 
     /// Stores a value in a compiler temporary and returns the temporary value.
@@ -4681,7 +4885,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .is_some_and(|fill| self.arm_roots_in_storage(fill))
             }
             ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
-                ValuePiece::Placeholder(inner) => self.arm_roots_in_storage(inner),
+                ValuePiece::Placeholder { value: inner, .. } => self.arm_roots_in_storage(inner),
                 _ => false,
             }),
             _ => false,
@@ -7106,6 +7310,71 @@ pub(super) fn contains_update(expr: &Expr) -> bool {
         ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             crate::ast::TemplatePiece::Placeholder(inner) => contains_update(inner),
             crate::ast::TemplatePiece::Literal(_) => false,
+        }),
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Lambda { .. }
+        | ExprKind::Error => false,
+    }
+}
+
+/// True when evaluating an expression contains a template placeholder.
+///
+/// A template placeholder can emit a statement at its source position (the
+/// string-like copy), so a literal field or element after it must not be
+/// evaluated earlier by a hoisted statement. The literal lowering pins every
+/// earlier operand when this predicate holds.
+fn contains_template_placeholder(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Template(pieces) => pieces
+            .iter()
+            .any(|piece| matches!(piece, crate::ast::TemplatePiece::Placeholder(_))),
+        ExprKind::Unary { operand, .. } => contains_template_placeholder(operand),
+        ExprKind::Index { base, index } => {
+            contains_template_placeholder(base) || contains_template_placeholder(index)
+        }
+        ExprKind::Member { base, .. } => contains_template_placeholder(base),
+        ExprKind::Binary { left, right, .. } => {
+            contains_template_placeholder(left) || contains_template_placeholder(right)
+        }
+        ExprKind::Assign { target, value, .. } => {
+            contains_template_placeholder(target) || contains_template_placeholder(value)
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            contains_template_placeholder(condition)
+                || contains_template_placeholder(then_value)
+                || contains_template_placeholder(else_value)
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            contains_template_placeholder(value)
+        }
+        ExprKind::Unsafe(inner) => contains_template_placeholder(inner),
+        ExprKind::Call { callee, args, .. } => {
+            contains_template_placeholder(callee)
+                || args
+                    .iter()
+                    .any(|arg| contains_template_placeholder(&arg.value))
+        }
+        ExprKind::StructLiteral { fields, .. } => fields
+            .iter()
+            .any(|field| contains_template_placeholder(&field.value)),
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements.iter().any(contains_template_placeholder)
+                || fill.as_deref().is_some_and(contains_template_placeholder)
+        }
+        ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+            crate::ast::IntrinsicArg::Expr(inner) => contains_template_placeholder(inner),
+            crate::ast::IntrinsicArg::Type(_) => false,
         }),
         ExprKind::Int(_)
         | ExprKind::Float(_)

@@ -399,6 +399,10 @@ impl<'a> Emitter<'a> {
                         self.record_temp_fill(target, self.resolved_value_ty(value));
                         self.collect_materialized_temps(value);
                     }
+                    Statement::Adopt { target, value } => {
+                        self.record_temp_fill(target, self.resolved_value_ty(value));
+                        self.collect_materialized_temps(value);
+                    }
                     Statement::Move { target, source } => {
                         self.record_temp_fill(target, self.resolved_place_ty(source));
                     }
@@ -519,7 +523,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.collect_materialized_temps(inner);
                     }
                 }
@@ -694,6 +698,15 @@ impl<'a> Emitter<'a> {
     /// Emits one IR statement that has a run-time effect.
     pub(super) fn emit_statement(&mut self, span: crate::span::Span, statement: &Statement) {
         match statement {
+            Statement::Adopt { target, value } => {
+                self.emit_line_directive(span);
+                // An adopted copy may carry an index, slice, division, or
+                // float-cast guard; every other store emits its guards first.
+                self.emit_guards(value);
+                let target_c = self.place(target);
+                let value_c = self.value(value);
+                self.push(&format!("    {target_c} = {value_c};"));
+            }
             Statement::Assign { target, value } => {
                 if let ValueKind::ArrayLit { elements, fill } = &value.kind {
                     let ty = self.substitute(&target.ty);
@@ -1636,7 +1649,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
                 ValuePiece::Literal(_) => false,
-                ValuePiece::Placeholder(inner) => self.needs_statement_discard(inner),
+                ValuePiece::Placeholder { value: inner, .. } => self.needs_statement_discard(inner),
             }),
             ValueKind::Materialize { value: inner, .. } => {
                 self.needs_statement_discard(inner)
@@ -3475,7 +3488,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
                 ValuePiece::Literal(_) => false,
-                ValuePiece::Placeholder(inner) => {
+                ValuePiece::Placeholder { value: inner, .. } => {
                     self.arm_consumes_target_in(inner, target_c, materialized)
                 }
             }),
@@ -3568,7 +3581,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.consumed_pointees(inner, out);
                     }
                 }
@@ -4803,6 +4816,9 @@ fn unread_locals(
                 Statement::Assign { target, value } => {
                     note_store_value(value, &target.ty, &mut read, &null_shape, &null_capable);
                 }
+                Statement::Adopt { target, value } => {
+                    note_store_value(value, &target.ty, &mut read, &null_shape, &null_capable);
+                }
                 Statement::Move { target, source } => {
                     // A null-shaped source lowers to the target's own empty
                     // value, so the move does not read it.
@@ -4983,7 +4999,7 @@ fn value_reads_raw_deref(value: &Value) -> bool {
         ValueKind::Intrinsic { args, .. } => args.iter().any(value_reads_raw_deref),
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_reads_raw_deref(inner),
+            ValuePiece::Placeholder { value: inner, .. } => value_reads_raw_deref(inner),
         }),
         ValueKind::Materialize { value, .. } => value_reads_raw_deref(value),
         ValueKind::ClosureCall { callable, args } => {
@@ -5246,7 +5262,7 @@ fn value_reads_place(value: &Value, matches: &dyn Fn(&Place) -> bool) -> bool {
         }
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_reads_place(inner, matches),
+            ValuePiece::Placeholder { value: inner, .. } => value_reads_place(inner, matches),
         }),
         ValueKind::Call {
             args, receiver, ..
@@ -5378,7 +5394,7 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>, null_shape: &impl Fn(&
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
-                if let ValuePiece::Placeholder(inner) = piece {
+                if let ValuePiece::Placeholder { value: inner, .. } = piece {
                     note_value(inner, read, null_shape);
                 }
             }

@@ -57,7 +57,7 @@ pub fn value_has_materialize(value: &Value) -> bool {
         }
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_has_materialize(inner),
+            ValuePiece::Placeholder { value: inner, .. } => value_has_materialize(inner),
         }),
         ValueKind::Closure { captures, .. } => captures.iter().any(value_has_materialize),
         ValueKind::ClosureCall { callable, args } => {
@@ -125,7 +125,7 @@ pub fn value_needs_guards(value: &Value) -> bool {
         }
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_needs_guards(inner),
+            ValuePiece::Placeholder { value: inner, .. } => value_needs_guards(inner),
         }),
         // A materialized operand is always evaluated where it stands, so it is
         // filled by a statement before the construct; a loop header cannot

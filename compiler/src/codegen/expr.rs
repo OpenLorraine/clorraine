@@ -1165,6 +1165,11 @@ impl<'a> Emitter<'a> {
         receiver: Option<&Value>,
         destination: Option<&str>,
     ) -> String {
+        // An internal template copy renders through the same converter as the
+        // explicit `text` helper. The sentinel never reaches the C output.
+        if callee == "$text" {
+            return self.text_call(args.first());
+        }
         // A `boxAlloc<T>()` call is lowered to a fixed helper name carrying the
         // element key. In a generic body that key still names the parameter, so
         // the concrete instance substitutes it here.
@@ -1620,7 +1625,7 @@ impl<'a> Emitter<'a> {
     fn template(&self, pieces: &[ValuePiece]) -> String {
         let has_placeholder = pieces
             .iter()
-            .any(|piece| matches!(piece, ValuePiece::Placeholder(_)));
+            .any(|piece| matches!(piece, ValuePiece::Placeholder { .. }));
         if !has_placeholder {
             let mut literal = Vec::new();
             for piece in pieces {
@@ -1639,7 +1644,7 @@ impl<'a> Emitter<'a> {
                     escape_c_string(text.as_bytes()),
                     text.len()
                 )),
-                ValuePiece::Placeholder(inner) => {
+                ValuePiece::Placeholder { value: inner, owned } => {
                     let ty = self.substitute(&inner.ty);
                     let value = self.value(inner);
                     let part = match &ty.kind {
@@ -1647,7 +1652,15 @@ impl<'a> Emitter<'a> {
                             "cl_str_part_owned(cl_text_str(({value}).ptr, ({value}).len))"
                         ),
                         TyKind::Handle(name) if name == "String" => {
-                            format!("cl_str_part_owned(cl_string_copy({value}))")
+                            // An ordered placeholder already owns its copy at
+                            // this position; a raw String piece (a producer
+                            // that bypassed the ordering walk) keeps the
+                            // defensive copy.
+                            if *owned {
+                                format!("cl_str_part_owned({value})")
+                            } else {
+                                format!("cl_str_part_owned(cl_string_copy({value}))")
+                            }
                         }
                         TyKind::Scalar(scalar) => match scalar {
                             ScalarType::I8

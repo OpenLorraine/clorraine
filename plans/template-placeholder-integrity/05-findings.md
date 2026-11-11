@@ -123,7 +123,106 @@ generic conditional null arm is now rejected (ST-37).
 
 ## 2. Phase 2 — Ordered Placeholder Evaluation
 
-_Pending._
+### 2.1 Red Evidence (phase-start `8b4bff2` + Phase 1)
+
+The P2 spec cases were added before the lowering change. On the Phase 1
+compiler, 12 failed:
+
+`st6` (`x calls=2`), `st7` (SIGSEGV), `st8` (corrupt bytes), `st10` (`25`
+instead of `15`), `st13` (SIGSEGV), `st15` (corrupt bytes), `st16`
+(`calls=2`), `st18` (`calls=4`), `st19`/`st20` (`calls=2`/`4`), `st31`
+(`calls=2`), `st35` (`calls=2`).
+
+The guards passed: `st9` (E10022), `st11`, `st12`, `st14`, `st17` (output
+only), `st21`, `st25`, `st28`, `st29`, `st30`. `st17` is the sanitizer red
+case; its UAF is visible under ASan.
+
+### 2.2 Implementation
+
+- `ValuePiece::Placeholder` carries an `owned` flag; only the ordered lowering
+  sets it. The emitter adopts an `owned` String part and keeps the defensive
+  copy for any raw String/`str` piece.
+- `compiler/src/own/lower.rs::lower_template_pieces` walks pieces in source
+  order, pre-scans the AST effect predicate, binds the source
+  (`materialize_owned_argument` + `bind_member_receiver`), copies a string-like
+  placeholder through the internal `$text` converter, and stores a scalar only
+  when it has effects or precedes a later effect.
+- An eager copy uses the new `Statement::Adopt` (a store that does not release
+  the previous temporary), so the copy precedes a later sibling's hoisted
+  mutation and a loop re-entry does not free a value the builder already
+  adopted. A guarded copy uses an adopting `Materialize` fill.
+- `compiler/src/codegen/expr.rs::render_call` maps `$text` to `text_call`; the
+  template renderer adopts an `owned` String and copies a raw one.
+- `compiler/src/codegen/program.rs::materialize_init_value` orders module
+  initializer placeholders, releases an owned source, and retains the copy
+  local the part adopts.
+- `Statement::Adopt` is handled by the statement emitters and by every body
+  walker (temp types, slice typedefs, type parameters, fill checks, for-step
+  shape).
+
+### 2.3 Green Evidence
+
+`cargo test -p clc --test template_placeholder_integrity_spec_test` 37/37;
+`..._impl_test` 14/14; `template_direct_formatting_spec_test` 15/15 after the
+intended emission-pin update in `template_direct_formatting_impl_test`;
+`template_direct_formatting_impl_test` 5/5; `make check`
+green. The `an_alias_sibling_does_not_free_a_placeholder_source` and
+`owned_placeholders_in_a_loop_are_leak_free` regressions from the first draft
+were found by the existing suite and fixed by the `Adopt` store.
+
+### 2.4 Phase Review
+
+| Review | Verdict | Findings |
+|--------|---------|----------|
+| Correctness | first round: 🔴 RV-001, 🟡 RV-002 | RV-001/RV-002 fixed; `for_step_text` `Adopt` arm removed |
+| Semantics | first round: 🔴 SR-002, 🟠 SR-001 | SR-002/SR-001 fixed; pre-existing residuals recorded |
+| Memory safety | clean | 52 programs / 104 sanitizer runs, no report; adopted copy in loops/guards, source release, module copy retention all clean |
+| Emission integrity | first round: 🔴 guard loss | fixed; no other emission finding; 77 host TUs build under `-Werror`; corpus diff intended-only |
+
+**RV-001/SR-002 (CRITICAL) — `Statement::Adopt` dropped runtime guards.**
+`emit_statement` rendered `target = value;` without `emit_guards`, so an index,
+slice, division, or float-cast guard in the copied expression was lost. The
+arm now calls `self.emit_guards(value)` before the store, matching every other
+store emitter. ST-38 pins the out-of-range index trap; IT-13 pins the emitted
+trap text.
+
+**SR-001 (MAJOR) — a template copy hoisted above earlier literal fields.**
+`H { a: mark(1), b: $"{txt(mark(2))}" }` evaluated `mark(2)` before `mark(1)`
+because the copy's `Adopt` statement is emitted while lowering field `b`, ahead
+of the C literal. The struct/array literal lowering now pins every operand when
+any field/element contains a template placeholder
+(`contains_template_placeholder`), so earlier operands store at their source
+positions. ST-39 pins `12`.
+
+**RV-002 (MINOR) — unused `Adopt` arm in `for_step_text`.** The arm is
+unreachable because `for_step_is_structured` rejects an adopting store; it is
+removed (`_ => None` covers it).
+
+**Re-review round 2 (fix diff).** The literal pin's owning temp double-freed
+on loop re-entry; the pin's owning aggregate emitted an invalid aggregate
+assignment; and ST-38/IT-13 did not exercise an adopting copy. Fixed:
+
+- `pin_literal_operand` adopts an owning **call** with
+  `materialize_adopted_operand` (`Statement::Adopt`), keeps the fixed-array
+  store path, and leaves an owning `StructLit`/`ArrayLit` inline (no invalid
+  C, no double free). ST-40 covers the call-field loop; the owning aggregate
+  order remains the AR-21 residual.
+- ST-41/IT-13 use `P { a: mk(get(xs, 0)[5]), b: $"{i}" }`: the pinned adopted
+  call carries the argument's bounds trap, and the test asserts the E11211
+  guard precedes the `mk` call. Deleting `emit_guards` from `Adopt` now fails.
+
+**Pre-existing residuals (outside this phase, AR-21).** The zero-state
+`String` field placeholder can still reach `cl_string_copy(NULL)`; a template
+in a `for` step leaks on the base and head; and an owned template expression
+already hoists above earlier enclosing operands on the base. They are recorded
+for the closeout follow-up issue; none is caused by this phase.
+
+### 2.5 Green after fixes
+
+`template_placeholder_integrity_spec_test` 41/41 (41/41 under ASan);
+`..._impl_test` 15/15; `template_direct_formatting_spec_test` 15/15;
+`..._impl_test` 5/5; `make check` green. The emission diff is intended-only;
+the full gate runs in Phase 3.
 
 ## 3. Acceptance
 

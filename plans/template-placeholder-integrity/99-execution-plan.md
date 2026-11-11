@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 14:08
-> **Progress**: 12/37 tasks (32%)
+> **Last Updated**: 2026-11-11 17:25
+> **Progress**: 28/37 tasks (76%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -106,34 +106,34 @@ behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [03-02](03-02-ordered-evaluation.md) · [07](07-testing-strategy.md) ST-6–ST-21, ST-25 · AR-3–AR-11
 **Objective**: Pin once-only, source-order evaluation and the copy-before-move rule in every evaluation position.
 
-- [ ] 2.1.1 [spec-author] Add ST-6–ST-14 (body call count, take sibling, view over move, reverse-order guard, scalar order, generic String/scalar) — `compiler/tests/template_placeholder_integrity_spec_test.rs`
-- [ ] 2.1.2 [spec-author] Add ST-15–ST-21, ST-25, and ST-28–ST-31, ST-35 (eager `?:`, short-circuit, loop condition, module initializer, literal-only, skipped-arm, String source, projected member, conditional view, static-str member) — `compiler/tests/template_placeholder_integrity_spec_test.rs`
-- [ ] 2.1.3 Run the suite against the phase-start `clc`; record the red evidence for every fix case and label the guards — verify: the failure log names each red case
+- [x] 2.1.1 [spec-author] Add ST-6–ST-14 (body call count, take sibling, view over move, reverse-order guard, scalar order, generic String/scalar) — `compiler/tests/template_placeholder_integrity_spec_test.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.1.2 [spec-author] Add ST-15–ST-21, ST-25, ST-28–ST-31, ST-35, ST-38–ST-41 (eager `?:`, short-circuit, loop condition, module initializer, literal-only, skipped-arm, String source, projected member, conditional view, static-str member, index trap, literal order, adopted loop field, pinned guard) — `compiler/tests/template_placeholder_integrity_spec_test.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.1.3 Run the suite against the phase-start `clc`; record the red evidence for every fix case and label the guards — verify: the failure log names each red case ✅ (completed: 2026-11-11 16:05)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02 §3–§8](03-02-ordered-evaluation.md) · AR-3–AR-12
 **Objective**: Lower each string-like placeholder copy at its source position and keep pure scalar-only templates unchanged.
 
-- [ ] 2.2.1 Make `expression_has_effects` `pub(super)` for the sibling lowering module; update its call site — `compiler/src/own/call.rs`
-- [ ] 2.2.2 Add the `owned` provenance flag to `ValuePiece::Placeholder` and update every `ValuePiece` walk to carry it — `compiler/src/ir.rs` and its 29 match sites
-- [ ] 2.2.3 Replace the template placeholder mapping in `lower_value` with the ordered walk and the three materialization helpers — `compiler/src/own/lower.rs`
-- [ ] 2.2.4 Add the `$text` early arm to `render_call`; adopt only an `owned` String part and keep the raw String/str copy — `compiler/src/codegen/expr.rs`
-- [ ] 2.2.5 Add the ordered once-only walk to `materialize_init_value`'s Template arm using the pre-walk `init_operand_is_pure` scan, and retain the copy local — `compiler/src/codegen/program.rs`
-- [ ] 2.2.6 Run the new suite on host; every case green — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test`
+- [x] 2.2.1 Make `expression_has_effects` `pub(super)` for the sibling lowering module; update its call site — `compiler/src/own/call.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.2.2 Add the `owned` provenance flag to `ValuePiece::Placeholder` and update every `ValuePiece` walk to carry it — `compiler/src/ir.rs` and its 29 match sites ✅ (completed: 2026-11-11 16:05)
+- [x] 2.2.3 Replace the template placeholder mapping in `lower_value` with the ordered walk and the three materialization helpers — `compiler/src/own/lower.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.2.4 Add the `$text` early arm to `render_call`; adopt only an `owned` String part and keep the raw String/str copy — `compiler/src/codegen/expr.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.2.5 Add the ordered once-only walk to `materialize_init_value`'s Template arm using the pre-walk `init_operand_is_pure` scan, and retain the copy local — `compiler/src/codegen/program.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.2.6 Run the new suite on host; every case green — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test` ✅ (completed: 2026-11-11 16:05)
 
 ### Step 2.3: Impl Tests and Hardening
 
 **Reference**: [07 §3](07-testing-strategy.md) IT-1–IT-10 · AR-8–AR-12
 **Objective**: Pin the intended emission, prove the sanitizer safety, and review the phase.
 
-- [ ] 2.3.1 Add IT-1–IT-10 to the impl suite (IT-11/IT-12 already exist from Phase 1) — `compiler/tests/template_placeholder_integrity_impl_test.rs`
-- [ ] 2.3.2 Update the intended #25 emission pins for the String/str part shape — `compiler/tests/template_direct_formatting_impl_test.rs`
-- [ ] 2.3.3 Run the impl suite and the #25 suites green — verify: `cargo test -p clc --test template_placeholder_integrity_impl_test --test template_direct_formatting_impl_test --test template_direct_formatting_spec_test`
-- [ ] 2.3.4 Run the new spec suite under ASan, including the `String`-returning-call-in-`&&` case; no report and no leak — verify: `RDC_ASAN=1 cargo test -p clc --test template_placeholder_integrity_spec_test`
-- [ ] 2.3.5 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff — verify: the verdicts are recorded in `05-findings.md`
-- [ ] 2.3.6 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict
-- [ ] 2.3.7 `make check` green — verify: `make check`
+- [x] 2.3.1 Add IT-1–IT-10 and IT-13 to the impl suite (IT-11/IT-12 already exist from Phase 1) — `compiler/tests/template_placeholder_integrity_impl_test.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.3.2 Update the intended #25 emission pins for the String/str part shape — `compiler/tests/template_direct_formatting_impl_test.rs` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.3.3 Run the impl suite and the #25 suites green — verify: `cargo test -p clc --test template_placeholder_integrity_impl_test --test template_direct_formatting_impl_test --test template_direct_formatting_spec_test` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.3.4 Run the new spec suite under ASan, including the `String`-returning-call-in-`&&` case; no report and no leak — verify: `RDC_ASAN=1 cargo test -p clc --test template_placeholder_integrity_spec_test` ✅ (completed: 2026-11-11 16:05)
+- [x] 2.3.5 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-11 16:35)
+- [x] 2.3.6 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-11 17:25)
+- [x] 2.3.7 `make check` green — verify: `make check` ✅ (completed: 2026-11-11 16:35)
 
 **Deliverables**:
 - [ ] Every placeholder evaluates once in source order in all positions

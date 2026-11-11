@@ -119,8 +119,11 @@ fn the_host_template_uses_typed_parts() {
     let line = template_line("host-parts", &emitted);
     assert_contains("host-parts", line, "cl_str_part_i32(");
     assert_contains("host-parts", line, "cl_str_part_u32(");
-    assert_contains("host-parts", line, "cl_str_part_owned(cl_string_copy(");
-    assert_contains("host-parts", line, "cl_str_part_owned(cl_text_str(");
+    // The String and str copies are bound at the placeholder's source
+    // position; the part adopts each one.
+    assert_contains("host-parts", &emitted, "cl_string_copy(s)");
+    assert_contains("host-parts", &emitted, "cl_text_str((t).ptr, (t).len)");
+    assert_contains("host-parts", line, "cl_str_part_owned(__cl_tmp");
     assert_contains("host-parts", line, "cl_str_part_bytes(");
     assert_contains("host-parts", line, "cl_str_part_bool(");
     assert_contains("host-parts", line, "cl_str_part_f64(");
@@ -165,7 +168,8 @@ fn the_amiga_template_uses_typed_parts() {
     let line = template_line("amiga-parts", &emitted);
     assert_contains("amiga-parts", line, "cl_str_part_i32(");
     assert_contains("amiga-parts", line, "cl_str_part_u32(");
-    assert_contains("amiga-parts", line, "cl_str_part_owned(cl_string_copy(");
+    assert_contains("amiga-parts", &emitted, "cl_string_copy(s)");
+    assert_contains("amiga-parts", line, "cl_str_part_owned(__cl_tmp");
     assert_contains("amiga-parts", &emitted, "#define CL_STR_KIND_I32 2u");
 }
 

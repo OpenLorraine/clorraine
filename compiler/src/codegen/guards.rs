@@ -90,7 +90,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.emit_guards(inner);
                     }
                 }
@@ -438,7 +438,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.emit_conditional_drop_hoists(inner);
                     }
                 }
@@ -650,7 +650,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.prefill_loop_condition_materializations(inner);
                     }
                 }
@@ -846,7 +846,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.emit_discard_effects(inner);
                     }
                 }
@@ -941,7 +941,7 @@ impl<'a> Emitter<'a> {
                     .iter()
                     .filter_map(|piece| match piece {
                         ValuePiece::Literal(_) => None,
-                        ValuePiece::Placeholder(inner) => {
+                        ValuePiece::Placeholder { value: inner, .. } => {
                             let part = self.discard_expression(inner);
                             (part != "0").then_some(part)
                         }
@@ -1884,7 +1884,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.guard_expressions(inner, out);
                     }
                 }

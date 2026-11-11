@@ -190,8 +190,23 @@ fn assert_rejected(tag: &str, source: &str, code: &str, names: &[&str]) {
     );
 }
 
-fn assert_no_sanitizer_report(tag: &str, output: &Output) {
+/// Runs a program and asserts it traps with `code`.
+fn assert_trap(tag: &str, source: &str, code: &str) {
+    let output = run(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a runtime trap; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(code),
+        "{tag}: expected {code}; stderr:\n{stderr}"
+    );
+}
+
+fn assert_no_sanitizer_report(tag: &str, output: &Output) {    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("AddressSanitizer") && !stderr.contains("runtime error:"),
         "{tag}: the sanitizer reported an error; stderr:\n{stderr}"
@@ -433,4 +448,459 @@ func main(): i32 {
 }
 "#;
     assert_output("genericelem", source, "97\n");
+}
+
+// -- Ordered placeholder evaluation -----------------------------------------
+
+/// ST-6: a `str`-returning call placeholder is evaluated once.
+#[test]
+fn st6_str_call_placeholder_evaluates_once() {
+    let source = r#"module spec.tpi.strcall;
+import { println } from std.io;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+func main(): i32 {
+    println($"{mk()} calls={calls}");
+    return 0;
+}
+"#;
+    assert_output("strcall", source, "x calls=1\n");
+}
+
+/// ST-7: a String placeholder copies before a later take sibling.
+#[test]
+fn st7_string_placeholder_copied_before_take_sibling() {
+    let source = r#"module spec.tpi.takesibling;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    println($"{s}{consume(s)}");
+    return 0;
+}
+"#;
+    assert_output("takesibling", source, "alpha5\n");
+}
+
+/// ST-8: a `str` view is read before a later take sibling releases its owner.
+#[test]
+fn st8_view_placeholder_copied_before_move() {
+    let source = r#"module spec.tpi.viewmove;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    let v: str = s;
+    println($"{v}{consume(s)}");
+    return 0;
+}
+"#;
+    assert_output("viewmove", source, "alpha5\n");
+}
+
+/// ST-9: the reverse order stays a move-while-borrowed rejection.
+#[test]
+fn st9_view_after_move_is_rejected() {
+    let source = r#"module spec.tpi.viewafter;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    let v: str = s;
+    println($"{consume(s)}{v}");
+    return 0;
+}
+"#;
+    assert_rejected("viewafter", source, "E10022", &["'s'"]);
+}
+
+/// ST-10: a scalar before a later effect reads its pre-effect value.
+#[test]
+fn st10_scalar_before_effect_reads_first() {
+    let source = r#"module spec.tpi.scalarfirst;
+import { println } from std.io;
+import { stringOf } from std.text;
+let x: i32 = 1;
+func bump(take s: String): i32 { x = 2; return i32(len(s)); }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    println($"{x}{bump(s)}");
+    return 0;
+}
+"#;
+    assert_output("scalarfirst", source, "15\n");
+}
+
+/// ST-11: a scalar after an effect reads its post-effect value.
+#[test]
+fn st11_scalar_after_effect_reads_second() {
+    let source = r#"module spec.tpi.scalarsecond;
+import { println } from std.io;
+import { stringOf } from std.text;
+let x: i32 = 1;
+func bump(take s: String): i32 { x = 2; return i32(len(s)); }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    println($"{bump(s)}{x}");
+    return 0;
+}
+"#;
+    assert_output("scalarsecond", source, "52\n");
+}
+
+/// ST-12: two String placeholders both read the same source.
+#[test]
+fn st12_two_string_placeholders_format() {
+    let source = r#"module spec.tpi.twostrings;
+import { println } from std.io;
+import { stringOf } from std.text;
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    println($"{s}{s}");
+    return 0;
+}
+"#;
+    assert_output("twostrings", source, "alphaalpha\n");
+}
+
+/// ST-13: a generic String placeholder copies before a take sibling.
+#[test]
+fn st13_generic_string_copied_before_take() {
+    let source = r#"module spec.tpi.generictake;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func show<T>(x: T, take y: String): String { return $"{x}{consume(y)}"; }
+func main(): i32 {
+    let s: String = stringOf("alpha");
+    println(show<String>(s, s));
+    return 0;
+}
+"#;
+    assert_output("generictake", source, "alpha5\n");
+}
+
+/// ST-14: a generic scalar placeholder still formats.
+#[test]
+fn st14_generic_scalar_formats() {
+    let source = r#"module spec.tpi.genericscalar;
+import { println } from std.io;
+import { String } from std.text;
+func show<T>(x: T): String { return $"{x}"; }
+func main(): i32 {
+    println(show<i32>(7));
+    return 0;
+}
+"#;
+    assert_output("genericscalar", source, "7\n");
+}
+
+/// ST-15: a view before a take sibling in an eager `?:` arm.
+#[test]
+fn st15_view_and_take_in_conditional_arm() {
+    let source = r#"module spec.tpi.condarm;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let c: bool = true;
+    let s: String = stringOf("alpha");
+    let v: str = s;
+    let t: String = c ? $"{v}{consume(s)}" : stringOf("none");
+    println(t);
+    return 0;
+}
+"#;
+    assert_output("condarm", source, "alpha5\n");
+}
+
+/// ST-16: a `str` call in a short-circuit operand is evaluated once.
+#[test]
+fn st16_short_circuit_str_call_once() {
+    let source = r#"module spec.tpi.shortcall;
+import { println } from std.io;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+func main(): i32 {
+    let c: bool = true;
+    let ok: bool = c && len($"v={mk()}") > 0;
+    println($"{ok}");
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("shortcall", source, "true\n1\n");
+}
+
+/// ST-17: a view and take in a short-circuit operand is sanitizer-clean.
+#[test]
+fn st17_short_circuit_view_take() {
+    let source = r#"module spec.tpi.shorttake;
+import { println } from std.io;
+import { stringOf } from std.text;
+func consume(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let c: bool = true;
+    let s: String = stringOf("alpha");
+    let v: str = s;
+    let n: i32 = c && len($"{v}{consume(s)}") > 0 ? 1 : 0;
+    println($"{n}");
+    return 0;
+}
+"#;
+    assert_output("shorttake", source, "1\n");
+}
+
+/// ST-18: a `str` call in a loop condition is evaluated once per test.
+#[test]
+fn st18_loop_condition_str_call_once() {
+    let source = r#"module spec.tpi.loopcall;
+import { println } from std.io;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && len($"v={mk()}") > 0) { i = i + 1; }
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("loopcall", source, "2\n");
+}
+
+/// ST-19: a module-initializer `str` call is evaluated once.
+#[test]
+fn st19_module_str_call_once() {
+    let source = r#"module spec.tpi.modulecall;
+import { println } from std.io;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+let s: str = $"v={mk()}";
+func main(): i32 {
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("modulecall", source, "1\n");
+}
+
+/// ST-20: two module-initializer placeholders each evaluate once.
+#[test]
+fn st20_module_two_placeholders_once() {
+    let source = r#"module spec.tpi.moduletwo;
+import { println } from std.io;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+let s: str = $"a={mk()} b={mk()}";
+func main(): i32 {
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("moduletwo", source, "2\n");
+}
+
+/// ST-21: a placeholder-free template stays a plain str.
+#[test]
+fn st21_literal_only_template() {
+    let source = r#"module spec.tpi.literal;
+import { println } from std.io;
+func main(): i32 {
+    println($"literal {{ braces }}");
+    return 0;
+}
+"#;
+    assert_output("literal", source, "literal { braces }\n");
+}
+
+/// ST-25: a skipped `?:` arm evaluates no placeholder.
+#[test]
+fn st25_skipped_arm_has_no_effect() {
+    let source = r#"module spec.tpi.skipped;
+import { println } from std.io;
+import { stringOf } from std.text;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "x"; }
+func main(): i32 {
+    let c: bool = false;
+    let s: String = c ? $"v={mk()}" : stringOf("none");
+    println(s);
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("skipped", source, "none\n0\n");
+}
+
+/// ST-28: a String-returning call in a short-circuit operand is once.
+#[test]
+fn st28_short_circuit_string_call_once() {
+    let source = r#"module spec.tpi.shortstring;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let calls: i32 = 0;
+func mkString(): String { calls = calls + 1; return stringOf("z"); }
+func main(): i32 {
+    let c: bool = true;
+    let ok: bool = c && len($"{mkString()}") > 0;
+    println($"{ok}");
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("shortstring", source, "true\n1\n");
+}
+
+/// ST-29: a module-initializer String source is released and evaluated once.
+#[test]
+fn st29_module_string_source_once() {
+    let source = r#"module spec.tpi.modulestring;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let calls: i32 = 0;
+func mkString(): String { calls = calls + 1; return stringOf("z"); }
+let s: str = $"v={mkString()}";
+func main(): i32 {
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("modulestring", source, "1\n");
+}
+
+/// ST-30: a String member projection over a call is evaluated once.
+#[test]
+fn st30_string_member_projection_once() {
+    let source = r#"module spec.tpi.membercall;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let calls: i32 = 0;
+struct H { name: String; }
+func mkH(): H { calls = calls + 1; return H { name: stringOf("alpha") }; }
+func main(): i32 {
+    println($"{mkH().name}");
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("membercall", source, "alpha\n1\n");
+}
+
+/// ST-31: a view conditional is evaluated once.
+#[test]
+fn st31_view_conditional_once() {
+    let source = r#"module spec.tpi.viewcond;
+import { println } from std.io;
+import { stringOf } from std.text;
+let calls: i32 = 0;
+func mk(): str { calls = calls + 1; return "z"; }
+func main(): i32 {
+    let c: bool = false;
+    let s: String = stringOf("alpha");
+    let v: str = s;
+    println($"x={(c ? v : mk())}");
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("viewcond", source, "x=z\n1\n");
+}
+
+/// ST-35: a static-str member over a call is evaluated once.
+#[test]
+fn st35_static_member_projection_once() {
+    let source = r#"module spec.tpi.staticmember;
+import { println } from std.io;
+let calls: i32 = 0;
+struct H { name: static str; }
+func get(): H { calls = calls + 1; return H { name: "alpha" }; }
+func main(): i32 {
+    println($"{get().name}");
+    println($"{calls}");
+    return 0;
+}
+"#;
+    assert_output("staticmember", source, "alpha\n1\n");
+}
+
+/// ST-38: an out-of-range index inside a string placeholder keeps its bounds trap.
+#[test]
+fn st38_index_placeholder_traps() {
+    let source = r#"module spec.tpi.indextrap;
+import { println } from std.io;
+import { Array, arrayNew, push, get } from std.mem;
+func main(): i32 {
+    let xs: Array<str> = arrayNew<str>();
+    push(xs, "ab");
+    println($"{get(xs, 0)[5]}");
+    return 0;
+}
+"#;
+    assert_trap("indextrap", source, "E11211");
+}
+
+/// ST-40: a pinned owning literal field is adopted across loop re-entry.
+#[test]
+fn st40_adopted_literal_field_in_a_loop() {
+    let source = r#"module spec.tpi.adoptloop;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+struct P { a: String; b: String; }
+func mk(n: i32): String { return stringOf($"{n}"); }
+func main(): i32 {
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: P = P { a: mk(i), b: $"{mk(i + 10)}" };
+        total = total + i32(len(p.a)) + i32(len(p.b));
+        i = i + 1;
+    }
+    println($"{total}");
+    return 0;
+}
+"#;
+    assert_output("adoptloop", source, "9\n");
+}
+
+/// ST-39: an earlier literal field evaluates before a later template copy.
+#[test]
+fn st39_literal_field_order_is_preserved() {
+    let source = r#"module spec.tpi.literalorder;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+struct Pair { a: i32; b: String; }
+func mark(n: i32): i32 { seq = seq * 10 + n; return n; }
+func txt(n: i32): String { return stringOf($"{n}"); }
+func main(): i32 {
+    let p: Pair = Pair { a: mark(1), b: $"{txt(mark(2))}" };
+    println($"{seq}");
+    return 0;
+}
+"#;
+    assert_output("literalorder", source, "12\n");
+}
+
+/// ST-41: a pinned adopted call keeps its argument's bounds trap.
+#[test]
+fn st41_pinned_call_keeps_argument_guard() {
+    let source = r#"module spec.tpi.pinguard;
+import { println } from std.io;
+import { Array, arrayNew, push, get } from std.mem;
+import { String, stringOf } from std.text;
+struct P { a: String; b: String; }
+func mk(n: str): String { return stringOf("x"); }
+func main(): i32 {
+    let xs: Array<str> = arrayNew<str>();
+    push(xs, "ab");
+    let i: i32 = 1;
+    let p: P = P { a: mk(get(xs, 0)[5]), b: $"{i}" };
+    println(p.a);
+    return 0;
+}
+"#;
+    assert_trap("pinguard", source, "E11211");
 }

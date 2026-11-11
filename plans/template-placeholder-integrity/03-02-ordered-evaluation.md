@@ -101,7 +101,7 @@ wrappers so the policy is explicit and testable.
 |--------|----------------|-------------------|
 | `materialize_at_position` | `materialize_value` (`lower.rs:3438`) | `materialize_guard_operand` (`lower.rs:2646`) |
 | `materialize_scalar_at_position` | `materialize_value` | A forced `Materialize` temporary with no release (the scalar owns nothing) |
-| `materialize_copy_at_position` | `materialize_value` | A forced `Materialize` with `adopting: true` and no release |
+| `materialize_adopted_copy` | A `Statement::Adopt` at the source position | A forced `Materialize` with `adopting: true` and no release |
 
 "Eager" means **only** `self.defer_move_outs == 0`: the current block is a
 statement position (a statement, a loop-condition block, or a lambda/defer
@@ -131,14 +131,20 @@ Value::new(
 )
 ```
 
+An eager copy uses `Statement::Adopt`: the store `target = value;` does **not**
+release the previous target value, because the part builder adopts the copy.
+A plain `Statement::Assign` would pre-drop the previous copy on a loop
+re-entry and free a value the builder already freed; the eager
+`Materialize` fill would run after a later sibling's hoisted mutation and
+copy the wrong bytes. The `Adopt` store is emitted at the piece's source
+position, so both problems are avoided.
+
 It deliberately does **not** call `mark_destination_temp` and does **not**
 register a pending release: the copy is adopted by the part, exactly like the
 existing adopting carrier in `consume_place_into`
-(`compiler/src/own/lower.rs:3496`). `mark_destination_temp` would make the
-projection/loan walks treat the temporary as released storage and is wrong
-for an adopted value. A re-executed guard must not drop the previous value:
-the builder already freed it. The guard emitter already skips the re-fill drop
-for `adopting` carriers (`compiler/src/codegen/guards.rs`).
+(`compiler/src/own/lower.rs:3496`). A re-executed guard must not drop the
+previous value: the builder already freed it. The guard emitter already skips
+the re-fill drop for `adopting` carriers (`compiler/src/codegen/guards.rs`).
 
 ### 3.4 Source Materialization Predicate
 
@@ -179,6 +185,20 @@ requires a **view type** for the impure-projection case and never wraps an
 owning `Materialize`, an owning conditional, or an owned projection. A view
 temporary's release is a no-op, so a second registration cannot double-free a
 String.
+
+### 3.5 Literals
+
+A template nested in a struct or array literal can emit a copy statement at
+its own field's position, before the C literal is built. If an earlier field
+or element has effects, it must run first. The literal lowering pins a
+duplicable operand (the existing update pin), an owning **call** (with an
+adopting `Statement::Adopt` so a loop re-entry does not free the field's
+handle), and a fixed array (the existing element-wise store). An owning
+**aggregate** field (`StructLit`/`ArrayLit`) stays inline: its structured
+store has no no-pre-drop form, and pinning it would emit an invalid aggregate
+assignment. The scalar/call order is pinned by ST-39/ST-40; the owning
+aggregate order is the recorded residual (AR-21). The rule uses the
+`contains_template_placeholder` AST predicate.
 
 ## 4. Internal Copy Call
 
@@ -347,9 +367,9 @@ The template result binding and `init_retain_owners` behavior at
 2. **One release per owned source.** `materialize_owned_argument` binds an
    owned call result as before; the scope cleanup frees it. The copy has no
    scope release. The part builder frees the copy after appending.
-3. **No release of a copy temporary.** Eager copies use `materialize_value`'s
-   unnamed temp (not in the ownership walk); deferred copies use
-   `adopting: true`; init copies use `init_retain_owners = true`.
+3. **No release of a copy temporary.** Eager copies use `Statement::Adopt`
+   (the target owns nothing and the previous value is not released); deferred
+   copies use `adopting: true`; init copies use `init_retain_owners = true`.
 4. **No double free on a re-executed guard.** An adopting fill skips the
    previous-value drop; the builder already freed the previous copy.
 5. **No leak on a skipped path.** A deferred fill runs only where the
@@ -388,20 +408,22 @@ before this copy runs.
 
 | File | Function | Change |
 |------|----------|--------|
-| `compiler/src/ir.rs` | `ValuePiece`, re-export | Add the `owned` flag; re-export the new duty |
+| `compiler/src/ir.rs` | `ValuePiece`, `Statement::Adopt`, re-export | Add the `owned` flag and the adopting store |
 | `compiler/src/ir/mono.rs` | `RequiresTemplatePlaceholder` | Per-instance formattability/nullability duty |
 | `compiler/src/own/expr.rs` | `eval`, `Template` arm | Add the concrete nullable check, record the generic duty, and compute its display name |
 | `compiler/src/own/instance_check.rs` | new check | Report E10500/E10010 for an invalid instance, deduped per site |
 | `compiler/src/own.rs` | duty field, dedupe set, transfer | Carry the new duty to `Monomorphization` |
 | `compiler/src/sema/expr.rs` | `formattable` | Expose the predicate; reject an opaque placeholder |
 | `compiler/src/sema/mod.rs` | re-export | Expose `formattable` to the instance check |
-| `compiler/src/own/lower.rs` | `lower_value`, `Template` arm | Ordered placeholder walk |
-| `compiler/src/own/lower.rs` | `bind_member_receiver` call | Bind a fresh projection root before the copy |
-| `compiler/src/own/lower.rs` | new helpers | Materialize at position / scalar / copy |
+| `compiler/src/own/lower.rs` | `lower_value`, `Template` arm | Ordered placeholder walk; literal operand pins |
+| `compiler/src/own/lower.rs` | new helpers | Materialize at position / scalar / adopted copy; literal template predicate |
 | `compiler/src/own/call.rs` | `expression_has_effects` | Visibility only (`pub(super)`) |
 | `compiler/src/codegen/expr.rs` | `render_call` | `$text` early arm |
 | `compiler/src/codegen/expr.rs` | `template` | Adopt only the `owned` part; copy the raw fallbacks |
+| `compiler/src/codegen/function.rs` | `emit_statement` | `Statement::Adopt` store with guards and no pre-drop |
+| `compiler/src/codegen/control.rs` | `for_step_text` | No adopting store is structured; the `_` fallback applies |
 | `compiler/src/codegen/program.rs` | `materialize_init_value`, Template arm | Ordered initializer walk |
+| `compiler/src/own/{generics,instance_check,loops}.rs` | statement walks | Carry `Adopt` like an assigned value |
 | All `ValuePiece` walk sites (29 matches) | various | Carry the `owned` flag unchanged |
 
 ## 12. Failure Handling

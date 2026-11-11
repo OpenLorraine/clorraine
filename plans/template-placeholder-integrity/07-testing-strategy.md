@@ -66,6 +66,10 @@ diagnostic, and no output `.c` file. "Runs" means exit 0 and exact stdout.
 | ST-35 | `struct H { name: static str; }; func get(): H; println($"{get().name}");` | runs: `alpha`, `calls=1` | R2, AR-3, AR-11 |
 | ST-36 | `func first<T>(x: T): String { return $"{x[0]}"; }` with `first<str>("a")` | runs: `97` (the element parameter resolves per instance) | R4, AR-7 |
 | ST-37 | `func show<T>(flag: bool, x: T): String { if (x != null) { return $"v={flag ? x : null}"; } ... }` with `show<String?>(true, stringOf("alpha"))` | rejected: E10010 at the null arm | R1, R4, AR-7 |
+| ST-38 | `Array<str>`; `println($"{get(xs, 0)[5]}")` | runtime trap: E11211; no out-of-range read | R2, AR-22 |
+| ST-39 | `struct Pair { a: i32; b: String; }`; `Pair { a: mark(1), b: $"{txt(mark(2))}" }` | runs: `12` (the earlier field evaluates first) | R2, AR-22 |
+| ST-40 | `struct P { a: String; b: String; }`; `P { a: mk(i), b: $"{mk(i + 10)}" }` in a 3-iteration loop | runs: `9`; ASan clean (the pinned owning field is adopted) | R2, AR-22 |
+| ST-41 | `struct P { a: String; b: String; }`; `P { a: mk(get(xs, 0)[5]), b: $"{i}" }` with `Array<str>` | runtime trap: E11211 (the pinned call keeps its argument's guard) | R2, AR-22 |
 
 ### 2.1 Red Evidence
 
@@ -78,11 +82,12 @@ phase-start compiler:
   internal "emitted C failed to compile" error; ST-33 is accepted because no
   instance is emitted (an instantiated member would fail the C build). The
   test fails on the missing diagnostic.
-- ST-6, ST-7, ST-8, ST-10, ST-13, ST-15–ST-20, ST-31, ST-35 are red fix
-  cases: they fail on the wrong call count, corrupt output, or a crash.
+- ST-6, ST-7, ST-8, ST-10, ST-13, ST-15–ST-20, ST-31, ST-35, ST-39 are red
+  fix cases: they fail on the wrong call count, corrupt output, or a crash.
 - ST-3, ST-5, ST-9, ST-11, ST-12, ST-14, ST-21, ST-22, ST-24, ST-25, ST-27–ST-30,
-  ST-34, ST-36 are **behavior guards** that pass before the change and must
-  keep passing; they are still written first so the whole contract is visible.
+  ST-34, ST-36, ST-38, ST-40, ST-41 are **behavior guards** that pass before
+  the change and must keep passing; they are still written first so the whole
+  contract is visible.
 - The execution plan records the exact failing test names and the observed
   base output for every red case.
 
@@ -102,6 +107,7 @@ phase-start compiler:
 | IT-10 | The part count, literal byte parts, and scalar kind codes are unchanged |
 | IT-11 | A nullable placeholder reports E10010 with the placeholder's name/span and writes no output C |
 | IT-12 | A nullable generic instance reports E10010 at the placeholder span; a narrowed instance emits the copy and no diagnostic; a non-formattable instance reports E10500 |
+| IT-13 | An adopted copy is a plain `target = value;` with no previous-value release and its bounds guard emitted |
 
 The #25 impl pins for a `String`/`str` placeholder change intentionally: the
 copy now binds to a temporary before the concat and the part adopts it. Only
@@ -137,7 +143,7 @@ reopens AR-9.
 | Requirement | Cases |
 |-------------|-------|
 | R1 (nullable) | ST-1–ST-5, ST-22–ST-24, ST-26, ST-27, ST-34, ST-37 |
-| R2 (once, in order) | ST-6, ST-10–ST-20, ST-25, ST-28, ST-30, ST-31, ST-35 |
+| R2 (once, in order) | ST-6, ST-10–ST-20, ST-25, ST-28, ST-30, ST-31, ST-35, ST-38–ST-41 |
 | R3 (copy before move) | ST-7–ST-9, ST-12, ST-15, ST-17, ST-30 |
 | R4 (generic) | ST-13, ST-14, ST-26, ST-27, ST-32, ST-33, ST-34, ST-36 |
 | R5 (no language change) | ST-21, the existing #25 suite, `make bench-shape` |

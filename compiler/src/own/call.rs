@@ -1460,7 +1460,7 @@ fn declared_ffi<'a>(
 /// other form is effectful only when one of its parts is. The predicate is
 /// conservative: a pure intrinsic still counts, so an earlier argument that
 /// could be skipped never folds into the later argument's fill.
-fn expression_has_effects(expr: &Expr) -> bool {
+pub(super) fn expression_has_effects(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Call { .. }
         | ExprKind::IntrinsicCall { .. }

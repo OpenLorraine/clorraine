@@ -461,7 +461,9 @@ impl<'a> Emitter<'a> {
         for block in &function.blocks {
             for instr in &block.statements {
                 match &instr.statement {
-                    Statement::Assign { value, .. } | Statement::Discard { value } => {
+                    Statement::Assign { value, .. }
+                    | Statement::Adopt { value, .. }
+                    | Statement::Discard { value } => {
                         self.collect_value_slice_types(value, subst, found);
                     }
                     // A run-time store index (and its guards) lives in the
@@ -597,7 +599,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.collect_value_slice_types(inner, subst, found);
                     }
                 }
@@ -3379,19 +3381,62 @@ impl<'a> Emitter<'a> {
                 }
             }
             ValueKind::Template(pieces) => {
+                // The source-order walk must decide later effects before it
+                // stores an earlier value, so the flags come from the raw
+                // lowered pieces. A String/str placeholder is copied at its own
+                // position; a scalar is stored only when a later piece can
+                // reorder it.
+                let effectful: Vec<bool> = pieces
+                    .iter()
+                    .map(|piece| match piece {
+                        ValuePiece::Placeholder { value, .. } => !init_operand_is_pure(value),
+                        ValuePiece::Literal(_) => false,
+                    })
+                    .collect();
+                let last_effect = effectful.iter().rposition(|&effect| effect);
+                let walked_pieces: Vec<ValuePiece> = pieces
+                    .iter()
+                    .enumerate()
+                    .map(|(index, piece)| match piece {
+                        ValuePiece::Literal(text) => ValuePiece::Literal(text.clone()),
+                        ValuePiece::Placeholder { value: inner, .. } => {
+                            let walked = self.materialize_init_value(inner, guard);
+                            let ty = self.substitute(&walked.ty);
+                            if Self::init_template_is_string_like(&ty) {
+                                let source = self.store_init_template_source(&walked, guard);
+                                let copy = self.init_template_text_copy(source);
+                                let copy = self.materialize_init_template_copy(&copy, guard);
+                                ValuePiece::Placeholder {
+                                    value: copy,
+                                    owned: true,
+                                }
+                            } else if effectful[index]
+                                || last_effect.is_some_and(|last| index < last)
+                            {
+                                let value = if init_operand_is_pure(&walked) {
+                                    let zero = self.empty_state(&walked.ty);
+                                    let (_, local) =
+                                        self.materialize_init_local(&walked, guard, &zero);
+                                    local
+                                } else {
+                                    self.store_impure_init_operand(&walked, guard)
+                                };
+                                ValuePiece::Placeholder {
+                                    value,
+                                    owned: false,
+                                }
+                            } else {
+                                ValuePiece::Placeholder {
+                                    value: walked,
+                                    owned: false,
+                                }
+                            }
+                        }
+                    })
+                    .collect();
                 let walked = Value::new(
                     value.ty.clone(),
-                    ValueKind::Template(
-                        pieces
-                            .iter()
-                            .map(|piece| match piece {
-                                ValuePiece::Literal(text) => ValuePiece::Literal(text.clone()),
-                                ValuePiece::Placeholder(inner) => ValuePiece::Placeholder(
-                                    self.materialize_init_value(inner, guard),
-                                ),
-                            })
-                            .collect(),
-                    ),
+                    ValueKind::Template(walked_pieces),
                 );
                 // A formatted value owns its buffer; bind it so the release
                 // pass frees it, unless a view destination retains it.
@@ -3413,6 +3458,55 @@ impl<'a> Emitter<'a> {
         }
         let zero = self.empty_state(&value.ty);
         let (_, local) = self.materialize_init_local(value, guard, &zero);
+        local
+    }
+
+    /// True when a module-initializer placeholder is copied into the builder.
+    fn init_template_is_string_like(ty: &Ty) -> bool {
+        ty.is_param()
+            || ty.is_unknown()
+            || matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
+            || matches!(&ty.kind, TyKind::Handle(name) if name == "String")
+    }
+
+    /// Stores a template source before the copy.
+    ///
+    /// The source is not the view's backing, so an owned String source is
+    /// released at the end of the init function. The copy gets the part
+    /// builder's ownership below.
+    fn store_init_template_source(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        if init_operand_is_pure(value) {
+            return value.clone();
+        }
+        let saved = std::mem::replace(&mut self.init_retain_owners, false);
+        let stored = self.store_impure_init_operand(value, guard);
+        self.init_retain_owners = saved;
+        stored
+    }
+
+    /// Builds the internal text-conversion call a module copy uses.
+    fn init_template_text_copy(&self, value: Value) -> Value {
+        Value::new(
+            Ty::handle("String"),
+            ValueKind::Call {
+                callee: "$text".to_owned(),
+                type_args: Vec::new(),
+                args: vec![value],
+                receiver: None,
+            },
+        )
+    }
+
+    /// Binds a module copy into a retained init local.
+    fn materialize_init_template_copy(
+        &mut self,
+        value: &Value,
+        guard: Option<&str>,
+    ) -> Value {
+        let zero = self.empty_state(&value.ty);
+        let saved = std::mem::replace(&mut self.init_retain_owners, true);
+        let (_, local) = self.materialize_init_local(value, guard, &zero);
+        self.init_retain_owners = saved;
         local
     }
 
@@ -3555,7 +3649,7 @@ impl<'a> Emitter<'a> {
                 self.init_result_needs_binding(&value.ty)
                     || pieces.iter().any(|piece| match piece {
                         ValuePiece::Literal(_) => false,
-                        ValuePiece::Placeholder(inner) => {
+                        ValuePiece::Placeholder { value: inner, .. } => {
                             self.init_value_needs_materialization(inner)
                         }
                     })
@@ -3754,7 +3848,10 @@ impl<'a> Emitter<'a> {
                             ValuePiece::Literal(String::from_utf8_lossy(bytes).into_owned())
                         }
                         TemplatePiece::Placeholder(inner) => {
-                            ValuePiece::Placeholder(self.lower_global(module, inner))
+                            ValuePiece::Placeholder {
+                                value: self.lower_global(module, inner),
+                                owned: false,
+                            }
                         }
                     })
                     .collect(),

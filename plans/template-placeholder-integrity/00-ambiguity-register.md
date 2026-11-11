@@ -1,6 +1,6 @@
 # Ambiguity Register: Template Placeholder Integrity
 
-> **Status**: ✅ GATE PASSED — all 21 items resolved
+> **Status**: ✅ GATE PASSED — all 22 items resolved
 > **Last Updated**: 2026-11-11 14:08
 > **Authority mode**: auto-design (root invocation
 > `codeops-20261111-1410-template-placeholder-integrity`, policy version 1)
@@ -30,6 +30,7 @@
 | 19 | Security | New input, parser, or unsafe surface | — | None: the copy is an internal lowering of an already-checked expression | ✅ Resolved |
 | 20 | UX & presentation | Diagnostic code, message, and help for a nullable placeholder | new code / reuse E10010 | Reuse E10010 with the frozen registry text (`value '{name}' may be null here`) | ✅ Resolved |
 | 21 | Scope | `$"{null}"` currently reaches the driver as an internal C-compile error | include / exclude | Exclude from this plan and file a separate follow-up issue at closeout | ✅ Resolved |
+| 22 | Technical (runtime) | An eager template copy needs a store that does not pre-drop the previous temporary, while still running at the placeholder's source position | plain Assign / adopting Materialize / new `Statement::Adopt` | Add `Statement::Adopt`: a store with no previous-value release and no guard loss | ✅ Resolved |
 
 ## Delegated Resolution Records
 
@@ -322,13 +323,41 @@ at the end; each applies to every row unless a row adds its own.
   error or a crash; they are recorded as a follow-up issue at closeout, not
   bundled. A **conditional null arm in a generic template** is still judged by
   the per-instance duty (ST-37), because the duty sees the arm and can report
-  E10010.
+  E10010. An owning **aggregate** literal field before a template copy keeps
+  its inline evaluation order (the pin covers duplicable operands, owning
+  calls, and fixed arrays); that ordering residual is part of the same
+  follow-up.
 - Evidence: a standalone `$"{null}"` program on `8b4bff2` reports the ICE;
   `c ? a : b` with `a: String` and `b: String?` is typed non-null and crashes
   on the base and head. The fix belongs in the formattability/null-literal and
   conditional-result rules, not in the ownership ordering this plan changes.
 - Rejected: bundling the sema change (scope expansion, separate root cause).
 - Confidence: High.
+
+**AR-22 (runtime) — adopting template store**
+
+- Authority: AI — delegated by `--auto-design`.
+- Eligibility: internal compiler mechanism within the accepted ordered-lowering
+  behavior; no language or ABI surface.
+- Decision: add `Statement::Adopt`, a compiler-temporary store that does not
+  release the previous value. The part builder adopts the copy; the store runs
+  at the placeholder's source position.
+- Evidence: a plain `Statement::Assign` pre-drops the previous copy on a loop
+  re-entry and double-frees a value the builder already freed
+  (`owned_placeholders_in_a_loop_are_leak_free`); an adopting `Materialize`
+  fill runs after a later sibling's hoisted mutation and copies the wrong bytes
+  (`an_alias_sibling_does_not_free_a_placeholder_source` printed `z1`). The
+  `Adopt` store preserves both. `emit_statement` calls `emit_guards` before the
+  store, so an index/slice/division guard in the copied expression is kept
+  (ST-38).
+- Rejected: a plain Assign (double free); an adopting Materialize (source-order
+  regression); a new `ValueKind` (heavier walk surface).
+- Strongest counterargument: a new statement variant must be handled by every
+  walker. The compiler forces the exhaustive matches; the walkers that inspect
+  assigned values now treat `Adopt` identically, and the for-step path
+  deliberately does not consider it structured.
+- Confidence: High. Reopen if a missed walker changes a type, cleanup, or
+  guard for an adopted value.
 
 ## Reopen Triggers
 

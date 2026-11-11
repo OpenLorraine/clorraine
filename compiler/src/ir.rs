@@ -351,7 +351,14 @@ pub enum ValuePiece {
     /// Literal text between placeholders.
     Literal(String),
     /// A `{...}` placeholder and its lowered value.
-    Placeholder(Value),
+    Placeholder {
+        /// The lowered placeholder value.
+        value: Value,
+        /// True when `value` is an owned `String` copy made at the
+        /// placeholder's source position. The part builder adopts such a
+        /// value; a raw `String`/`str` piece keeps the defensive copy.
+        owned: bool,
+    },
 }
 
 /// One statement of the typed control-flow IR.
@@ -363,6 +370,18 @@ pub enum Statement {
         /// The place written.
         target: Place,
         /// The value stored.
+        value: Value,
+    },
+    /// Store an adopted value into a compiler temporary.
+    ///
+    /// The consumer takes ownership of `value`, so the previous target value is
+    /// not released: a template part frees the copy after appending it, and a
+    /// re-executed loop or guard must not free it again. The target is a
+    /// compiler temporary; the value is a fresh owned copy.
+    Adopt {
+        /// The compiler temporary written.
+        target: Place,
+        /// The owned value the consumer adopts.
         value: Value,
     },
     /// Store a value through a pointer-derived lvalue.

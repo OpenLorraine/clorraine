@@ -947,7 +947,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
+                    if let ValuePiece::Placeholder { value: inner, .. } = piece {
                         self.materialize_owned_calls(inner);
                     }
                 }
@@ -1001,6 +1001,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     !value_needs_guards(value)
                         && !matches!(value.kind, ValueKind::ArrayLit { .. })
                 }
+                Statement::Adopt { .. } => false,
                 Statement::Nop => true,
                 _ => false,
             })

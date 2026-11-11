@@ -1530,7 +1530,7 @@ fn check_function_fills(
     for block in &function.blocks {
         for instr in &block.statements {
             match &instr.statement {
-                Statement::Assign { value, .. } => {
+                Statement::Assign { value, .. } | Statement::Adopt { value, .. } => {
                     check_value_fills(value, params, args, sema, instr.span, diagnostics);
                 }
                 Statement::StorePointer { pointer, value } => {
@@ -1657,7 +1657,7 @@ fn check_value_fills(
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
-                if let crate::ir::ValuePiece::Placeholder(inner) = piece {
+                if let crate::ir::ValuePiece::Placeholder { value: inner, .. } = piece {
                     check_value_fills(inner, params, args, sema, span, diagnostics);
                 }
             }

@@ -902,7 +902,7 @@ pub(crate) fn lifted_needs_specialization(
     }
     function.blocks.iter().any(|block| {
         block.statements.iter().any(|statement| match &statement.statement {
-            Statement::Assign { value, .. } | Statement::Discard { value } => {
+            Statement::Assign { value, .. } | Statement::Adopt { value, .. } | Statement::Discard { value } => {
                 value_mentions_type_param(value)
             }
             Statement::StorePointer { pointer, value } => {
@@ -987,7 +987,7 @@ fn value_mentions_type_param(value: &Value) -> bool {
         }
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(value) => value_mentions_type_param(value),
+            ValuePiece::Placeholder { value, .. } => value_mentions_type_param(value),
         }),
         ValueKind::Intrinsic { args, type_arg, .. } => {
             type_arg.iter().any(super::lower::mentions_type_param)
@@ -1025,7 +1025,7 @@ fn walk_function(
     for block in &function.blocks {
         for instr in &block.statements {
             match &instr.statement {
-                Statement::Assign { value, .. } => {
+                Statement::Assign { value, .. } | Statement::Adopt { value, .. } => {
                     walk_value(value, bindings, function, program, sema, mono, enclosing)
                 }
                 Statement::StorePointer { pointer, value } => {
@@ -1366,6 +1366,15 @@ fn resolved_ir_temp_ty(
                         return resolved;
                     }
                 }
+                Statement::Adopt { target, value } => {
+                    if !names_temp(target, id) {
+                        continue;
+                    }
+                    let resolved = resolved_ir_value_ty(value, bindings, function, program, sema);
+                    if !resolved.is_unknown() {
+                        return resolved;
+                    }
+                }
                 Statement::Move { target, source } => {
                     if !names_temp(target, id) {
                         continue;
@@ -1502,7 +1511,7 @@ fn walk_value(
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
-                if let crate::ir::ValuePiece::Placeholder(inner) = piece {
+                if let crate::ir::ValuePiece::Placeholder { value: inner, .. } = piece {
                     walk_value(inner, bindings, function, program, sema, mono, enclosing);
                 }
             }
