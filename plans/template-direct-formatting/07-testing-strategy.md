@@ -35,7 +35,7 @@ the host allocator and reading a counter around the template expression.
 | File | Cases | Notes |
 |---|---|---|
 | `compiler/tests/template_direct_formatting_spec_test.rs` | ST-1 – ST-15 | Host; `--wrap=malloc` for the deltas; ASan/UBSan markers |
-| `compiler/tests/template_direct_formatting_impl_test.rs` | Emission | Host and Amiga: scalar parts, no `cl_text_i32/u32(` inside a template call, borrowed `String`/`str`, `cl_str_part_bool`/`f64`, literal-only `cl_str`, determinism |
+| `compiler/tests/template_direct_formatting_impl_test.rs` | Emission | Host and Amiga: scalar parts, no `cl_text_i32/u32(` inside a template call, owned `String`/`str` copies, `cl_str_part_bool`/`f64`, literal-only `cl_str`, determinism |
 
 The existing `string_integer_formatting_spec_test` and `_impl_test` remain the
 converter oracle and must stay green.
@@ -54,6 +54,6 @@ converter oracle and must stay green.
 - [ ] ST-1 is red on the base.
 - [ ] All new and existing suites pass.
 - [ ] ASan and UBSan legs pass.
-- [ ] `make bench-compare` passes with `strings` allocations near 2,002.
+- [ ] `make bench-compare` passes with `strings` allocations near 2,003.
 - [ ] `make check`, `make bench-shape`, `make verify` pass.
 - [ ] The emission-integrity audit finds no program-body change.

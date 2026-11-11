@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 13:16
-> **Progress**: 19/26 tasks (73%)
+> **Last Updated**: 2026-11-11 14:08
+> **Progress**: 26/26 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 > **Commit mode**: `--auto-commit --auto-design`; pushes only after the final
 > gate.
@@ -65,7 +65,7 @@
 **Reference**: R1–R5, AR-02 – AR-06 · `03-template-lowering.md`
 **Objective**: implement the typed part and the direct builder in both shims and the codegen.
 
-- [x] 3.1.1 Change `compiler/src/codegen/expr.rs::template` to emit the typed parts (scalars, borrowed `str`/`String`, bool, float) while keeping the literal-only path and `text_call` unchanged. ✅ (completed: 2026-11-11 12:45)
+- [x] 3.1.1 Change `compiler/src/codegen/expr.rs::template` to emit the typed parts (scalars, owned `str`/`String` copies, bool, float) while keeping the literal-only path and `text_call` unchanged. ✅ (completed: 2026-11-11 12:45)
 - [x] 3.1.2 Replace `ClStrPart`, the helpers, and `cl_string_concat` in `compiler/runtime/shim_host.c`; make the decimal helpers callable from the builder through prototypes. ✅ (completed: 2026-11-11 12:45)
 - [x] 3.1.3 Apply the same builder and helpers to `compiler/runtime/shim_hosted_amiga.c`; keep the freestanding shim untouched. ✅ (completed: 2026-11-11 12:45)
 - [x] 3.1.4 Run the new spec suite green and the existing `string_integer_formatting` suites green. ✅ (completed: 2026-11-11 12:45)
@@ -83,7 +83,7 @@
 **Objective**: measure the allocation and instruction win and complete the emission proof.
 
 - [x] 4.1.1 Run `make bench` and `make bench-compare`; record the final table, outputs, allocation count, and the 1% guard in `05-findings.md` §4. ✅ (completed: 2026-11-11 12:55)
-- [x] 4.1.2 Run the allocation-count probe on the head; confirm the two-integer template is 1 and `strings` is near 2,002; record the split. ✅ (completed: 2026-11-11 12:57)
+- [x] 4.1.2 Run the allocation-count probe on the head; confirm the two-integer template is 1 and `strings` is near 2,003; record the split. ✅ (completed: 2026-11-11 12:57)
 - [x] 4.1.3 Run `make asan` and `make ubsan`; confirm the new suite is in both legs; record in §5. ✅ (completed: 2026-11-11 13:10)
 - [x] 4.1.4 Run `make bench-shape`; confirm host, Amiga, nix13, vbcc, and freestanding legs are clean. ✅ (completed: 2026-11-11 13:12)
 - [x] 4.1.5 Build a boundary program for `hosted-amiga`, run it under `vamos`, and compare it with the host output. ✅ (completed: 2026-11-11 13:14)
@@ -97,11 +97,11 @@
 
 ### Step 5.1: Independent review and acceptance
 
-- [ ] 5.1.1 Dispatch the correctness reviewer with a blast-radius packet (every caller of `template`, `text_call`, `cl_string_concat`, both profiles, explicit converters).
-- [ ] 5.1.2 Dispatch the memory-safety auditor with the borrow/lifetime, union, capacity, and ASan probes.
-- [ ] 5.1.3 Dispatch the read-only emission-integrity auditor with the base/head corpus emission diff and the strict-C build hunt.
-- [ ] 5.1.4 Resolve every critical/major finding and rerun the affected legs.
-- [ ] 5.1.5 Run `make check`, `make bench-compare`, and `make verify`; record the results in `05-findings.md` §5–§6.
+- [x] 5.1.1 Dispatch the correctness reviewer with a blast-radius packet (every caller of `template`, `text_call`, `cl_string_concat`, both profiles, explicit converters). ✅ (completed: 2026-11-11 13:25)
+- [x] 5.1.2 Dispatch the memory-safety auditor with the borrow/lifetime, union, capacity, and ASan probes. ✅ (completed: 2026-11-11 13:25)
+- [x] 5.1.3 Dispatch the read-only emission-integrity auditor with the base/head corpus emission diff and the strict-C build hunt. ✅ (completed: 2026-11-11 13:25)
+- [x] 5.1.4 Resolve every critical/major finding and rerun the affected legs. ✅ (completed: 2026-11-11 13:45)
+- [x] 5.1.5 Run `make check`, `make bench-compare`, and `make verify`; record the results in `05-findings.md` §5–§6. ✅ (completed: 2026-11-11 13:50)
 
 **Verify**: `make verify: all legs passed`; no open critical/major finding.
 
@@ -109,10 +109,10 @@
 
 ## Phase 6: Closeout
 
-- [ ] 6.1.1 Complete `05-findings.md` with the final table, allocation split, emission proof, and review verdicts.
-- [ ] 6.1.2 Update `plans/00-roadmap.md` with the plan row at Done and the final numbers.
-- [ ] 6.1.3 Close issues #25 and #19 with the final evidence.
-- [ ] 6.1.4 Commit the documentation and roadmap with the git-commit skill; verify the tree is clean and push after the final gate.
+- [x] 6.1.1 Complete `05-findings.md` with the final table, allocation split, emission proof, and review verdicts. ✅ (completed: 2026-11-11 14:05)
+- [x] 6.1.2 Update `plans/00-roadmap.md` with the plan row at Done and the final numbers. ✅ (completed: 2026-11-11 14:06)
+- [x] 6.1.3 Close issues #25 and #19 with the final evidence. ✅ (completed: 2026-11-11 14:07)
+- [x] 6.1.4 Commit the documentation and roadmap with the git-commit skill; verify the tree is clean and push after the final gate. ✅ (completed: 2026-11-11 14:08)
 
 **Verify**: tree clean; `main == origin/main`; both issues closed.
 
@@ -120,10 +120,10 @@
 
 ## Success Criteria
 
-1. ✅ All 26 tasks completed.
-2. ✅ `strings` allocations near 2,002; net instructions below 1,489,187.
-3. ✅ Every scored benchmark inside the 1% instruction and `.text` guard; outputs equal.
-4. ✅ ASan/UBSan clean; all strict-C legs green.
-5. ✅ Three reviews recorded with no open critical/major finding.
-6. ✅ `make check`, `make bench-shape`, `make bench-compare`, `make verify` green.
-7. ✅ #25 and #19 closed; roadmap Done.
+1. [x] All 26 tasks completed.
+2. [x] `strings` allocations near 2,003; net instructions below 1,489,187.
+3. [x] Every scored benchmark inside the 1% instruction and `.text` guard; outputs equal.
+4. [x] ASan/UBSan clean; all strict-C legs green.
+5. [x] Three reviews recorded with no open critical/major finding.
+6. [x] `make check`, `make bench-shape`, `make bench-compare`, `make verify` green.
+7. [x] #25 and #19 closed; roadmap Done.

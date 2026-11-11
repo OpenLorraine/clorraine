@@ -1,9 +1,9 @@
 //! Host specification tests for direct template formatting.
 //!
-//! The cases pin the allocation contract (one result allocation for a
-//! non-float template, two for a float template), the unchanged output for
-//! every formattable type, the borrowed `String`/`str` lifetime, and the
-//! sanitizer behavior. A wrapped `malloc` counts calls around one template
+//! The cases pin the allocation contract (one result for an integer/bool
+//! template, a copy plus the result for `String`/`str`, two for a float), the
+//! unchanged output for every formattable type, the source-copy safety, and
+//! the sanitizer behavior. A wrapped `malloc` counts calls around one template
 //! expression; the allocation cases are skipped under the sanitizer legs
 //! because the wrapper would bypass the sanitizer's allocator.
 
@@ -379,7 +379,7 @@ import { println } from std.io;
 let calls: i32 = 0;
 func touch(): i32 {
     calls = calls + 1;
-    return 7;
+    return calls;
 }
 func main(): i32 {
     let t: String = $"{touch()}-{touch()}";
@@ -387,7 +387,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    assert_output("once", source, "7-7 2\n");
+    assert_output("once", source, "1-2 2\n");
 }
 
 /// The scored benchmark's loop keeps its exact checksum.
@@ -471,6 +471,29 @@ func main(): i32 {
         "xy",
         "ownedloop: the source was not reusable"
     );
+}
+
+/// A sibling placeholder that reassigns the source through a borrow must not
+/// free the bytes the template copies. The copy is built before the sibling
+/// can release the source.
+#[test]
+fn an_alias_sibling_does_not_free_a_placeholder_source() {
+    let source = r#"module spec.tdf.alias;
+import { println } from std.io;
+import { stringOf } from std.text;
+func reset(borrow s: String?): i32 {
+    s = stringOf("z");
+    return 1;
+}
+func main(): i32 {
+    let s: String? = stringOf("abcdef");
+    if (s != null) {
+        println($"{s}{reset(s)}");
+    }
+    return 0;
+}
+"#;
+    assert_output("alias", source, "abcdef1\n");
 }
 
 /// A null view is an empty byte piece, never the scalar zero.

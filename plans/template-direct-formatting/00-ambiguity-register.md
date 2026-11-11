@@ -233,7 +233,7 @@ component, and the explicit next step is to implement #25 under the full gate.
 - **Authority**: AI — delegated by --auto-design.
 - **Decision**: plan folder `plans/template-direct-formatting/`; tests
   `compiler/tests/template_direct_formatting_spec_test.rs` and
-  `_impl_test.rs`; shim names `cl_str_part_string`, `cl_str_part_bool`,
+  `_impl_test.rs`; shim names `cl_str_part_bytes`, `cl_str_part_i32`,
   `cl_str_part_f64`, `CL_STR_KIND_I32`, `CL_STR_KIND_U32`.
 - **Evidence**: the repo's `<feature>_spec_test.rs` convention.
 - **Confidence**: High.

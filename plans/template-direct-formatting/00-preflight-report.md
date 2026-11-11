@@ -36,14 +36,13 @@
 
 - **Severity**: 🟡 MINOR
 - **Dimension**: Edge cases / memory safety
-- **Evidence**: a borrowed part points at the source's bytes until the builder
-  copies them in the same full expression. A source freed earlier would be a
-  use-after-free.
-- **Resolution**: the borrowed source is an operand of the same expression;
-  compiler temporaries live to the end of the statement; `cl_str_part_string`
-  evaluates the source once; ST-9 proves the result is independent after the
-  source is reassigned; ASan/ownership probes cover the loop and temporary
-  cases.
+- **Evidence**: the first design borrowed the source bytes until the builder
+  copied them; a sibling placeholder that released the source could free them
+  first. The review reproduced that use-after-free.
+- **Resolution**: `String`/`str` placeholders copy when the part is built, so
+  a sibling cannot release the bytes before the copy; the alias regression is
+  committed and ST-9 proves the result is independent after a reassignment
+  (AR-13).
 - **Status**: ✅ Resolved.
 
 ### PF-003 — Allocation test uses GNU `--wrap`

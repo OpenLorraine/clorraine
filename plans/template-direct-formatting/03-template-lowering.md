@@ -220,7 +220,7 @@ no-placeholder path. For placeholders it matches the substituted type:
 
 - Output equality for every formattable type and boundary.
 - Allocation delta: two integer placeholders = 1 result allocation; base = 3.
-- `String`/`str` borrow; owned source reusable.
+- `String`/`str` copy at part construction; owned source reusable.
 - Float = 2 allocations (temp + result).
 - ASan/UBSan.
 - Emission pins and the base/head C diff.

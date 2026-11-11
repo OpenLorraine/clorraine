@@ -1,9 +1,10 @@
 //! Implementation tests for direct template formatting.
 //!
-//! The cases pin the emitted parts: a template call carries scalar kind codes
-//! and borrowed bytes, integer placeholders no longer call the converter, the
-//! explicit `text` path still uses it, and both profiles emit the same shape.
-//! The behavior oracle is the specification suite.
+//! The cases pin the emitted parts: a template call carries scalar kind codes,
+//! literals use a byte part, `String`/`str` use an owned copy, integer
+//! placeholders no longer call the converter, the explicit `text` path still
+//! uses it, and both profiles emit the same shape. The behavior oracle is the
+//! specification suite.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -110,8 +111,8 @@ func main(): i32 {
 }
 "#;
 
-/// The host template call carries scalar kinds, a borrowed String/view, a bool
-/// part, and a float part.
+/// The host template call carries scalar kinds, an owned String/view copy, a
+/// bool part, and a float part.
 #[test]
 fn the_host_template_uses_typed_parts() {
     let emitted = emit("host-parts", "host", MIXED, "host.c");

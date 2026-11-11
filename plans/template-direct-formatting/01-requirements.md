@@ -13,9 +13,10 @@ implements it.
 
 A template with `n` integer placeholders must allocate one result `String`,
 not `n + 1`. The lowering carries the placeholder value in a 12-byte part; the
-builder formats it into the destination. `str` and `String` placeholders
-borrow their bytes instead of copying them. Float placeholders keep the
-documented `%g` output and its one temporary.
+builder formats it into the destination. `str` and `String` placeholders copy
+their bytes when the part is built, before a sibling placeholder can release
+the source. Float placeholders keep the documented `%g` output and its one
+temporary.
 
 ## Scope Boundary
 
@@ -84,7 +85,7 @@ builder API or allocator; the freestanding profile; versioning or a release.
 ### R6 — Measured win and no scored regression
 
 - `strings` net instructions must drop below the shim-only head (1,489,187)
-  and allocations must drop from 6,003 toward 2,002.
+  and allocations must drop from 6,003 toward 2,003.
 - No scored benchmark may exceed the 1% instruction or `.text` guard; every
   output hash matches.
 - The base is the current `main` head `00eb6bc` built clean.

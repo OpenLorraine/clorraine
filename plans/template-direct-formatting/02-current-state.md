@@ -83,8 +83,9 @@ results + 2 outside the loop), down from 6,003.
 ### Gap 2: `str` and `String` placeholders copy
 
 **Current:** `cl_text_str`/`cl_string_copy` allocate a copy.
-**Required:** borrow the bytes for the full expression.
-**Fix:** `cl_str_part_string` and a borrowed byte part.
+**Required:** copy the bytes when the part is built, before a sibling can
+release the source.
+**Fix:** `cl_str_part_owned` with `cl_string_copy`/`cl_text_str`.
 
 ### Gap 3: The allocation count is not pinned by a test
 

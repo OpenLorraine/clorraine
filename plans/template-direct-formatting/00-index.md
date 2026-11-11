@@ -1,9 +1,9 @@
 # Direct Template Formatting
 
 > **Feature**: Lower template placeholders into typed builder parts so integer
-> and string placeholders are formatted or borrowed directly into the
-> destination, removing the temporary `String` allocations.
-> **Status**: Planning Complete
+> and bool placeholders are formatted directly into the destination, removing
+> the temporary `String` allocations; `String`/`str` copy for safety.
+> **Status**: Done — 26/26; full gate green
 > **Created**: 2026-11-11
 > **Implements**: R1–R7
 > **CodeOps Artifact Schema**: 1
@@ -18,12 +18,12 @@ The shim-only delivery removed the `snprintf` cost but kept three allocations
 per `strings` iteration: two converter `String`s and the builder result. The
 measured next step (issue #25) is to carry a scalar placeholder as a value in
 a 12-byte template part and write it directly into the destination, and to
-make `str`/`String` placeholders borrow their bytes instead of allocating a
-copy.
+copy `String`/`str` placeholders when the part is built, before a sibling
+placeholder can release the source.
 
 The pre-plan probe measured `strings` at 1,132,051 net instructions (from
-1,489,187) and 2,002 allocations (from 6,003), with one allocation per
-non-float template result. The change touches
+1,489,187) and 2,003 allocations (from 6,003), with one result allocation
+for integer/bool placeholders. The change touches
 `compiler/src/codegen/expr.rs::template` and the `ClStrPart` builder in the two
 `String` shims. It changes the emitted C for every template, so it needs the
 emission-integrity auditor in addition to the correctness and memory-safety
@@ -35,8 +35,8 @@ reviews.
 changing template behavior or the language ABI.
 **Smallest viable design:** extend the existing `ClStrPart` from
 `{ptr, len, owned}` to a 12-byte union part with two scalar kind codes, and
-emit scalar placeholders as values, `str`/`String` placeholders as borrowed
-bytes, and floats as the existing `%g` temporary. One builder call, one
+emit scalar placeholders as values, `str`/`String` placeholders as owned
+copies, and floats as the existing `%g` temporary. One builder call, one
 result allocation.
 **Excluded machinery:** a new builder API, a general formatting framework, a
 scratch allocator/pool, a new benchmark harness, and any language change.
@@ -62,7 +62,7 @@ existing converters, and the existing benchmark.
 |---|---|
 | Scope | Implement #25; close #25 and #19 after the gate (AR-01, AR-11) |
 | Part shape | 12-byte union part, kind codes 0/1 (AR-02) |
-| String/str placeholders | Borrow, no copy (AR-03) |
+| String/str placeholders | Copy at part construction (AR-03, AR-13) |
 | Float placeholder | Existing `%g` temporary, two allocations (AR-04) |
 | Capacity | Max-width reserve, then `len = cap = written` (AR-05) |
 | Reviews | Correctness + memory-safety + emission-integrity (AR-09) |
