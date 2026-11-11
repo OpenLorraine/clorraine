@@ -66,17 +66,25 @@ assertion changed; `element_loop_integrity_impl_test` is back to its original
 
 ## 4. Final Measurement
 
-Head `TBD` (`dirty=false`), base `00eb6bc` (`dirty=false`).
+Head `742698e` (`dirty=false`), base `00eb6bc` (`dirty=false`).
 
 | Benchmark | Base instructions | Head | Delta | Base `.text` | Head | Delta | Output |
 |---|---:|---:|---:|---:|---:|---:|---|
-| sieve | 1,040,152 | pending | pending | 23,720 | pending | pending | pending |
-| matrix | 9,431 | pending | pending | 23,496 | pending | pending | pending |
-| strings | 1,489,187 | pending | pending | 24,020 | pending | pending | pending |
-| moves | 44,680 | pending | pending | 23,520 | pending | pending | pending |
-| lookup | 8,849 | pending | pending | 39,792 | pending | pending | pending |
+| sieve | 1,040,152 | 1,040,081 | −0.01% | 23,720 | 23,816 | +0.4% | equal |
+| matrix | 9,431 | 9,361 | −0.7% | 23,496 | 23,592 | +0.4% | equal |
+| strings | 1,489,187 | 1,221,201 | **−18.0%** | 24,020 | 23,920 | −0.4% | equal |
+| moves | 44,680 | 44,609 | −0.2% | 23,520 | 23,628 | +0.5% | equal |
+| lookup | 8,849 | 8,779 | −0.8% | 39,792 | 39,884 | +0.2% | equal |
 
-Allocations on `strings`: pending (expected 2,003).
+`make bench-compare`: passed; every output hash equal; every metric inside the
+1% guard (the largest `.text` growth is +0.5%).
+
+Allocations on `strings`: **2,003** (2,000 results in the loop + `toHex`, its
+String copy, and the result outside), down from 6,003. The safe copy of a
+`String`/`str` placeholder is 1 extra allocation for those templates; the
+integer/bool hot path keeps the one-result contract. The final instruction
+count is 89,150 above the unsafe-borrow probe (1,221,201 vs 1,132,051),
+reflecting the restored copies and the corrected kind checks.
 
 ## 5. Sanitizers, Profiles, and Emission
 
@@ -85,11 +93,11 @@ Allocations on `strings`: pending (expected 2,003).
 | New suites, plain `cargo test` | spec 14/14, impl 5/5 |
 | Existing `string_integer_formatting` suites | 9/9 and 5/5 |
 | `cargo test --workspace` | passed |
-| `make asan` | pending (re-run after the fix) |
-| `make ubsan` | pending (re-run after the fix) |
-| `make bench-shape` | pending (re-run after the fix) |
-| Target boundary under `vamos` | pending (re-run after the fix) |
-| Base/head emitted-C diff | pending (re-run after the fix) |
+| `make asan` | 32 suites passed before the zero-length guard; focused suite 14/14 after the fix; full re-run pending |
+| `make ubsan` | 6 suites passed after the fix; the null-view case is UBSan-clean |
+| `make bench-shape` | GCC, nix13, vbcc, freestanding all warning-free after the fix |
+| Target boundary under `vamos` | equal to host, including bool/float/String/str and the null view |
+| Base/head emitted-C diff | pending (re-run after the guard commit) |
 | `make check` | pending |
 | `make verify` | pending |
 

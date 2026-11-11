@@ -263,7 +263,11 @@ void cl_string_append(void *handle, void *src, unsigned int n)
     if (n > string->cap - string->len) {
         cl_trap("E1", "string capacity exceeded");
     }
-    memcpy(cl_string_bytes(string) + string->len, src, n);
+    /* A zero-length append may carry a null view pointer; skip the copy so
+     * the call is valid under UndefinedBehaviorSanitizer. */
+    if (n != 0) {
+        memcpy(cl_string_bytes(string) + string->len, src, n);
+    }
     string->len += n;
     cl_string_bytes(string)[string->len] = '\0';
 }
