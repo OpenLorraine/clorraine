@@ -14,10 +14,13 @@ measurement in Phase 4. Values are never estimated; a missing value is
 |---|---|
 | Base commit | `8f07e408975d9ad090392712030d2e2761d19437` |
 | Compiler version | `clc 1.1.2` |
-| Compiler SHA-256 | pending (Phase 1) |
-| Worktree | clean before the plan commit; only plan-document edits after it |
+| Base compiler SHA-256 | `232698a3dc89e8b96b9d51a7258542830d0d1c18a6f262366494c449c3b8f295` |
+| Pre-change head | `828453a854341634f348f8a12def879fd96e27f8`, SHA-256 `7b7ab88b7b4ae65dddd26fe3b1e6d411fcf73c9c4d1c368a4ac711476362f3bc` |
+| Worktree | clean for both measured runs; harness `dirty=false` |
 | Toolchain | pinned SDK container; m68k GCC 16.2.0b, libnix `nix20`, `vamos` 0.8.1 |
-| Base document | `build/perf/base.json` (Phase 1) |
+| Base document | `build/perf/base.json` (commit `8f07e40`, 30 runs) |
+| Pre-change document | `build/perf/pre-change-head.json` (commit `828453a`) |
+| Base vs pre-change compare | passed, every metric `+0.0%` (the source is unchanged) |
 | `make check` on the plan commit | passed (2026-11-11 09:50; spec, registry, setup, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
 
 ## 2. Pre-Plan Probe
@@ -27,8 +30,24 @@ The baseline, attribution, and probe tables are owned by
 2,964,051 net instructions with 6,003 allocations; the selected direct-write
 shim probe is 1,464,668 (−50.6%), 24,080 `.text` (−0.5%), and 6,003
 allocations; the out-of-scope codegen probe is 1,132,051 (−61.8%) with 2,002
-allocations. The probe artifact path and the exact commands are recorded in
-that document.
+allocations.
+
+Commands and artifacts (the `build/perf/audit` scratch is removed at
+closeout):
+
+```
+target/debug/clc --profile hosted-amiga -o build/perf/audit/strings.c benchmarks/strings/program.clo
+m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 \
+    -ffunction-sections -fdata-sections -Wl,--gc-sections \
+    -o build/perf/audit/strings-shimonly2 build/perf/audit/strings-shimonly2.c -lamiga -lm
+vamos --instr-trace build/perf/audit/strings-shimonly2 2> build/perf/audit/shimonly2.trace
+m68k-amigaos-size build/perf/audit/strings-shimonly2
+```
+
+The allocation counter was a host build of the same emission with
+`cl_alloc_calls`/`cl_free_calls` counters and an `atexit` report; it printed
+`AUDIT alloc=6003 free=6003` for the base and `alloc=2002` for the codegen
+probe.
 
 ## 3. Red/Green Record
 
