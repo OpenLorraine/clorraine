@@ -273,8 +273,23 @@ impl Checker<'_, '_> {
                 // Clorraine; the compiler lowers it to a `String`-returning
                 // shim conversion. Registering that return type here lets the
                 // `String`-to-`str` widening apply when it is passed to a view.
-                if name == "text" {
+                if name == "text" && !self.text_name_is_shadowed(name) {
                     self.check_non_generic_type_args("text", type_args, span);
+                    // The standard-library appendix specifies the one-argument
+                    // form `text(v)`. A wrong count reports the frozen arity
+                    // rule and still walks the written arguments so their own
+                    // errors are not hidden.
+                    if args.len() != 1 {
+                        self.error(
+                            "E10308",
+                            format!(
+                                "wrong number of arguments for 'text': expected 1, found {}",
+                                args.len()
+                            ),
+                            "pass one argument per parameter",
+                            span,
+                        );
+                    }
                     for arg in args {
                         self.check_value(&arg.value, None);
                     }
@@ -1477,6 +1492,42 @@ impl Checker<'_, '_> {
         callee: Option<(&str, Span)>,
     ) {
         self.check_args_impl(args, params, modes, true, callee);
+    }
+
+    /// True when a module-level value binding shadows the compiler-known
+    /// `text` intrinsic.
+    ///
+    /// `text` is not declared in the standard library, so an import of the
+    /// spelling binds the intrinsic. A user module-level `let`/`const` of the
+    /// same name is a real value and a call on it must go through the ordinary
+    /// value-callee path; a same-named imported global does the same. An
+    /// imported function is already resolved by `free_function` before this
+    /// branch. A poisoned import keeps the intrinsic spelling so the missing
+    /// import was already reported.
+    fn text_name_is_shadowed(&self, name: &str) -> bool {
+        if self
+            .module
+            .decl(name)
+            .is_some_and(|decl| {
+                matches!(
+                    decl.kind,
+                    crate::load::DeclKind::Global | crate::load::DeclKind::Const
+                )
+            })
+        {
+            return true;
+        }
+        if let Some(binding) = self.module.import(name) {
+            if !binding.poisoned
+                && self
+                    .table
+                    .global(&binding.module, &binding.original)
+                    .is_some()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Checks call arguments, optionally allowing a `cstring` literal argument.

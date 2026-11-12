@@ -1168,7 +1168,10 @@ impl<'a> Emitter<'a> {
         // An internal template copy renders through the same converter as the
         // explicit `text` helper. The sentinel never reaches the C output.
         if callee == "$text" {
-            return self.text_call(args.first());
+            return self.text_call(
+                args.first()
+                    .expect("internal error: the `$text` sentinel has no argument"),
+            );
         }
         // A `boxAlloc<T>()` call is lowered to a fixed helper name carrying the
         // element key. In a generic body that key still names the parameter, so
@@ -1277,7 +1280,10 @@ impl<'a> Emitter<'a> {
             return format!("{symbol}({argument_list})");
         }
         match callee {
-            "text" => self.text_call(args.first()),
+            "text" => self.text_call(
+                args.first()
+                    .expect("internal error: `text` requires one argument after sema"),
+            ),
             _ => {
                 // A func-typed local is called through its own C spelling, so
                 // the compiler's local names map resolves it. An `ffi` call,
@@ -1557,11 +1563,9 @@ impl<'a> Emitter<'a> {
     /// pointer-and-length struct that the shim cannot receive by value; a
     /// `String` is copied so the caller owns a fresh handle; a scalar passes
     /// its value directly. This is the same conversion a template placeholder
-    /// lowers to, so both spellings agree.
-    fn text_call(&self, arg: Option<&Value>) -> String {
-        let Some(arg) = arg else {
-            return "cl_text_i32()".to_owned();
-        };
+    /// lowers to, so both spellings agree. Sema enforces the one-argument form,
+    /// so the argument is mandatory here.
+    fn text_call(&self, arg: &Value) -> String {
         let ty = self.substitute(&arg.ty);
         let value = self.value(arg);
         match &ty.kind {
@@ -1680,10 +1684,7 @@ impl<'a> Emitter<'a> {
                                 format!("cl_str_part_f64((double)({value}))")
                             }
                         },
-                        _ => format!(
-                            "cl_str_part_owned({})",
-                            self.text_call(Some(inner))
-                        ),
+                        _ => format!("cl_str_part_owned({})", self.text_call(inner)),
                     };
                     parts.push(part);
                 }

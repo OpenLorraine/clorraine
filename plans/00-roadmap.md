@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-12
-> **Progress**: 575/577 rows done; 0 active; 2 Parked
+> **Progress**: 575/579 rows done; 2 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -592,6 +592,8 @@
 | PLAN-29 | Direct template formatting | [01-requirements](template-direct-formatting/01-requirements.md) | [template-direct-formatting](template-direct-formatting/00-index.md) | Done | ✅ | 2026-11-11 | 26/26; integer/bool template placeholders use 12-byte typed parts written directly into the destination; String/str copy at part construction for evaluation-order safety; `strings` 1,489,187 → 1,221,232 net (−18.0%), `.text` 24,020 → 23,972, allocations 6,003 → 2,003; all outputs equal and every scored metric within 1%; ASan 32, UBSan 6, `bench-shape`, `bench-compare`, `make check`, `make verify` all green; #25 and #19 closed; pre-existing template defects #26 |
 | PLAN-30 | Template placeholder integrity (#26) | [01-requirements](template-placeholder-integrity/01-requirements.md) | [template-placeholder-integrity](template-placeholder-integrity/00-index.md) | Done | ✅ | 2026-11-11 | 37/37; null placeholders E10010, opaque/non-formattable generic placeholders E10500, once-only source-order evaluation, copy before a sibling move; generic/guarded/loop/module variants; 41 spec + 15 impl cases, ASan 33 suites, UBSan 7, `bench-shape`, `bench-compare` zero deltas, `make check`, `make verify` all legs; #26 closed; residual issue #27 filed |
 | PLAN-31 | Template placeholder residuals (#27) | [01-requirements](template-placeholder-residuals/01-requirements.md) | [template-placeholder-residuals](template-placeholder-residuals/00-index.md) | Done | ✅ | 2026-11-12 | 38/38; null placeholder E10500, mixed-conditional nullability E10010, zero-state String reads empty, discarded/for-step template cleanup, owning aggregate order via a zero-filled Adopt store; 30 spec + 10 impl cases, ASan 34 suites, UBSan 8, `bench-shape`, `bench-compare` zero instruction/.text deltas (C +0.1% from shim null checks), `make check`, `make verify` all legs; #27 closed; follow-up #28 filed |
+| PLAN-32 | Template placeholder residuals II (#28) | [01-requirements](template-placeholder-residuals-ii/01-requirements.md) | [template-placeholder-residuals-ii](template-placeholder-residuals-ii/00-index.md) | Plan Preflighted | 🔬 | 2026-11-12 | #28: explicit `text` formattability (concrete, generic, opaque), bare null binary operand, generic/scalar null-arm parity, for-step owning assignment, for-init effects, aggregate initializer-order contract, `cl_panic` zero-length guard; full gate + 1% scored guard against `bb3956c`; preflight passed (1 critical, 13 major, 8 minor resolved) |
+| PLAN-33 | Enforce one-argument `text` arity (#24) | — | [text-arity](text-arity/99-execution-plan.md) | Plan Preflighted | 🔬 | 2026-11-12 | #24: exact one-argument `text` with E10308 and the frozen help, no output C for zero/two arguments, zero-argument codegen fallback removed from all three call sites; spec + impl regression cases; review + full gate |
 
 ## Batch N accounting (2026-10-19)
 
