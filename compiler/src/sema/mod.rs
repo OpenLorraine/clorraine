@@ -596,6 +596,14 @@ struct Checker<'a, 'd> {
     /// `embed` is legal only in a constant context; a module-level `let`, a
     /// local `let`, and a local `const` are runtime positions.
     in_const_context: bool,
+    /// True for the root expression of a condition operand.
+    ///
+    /// The flag is one-shot: `check_expr_inner` takes it, so a conditional
+    /// reached through a value operator is a value use again. A non-bool
+    /// conditional used directly as a condition keeps the frozen E10218 and
+    /// does not also report its null arm; a bool conditional still reports the
+    /// null arm with E10012.
+    condition_root: bool,
     /// Nesting depth of `unsafe { ... }` blocks in the current expression.
     ///
     /// The type stage uses the depth only to record whether an opaque member
@@ -708,6 +716,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             callable_bound_params: Vec::new(),
             function_name: None,
             in_const_context: false,
+            condition_root: false,
             unsafe_depth: 0,
             returns: Ty::void(),
             recorded: Vec::new(),
@@ -1120,6 +1129,19 @@ impl<'a, 'd> Checker<'a, 'd> {
             .rev()
             .find_map(|(depth, scope)| scope.contains_key(name).then_some(depth))
     }
+
+    /// Checks a condition operand, marking the condition context.
+    ///
+    /// A non-bool conditional in this position keeps the frozen E10218 and
+    /// does not also report its null arm; a bool conditional still reports the
+    /// null arm with E10012.
+    pub(super) fn check_condition_value(&mut self, condition: &Expr) -> Ty {
+        self.condition_root = true;
+        let ty = self.check_value(condition, None);
+        self.condition_root = false;
+        ty
+    }
+
 
     /// The capture mode of `name` in the innermost enclosing lambda that
     /// captures it, if any.

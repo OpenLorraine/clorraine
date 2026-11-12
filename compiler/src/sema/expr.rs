@@ -40,6 +40,10 @@ impl Checker<'_, '_> {
     ///
     /// `expected` carries the context type where it matters to a literal.
     fn check_expr_inner(&mut self, expr: &Expr, expected: Option<&Ty>) -> Ty {
+        // A condition flag applies to this node only. A value operator drops
+        // it, so a conditional nested in an arithmetic, index, call, or cast
+        // operand is a value use again.
+        let condition_root = std::mem::take(&mut self.condition_root);
         match &expr.kind {
             ExprKind::Int(value) => self.check_int(*value, expected, expr.span),
             ExprKind::Float(_) => self.check_float(expected),
@@ -81,7 +85,14 @@ impl Checker<'_, '_> {
                 condition,
                 then_value,
                 else_value,
-            } => self.check_conditional(condition, then_value, else_value, expected, expr.span),
+            } => self.check_conditional(
+                condition,
+                then_value,
+                else_value,
+                expected,
+                expr.span,
+                condition_root,
+            ),
             ExprKind::Cast { ty, value } => self.check_cast(ty, value),
             ExprKind::RawCast { ty, value } => self.check_raw_cast(ty, value),
             ExprKind::StructLiteral {
@@ -99,6 +110,9 @@ impl Checker<'_, '_> {
             } => self.check_lambda(captures, params, body, expr.span),
             ExprKind::Unsafe(inner) => {
                 self.unsafe_depth += 1;
+                // An unsafe block is a transparent wrapper: its value keeps
+                // the surrounding condition position.
+                self.condition_root = condition_root;
                 let ty = self.check_value(inner, expected);
                 self.unsafe_depth -= 1;
                 ty
@@ -1684,7 +1698,7 @@ impl Checker<'_, '_> {
             }
             "assert" => {
                 if let Some(IntrinsicArg::Expr(condition)) = args.first() {
-                    let ty = self.check_value(condition, None);
+                    let ty = self.check_condition_value(condition);
                     self.require_bool(&ty, condition.span);
                 }
                 // The first argument was already checked as the condition.

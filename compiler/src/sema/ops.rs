@@ -62,7 +62,13 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        let ty = self.check_value(operand, None);
+        let ty = if op == UnaryOp::Not {
+            // The `!` operand is a condition position regardless of the
+            // surrounding expression.
+            self.check_condition_value(operand)
+        } else {
+            self.check_value(operand, None)
+        };
         match op {
             UnaryOp::Not => {
                 if crate::types::is_null_shaped(&ty) {
@@ -113,27 +119,46 @@ impl Checker<'_, '_> {
 
     /// Types a binary operator application.
     pub(super) fn check_binary(&mut self, op: BinaryOp, left: &Expr, right: &Expr) -> Ty {
-        let left_ty = self.check_value(left, None);
-        let right_ty = self.check_value(right, None);
+        let logical = matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr);
+        // The `&&`/`||` operands are condition positions regardless of the
+        // surrounding expression.
+        let (left_ty, right_ty) = if logical {
+            (
+                self.check_condition_value(left),
+                self.check_condition_value(right),
+            )
+        } else {
+            (
+                self.check_value(left, None),
+                self.check_value(right, None),
+            )
+        };
         let (left_ty, right_ty) = self.adapt_operands(left, left_ty, right, right_ty);
-        // The null shape has no operator surface. A literal `null` keeps its
-        // legal comparison and narrowing uses; a binding inferred from `null`
-        // is a concrete use and reports the null rule against the other
-        // operand's type.
-        let left_null = is_null_shaped(&left_ty) && !matches!(left.kind, ExprKind::Null);
-        let right_null = is_null_shaped(&right_ty) && !matches!(right.kind, ExprKind::Null);
-        if left_null
-            && !is_null_shaped(&right_ty)
-            && !(matches!(op, BinaryOp::Eq | BinaryOp::Ne)
-                && crate::borrow::is_nullable_capable(&right_ty))
-        {
-            self.error(
+        // The null shape has no arithmetic, relational, or bitwise operator
+        // surface. A literal `null` is included here now: only `==`/`!=` with a
+        // null-capable sibling stay legal. `&&`/`||` are left to the frozen
+        // condition rule (E10218), which the specification names for
+        // `null && true`.
+        let comparison = matches!(op, BinaryOp::Eq | BinaryOp::Ne);
+        let left_null = is_null_shaped(&left_ty);
+        let right_null = is_null_shaped(&right_ty);
+        // A comparison against a still-open parameter keeps the literal-null
+        // spelling legal (`x != null` with `x: T`); a binding inferred from
+        // `null` is a concrete use and still reports, exactly as on the base.
+        let open_param = |ty: &Ty| ty.is_param() || contains_param(ty);
+        let literal_null = |expr: &Expr| matches!(expr.kind, ExprKind::Null);
+        let null_capable = |ty: &Ty, null_operand: &Expr| {
+            crate::borrow::is_nullable_capable(ty)
+                || (open_param(ty) && literal_null(null_operand))
+        };
+        let report = |checker: &mut Self, span: Span| {
+            checker.error(
                 "E10012",
                 "'null' is not allowed here",
                 "declare the type `T?` or avoid the empty state",
-                left.span,
+                span,
             );
-            return match op {
+            match op {
                 BinaryOp::Eq
                 | BinaryOp::Ne
                 | BinaryOp::Lt
@@ -143,30 +168,21 @@ impl Checker<'_, '_> {
                 | BinaryOp::LogicalAnd
                 | BinaryOp::LogicalOr => Ty::boolean(),
                 _ => Ty::unknown(),
-            };
-        }
-        if right_null
-            && !is_null_shaped(&left_ty)
-            && !(matches!(op, BinaryOp::Eq | BinaryOp::Ne)
-                && crate::borrow::is_nullable_capable(&left_ty))
-        {
-            self.error(
-                "E10012",
-                "'null' is not allowed here",
-                "declare the type `T?` or avoid the empty state",
-                right.span,
-            );
-            return match op {
-                BinaryOp::Eq
-                | BinaryOp::Ne
-                | BinaryOp::Lt
-                | BinaryOp::Le
-                | BinaryOp::Gt
-                | BinaryOp::Ge
-                | BinaryOp::LogicalAnd
-                | BinaryOp::LogicalOr => Ty::boolean(),
-                _ => Ty::unknown(),
-            };
+            }
+        };
+        if !logical {
+            // Both sides null-shaped: a comparison is legal, every other
+            // operator has no value to produce, so one report at the left null
+            // is enough.
+            if left_null && right_null && !comparison {
+                return report(self, left.span);
+            }
+            if left_null && !right_null && !(comparison && null_capable(&right_ty, left)) {
+                return report(self, left.span);
+            }
+            if right_null && !left_null && !(comparison && null_capable(&left_ty, right)) {
+                return report(self, right.span);
+            }
         }
         // A conditional operand with a null arm is judged against the other
         // operand's non-nullable base type. The nullable flag a literal
@@ -453,17 +469,41 @@ impl Checker<'_, '_> {
         else_value: &Expr,
         expected: Option<&Ty>,
         span: Span,
+        in_condition: bool,
     ) -> Ty {
-        let condition_ty = self.check_value(condition, None);
+        let condition_ty = self.check_condition_value(condition);
         self.require_bool(&condition_ty, condition.span);
         let then_ty = self.check_value(then_value, expected);
         let else_ty = self.check_value(else_value, expected);
-        let null_reported = if let Some(expected) = expected {
+        let mut null_reported = if let Some(expected) = expected {
             self.report_null_conditional_arm(&then_ty, expected, then_value.span)
                 | self.report_null_conditional_arm(&else_ty, expected, else_value.span)
         } else {
             false
         };
+        // A conditional with no written destination settles its null arm
+        // against the sibling. A concrete non-nullable result that cannot hold
+        // the empty state rejects the null at its own span; a view-like result
+        // keeps the empty state, and a handle/`Box` result is nullable and is
+        // judged later at the use.
+        let settled_is_bool = crate::types::conditional_result(&then_ty, &else_ty)
+            .is_some_and(|result| result.is_bool());
+        if expected.is_none() && (!in_condition || settled_is_bool) {
+            if matches!(
+                crate::types::settle_null_arm(&then_ty, &else_ty),
+                Some(crate::types::NullArmSettlement::NotAllowed)
+            ) {
+                self.report_null_literal(then_value.span);
+                null_reported = true;
+            }
+            if matches!(
+                crate::types::settle_null_arm(&else_ty, &then_ty),
+                Some(crate::types::NullArmSettlement::NotAllowed)
+            ) {
+                self.report_null_literal(else_value.span);
+                null_reported = true;
+            }
+        }
         // The arm types are still open at the declaration, so the instance
         // decides whether they agree and whether a null arm reaches a
         // non-nullable destination. The site records its arms and the
@@ -625,6 +665,11 @@ impl Checker<'_, '_> {
         // A site whose arms still name a type parameter is judged by the
         // instance audit, which substitutes the same destination.
         if arms.opaque {
+            return;
+        }
+        // A site that already reported at the declaration (a written
+        // destination or an inferred null-arm settlement) reports once.
+        if arms.null_reported {
             return;
         }
         let (then_ty, else_ty, then_span, else_span) =

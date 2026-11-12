@@ -34,7 +34,7 @@ impl Checker<'_, '_> {
             }
             Stmt::If(decl) => self.check_if(decl),
             Stmt::While(decl) => {
-                let condition = self.check_value(&decl.condition, None);
+                let condition = self.check_condition_value(&decl.condition);
                 self.require_bool(&condition, decl.condition.span);
                 self.check_block(&decl.body);
             }
@@ -187,7 +187,7 @@ impl Checker<'_, '_> {
 
     /// Checks an `if` statement, including a chained `else if`.
     fn check_if(&mut self, decl: &IfStmt) {
-        let condition = self.check_value(&decl.condition, None);
+        let condition = self.check_condition_value(&decl.condition);
         self.require_bool(&condition, decl.condition.span);
         // A nullable bool conditional is still a bool condition; its null arm
         // is a null in a non-nullable bool context. A non-bool condition keeps
@@ -213,7 +213,7 @@ impl Checker<'_, '_> {
     /// Checks a `do ... while` loop.
     fn check_do_while(&mut self, decl: &DoWhileStmt) {
         self.check_block(&decl.body);
-        let condition = self.check_value(&decl.condition, None);
+        let condition = self.check_condition_value(&decl.condition);
         self.require_bool(&condition, decl.condition.span);
     }
 
@@ -231,7 +231,7 @@ impl Checker<'_, '_> {
             None => {}
         }
         if let Some(condition) = &decl.condition {
-            let ty = self.check_value(condition, None);
+            let ty = self.check_condition_value(condition);
             self.require_bool(&ty, condition.span);
         }
         for step in &decl.step {

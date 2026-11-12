@@ -433,3 +433,88 @@ fn the_null_shape_is_an_unresolved_nullable_type() {
     };
     assert!(!is_null_shaped(&nullable_handle));
 }
+
+/// A null literal's type shape.
+fn null_ty() -> Ty {
+    Ty {
+        kind: TyKind::Unknown,
+        nullable: true,
+    }
+}
+
+#[test]
+fn accepts_bare_null_covers_only_the_empty_state_types() {
+    assert!(accepts_bare_null(&ty(TyKind::Str)));
+    assert!(accepts_bare_null(&ty(TyKind::StaticStr)));
+    assert!(accepts_bare_null(&ty(TyKind::CString)));
+    assert!(accepts_bare_null(&Ty::raw(ty(TyKind::Scalar(ScalarType::I32)))));
+    assert!(accepts_bare_null(&Ty::array(
+        ty(TyKind::Scalar(ScalarType::I32)),
+        vec![None]
+    )));
+
+    assert!(!accepts_bare_null(&Ty::handle("String")));
+    assert!(!accepts_bare_null(&Ty::boxed(ty(TyKind::Scalar(ScalarType::I32)))));
+    assert!(!accepts_bare_null(&ty(TyKind::Scalar(ScalarType::I32))));
+    assert!(!accepts_bare_null(&Ty::struct_("Box")));
+    assert!(!accepts_bare_null(&Ty::array(
+        ty(TyKind::Scalar(ScalarType::I32)),
+        vec![Some(2)]
+    )));
+}
+
+#[test]
+fn settle_null_arm_classifies_each_sibling_surface() {
+    let null = null_ty();
+    assert_eq!(
+        settle_null_arm(&null, &ty(TyKind::Str)),
+        Some(NullArmSettlement::EmptyState)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &ty(TyKind::CString)),
+        Some(NullArmSettlement::EmptyState)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &Ty::raw(ty(TyKind::Scalar(ScalarType::U8)))),
+        Some(NullArmSettlement::EmptyState)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &Ty::array(ty(TyKind::Scalar(ScalarType::U8)), vec![None])),
+        Some(NullArmSettlement::EmptyState)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &Ty::handle("String")),
+        Some(NullArmSettlement::Nullable)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &Ty::boxed(ty(TyKind::Scalar(ScalarType::I32)))),
+        Some(NullArmSettlement::Nullable)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &ty(TyKind::Scalar(ScalarType::I32))),
+        Some(NullArmSettlement::NotAllowed)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &Ty::struct_("Box")),
+        Some(NullArmSettlement::NotAllowed)
+    );
+    assert_eq!(
+        settle_null_arm(
+            &null,
+            &Ty::array(ty(TyKind::Scalar(ScalarType::I32)), vec![Some(2)])
+        ),
+        Some(NullArmSettlement::NotAllowed)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &ty(TyKind::Param("T".to_owned()))),
+        Some(NullArmSettlement::Deferred)
+    );
+    assert_eq!(
+        settle_null_arm(&null, &ty(TyKind::Unknown)),
+        Some(NullArmSettlement::Deferred)
+    );
+    assert_eq!(
+        settle_null_arm(&ty(TyKind::Scalar(ScalarType::I32)), &null),
+        None
+    );
+}

@@ -49,6 +49,9 @@ with no leak report. "Panic-clean" is the helper above.
 | ST-33 | `let c = null + null;` | rejected: E10012 at the left null, no C | R3, AR-4 |
 | ST-34 | `let c: bool = null == null;` | runs: `true` (a null comparison stays legal) | R3, AR-4 (guard) |
 | ST-35 | `println($"{flag ? null : toCString("x")}");` | rejected: E10500 at the placeholder (the cstring sibling is not formattable) | R4, AR-5 (guard) |
+| ST-36 | `let flag = true; if (-(flag ? null : 5) > 0) { ... }` | rejected: E10012 at the null (a conditional nested in a value operand of a condition) | R5, AR-8 |
+| ST-37 | `func impl(s: String?): String`; `let text: func(String?): String = impl; text(s)` | runs: the module value is called, not the intrinsic | R1, AR-1 (guard) |
+| ST-38 | `func f<T>(x: T): bool { let z = null; return z == x; }` with `f<i32>(1)` | rejected: E10012 at `z` (a null binding vs an open parameter) | R3, AR-4 (guard) |
 | ST-11 | `show<str>(false, "x")` with `$"{f ? null : x}"` | runs: `x` | R4, AR-5 |
 | ST-12 | `show<String>(true, stringOf("x"))` with the same placeholder | rejected: E10010 only at the null; no E10012 | R4, AR-6 |
 | ST-13 | `show<i32>(true, 1)` with the same placeholder | rejected: E10012 at the null | R4, AR-7 |
@@ -84,13 +87,14 @@ On `bb3956c`:
 - ST-11 is rejected with the wrong E10012+E10010 pair; ST-12/ST-13 are
   rejected with the wrong pair.
 - ST-14/ST-15 are accepted and emit `(flag ? NULL : ...)`.
-- ST-33 is accepted and emits `(NULL + NULL)`.
+- ST-33 is accepted and emits `(NULL + NULL)`; ST-36 is accepted and emits a
+  pointer/integer conditional.
 - ST-18/ST-19 leak 49 bytes under ASan.
 - ST-20/ST-21/ST-32 print `0` (the effect never runs).
 - ST-24/ST-25 report a UBSan null-pointer error.
 - ST-4, ST-6, ST-8, ST-10, ST-16, ST-17, ST-22, ST-23, ST-26, ST-27, ST-29,
-  ST-30, ST-31, ST-34, ST-35 are **behavior guards** that pass on the base and
-  must keep passing.
+  ST-30, ST-31, ST-34, ST-35, ST-37, ST-38 are **behavior guards** that pass on
+  the base and must keep passing.
 
 The execution plan records the exact failing names and observed base output.
 
@@ -143,11 +147,11 @@ must stay within the 1% guard.
 
 | Requirement | Cases |
 |-------------|-------|
-| R1 (text formattability) | ST-1, ST-2, ST-5, ST-6, ST-7, ST-27, IT-1, IT-3 |
+| R1 (text formattability) | ST-1, ST-2, ST-5, ST-6, ST-7, ST-27, ST-37, IT-1, IT-3 |
 | R2 (generic text) | ST-3, ST-4, ST-28, ST-29, IT-2 |
-| R3 (bare null operand) | ST-9, ST-10, ST-30, ST-33, ST-34, IT-4, IT-15 |
+| R3 (bare null operand) | ST-9, ST-10, ST-30, ST-33, ST-34, ST-38, IT-4, IT-15 |
 | R4 (generic null arm) | ST-11, ST-12, ST-13, ST-26, ST-35, IT-5, IT-13 |
-| R5 (scalar null arm) | ST-14, ST-15, ST-16, ST-17, IT-6 |
+| R5 (scalar null arm) | ST-14, ST-15, ST-16, ST-17, ST-36, IT-6 |
 | R6 (for-step own assignment) | ST-18, ST-19, IT-7, IT-8 |
 | R7 (for-init effects) | ST-20, ST-21, ST-32, IT-9 |
 | R8 (aggregate order) | ST-22, ST-23, IT-10 |
@@ -162,9 +166,10 @@ Each fix assertion must fail without the fix:
 - ST-1/ST-2/ST-3 fail on `bb3956c` on the missing E10500.
 - ST-5 and ST-28 fail on the accepted nullable argument.
 - ST-7 fails on the opaque projection's `cl_text_unknown`.
-- ST-9 and ST-33 fail on the accepted invalid C; ST-30 guards the E10218
-  logical rule and ST-34/ST-35 guard the accepted comparison and the
-  non-formattable placeholder arm.
+- ST-9, ST-33, and ST-36 fail on the accepted invalid C; ST-30 guards the
+  E10218 logical rule; ST-34/ST-35 guard the accepted comparison and the
+  non-formattable placeholder arm; ST-37/ST-38 guard the module value shadow
+  and the null binding against an open parameter.
 - ST-11/ST-12/ST-13 fail on the wrong reports.
 - ST-14/ST-15 fail on the accepted invalid C.
 - ST-18/ST-19 fail under ASan on the leak.

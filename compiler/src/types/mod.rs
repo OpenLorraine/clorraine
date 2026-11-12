@@ -1085,6 +1085,62 @@ fn settle_conditional(then_ty: &Ty, else_ty: &Ty, mut result: Ty) -> Ty {
     result
 }
 
+/// How a null-shaped conditional arm settles against its sibling.
+///
+/// A conditional evaluates exactly one arm, so a null arm's legality depends
+/// on the type the sibling supplies: a view-like result carries the empty
+/// state directly, a handle/`Box` result becomes nullable, and any other
+/// concrete result cannot hold the null.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NullArmSettlement {
+    /// The settled result is a bare-null view/`raw`/`cstring`/slice.
+    EmptyState,
+    /// The settled result is a nullable handle or `Box`.
+    Nullable,
+    /// The settled result is concrete, non-nullable, and cannot hold null.
+    NotAllowed,
+    /// The sibling still names a parameter or is unknown.
+    Deferred,
+}
+
+/// Classifies a null-shaped arm against its sibling.
+///
+/// Returns `None` when `arm` is not null-shaped. The settlement uses the same
+/// [`conditional_result`] the declaration and the instance audit use, so an
+/// unknown sibling joins exactly as it does at the conditional itself. A
+/// still-open result defers to the instance duty.
+pub fn settle_null_arm(arm: &Ty, sibling: &Ty) -> Option<NullArmSettlement> {
+    if !is_null_shaped(arm) {
+        return None;
+    }
+    let Some(result) = conditional_result(arm, sibling) else {
+        return Some(NullArmSettlement::Deferred);
+    };
+    if result.is_unknown() || contains_param(&result) {
+        return Some(NullArmSettlement::Deferred);
+    }
+    if result.nullable {
+        return Some(NullArmSettlement::Nullable);
+    }
+    if accepts_bare_null(&result) {
+        return Some(NullArmSettlement::EmptyState);
+    }
+    Some(NullArmSettlement::NotAllowed)
+}
+
+/// True when a type accepts the all-zero empty state without a `?` suffix.
+///
+/// A view, `raw`, `cstring`, and slice carry the empty state directly. A
+/// handle or `Box` needs its nullable form, so it is not a bare-null
+/// destination. The own stage's destination rule delegates to this predicate.
+pub fn accepts_bare_null(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Raw(_) | TyKind::CString | TyKind::Str | TyKind::StaticStr => true,
+        TyKind::Array { .. } => ty.is_slice(),
+        _ => false,
+    }
+}
+
 /// True when a conditional's null arm must report at its context.
 ///
 /// The arm reports only when it is the null shape and the context — the

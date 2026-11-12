@@ -291,7 +291,46 @@ impl Checker<'_, '_> {
                         );
                     }
                     for arg in args {
-                        self.check_value(&arg.value, None);
+                        let ty = self.check_value(&arg.value, None);
+                        if args.len() != 1 {
+                            continue;
+                        }
+                        // The explicit converter applies the same formattability
+                        // rule as a template placeholder. A null-shaped value
+                        // has no concrete formattable type; an opaque member or
+                        // index over a parameter has none the declaration can
+                        // name. A nullable formattable argument is judged by the
+                        // ownership pass, which knows the flow narrowing.
+                        let null_shaped = crate::types::is_null_shaped(&ty);
+                        let opaque = ty.is_unknown()
+                            && !ty.nullable
+                            && matches!(
+                                arg.value.kind,
+                                ExprKind::Member { .. }
+                                    | ExprKind::Index { .. }
+                                    | ExprKind::Qualified(_)
+                            )
+                            && self.opaque_projections.iter().any(|projection| {
+                                projection.span.start >= arg.value.span.start
+                                    && projection.span.end <= arg.value.span.end
+                            });
+                        if null_shaped {
+                            self.error(
+                                "E10500",
+                                "type 'null' is not formattable",
+                                "convert with `text`, `toHex`, or `toDecimal`",
+                                arg.value.span,
+                            );
+                        } else if (!ty.is_unknown() && !ty.is_param() && !super::formattable(&ty))
+                            || opaque
+                        {
+                            self.error(
+                                "E10500",
+                                format!("type '{}' is not formattable", ty.display()),
+                                "convert with `text`, `toHex`, or `toDecimal`",
+                                arg.value.span,
+                            );
+                        }
                     }
                     return Ty::handle("String");
                 }

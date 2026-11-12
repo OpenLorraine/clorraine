@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-12 02:00
-> **Progress**: 0/38 tasks (0%)
+> **Last Updated**: 2026-11-12 04:05
+> **Progress**: 16/38 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,34 +62,34 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [03-01](03-01-static-diagnoses.md) · [07](07-testing-strategy.md) ST-1–ST-17, ST-26–ST-31 · AR-1–AR-9, AR-18, AR-20, AR-21
 **Objective**: Pin `text` formattability, the bare null operand, and the null-arm parity before any implementation.
 
-- [ ] 1.1.1 [spec-author] Create `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` with the harness and ST-1–ST-17, ST-26–ST-31, ST-33–ST-35 — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs`
-- [ ] 1.1.2 Run the suite against `bb3956c` and record the red evidence for ST-1, ST-2, ST-3, ST-5, ST-7, ST-9, ST-11, ST-12, ST-13, ST-14, ST-15, ST-28, ST-33 — verify: the failure log names each red case
-- [ ] 1.1.3 Confirm ST-4, ST-6, ST-8, ST-10, ST-16, ST-17, ST-26, ST-27, ST-29, ST-30, ST-31, ST-34 pass on `bb3956c` (behavior guards) — verify: the suite output
+- [x] 1.1.1 [spec-author] Create `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` with the harness and ST-1–ST-17, ST-26–ST-31, ST-33–ST-38 — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.1.2 Run the suite against `bb3956c` and record the red evidence for ST-1, ST-2, ST-3, ST-5, ST-7, ST-9, ST-11, ST-12, ST-13, ST-14, ST-15, ST-28, ST-33, ST-36 — verify: the failure log names each red case ✅ (completed: 2026-11-12 03:17)
+- [x] 1.1.3 Confirm ST-4, ST-6, ST-8, ST-10, ST-16, ST-17, ST-26, ST-27, ST-29, ST-30, ST-31, ST-34 pass on `bb3956c` (behavior guards) — verify: the suite output ✅ (completed: 2026-11-12 03:17)
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-01 §1–§3](03-01-static-diagnoses.md) · AR-1–AR-9, AR-20, AR-21
 **Objective**: Reject a non-formattable `text` argument (including an opaque projection), a bare null operand, and a scalar null arm; make the generic null arm match the concrete twin.
 
-- [ ] 1.2.1 Add the concrete null/non-formattable/opaque-projection E10500 branch to the compiler-known `text` call — `compiler/src/sema/call.rs`
-- [ ] 1.2.2 Apply the nullable-use E10010 rule to a formattable `text` argument, and reuse the existing deferred placeholder duty for a generic argument — `compiler/src/own/expr.rs`
-- [ ] 1.2.3 Remove the literal-null exclusion from the binary null-operand rule — `compiler/src/sema/ops.rs`
-- [ ] 1.2.4 Add the shared `settle_null_arm` and `accepts_bare_null` helpers (with unit tests) and the concrete no-expected-type E10012 report — `compiler/src/types/mod.rs`, `compiler/src/sema/ops.rs`
-- [ ] 1.2.5 Apply the settled null-arm rule in `null_conditional_report` and the placeholder requirement audit; the placeholder duty owns E10010 while the instance conversion duty owns E10012 — `compiler/src/own/instance_check.rs`
-- [ ] 1.2.6 Skip a binary argument conditional whose site already reported, so `(c ? 1 : null) + 1` reports E10012 once — `compiler/src/sema/ops.rs`
-- [ ] 1.2.7 Re-run the new spec suite; all Phase 1 cases green — verify: the suite output
-- [ ] 1.2.8 Re-run the #26/#27 suites, `def_zero_null_spec_test`, and `def_semantic_parity_integrity_spec_test`; #26 ST-37 stays green — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test --test template_placeholder_integrity_impl_test --test template_placeholder_residuals_spec_test --test template_placeholder_residuals_impl_test --test def_zero_null_spec_test --test def_semantic_parity_integrity_spec_test`
+- [x] 1.2.1 Add the concrete null/non-formattable/opaque-projection E10500 branch to the compiler-known `text` call — `compiler/src/sema/call.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.2 Apply the nullable-use E10010 rule to a formattable `text` argument, and reuse the existing deferred placeholder duty for a generic argument — `compiler/src/own/expr.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.3 Remove the literal-null exclusion from the binary null-operand rule — `compiler/src/sema/ops.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.4 Add the shared `settle_null_arm` and `accepts_bare_null` helpers (with unit tests) and the concrete no-expected-type E10012 report — `compiler/src/types/mod.rs`, `compiler/src/sema/ops.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.5 Apply the settled null-arm rule in `null_conditional_report` and the placeholder requirement audit; the placeholder duty owns E10010 while the instance conversion duty owns E10012 — `compiler/src/own/instance_check.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.6 Skip a binary argument conditional whose site already reported, so `(c ? 1 : null) + 1` reports E10012 once — `compiler/src/sema/ops.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.7 Re-run the new spec suite; all Phase 1 cases green — verify: the suite output ✅ (completed: 2026-11-12 03:17)
+- [x] 1.2.8 Re-run the #26/#27 suites, `def_zero_null_spec_test`, and `def_semantic_parity_integrity_spec_test`; #26 ST-37 stays green — verify: `cargo test -p clc --test template_placeholder_integrity_spec_test --test template_placeholder_integrity_impl_test --test template_placeholder_residuals_spec_test --test template_placeholder_residuals_impl_test --test def_zero_null_spec_test --test def_semantic_parity_integrity_spec_test` ✅ (completed: 2026-11-12 03:17)
 
 ### Step 1.3: Impl Tests and Hardening
 
 **Reference**: [07 §3](07-testing-strategy.md) IT-1–IT-6, IT-13, IT-14 · AR-1–AR-9, AR-16, AR-20, AR-21
 **Objective**: Pin the diagnostic surface and review the phase.
 
-- [ ] 1.3.1 Create `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` with IT-1–IT-6, IT-13–IT-15 — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs`
-- [ ] 1.3.2 Create `plans/template-placeholder-residuals-ii/05-findings.md` as the findings ledger — `plans/template-placeholder-residuals-ii/05-findings.md`
-- [ ] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md`
-- [ ] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict
-- [ ] 1.3.5 `make check` green — verify: `make check`
+- [x] 1.3.1 Create `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` with IT-1–IT-6, IT-13–IT-15 — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.3.2 Create `plans/template-placeholder-residuals-ii/05-findings.md` as the findings ledger — `plans/template-placeholder-residuals-ii/05-findings.md` ✅ (completed: 2026-11-12 03:17)
+- [x] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 04:05)
+- [x] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 04:05)
+- [x] 1.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 04:05)
 
 **Deliverables**:
 - [ ] `text(null)` and a non-formattable `text` argument are E10500

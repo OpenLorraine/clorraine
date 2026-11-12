@@ -2564,7 +2564,7 @@ fn check_template_placeholder_requirements(
                 }
             } else {
                 let mut arm_e10500_reported = false;
-                for arm in &requirement.arms {
+                for (index, arm) in requirement.arms.iter().enumerate() {
                     let arm_key = (
                         requirement.function.clone(),
                         arm.span.file,
@@ -2575,22 +2575,37 @@ fn check_template_placeholder_requirements(
                         continue;
                     }
                     let arm_ty = crate::types::substitute(&arm.ty, &bindings);
-                    // A null-shaped arm carries the null literal's opaque type.
-                    // It is an unnarrowed possible-null placeholder value, so
-                    // it reports E10010 exactly as the concrete conditional
-                    // arm does.
-                    if arm_ty.is_unknown() && arm_ty.nullable {
-                        if !arm.narrowed {
-                            diagnostics.push(
-                                Diagnostic::error(
-                                    "E10010",
-                                    format!("value '{}' may be null here", arm.name),
-                                    arm.span,
-                                )
-                                .with_help("check `!= null` before the use"),
-                            );
-                            reported.insert(arm_key);
-                            instance_reported = true;
+                    let sibling_ty = if requirement.arms.len() == 2 {
+                        Some(crate::types::substitute(
+                            &requirement.arms[1 - index].ty,
+                            &bindings,
+                        ))
+                    } else {
+                        None
+                    };
+                    // A null-shaped arm settles against its substituted
+                    // sibling. The placeholder needs a non-null value, so a
+                    // nullable result reports E10010 at the arm. A concrete
+                    // non-nullable result is E10012, owned by the instance
+                    // conversion duty so the site reports once.
+                    if crate::types::is_null_shaped(&arm_ty) {
+                        if let Some(sibling_ty) = sibling_ty {
+                            if matches!(
+                                crate::types::settle_null_arm(&arm_ty, &sibling_ty),
+                                Some(crate::types::NullArmSettlement::Nullable)
+                            ) && !arm.narrowed
+                            {
+                                diagnostics.push(
+                                    Diagnostic::error(
+                                        "E10010",
+                                        format!("value '{}' may be null here", arm.name),
+                                        arm.span,
+                                    )
+                                    .with_help("check `!= null` before the use"),
+                                );
+                                reported.insert(arm_key);
+                                instance_reported = true;
+                            }
                         }
                         continue;
                     }
@@ -2711,18 +2726,33 @@ fn check_opaque_conditionals(
             // report ends the site so a second instance cannot repeat it.
             let mut arm_reported = false;
             if !conditional.null_reported {
-                arm_reported |= null_conditional_report(
-                    &then_ty,
-                    expected.unwrap_or(&else_ty),
-                    conditional.then_span,
-                    diagnostics,
-                );
-                arm_reported |= null_conditional_report(
-                    &else_ty,
-                    expected.unwrap_or(&then_ty),
-                    conditional.else_span,
-                    diagnostics,
-                );
+                if let Some(destination) = expected {
+                    arm_reported |= null_conditional_report(
+                        &then_ty,
+                        destination,
+                        conditional.then_span,
+                        diagnostics,
+                    );
+                    arm_reported |= null_conditional_report(
+                        &else_ty,
+                        destination,
+                        conditional.else_span,
+                        diagnostics,
+                    );
+                } else {
+                    arm_reported |= settled_null_conditional_report(
+                        &then_ty,
+                        &else_ty,
+                        conditional.then_span,
+                        diagnostics,
+                    );
+                    arm_reported |= settled_null_conditional_report(
+                        &else_ty,
+                        &then_ty,
+                        conditional.else_span,
+                        diagnostics,
+                    );
+                }
             }
             // The settled result follows the declaration's arm rule, then the
             // destination conversion the concrete twin's store applies.
@@ -2823,6 +2853,32 @@ fn null_conditional_report(
     diagnostics: &mut Diagnostics,
 ) -> bool {
     if !crate::types::null_arm_needs_report(arm, context) {
+        return false;
+    }
+    diagnostics.push(
+        Diagnostic::error("E10012", "'null' is not allowed here", span)
+            .with_help("declare the type `T?` or avoid the empty state"),
+    );
+    true
+}
+
+/// Reports the null rule for an inferred conditional arm.
+///
+/// With no written destination the sibling supplies the context. The shared
+/// settlement classifies the pair: a bare-null view/`raw`/`cstring`/slice is
+/// the empty state, a handle/`Box` is nullable and is judged at the use, and a
+/// concrete scalar or struct cannot hold the null, so the arm reports E10012.
+/// A still-open pair defers.
+fn settled_null_conditional_report(
+    arm: &Ty,
+    sibling: &Ty,
+    span: Span,
+    diagnostics: &mut Diagnostics,
+) -> bool {
+    if !matches!(
+        crate::types::settle_null_arm(arm, sibling),
+        Some(crate::types::NullArmSettlement::NotAllowed)
+    ) {
         return false;
     }
     diagnostics.push(

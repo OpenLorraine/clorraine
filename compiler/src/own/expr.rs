@@ -1152,6 +1152,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.discarded_conditional = false;
                 self.discarded_literal_field = false;
                 self.check_call_expr(callee, type_args, args, expr.span);
+                if self.is_builtin_text_call(callee) {
+                    for arg in args {
+                        self.check_text_argument(&arg.value);
+                    }
+                }
                 if self.call_may_write_globals(callee) {
                     self.state.global_narrowed.clear();
                 }
@@ -1599,6 +1604,60 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
     }
 
+    /// True when the callee is the compiler-known `text` conversion.
+    ///
+    /// A lexical binding, a user function, or an `ffi` declaration of the
+    /// spelling shadows the intrinsic; a module-level value is excluded the
+    /// same way the type stage excludes it. The resolved callee for the
+    /// intrinsic is the standard-library `text` effect.
+    fn is_builtin_text_call(&self, callee: &Expr) -> bool {
+        let ExprKind::Name(name) = &callee.kind else {
+            return false;
+        };
+        if name != "text" || self.lookup(name).is_some() {
+            return false;
+        }
+        // A module-level value binding shadows the intrinsic exactly as it
+        // does in the type stage; the resolved callee alone cannot tell the
+        // two apart because a global is not a `Callee`.
+        if self.sema.table.global(&self.module.name, name).is_some() {
+            return false;
+        }
+        if let Some(binding) = self.module.import(name) {
+            if !binding.poisoned
+                && self
+                    .sema
+                    .table
+                    .global(&binding.module, &binding.original)
+                    .is_some()
+            {
+                return false;
+            }
+        }
+        matches!(
+            self.resolved_callee(name),
+            Some(super::program::Callee::Stdlib { name, .. }) if name == "text"
+        )
+    }
+
+    /// Applies the explicit-converter rules to a `text` argument.
+    ///
+    /// The argument is a concrete use, so an unnarrowed nullable formattable
+    /// value reports the possible-null rule. A generic argument records the
+    /// same deferred formattability/nullability duty a template placeholder
+    /// uses; the concrete E10500 was already reported by the type stage.
+    fn check_text_argument(&mut self, arg: &'a Expr) {
+        let ty = self.ty(arg);
+        if crate::sema::formattable(&ty) {
+            let expected = Ty {
+                kind: TyKind::Str,
+                nullable: false,
+            };
+            self.check_value_into(arg, &expected, arg.span);
+        }
+        self.record_template_placeholder(arg);
+    }
+
     /// The name a placeholder diagnostic uses.
     ///
     /// A place-rooted read names its root binding, matching
@@ -1625,17 +1684,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// True when a destination carries the empty state without a `?` suffix.
     ///
-    /// Raw pointers, `cstring`, views, and handles all use zero/NULL as their
-    /// empty value, so a null shape lowers to the destination's own empty
-    /// value there. A scalar, enum, or fixed array has no empty value.
+    /// Raw pointers, `cstring`, and views use zero/NULL as their empty value,
+    /// so a null shape lowers to the destination's own empty value there. A
+    /// handle or `Box` needs its `?` form; a scalar, enum, or fixed array has
+    /// no empty value.
     fn null_capable_destination(ty: &Ty) -> bool {
-        match &ty.kind {
-            TyKind::Raw(_) | TyKind::CString | TyKind::Str | TyKind::StaticStr => true,
-            // Only a slice view carries the empty state; a fixed array is
-            // inline storage and cannot be assigned null.
-            TyKind::Array { .. } => ty.is_slice(),
-            _ => false,
-        }
+        // One predicate with the type stage: a view/`raw`/`cstring`/slice
+        // carries the empty state, while a handle/`Box` needs its `?` form.
+        crate::types::accepts_bare_null(ty)
     }
 
     /// Reports the null rule at a position that requires a concrete value.
