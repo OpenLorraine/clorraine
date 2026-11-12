@@ -124,8 +124,8 @@ impl Checker<'_, '_> {
         // surrounding expression.
         let (left_ty, right_ty) = if logical {
             (
-                self.check_condition_value(left),
-                self.check_condition_value(right),
+                self.check_judged_condition_value(left),
+                self.check_judged_condition_value(right),
             )
         } else {
             (
@@ -182,6 +182,23 @@ impl Checker<'_, '_> {
             }
             if right_null && !left_null && !(comparison && null_capable(&left_ty, right)) {
                 return report(self, right.span);
+            }
+        }
+        // A literal null on the left of a comparison against a still-open
+        // parameter defers: the instance substitutes the sibling and applies
+        // the concrete E10012 rule. The right-literal `x == null` form is the
+        // generic narrowing idiom and keeps the declaration's acceptance; the
+        // existing convention-parity oracle pins that the body test itself
+        // adds no report when the instance is already judged at its argument.
+        if comparison {
+            if let Some(function) = self.function_name.clone() {
+                if matches!(left.kind, ExprKind::Null) && contains_param(&right_ty) {
+                    self.opaque_null_comparisons.push(super::OpaqueNullComparison {
+                        function,
+                        other_ty: right_ty.clone(),
+                        null_span: left.span,
+                    });
+                }
             }
         }
         // A conditional operand with a null arm is judged against the other
@@ -470,6 +487,7 @@ impl Checker<'_, '_> {
         expected: Option<&Ty>,
         span: Span,
         in_condition: bool,
+        judged_operand: bool,
     ) -> Ty {
         let condition_ty = self.check_condition_value(condition);
         self.require_bool(&condition_ty, condition.span);
@@ -535,6 +553,8 @@ impl Checker<'_, '_> {
             then_base: super::expr::plain_binding_root(then_value),
             else_base: super::expr::plain_binding_root(else_value),
             span,
+            condition: in_condition,
+            judged_operand,
             destination: expected.cloned(),
             opaque: contains_param(&then_ty)
                 || contains_param(&else_ty)

@@ -1129,7 +1129,8 @@ impl<'a> Emitter<'a> {
     /// A call whose callee is a `func`-typed field renders the field as the
     /// callable expression and passes no receiver argument; every other call
     /// resolves the callee name to a C symbol. An unresolved callee name is
-    /// spelled as-is so a compiler-known helper such as `text` still renders.
+    /// spelled as-is; the `text` intrinsic never reaches this path because
+    /// every spelling lowers through the `$text` sentinel.
     pub(super) fn call(
         &self,
         callee: &str,
@@ -1279,29 +1280,21 @@ impl<'a> Emitter<'a> {
             };
             return format!("{symbol}({argument_list})");
         }
-        match callee {
-            "text" => self.text_call(
-                args.first()
-                    .expect("internal error: `text` requires one argument after sema"),
-            ),
-            _ => {
-                // A func-typed local is called through its own C spelling, so
-                // the compiler's local names map resolves it. An `ffi` call,
-                // qualified or not, names the declaration's own C symbol. Every
-                // other unresolved name is a compiler-known helper spelled
-                // as-is.
-                let spelled = self
-                    .local_names
-                    .get(callee)
-                    .cloned()
-                    .or_else(|| {
-                        self.ffi_callee_signature(callee)
-                            .map(|signature| signature.name.clone())
-                    })
-                    .unwrap_or_else(|| callee.to_owned());
-                format!("{spelled}({argument_list})")
-            }
-        }
+        // A func-typed local is called through its own C spelling, so the
+        // compiler's local names map resolves it. An `ffi` call, qualified or
+        // not, names the declaration's own C symbol. Every other unresolved
+        // name is a compiler-known helper spelled as-is. The `text` intrinsic
+        // never reaches here: every spelling lowers through `$text`.
+        let spelled = self
+            .local_names
+            .get(callee)
+            .cloned()
+            .or_else(|| {
+                self.ffi_callee_signature(callee)
+                    .map(|signature| signature.name.clone())
+            })
+            .unwrap_or_else(|| callee.to_owned());
+        format!("{spelled}({argument_list})")
     }
 
     /// The concrete type arguments of a call in the instance being emitted.

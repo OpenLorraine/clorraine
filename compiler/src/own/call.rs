@@ -375,6 +375,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             self.func_global_callee_path(callee).unwrap_or(name)
         };
+        // Every `text` spelling lowers through the internal sentinel, which
+        // the emitter resolves before any user symbol. A user function or
+        // `ffi` declaration of the spelling is not the intrinsic and keeps its
+        // own name.
+        let name = if self.is_builtin_text_call(callee) {
+            "$text".to_owned()
+        } else {
+            name
+        };
         // A callee expression with no name but a callable type — a conditional
         // over func values, a cast, or an indexed callable — is the callable
         // itself. Lower it as a value and attach it as the call's receiver, so

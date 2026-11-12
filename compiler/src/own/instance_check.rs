@@ -63,6 +63,7 @@ pub fn check(
     check_opaque_indexes(program, sema, mono, diagnostics);
     check_opaque_member_uses(program, sema, mono, diagnostics);
     check_opaque_conditionals(program, sema, mono, diagnostics);
+    check_opaque_null_comparisons(program, sema, mono, diagnostics);
     check_len_operand_requirements(program, mono, diagnostics);
     check_template_placeholder_requirements(program, mono, diagnostics);
     check_deferred_conversions(program, sema, mono, diagnostics);
@@ -2719,6 +2720,34 @@ fn check_opaque_conditionals(
                         && requirement.then_span == conditional.then_span
                         && requirement.else_span == conditional.else_span
                 });
+            // A conditional used directly as a condition follows the
+            // concrete E10218 rule: a non-bool settled type reports at the
+            // conditional, and the null arm is not also reported there. A
+            // logical operand also carries the operand judge's null-arm
+            // report, so its E10218 follows that report. A still-open pair
+            // defers; a bool settlement keeps the ordinary null-arm rule.
+            let condition_non_bool = if conditional.condition {
+                let settled = crate::types::conditional_result(&then_ty, &else_ty);
+                settled.as_ref().is_some_and(|result| {
+                    !result.is_bool()
+                        && !result.is_param()
+                        && !crate::types::contains_param(result)
+                        && !(result.is_unknown() && !crate::types::is_null_shaped(result))
+                })
+            } else {
+                false
+            };
+            if condition_non_bool && !conditional.judged_operand {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10218",
+                        "condition must be 'bool'",
+                        conditional.span,
+                    )
+                    .with_help("compare explicitly, for example `x != 0`"),
+                );
+                break;
+            }
             // A null arm faces the destination, or the sibling when the
             // conditional has no destination of its own. The instance keeps
             // the concrete twin's order: the null report first, then the
@@ -2753,6 +2782,17 @@ fn check_opaque_conditionals(
                         diagnostics,
                     );
                 }
+            }
+            if condition_non_bool {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10218",
+                        "condition must be 'bool'",
+                        conditional.span,
+                    )
+                    .with_help("compare explicitly, for example `x != 0`"),
+                );
+                break;
             }
             // The settled result follows the declaration's arm rule, then the
             // destination conversion the concrete twin's store applies.
@@ -2860,6 +2900,63 @@ fn null_conditional_report(
             .with_help("declare the type `T?` or avoid the empty state"),
     );
     true
+}
+
+/// Re-applies the null rule to a literal-null comparison at each instance.
+///
+/// The declaration cannot tell whether a still-open sibling substitutes to a
+/// null-capable type, so a left-literal `null == x` / `null != x` against a
+/// parameter stays legal there. Each instance substitutes the sibling: a
+/// null-capable type accepts the comparison, and any other concrete type
+/// reports E10012 at the null, exactly as the concrete spelling does. The
+/// right-literal `x == null` / `x != null` narrowing form is not recorded. The
+/// site reports once.
+fn check_opaque_null_comparisons(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut reported = BTreeSet::new();
+    for requirement in &sema.opaque_null_comparisons {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let other = crate::types::substitute(&requirement.other_ty, &bindings);
+            if other.is_unknown()
+                || other.is_param()
+                || crate::types::contains_param(&other)
+            {
+                continue;
+            }
+            if crate::borrow::is_nullable_capable(&other) {
+                continue;
+            }
+            let key = (
+                requirement.function.clone(),
+                requirement.null_span.file,
+                requirement.null_span.start,
+                requirement.null_span.end,
+            );
+            if reported.insert(key) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10012",
+                        "'null' is not allowed here",
+                        requirement.null_span,
+                    )
+                    .with_help("declare the type `T?` or avoid the empty state"),
+                );
+            }
+            break;
+        }
+    }
 }
 
 /// Reports the null rule for an inferred conditional arm.

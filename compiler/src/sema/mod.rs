@@ -119,6 +119,13 @@ pub struct SemaOutput {
     /// whether a null arm reaches a non-nullable context, so the per-instance
     /// audit re-applies the conditional rule to the resolved arms.
     pub opaque_conditionals: Vec<OpaqueConditional>,
+    /// Literal-null comparisons whose other operand still names a parameter.
+    ///
+    /// The declaration keeps the left-literal spelling legal; each instance
+    /// substituting a non-null-capable sibling reports E10012 at the literal
+    /// null. The right-literal `x == null` / `x != null` form is the generic
+    /// narrowing idiom and is not recorded.
+    pub opaque_null_comparisons: Vec<OpaqueNullComparison>,
     /// Raw casts whose operand's type is still open at the declaration.
     ///
     /// A cast of an operand typed by a type parameter cannot tell whether the
@@ -354,6 +361,18 @@ pub struct OpaqueConditional {
     pub else_base: Option<String>,
     /// The whole conditional's span, for the destination conversion.
     pub span: Span,
+    /// True when the conditional sits directly in a condition position.
+    ///
+    /// The instance audit then owns the frozen E10218 report for a non-bool
+    /// settlement, exactly as the concrete twin's `require_bool` does, and
+    /// suppresses the null-arm report for that site.
+    pub condition: bool,
+    /// True when a logical operand also judges the condition.
+    ///
+    /// The instance keeps the null-arm report for this shape, so the
+    /// generic conditional reproduces the concrete twin's E10218 + E10012
+    /// pair.
+    pub judged_operand: bool,
     /// The destination the conditional must convert to, when one is known.
     ///
     /// A let, return, field, or call-argument destination is recorded here so
@@ -364,6 +383,22 @@ pub struct OpaqueConditional {
     /// True when the declaration already reported a null arm at a concrete
     /// destination, so the instance must not report it a second time.
     pub null_reported: bool,
+}
+
+/// A literal-null comparison whose other operand still names a parameter.
+///
+/// The declaration cannot tell whether the instance's type is null-capable, so
+/// the left-literal comparison stays legal there. The per-instance audit
+/// substitutes the sibling and applies the concrete E10012 rule at the null
+/// literal. The right-literal `x == null` / `x != null` form is the generic
+/// narrowing idiom and is not recorded.
+pub struct OpaqueNullComparison {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The non-null operand's declared type.
+    pub other_ty: Ty,
+    /// The literal null's span.
+    pub null_span: Span,
 }
 
 /// The arm types of one checked conditional.
@@ -398,6 +433,10 @@ pub struct ConditionalArms {
     pub else_base: Option<String>,
     /// The whole conditional's span.
     pub span: Span,
+    /// True when the conditional sits directly in a condition position.
+    pub condition: bool,
+    /// True when a logical operand also judges the condition.
+    pub judged_operand: bool,
     /// The destination the conditional must convert to, when one is known.
     pub destination: Option<Ty>,
     /// True when an arm still names a type parameter, so the instance must
@@ -467,6 +506,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
     let mut opaque_conversions: Vec<OpaqueConversion> = Vec::new();
     let mut opaque_conditionals: Vec<OpaqueConditional> = Vec::new();
+    let mut opaque_null_comparisons: Vec<OpaqueNullComparison> = Vec::new();
     let mut raw_casts: Vec<RawCastRequirement> = Vec::new();
     let mut hook_calls: BTreeMap<usize, HookCallSite> = BTreeMap::new();
     // Lambda site ids are program-global and deterministic: they count the
@@ -484,6 +524,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
         opaque_conversions.extend(checker.opaque_conversions.drain(..));
         opaque_conditionals.extend(checker.opaque_conditionals.drain(..));
+        opaque_null_comparisons.extend(checker.opaque_null_comparisons.drain(..));
         raw_casts.extend(checker.raw_casts.drain(..));
         merge_hook_calls(&mut hook_calls, std::mem::take(&mut checker.hook_calls));
         expr_types.extend(checker.recorded.drain(..));
@@ -501,6 +542,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_member_uses,
         opaque_conversions,
         opaque_conditionals,
+        opaque_null_comparisons,
         raw_casts,
     }
 }
@@ -604,6 +646,13 @@ struct Checker<'a, 'd> {
     /// does not also report its null arm; a bool conditional still reports the
     /// null arm with E10012.
     condition_root: bool,
+    /// True when the condition root is also judged by a logical operand.
+    ///
+    /// `&&`/`||` judge each operand against the other's bool type, so the
+    /// concrete twin reports E10218 and the operand's null-arm E10012. The
+    /// deferred conditional carries this flag so its instance can reproduce
+    /// both reports.
+    condition_judged: bool,
     /// Nesting depth of `unsafe { ... }` blocks in the current expression.
     ///
     /// The type stage uses the depth only to record whether an opaque member
@@ -636,6 +685,8 @@ struct Checker<'a, 'd> {
     /// Conditionals whose arm agreement is deferred to their instance, in
     /// check order.
     opaque_conditionals: Vec<OpaqueConditional>,
+    /// Literal-null comparisons whose other operand is still open.
+    opaque_null_comparisons: Vec<OpaqueNullComparison>,
     /// Raw casts whose operand's type is still open, in check order.
     raw_casts: Vec<RawCastRequirement>,
     /// The arm types of every checked conditional, in check order.
@@ -717,6 +768,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             function_name: None,
             in_const_context: false,
             condition_root: false,
+            condition_judged: false,
             unsafe_depth: 0,
             returns: Ty::void(),
             recorded: Vec::new(),
@@ -729,6 +781,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             opaque_member_uses: Vec::new(),
             opaque_conversions: Vec::new(),
             opaque_conditionals: Vec::new(),
+            opaque_null_comparisons: Vec::new(),
             raw_casts: Vec::new(),
             conditional_arms: Vec::new(),
             conditional_index: HashMap::new(),
@@ -772,6 +825,8 @@ impl<'a, 'd> Checker<'a, 'd> {
                 then_base: arms.then_base,
                 else_base: arms.else_base,
                 span: arms.span,
+                condition: arms.condition,
+                judged_operand: arms.judged_operand,
                 expected: arms.destination,
                 null_reported: arms.null_reported,
             });
@@ -1137,8 +1192,24 @@ impl<'a, 'd> Checker<'a, 'd> {
     /// null arm with E10012.
     pub(super) fn check_condition_value(&mut self, condition: &Expr) -> Ty {
         self.condition_root = true;
+        self.condition_judged = false;
         let ty = self.check_value(condition, None);
         self.condition_root = false;
+        self.condition_judged = false;
+        ty
+    }
+
+    /// Checks a condition operand that a logical operator also judges.
+    ///
+    /// The concrete twin reports E10218 for a non-bool condition and the
+    /// operand judge's E10012 for a null arm; the deferred conditional records
+    /// the second flag so its instance reproduces the same pair.
+    pub(super) fn check_judged_condition_value(&mut self, condition: &Expr) -> Ty {
+        self.condition_root = true;
+        self.condition_judged = true;
+        let ty = self.check_value(condition, None);
+        self.condition_root = false;
+        self.condition_judged = false;
         ty
     }
 

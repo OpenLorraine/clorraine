@@ -1012,8 +1012,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // statement and cannot live in the compact C `for`
                     // header. A target that may own after substitution takes
                     // the same safe path.
+                    // A fixed array has no C assignment or value-return
+                    // form: the ordinary store supplies the hidden
+                    // destination argument or the element copy, which the
+                    // compact header cannot carry.
                     !self.owns_drop(&target.ty)
                         && !self.maybe_owns(&target.ty)
+                        && !target.ty.is_fixed_array()
                         && !self.literal_fields_need_stores(value)
                         && !value_needs_guards(value)
                         && !matches!(value.kind, ValueKind::ArrayLit { .. })

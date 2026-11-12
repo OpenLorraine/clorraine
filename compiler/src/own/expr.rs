@@ -1606,38 +1606,102 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// True when the callee is the compiler-known `text` conversion.
     ///
-    /// A lexical binding, a user function, or an `ffi` declaration of the
-    /// spelling shadows the intrinsic; a module-level value is excluded the
-    /// same way the type stage excludes it. The resolved callee for the
-    /// intrinsic is the standard-library `text` effect.
-    fn is_builtin_text_call(&self, callee: &Expr) -> bool {
-        let ExprKind::Name(name) = &callee.kind else {
-            return false;
-        };
-        if name != "text" || self.lookup(name).is_some() {
-            return false;
-        }
-        // A module-level value binding shadows the intrinsic exactly as it
-        // does in the type stage; the resolved callee alone cannot tell the
-        // two apart because a global is not a `Callee`.
-        if self.sema.table.global(&self.module.name, name).is_some() {
-            return false;
-        }
-        if let Some(binding) = self.module.import(name) {
-            if !binding.poisoned
-                && self
-                    .sema
-                    .table
-                    .global(&binding.module, &binding.original)
-                    .is_some()
-            {
-                return false;
+    /// A lexical binding, a user function, an `ffi` declaration, or a module
+    /// global of the spelling shadows the intrinsic. The bare, aliased, and
+    /// module-qualified spellings all resolve here; a real declaration reached
+    /// through `std.fmt.text` wins.
+    pub(super) fn is_builtin_text_call(&self, callee: &Expr) -> bool {
+        match &callee.kind {
+            ExprKind::Name(name) => {
+                if self.lookup(name).is_some() {
+                    return false;
+                }
+                if self.sema.table.global(&self.module.name, name).is_some() {
+                    return false;
+                }
+                // A same-module function or `ffi` declaration of the spelling
+                // wins; the import binding is the only remaining path to the
+                // intrinsic for an aliased spelling.
+                if self.module.decl(name).is_some_and(|decl| {
+                    decl.kind == crate::load::DeclKind::Func
+                }) {
+                    return false;
+                }
+                // An `ffi` block's name is a declaration but not a callable
+                // signature; only a declared signature of the spelling wins.
+                if self.module.items.iter().any(|item| {
+                    matches!(
+                        item,
+                        crate::ast::Item::Ffi(block)
+                            if block.decls.iter().any(|signature| signature.name == *name)
+                    )
+                }) {
+                    return false;
+                }
+                if let Some(binding) = self.module.import(name) {
+                    if binding.poisoned {
+                        return false;
+                    }
+                    if binding.module == "std.fmt" && binding.original == "text" {
+                        let target_decl = self
+                            .loaded
+                            .module("std.fmt")
+                            .and_then(|target| target.decl("text"))
+                            .is_some();
+                        return !target_decl;
+                    }
+                    // The alias names another module's declaration.
+                    return false;
+                }
+                // The resolver requires an import for the bare spelling, so a
+                // resolved program reaches here only for the compiler-known
+                // name.
+                name == "text"
             }
+            ExprKind::Qualified(path) => {
+                let exact = path.segments.len() == 3
+                    && path.segments[0] == "std"
+                    && path.segments[1] == "fmt"
+                    && path.segments[2] == "text";
+                if !exact || self.is_dot_call(callee) || self.value_head_shadows("std") {
+                    return false;
+                }
+                if matches!(
+                    self.resolved_callee("std.fmt.text"),
+                    Some(super::program::Callee::User(_) | super::program::Callee::Ffi(_))
+                ) {
+                    return false;
+                }
+                let target_decl = self
+                    .loaded
+                    .module("std.fmt")
+                    .and_then(|target| target.decl("text"))
+                    .is_some();
+                !target_decl && self.sema.table.global("std.fmt", "text").is_none()
+            }
+            _ => false,
         }
-        matches!(
-            self.resolved_callee(name),
-            Some(super::program::Callee::Stdlib { name, .. }) if name == "text"
-        )
+    }
+
+    /// True when a value binding shadows a module-path head.
+    ///
+    /// The type stage treats a lexical, module-level, or imported value head
+    /// as a member path; the ownership stage must agree, including a
+    /// module-level `let std` that is not a lexical name.
+    fn value_head_shadows(&self, name: &str) -> bool {
+        self.lookup(name).is_some()
+            || self.sema.table.global(&self.module.name, name).is_some()
+            || self.module.decl(name).is_some_and(|decl| {
+                matches!(
+                    decl.kind,
+                    crate::load::DeclKind::Func
+                        | crate::load::DeclKind::Global
+                        | crate::load::DeclKind::Const
+                        | crate::load::DeclKind::Ffi
+                        | crate::load::DeclKind::Intrinsic
+                )
+            })
+            || self.module.import(name).is_some_and(|binding| !binding.poisoned)
     }
 
     /// Applies the explicit-converter rules to a `text` argument.

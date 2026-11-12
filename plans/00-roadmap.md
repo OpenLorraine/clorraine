@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-12
-> **Progress**: 577/579 rows done; 0 active; 2 Parked
+> **Progress**: 578/580 rows done; 0 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -594,6 +594,7 @@
 | PLAN-31 | Template placeholder residuals (#27) | [01-requirements](template-placeholder-residuals/01-requirements.md) | [template-placeholder-residuals](template-placeholder-residuals/00-index.md) | Done | ✅ | 2026-11-12 | 38/38; null placeholder E10500, mixed-conditional nullability E10010, zero-state String reads empty, discarded/for-step template cleanup, owning aggregate order via a zero-filled Adopt store; 30 spec + 10 impl cases, ASan 34 suites, UBSan 8, `bench-shape`, `bench-compare` zero instruction/.text deltas (C +0.1% from shim null checks), `make check`, `make verify` all legs; #27 closed; follow-up #28 filed |
 | PLAN-32 | Template placeholder residuals II (#28) | [01-requirements](template-placeholder-residuals-ii/01-requirements.md) | [template-placeholder-residuals-ii](template-placeholder-residuals-ii/00-index.md) | Done | ✅ | 2026-11-12 | 38/38; explicit `text` E10500 (null/non-formattable/opaque) and E10010 (nullable), bare-null E10012 with E10218 preserved, generic/scalar null-arm parity, for-step owning-assignment pre-drop, for-init effects, for-step aggregate order, panic zero-length guard; 39 spec + 14 impl cases, ASan 35 suites, UBSan 9, `bench-shape`, `bench-compare` zero instruction/.text deltas (C +0.1%), `make check`, `make verify` all legs; #28 closed; follow-up #29 filed |
 | PLAN-33 | Enforce one-argument `text` arity (#24) | — | [text-arity](text-arity/99-execution-plan.md) | Done | ✅ | 2026-11-12 | 8/8; exact one-argument `text` with E10308 and the frozen help, no output C for zero/two arguments, zero-argument codegen fallback removed from all three call sites, module-level/imported value shadows preserved; 6 spec + 3 impl cases, independent correctness + emission reviews, combined full gate green; #24 closed |
+| PLAN-34 | Template placeholder residuals III (#29) | [01-requirements](template-placeholder-residuals-iii/01-requirements.md) | [template-placeholder-residuals-iii](template-placeholder-residuals-iii/00-index.md) | Done | ✅ | 2026-11-12 | 35/35; aliased/qualified/module-initializer `text` via `$text`, usable `std.fmt.text`/ffi shadowing, generic condition E10218 parity, documented both-null value, left-literal null-vs-parameter E10012, null cstring panic guard, fixed-array step flat store; 49 spec + 13 impl cases, ASan 36 suites, UBSan 10, `bench-shape`, zero instruction/.text deltas, `make check`, `make verify` all legs; #29 closed |
 
 ## Batch N accounting (2026-10-19)
 

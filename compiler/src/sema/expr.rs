@@ -44,6 +44,7 @@ impl Checker<'_, '_> {
         // it, so a conditional nested in an arithmetic, index, call, or cast
         // operand is a value use again.
         let condition_root = std::mem::take(&mut self.condition_root);
+        let condition_judged = std::mem::take(&mut self.condition_judged);
         match &expr.kind {
             ExprKind::Int(value) => self.check_int(*value, expected, expr.span),
             ExprKind::Float(_) => self.check_float(expected),
@@ -92,6 +93,7 @@ impl Checker<'_, '_> {
                 expected,
                 expr.span,
                 condition_root,
+                condition_judged,
             ),
             ExprKind::Cast { ty, value } => self.check_cast(ty, value),
             ExprKind::RawCast { ty, value } => self.check_raw_cast(ty, value),
@@ -113,6 +115,7 @@ impl Checker<'_, '_> {
                 // An unsafe block is a transparent wrapper: its value keeps
                 // the surrounding condition position.
                 self.condition_root = condition_root;
+                self.condition_judged = condition_judged;
                 let ty = self.check_value(inner, expected);
                 self.unsafe_depth -= 1;
                 ty

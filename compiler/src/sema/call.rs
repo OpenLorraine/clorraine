@@ -158,6 +158,13 @@ impl Checker<'_, '_> {
                     }
                     _ => {}
                 }
+                // The module-qualified spelling of the compiler-known
+                // `text(v)` converter. A real declaration reached through the
+                // path has already returned above; a value head makes this an
+                // ordinary member path instead.
+                if self.is_std_fmt_text_path(&name.segments) {
+                    return self.check_text_call(type_args, args, span);
+                }
             }
             // A dotted callee whose receiver is a value or a module-path
             // binding is a dot-call, exactly like the `Member` shape the
@@ -261,7 +268,19 @@ impl Checker<'_, '_> {
                 // The call's result carries the declared return type, so the
                 // ordinary conversion judgments see it at the result's uses.
                 if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
-                    if let Some(signature) = self.ffi_signature(name) {
+                    // The signature may live in the importing module (an
+                    // `ffi` declaration in the current file) or in the
+                    // declaration's own module (an imported `ffi` function).
+                    let signature = self.ffi_signature(name).or_else(|| {
+                        self.module.import(name).and_then(|binding| {
+                            if binding.poisoned {
+                                None
+                            } else {
+                                self.qualified_ffi_signature(&binding.module, &binding.original)
+                            }
+                        })
+                    });
+                    if let Some(signature) = signature {
                         let params = self.ffi_parameter_types(name, signature);
                         let result = self.ffi_result_type(name, signature);
                         self.check_ffi_arguments(name, &params, args, span, call_site, &result);
@@ -271,68 +290,10 @@ impl Checker<'_, '_> {
                 }
                 // The compiler-known `text(v)` formatter is not declared in
                 // Clorraine; the compiler lowers it to a `String`-returning
-                // shim conversion. Registering that return type here lets the
-                // `String`-to-`str` widening apply when it is passed to a view.
-                if name == "text" && !self.text_name_is_shadowed(name) {
-                    self.check_non_generic_type_args("text", type_args, span);
-                    // The standard-library appendix specifies the one-argument
-                    // form `text(v)`. A wrong count reports the frozen arity
-                    // rule and still walks the written arguments so their own
-                    // errors are not hidden.
-                    if args.len() != 1 {
-                        self.error(
-                            "E10308",
-                            format!(
-                                "wrong number of arguments for 'text': expected 1, found {}",
-                                args.len()
-                            ),
-                            "pass one argument per parameter",
-                            span,
-                        );
-                    }
-                    for arg in args {
-                        let ty = self.check_value(&arg.value, None);
-                        if args.len() != 1 {
-                            continue;
-                        }
-                        // The explicit converter applies the same formattability
-                        // rule as a template placeholder. A null-shaped value
-                        // has no concrete formattable type; an opaque member or
-                        // index over a parameter has none the declaration can
-                        // name. A nullable formattable argument is judged by the
-                        // ownership pass, which knows the flow narrowing.
-                        let null_shaped = crate::types::is_null_shaped(&ty);
-                        let opaque = ty.is_unknown()
-                            && !ty.nullable
-                            && matches!(
-                                arg.value.kind,
-                                ExprKind::Member { .. }
-                                    | ExprKind::Index { .. }
-                                    | ExprKind::Qualified(_)
-                            )
-                            && self.opaque_projections.iter().any(|projection| {
-                                projection.span.start >= arg.value.span.start
-                                    && projection.span.end <= arg.value.span.end
-                            });
-                        if null_shaped {
-                            self.error(
-                                "E10500",
-                                "type 'null' is not formattable",
-                                "convert with `text`, `toHex`, or `toDecimal`",
-                                arg.value.span,
-                            );
-                        } else if (!ty.is_unknown() && !ty.is_param() && !super::formattable(&ty))
-                            || opaque
-                        {
-                            self.error(
-                                "E10500",
-                                format!("type '{}' is not formattable", ty.display()),
-                                "convert with `text`, `toHex`, or `toDecimal`",
-                                arg.value.span,
-                            );
-                        }
-                    }
-                    return Ty::handle("String");
+                // shim conversion. Bare, aliased, and module-qualified
+                // spellings share one judgment.
+                if self.is_text_intrinsic_name(name) {
+                    return self.check_text_call(type_args, args, span);
                 }
                 // The view builders are compiler-known when their visible
                 // declaration is the intrinsic one; a user or `ffi` function
@@ -1567,6 +1528,119 @@ impl Checker<'_, '_> {
             }
         }
         false
+    }
+
+    /// True when a written local name denotes the compiler-known `text`
+    /// conversion.
+    ///
+    /// `text` is not declared in the standard library, so a bare or aliased
+    /// import binds the intrinsic. A user module named `std.fmt` may declare
+    /// `text` as a function, `ffi`, or global; a real declaration wins. A
+    /// module-level value of the same spelling shadows it.
+    fn is_text_intrinsic_name(&self, name: &str) -> bool {
+        if self.text_name_is_shadowed(name) {
+            return false;
+        }
+        if name == "text" {
+            // The imported-`ffi` path does not reach `ffi_signature` (which
+            // reads only the current module), so the intrinsic gate excludes a
+            // target `ffi` declaration here.
+            let imported_ffi = self.module.import(name).is_some_and(|binding| {
+                !binding.poisoned
+                    && self
+                        .qualified_ffi_signature(&binding.module, &binding.original)
+                        .is_some()
+            });
+            return !imported_ffi
+                && self.qualified_ffi_signature("std.fmt", "text").is_none()
+                && self.qualified_decl_kind("std.fmt", "text").is_none()
+                && self.table.global("std.fmt", "text").is_none();
+        }
+        self.module.import(name).is_some_and(|binding| {
+            !binding.poisoned
+                && binding.module == "std.fmt"
+                && binding.original == "text"
+                && self.qualified_ffi_signature("std.fmt", "text").is_none()
+                && self.qualified_decl_kind("std.fmt", "text").is_none()
+                && self.table.global("std.fmt", "text").is_none()
+        })
+    }
+
+    /// True when a module path is exactly the `std.fmt.text` intrinsic.
+    ///
+    /// A value binding of the head makes the path an ordinary member access;
+    /// a real function, `ffi`, or global declaration reached through the path
+    /// wins over the intrinsic.
+    fn is_std_fmt_text_path(&self, segments: &[String]) -> bool {
+        segments.len() == 3
+            && segments[0] == "std"
+            && segments[1] == "fmt"
+            && segments[2] == "text"
+            && !self.name_is_value("std")
+            && self.qualified_ffi_signature("std.fmt", "text").is_none()
+            && self.qualified_decl_kind("std.fmt", "text").is_none()
+            && self.table.global("std.fmt", "text").is_none()
+    }
+
+    /// Checks the compiler-known `text(v)` conversion.
+    ///
+    /// The arity, formattability, and nullable-use judgments are the same for
+    /// the bare, aliased, and module-qualified spellings; only the written name
+    /// differs. A wrong count reports the frozen arity rule and still walks the
+    /// written arguments so their own errors are not hidden.
+    fn check_text_call(&mut self, type_args: &[Type], args: &[Arg], span: Span) -> Ty {
+        self.check_non_generic_type_args("text", type_args, span);
+        if args.len() != 1 {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for 'text': expected 1, found {}",
+                    args.len()
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+        }
+        for arg in args {
+            let ty = self.check_value(&arg.value, None);
+            if args.len() != 1 {
+                continue;
+            }
+            // The explicit converter applies the same formattability rule as a
+            // template placeholder. A null-shaped value has no concrete
+            // formattable type; an opaque member or index over a parameter has
+            // none the declaration can name. A nullable formattable argument is
+            // judged by the ownership pass, which knows the flow narrowing.
+            let null_shaped = crate::types::is_null_shaped(&ty);
+            let opaque = ty.is_unknown()
+                && !ty.nullable
+                && matches!(
+                    arg.value.kind,
+                    ExprKind::Member { .. }
+                        | ExprKind::Index { .. }
+                        | ExprKind::Qualified(_)
+                )
+                && self.opaque_projections.iter().any(|projection| {
+                    projection.span.start >= arg.value.span.start
+                        && projection.span.end <= arg.value.span.end
+                });
+            if null_shaped {
+                self.error(
+                    "E10500",
+                    "type 'null' is not formattable",
+                    "convert with `text`, `toHex`, or `toDecimal`",
+                    arg.value.span,
+                );
+            } else if (!ty.is_unknown() && !ty.is_param() && !super::formattable(&ty)) || opaque {
+                self.error(
+                    "E10500",
+                    format!("type '{}' is not formattable", ty.display()),
+                    "convert with `text`, `toHex`, or `toDecimal`",
+                    arg.value.span,
+                );
+            }
+        }
+        Ty::handle("String")
     }
 
     /// Checks call arguments, optionally allowing a `cstring` literal argument.

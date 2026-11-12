@@ -3676,6 +3676,95 @@ impl<'a> Emitter<'a> {
         name
     }
 
+    /// The lowered spelling of a module-initializer `text` call.
+    ///
+    /// A module initializer has its own AST walk, so it cannot rely on the
+    /// body lowering's `$text` canonicalization. This mirrors the type stage:
+    /// the bare and `std.fmt` alias spellings are the intrinsic unless a real
+    /// function, `ffi` signature, or value declaration wins; the exact
+    /// `std.fmt.text` path is the intrinsic unless a value head or a real
+    /// declaration wins.
+    fn init_text_intrinsic_name(&self, module: &Module, callee: &Expr) -> Option<String> {
+        let path: Vec<String> = match &callee.kind {
+            ExprKind::Name(name) => {
+                if module.decl(name).is_some_and(|decl| {
+                    matches!(
+                        decl.kind,
+                        crate::load::DeclKind::Global
+                            | crate::load::DeclKind::Const
+                            | crate::load::DeclKind::Func
+                    )
+                }) {
+                    return None;
+                }
+                if module.items.iter().any(|item| {
+                    matches!(
+                        item,
+                        Item::Ffi(block)
+                            if block.decls.iter().any(|signature| signature.name == *name)
+                    )
+                }) {
+                    return None;
+                }
+                if let Some(binding) = module.import(name) {
+                    if !binding.poisoned
+                        && binding.module == "std.fmt"
+                        && binding.original == "text"
+                    {
+                        let target = self.loaded.module("std.fmt")?;
+                        if Self::declares_text(target) {
+                            return None;
+                        }
+                        return Some("$text".to_owned());
+                    }
+                    return None;
+                }
+                if name == "text" {
+                    vec!["std".to_owned(), "fmt".to_owned(), "text".to_owned()]
+                } else {
+                    return None;
+                }
+            }
+            ExprKind::Qualified(path) => path.segments.clone(),
+            _ => return None,
+        };
+        if path.len() != 3 || path[0] != "std" || path[1] != "fmt" || path[2] != "text" {
+            return None;
+        }
+        if module.decl("std").is_some_and(|decl| {
+            matches!(
+                decl.kind,
+                crate::load::DeclKind::Func
+                    | crate::load::DeclKind::Global
+                    | crate::load::DeclKind::Const
+                    | crate::load::DeclKind::Ffi
+                    | crate::load::DeclKind::Intrinsic
+            )
+        }) || module.import("std").is_some_and(|binding| !binding.poisoned)
+        {
+            return None;
+        }
+        let target = self.loaded.module("std.fmt")?;
+        if Self::declares_text(target) {
+            return None;
+        }
+        Some("$text".to_owned())
+    }
+
+    /// True when a module declares a callable `text` (function or `ffi`).
+    fn declares_text(module: &Module) -> bool {
+        module
+            .decl("text")
+            .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Func))
+            || module.items.iter().any(|item| {
+                matches!(
+                    item,
+                    Item::Ffi(block)
+                        if block.decls.iter().any(|signature| signature.name == "text")
+                )
+            })
+    }
+
     /// Lowers a module-initializer call the checker resolved as a conversion.
     ///
     /// The body lowering reads the checker's recorded cast set; a module
@@ -3922,6 +4011,7 @@ impl<'a> Emitter<'a> {
                 } else {
                     qualified_callee_name(callee)
                 };
+                let name = self.init_text_intrinsic_name(module, callee).unwrap_or(name);
                 let resolved_type_args: Vec<Ty> = if callable.is_some() {
                     type_args
                         .iter()

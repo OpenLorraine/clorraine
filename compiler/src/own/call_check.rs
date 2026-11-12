@@ -88,6 +88,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
         }
+        // The compiler-known `text` has one by-value parameter and no modes;
+        // a program-wide same-named function must not supply its `take` modes.
+        if self.is_builtin_text_call(callee) {
+            for arg in args {
+                self.eval(&arg.value);
+            }
+            return;
+        }
         // A callee that is itself a call is called through the function value
         // it returns; the recorded result type carries the signature, so the
         // arguments are checked exactly like a func-typed binding's. The

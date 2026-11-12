@@ -47,7 +47,8 @@ static inline void cl_trap(const char *code, const char *message)
  * message keep printing their text through the length-based runtime. */
 static inline size_t cl_cstring_len(const char *text)
 {
-    return strlen(text);
+    /* A null cstring is the empty state; strlen has no null contract. */
+    return text == NULL ? 0 : strlen(text);
 }
 
 /* Abort on a user-level panic. The message is passed as pointer and length, so

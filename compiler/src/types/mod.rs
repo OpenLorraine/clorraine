@@ -1109,6 +1109,13 @@ pub enum NullArmSettlement {
 /// [`conditional_result`] the declaration and the instance audit use, so an
 /// unknown sibling joins exactly as it does at the conditional itself. A
 /// still-open result defers to the instance duty.
+///
+/// Two null-shaped arms settle to [`NullArmSettlement::Deferred`] because
+/// there is no sibling type to classify. A no-destination conditional of that
+/// pair is not recorded as an opaque duty (the opaque flag needs an open
+/// destination or a parameter), so the value is accepted exactly like a bare
+/// `null` binding; a concrete destination still reports each arm through
+/// [`null_arm_needs_report`].
 pub fn settle_null_arm(arm: &Ty, sibling: &Ty) -> Option<NullArmSettlement> {
     if !is_null_shaped(arm) {
         return None;
