@@ -486,7 +486,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // local, parameter, or capture, a module-level func-typed global, or
         // the declared function the name resolves to. A same-named module
         // function's modes are never applied to a value callee.
-        let modes: Option<Vec<Mode>> = if let Some(callable) = &receiver {
+        let modes: Option<Vec<Mode>> = if self.is_builtin_text_call(callee) {
+            // The compiler-known text conversion reads its argument; the
+            // synthetic borrow lets an owned temporary be materialized and
+            // released while a named place stays a copy.
+            Some(vec![Mode::Borrow; args.len()])
+        } else if let Some(callable) = &receiver {
             self.callable_modes(&callable.ty)
         } else {
             match local_callee_id {

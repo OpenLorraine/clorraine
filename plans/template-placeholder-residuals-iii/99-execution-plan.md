@@ -8,6 +8,10 @@
 
 ## Overview
 
+> **Supersession:** the module-level value-head clause of R2/IT-13 is
+> superseded by PLAN-35 (#31). The plan stays as the historical record of the
+> #29 delivery; the current behavior is the module path wins (MOD-13).
+
 Deliver issue #29 in three phases: the static judgments (alias/qualified
 `text`, generic condition context, both-null decision, deferred null
 comparison), the lowering/runtime residuals (null-safe cstring length,

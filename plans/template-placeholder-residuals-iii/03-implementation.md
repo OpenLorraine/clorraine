@@ -75,14 +75,14 @@ fn is_std_fmt_text_path(&self, segments: &[String]) -> bool {
         && segments[0] == "std"
         && segments[1] == "fmt"
         && segments[2] == "text"
-        && !self.name_is_value("std")
         && self.qualified_decl_kind("std.fmt", "text").is_none()
         && self.table.global("std.fmt", "text").is_none()
 }
 ```
 
-`name_is_value("std")` covers lexical scopes, module declarations, and imports,
-so a value head makes the path an ordinary dot/member access. The
+A **lexical** value head makes the path an ordinary dot/member access
+(MOD-16); a module-level or imported value does not, because qualified access
+is always available (MOD-13). PLAN-35 (#31) supersedes this clause. The
 `qualified_decl_kind` gate covers a user module named `std.fmt` that declares a
 function, `ffi`, or global; the ordinary route then handles the call. The bare
 branch becomes `if self.is_text_intrinsic_name(name) { return

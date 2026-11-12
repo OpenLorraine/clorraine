@@ -444,13 +444,10 @@ func main(): i32 {
     assert!(!c.contains("$text"), "{c}");
 }
 
-/// IT-13: a module-level value head keeps the member path, not the intrinsic.
-///
-/// The global member-path emission is a pre-existing limitation; this pin
-/// only proves that the sema/own value-head gates agree and the intrinsic
-/// does not capture the call.
+/// IT-13: a module-level value head does not hide the `std.fmt.text` module
+/// path (MOD-13); only a lexical binding shadows it (MOD-16).
 #[test]
-fn it13_module_level_value_head_is_not_the_intrinsic() {
+fn it13_module_level_value_head_uses_the_module_path() {
     let source = r#"module spec.tpriii.it13;
 import { println } from std.io;
 import { String, stringOf } from std.text;
@@ -464,6 +461,6 @@ func main(): i32 {
 }
 "#;
     let c = emitted_profile("valueheadmodule", "host", source);
-    assert!(!c.contains("cl_text_i32((i32)(7))"), "{c}");
-    assert!(c.contains("std.fmt.text(7)"), "{c}");
+    assert!(c.contains("cl_text_i32((i32)(7))"), "{c}");
+    assert!(!c.contains("std.fmt.text(7)"), "{c}");
 }

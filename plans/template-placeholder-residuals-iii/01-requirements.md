@@ -21,8 +21,10 @@ spec leaves open.
   binding.
 - [ ] **R2 — Qualified `text`.** `std.fmt.text(v)` applies the same intrinsic
   judgments only when no real declaration is reached through the path. A user
-  function, `ffi` declaration, or module global named `std.fmt.text` wins, and
-  a value binding of the head `std` makes it an ordinary dot/member path.
+  function, `ffi` declaration, or module global named `std.fmt.text` wins. A
+  **lexical** value binding of the head `std` makes it an ordinary dot/member
+  path (MOD-16); a module-level or imported value does not shadow the module
+  path (MOD-13). PLAN-35 (#31) supersedes this clause.
 - [ ] **R3 — Generic condition context.** A generic conditional used directly
   as a condition reports E10218 at the conditional span when its substituted
   arms agree on a non-bool type, and does not also report E10012 at the null

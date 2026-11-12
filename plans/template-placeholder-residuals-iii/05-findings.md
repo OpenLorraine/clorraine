@@ -86,10 +86,10 @@ issue's reproduction is the left-literal `null == x` form.
 
 **RV-001 / SR-002 (MAJOR) — module-level value head split.** Sema treated a
 module-level `std` value as a member path while own lowered it as `$text`.
-`value_head_shadows` now mirrors the type stage's lexical, module-level, and
-imported value-head gate. The module-level member-path emission is a
-pre-existing global-member limitation; IT-13 pins that the intrinsic does not
-capture it.
+The original fix made both stages agree on the member path. **PLAN-35 (#31)
+supersedes the module-level clause**: MOD-13 makes the qualified module path
+always available, and MOD-16 lets only a local shadow it. The gate is now
+lexical-only; IT-13 pins the module-path emission.
 
 **SR-001 (MAJOR) — imported `ffi text` typed as unknown.** The sema `ffi`
 branch read only the current module's signature. It now falls back to
@@ -148,14 +148,13 @@ reproduces on the base or is a documented limitation:
    and can emit a pointer/integer C comparison. The conformance oracle pins the
    generic body's acceptance; the issue's reproduction is the left-literal
    form.
-2. A module-level or imported value head `std` makes `std.fmt.text` a member
-   path, but the global member-path emission is a pre-existing limitation
-   (`std.fmt.text(7)` instead of the mangled global). The intrinsic no longer
-   captures it.
-3. An explicit `text(stringOf("x"))` or `text($"{s}")` leaks the owned
-   temporary argument. This predates the change (the bare spelling leaks on
-   the base too); the alias/qualified spellings inherit it through the shared
-   sentinel.
+2. **Superseded by PLAN-35 (#31).** A module-level or imported value head
+   `std` does not shadow the `std.fmt.text` module path (MOD-13); only a local
+   does (MOD-16). The module-path intrinsic now fires in bodies and
+   initializers, and IT-13 pins that emission.
+3. **Fixed by PLAN-35 (#30).** An explicit `text(stringOf("x"))` or
+   `text($"{s}")` leaked the owned temporary argument; the intrinsic call now
+   borrow-materializes and releases it.
 4. The deferred duties resolve the function by simple name, so an unrelated
    loaded module's same-named function can suppress a duty; the shared
    infrastructure has this shape for several duties.

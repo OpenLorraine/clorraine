@@ -678,9 +678,8 @@ func main(): i32 {
 }
 "#;
     assert_output("valuehead", source, "u\n");
-    // A module-level or imported value head is pinned emit-only by IT-13:
-    // the pre-existing global member-path emission is outside this fix, but
-    // the intrinsic must not capture it.
+    // A module-level or imported value head does not shadow the module path
+    // (MOD-13); only a lexical binding does (MOD-16). IT-13 pins the emission.
 }
 
 // -- Generic condition context ---------------------------------------------

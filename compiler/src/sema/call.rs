@@ -131,6 +131,24 @@ impl Checker<'_, '_> {
                         }
                         _ => {}
                     },
+                    Some(
+                        DeclKind::Struct | DeclKind::Handle | DeclKind::Enum,
+                    ) => {
+                        // A type declaration is not a callable value. The
+                        // ordinary cast path handles scalar/built-in types;
+                        // a qualified struct/handle/enum path called as a
+                        // function is E10309, not an opaque C call.
+                        self.error(
+                            "E10309",
+                            format!("value of type '{last}' is not callable"),
+                            "call a function or a func-typed value",
+                            span,
+                        );
+                        for arg in args {
+                            self.check_value(&arg.value, None);
+                        }
+                        return Ty::unknown();
+                    }
                     Some(DeclKind::Ffi) => {
                         let signature = self
                             .qualified_ffi_signature(&module, &last)
@@ -287,6 +305,28 @@ impl Checker<'_, '_> {
                         let _ = self.check_value(callee, None);
                         return result;
                     }
+                }
+                // A non-callable declaration reached by a bare or imported
+                // spelling is E10309, exactly as the qualified path is. A
+                // valid type cast was handled at the top of the call.
+                if matches!(
+                    self.visible_decl_kind(name),
+                    Some(
+                        crate::load::DeclKind::Struct
+                            | crate::load::DeclKind::Handle
+                            | crate::load::DeclKind::Enum
+                    )
+                ) {
+                    self.error(
+                        "E10309",
+                        format!("value of type '{name}' is not callable"),
+                        "call a function or a func-typed value",
+                        span,
+                    );
+                    for arg in args {
+                        self.check_value(&arg.value, None);
+                    }
+                    return Ty::unknown();
                 }
                 // The compiler-known `text(v)` formatter is not declared in
                 // Clorraine; the compiler lowers it to a `String`-returning
@@ -1568,15 +1608,15 @@ impl Checker<'_, '_> {
 
     /// True when a module path is exactly the `std.fmt.text` intrinsic.
     ///
-    /// A value binding of the head makes the path an ordinary member access;
-    /// a real function, `ffi`, or global declaration reached through the path
-    /// wins over the intrinsic.
+    /// A lexical binding of the head makes the path an ordinary member access
+    /// (MOD-16); a module-level or imported value does not, because qualified
+    /// access is always available (MOD-13). A real function, `ffi`, or global
+    /// declaration reached through the path wins over the intrinsic.
     fn is_std_fmt_text_path(&self, segments: &[String]) -> bool {
         segments.len() == 3
             && segments[0] == "std"
             && segments[1] == "fmt"
             && segments[2] == "text"
-            && !self.name_is_value("std")
             && self.qualified_ffi_signature("std.fmt", "text").is_none()
             && self.qualified_decl_kind("std.fmt", "text").is_none()
             && self.table.global("std.fmt", "text").is_none()

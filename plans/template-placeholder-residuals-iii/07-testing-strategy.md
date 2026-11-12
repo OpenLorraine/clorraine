@@ -151,7 +151,7 @@ ST-42, ST-45, and ST-48. They pass on the base and must keep passing.
 | IT-10 | Bare `text(7)`, alias, and qualified intrinsics emit the same `cl_text_*` shape; no name-based `text` arm remains, so a user `ffi text` keeps its symbol |
 | IT-11 | A user `std.fmt.text` pair emits the user symbol, not `cl_text_*`; an aliased or bare user `std.fmt.text` `ffi` declaration keeps its `ffi` symbol |
 | IT-12 | The #24/#28 emission/diagnostic pins stay unchanged (existing suites) |
-| IT-13 | A module-level value head keeps the member path and is not captured by the intrinsic (emit-only; the global member-path emission is a pre-existing limitation) |
+| IT-13 | A module-level value head does not hide the `std.fmt.text` module path; the intrinsic emits `cl_text_*` (MOD-13; superseded by PLAN-35) |
 
 ## 4. Sanitizer Matrix
 
@@ -189,7 +189,7 @@ advisory (the scored guard is instructions and `.text`).
 | R7 (array step) | ST-43, ST-44, ST-45, IT-8, IT-9 |
 | R8 (diagnostics) | ST-2, ST-3, ST-4, ST-7, ST-8, ST-9, ST-16, ST-25, ST-33, IT-3, IT-4, IT-6 |
 | R9 (emission stability) | ST-18, ST-23, ST-36, ST-42, ST-45, IT-9, IT-10, IT-12 |
-| R10 (shadow) | ST-10, ST-11, ST-14, ST-15, IT-11, IT-13 |
+| R10 (shadow) | ST-10, ST-11, ST-14, ST-15, IT-11 (IT-13 now pins #31's module path) |
 
 IT-11 emits two pairs: the user function pair and a bare/aliased `ffi text`
 pair. The ffi pair is emit-only (the symbol has no C definition in the test),

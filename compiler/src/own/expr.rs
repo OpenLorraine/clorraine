@@ -1606,10 +1606,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// True when the callee is the compiler-known `text` conversion.
     ///
-    /// A lexical binding, a user function, an `ffi` declaration, or a module
-    /// global of the spelling shadows the intrinsic. The bare, aliased, and
-    /// module-qualified spellings all resolve here; a real declaration reached
-    /// through `std.fmt.text` wins.
+    /// A lexical binding, a user function, or an `ffi` signature of the
+    /// spelling shadows the intrinsic; a module-level value does not shadow the
+    /// qualified path (MOD-13). The bare, aliased, and module-qualified
+    /// spellings all resolve here; a real declaration reached through
+    /// `std.fmt.text` wins.
     pub(super) fn is_builtin_text_call(&self, callee: &Expr) -> bool {
         match &callee.kind {
             ExprKind::Name(name) => {
@@ -1663,7 +1664,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     && path.segments[0] == "std"
                     && path.segments[1] == "fmt"
                     && path.segments[2] == "text";
-                if !exact || self.is_dot_call(callee) || self.value_head_shadows("std") {
+                if !exact || self.is_dot_call(callee) {
                     return false;
                 }
                 if matches!(
@@ -1681,27 +1682,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => false,
         }
-    }
-
-    /// True when a value binding shadows a module-path head.
-    ///
-    /// The type stage treats a lexical, module-level, or imported value head
-    /// as a member path; the ownership stage must agree, including a
-    /// module-level `let std` that is not a lexical name.
-    fn value_head_shadows(&self, name: &str) -> bool {
-        self.lookup(name).is_some()
-            || self.sema.table.global(&self.module.name, name).is_some()
-            || self.module.decl(name).is_some_and(|decl| {
-                matches!(
-                    decl.kind,
-                    crate::load::DeclKind::Func
-                        | crate::load::DeclKind::Global
-                        | crate::load::DeclKind::Const
-                        | crate::load::DeclKind::Ffi
-                        | crate::load::DeclKind::Intrinsic
-                )
-            })
-            || self.module.import(name).is_some_and(|binding| !binding.poisoned)
     }
 
     /// Applies the explicit-converter rules to a `text` argument.

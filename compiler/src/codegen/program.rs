@@ -3671,7 +3671,15 @@ impl<'a> Emitter<'a> {
 
     /// The C name of the next init-function local.
     fn next_init_local(&mut self) -> String {
-        let name = format!("__cl_itmp{}", self.init_locals);
+        // A user `ffi` declaration is a literal C symbol, and a block-scope
+        // init local with the same spelling would shadow it. Advance the
+        // counter until the reserved prefix is free, exactly as the
+        // `__cl_ctmpl` template name does.
+        let mut name = format!("__cl_itmp{}", self.init_locals);
+        while self.is_taken_symbol(&name) {
+            self.init_locals += 1;
+            name = format!("__cl_itmp{}", self.init_locals);
+        }
         self.init_locals += 1;
         name
     }
@@ -3681,9 +3689,9 @@ impl<'a> Emitter<'a> {
     /// A module initializer has its own AST walk, so it cannot rely on the
     /// body lowering's `$text` canonicalization. This mirrors the type stage:
     /// the bare and `std.fmt` alias spellings are the intrinsic unless a real
-    /// function, `ffi` signature, or value declaration wins; the exact
-    /// `std.fmt.text` path is the intrinsic unless a value head or a real
-    /// declaration wins.
+    /// declaration of the spelling wins; the exact `std.fmt.text` path is the
+    /// intrinsic unless a real declaration wins. A module-level/imported value
+    /// head does not shadow the module path (MOD-13).
     fn init_text_intrinsic_name(&self, module: &Module, callee: &Expr) -> Option<String> {
         let path: Vec<String> = match &callee.kind {
             ExprKind::Name(name) => {
@@ -3731,19 +3739,6 @@ impl<'a> Emitter<'a> {
         if path.len() != 3 || path[0] != "std" || path[1] != "fmt" || path[2] != "text" {
             return None;
         }
-        if module.decl("std").is_some_and(|decl| {
-            matches!(
-                decl.kind,
-                crate::load::DeclKind::Func
-                    | crate::load::DeclKind::Global
-                    | crate::load::DeclKind::Const
-                    | crate::load::DeclKind::Ffi
-                    | crate::load::DeclKind::Intrinsic
-            )
-        }) || module.import("std").is_some_and(|binding| !binding.poisoned)
-        {
-            return None;
-        }
         let target = self.loaded.module("std.fmt")?;
         if Self::declares_text(target) {
             return None;
@@ -3751,18 +3746,15 @@ impl<'a> Emitter<'a> {
         Some("$text".to_owned())
     }
 
-    /// True when a module declares a callable `text` (function or `ffi`).
+    /// True when a module declares `text` in any form.
+    ///
+    /// A function, global, type, or `ffi` signature of the spelling is a real
+    /// declaration; the intrinsic must not displace it. This mirrors the type
+    /// and ownership stages, which decline the intrinsic for any declaration.
+    /// The loader records `ffi` signatures in the declaration table, so one
+    /// lookup covers every form.
     fn declares_text(module: &Module) -> bool {
-        module
-            .decl("text")
-            .is_some_and(|decl| matches!(decl.kind, crate::load::DeclKind::Func))
-            || module.items.iter().any(|item| {
-                matches!(
-                    item,
-                    Item::Ffi(block)
-                        if block.decls.iter().any(|signature| signature.name == "text")
-                )
-            })
+        module.decl("text").is_some()
     }
 
     /// Lowers a module-initializer call the checker resolved as a conversion.
@@ -3997,6 +3989,44 @@ impl<'a> Emitter<'a> {
                 // call passes its receiver as the first argument, exactly as
                 // the body's call lowering builds its list, and the inferred
                 // instance key below must align with that list.
+                // A real `std.fmt.text` ffi declaration wins over the
+                // value-head field fallback in an initializer, exactly as it
+                // does in a body.
+                if let Some(ffi_name) = self.init_text_ffi_name(module, callee) {
+                    let values: Vec<Value> = args
+                        .iter()
+                        .map(|arg| self.lower_global(module, &arg.value))
+                        .collect();
+                    return Value::new(
+                        ty,
+                        ValueKind::Call {
+                            callee: ffi_name,
+                            type_args: Vec::new(),
+                            args: values,
+                            receiver: None,
+                        },
+                    );
+                }
+                // Decide the compiler-known text conversion before the
+                // callable fallback: a module-level `std` value must not turn
+                // the module path into a field call (MOD-13). A real
+                // std.fmt.text function/ffi/global makes the helper return
+                // None and keeps the ordinary callable path.
+                if let Some(text_name) = self.init_text_intrinsic_name(module, callee) {
+                    let values: Vec<Value> = args
+                        .iter()
+                        .map(|arg| self.lower_global(module, &arg.value))
+                        .collect();
+                    return Value::new(
+                        ty,
+                        ValueKind::Call {
+                            callee: text_name,
+                            type_args: Vec::new(),
+                            args: values,
+                            receiver: None,
+                        },
+                    );
+                }
                 let callable = self.init_callable_value(module, callee);
                 let receiver = match callable {
                     Some(_) => None,
@@ -4011,7 +4041,6 @@ impl<'a> Emitter<'a> {
                 } else {
                     qualified_callee_name(callee)
                 };
-                let name = self.init_text_intrinsic_name(module, callee).unwrap_or(name);
                 let resolved_type_args: Vec<Ty> = if callable.is_some() {
                     type_args
                         .iter()
@@ -4146,6 +4175,37 @@ impl<'a> Emitter<'a> {
             arg_types.push(ty);
         }
         crate::sema::call::infer_type_args(&declared, &param_types, &arg_types).unwrap_or_default()
+    }
+
+    /// The `std.fmt.text` ffi signature a module-initializer callee names.
+    ///
+    /// A real `ffi` declaration wins over the value-head field fallback,
+    /// exactly as it does in a body. Only the exact `std.fmt.text` path and
+    /// its imported aliases resolve.
+    fn init_text_ffi_name(&self, module: &Module, callee: &Expr) -> Option<String> {
+        let (module_name, simple) = match &callee.kind {
+            ExprKind::Name(name) => {
+                let binding = module.import(name)?;
+                if binding.poisoned {
+                    return None;
+                }
+                (binding.module.clone(), binding.original.clone())
+            }
+            ExprKind::Qualified(path) if path.segments.len() >= 2 => {
+                let simple = path.segments.last()?.clone();
+                let module_name = path.segments[..path.segments.len() - 1].join(".");
+                (module_name, simple)
+            }
+            _ => return None,
+        };
+        if module_name != "std.fmt" || simple != "text" {
+            return None;
+        }
+        self.ffi_functions
+            .get(&(module_name.clone(), simple.clone()))?;
+        // Keep the qualified spelling so the emitter resolves this ffi, not a
+        // same-named function of the initializing module.
+        Some(format!("{module_name}.{simple}"))
     }
 
     /// The callable value a func-typed callee names, carrying its signature.
