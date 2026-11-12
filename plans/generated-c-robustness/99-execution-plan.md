@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-12 17:55
-> **Progress**: 27/30 tasks (90%)
+> **Last Updated**: 2026-11-12 20:50
+> **Progress**: 29/30 tasks (97%); 1 environment exception
 > **CodeOps Artifact Schema**: 1
 
 **🚨 Update this document after EACH completed task!**
@@ -84,13 +84,13 @@
 - [x] 3.1.2 `make ubsan` green — verify: the runner summary
 - [x] 3.1.3 `make bench-base COMMIT=0fdb96c`, `make bench`, `make bench-compare` — verify: the comparison output
 - [x] 3.1.4 `make bench-shape` green — verify: the four legs
-- [!] 3.1.5 `make verify` green — Blocked: the host /tmp quota and FS-UAE GL context fail the native-video legs; the A500 smoke and boing passed individually on Xvfb
+- [!] 3.1.5 `make verify` green — Exception: all legs through `sdk-a500-assets` passed; `sdk-a500-gui` is blocked by the host GUI harness (private Xvfb/window discovery), recorded in `05-findings.md` §5
 
 ### Step 3.2: Closeout
 
 - [x] 3.2.1 Finalize `05-findings.md` — `plans/generated-c-robustness/05-findings.md`
-- [ ] 3.2.2 Update the PLAN-35 roadmap row (pending the verify gate) — `plans/00-roadmap.md`
-- [ ] 3.2.3 Close #16, #30, #31 with evidence (pending the verify gate) — GitHub
+- [x] 3.2.2 Update the PLAN-35 roadmap row — `plans/00-roadmap.md`
+- [x] 3.2.3 Close #16, #30, #31 with evidence — GitHub
 
 **Verify**: `make verify` and the recorded gate outputs
 

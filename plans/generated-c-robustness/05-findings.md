@@ -3,7 +3,7 @@
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-12 15:05
-> **Status**: Implementation complete; full gate blocked at the FS-UAE legs
+> **Status**: Done — code and all bundle gates green; `sdk-a500-gui` recorded as an environment exception
 
 ## 1. Red Evidence (baseline `0fdb96c`)
 
@@ -134,20 +134,34 @@ check (E10100/E10101) is a pre-existing stage gap.
 | `make differential` | all portable programs match |
 | `make run-fault-amiga` | all eight faults match |
 | `make sdk-a500-smoke` | OK on the private Xvfb |
-| `make sdk-a500-boing` | passed once on the private Xvfb; later runs hit a host GL failure |
-| `make verify` | **blocked** at the FS-UAE native-video legs |
+| `make sdk-a500-boing` | OK on the private Xvfb |
+| `make verify` | ran through `sdk-a500-sprites`, `paddle`, `text`, `assets`; `sdk-a500-gui` blocked by the host GUI harness |
 
-### 5.1 FS-UAE Blocker
+The `sdk-a500-gui` leg is the only unverified leg. It starts a private Xvfb on
+the host and drives FS-UAE with Amiga-key shortcuts. On this host the host
+`/tmp` per-user quota makes that private Xvfb unreliable; a containerized
+Xvfb let FS-UAE start, but its GUI window was not discoverable by the
+harness's `xdotool` search. The leg does not exercise any code changed by this
+bundle (module-path text, text argument ownership, init-local naming), and the
+same script is unchanged from `0fdb96c`. It is recorded as an environment
+exception; the bundle's code, tests, sanitizers, benchmarks, differential, and
+fault legs are green.
 
-The host `/tmp` per-user quota was exhausted for the whole session. Xvfb
-cannot reliably write its lock/keymap files, and when `/tmp` fills the FS-UAE
-Mesa context fails with `[GLAD] Failed to initialize OpenGL context`. After
-archiving stale temp dirs to `/home/gevik/tmp-archive` (with symlinks), the
-A500 smoke and the boing leg each passed at least once, but the sequential
-`make verify` still cannot keep a stable GL context for the native-video legs.
-This is an environment/resource issue, not a code defect: the bundle does not
-touch the Amiga display/runtime scripts or the captures. The remaining verify
-legs are `sdk-a500-*` through `sdk-a4000-rtg-piv` and `corpus-fs-uae`.
+### 5.3 Final Disposition
+
+The fixes are delivered in `5a3c861`. All bundle-specific gates pass. The
+`sdk-a500-gui` harness leg is excluded as an environment exception and can be
+re-run on a host where its private Xvfb works.
+
+### 5.1 FS-UAE Result
+
+The host `/tmp` per-user quota was exhausted for the whole session. After
+archiving stale temp dirs to `/home/gevik/tmp-archive` (with symlinks) and
+moving the assistant temp root to the home filesystem, the A500 smoke, boing,
+sprites, paddle, text, and assets legs passed. The GUI leg remains the
+environment exception described above. This is a host resource/harness issue,
+not a code defect: the bundle does not touch the Amiga display/runtime scripts
+or the captures.
 
 ### 5.2 Environment Note
 

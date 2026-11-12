@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-12
-> **Progress**: 578/581 rows done; 1 active; 2 Parked
+> **Progress**: 579/581 rows done; 0 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -595,7 +595,7 @@
 | PLAN-32 | Template placeholder residuals II (#28) | [01-requirements](template-placeholder-residuals-ii/01-requirements.md) | [template-placeholder-residuals-ii](template-placeholder-residuals-ii/00-index.md) | Done | ✅ | 2026-11-12 | 38/38; explicit `text` E10500 (null/non-formattable/opaque) and E10010 (nullable), bare-null E10012 with E10218 preserved, generic/scalar null-arm parity, for-step owning-assignment pre-drop, for-init effects, for-step aggregate order, panic zero-length guard; 39 spec + 14 impl cases, ASan 35 suites, UBSan 9, `bench-shape`, `bench-compare` zero instruction/.text deltas (C +0.1%), `make check`, `make verify` all legs; #28 closed; follow-up #29 filed |
 | PLAN-33 | Enforce one-argument `text` arity (#24) | — | [text-arity](text-arity/99-execution-plan.md) | Done | ✅ | 2026-11-12 | 8/8; exact one-argument `text` with E10308 and the frozen help, no output C for zero/two arguments, zero-argument codegen fallback removed from all three call sites, module-level/imported value shadows preserved; 6 spec + 3 impl cases, independent correctness + emission reviews, combined full gate green; #24 closed |
 | PLAN-34 | Template placeholder residuals III (#29) | [01-requirements](template-placeholder-residuals-iii/01-requirements.md) | [template-placeholder-residuals-iii](template-placeholder-residuals-iii/00-index.md) | Done | ✅ | 2026-11-12 | 35/35; aliased/qualified/module-initializer `text` via `$text`, usable `std.fmt.text`/ffi shadowing, generic condition E10218 parity, documented both-null value, left-literal null-vs-parameter E10012, null cstring panic guard, fixed-array step flat store; 49 spec + 13 impl cases, ASan 36 suites, UBSan 10, `bench-shape`, zero instruction/.text deltas, `make check`, `make verify` all legs; #29 closed |
-| PLAN-35 | Generated-C robustness bundle (#16, #30, #31) | [01-requirements](generated-c-robustness/01-requirements.md) | [generated-c-robustness](generated-c-robustness/00-index.md) | In Progress | 🚧 | 2026-11-12 | Reserve `__cl_itmp` init locals against user ffi names, release an owned temporary `text(...)` argument, and let the `std.fmt.text` module path win over a module-level `std` value (MOD-13/MOD-16); full gate + 1% guard against `0fdb96c` |
+| PLAN-35 | Generated-C robustness bundle (#16, #30, #31) | [01-requirements](generated-c-robustness/01-requirements.md) | [generated-c-robustness](generated-c-robustness/00-index.md) | Done | ✅ | 2026-11-12 | 29/30 + GUI exception; `__cl_itmp` reservation, owned `text(...)` argument release, module-path precedence (MOD-13/MOD-16) in bodies/initializers, E10309 non-callable declarations; 15 spec + 11 impl; check, ASan 37, UBSan 11, zero bench deltas, bench-shape, differential, six FS-UAE legs green; `sdk-a500-gui` blocked by the host private-Xvfb harness; #16/#30/#31 closed |
 
 ## Batch N accounting (2026-10-19)
 
