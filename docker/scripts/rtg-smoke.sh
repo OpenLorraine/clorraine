@@ -81,14 +81,14 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 runner=""
 
 if [ ! -f "${docker_dir}/.env" ]; then
     echo "rtg-smoke: docker/.env is missing" >&2
     exit 2
 fi
-for tool in Xvfb convert sha1sum sha256sum python3; do
+for tool in convert sha1sum sha256sum python3; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "rtg-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -102,14 +102,11 @@ p96_lha="${P96_LHA:-${AMIGA_DATA}/picasso96/Picasso96.lha}"
 picasso_iv_rom="${PICASSO_IV_ROM:-${AMIGA_DATA}/roms/villagetronic-picasso-iv-74.rom}"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
     if [ -n "${runner}" ]; then
         wait "${runner}" 2>/dev/null || true
     fi
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${rom}"
     # The Picasso IV flash ROM is user media; never leave a staged copy.
     rm -rf "${work}/Kickstarts"
@@ -230,12 +227,20 @@ if [ "${sha1}" != "${rom_sha1}" ]; then
     exit 1
 fi
 
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "$(basename "$0"): the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 

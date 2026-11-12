@@ -23,7 +23,7 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 
 for bin in \
     build/clorraine/optional-lowlevel/hosted-amiga/optional-lowlevel \
@@ -33,7 +33,7 @@ for bin in \
         exit 2
     fi
 done
-for tool in Xvfb sha1sum; do
+for tool in sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a600-ks31-addons-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -49,11 +49,8 @@ set +a
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${rom}"
 }
 trap cleanup EXIT
@@ -90,12 +87,20 @@ if [ "${sha1}" != "3b7f1493b27e212830f989f26ca76c02049f09ca" ]; then
     exit 1
 fi
 
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "$(basename "$0"): the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 

@@ -4,9 +4,9 @@
 # Decrypts the user's licensed Amiga Forever Kickstart 1.3 ROM locally (the
 # decrypted image stays in gitignored build/ and is removed on exit), boots the
 # GUI demo from a clean ADF under FS-UAE configured as an A500, drives it with
-# the host keyboard on a private Xvfb display, compares the app's native screen
-# capture to the committed golden, and asserts the pinned report line. No
-# emulator window is shown on the user's desktop; the artifact comes from the
+# the host keyboard on a private Xvfb display inside the SDK image, and compares
+# the app's native screen capture to the committed golden. No emulator window is
+# shown on the user's desktop; the artifact comes from the
 # Amiga bitmap, not from a host-window screenshot.
 #
 # The app writes `DF0:gui.cscr` before the event loop, one `DF0:gui-*`
@@ -46,7 +46,7 @@ if [ ! -f "${docker_dir}/.env" ]; then
     echo "a500-gui-smoke: docker/.env is missing; run 'make -C docker init'" >&2
     exit 2
 fi
-for tool in xdotool Xvfb import compare convert sha1sum python3; do
+for tool in xdotool import compare convert sha1sum python3; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-gui-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -62,26 +62,32 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-a500-gui-xvfb-$$"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${repo_dir}/${rom}"
 }
 trap cleanup EXIT
 
 rm -rf "${work:?}"/*
 mkdir -p "${work}/S"
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context. The
+# socket is shared with the host, so no host Xvfb or desktop display is needed.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "a500-gui-smoke: the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 

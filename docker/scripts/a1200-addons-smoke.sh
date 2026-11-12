@@ -30,7 +30,7 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 peer_pid=""
 
 for bin in \
@@ -51,7 +51,7 @@ if [ ! -f "${docker_dir}/.env" ]; then
     echo "a1200-addons-smoke: docker/.env is missing" >&2
     exit 2
 fi
-for tool in Xvfb convert compare identify sha1sum python3; do
+for tool in convert compare identify sha1sum python3; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a1200-addons-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -63,15 +63,12 @@ set +a
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
     if [ -n "${peer_pid}" ]; then
         kill "${peer_pid}" >/dev/null 2>&1 || true
         wait "${peer_pid}" 2>/dev/null || true
     fi
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${rom}"
 }
 trap cleanup EXIT
@@ -158,12 +155,20 @@ PY
 peer_pid=$!
 sleep 1
 
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "$(basename "$0"): the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 

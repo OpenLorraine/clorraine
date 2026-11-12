@@ -42,7 +42,7 @@ if [ ! -f "${AMIGA_DATA}/hdf/workbench-135.hdf" ]; then
     echo "a500-diskfont-smoke: missing Workbench 1.3.5 HDF under ${AMIGA_DATA}/hdf" >&2
     exit 2
 fi
-for tool in Xvfb sha1sum; do
+for tool in sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-diskfont-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -52,14 +52,11 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${rom}"
 }
 trap cleanup EXIT
@@ -97,12 +94,20 @@ if [ "${sha1}" != "891e9a547772fe0c6c19b610baf8bc4ea7fcb785" ]; then
     exit 1
 fi
 
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "$(basename "$0"): the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 

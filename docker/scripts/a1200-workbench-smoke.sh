@@ -37,7 +37,7 @@ while [ -e "/tmp/.X11-unix/X${xvfb_num}" ]; do
     xvfb_num=$((xvfb_num + 1))
 done
 xvfb_display=":${xvfb_num}"
-xvfb_pid=""
+xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 
 for binary in "${workbench_bin}" "${services_bin}" "${start_bin}" "${post_bin}"; do
     if [ ! -f "${binary}" ]; then
@@ -55,7 +55,7 @@ if [ "${capture_golden}" != "1" ] && { [ ! -f "${golden}" ] || [ ! -f "${icon_go
     echo "a1200-workbench-smoke: run with CAPTURE_GOLDEN=1 once" >&2
     exit 2
 fi
-for tool in Xvfb convert compare identify sha1sum python3; do
+for tool in convert compare identify sha1sum python3; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a1200-workbench-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -67,11 +67,8 @@ set +a
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
-    docker rm -f "${container}" >/dev/null 2>&1 || true
-    if [ -n "${xvfb_pid}" ]; then
-        kill "${xvfb_pid}" >/dev/null 2>&1 || true
-        wait "${xvfb_pid}" 2>/dev/null || true
-    fi
+    docker rm -f "${container}" "${xvfb_container}" >/dev/null 2>&1 || true
+    rm -f "/tmp/.X11-unix/X${xvfb_display#:}"
     rm -f "${rom}"
 }
 trap cleanup EXIT
@@ -88,12 +85,20 @@ CNEXT:workbench-start >CNEXT:wb-start.txt
 CNEXT:workbench-post >CNEXT:wb-post.txt
 EOF
 
-Xvfb "${xvfb_display}" -screen 0 1280x720x24 -ac > "${work}/xvfb.log" 2>&1 &
-xvfb_pid=$!
-for _ in $(seq 1 50); do
+# Run Xvfb inside the SDK image so FS-UAE gets a compatible GLX context.
+docker run -d --rm --name "${xvfb_container}" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    "${image}" Xvfb "${xvfb_display}" \
+    -screen 0 1280x720x24 -ac +extension GLX -noreset >/dev/null
+for _ in $(seq 1 100); do
     [ -S "/tmp/.X11-unix/X${xvfb_display#:}" ] && break
     sleep 0.1
 done
+if [ ! -S "/tmp/.X11-unix/X${xvfb_display#:}" ]; then
+    echo "$(basename "$0"): the private Xvfb did not start" >&2
+    docker logs "${xvfb_container}" >&2 2>/dev/null || true
+    exit 1
+fi
 export DISPLAY="${xvfb_display}"
 unset XAUTHORITY
 
