@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-12 20:50
-> **Progress**: 29/30 tasks (97%); 1 environment exception
+> **Last Updated**: 2026-11-12 23:45
+> **Progress**: 30/30 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 **🚨 Update this document after EACH completed task!**
@@ -84,7 +84,7 @@
 - [x] 3.1.2 `make ubsan` green — verify: the runner summary
 - [x] 3.1.3 `make bench-base COMMIT=0fdb96c`, `make bench`, `make bench-compare` — verify: the comparison output
 - [x] 3.1.4 `make bench-shape` green — verify: the four legs
-- [!] 3.1.5 `make verify` green — Exception: all legs through `sdk-a500-assets` passed; `sdk-a500-gui` is blocked by the host GUI harness (private Xvfb/window discovery), recorded in `05-findings.md` §5
+- [x] 3.1.5 `make verify` green — all legs passed, including `sdk-a500-gui`, the advanced SDK gates, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the smoke gates run Xvfb inside the SDK image
 
 ### Step 3.2: Closeout
 

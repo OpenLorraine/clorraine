@@ -3,7 +3,7 @@
 > **Feature**: Close #16, #30, and #31: reserve the `__cl_itmp` init-local
 > prefix, release an owned temporary argument to `text(...)`, and let the
 > `std.fmt.text` module path win over a module-level `std` value.
-> **Status**: Done — code and bundle gates green; GUI harness recorded as an environment exception
+> **Status**: Done — all bundle gates green, full `make verify` passed
 > **Created**: 2026-11-12 14:15
 > **Implements**: R1–R6
 > **CodeOps Artifact Schema**: 1

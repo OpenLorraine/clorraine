@@ -3,7 +3,7 @@
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-12 15:05
-> **Status**: Done — code and all bundle gates green; `sdk-a500-gui` recorded as an environment exception
+> **Status**: Done — all bundle gates green, full `make verify` passed
 
 ## 1. Red Evidence (baseline `0fdb96c`)
 
@@ -135,33 +135,30 @@ check (E10100/E10101) is a pre-existing stage gap.
 | `make run-fault-amiga` | all eight faults match |
 | `make sdk-a500-smoke` | OK on the private Xvfb |
 | `make sdk-a500-boing` | OK on the private Xvfb |
-| `make verify` | ran through `sdk-a500-sprites`, `paddle`, `text`, `assets`; `sdk-a500-gui` blocked by the host GUI harness |
+| `make verify` | **green** — all legs passed, including `sdk-a500-gui`, the advanced SDK gates, `differential`, `corpus-fs-uae`, and `run-fault-amiga` |
 
-The `sdk-a500-gui` leg is the only unverified leg. It starts a private Xvfb on
-the host and drives FS-UAE with Amiga-key shortcuts. On this host the host
-`/tmp` per-user quota makes that private Xvfb unreliable; a containerized
-Xvfb let FS-UAE start, but its GUI window was not discoverable by the
-harness's `xdotool` search. The leg does not exercise any code changed by this
-bundle (module-path text, text argument ownership, init-local naming), and the
-same script is unchanged from `0fdb96c`. It is recorded as an environment
-exception; the bundle's code, tests, sanitizers, benchmarks, differential, and
-fault legs are green.
+The `sdk-a500-gui` leg runs its private Xvfb inside the SDK image. The host
+Xvfb could not give FS-UAE a compatible GLX context on this machine, and the
+host `/tmp` per-user quota made its lock files unreliable. Running the display
+server in the same image as FS-UAE keeps the display private and gives the
+emulator a working GLX context. The smoke and advanced SDK gates use the same
+pattern, so the full gate no longer depends on the host X display.
 
 ### 5.3 Final Disposition
 
-The fixes are delivered in `5a3c861`. All bundle-specific gates pass. The
-`sdk-a500-gui` harness leg is excluded as an environment exception and can be
-re-run on a host where its private Xvfb works.
+The fixes are delivered in `5a3c861`. The full `make verify` gate is green,
+including `sdk-a500-gui`, the advanced SDK legs, `differential`,
+`corpus-fs-uae`, and `run-fault-amiga`. The private-Xvfb harness change is
+test infrastructure only; it does not change compiler output or the golden
+assertions.
 
 ### 5.1 FS-UAE Result
 
-The host `/tmp` per-user quota was exhausted for the whole session. After
-archiving stale temp dirs to `/home/gevik/tmp-archive` (with symlinks) and
-moving the assistant temp root to the home filesystem, the A500 smoke, boing,
-sprites, paddle, text, and assets legs passed. The GUI leg remains the
-environment exception described above. This is a host resource/harness issue,
-not a code defect: the bundle does not touch the Amiga display/runtime scripts
-or the captures.
+The host `/tmp` per-user quota was exhausted for most of the session. Archiving
+stale temp dirs to `/home/gevik/tmp-archive` (with symlinks) restored enough
+headroom for the host-side tools. The smoke and advanced SDK gates now start
+Xvfb inside the SDK image, which removes the host GLX and quota dependency.
+All FS-UAE legs passed in the final `make verify` run.
 
 ### 5.2 Environment Note
 
