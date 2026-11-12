@@ -144,6 +144,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   active with a known signed-overflow probe, and appends `-no-pie` to
   sanitizer links. The robustness suite also builds its own ASan/UBSan
   controls, so a silently unsanitized child build is a failure.
+- Ad-hoc compiler and sanitizer probes run under `timeout` with
+  `ulimit -f 1048576` (1 GiB per file) and write logs under `build/tmp`;
+  `make asan` and `make ubsan` apply the same cap. The host `/tmp` is a small
+  tmpfs with a per-user quota, so unbounded logs there fail with `EDQUOT`.
 - `tools/fuzz/fuzz.py` is a SHA-256-seeded, typed template generator. The
   smoke target runs the committed seeds on host, ASan/UBSan, and m68k, plus a
   bounded generated range; `make fuzz` is the longer local run. Seed goldens
@@ -176,6 +180,8 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   `make demo` and ignored; only `demo/poster.png` is committed. `tools/demo/` is
   npm-only and excluded from `make check`/`make verify`.
 - `docker/.env` and `docker/compose.override.yaml` are local and gitignored.
+- Scratch and probe output belongs in `build/tmp` (or `$CODEOPS_TMPDIR`), not
+  `/tmp`; gate invocations point `TMPDIR` and `CODEOPS_TMPDIR` there.
 - `spec/` is the immutable oracle. Do not change a golden or chapter to match the
   implementation; a specification change needs an explicit user ruling.
 - Never reference `plans/`, `requirements/`, or a plan/requirement/ambiguity

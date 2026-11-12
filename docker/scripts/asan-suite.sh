@@ -20,6 +20,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# A runaway probe must not fill the host temp filesystem or leave core files:
+# cap any single file at 1 GiB and suppress core dumps.
+ulimit -c 0 || true
+ulimit -f 1048576 || true
+
 suite_timeout="${ASAN_SUITE_TIMEOUT:-900}"
 
 real_cc="$(command -v cc)"

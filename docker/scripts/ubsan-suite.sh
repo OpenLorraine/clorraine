@@ -17,8 +17,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# A fault or sanitizer abort must not leave a core file in the tree.
+# A fault or sanitizer abort must not leave a core file in the tree, and a
+# runaway probe must not fill the host temp filesystem: cap any single file at
+# 1 GiB.
 ulimit -c 0 || true
+ulimit -f 1048576 || true
 
 suite_timeout="${UBSAN_SUITE_TIMEOUT:-900}"
 
