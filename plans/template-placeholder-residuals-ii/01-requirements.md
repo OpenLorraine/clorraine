@@ -14,50 +14,50 @@ surface.
 
 ### Must Have
 
-- [ ] **R1 — Explicit text formattability.** `text(v)` requires a formattable
+- [x] **R1 — Explicit text formattability.** `text(v)` requires a formattable
   argument (its arity is the separate #24 mini-plan). A null-shaped argument
   reports E10500 (`type 'null' is not formattable`); a concrete non-formattable
   argument reports E10500 with its type; an opaque parameter projection such as
   `text(x.n)` reports E10500 at the projection. An unnarrowed nullable
   formattable argument reports E10010. No C is written.
-- [ ] **R2 — Generic text argument.** A generic `text(x)` defers to each
+- [x] **R2 — Generic text argument.** A generic `text(x)` defers to each
   instance: a formattable, non-null (or narrowed) instance is accepted; a
   non-formattable instance reports E10500; an unnarrowed nullable instance
   reports E10010.
-- [ ] **R3 — Bare null binary operand.** A literal `null` operand reports
+- [x] **R3 — Bare null binary operand.** A literal `null` operand reports
   E10012 at the null unless the operator is `==`/`!=` and the sibling is
   null-capable or null-shaped. `x == null` and `x != null` stay legal;
   `null == 5`, `null + 1`, `null + null`, and `null < null` are rejected.
   `null && flag` keeps the frozen E10218 condition report.
-- [ ] **R4 — Generic null-arm parity.** A generic `flag ? null : x` in an
+- [x] **R4 — Generic null-arm parity.** A generic `flag ? null : x` in an
   inferred or placeholder context follows the concrete settlement: at
   `T = str` it is accepted as the empty state; at `T = String` it reports
   E10010 only at the null arm; at a scalar or struct `T` it reports E10012 at
   the null arm. A placeholder over a `raw`/`cstring`/slice/`Box` arm still
   reports E10500 because the whole value is not formattable, and a written
   destination keeps its existing E10012 rule.
-- [ ] **R5 — Scalar null arm.** `let x = flag ? null : 5;` reports E10012 at
+- [x] **R5 — Scalar null arm.** `let x = flag ? null : 5;` reports E10012 at
   the null arm. A written non-nullable destination keeps its existing E10012.
   An inferred handle result stays `T?` and is accepted until used.
-- [ ] **R6 — For-step owning assignment.** A step assignment whose target may
+- [x] **R6 — For-step owning assignment.** A step assignment whose target may
   own releases the old value once per iteration; a loop with three iterations
   is leak-free under ASan on the fall-through and `continue` edges.
-- [ ] **R7 — For-init effects.** A template or call in a for-init expression
+- [x] **R7 — For-init effects.** A template or call in a for-init expression
   list runs exactly once and releases its result before the first test.
-- [ ] **R8 — Aggregate field order contract.** A same-order multi-field
+- [x] **R8 — Aggregate field order contract.** A same-order multi-field
   literal evaluates its fields in source order on the supported toolchains and
   a differing order takes the fieldwise store; both are pinned by a test, and
   the codegen contract states the supported-toolchain assumption.
-- [ ] **R9 — Panic message safety.** A zero-length panic message (a null view
+- [x] **R9 — Panic message safety.** A zero-length panic message (a null view
   or zero-state String) writes the prefix and newline without a zero-length
   `fwrite` of a NULL pointer on host or Amiga.
 
 ### Should Have
 
-- [ ] **R10 — Diagnostic consistency.** Every new report uses a frozen code,
+- [x] **R10 — Diagnostic consistency.** Every new report uses a frozen code,
   message, and help: E10500 for formattability, E10010 for a possible-null
   use, E10012 for a null at a concrete position.
-- [ ] **R11 — Emission stability.** A non-owning for step keeps the compact
+- [x] **R11 — Emission stability.** A non-owning for step keeps the compact
   `for` header; every effectful init (a template, call, or increment) now runs;
   the `text` one-argument shape and the #26/#27 copy shapes are unchanged.
 
@@ -120,14 +120,14 @@ surface.
 
 ## Acceptance Criteria
 
-1. [ ] All requirements R1–R11 are verified by the ST cases in
+1. [x] All requirements R1–R11 are verified by the ST cases in
    [07-testing-strategy.md](07-testing-strategy.md).
-2. [ ] Every #28 reproduction behaves as specified under the host build, ASan,
+2. [x] Every #28 reproduction behaves as specified under the host build, ASan,
    and UBSan.
-3. [ ] `make check`, `make asan`, `make ubsan`, `make verify`,
+3. [x] `make check`, `make asan`, `make ubsan`, `make verify`,
    `make bench-shape`, and `make bench` + `make bench-compare` are green.
-4. [ ] All scored benchmark outputs are equal; no scored metric regresses by
+4. [x] All scored benchmark outputs are equal; no scored metric regresses by
    more than 1%.
-5. [ ] No critical or major review finding remains open.
-6. [ ] The findings ledger, the roadmap row, and issue #28 reflect the
+5. [x] No critical or major review finding remains open.
+6. [x] The findings ledger, the roadmap row, and issue #28 reflect the
    delivered evidence.

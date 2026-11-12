@@ -3,7 +3,7 @@
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-12 03:17
-> **Status**: Phase 1 implemented and green; Phase 1 review pending
+> **Status**: Done — full gate green; #28 closed; follow-up #29 filed
 
 ## 1. Phase 1 — Static Diagnoses
 
@@ -202,4 +202,69 @@ with a 30-second bound and set `handle_segv=0` for ASan.
 
 ## 3. Acceptance
 
-_Pending._
+### 3.1 Gate Results
+
+| Gate | Result |
+|------|--------|
+| `make check` | green (spec check, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
+| `make asan` | 35 suites green (the new suite is discovered) |
+| `make ubsan` | 9 suites green |
+| `make bench-shape` | gcc, nix13, vbcc, freestanding warning-free |
+| `make verify` | `verify: all legs passed` (A500/A600/A1200/A4000 FS-UAE legs, corpus, differential, fault legs) |
+
+The FS-UAE legs ran on a private Xvfb display with `LIBGL_ALWAYS_SOFTWARE=1`
+(the host Xwayland rendered the A500 capture one pixel off). The local
+`docker/.env` was restored to the user's original `DISPLAY=:0` afterward.
+
+### 3.2 Benchmark (`bb3956c` → `864dab3`)
+
+`make bench-compare` passed with every scored output equal:
+
+| Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta |
+|-----------|-------------------|-------------------|-------|--------------|--------------|-------|
+| lookup | 8,779 | 8,779 | +0.0% | 39,884 | 39,884 | +0.0% |
+| matrix | 9,361 | 9,361 | +0.0% | 23,592 | 23,592 | +0.0% |
+| moves | 44,630 | 44,630 | +0.0% | 23,684 | 23,684 | +0.0% |
+| sieve | 1,040,081 | 1,040,081 | +0.0% | 23,816 | 23,816 | +0.0% |
+| strings | 1,221,232 | 1,221,232 | +0.0% | 23,972 | 23,972 | +0.0% |
+
+The generated C grows by about 196 bytes (+0.1%) per program from the two
+panic-field guards. Instructions and `.text` are unchanged; the 1% guard is
+satisfied.
+
+### 3.3 Final Test Inventory
+
+- `template_placeholder_residuals_ii_spec_test`: 39 behavior cases (plain,
+  ASan, UBSan).
+- `template_placeholder_residuals_ii_impl_test`: 14 emission/diagnostic cases.
+- `text_arity_spec_test`: 6; `text_arity_impl_test`: 3.
+- `template_placeholder_integrity_spec_test`: 41; `..._impl_test`: 15.
+- `template_placeholder_residuals_spec_test`: 30; `..._impl_test`: 10.
+- `template_direct_formatting_spec_test`: 15; `..._impl_test`: 5.
+- `def_zero_null_spec_test`: 44; `def_semantic_parity_integrity_spec_test`: 18.
+
+### 3.4 Residuals and Follow-up
+
+The closeout files a follow-up issue for the adjacent shapes the reviews
+found (none is caused by this plan; each reproduces on the base or is a
+pre-existing gap):
+
+1. An aliased or qualified `text` spelling (`import { text as t }`,
+   `std.fmt.text(7)`) bypasses the intrinsic gate and emits an undeclared
+   function.
+2. A generic conditional used directly as a condition reports E10012 at its
+   null arm where the concrete twin reports E10218; the instance conditional
+   record carries no condition-context flag.
+3. `let z = c ? null : null;` stays `Deferred` and is accepted.
+4. A literal `null == x` with `x: T` stays accepted (the binding form is
+   rejected by the shipped rule).
+5. `panic(cstring null)` calls `cl_cstring_len(NULL)` before the guarded
+   `cl_panic` and segfaults.
+6. A for-step assignment of a non-owning fixed array from a call or member
+   emits an invalid array assignment/call.
+
+### 3.5 Review Outcome
+
+No critical or major review finding remains open. The Phase 1 and Phase 2
+minor findings were fixed, including the review-discovered for-step aggregate
+order defect (ST-39) and the test-hygiene bound.

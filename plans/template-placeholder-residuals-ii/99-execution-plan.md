@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-12 05:05
-> **Progress**: 28/38 tasks (74%)
+> **Last Updated**: 2026-11-12 05:50
+> **Progress**: 38/38 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -87,9 +87,9 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 
 - [x] 1.3.1 Create `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` with IT-1–IT-6, IT-13–IT-15 — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 03:17)
 - [x] 1.3.2 Create `plans/template-placeholder-residuals-ii/05-findings.md` as the findings ledger — `plans/template-placeholder-residuals-ii/05-findings.md` ✅ (completed: 2026-11-12 03:17)
-- [x] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:05)
-- [x] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:05)
-- [x] 1.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:05)
+- [x] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:50)
+- [x] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:50)
+- [x] 1.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:50)
 
 **Deliverables**:
 - [ ] `text(null)` and a non-formattable `text` argument are E10500
@@ -111,32 +111,32 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [03-02](03-02-lowering-and-runtime.md) · [07](07-testing-strategy.md) ST-18–ST-25, ST-32 · AR-10–AR-13
 **Objective**: Pin the for-step, for-init, aggregate-order, and panic behavior.
 
-- [x] 2.1.1 [spec-author] Add ST-18–ST-21 (for-step owning assignment, continue edge, for-init template, for-init owning call) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.1.2 [spec-author] Add ST-22–ST-25 and ST-32 (same/differing aggregate order, panic null view, panic zero-state String, increment init) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.1.3 Run the suite against the Phase 1 head and record the red evidence for ST-18, ST-19, ST-20, ST-21, ST-24, ST-25, ST-32, ST-39; ST-22/ST-23 are guards — verify: the failure log names each red case ✅ (completed: 2026-11-12 05:05)
+- [x] 2.1.1 [spec-author] Add ST-18–ST-21 (for-step owning assignment, continue edge, for-init template, for-init owning call) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.1.2 [spec-author] Add ST-22–ST-25 and ST-32 (same/differing aggregate order, panic null view, panic zero-state String, increment init) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.1.3 Run the suite against the Phase 1 head and record the red evidence for ST-18, ST-19, ST-20, ST-21, ST-24, ST-25, ST-32, ST-39; ST-22/ST-23 are guards — verify: the failure log names each red case ✅ (completed: 2026-11-12 05:50)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02 §1–§4](03-02-lowering-and-runtime.md) · AR-10–AR-13
 **Objective**: Release the old for-step value, run for-init effects, document and pin the aggregate contract, and guard the panic write.
 
-- [x] 2.2.1 Reject a for-step `Assign` whose target may own, forcing the flat loop form — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.2.2 Lower each for-init expression through `check_expr_statement` with a release floor and drain — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.2.3 Guard the zero-length message `fwrite` in both panic shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.2.4 Document the supported-toolchain initializer-order contract in the two codegen comments — `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.2.5 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_ii_spec_test` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.2.6 Re-run the #26/#27/#25 suites and the nullability suites — verify: the suite output ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.1 Reject a for-step `Assign` whose target may own, forcing the flat loop form — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.2.2 Lower each for-init expression through `check_expr_statement` with a release floor and drain — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.2.3 Guard the zero-length message `fwrite` in both panic shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.2.4 Document the supported-toolchain initializer-order contract in the two codegen comments — `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.2.5 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_ii_spec_test` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.2.6 Re-run the #26/#27/#25 suites and the nullability suites — verify: the suite output ✅ (completed: 2026-11-12 05:50)
 
 ### Step 2.3: Impl Tests and Hardening
 
 **Reference**: [07 §3–§4](07-testing-strategy.md) IT-7–IT-12 · AR-10, AR-12, AR-13
 **Objective**: Pin the loop shapes and panic guard, and prove the sanitizer safety.
 
-- [x] 2.3.1 Add IT-7–IT-12 to the impl suite — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.3.2 Run `make asan` and `make ubsan`; the new suite is discovered and reports no ASan/UBSan error and no leak — verify: the runner summaries ✅ (completed: 2026-11-12 05:05)
-- [x] 2.3.3 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:05)
-- [x] 2.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:05)
-- [x] 2.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.3.1 Add IT-7–IT-12 to the impl suite — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.3.2 Run `make asan` and `make ubsan`; the new suite is discovered and reports no ASan/UBSan error and no leak — verify: the runner summaries ✅ (completed: 2026-11-12 05:50)
+- [x] 2.3.3 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:50)
+- [x] 2.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:50)
+- [x] 2.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:50)
 
 **Deliverables**:
 - [ ] A for-step owning assignment is leak-free on the fall-through and `continue` edges
@@ -159,20 +159,20 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [07 §4–§5](07-testing-strategy.md) · AR-17
 **Objective**: Prove the complete acceptance surface and the performance budget.
 
-- [ ] 3.1.1 `make asan` all suites green — verify: the runner's summary
-- [ ] 3.1.2 `make ubsan` all suites green — verify: the runner's summary
-- [ ] 3.1.3 `make bench-base COMMIT=bb3956c`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output
-- [ ] 3.1.4 `make bench-shape` green — verify: the four shape legs
-- [ ] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed`
+- [x] 3.1.1 `make asan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-12 05:50)
+- [x] 3.1.2 `make ubsan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-12 05:50)
+- [x] 3.1.3 `make bench-base COMMIT=bb3956c`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output ✅ (completed: 2026-11-12 05:50)
+- [x] 3.1.4 `make bench-shape` green — verify: the four shape legs ✅ (completed: 2026-11-12 05:50)
+- [x] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed` ✅ (completed: 2026-11-12 05:50)
 
 ### Step 3.2: Closeout
 
 **Reference**: [01 §Acceptance](01-requirements.md) · AR-14, AR-17
 **Objective**: Record the evidence and sync the project state.
 
-- [ ] 3.2.1 Finalize `plans/template-placeholder-residuals-ii/05-findings.md` (PLAN-33, the `text` arity mini-plan, executes first because it edits the same `text` branch) with the baseline/head metrics, red evidence, review outcomes, and the gate results — `plans/template-placeholder-residuals-ii/05-findings.md`
-- [ ] 3.2.2 Update the existing PLAN-32 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md`
-- [ ] 3.2.3 Close issue #28 with the delivered evidence and the #24 note — GitHub issue #28 via `gh issue close --comment`
+- [x] 3.2.1 Finalize `plans/template-placeholder-residuals-ii/05-findings.md` (PLAN-33, the `text` arity mini-plan, executes first because it edits the same `text` branch) with the baseline/head metrics, red evidence, review outcomes, and the gate results — `plans/template-placeholder-residuals-ii/05-findings.md` ✅ (completed: 2026-11-12 05:50)
+- [x] 3.2.2 Update the existing PLAN-32 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md` ✅ (completed: 2026-11-12 05:50)
+- [x] 3.2.3 Close issue #28 with the delivered evidence and the #24 note — GitHub issue #28 via `gh issue close --comment` ✅ (completed: 2026-11-12 05:50)
 
 **Deliverables**:
 - [ ] The full gate is green

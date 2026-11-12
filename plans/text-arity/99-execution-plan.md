@@ -1,7 +1,7 @@
 # Task: Enforce the one-argument `text` intrinsic
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 7/8 tasks (87%)
+> **Progress**: 8/8 tasks (100%)
 > **Reasoning**: low — one arity check and one dead codegen fallback, with an
 > existing diagnostic and an existing test harness. This task executes before
 > PLAN-32 because both edit the compiler-known `text` branch.
@@ -39,16 +39,16 @@ codegen fallback. No new diagnostic, no new intrinsic, no spec edit.
   span, no C, and the one-argument `cl_text_i32` shape unchanged.
 - [x] T-06 Run the independent correctness and emission-integrity reviews on
   the diff and fix every critical/major finding — verify: the verdicts are
-  recorded in the task findings below. ✅ (completed: 2026-11-12 03:08)
+  recorded in the task findings below. ✅ (completed: 2026-11-12 05:45)
 - [x] T-07 Run the regression suites and `make check` — verify: the #25/#26/
-  #27/#28 suites and the workspace tests are green. ✅ (completed: 2026-11-12 03:08)
-- [ ] T-08 Run the full acceptance gate (`make asan`, `make ubsan`,
+  #27/#28 suites and the workspace tests are green. ✅ (completed: 2026-11-12 05:45)
+- [x] T-08 Run the full acceptance gate (`make asan`, `make ubsan`,
   `make bench-shape`, `make bench-base COMMIT=bb3956c`, `make bench`,
   `make bench-compare`, `make verify`); record the result in the roadmap row
   and close #24.
 
 **Verify**: `make check`; `make asan`; `make ubsan`; `make bench-compare`;
-`make verify`
+`make verify` — all green on the combined final tree (`864dab3`).
 
 ## Key decisions
 

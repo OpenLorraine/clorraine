@@ -4,7 +4,7 @@
 > formattability (including a generic argument), a bare null binary operand,
 > generic and scalar null-arm parity, a for-step owning assignment, for-init
 > effects, aggregate field order, and `cl_panic` zero-length messages.
-> **Status**: Planning Complete
+> **Status**: Done — 38/38; full gate green
 > **Created**: 2026-11-12 02:00
 > **Implements**: R1–R11
 > **CodeOps Artifact Schema**: 1
