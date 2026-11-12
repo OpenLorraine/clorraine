@@ -52,6 +52,7 @@ with no leak report. "Panic-clean" is the helper above.
 | ST-36 | `let flag = true; if (-(flag ? null : 5) > 0) { ... }` | rejected: E10012 at the null (a conditional nested in a value operand of a condition) | R5, AR-8 |
 | ST-37 | `func impl(s: String?): String`; `let text: func(String?): String = impl; text(s)` | runs: the module value is called, not the intrinsic | R1, AR-1 (guard) |
 | ST-38 | `func f<T>(x: T): bool { let z = null; return z == x; }` with `f<i32>(1)` | rejected: E10012 at `z` (a null binding vs an open parameter) | R3, AR-4 (guard) |
+| ST-39 | `struct P { a: i32; b: i32; }`; `for (let i = 0; i < 1; p = P { b: mark(2), a: mark(1) }, i = i + 1) { }` | runs: `21` (the step's differing aggregate order) | R8, AR-12 |
 | ST-11 | `show<str>(false, "x")` with `$"{f ? null : x}"` | runs: `x` | R4, AR-5 |
 | ST-12 | `show<String>(true, stringOf("x"))` with the same placeholder | rejected: E10010 only at the null; no E10012 | R4, AR-6 |
 | ST-13 | `show<i32>(true, 1)` with the same placeholder | rejected: E10012 at the null | R4, AR-7 |
@@ -88,7 +89,8 @@ On `bb3956c`:
   rejected with the wrong pair.
 - ST-14/ST-15 are accepted and emit `(flag ? NULL : ...)`.
 - ST-33 is accepted and emits `(NULL + NULL)`; ST-36 is accepted and emits a
-  pointer/integer conditional.
+  pointer/integer conditional; ST-39 is accepted and emits `12` from the
+  compact step header.
 - ST-18/ST-19 leak 49 bytes under ASan.
 - ST-20/ST-21/ST-32 print `0` (the effect never runs).
 - ST-24/ST-25 report a UBSan null-pointer error.
@@ -154,7 +156,7 @@ must stay within the 1% guard.
 | R5 (scalar null arm) | ST-14, ST-15, ST-16, ST-17, ST-36, IT-6 |
 | R6 (for-step own assignment) | ST-18, ST-19, IT-7, IT-8 |
 | R7 (for-init effects) | ST-20, ST-21, ST-32, IT-9 |
-| R8 (aggregate order) | ST-22, ST-23, IT-10 |
+| R8 (aggregate order) | ST-22, ST-23, ST-39, IT-10 |
 | R9 (panic safety) | ST-24, ST-25, IT-11 |
 | R10 (diagnostic consistency) | ST-1, ST-2, ST-3, ST-5, ST-7, ST-9, ST-12, ST-13, ST-14, IT-1, IT-2, IT-4, IT-5, IT-6, IT-14, IT-15 |
 | R11 (emission stability) | ST-8, IT-3, IT-8, IT-12 |
@@ -166,7 +168,7 @@ Each fix assertion must fail without the fix:
 - ST-1/ST-2/ST-3 fail on `bb3956c` on the missing E10500.
 - ST-5 and ST-28 fail on the accepted nullable argument.
 - ST-7 fails on the opaque projection's `cl_text_unknown`.
-- ST-9, ST-33, and ST-36 fail on the accepted invalid C; ST-30 guards the
+- ST-9, ST-33, ST-36, and ST-39 fail on the accepted invalid C/order; ST-30 guards the
   E10218 logical rule; ST-34/ST-35 guard the accepted comparison and the
   non-formattable placeholder arm; ST-37/ST-38 guard the module value shadow
   and the null binding against an open parameter.

@@ -125,7 +125,80 @@ follow-up):**
 
 ## 2. Phase 2 — Lowering and Runtime Residuals
 
-_Pending._
+### 2.1 Red Evidence (Phase 1 head `9199fd7`)
+
+The Phase 2 cases were added before the changes. Seven failed:
+
+- `st18_for_step_owning_assignment_is_leak_free`,
+  `st19_for_step_continue_is_leak_free`: ASan reported the old `s` value
+  leaked on each iteration (49 bytes in the 3-iteration case).
+- `st20_for_init_template_runs_once`,
+  `st21_for_init_owning_call_runs_once`, `st32_for_init_increment_runs`: the
+  init effect did not run (the counter printed `0`).
+- `st24_null_view_panic_is_clean`, `st25_zero_state_string_panic_is_clean`:
+  UBSan reported the null-pointer `fwrite` argument.
+- `st39_for_step_aggregate_order`: the compact step header emitted the
+  declaration-order initializer and printed `12`.
+
+`st22_same_order_aggregate_evaluates_in_order` and
+`st23_differing_order_aggregate_uses_stores` were green guards (`12`/`21`).
+
+### 2.2 Implementation
+
+- `compiler/src/own/loops.rs`: `for_step_is_structured` rejects an `Assign`
+  whose target owns or may own, or whose literal needs fieldwise stores, so the
+  flat loop runs the ordinary pre-drop/store path; `ForInit::Expr` lowers each
+  expression through `check_expr_statement` with a release floor and drain.
+- `compiler/runtime/shim_host.c`, `shim_hosted_amiga.c`: `cl_panic` skips a
+  zero-length message `fwrite`, keeping the host `stderr` and Amiga `stdout`
+  streams.
+- `compiler/src/codegen/function.rs`, `guards.rs`: the initializer-order
+  contract comments state the C99 caveat and the supported-toolchain
+  assumption; the same/differing order behavior is pinned by ST-22/ST-23.
+
+### 2.3 Green Evidence
+
+`template_placeholder_residuals_ii_spec_test`: 39 passed;
+`..._impl_test`: 14 passed (IT-1–IT-12, IT-14, IT-15).
+
+### 2.4 Phase Review
+
+| Review | Verdict | Findings |
+|--------|---------|----------|
+| Correctness | no critical/major | RV-001/RV-002 fixed |
+| Semantics | no critical/major | SR-001 doc fixed; SR-P1 fixed; SR-P2/SR-P3 pre-existing |
+| Memory safety | clean | one test-hygiene minor fixed; two pre-existing shapes recorded |
+| Emission integrity | PASS | no unintended diff; 40 host + 68 Amiga + 54 amiga-13 + 12 freestanding TUs strict |
+
+**RV-001 (MINOR) — the IT-7 pre-drop assertion could match the declaration's
+drop.** It now searches after the step block label (`__cl_b3:`), so the
+assertion pins the step's own release.
+
+**RV-002 (MINOR) — the aggregate contract comments named the wrong test
+results.** They now name the same-order `st22` (`12`) and differing-order
+`st23` (`21`) functions, and no longer imply that `21` pins the C initializer
+order.
+
+**SR-001 (MINOR) — vbcc was described as build-only.** `spec/17-codegen.md`
+§13 compiles and runs the vbcc leg on `vamos`; the plan and comments now say
+so.
+
+**SR-P1 (pre-existing, fixed in this phase) — a for-step aggregate assignment
+reordered its fields.** The compact header rendered a reversed `P { b: ...,
+a: ... }` in declaration order (`12`). `for_step_is_structured` now also
+rejects a literal that needs fieldwise stores, so the flat store path runs and
+prints `21`; `st39` pins it.
+
+**Memory-safety minor (fixed).** The new leak/panic helpers now run the child
+with a 30-second bound and set `handle_segv=0` for ASan.
+
+**Pre-existing shapes recorded for the closeout follow-up:**
+- `panic(cstring null)` calls `cl_cstring_len(NULL)` before the guarded
+  `cl_panic` and segfaults.
+- A for-step assignment of a non-owning fixed array from a call or member
+  emits an invalid array assignment/call.
+- An aliased or qualified `text` spelling and a both-null conditional remain
+  the Phase 1 follow-ups.
 
 ## 3. Acceptance
 

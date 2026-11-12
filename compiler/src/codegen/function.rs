@@ -3000,6 +3000,15 @@ impl<'a> Emitter<'a> {
     /// the whole literal store every field through statements, in source
     /// order, which a C initializer cannot mix with without reordering
     /// side-effecting fields.
+    ///
+    /// C99 6.7.8p23 leaves initializer-list evaluation order unspecified. The
+    /// supported-toolchain contract is that GCC and vbcc evaluate the list in
+    /// the written (declaration) order; a source order that differs is forced
+    /// through this store form instead, so the language's source-order rule
+    /// does not depend on the C order. The same-order case is pinned by
+    /// `st22_same_order_aggregate_evaluates_in_order` (`12`) and the
+    /// differing-order case by `st23_differing_order_aggregate_uses_stores`
+    /// (`21`) in `template_placeholder_residuals_ii_spec_test`.
     pub(super) fn struct_literal_needs_stores(
         &self,
         name: &str,

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-12 04:05
-> **Progress**: 16/38 tasks (42%)
+> **Last Updated**: 2026-11-12 05:05
+> **Progress**: 28/38 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -87,9 +87,9 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 
 - [x] 1.3.1 Create `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` with IT-1–IT-6, IT-13–IT-15 — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 03:17)
 - [x] 1.3.2 Create `plans/template-placeholder-residuals-ii/05-findings.md` as the findings ledger — `plans/template-placeholder-residuals-ii/05-findings.md` ✅ (completed: 2026-11-12 03:17)
-- [x] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 04:05)
-- [x] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 04:05)
-- [x] 1.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 04:05)
+- [x] 1.3.3 Run the phase review (correctness-reviewer, semantics-reviewer, emission-integrity-auditor) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:05)
+- [x] 1.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:05)
+- [x] 1.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:05)
 
 **Deliverables**:
 - [ ] `text(null)` and a non-formattable `text` argument are E10500
@@ -111,32 +111,32 @@ the expected behavior is [07-testing-strategy.md](07-testing-strategy.md).
 **Reference**: [03-02](03-02-lowering-and-runtime.md) · [07](07-testing-strategy.md) ST-18–ST-25, ST-32 · AR-10–AR-13
 **Objective**: Pin the for-step, for-init, aggregate-order, and panic behavior.
 
-- [ ] 2.1.1 [spec-author] Add ST-18–ST-21 (for-step owning assignment, continue edge, for-init template, for-init owning call) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs`
-- [ ] 2.1.2 [spec-author] Add ST-22–ST-25 and ST-32 (same/differing aggregate order, panic null view, panic zero-state String, increment init) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs`
-- [ ] 2.1.3 Run the suite against the Phase 1 head and record the red evidence for ST-18, ST-19, ST-20, ST-21, ST-24, ST-25, ST-32; ST-22/ST-23 are guards — verify: the failure log names each red case
+- [x] 2.1.1 [spec-author] Add ST-18–ST-21 (for-step owning assignment, continue edge, for-init template, for-init owning call) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.1.2 [spec-author] Add ST-22–ST-25 and ST-32 (same/differing aggregate order, panic null view, panic zero-state String, increment init) — `compiler/tests/template_placeholder_residuals_ii_spec_test.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.1.3 Run the suite against the Phase 1 head and record the red evidence for ST-18, ST-19, ST-20, ST-21, ST-24, ST-25, ST-32, ST-39; ST-22/ST-23 are guards — verify: the failure log names each red case ✅ (completed: 2026-11-12 05:05)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02 §1–§4](03-02-lowering-and-runtime.md) · AR-10–AR-13
 **Objective**: Release the old for-step value, run for-init effects, document and pin the aggregate contract, and guard the panic write.
 
-- [ ] 2.2.1 Reject a for-step `Assign` whose target may own, forcing the flat loop form — `compiler/src/own/loops.rs`
-- [ ] 2.2.2 Lower each for-init expression through `check_expr_statement` with a release floor and drain — `compiler/src/own/loops.rs`
-- [ ] 2.2.3 Guard the zero-length message `fwrite` in both panic shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.4 Document the supported-toolchain initializer-order contract in the two codegen comments — `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.5 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_ii_spec_test`
-- [ ] 2.2.6 Re-run the #26/#27/#25 suites and the nullability suites — verify: the suite output
+- [x] 2.2.1 Reject a for-step `Assign` whose target may own, forcing the flat loop form — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.2 Lower each for-init expression through `check_expr_statement` with a release floor and drain — `compiler/src/own/loops.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.3 Guard the zero-length message `fwrite` in both panic shims — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.4 Document the supported-toolchain initializer-order contract in the two codegen comments — `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.5 Run the new spec suite; every case green — verify: `cargo test -p clc --test template_placeholder_residuals_ii_spec_test` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.2.6 Re-run the #26/#27/#25 suites and the nullability suites — verify: the suite output ✅ (completed: 2026-11-12 05:05)
 
 ### Step 2.3: Impl Tests and Hardening
 
 **Reference**: [07 §3–§4](07-testing-strategy.md) IT-7–IT-12 · AR-10, AR-12, AR-13
 **Objective**: Pin the loop shapes and panic guard, and prove the sanitizer safety.
 
-- [ ] 2.3.1 Add IT-7–IT-12 to the impl suite — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs`
-- [ ] 2.3.2 Run `make asan` and `make ubsan`; the new suite is discovered and reports no ASan/UBSan error and no leak — verify: the runner summaries
-- [ ] 2.3.3 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md`
-- [ ] 2.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict
-- [ ] 2.3.5 `make check` green — verify: `make check`
+- [x] 2.3.1 Add IT-7–IT-12 to the impl suite — `compiler/tests/template_placeholder_residuals_ii_impl_test.rs` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.3.2 Run `make asan` and `make ubsan`; the new suite is discovered and reports no ASan/UBSan error and no leak — verify: the runner summaries ✅ (completed: 2026-11-12 05:05)
+- [x] 2.3.3 Run the phase review (correctness, semantics, memory-safety, emission-integrity) on the phase diff and record the verdicts — verify: the verdicts are recorded in `05-findings.md` ✅ (completed: 2026-11-12 05:05)
+- [x] 2.3.4 Fix every critical/major finding and re-review the fix diff once — verify: the re-review verdict ✅ (completed: 2026-11-12 05:05)
+- [x] 2.3.5 `make check` green — verify: `make check` ✅ (completed: 2026-11-12 05:05)
 
 **Deliverables**:
 - [ ] A for-step owning assignment is leak-free on the fall-through and `continue` edges

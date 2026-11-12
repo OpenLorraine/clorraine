@@ -88,9 +88,10 @@ the fieldwise store when the written order differs from the declaration order
 (`compiler/src/codegen/guards.rs:1413`). When the orders agree, the literal is
 a C initializer list. C99 6.7.8p23 leaves the evaluation order of initializer
 expressions unspecified. GCC executes them in order, which the corpus and
-benchmarks observe; vbcc is build-only in this repository (`bench-shape`). The
-codegen comments assert declaration order but do not state the C99 caveat or
-the supported-toolchain contract, and no test pins the same-order behavior.
+benchmarks observe, and vbcc is compiled and run on `vamos` by the SDK
+smoke/corpus leg. The codegen comments assert declaration order but do not
+state the C99 caveat or the supported-toolchain contract, and no test pins the
+same-order behavior.
 
 ### 2.7 Panic message
 

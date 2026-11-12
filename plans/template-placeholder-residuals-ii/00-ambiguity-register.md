@@ -20,7 +20,7 @@
 | 9 | Technical | How the concrete conditional and the generic instance share the null-arm rule | duplicate the rule / shared helper / only fix the instance | One shared `types` helper that classifies a null arm against its settled sibling; both callers use it | ✅ Resolved |
 | 10 | Behavioral | A for-step owning assignment (`s = $"..."`) keeps the compact C `for` header and leaks the old value | force the flat form / pre-drop in the header / leave | `for_step_is_structured` rejects an `Assign` whose target may own, so the flat block runs the ordinary pre-drop store | ✅ Resolved |
 | 11 | Behavioral | A template in a for-init expression list is checked but never lowered, so its effect does not run | lower through `check_expr_statement` / evaluate eagerly / leave | Lower each init expression through `check_expr_statement` with a release floor and drain, exactly as an ordinary statement | ✅ Resolved |
-| 12 | Behavioral | A non-`needs_stores` aggregate's field order relies on the C initializer's declaration order, which C99 leaves unspecified | fieldwise store every multi-field aggregate / document the supported-toolchain assumption | Document the assumption in the codegen contract and pin the GCC host behavior with a same-order and a differing-order test; vbcc is build-only in this repository (`bench-shape`), so its execution is not claimed; no emission-wide change (the issue authorizes this option) | ✅ Resolved |
+| 12 | Behavioral | A non-`needs_stores` aggregate's field order relies on the C initializer's declaration order, which C99 leaves unspecified | fieldwise store every multi-field aggregate / document the supported-toolchain assumption | Document the assumption in the codegen contract and pin the GCC host behavior with a same-order and a differing-order test; vbcc is compiled and run on `vamos` by the SDK smoke/corpus leg; no emission-wide change (the issue authorizes this option) | ✅ Resolved |
 | 13 | Behavioral | `cl_panic` passes a NULL message with length 0 to `fwrite`, which UBSan reports | skip the zero-length write / substitute an empty string / leave | Skip the `fwrite` when `len == 0` in both shims, keeping each shim's existing stream (host stderr, Amiga stdout); the host runtime is tested and the Amiga body will be pinned by a shim-parity test and built by `make verify` | ✅ Resolved |
 | 14 | Scope | Whether #24 (`text` arity) is part of this plan | bundle / separate mini-plan | Separate lightweight plan `plans/text-arity/`; this plan does not change arity | ✅ Resolved |
 | 15 | Scope | Whether any spec, stdlib, or ABI artifact changes | edit spec / no edit | No `spec/` or `stdlib/` edit; no ABI change. The behavior follows the frozen formattability, null, conditional, source-order, and zero-state rules | ✅ Resolved |
@@ -127,11 +127,11 @@ list evaluation order unspecified. The compiler already forces fieldwise
 stores when the written order differs from the declaration order; when the
 orders agree, the emitted initializer lists fields in declaration order.
 GCC (the host compiler used by the tests and benchmarks) evaluates that list
-in order, and the corpus and benchmark outputs confirm it. vbcc is build-only
-in this repository (`bench-shape`), so its execution is part of the documented
-contract rather than a test claim. The codegen contract documents this
-supported-toolchain assumption and the new regression test pins both the
-same-order (`12`) and differing-order (`21`) results on the host. Rejected: converting every multi-field literal to fieldwise stores
+in order, and the corpus and benchmark outputs confirm it. vbcc is compiled and
+run on `vamos` by the SDK smoke/corpus leg (`spec/17-codegen.md` §13), so both
+supported compilers execute the contract. The codegen contract documents this
+assumption and the new regression test pins both the same-order (`12`) and
+differing-order (`21`) results on the host. Rejected: converting every multi-field literal to fieldwise stores
 (an emission-wide change with no observable benefit on a supported toolchain,
 and a scored-regression risk).
 

@@ -1442,8 +1442,12 @@ impl<'a> Emitter<'a> {
         fields: &[(String, Value)],
     ) -> bool {
         // The C compound literal evaluates its initializer in declaration
-        // order. A source order that differs would run the fields out of
-        // order, so the literal takes the per-field store form.
+        // order on the supported toolchains, which C99 6.7.8p23 leaves
+        // unspecified. A source order that differs would run the fields out
+        // of order, so the literal takes the per-field store form; a
+        // same-order literal keeps the initializer and is pinned by
+        // `st22_same_order_aggregate_evaluates_in_order` in
+        // `template_placeholder_residuals_ii_spec_test`.
         if self.struct_literal_order_differs(name, fields) {
             return true;
         }

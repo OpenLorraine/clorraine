@@ -9,8 +9,9 @@
 //! lowering phase.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -682,4 +683,310 @@ func main(): i32 {
 }
 "#;
     assert_rejected("nullparam", source, "E10012", &["'null' is not allowed here"]);
+}
+
+// -- Lowering and runtime --------------------------------------------------
+
+/// Runs a spawned command with a bounded wait, so a wedged child cannot hang
+/// the test process.
+fn run_bounded(tag: &str, mut command: Command) -> Output {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .unwrap_or_else(|error| panic!("{tag}: spawn: {error}"));
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().expect("collect the child output"),
+            Ok(None) => {}
+            Err(error) => panic!("{tag}: wait: {error}"),
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{tag}: timed out after 30s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Builds with ASan and asserts a clean exit with no leak report.
+fn assert_leak_free(tag: &str, source: &str, expected: &str) {
+    let (scratch, emitted) = emit(tag, source);
+    let c_path = scratch.path().join("asan.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("asan-prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=address",
+            "-fno-omit-frame-pointer",
+            "-no-pie",
+        ])
+        .args([
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("C path"),
+        ])
+        .output()
+        .expect("spawn cc");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let mut command = Command::new(&program);
+    command.env(
+        "ASAN_OPTIONS",
+        "detect_leaks=1:symbolize=0:handle_segv=0",
+    );
+    let output = run_bounded(tag, command);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected exit 0 under ASan; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected,
+        "{tag}: unexpected stdout"
+    );
+    assert_no_sanitizer_report(tag, &output);
+}
+
+/// Builds with UBSan, runs a panic program, and asserts a clean report.
+fn assert_panic_clean(tag: &str, source: &str) {
+    let (scratch, emitted) = emit(tag, source);
+    let c_path = scratch.path().join("ubsan.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("ubsan-prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=undefined",
+            "-fno-sanitize-recover=all",
+            "-no-pie",
+        ])
+        .args([
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("C path"),
+        ])
+        .output()
+        .expect("spawn cc");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let mut command = Command::new(&program);
+    command.env("UBSAN_OPTIONS", "halt_on_error=1");
+    let output = run_bounded(tag, command);
+    assert!(
+        !output.status.success(),
+        "{tag}: a panic program exited successfully"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("panic: "), "{tag}: missing panic output:\n{stderr}");
+    assert!(
+        !stderr.contains("runtime error:") && !stderr.contains("AddressSanitizer"),
+        "{tag}: the sanitizer reported an error; stderr:\n{stderr}"
+    );
+}
+
+/// ST-18: a for-step owning assignment releases the old value each iteration.
+#[test]
+fn st18_for_step_owning_assignment_is_leak_free() {
+    let source = r#"module spec.tprii.forstep;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    let s: String = stringOf("");
+    for (let i: i32 = 0; i < 3; s = $"{i}", i = i + 1) {
+        println($"{i}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forstep", source, "0\n1\n2\n");
+}
+
+/// ST-19: the step cleanup also runs on a `continue` edge.
+#[test]
+fn st19_for_step_continue_is_leak_free() {
+    let source = r#"module spec.tprii.forcontinue;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    let s: String = stringOf("");
+    for (let i: i32 = 0; i < 3; s = $"{i}", i = i + 1) {
+        if (i == 1) { continue; }
+        println($"{i}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forcontinue", source, "0\n2\n");
+}
+
+/// ST-20: a template in the for-init runs once and releases its result.
+#[test]
+fn st20_for_init_template_runs_once() {
+    let source = r#"module spec.tprii.forinittpl;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+func tick(): String {
+    seq = seq + 1;
+    return stringOf("t");
+}
+func main(): i32 {
+    let i: i32 = 0;
+    for ($"{tick()}", i = 0; i < 1; i = i + 1) {
+        println($"{seq}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forinittpl", source, "1\n");
+}
+
+/// ST-21: an owning call in the for-init runs once and is released.
+#[test]
+fn st21_for_init_owning_call_runs_once() {
+    let source = r#"module spec.tprii.forinitcall;
+import { println } from std.io;
+import { String, stringOf } from std.text;
+let seq: i32 = 0;
+func mkString(): String {
+    seq = seq + 1;
+    return stringOf("x");
+}
+func main(): i32 {
+    let i: i32 = 0;
+    for (mkString(), i = 0; i < 1; i = i + 1) {
+        println($"{seq}");
+    }
+    return 0;
+}
+"#;
+    assert_leak_free("forinitcall", source, "1\n");
+}
+
+/// ST-32: an increment in the for-init now runs.
+#[test]
+fn st32_for_init_increment_runs() {
+    let source = r#"module spec.tprii.forinitinc;
+import { println } from std.io;
+func main(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    for (i++, n = 0; n < 1; n = n + 1) {
+        println($"{i}");
+    }
+    return 0;
+}
+"#;
+    assert_output("forinitinc", source, "1\n");
+}
+
+/// ST-22: a same-order aggregate evaluates its fields in source order.
+#[test]
+fn st22_same_order_aggregate_evaluates_in_order() {
+    let source = r#"module spec.tprii.aggorder;
+import { println } from std.io;
+let seq: i32 = 0;
+func mark(n: i32): i32 {
+    seq = seq * 10 + n;
+    return n;
+}
+struct P { a: i32; b: i32; }
+func main(): i32 {
+    let p: P = P { a: mark(1), b: mark(2) };
+    println($"{seq}");
+    return 0;
+}
+"#;
+    assert_output("aggorder", source, "12\n");
+}
+
+/// ST-23: a differing order uses the fieldwise store and runs in source order.
+#[test]
+fn st23_differing_order_aggregate_uses_stores() {
+    let source = r#"module spec.tprii.aggorderrev;
+import { println } from std.io;
+let seq: i32 = 0;
+func mark(n: i32): i32 {
+    seq = seq * 10 + n;
+    return n;
+}
+struct P { a: i32; b: i32; }
+func main(): i32 {
+    let p: P = P { b: mark(2), a: mark(1) };
+    println($"{seq}");
+    return 0;
+}
+"#;
+    assert_output("aggorderrev", source, "21\n");
+}
+
+/// ST-24: a null-view panic is clean under UBSan.
+#[test]
+fn st24_null_view_panic_is_clean() {
+    let source = r#"module spec.tprii.panicnull;
+func main(): i32 {
+    let v: str = null;
+    panic(v);
+    return 0;
+}
+"#;
+    assert_panic_clean("panicnull", source);
+}
+
+/// ST-25: a zero-state String panic is clean under UBSan.
+#[test]
+fn st25_zero_state_string_panic_is_clean() {
+    let source = r#"module spec.tprii.paniczero;
+import { String } from std.text;
+struct H { name: String; }
+func main(): i32 {
+    let h: H = H {};
+    let v: str = h.name;
+    panic(v);
+    return 0;
+}
+"#;
+    assert_panic_clean("paniczero", source);
+}
+
+/// ST-39: an aggregate literal assigned in a for step keeps source order.
+#[test]
+fn st39_for_step_aggregate_order() {
+    let source = r#"module spec.tprii.foragg;
+import { println } from std.io;
+let seq: i32 = 0;
+func mark(n: i32): i32 {
+    seq = seq * 10 + n;
+    return n;
+}
+struct P { a: i32; b: i32; }
+func main(): i32 {
+    let p: P = P { a: 0, b: 0 };
+    for (let i: i32 = 0; i < 1; p = P { b: mark(2), a: mark(1) }, i = i + 1) { }
+    println($"{seq}");
+    return 0;
+}
+"#;
+    assert_output("foragg", source, "21\n");
 }

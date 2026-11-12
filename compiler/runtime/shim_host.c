@@ -56,7 +56,12 @@ static inline size_t cl_cstring_len(const char *text)
 static inline void cl_panic(const unsigned char *message, size_t len)
 {
     fwrite("panic: ", 1, 7, stderr);
-    fwrite(message, 1, len, stderr);
+    /* A zero-length message is the empty view or the zero-state String; its
+     * pointer is NULL, which is not a valid fwrite buffer even for zero
+     * bytes. */
+    if (len > 0) {
+        fwrite(message, 1, len, stderr);
+    }
     fwrite("\n", 1, 1, stderr);
     fflush(stderr);
     abort();

@@ -277,8 +277,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(ForInit::Let(binding)) => self.check_let(binding),
             Some(ForInit::Const(binding)) => self.check_const(binding),
             Some(ForInit::Expr(expressions)) => {
+                // Each written expression is a statement, so a template, call,
+                // conditional, or increment runs its effect once before the
+                // first test. A discarded owned result binds a statement
+                // temporary that the drain releases before the loop head.
                 for expression in expressions {
-                    self.eval(expression);
+                    let release_floor = self.pending_releases.len();
+                    self.check_expr_statement(expression);
+                    self.drain_pending_releases(release_floor);
                 }
             }
             None => {}
@@ -1001,8 +1007,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .statements
             .iter()
             .all(|instr| match &instr.statement {
-                Statement::Assign { value, .. } => {
-                    !value_needs_guards(value)
+                Statement::Assign { target, value } => {
+                    // An owning target needs the ordinary pre-drop, which is a
+                    // statement and cannot live in the compact C `for`
+                    // header. A target that may own after substitution takes
+                    // the same safe path.
+                    !self.owns_drop(&target.ty)
+                        && !self.maybe_owns(&target.ty)
+                        && !self.literal_fields_need_stores(value)
+                        && !value_needs_guards(value)
                         && !matches!(value.kind, ValueKind::ArrayLit { .. })
                 }
                 Statement::Adopt { .. } => false,
