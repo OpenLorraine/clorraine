@@ -3,7 +3,7 @@
 > **Document**: 05-findings.md
 > **Parent**: [Index](00-index.md)
 > **Created**: 2026-11-11 22:02
-> **Status**: Phase 1 implemented; phase review and Phase 2 follow
+> **Status**: Done — full gate green; #27 closed; follow-up #28 filed
 
 ## 1. Phase 1 — Type Diagnostics
 
@@ -206,4 +206,74 @@ green.
 
 ## 3. Acceptance
 
-_Pending._
+### 3.1 Gate Results
+
+| Gate | Result |
+|------|--------|
+| `make check` | green (spec check, workspace tests, bench-test, fuzz-test, fuzz-smoke 28/0) |
+| `make asan` | 34 suites green (the new suite is discovered) |
+| `make ubsan` | 8 suites green |
+| `make bench-shape` | gcc, nix13, vbcc, freestanding warning-free |
+| `make verify` | `verify: all legs passed` (A500/A600/A1200/A4000 FS-UAE legs, corpus, differential, fault legs) |
+
+The FS-UAE legs ran on a private Xvfb display with `LIBGL_ALWAYS_SOFTWARE=1`
+(the host Xwayland rendered the captured line one pixel off). The local
+`docker/.env` was restored to the user's original `DISPLAY=:0` afterward. The
+`a500-smoke` harness now re-searches the visible FS-UAE window on every poll,
+because the emulator can recreate its top-level window while it initialises;
+the exact `AE=0` golden comparison is unchanged.
+
+### 3.2 Benchmark (`b6f12d8` → `46c5c4c` + the harness fix)
+
+`make bench-compare` passed with every scored output equal:
+
+| Benchmark | Base instructions | Head instructions | Delta | Base `.text` | Head `.text` | Delta |
+|-----------|-------------------|-------------------|-------|--------------|--------------|-------|
+| lookup | 8,779 | 8,779 | +0.0% | 39,884 | 39,884 | +0.0% |
+| matrix | 9,361 | 9,361 | +0.0% | 23,592 | 23,592 | +0.0% |
+| moves | 44,630 | 44,630 | +0.0% | 23,684 | 23,684 | +0.0% |
+| sieve | 1,040,081 | 1,040,081 | +0.0% | 23,816 | 23,816 | +0.0% |
+| strings | 1,221,232 | 1,221,232 | +0.0% | 23,972 | 23,972 | +0.0% |
+
+The generated C grows by 345 bytes (+0.1%) in every program from the three
+String accessor NULL branches. Instructions and `.text` are unchanged; the
+1% guard is satisfied. The `strings` hot loop is unaffected because it widens
+String views through the existing accessors without a scored instruction
+change.
+
+### 3.3 Final Test Inventory
+
+- `template_placeholder_residuals_spec_test`: 30 behavior cases, 30/30 plain,
+  ASan, and UBSan.
+- `template_placeholder_residuals_impl_test`: 10 emission/diagnostic cases.
+- `template_placeholder_integrity_spec_test`: 41/41; `..._impl_test`: 15/15.
+- `template_direct_formatting_spec_test`: 15/15; `..._impl_test`: 5/5.
+- `def_zero_null_spec_test`: 44/44.
+- `make check` includes the full workspace suite.
+
+### 3.4 Residuals and Follow-up
+
+The closeout files one follow-up issue for the adjacent shapes the reviews
+found (none is caused by this plan; each reproduces on the base or is a
+pre-existing test-infra gap):
+
+1. `text(null)` and `$"{null + 1}"` still reach the explicit converter with no
+   concrete formattable type.
+2. A generic `flag ? null : x` with `T = str`/`String` reports E10012 + E10010
+   at the null arm while the concrete twin is accepted/typed nullable.
+3. A scalar `flag ? null : 5` is accepted and emits invalid C.
+4. A for-step **assignment** of an owning value (`s = $"{i}"`) keeps the
+   compact C for header and leaks the old `s` value.
+5. A template in a for **init** expression list is checked but not lowered,
+   so its effects do not run.
+6. A non-`needs_stores` aggregate's own field order still relies on the C
+   initializer's declaration order.
+7. `cl_panic` passes a NULL message with length 0 to `fwrite`, which UBSan
+   reports.
+
+### 3.5 Review Outcome
+
+No critical or major review finding remains open. The Phase 1 and Phase 2
+minor findings were fixed; the semantic ambiguity around the zero-state
+String's nullable identity is documented in 03-02 §1.3 as the existing
+O7/TY-8 behavior.

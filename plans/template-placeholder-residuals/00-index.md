@@ -4,7 +4,7 @@
 > literal placeholder, a mixed-nullability conditional, the zero-state String
 > handle, a discarded template in a `for` step, and an owning aggregate field
 > evaluated after a later placeholder copy.
-> **Status**: Planning Complete
+> **Status**: Done — 38/38; full gate green
 > **Created**: 2026-11-11 21:03
 > **Implements**: R1–R9
 > **CodeOps Artifact Schema**: 1

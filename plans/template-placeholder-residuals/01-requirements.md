@@ -18,7 +18,7 @@ language surface and no runtime entry point.
 
 ### Must Have
 
-- [ ] **R1 — Null literal placeholder.** A placeholder whose value is
+- [x] **R1 — Null literal placeholder.** A placeholder whose value is
   null-shaped (`null`, or a conditional result with no concrete type) reports
   E10500 (`type 'null' is not formattable`) at the placeholder and writes no
   translation unit. A null literal inside a conditional with a view arm stays
@@ -26,40 +26,40 @@ language surface and no runtime entry point.
   written or resolved destination (including a generic instantiation) keeps the
   existing E10012 rule. A null arm with a handle sibling makes the conditional
   nullable and the placeholder reports E10010 at the null arm.
-- [ ] **R2 — Mixed-nullability conditional.** A conditional with two same-kind
+- [x] **R2 — Mixed-nullability conditional.** A conditional with two same-kind
   arms keeps the nullable flag when either non-null-shaped arm is nullable. An
   unnarrowed nullable arm in a placeholder reports E10010 at that arm; a
   narrowed arm is accepted. The same rule applies in a plain store
   (`let s: String = flag ? a : b;`).
-- [ ] **R3 — Zero-state String handle.** The all-zero `String` handle is the
+- [x] **R3 — Zero-state String handle.** The all-zero `String` handle is the
   empty String. A placeholder over a zero-state field (`H {}`) and a direct
   `println(h.name)`, `len(h.name)`, and `clone(h.name)` print/return empty
   without a crash on host; the hosted-amiga shim mirrors the same null-safe
   helpers and builds.
-- [ ] **R4 — Discarded template.** A discarded owned template result is
+- [x] **R4 — Discarded template.** A discarded owned template result is
   released at the end of its statement, including in a `for` step; a loop with
   a discarded step template completes with no leak. A discarded owning call in
   a step is released by the same drain.
-- [ ] **R5 — Owning aggregate literal order.** An owning aggregate field before
+- [x] **R5 — Owning aggregate literal order.** An owning aggregate field before
   a later template placeholder evaluates its own fields at its source position,
   before the later copy. `P { inner: Inner { a: mkString() }, b: $"{mark(2)}" }`
   yields `seq=12`, and loop re-entry does not double-free the adopted aggregate.
-- [ ] **R6 — No language surface or ABI change.** No `spec/` edit; the String
+- [x] **R6 — No language surface or ABI change.** No `spec/` edit; the String
   helper signatures, the emitted C ABI, and the template part contract are
   unchanged. The zero-state read is the empty-state reading the issue requests
   (AR-3).
-- [ ] **R7 — Gate and budget.** `make check`, `make asan`, `make ubsan`,
+- [x] **R7 — Gate and budget.** `make check`, `make asan`, `make ubsan`,
   `make verify`, and `make bench-shape` are green; every scored benchmark
   output is equal and no scored metric regresses by more than 1% against
   `b6f12d8`.
 
 ### Should Have
 
-- [ ] **R8 — Diagnostic consistency.** The null placeholder uses the frozen
+- [x] **R8 — Diagnostic consistency.** The null placeholder uses the frozen
   E10500 message/help; the mixed conditional and the null arm at a handle
   sibling use the frozen E10010 message/help and name the nullable arm's root,
   call, or `value`.
-- [ ] **R9 — Emission clarity.** The adopted aggregate is a `cl_zero` plus a
+- [x] **R9 — Emission clarity.** The adopted aggregate is a `cl_zero` plus a
   fieldwise store, or a plain temporary store, in the emitted C; no invalid
   aggregate assignment and no `cl_text_unknown` for a supported program.
 
@@ -119,14 +119,14 @@ language surface and no runtime entry point.
 
 ## Acceptance Criteria
 
-1. [ ] All requirements R1–R9 are verified by the ST cases in
+1. [x] All requirements R1–R9 are verified by the ST cases in
    [07-testing-strategy.md](07-testing-strategy.md).
-2. [ ] The five #27 reproductions behave as specified under the host build and
+2. [x] The five #27 reproductions behave as specified under the host build and
    under AddressSanitizer.
-3. [ ] `make check`, `make asan`, `make ubsan`, `make verify`,
+3. [x] `make check`, `make asan`, `make ubsan`, `make verify`,
    `make bench-shape`, and `make bench` + `make bench-compare` are green.
-4. [ ] All scored benchmark outputs are equal; no scored metric regresses by
+4. [x] All scored benchmark outputs are equal; no scored metric regresses by
    more than 1%.
-5. [ ] No critical or major review finding remains open.
-6. [ ] The findings ledger, the roadmap row, and issue #27 reflect the
+5. [x] No critical or major review finding remains open.
+6. [x] The findings ledger, the roadmap row, and issue #27 reflect the
    delivered evidence.

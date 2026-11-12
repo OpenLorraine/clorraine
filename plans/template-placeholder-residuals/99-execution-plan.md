@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-11 23:46
-> **Progress**: 29/38 tasks (76%)
+> **Last Updated**: 2026-11-12 01:10
+> **Progress**: 38/38 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -158,21 +158,21 @@ specifications are [03-01](03-01-type-diagnostics.md) and
 **Reference**: [07 §4–§5](07-testing-strategy.md) · AR-16, AR-22
 **Objective**: Prove the complete acceptance surface and the performance budget.
 
-- [ ] 3.1.1 `make asan` all suites green — verify: the runner's summary
-- [ ] 3.1.2 `make ubsan` all suites green — verify: the runner's summary
-- [ ] 3.1.3 `make bench-base COMMIT=b6f12d8`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output
-- [ ] 3.1.4 `make bench-shape` green — verify: the four shape legs
-- [ ] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed`
+- [x] 3.1.1 `make asan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-12 01:10)
+- [x] 3.1.2 `make ubsan` all suites green — verify: the runner's summary ✅ (completed: 2026-11-12 01:10)
+- [x] 3.1.3 `make bench-base COMMIT=b6f12d8`, `make bench`, `make bench-compare` green with equal outputs and the 1% guard — verify: the comparison output ✅ (completed: 2026-11-12 01:10)
+- [x] 3.1.4 `make bench-shape` green — verify: the four shape legs ✅ (completed: 2026-11-12 01:10)
+- [x] 3.1.5 `make verify` all legs green — verify: `verify: all legs passed` ✅ (completed: 2026-11-12 01:10)
 
 ### Step 3.2: Closeout
 
 **Reference**: [01 §Acceptance](01-requirements.md) · AR-10, AR-16
 **Objective**: Record the evidence and sync the project state.
 
-- [ ] 3.2.1 Finalize `plans/template-placeholder-residuals/05-findings.md` with the acceptance metrics, review outcomes, and the gate results — `plans/template-placeholder-residuals/05-findings.md`
-- [ ] 3.2.2 Update the existing PLAN-31 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md`
-- [ ] 3.2.3 Close issue #27 with the delivered evidence and the residual note — GitHub issue #27 via `gh issue close --comment`
-- [ ] 3.2.4 File the follow-up issue for the explicit `text(null)` ICE (AR-10) — GitHub via `gh issue create`
+- [x] 3.2.1 Finalize `plans/template-placeholder-residuals/05-findings.md` with the acceptance metrics, review outcomes, and the gate results — `plans/template-placeholder-residuals/05-findings.md` ✅ (completed: 2026-11-12 01:10)
+- [x] 3.2.2 Update the existing PLAN-31 row in `plans/00-roadmap.md` to Done and correct the progress counters — `plans/00-roadmap.md` ✅ (completed: 2026-11-12 01:10)
+- [x] 3.2.3 Close issue #27 with the delivered evidence and the residual note — GitHub issue #27 via `gh issue close --comment` ✅ (completed: 2026-11-12 01:10)
+- [x] 3.2.4 File the follow-up issue for the explicit `text(null)` ICE (AR-10) — GitHub via `gh issue create` ✅ (completed: 2026-11-12 01:10)
 
 **Deliverables**:
 - [ ] The full gate is green

@@ -109,18 +109,19 @@ docker run --rm --name "${container}" \
 runner=$!
 sleep 30
 
-window="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
-if [ -z "${window}" ]; then
-    echo "a500-smoke: no FS-UAE window" >&2
-    tail -20 "${work}/fs-uae.log" >&2 || true
-    exit 1
-fi
 metric=1
 step=0
-while [ "${step}" -lt 15 ]; do
+while [ "${step}" -lt 30 ]; do
     step=$((step + 1))
     sleep 5
-    DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}"
+    # FS-UAE can recreate its top-level window while it initialises, so the
+    # captured id goes stale. Re-search the visible window on every poll and
+    # keep the first (top-level) match.
+    window="$(DISPLAY="${DISPLAY}" xdotool search --onlyvisible --name 'FS-UAE' 2>/dev/null | head -1 || true)"
+    if [ -z "${window}" ]; then
+        continue
+    fi
+    DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" || continue
     convert "${screenshot}" -crop 430x22+160+88 +repage "${crop}"
     metric="$(compare -metric AE "${crop}" "${golden}" null: 2>&1 || true)"
     metric="${metric%% *}"
