@@ -64,6 +64,6 @@ GNU General Public License, version 3 or later. The full license is in
 `site/public/copperline/aros/` contains the AROS m68k ROM images bundled with
 that Copperline release. AROS is copyright the AROS Development Team and is
 distributed under the AROS Public License. The full text and acknowledgements
-are in that directory. The First Light save state
-(`site/public/demos/first-light.clstate`) contains a copy of these ROMs as part
-of the emulated machine.
+are in that directory. The First Light, Boing, and Prism save states under
+`site/public/demos/` contain a copy of these ROMs as part of the emulated
+machine.

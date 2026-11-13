@@ -1,122 +1,82 @@
 ---
-title: Boing graphics
-description: "The Clorraine Boing demo: chip-memory bitmaps, a copper list, a masked blit, double buffering, and a frame checksum on A500."
+title: Boing
+description: "Boing: a neon-horizon Amiga demo with a dithered sunset, a perspective grid, and a chrome ball bouncing over two chip-memory screens."
 ---
 
-# Boing graphics
+# Boing: Neon Horizon
 
-The Boing demo is the native-video acceptance program. It owns a 320×256×4
-custom display built from two chip-memory bitmaps, draws a checkerboard and a
-shaded ball, and flips one view per frame.
+A 320×256, 16-colour sunset built from chip-memory bitplanes. The sky is a
+dithered gradient, the lower half is a perspective grid, and a 48×48 chrome
+ball bounces across the scene through a one-plane mask. The display flips
+between two bitmaps, so the ball never tears.
 
-<DocFigure
-  src="/screenshots/a500-boing.webp"
-  alt="A chequered Amiga screen with a shaded sphere moving across it."
-  caption="Native capture from the A500 / Kickstart 1.3 / OCS gate."
+<AmigaPlayer
+  poster="/screenshots/boing.webp"
+  state="/demos/boing.clstate"
+  adf="/demos/boing.adf"
+  badge="A500 · 16 colours"
+  caption="Boing: Neon Horizon · compiled with clc · live in Copperline"
+  hint="Runs in your browser with Copperline and AROS. The ball keeps bouncing until you stop it."
 />
 
-## What it exercises
+## What you are looking at
 
-| Capability | Use in the demo |
+| Detail | Value |
 |---|---|
-| Chip memory | Two frame bitmaps and a ball/mask pair |
-| Bitmap drawing | Checkerboard fill and a shaded sphere |
-| Copper | Three background colours change every sixteen scanlines |
-| Blitter | Masked copy of the ball into the visible frame |
-| Double buffering | One frame buffer shown while the other is drawn |
-| Frame checksum | A deterministic final-frame oracle |
-| Display lifecycle | Open a custom screen and restore the system view |
+| Machine | Amiga 500, 68000, OCS, 512 KB chip + 512 KB slow RAM |
+| Display | 320×256, 4 bitplanes, 16 colours, PAL |
+| Runtime | Clorraine `hosted-amiga-13` release build, libnix `nix13` |
+| Emulator | [Copperline](https://copperline.dev/) 1.1.0 with its bundled AROS ROM |
+| Source | [`examples/amiga/boing-showcase.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/boing-showcase.clo) |
 
-## A source excerpt
+The live view restores a saved machine state, so the demo starts without
+waiting for AROS to boot. The first click still downloads the emulator bundle
+and the machine state; after that the browser caches them. No Kickstart ROM or
+Workbench media is downloaded or distributed.
 
-```clorraine
-func drawBackground(borrow bitmap: Bitmap): void {
-    bitmapClear(bitmap, 0);
-    let y: i32 = 0;
-    while (y < HEIGHT) {
-        let x: i32 = 0;
-        while (x < WIDTH) {
-            let pen: u8 = u8(((x / TILE) + (y / TILE)) % 3 + 1);
-            bitmapFill(bitmap, x, y, x + TILE - 1, y + TILE - 1, pen);
-            x = x + TILE;
-        }
-        y = y + TILE;
-    }
-}
-```
+## The scene
 
-```clorraine
-func drawBall(borrow ball: Bitmap, borrow mask: Bitmap): void {
-    bitmapClear(ball, 0);
-    bitmapClear(mask, 0);
-    let radius: i32 = BALL / 2;
-    let y: i32 = 0;
-    while (y < BALL) {
-        let x: i32 = 0;
-        while (x < BALL) {
-            let dx: i32 = x - radius;
-            let dy: i32 = y - radius;
-            let distance: i32 = dx * dx + dy * dy;
-            if (distance <= radius * radius) {
-                let light: i32 = (dx + 10) * (dx + 10) + (dy + 10) * (dy + 10);
-                let shade: i32 = 15 - light / 96;
-                if (shade < 4) {
-                    shade = 4;
-                }
-                bitmapPlot(ball, x, y, u8(shade));
-                bitmapSetPlaneBit(mask, 0, x, y, true);
-            }
-            x = x + 1;
-        }
-        y = y + 1;
-    }
-}
-```
+| Element | Technique |
+|---|---|
+| Sky | A four-pen indigo-to-navy gradient, dithered with a 4×4 Bayer matrix |
+| Sun | A half-disc with horizontal slits that reveal the sky behind it |
+| Mountains | Two ridge silhouettes with a warm rim |
+| Grid | Converging verticals and depth-spaced horizontal rules |
+| Ball | A pre-rendered 48×48 chrome sphere with a cyan rim |
+| Motion | 8.8 fixed-point position and velocity, with edge bounces |
+| Display | Two chip-memory bitmaps, one visible while the other is drawn |
 
-The complete program is
-[`examples/amiga/boing.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/boing.clo).
+## Why it is fast on a 68000
 
-## Run it
+The static scene is drawn once into a chunky byte buffer and converted to
+bitplanes in one call. Each frame only restores the small rectangle behind the
+ball, blits the ball through its mask, and flips the view. The ball and mask are
+pre-rendered, so the 68000 never walks the sphere pixel by pixel during play.
 
-The simplest Amiga path uses `vamos`, but Boing needs a display, so use FS-UAE:
+The demo also drove two runtime improvements: `bitmapFromIndices` writes
+bitplane bytes directly instead of repeating the per-bit bounds check, and
+custom displays can be opened at an explicit screen offset so the emulator's
+presenter sees the whole picture.
+
+## Run it on your own Amiga
+
+- [Download `boing.adf`](/demos/boing.adf) — A500, Kickstart 1.3 or AROS,
+  880 KB.
+
+From a checkout with the SDK:
 
 ```sh
-make sdk-a500-boing
+make run FILE=examples/amiga/boing-showcase.clo \
+  PROFILE=hosted-amiga-13 EMULATOR=1
 ```
 
-That builds for `hosted-amiga-13`, boots FS-UAE as an A500 with licensed
-Kickstart 1.3, shows the live custom display, and compares the final frame
-checksum line and the native capture.
+The program needs a display, so use FS-UAE or Copperline rather than `vamos`.
 
-For an interactive window:
+## Read the source
 
-```sh
-make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1
-```
+The program is one file. Start with `drawBackground`, `buildBall`, and `main`.
 
-## The gate line
-
-The program prints the checksum of the visible frame:
-
-```text
-boing: checksum 0xF58C7129
-```
-
-The A500 gate compares that line and the captured frame. The checksum is
-deterministic because the ball position is fixed-point and the frame count is
-fixed. It is a correctness oracle, not a benchmark.
-
-## What to inspect
-
-- The ball is blitted through a single-plane mask, so the corners are
-  transparent even though the ball bitmap is square.
-- The copper list changes only the background colours, not the ball.
-- The display restores the system view before the program reports.
-- The A500 path uses `-mcrt=nix13`, 68000, and OCS; there is no AGA dependency.
-
-## Learn more
-
-- [SDK coverage](/amiga/sdk-coverage)
+- [`examples/amiga/boing-showcase.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/boing-showcase.clo)
+- [Native video API](/reference/stdlib) — `std.amiga.video`
 - [Amiga profiles](/amiga/profiles)
-- [Emulator workflow](/amiga/emulator)
-- [`std.amiga.video`](https://github.com/OpenLorraine/clorraine/blob/main/stdlib/std.amiga.video.clo)
+- [SDK coverage](/amiga/sdk-coverage)

@@ -13,16 +13,24 @@ withDefaults(
     title: string;
     description: string;
     meta?: string;
+    ratio?: string;
   }>(),
   {
     meta: "",
+    ratio: "16 / 9",
   },
 );
 </script>
 
 <template>
   <a class="cl-example-card" :href="withBase(href)">
-    <img :src="withBase(src)" :alt="alt" loading="lazy" decoding="async" />
+    <img
+      :src="withBase(src)"
+      :alt="alt"
+      loading="lazy"
+      decoding="async"
+      :style="{ aspectRatio: ratio }"
+    />
     <span class="cl-example-card__body">
       <strong>{{ title }}</strong>
       <span>{{ description }}</span>

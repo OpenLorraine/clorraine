@@ -109,7 +109,7 @@ brief will be updated with the required attribution.
 
 ## Browser demo
 
-The live First Light player uses a pinned copy of the
+The live First Light, Boing, and Prism players use a pinned copy of the
 [Copperline](https://copperline.dev/) browser build, version **1.1.0**
 (`dfb12c45c`), with its bundled AROS ROMs.
 
@@ -117,7 +117,7 @@ The live First Light player uses a pinned copy of the
 |---|---|---|
 | Copperline browser build | GNU GPL v3.0 or later | `site/public/copperline/pkg/` |
 | AROS m68k ROMs | AROS Public License | `site/public/copperline/aros/` |
-| First Light ADF and save state | Clorraine output exception; AROS terms for the ROM inside the state | `site/public/demos/` |
+| First Light, Boing, and Prism ADFs and save states | Clorraine output exception; AROS terms for the ROM inside each state | `site/public/demos/` |
 
 The Copperline source is available at
 [CopperlineHQ/Copperline](https://github.com/CopperlineHQ/Copperline), and the

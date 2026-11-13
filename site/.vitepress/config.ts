@@ -184,10 +184,11 @@ export default defineConfig({
           text: "Examples",
           items: [
             { text: "First Light (live)", link: "/examples/first-light" },
+            { text: "Prism (playable)", link: "/examples/prism" },
+            { text: "Boing (live)", link: "/examples/graphics" },
             { text: "Overview", link: "/examples/" },
             { text: "Hello, Amiga", link: "/examples/hello" },
             { text: "String parser", link: "/examples/string-parser" },
-            { text: "Boing graphics", link: "/examples/graphics" },
             { text: "Intuition GUI", link: "/examples/gui" },
           ],
         },

@@ -6,7 +6,7 @@ import type { Theme } from "vitepress";
 
 import DocFigure from "./components/DocFigure.vue";
 import ExampleCard from "./components/ExampleCard.vue";
-import FirstLightPlayer from "./components/FirstLightPlayer.vue";
+import AmigaPlayer from "./components/AmigaPlayer.vue";
 import HomePage from "./components/HomePage.vue";
 import Layout from "./Layout.vue";
 import PartnerCTA from "./components/PartnerCTA.vue";
@@ -26,7 +26,7 @@ export default {
   enhanceApp({ app }) {
     app.component("DocFigure", DocFigure);
     app.component("ExampleCard", ExampleCard);
-    app.component("FirstLightPlayer", FirstLightPlayer);
+    app.component("AmigaPlayer", AmigaPlayer);
     app.component("HomePage", HomePage);
     app.component("PartnerCTA", PartnerCTA);
     app.component("StatusBadge", StatusBadge);

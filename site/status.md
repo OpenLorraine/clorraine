@@ -31,6 +31,8 @@ statement here disagrees with a release note, the release note wins.
 | Windows and macOS installers | <StatusBadge state="progress" /> | No release yet |
 | Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 | First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
+| Prism demo | <StatusBadge state="ready" label="Playable" /> | [Play in Copperline](/examples/prism) |
+| Boing demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/graphics) |
 
 ## What this means
 

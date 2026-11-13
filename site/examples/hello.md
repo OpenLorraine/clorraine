@@ -45,24 +45,32 @@ On AmigaOS through `vamos`, from a checkout with the SDK:
 make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga
 ```
 
-On an A500 with Kickstart 1.3 in FS-UAE:
+On an A1200 with Kickstart 3.1 in FS-UAE:
 
 ```sh
-make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga-13 EMULATOR=1
+make run FILE=examples/hello/hello.clo \
+  PROFILE=hosted-amiga EMULATOR=1
 ```
 
-The A500 path needs the licensed Kickstart 1.3 ROM. The `vamos` path needs no
+On an A500 with Kickstart 1.3:
+
+```sh
+make run FILE=examples/hello/hello.clo \
+  PROFILE=hosted-amiga-13 EMULATOR=1
+```
+
+The emulator paths need a licensed Kickstart ROM. The `vamos` path needs no
 ROM.
 
-## What the A500 sees
+## What Kickstart 3.1 sees
 
-The A500 smoke gate captures the output line from a real Kickstart 1.3 boot:
+The screenshot below is from a real A1200 / Kickstart 3.1 boot. The A500 /
+Kickstart 1.3 smoke gate still checks the same output line:
 
 <DocFigure
-  src="/screenshots/a500-hello-line.png"
-  alt="The captured Amiga screen line: Hello, Amiga, from Clorraine!"
-  caption="Native capture from the A500 / Kickstart 1.3 gate."
-  line
+  src="/screenshots/hello31.png"
+  alt="An AmigaDOS shell on Kickstart 3.1 showing the line Hello, Amiga, from Clorraine!"
+  caption="Native capture from an A1200 / Kickstart 3.1 run."
 />
 
 ## The generated C

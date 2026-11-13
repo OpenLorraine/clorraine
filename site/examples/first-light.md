@@ -10,7 +10,14 @@ The demo opens a 320×256, 16-colour display on an Amiga 500, draws the scene
 into chip-memory bitplanes, and animates the sun's reflection as an eight-phase
 filmstrip. It is a release build of a real program, not a mockup.
 
-<FirstLightPlayer />
+<AmigaPlayer
+  poster="/screenshots/first-light.webp"
+  state="/demos/first-light.clstate"
+  adf="/demos/first-light.adf"
+  badge="A500 · 16 colours"
+  caption="First Light · compiled with clc · live in Copperline"
+  hint="Runs in your browser with Copperline and AROS. First load takes a few seconds."
+/>
 
 ## What you are looking at
 

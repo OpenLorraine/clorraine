@@ -20,30 +20,38 @@ in step.
 The browser build is single-threaded and needs no `SharedArrayBuffer` or
 cross-origin isolation headers, which is why it works on GitHub Pages.
 
-## First Light demo media
+## Demo media
 
-`site/public/demos/first-light.adf` is a bootable ADF containing the release
-build of `examples/amiga/first-light.clo` for the `hosted-amiga-13` profile.
-`site/public/demos/first-light.clstate` is a Copperline save state captured from
-that exact ADF on the A500 machine. The live player loads the state instead of
-booting the floppy, so visitors do not wait for AROS startup.
+`site/public/demos/` contains bootable ADFs and Copperline save states for the
+three live demos:
 
-The state is tied to the Copperline build above. If the bundle is updated,
-regenerate the state with the same build; do not update one without the other.
-The ADF and state are Clorraine output, covered by the Clorraine Output
-Exception. The AROS ROM inside the state remains under the AROS Public License.
-No Kickstart ROM or Workbench media is included.
+| Demo | Source | ADF | State |
+|---|---|---|---|
+| First Light | `examples/amiga/first-light.clo` | `first-light.adf` | `first-light.clstate` |
+| Boing: Neon Horizon | `examples/amiga/boing-showcase.clo` | `boing.adf` | `boing.clstate` |
+| Prism | `examples/amiga/prism.clo` | `prism.adf` | `prism.clstate` |
+
+Each ADF is a `hosted-amiga-13` release build with the demo and a one-line
+`startup-sequence` (`DF0:<program>`). Each state was captured from that exact
+ADF on a Copperline A500, so the live player skips the AROS boot. Prism's state
+is saved from a running game; the First Light and Boing states are ambient.
+
+The states are tied to the Copperline build above. If the bundle is updated,
+regenerate the states with the same build; do not update one without the other.
+The ADFs and states are Clorraine output, covered by the Clorraine Output
+Exception. The AROS ROM inside each state remains under the AROS Public
+License. No Kickstart ROM or Workbench media is included.
 
 ## Regenerating
 
-1. Build `examples/amiga/first-light.clo` with
+1. Build the demo with
    `clorraine build --release --profile hosted-amiga-13`.
-2. Write the binary and a one-line `startup-sequence` (`DF0:first-light`) into
-   a fresh ADF with `xdftool`, and install the `boot1x` boot block.
-3. Boot the ADF on a Copperline A500 with the pinned bundle, wait for the demo,
-   and save the machine state.
+2. Write the binary and a one-line `startup-sequence` (`DF0:<program>`) into a
+   fresh ADF with `xdftool`, and install the `boot1x` boot block.
+3. Boot the ADF on a Copperline A500 with the pinned bundle, wait for the demo
+   (Prism: start a game), and save the machine state.
 4. Copy the ADF and state into `site/public/demos/` and rebuild the site.
 
 The browser state is captured after the demo opens its display. The player
-crops the first rows of the AROS screen border and restores the state on every
+trims the small AROS screen-border corner and restores the state on every
 **Restart**.

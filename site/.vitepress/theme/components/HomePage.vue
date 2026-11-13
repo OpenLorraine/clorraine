@@ -134,6 +134,45 @@ import { withBase } from "vitepress";
           </div>
         </div>
 
+        <div class="cl-arcade">
+          <a
+            class="cl-arcade__card"
+            :href="withBase('/examples/prism')"
+          >
+            <img
+              :src="withBase('/screenshots/prism.webp')"
+              alt="Prism: a colourful brick-breaker title screen with a prism triangle."
+              loading="lazy"
+            />
+            <span class="cl-arcade__body">
+              <span class="cl-arcade__tag">Playable</span>
+              <strong>Prism</strong>
+              <span>
+                A 32-colour brick-breaker with a title screen, six-digit score,
+                three lives, and a quick restart loop.
+              </span>
+            </span>
+          </a>
+          <a
+            class="cl-arcade__card"
+            :href="withBase('/examples/graphics')"
+          >
+            <img
+              :src="withBase('/screenshots/boing.webp')"
+              alt="Boing: a neon sunset, a perspective grid, and a chrome ball."
+              loading="lazy"
+            />
+            <span class="cl-arcade__body">
+              <span class="cl-arcade__tag">Live</span>
+              <strong>Boing: Neon Horizon</strong>
+              <span>
+                A dithered sunset, a perspective grid, and a masked chrome ball
+                over two chip-memory screens.
+              </span>
+            </span>
+          </a>
+        </div>
+
         <div class="cl-tech-strip">
           <span class="cl-tech-strip__label">Acceptance programs</span>
           <a :href="withBase('/examples/graphics')">Boing · chip-memory blits and copper</a>

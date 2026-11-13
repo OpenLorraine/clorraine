@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { withBase } from "vitepress";
 
 /**
- * Minimal typing for the Copperline browser bundle. The bundle is loaded at
- * runtime from a static path, so the site does not bundle the emulator and the
- * page stays a normal VitePress document until the visitor asks for the demo.
+ * Minimal typing for the pinned Copperline browser bundle. The bundle is
+ * loaded from a static path at runtime, so VitePress never bundles the
+ * emulator and a page stays a normal document until the visitor presses play.
  */
 interface CopperlineWasm {
   memory: WebAssembly.Memory;
@@ -18,10 +18,20 @@ interface CopperlineEmu {
   present_ptr(): number;
   present_content_rect(): ArrayLike<number>;
   resync_clock(): void;
-  load_rom(rom: Uint8Array, ext: Uint8Array): void;
+  load_rom(rom: Uint8Array, ext?: Uint8Array): void;
   load_state(state: Uint8Array): void;
   set_floppy_speed(speed: number): void;
   set_volume_percent(percent: number): void;
+  set_port_device(port: number, device: string): void;
+  set_joystick_port(
+    port: number,
+    up: boolean,
+    down: boolean,
+    left: boolean,
+    right: boolean,
+    fire: boolean,
+    button2: boolean,
+  ): void;
   free(): void;
 }
 
@@ -32,13 +42,30 @@ interface CopperlineModule {
 
 type Phase = "idle" | "loading" | "running" | "paused" | "error";
 
-const poster = withBase("/screenshots/first-light.webp");
-const adfUrl = withBase("/demos/first-light.adf");
-const fallbackUrl =
-  "https://copperline.dev/try/?machine=A500&df0=" +
-  encodeURIComponent(
-    "https://openlorraine.github.io/clorraine/demos/first-light.adf",
-  );
+const props = withDefaults(
+  defineProps<{
+    /** Poster shown before the emulator loads. */
+    poster: string;
+    /** Copperline save state for this demo. */
+    state: string;
+    /** Bootable ADF, used as the download and the hosted fallback. */
+    adf: string;
+    /** Small label over the picture. */
+    badge?: string;
+    /** Caption under the picture while the demo is idle. */
+    caption?: string;
+    /** Whether the demo reads a joystick in port 2. */
+    interactive?: boolean;
+    /** Hint shown on the idle screen. */
+    hint?: string;
+  }>(),
+  {
+    badge: "A500 · OCS",
+    caption: "Compiled with clc · live in Copperline",
+    interactive: false,
+    hint: "Runs in your browser with Copperline and AROS. First load takes a few seconds.",
+  },
+);
 
 const phase = ref<Phase>("idle");
 const message = ref("");
@@ -54,6 +81,17 @@ let offscreenContext: CanvasRenderingContext2D | null = null;
 let animation = 0;
 let looping = false;
 let disposed = false;
+let leftHeld = false;
+let rightHeld = false;
+let fireHeld = false;
+
+const posterUrl = computed(() => withBase(props.poster));
+const adfUrl = computed(() => withBase(props.adf));
+const fallbackUrl = computed(() => {
+  if (typeof window === "undefined") return "https://copperline.dev/try/";
+  const disk = new URL(adfUrl.value, window.location.href).href;
+  return `https://copperline.dev/try/?machine=A500&df0=${encodeURIComponent(disk)}`;
+});
 
 /** Fetches a binary asset and reports byte progress when the server allows it. */
 async function fetchBytes(
@@ -89,7 +127,7 @@ async function fetchBytes(
   return result;
 }
 
-/** Draws the current presentation buffer, cropped to a clean 4:3 frame. */
+/** Draws the presentation buffer, trimming the small screen-border corner. */
 function draw(): void {
   const canvas = canvasRef.value;
   if (!canvas || !emulator || !wasm) return;
@@ -116,8 +154,6 @@ function draw(): void {
   );
   offscreenContext.putImageData(new ImageData(pixels, width, height), 0, 0);
 
-  // Copperline reports the active raster box. The first row is the remains of
-  // the AROS screen border, so drop a few lines before centring the 4:3 crop.
   const content = emulator.present_content_rect();
   let sourceX = 0;
   let sourceY = 0;
@@ -136,15 +172,16 @@ function draw(): void {
     }
   }
 
-  const border = Math.min(6, Math.max(0, sourceHeight - 8));
-  const cropHeight = sourceHeight - border;
-  const cropWidth = Math.round((cropHeight * 4) / 3);
-  const visibleWidth = Math.min(cropWidth, sourceWidth);
-  const left =
-    sourceX + Math.max(0, Math.round((sourceWidth - visibleWidth) / 2));
+  // The AROS screen border leaves a small green corner at the top left. A
+  // four-pixel trim removes it without touching the demo picture.
+  const trim = Math.min(4, sourceWidth - 8, sourceHeight - 8);
+  const cropX = sourceX + Math.max(0, trim);
+  const cropY = sourceY + Math.max(0, trim);
+  const cropWidth = sourceWidth - Math.max(0, trim);
+  const cropHeight = sourceHeight - Math.max(0, trim);
 
-  if (canvas.width !== visibleWidth || canvas.height !== cropHeight) {
-    canvas.width = visibleWidth;
+  if (canvas.width !== cropWidth || canvas.height !== cropHeight) {
+    canvas.width = cropWidth;
     canvas.height = cropHeight;
   }
   const context = canvas.getContext("2d", { alpha: false });
@@ -152,13 +189,13 @@ function draw(): void {
   context.imageSmoothingEnabled = false;
   context.drawImage(
     offscreen,
-    left,
-    sourceY + border,
-    visibleWidth,
+    cropX,
+    cropY,
+    cropWidth,
     cropHeight,
     0,
     0,
-    visibleWidth,
+    cropWidth,
     cropHeight,
   );
 }
@@ -181,7 +218,60 @@ function stopLoop(): void {
   cancelAnimationFrame(animation);
 }
 
-/** Loads the emulator, the AROS ROM, and the saved First Light machine. */
+/** Sends the current keyboard/touch stick state to Copperline. */
+function pushStick(): void {
+  emulator?.set_joystick_port(
+    2,
+    false,
+    false,
+    leftHeld,
+    rightHeld,
+    fireHeld,
+    false,
+  );
+}
+
+function onKeyDown(event: KeyboardEvent): void {
+  if (!props.interactive || !emulator) return;
+  if (phase.value !== "running" && phase.value !== "paused") return;
+  const code = event.code;
+  if (code === "ArrowLeft" || code === "KeyA") {
+    leftHeld = true;
+  } else if (code === "ArrowRight" || code === "KeyD") {
+    rightHeld = true;
+  } else if (code === "Space" || code === "Enter") {
+    fireHeld = true;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  pushStick();
+}
+
+function onKeyUp(event: KeyboardEvent): void {
+  if (!props.interactive || !emulator) return;
+  const code = event.code;
+  if (code === "ArrowLeft" || code === "KeyA") {
+    leftHeld = false;
+  } else if (code === "ArrowRight" || code === "KeyD") {
+    rightHeld = false;
+  } else if (code === "Space" || code === "Enter") {
+    fireHeld = false;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  pushStick();
+}
+
+function releaseStick(): void {
+  leftHeld = false;
+  rightHeld = false;
+  fireHeld = false;
+  pushStick();
+}
+
+/** Loads the emulator, AROS, and the saved machine state. */
 async function start(): Promise<void> {
   if (phase.value === "loading" || phase.value === "running") return;
   phase.value = "loading";
@@ -196,7 +286,7 @@ async function start(): Promise<void> {
     wasm = await module.default();
     if (disposed) return;
 
-    message.value = "Loading AROS and the First Light machine…";
+    message.value = "Loading AROS and the saved machine…";
     let loaded = 0;
     const report = (bytes: number, total: number): void => {
       loaded += bytes;
@@ -205,7 +295,7 @@ async function start(): Promise<void> {
     const [rom, ext, state] = await Promise.all([
       fetchBytes(withBase("/copperline/aros/aros-amiga-m68k-rom.bin"), report),
       fetchBytes(withBase("/copperline/aros/aros-amiga-m68k-ext.bin"), report),
-      fetchBytes(withBase("/demos/first-light.clstate"), report),
+      fetchBytes(withBase(props.state), report),
     ]);
     if (disposed) return;
 
@@ -214,6 +304,11 @@ async function start(): Promise<void> {
     machine.set_volume_percent(0);
     machine.load_rom(rom, ext);
     machine.load_state(state);
+    if (props.interactive) {
+      machine.set_port_device(1, "joystick");
+      machine.set_port_device(2, "joystick");
+      machine.set_joystick_port(2, false, false, false, false, false, false);
+    }
     emulator = machine;
     stateBytes = state;
     machine.resync_clock();
@@ -232,6 +327,7 @@ async function start(): Promise<void> {
 function pause(): void {
   if (phase.value !== "running") return;
   stopLoop();
+  releaseStick();
   phase.value = "paused";
 }
 
@@ -250,6 +346,11 @@ function toggle(): void {
 function restart(): void {
   if (!emulator || !stateBytes) return;
   emulator.load_state(stateBytes);
+  if (props.interactive) {
+    emulator.set_port_device(1, "joystick");
+    emulator.set_port_device(2, "joystick");
+  }
+  releaseStick();
   emulator.resync_clock();
   if (phase.value === "paused") {
     phase.value = "running";
@@ -272,19 +373,33 @@ function onVisibility(): void {
   if (!emulator) return;
   if (document.hidden) {
     stopLoop();
+    if (props.interactive) releaseStick();
   } else if (phase.value === "running") {
     emulator.resync_clock();
     startLoop();
   }
 }
 
+function touch(code: "left" | "right" | "fire", pressed: boolean): void {
+  if (code === "left") leftHeld = pressed;
+  if (code === "right") rightHeld = pressed;
+  if (code === "fire") fireHeld = pressed;
+  pushStick();
+}
+
 onMounted(() => {
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", releaseStick);
 });
 
 onBeforeUnmount(() => {
   disposed = true;
   document.removeEventListener("visibilitychange", onVisibility);
+  window.removeEventListener("keydown", onKeyDown);
+  window.removeEventListener("keyup", onKeyUp);
+  window.removeEventListener("blur", releaseStick);
   stopLoop();
   emulator?.free();
   emulator = null;
@@ -295,44 +410,44 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <figure class="fl-player">
-    <div ref="stageRef" class="fl-player__stage">
+  <figure class="ap-player">
+    <div ref="stageRef" class="ap-player__stage">
       <img
         v-if="phase === 'idle' || phase === 'loading' || phase === 'error'"
-        class="fl-player__poster"
-        :src="poster"
-        alt="First Light: a lighthouse on a dark headland beside a calm sea, under a glowing sunrise and a field of stars."
+        class="ap-player__poster"
+        :src="posterUrl"
+        :alt="caption"
       />
       <canvas
         v-show="phase === 'running' || phase === 'paused'"
         ref="canvasRef"
-        class="fl-player__canvas"
+        class="ap-player__canvas"
         role="img"
-        aria-label="The First Light demo running on an emulated Amiga 500."
+        :aria-label="caption"
       ></canvas>
 
-      <div v-if="phase === 'idle'" class="fl-player__veil">
-        <button class="fl-player__play" type="button" @click="start">
-          <span class="fl-player__play-icon" aria-hidden="true">▶</span>
-          Run the demo
+      <div v-if="phase === 'idle'" class="ap-player__veil">
+        <button class="ap-player__play" type="button" @click="start">
+          <span class="ap-player__play-icon" aria-hidden="true">▶</span>
+          {{ interactive ? "Play now" : "Run the demo" }}
         </button>
-        <p class="fl-player__hint">
-          Runs in your browser with Copperline and AROS. First load takes a few
-          seconds.
+        <p class="ap-player__hint">{{ hint }}</p>
+        <p v-if="interactive" class="ap-player__keys">
+          ← → move · Space fires
         </p>
       </div>
 
-      <div v-else-if="phase === 'loading'" class="fl-player__veil">
-        <p class="fl-player__loading">{{ message }}</p>
-        <div class="fl-player__progress" aria-hidden="true">
+      <div v-else-if="phase === 'loading'" class="ap-player__veil">
+        <p class="ap-player__loading">{{ message }}</p>
+        <div class="ap-player__progress" aria-hidden="true">
           <span :style="{ width: `${progress ?? 8}%` }"></span>
         </div>
       </div>
 
-      <div v-else-if="phase === 'error'" class="fl-player__veil">
-        <p class="fl-player__loading">The live demo could not start.</p>
-        <p class="fl-player__hint">{{ message }}</p>
-        <p class="fl-player__links">
+      <div v-else-if="phase === 'error'" class="ap-player__veil">
+        <p class="ap-player__loading">The live demo could not start.</p>
+        <p class="ap-player__hint">{{ message }}</p>
+        <p class="ap-player__links">
           <a :href="fallbackUrl" target="_blank" rel="noopener">
             Open it in Copperline
           </a>
@@ -340,14 +455,14 @@ onBeforeUnmount(() => {
         </p>
       </div>
 
-      <span class="fl-player__badge">A500 · 16 colours</span>
+      <span class="ap-player__badge">{{ badge }}</span>
     </div>
 
-    <figcaption class="fl-player__bar">
-      <div class="fl-player__controls">
+    <figcaption class="ap-player__bar">
+      <div class="ap-player__controls">
         <button
           type="button"
-          class="fl-player__button"
+          class="ap-player__button"
           :disabled="phase === 'idle' || phase === 'loading' || phase === 'error'"
           @click="toggle"
         >
@@ -355,7 +470,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="fl-player__button"
+          class="ap-player__button"
           :disabled="phase !== 'running' && phase !== 'paused'"
           @click="restart"
         >
@@ -363,25 +478,57 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="fl-player__button"
+          class="ap-player__button"
           :disabled="phase !== 'running' && phase !== 'paused'"
           @click="fullscreen"
         >
           Fullscreen
         </button>
       </div>
-      <span class="fl-player__caption">{{
+      <div v-if="interactive" class="ap-player__touch" aria-label="Touch controls">
+        <button
+          type="button"
+          class="ap-player__touch-button"
+          aria-label="Move left"
+          @pointerdown.prevent="touch('left', true)"
+          @pointerup.prevent="touch('left', false)"
+          @pointerleave="touch('left', false)"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          class="ap-player__touch-button"
+          aria-label="Move right"
+          @pointerdown.prevent="touch('right', true)"
+          @pointerup.prevent="touch('right', false)"
+          @pointerleave="touch('right', false)"
+        >
+          ▶
+        </button>
+        <button
+          type="button"
+          class="ap-player__touch-button ap-player__touch-button--fire"
+          aria-label="Fire"
+          @pointerdown.prevent="touch('fire', true)"
+          @pointerup.prevent="touch('fire', false)"
+          @pointerleave="touch('fire', false)"
+        >
+          Fire
+        </button>
+      </div>
+      <span class="ap-player__caption">{{
         phase === "running" || phase === "paused"
-          ? "First Light · compiled with clc · live in Copperline"
-          : "First Light · a real A500 program, not a mockup"
+          ? "Running in Copperline with AROS"
+          : caption
       }}</span>
     </figcaption>
-    <p class="fl-player__sr" aria-live="polite">{{ message }}</p>
+    <p class="ap-player__sr" aria-live="polite">{{ message }}</p>
   </figure>
 </template>
 
 <style scoped>
-.fl-player {
+.ap-player {
   margin: 28px 0;
   overflow: hidden;
   border: 1px solid var(--vp-c-divider);
@@ -390,29 +537,29 @@ onBeforeUnmount(() => {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
 }
 
-.fl-player__stage {
+.ap-player__stage {
   position: relative;
   aspect-ratio: 4 / 3;
   overflow: hidden;
   background: #05070a;
 }
 
-.fl-player__poster,
-.fl-player__canvas {
+.ap-player__poster,
+.ap-player__canvas {
   position: absolute;
   inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: fill;
   image-rendering: pixelated;
 }
 
-.fl-player__canvas {
+.ap-player__canvas {
   background: #05070a;
 }
 
-.fl-player__veil {
+.ap-player__veil {
   position: absolute;
   inset: 0;
   display: flex;
@@ -427,7 +574,7 @@ onBeforeUnmount(() => {
     linear-gradient(180deg, rgba(4, 6, 10, 0.1), rgba(4, 6, 10, 0.55));
 }
 
-.fl-player__play {
+.ap-player__play {
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -448,13 +595,13 @@ onBeforeUnmount(() => {
     border-color 0.15s ease;
 }
 
-.fl-player__play:hover {
+.ap-player__play:hover {
   background: rgba(245, 165, 36, 0.16);
   border-color: #f5a524;
   transform: translateY(-1px);
 }
 
-.fl-player__play-icon {
+.ap-player__play-icon {
   display: grid;
   place-items: center;
   width: 26px;
@@ -466,22 +613,30 @@ onBeforeUnmount(() => {
   padding-left: 2px;
 }
 
-.fl-player__hint {
-  max-width: 34ch;
+.ap-player__hint {
+  max-width: 40ch;
   margin: 0;
   color: #c4cfdb;
   font-size: 12.5px;
   line-height: 1.5;
 }
 
-.fl-player__loading {
+.ap-player__keys {
+  margin: 0;
+  color: #f5c77e;
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.ap-player__loading {
   margin: 0;
   color: #f4e8ce;
   font-size: 14px;
   font-weight: 560;
 }
 
-.fl-player__progress {
+.ap-player__progress {
   width: min(280px, 70%);
   height: 3px;
   overflow: hidden;
@@ -489,7 +644,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.14);
 }
 
-.fl-player__progress span {
+.ap-player__progress span {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -497,7 +652,7 @@ onBeforeUnmount(() => {
   transition: width 0.2s ease;
 }
 
-.fl-player__links {
+.ap-player__links {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -506,11 +661,11 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
 }
 
-.fl-player__links a {
+.ap-player__links a {
   color: #ffd68a;
 }
 
-.fl-player__badge {
+.ap-player__badge {
   position: absolute;
   top: 14px;
   left: 14px;
@@ -526,7 +681,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(6px);
 }
 
-.fl-player__bar {
+.ap-player__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -536,12 +691,13 @@ onBeforeUnmount(() => {
   background: #090d12;
 }
 
-.fl-player__controls {
+.ap-player__controls {
   display: flex;
   gap: 6px;
 }
 
-.fl-player__button {
+.ap-player__button,
+.ap-player__touch-button {
   min-height: 30px;
   padding: 0 11px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -552,19 +708,36 @@ onBeforeUnmount(() => {
   font-size: 11.5px;
   font-weight: 560;
   cursor: pointer;
+  touch-action: none;
 }
 
-.fl-player__button:hover:not(:disabled) {
+.ap-player__button:hover:not(:disabled),
+.ap-player__touch-button:hover {
   border-color: rgba(245, 165, 36, 0.55);
   color: #ffe1a6;
 }
 
-.fl-player__button:disabled {
+.ap-player__button:disabled {
   opacity: 0.38;
   cursor: default;
 }
 
-.fl-player__caption {
+.ap-player__touch {
+  display: flex;
+  gap: 6px;
+}
+
+.ap-player__touch-button {
+  min-width: 38px;
+  color: #ffe1a6;
+}
+
+.ap-player__touch-button--fire {
+  min-width: 52px;
+  border-color: rgba(245, 165, 36, 0.45);
+}
+
+.ap-player__caption {
   color: #7f8c9c;
   font-family: var(--vp-font-family-mono);
   font-size: 10px;
@@ -572,7 +745,7 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
-.fl-player__sr {
+.ap-player__sr {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -581,14 +754,14 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .fl-player__bar {
+@media (max-width: 720px) {
+  .ap-player__bar {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
   }
 
-  .fl-player__caption {
+  .ap-player__caption {
     text-align: left;
   }
 }

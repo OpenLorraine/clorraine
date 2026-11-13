@@ -58,8 +58,9 @@ production URL.
 
 ## Assets
 
-- Screenshots are derived from `docs/amiga-sdk/*.png` and the First Light
-  Copperline capture; they live in `public/screenshots/`.
+- Screenshots are derived from `docs/amiga-sdk/*.png`, the First Light, Boing,
+  and Prism Copperline captures, and the Kickstart 3.1 GUI and shell captures;
+  they live in `public/screenshots/`.
 - The social preview is `public/og.png` (1200×630).
 - The logo and favicon are `public/logo.svg` and `public/favicon.svg`.
 - Inter and JetBrains Mono are served locally from
@@ -78,10 +79,13 @@ The First Light player is a pinned, self-hosted Copperline 1.1.0 bundle:
 | `public/copperline/aros/` | AROS ROMs, license, acknowledgements |
 | `public/demos/first-light.clstate` | Saved Copperline machine state |
 | `public/demos/first-light.adf` | Bootable A500 ADF of the same build |
+| `public/demos/boing.clstate` | Saved Copperline machine state |
+| `public/demos/boing.adf` | Bootable A500 ADF of the same build |
+| `public/demos/prism.clstate` | Saved Copperline machine state (running game) |
+| `public/demos/prism.adf` | Bootable A500 ADF of the same build |
 
-The state is tied to the bundle. If you update `public/copperline/`, regenerate
-the state and the ADF from the same Copperline build; otherwise the player may
-refuse the state or run a different demo. The provenance and regeneration steps
-are in `public/copperline/NOTICE.md`. The ADF is built from
-`examples/amiga/first-light.clo` with the `--release --profile hosted-amiga-13`
-options.
+The states are tied to the bundle. If you update `public/copperline/`,
+regenerate every state and ADF from the same Copperline build; otherwise the
+player may refuse a state or run a different demo. The provenance and
+regeneration steps are in `public/copperline/NOTICE.md`. The ADFs are built from
+their sources with the `--release --profile hosted-amiga-13` options.
