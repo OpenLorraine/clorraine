@@ -35,6 +35,9 @@ export default defineConfig({
   cleanUrls: true,
   // `README.md` documents the site package; it is not a public page.
   srcExclude: ["README.md"],
+  // Downloadable demo media lives in `public/demos/`; the dead-link checker
+  // only understands pages, so exclude those binary assets from it.
+  ignoreDeadLinks: [/^\/demos\//],
   lastUpdated: true,
   sitemap: {
     hostname: "https://openlorraine.github.io/clorraine/",
@@ -179,6 +182,7 @@ export default defineConfig({
         {
           text: "Examples",
           items: [
+            { text: "First Light (live)", link: "/examples/first-light" },
             { text: "Overview", link: "/examples/" },
             { text: "Hello, Amiga", link: "/examples/hello" },
             { text: "String parser", link: "/examples/string-parser" },

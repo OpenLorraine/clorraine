@@ -6,10 +6,10 @@ import type { Theme } from "vitepress";
 
 import DocFigure from "./components/DocFigure.vue";
 import ExampleCard from "./components/ExampleCard.vue";
+import FirstLightPlayer from "./components/FirstLightPlayer.vue";
 import HomePage from "./components/HomePage.vue";
 import Layout from "./Layout.vue";
 import PartnerCTA from "./components/PartnerCTA.vue";
-import ScreenshotCard from "./components/ScreenshotCard.vue";
 import StatusBadge from "./components/StatusBadge.vue";
 
 import "./custom.css";
@@ -26,9 +26,9 @@ export default {
   enhanceApp({ app }) {
     app.component("DocFigure", DocFigure);
     app.component("ExampleCard", ExampleCard);
+    app.component("FirstLightPlayer", FirstLightPlayer);
     app.component("HomePage", HomePage);
     app.component("PartnerCTA", PartnerCTA);
-    app.component("ScreenshotCard", ScreenshotCard);
     app.component("StatusBadge", StatusBadge);
   },
 } satisfies Theme;

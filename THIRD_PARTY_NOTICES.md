@@ -49,3 +49,21 @@ library-call macros used by `compiler/runtime/shim_hosted_amiga_optional_rtg.c`.
 The full P96 varargs macro forms and the PIP/overlay and palette APIs are
 omitted. The vbcc branch uses plain prototypes; the compiler's `amiga.lib` provides the
 P96 stubs for the build-only corpus leg.
+
+## Copperline browser build
+
+`site/public/copperline/pkg/` contains an unmodified copy of the Copperline
+**v1.1.0** browser build (JavaScript and WebAssembly) used by the live First
+Light player. Copperline is copyright its contributors and licensed under the
+GNU General Public License, version 3 or later. The full license is in
+`site/public/copperline/LICENSE`; the corresponding source is
+<https://github.com/CopperlineHQ/Copperline/tree/v1.1.0>.
+
+## AROS ROMs
+
+`site/public/copperline/aros/` contains the AROS m68k ROM images bundled with
+that Copperline release. AROS is copyright the AROS Development Team and is
+distributed under the AROS Public License. The full text and acknowledgements
+are in that directory. The First Light save state
+(`site/public/demos/first-light.clstate`) contains a copy of these ROMs as part
+of the emulated machine.

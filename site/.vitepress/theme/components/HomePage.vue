@@ -22,15 +22,12 @@ import { withBase } from "vitepress";
             toolchains and emulators you already use.
           </p>
           <div class="cl-actions">
-            <a class="cl-btn cl-btn--primary" :href="withBase('/language/')">
-              Explore the language
+            <a class="cl-btn cl-btn--primary" :href="withBase('/examples/first-light')">
+              Run the demo
               <span aria-hidden="true">→</span>
             </a>
-            <a
-              class="cl-btn cl-btn--ghost"
-              :href="withBase('/guide/quick-start')"
-            >
-              Quick start
+            <a class="cl-btn cl-btn--ghost" :href="withBase('/language/')">
+              Explore the language
             </a>
           </div>
           <p class="cl-hero__note">
@@ -39,37 +36,24 @@ import { withBase } from "vitepress";
           </p>
         </div>
 
-        <div class="cl-terminal" aria-label="Hello world source and output">
-          <div class="cl-terminal__bar">
-            <span class="cl-dots" aria-hidden="true">
-              <i></i><i></i><i></i>
+        <a
+          class="cl-showcase"
+          :href="withBase('/examples/first-light')"
+          aria-label="Run the First Light Amiga demo live in your browser"
+        >
+          <img
+            :src="withBase('/screenshots/first-light.webp')"
+            alt="First Light: a lighthouse on a dark headland beside a calm sea, under a glowing sunrise and a field of stars."
+          />
+          <span class="cl-showcase__badge">Live demo · A500</span>
+          <span class="cl-showcase__overlay">
+            <span class="cl-showcase__play" aria-hidden="true">▶</span>
+            <span class="cl-showcase__copy">
+              <strong>First Light</strong>
+              <span>16 colours · 320×256 · one blit per frame</span>
             </span>
-            <span class="cl-terminal__file">hello.clo</span>
-            <span class="cl-terminal__tag">host</span>
-          </div>
-          <pre class="cl-code"><code><span class="tok-kw">module</span> demo.Hello;
-
-<span class="tok-kw">import</span> { println } <span class="tok-kw">from</span> std.io;
-
-<span class="tok-kw">func</span> <span class="tok-fn">main</span>(): <span class="tok-type">i32</span> {
-    <span class="tok-kw">let</span> who: <span class="tok-type">str</span> = <span class="tok-str">"Amiga"</span>;
-    println(<span class="tok-str">$"Hello, {who}, from Clorraine!"</span>);
-    <span class="tok-kw">return</span> <span class="tok-num">0</span>;
-}</code></pre>
-          <div class="cl-terminal__output">
-            <div class="cl-terminal__cmd">
-              <span class="cl-prompt" aria-hidden="true">$</span>
-              clorraine run hello.clo
-            </div>
-            <div class="cl-terminal__result">
-              Hello, Amiga, from Clorraine!
-            </div>
-          </div>
-          <div class="cl-terminal__footer">
-            <span>One C99 translation unit</span>
-            <span class="cl-terminal__ok">exit 0</span>
-          </div>
-        </div>
+          </span>
+        </a>
       </div>
     </section>
 
@@ -98,37 +82,64 @@ import { withBase } from "vitepress";
       <div class="cl-wrap">
         <header class="cl-section__head">
           <p class="cl-eyebrow">See it run</p>
-          <h2>Real code. Real Amiga screens.</h2>
+          <h2>A real Amiga program, live in your browser.</h2>
           <p>
-            Every capture below comes from the project's FS-UAE acceptance
-            runs, not from a mockup. The programs are built from the same source
-            tree you can clone today.
+            First Light is written in Clorraine, compiled to C99, and built for
+            an A500. The player restores a saved machine state, so the demo
+            starts without waiting for an operating system boot.
           </p>
         </header>
-        <div class="cl-shots">
-          <ScreenshotCard
-            class="cl-shot--wide"
-            src="/screenshots/a500-gui.webp"
-            alt="A Clorraine Intuition window on an Amiga screen, with a name field, a Say hello button, and a ready status line."
-            caption="Intuition: windows, gadgets, requesters, and keyboard shortcuts."
-            tag="A500 · KS 1.3"
-          />
-          <ScreenshotCard
-            src="/screenshots/a500-boing.webp"
-            alt="A chequered Amiga screen with a shaded sphere moving across it, drawn by the Clorraine Boing demo."
-            caption="Boing: chip-memory bitmaps, a copper list, and a masked blit."
-            tag="A500 · KS 1.3"
-          />
-          <ScreenshotCard
-            src="/screenshots/a500-assets.webp"
-            alt="The Clorraine ILBM viewer showing a checkerboard and a diamond image on a dark blue screen."
-            caption="DOS and assets: an ILBM image decoded and displayed."
-            tag="A500 · KS 1.3"
-          />
+
+        <div class="cl-feature">
+          <a
+            class="cl-feature__media"
+            :href="withBase('/examples/first-light')"
+          >
+            <img
+              :src="withBase('/screenshots/first-light.webp')"
+              alt="First Light: the lighthouse and sunrise on the Amiga screen."
+              loading="lazy"
+            />
+            <span class="cl-feature__play" aria-hidden="true">▶</span>
+          </a>
+          <div class="cl-feature__copy">
+            <p class="cl-eyebrow">First Light</p>
+            <h3>Sixteen colours. One 68000. No mockups.</h3>
+            <p>
+              A dawn seascape with an ordered-dither sky, a radial sun glow,
+              chip-memory bitplanes, and a broken water reflection. The moving
+              water is pre-rendered into eight phases, so each frame costs one
+              blit and one flip.
+            </p>
+            <ul class="cl-checks">
+              <li>320×256, 4 bitplanes, PAL A500 / OCS.</li>
+              <li>Runs in Copperline with its bundled AROS ROM.</li>
+              <li>Source, ADF, and the saved state are all in the repository.</li>
+            </ul>
+            <div class="cl-actions cl-actions--tight">
+              <a
+                class="cl-btn cl-btn--primary"
+                :href="withBase('/examples/first-light')"
+              >
+                Run it live
+                <span aria-hidden="true">→</span>
+              </a>
+              <a
+                class="cl-btn cl-btn--ghost-dark"
+                href="https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/first-light.clo"
+              >
+                Read the source
+              </a>
+            </div>
+          </div>
         </div>
-        <p class="cl-section__more">
-          <a :href="withBase('/examples/')">Browse the examples →</a>
-        </p>
+
+        <div class="cl-tech-strip">
+          <span class="cl-tech-strip__label">Acceptance programs</span>
+          <a :href="withBase('/examples/graphics')">Boing · chip-memory blits and copper</a>
+          <a :href="withBase('/examples/gui')">Intuition · windows, gadgets, menus</a>
+          <a :href="withBase('/amiga/screenshots')">ILBM, sprites, audio, layers</a>
+        </div>
       </div>
     </section>
 
@@ -257,7 +268,7 @@ observe(s);</code></pre>
             </span>
           </a>
           <a class="cl-evidence__card" :href="withBase('/project/licensing')">
-            <span class="cl-evidence__tag">Licence</span>
+            <span class="cl-evidence__tag">License</span>
             <strong>Apache 2.0, output stays yours</strong>
             <span>
               Fork it, bundle it, sell it, or ship proprietary programs built

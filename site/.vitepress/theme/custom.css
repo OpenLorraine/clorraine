@@ -413,6 +413,10 @@ button:focus-visible,
   margin-top: 32px;
 }
 
+.cl-actions--tight {
+  margin-top: 22px;
+}
+
 .cl-btn {
   display: inline-flex;
   align-items: center;
@@ -458,11 +462,114 @@ button:focus-visible,
   background: rgba(245, 165, 36, 0.07);
 }
 
+.cl-btn--ghost-dark {
+  border-color: var(--vp-c-divider);
+  background: transparent;
+  color: var(--vp-c-text-1);
+}
+
+.cl-btn--ghost-dark:hover {
+  border-color: var(--cl-amber);
+  background: color-mix(in srgb, var(--cl-amber) 7%, transparent);
+}
+
 .cl-hero__note {
   margin: 22px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
   color: #8f9dad;
+}
+
+/* The First Light hero capture */
+
+.cl-showcase {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--cl-radius);
+  background: #05070a;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(245, 165, 36, 0.06) inset;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.cl-showcase:hover {
+  transform: translateY(-3px);
+  border-color: rgba(245, 165, 36, 0.5);
+  text-decoration: none;
+}
+
+.cl-showcase img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cl-showcase__badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  padding: 5px 9px;
+  border: 1px solid rgba(245, 165, 36, 0.34);
+  border-radius: 999px;
+  background: rgba(5, 7, 10, 0.7);
+  color: #f5c77e;
+  font-family: var(--vp-font-family-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  backdrop-filter: blur(6px);
+}
+
+.cl-showcase__overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 34px 20px 18px;
+  background: linear-gradient(transparent, rgba(3, 4, 8, 0.92));
+}
+
+.cl-showcase__play {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding-left: 2px;
+  border-radius: 50%;
+  background: var(--cl-amber-bright);
+  color: #171106;
+  font-size: 15px;
+  box-shadow: 0 0 0 6px rgba(245, 165, 36, 0.14);
+}
+
+.cl-showcase__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cl-showcase__copy strong {
+  color: #f7fafc;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.cl-showcase__copy span {
+  overflow: hidden;
+  color: #a7b5c5;
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Terminal panel */
@@ -665,74 +772,97 @@ button:focus-visible,
 }
 
 /* -------------------------------------------------------------------------
-   Home: screenshots
+   Home: First Light feature
    ------------------------------------------------------------------------- */
 
-.cl-shots {
+.cl-feature {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.cl-shot--wide {
-  grid-column: 1 / -1;
-}
-
-.cl-shot--wide .cl-shot__frame {
-  height: auto;
-}
-
-.cl-shot--wide .cl-shot__frame img {
-  height: auto;
-}
-
-.cl-shot {
-  margin: 0;
-}
-
-.cl-shot__frame {
-  display: flex;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 48px;
   align-items: center;
-  justify-content: center;
-  height: 300px;
+}
+
+.cl-feature__media {
+  position: relative;
+  display: block;
   overflow: hidden;
   border: 1px solid var(--vp-c-divider);
-  border-radius: var(--cl-radius-sm);
+  border-radius: var(--cl-radius);
   background: #05070a;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
 }
 
-.cl-shot__frame img {
+.cl-feature__media img {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  image-rendering: auto;
+  height: auto;
   transition: transform 0.4s ease;
 }
 
-.cl-shot:hover .cl-shot__frame img {
-  transform: scale(1.015);
+.cl-feature__media:hover img {
+  transform: scale(1.012);
 }
 
-.cl-shot__caption {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 2px 0;
-  font-size: 12.5px;
-  line-height: 1.5;
+.cl-feature__play {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding-left: 2px;
+  border-radius: 50%;
+  background: var(--cl-amber-bright);
+  color: #171106;
+  font-size: 16px;
+  box-shadow: 0 0 0 6px rgba(245, 165, 36, 0.16);
+}
+
+.cl-feature__copy h3 {
+  margin: 0 0 14px;
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  color: var(--vp-c-text-1);
+}
+
+.cl-feature__copy p:not(.cl-eyebrow) {
+  margin: 0;
   color: var(--vp-c-text-2);
+  font-size: 1.02rem;
+  line-height: 1.72;
 }
 
-.cl-shot__tag {
-  flex: none;
-  font-family: var(--vp-font-family-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
+.cl-tech-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 24px;
+  margin-top: 44px;
+  padding: 18px 22px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-alt);
+  font-size: 12.5px;
+}
+
+.cl-tech-strip__label {
   color: var(--vp-c-text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cl-tech-strip a {
+  color: var(--vp-c-text-2);
+  text-decoration: none;
+}
+
+.cl-tech-strip a:hover {
+  color: var(--cl-amber);
+  text-decoration: underline;
 }
 
 /* -------------------------------------------------------------------------
@@ -1138,6 +1268,15 @@ button:focus-visible,
     gap: 40px;
   }
 
+  .cl-feature {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .cl-showcase__copy span {
+    white-space: normal;
+  }
+
   .cl-pipeline {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1193,18 +1332,6 @@ button:focus-visible,
 
   .cl-stat:nth-child(n + 3) {
     border-top: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  .cl-shots {
-    grid-template-columns: 1fr;
-  }
-
-  .cl-shot--wide {
-    grid-column: auto;
-  }
-
-  .cl-shot:not(.cl-shot--wide) .cl-shot__frame {
-    height: 230px;
   }
 
   .cl-evidence {

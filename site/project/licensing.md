@@ -107,6 +107,29 @@ redistribute the NDK archive or a header bundle.
 If a future agreement changes this policy, the licensing page and the project
 brief will be updated with the required attribution.
 
+## Browser demo
+
+The live First Light player uses a pinned copy of the
+[Copperline](https://copperline.dev/) browser build, version **1.1.0**
+(`dfb12c45c`), with its bundled AROS ROMs.
+
+| Component | License | Where |
+|---|---|---|
+| Copperline browser build | GNU GPL v3.0 or later | `site/public/copperline/pkg/` |
+| AROS m68k ROMs | AROS Public License | `site/public/copperline/aros/` |
+| First Light ADF and save state | Clorraine output exception; AROS terms for the ROM inside the state | `site/public/demos/` |
+
+The Copperline source is available at
+[CopperlineHQ/Copperline](https://github.com/CopperlineHQ/Copperline), and the
+pinned release tree is
+[v1.1.0](https://github.com/CopperlineHQ/Copperline/tree/v1.1.0). The full
+notices are in
+[`site/public/copperline/NOTICE.md`](https://github.com/OpenLorraine/clorraine/blob/main/site/public/copperline/NOTICE.md).
+
+The player loads locally in the browser. It does not send the demo state or any
+machine data to a server. No Kickstart ROM or Workbench media is distributed;
+the AROS ROM is the open-source replacement Copperline ships.
+
 ## Third-party material
 
 The repository includes two notable third-party components:

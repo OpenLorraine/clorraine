@@ -58,8 +58,8 @@ production URL.
 
 ## Assets
 
-- Screenshots are derived from `docs/amiga-sdk/*.png` and live in
-  `public/screenshots/`.
+- Screenshots are derived from `docs/amiga-sdk/*.png` and the First Light
+  Copperline capture; they live in `public/screenshots/`.
 - The social preview is `public/og.png` (1200×630).
 - The logo and favicon are `public/logo.svg` and `public/favicon.svg`.
 - Inter and JetBrains Mono are served locally from
@@ -67,3 +67,21 @@ production URL.
 - The canonical editor grammar in `editors/clorraine.tmLanguage.json` is loaded
   for syntax highlighting, so there is one grammar for the site and the VS Code
   extension.
+
+## Live demo assets
+
+The First Light player is a pinned, self-hosted Copperline 1.1.0 bundle:
+
+| Path | Contents |
+|---|---|
+| `public/copperline/pkg/` | Copperline browser JavaScript and WebAssembly |
+| `public/copperline/aros/` | AROS ROMs, license, acknowledgements |
+| `public/demos/first-light.clstate` | Saved Copperline machine state |
+| `public/demos/first-light.adf` | Bootable A500 ADF of the same build |
+
+The state is tied to the bundle. If you update `public/copperline/`, regenerate
+the state and the ADF from the same Copperline build; otherwise the player may
+refuse the state or run a different demo. The provenance and regeneration steps
+are in `public/copperline/NOTICE.md`. The ADF is built from
+`examples/amiga/first-light.clo` with the `--release --profile hosted-amiga`
+options.
