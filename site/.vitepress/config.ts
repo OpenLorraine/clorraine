@@ -33,8 +33,9 @@ export default defineConfig({
   lang: "en",
   base: "/clorraine/",
   cleanUrls: true,
-  // `README.md` documents the site package; it is not a public page.
-  srcExclude: ["README.md"],
+  // `README.md` documents the site package and `public/` holds static assets;
+  // neither should be rendered as a documentation page.
+  srcExclude: ["README.md", "public/**"],
   // Downloadable demo media lives in `public/demos/`; the dead-link checker
   // only understands pages, so exclude those binary assets from it.
   ignoreDeadLinks: [/^\/demos\//],
