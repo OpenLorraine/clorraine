@@ -29,7 +29,8 @@ statement here disagrees with a release note, the release note wins.
 | Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
 | VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
 | Windows and macOS installers | <StatusBadge state="progress" /> | No release yet |
-| Documentation site | <StatusBadge state="progress" label="This site" /> | Being published now |
+| Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
+| First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
 
 ## What this means
 
