@@ -1,5 +1,10 @@
 # Clorraine v1.1.2
 
+> **Historical release.** v1.1.2 was published under the MIT License. The
+> repository now uses the Apache License 2.0 with the Clorraine Output
+> Exception; see `LICENSE`, `LICENSE-EXCEPTION.md`, and the README for the
+> current terms.
+
 Clorraine is a compiler for the frozen v1.0 language with the approved v1.1
 language surfaces, plus a build/run driver for the `host`, `hosted-amiga`,
 `hosted-amiga-13`, and `freestanding` profiles. v1.1.2 is a patch release; the
@@ -69,8 +74,8 @@ remaining libnix constructors still run on both m68k profiles.
 
 ## Licence
 
-MIT. Third-party notices, including the Hamurabi port, are in
-`THIRD_PARTY_NOTICES.md`. The binary tarball includes that file and
+MIT, as published for v1.1.2. Third-party notices, including the Hamurabi
+port, are in `THIRD_PARTY_NOTICES.md`. The binary tarball includes that file and
 `docs/known-limitations.md`, so the licence and limitations links in the
 shipped README resolve; the other README links point to the source tree.
 

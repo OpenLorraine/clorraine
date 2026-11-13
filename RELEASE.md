@@ -20,6 +20,13 @@ complete while the tag and artifacts remain unpublished.
 | Specification | Frozen v1.0 chapters plus the approved v1.1 amendments; the two GCC release rows in §13 were updated by the separate PLAN-26 ruling |
 | aarch64 artefact | Deferred; aarch64 host builds remain supported |
 
+> **License change after publication (2026-11-13).** v1.1.2 was published
+> under the MIT License, as recorded in this runbook. The repository now uses
+> the Apache License 2.0 with the Clorraine Output Exception for future
+> releases. The published v1.1.2 artifacts are unchanged and remain available
+> under MIT. Future release artifacts should include `LICENSE`,
+> `LICENSE-EXCEPTION.md`, `NOTICE`, and `TRADEMARKS.md`.
+
 The version of record is set in `compiler/Cargo.toml` and mirrored in
 `Cargo.lock`. The workspace extension version in `tools/vscode/package.json`
 and its lock are bumped with the release. The release is manual; release
@@ -76,7 +83,7 @@ Gate evidence for the gated commit:
 | `make verify` | exit 0; `verify: all legs passed` |
 | `make vscode-check` | exit 0; extension type-check, tests, `.vsix` package audit, and packaged-client smoke passed (Node 22.23.3) |
 
-## Licence and metadata audit
+## Licence and metadata audit (v1.1.2, as published)
 
 - [x] `LICENSE` contains the MIT text with the OpenLorraine copyright line
 - [x] `compiler/Cargo.toml` declares `version = "1.1.2"`, `license = "MIT"`, a

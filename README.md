@@ -125,6 +125,18 @@ The accepted limitations of the v1.0 and v1.1 releases are recorded in
 
 ## License
 
-Clorraine is released under the MIT License. See [LICENSE](LICENSE) for the full text.
-Third-party notices for ported source are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Clorraine is open source under the OSI-approved
+[Apache License 2.0](LICENSE), with the
+[Clorraine Output Exception](LICENSE-EXCEPTION.md).
+
+You may use, modify, and distribute Clorraine, including commercially. You may
+sell software built with it. Apache 2.0 also permits redistributing or selling
+copies of the compiler itself. The compiler's runtime and standard-library code
+embedded in your programs may be distributed under your own terms, including
+proprietary terms. You do not need permission to fork Clorraine, bundle it in
+an IDE or SDK, or sell support; the trademark policy applies to the Clorraine
+name and logo.
+
+The [trademark policy](TRADEMARKS.md) explains how the Clorraine name and logo
+may be used. Third-party notices for ported source and vendored definitions are
+in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

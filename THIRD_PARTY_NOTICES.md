@@ -1,5 +1,10 @@
 # Third-Party Notices
 
+Clorraine's first-party code is licensed under the Apache License 2.0, with
+the Clorraine Output Exception (see `LICENSE` and `LICENSE-EXCEPTION.md`). The
+material below remains under its own license, and those terms take precedence
+for the named files.
+
 ## Hamurabi
 
 `examples/amiga/hamurabi.clo` is a Clorraine port of `full/hamurabi.c` from

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The repository license changed from MIT to the OSI-approved Apache License
+  2.0, with the Clorraine Output Exception for compiled programs and embedded
+  runtime and standard-library code. Clorraine is now open source: forks,
+  bundling, and commercial distribution are allowed. The trademark policy is
+  in TRADEMARKS.md. Releases published before the change remain available under
+  MIT.
+
 ## [1.1.2] - 2026-11-11
 
 ### Changed

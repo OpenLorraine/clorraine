@@ -24,7 +24,16 @@ rmSync(stage, { recursive: true, force: true });
 mkdirSync(join(stage, "syntaxes"), { recursive: true });
 cpSync(join(packageRoot, "package.json"), join(stage, "package.json"));
 cpSync(join(packageRoot, "README.md"), join(stage, "README.md"));
-cpSync(join(repoRoot, "LICENSE"), join(stage, "LICENSE"));
+// The staged extension keeps the license beside its manifest. The `.txt` name
+// matches the packaged audit and the standard VS Code license lookup. The
+// output exception, NOTICE, and trademark policy travel with it.
+cpSync(join(repoRoot, "LICENSE"), join(stage, "LICENSE.txt"));
+cpSync(
+  join(repoRoot, "LICENSE-EXCEPTION.md"),
+  join(stage, "LICENSE-EXCEPTION.md"),
+);
+cpSync(join(repoRoot, "NOTICE"), join(stage, "NOTICE"));
+cpSync(join(repoRoot, "TRADEMARKS.md"), join(stage, "TRADEMARKS.md"));
 cpSync(join(packageRoot, ".vscodeignore"), join(stage, ".vscodeignore"));
 cpSync(
   join(packageRoot, "language-configuration.json"),

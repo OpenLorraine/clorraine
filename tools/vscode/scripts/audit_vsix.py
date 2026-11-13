@@ -23,6 +23,9 @@ REQUIRED = (
     "extension/language-configuration.json",
     "extension/README.md",
     "extension/LICENSE.txt",
+    "extension/LICENSE-EXCEPTION.md",
+    "extension/NOTICE",
+    "extension/TRADEMARKS.md",
 )
 FORBIDDEN_PREFIXES = ("extension/src/", "extension/test/", "extension/scripts/", "extension/node_modules/")
 FORBIDDEN_SUFFIXES = (".ts", ".map", ".vsix")

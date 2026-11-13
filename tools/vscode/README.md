@@ -29,3 +29,9 @@ make vscode-check
 This builds the server in the pinned SDK container, type-checks the extension,
 runs the headless tests, packages `build/vscode/clorraine-<version>.vsix`, and
 audits the archive.
+
+## License
+
+Clorraine is licensed under the Apache License 2.0, with the Clorraine Output
+Exception. The packaged extension includes `LICENSE.txt`,
+`LICENSE-EXCEPTION.md`, `NOTICE`, and `TRADEMARKS.md`.
