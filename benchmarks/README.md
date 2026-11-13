@@ -2,7 +2,7 @@
 
 These are tooling fixtures, not frozen-specification goldens. Each directory
 holds `program.clo`, `expected-output.txt`, and `README.md`. `calibration` is a
-startup-only program; the other five are scored.
+startup-only program; the other six are scored.
 
 Run the suite inside the pinned SDK container:
 
@@ -37,8 +37,10 @@ and shipped flag sets and asserts the size/runtime floors.
 | `strings` | template-built Strings, `str` views, byte access, formatting |
 | `moves` | struct with a fixed-array field, generic identity, one String move |
 | `lookup` | 4,096-entry `i32` sine table, one scan, module-level constant table startup |
+| `local-table` | 256-entry `i32` sine table declared inside a function, one scan |
 
 Changing a workload requires a new committed baseline in the active
 optimization plan’s `05-findings.md`. The `lookup` baseline is in
-`plans/constant-array-initializer/05-findings.md`; the earlier suite baseline
+`plans/constant-array-initializer/05-findings.md`; the `local-table` baseline is
+in `plans/constant-array-residuals/05-findings.md`; the earlier suite baseline
 is in `plans/generated-c-optimization/05-findings.md`.

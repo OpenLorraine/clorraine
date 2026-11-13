@@ -1841,13 +1841,10 @@ impl<'a> Emitter<'a> {
     /// Emits a module-level constant scalar array as one read-only template
     /// plus a copy, when the shape is eligible.
     ///
-    /// The shape is deliberately narrow: one fixed extent, a 2- or 4-byte
-    /// scalar leaf, a complete explicit list of guard-free constant values,
-    /// at least 16 elements and 64 bytes, and a non-volatile binding on a
-    /// non-freestanding profile. The target remains the writable global; the
-    /// copy runs at the same init position as the stores it replaces, so the
-    /// init order and any later mutation are unchanged. Every other shape
-    /// returns false and keeps the existing fill path.
+    /// The target remains the writable global; the copy runs at the same init
+    /// position as the stores it replaces, so the init order and any later
+    /// mutation are unchanged. Every other shape returns false and keeps the
+    /// existing fill path.
     fn emit_constant_array_template(
         &mut self,
         target: &str,
@@ -1855,20 +1852,52 @@ impl<'a> Emitter<'a> {
         value: &Value,
         volatile: bool,
     ) -> bool {
-        if volatile || matches!(self.profile, Profile::Freestanding) {
+        let Some(name) =
+            self.emit_constant_array_template_data(ty, value, volatile, &BTreeSet::new())
+        else {
             return false;
+        };
+        self.push(&format!("    memcpy({target}, {name}, sizeof({target}));"));
+        true
+    }
+
+    /// Emits the read-only data for an eligible constant scalar array and
+    /// returns its C name.
+    ///
+    /// The shape is deliberately narrow: one fixed extent, a 2- or 4-byte
+    /// scalar leaf, a complete explicit list of guard-free constant values,
+    /// at least 16 elements and 64 bytes, and a non-volatile binding on a
+    /// non-freestanding profile. A 1-byte leaf keeps the stores because the
+    /// measured template costs more instructions than GCC's packed byte
+    /// stores. The declaration is a block-scope `static const`, so the same
+    /// helper serves a module initializer and a function-local table; the
+    /// caller copies the bytes into the writable destination.
+    ///
+    /// `local_taken` names the C spellings of the current function's locals
+    /// and parameters. A function-local template shares their scope, so its
+    /// name must also avoid them; the module path passes an empty set because
+    /// no user local is in scope in an init function.
+    ///
+    /// Every other shape returns `None` and keeps the existing store path.
+    pub(super) fn emit_constant_array_template_data(
+        &mut self,
+        ty: &Ty,
+        value: &Value,
+        volatile: bool,
+        local_taken: &BTreeSet<String>,
+    ) -> Option<String> {
+        if volatile || matches!(self.profile, Profile::Freestanding) {
+            return None;
         }
         let TyKind::Array { element, extents } = &ty.kind else {
-            return false;
+            return None;
         };
         if extents.len() != 1 {
-            return false;
+            return None;
         }
-        let Some(extent) = extents[0] else {
-            return false;
-        };
+        let extent = extents[0]?;
         if extent < 16 {
-            return false;
+            return None;
         }
         let element_ty = element.as_ref();
         if !matches!(
@@ -1882,38 +1911,33 @@ impl<'a> Emitter<'a> {
                     | ScalarType::Isize
             )
         ) {
-            return false;
+            return None;
         }
-        let Some(element_size) = self.sema.table.size_of(element_ty) else {
-            return false;
-        };
-        let Some(bytes) = extent.checked_mul(element_size) else {
-            return false;
-        };
+        let element_size = self.sema.table.size_of(element_ty)?;
+        let bytes = extent.checked_mul(element_size)?;
         if bytes < 64 {
-            return false;
+            return None;
         }
         let ValueKind::ArrayLit {
             elements,
             fill: None,
         } = &value.kind
         else {
-            return false;
+            return None;
         };
         if elements.len() != extent {
-            return false;
+            return None;
         }
         if !elements.iter().all(|element| {
-            guard_free_constant(element)
-                && super::expr::constant_integer(element).is_some()
+            guard_free_constant(element) && super::expr::constant_integer(element).is_some()
         }) {
-            return false;
+            return None;
         }
         // A user `ffi` declaration is a literal C symbol, and a block-scope
-        // template with the same spelling would shadow it inside this init
-        // function. Advance the counter until the reserved prefix is free.
+        // template with the same spelling would shadow it inside a function.
+        // Advance the counter until the reserved prefix is free.
         let mut name = format!("__cl_ctmpl_{}", self.init_templates);
-        while self.is_taken_symbol(&name) {
+        while self.is_taken_symbol(&name) || local_taken.contains(&name) {
             self.init_templates += 1;
             name = format!("__cl_ctmpl_{}", self.init_templates);
         }
@@ -1929,10 +1953,7 @@ impl<'a> Emitter<'a> {
             self.push(&format!("        {},", row.join(", ")));
         }
         self.push("    };");
-        self.push(&format!(
-            "    memcpy({target}, {name}, sizeof({target}));"
-        ));
-        true
+        Some(name)
     }
 
     /// Fills a fixed-array global element-wise.

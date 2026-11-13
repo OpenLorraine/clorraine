@@ -3,8 +3,8 @@
 > **Feature-Set**: Clorraine
 > **Status**: Done
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-11-12
-> **Progress**: 579/581 rows done; 0 active; 2 Parked
+> **Last Updated**: 2026-11-13
+> **Progress**: 580/582 rows done; 0 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -596,6 +596,7 @@
 | PLAN-33 | Enforce one-argument `text` arity (#24) | — | [text-arity](text-arity/99-execution-plan.md) | Done | ✅ | 2026-11-12 | 8/8; exact one-argument `text` with E10308 and the frozen help, no output C for zero/two arguments, zero-argument codegen fallback removed from all three call sites, module-level/imported value shadows preserved; 6 spec + 3 impl cases, independent correctness + emission reviews, combined full gate green; #24 closed |
 | PLAN-34 | Template placeholder residuals III (#29) | [01-requirements](template-placeholder-residuals-iii/01-requirements.md) | [template-placeholder-residuals-iii](template-placeholder-residuals-iii/00-index.md) | Done | ✅ | 2026-11-12 | 35/35; aliased/qualified/module-initializer `text` via `$text`, usable `std.fmt.text`/ffi shadowing, generic condition E10218 parity, documented both-null value, left-literal null-vs-parameter E10012, null cstring panic guard, fixed-array step flat store; 49 spec + 13 impl cases, ASan 36 suites, UBSan 10, `bench-shape`, zero instruction/.text deltas, `make check`, `make verify` all legs; #29 closed |
 | PLAN-35 | Generated-C robustness bundle (#16, #30, #31) | [01-requirements](generated-c-robustness/01-requirements.md) | [generated-c-robustness](generated-c-robustness/00-index.md) | Done | ✅ | 2026-11-12 | 30/30; `__cl_itmp` reservation, owned `text(...)` argument release, module-path precedence (MOD-13/MOD-16) in bodies/initializers, E10309 non-callable declarations; 15 spec + 11 impl; check, ASan 37, UBSan 11, zero bench deltas, bench-shape, differential, full `make verify` green including GUI and advanced SDK legs; #16/#30/#31 closed |
+| PLAN-36 | Constant-array codegen residuals (#18) | [01-requirements](constant-array-residuals/01-requirements.md) | [constant-array-residuals](constant-array-residuals/00-index.md) | Done | ✅ | 2026-11-13 | 31/31; function-local constant scalar arrays emit a block-scope `static const` template + `memcpy`; `local-table` benchmark −8.2% net / −3.9% `.text`, probe `i32[256]` −1,004/−260, `i32[1024]` −4,036/−1,045, `i32[1280]` −5,256/−1,672; 1-byte keeps stores (+211 instructions at `u8[256]`), 2–5 KB band keeps the template (−6,044 `.text`/+41 instructions at `i32[1024]`), short-list tail recorded; local-name and runtime-indexed strict-build collisions fixed; 13 spec + 18 impl; check, ASan 38, UBSan 12, bench-compare, bench-shape, corpus-amiga, differential, verify green; #18 closed |
 
 ## Batch N accounting (2026-10-19)
 

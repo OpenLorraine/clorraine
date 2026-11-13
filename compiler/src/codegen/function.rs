@@ -728,6 +728,44 @@ impl<'a> Emitter<'a> {
                     if matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().all(Option::is_some))
                     {
                         self.emit_line_directive(span);
+                        // A complete constant list can copy from one read-only
+                        // template instead of one store per element. This
+                        // covers a function-local table as well as a global
+                        // assignment; the template is emitted before the
+                        // target is rendered, so an ineligible shape does not
+                        // evaluate the place twice.
+                        let volatile = self.fill_target_volatile(target);
+                        // An element target with a run-time or unknown index
+                        // keeps the stores. A `memcpy` of a known-size row into
+                        // an element GCC can prove out of range makes
+                        // `-Wstringop-overflow` reject the strict build before
+                        // the guard can trap; the store form builds clean and
+                        // traps at the same point. A constant in-range element
+                        // stays eligible.
+                        let runtime_indexed = target.projections.iter().any(|projection| {
+                            matches!(
+                                projection,
+                                ir::Projection::ElementTemp(_) | ir::Projection::Element(None)
+                            )
+                        });
+                        let local_taken: BTreeSet<String> =
+                            self.local_names.values().cloned().collect();
+                        if !runtime_indexed {
+                            if let Some(name) = self.emit_constant_array_template_data(
+                                &ty,
+                                value,
+                                volatile,
+                                &local_taken,
+                            ) {
+                                let target_c = self.place(target);
+                                let array_target = self.array_target(target, &target_c);
+                                self.push(&format!(
+                                    "    memcpy({}, {name}, {});",
+                                    array_target.address, array_target.bytes
+                                ));
+                                return;
+                            }
+                        }
                         // A literal that reads the destination through a view or
                         // a loop alias keeps the old bytes alive until the fill
                         // has run; the shared fixed-array core saves them.
