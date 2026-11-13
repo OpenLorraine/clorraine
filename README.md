@@ -5,8 +5,9 @@
 > and Amiga SDK surface, but installation, packaging, editor integration, and
 > some platform support are still in progress. Expect changes; do not rely on
 > it for production work yet. See
-> [Known limitations](docs/known-limitations.md) and the
-> [latest release](https://github.com/OpenLorraine/clorraine/releases).
+> [Known limitations](docs/known-limitations.md), the
+> [latest release](https://github.com/OpenLorraine/clorraine/releases), and the
+> [documentation site](https://openlorraine.github.io/clorraine/).
 
 | Area | State |
 |---|---|
@@ -14,7 +15,7 @@
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
 | Linux x86_64 binary | Released (v1.1.2) |
 | Windows/macOS installers, VS Code packaging | In progress |
-| Documentation site | In progress; source in `site/`, repository docs remain the reference |
+| Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
 the Motorola 68000 family.
@@ -62,9 +63,10 @@ committed; `demo/poster.png` is the one checked-in still.
   public components without ever downloading media.
 - **Reference documentation** — `clorraine --doc -o build/api FILE...` renders
   `///` comments as linked Markdown.
-- **Documentation site** — `site/` is a VitePress package. `make site-dev`
-  previews it locally; `make site-check` performs a clean install and a
-  production build.
+- **Documentation site** — the developer preview is at
+  [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/).
+  `site/` is a VitePress package; `make site-dev` previews it locally and
+  `make site-check` performs a clean install and a production build.
 - **C to Clorraine** — [the Rosetta guide](docs/c-to-clorraine.md) translates
   the common Amiga C patterns and the diagnostics they meet.
 

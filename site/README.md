@@ -36,7 +36,8 @@ it and deploys from `main` with GitHub Pages. The repository setting must use
 The production URL is <https://openlorraine.github.io/clorraine/>. The `base` in
 `.vitepress/config.ts` is `/clorraine/`; change it only with a custom domain.
 
-The site must stay unlinked from the README until the deployment is verified.
+The README links to the site only after a deployment is verified at the
+production URL.
 
 ## Content rules
 
