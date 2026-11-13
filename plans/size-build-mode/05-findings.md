@@ -214,3 +214,6 @@ Mesa/GLX errors); the program's C and the default build line were unchanged.
 The complete gate was then run on a private Xvfb `:99` display and every leg
 passed. `docker/.env` was restored to `DISPLAY=:0` afterwards and no Xvfb
 process remains.
+
+Delivered in commit `480f743` (`feat(driver): add opt-in --size build mode`);
+issue #21 is closed with the measured trade recorded above.
