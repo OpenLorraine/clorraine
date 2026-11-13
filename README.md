@@ -14,7 +14,7 @@
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
 | Linux x86_64 binary | Released (v1.1.2) |
 | Windows/macOS installers, VS Code packaging | In progress |
-| Documentation site | Planned; repository docs are the current reference |
+| Documentation site | In progress; source in `site/`, repository docs remain the reference |
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
 the Motorola 68000 family.
@@ -62,6 +62,9 @@ committed; `demo/poster.png` is the one checked-in still.
   public components without ever downloading media.
 - **Reference documentation** — `clorraine --doc -o build/api FILE...` renders
   `///` comments as linked Markdown.
+- **Documentation site** — `site/` is a VitePress package. `make site-dev`
+  previews it locally; `make site-check` performs a clean install and a
+  production build.
 - **C to Clorraine** — [the Rosetta guide](docs/c-to-clorraine.md) translates
   the common Amiga C patterns and the diagnostics they meet.
 
@@ -96,6 +99,7 @@ stdlib/    The embedded standard-library `.clo` sources
 spec/      The language specification, grammar, and golden test data
 docker/    The Clorraine SDK: pinned, from-source Amiga toolchain in Docker
 docs/      Findings and review records
+site/      The public VitePress documentation site
 plans/     CodeOps feature plans and the roadmap
 spikes/    Phase 1 toolchain spikes
 ```

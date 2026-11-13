@@ -55,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -352,6 +352,17 @@ sdk-a4000-rtg-piv: sdk-rtg-build
 demo-check:
 	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
 	cd tools/demo && npx tsc --noEmit && node --test --experimental-test-coverage test/*.test.ts
+
+# Public documentation site. `site-check` performs a clean install and a
+# production build, which also fails on dead internal links. The site deploy is
+# a separate GitHub Pages workflow; it is not part of `check`/`verify`.
+site-dev:
+	npm --prefix site run docs:dev
+
+site-check:
+	@command -v npm >/dev/null || { echo "site-check: Node.js 22+ and npm are required on PATH"; exit 2; }
+	npm --prefix site ci --no-audit --no-fund
+	npm --prefix site run docs:build
 
 # Render the story video, the README gif, and the poster, then re-render the
 # string-parser emulator chapter on its own as `demo/emulator.mp4`. Host-only: it needs

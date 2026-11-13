@@ -1,0 +1,16 @@
+{
+  "name": "@clorraine/site",
+  "private": true,
+  "type": "module",
+  "version": "1.1.2",
+  "description": "The public Clorraine documentation site",
+  "license": "Apache-2.0",
+  "scripts": {
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

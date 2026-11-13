@@ -24,9 +24,9 @@ The language is frozen under `spec/`. The compiler implements the corpus subset
 plus the completed language surfaces (generics, lambdas, volatile/MMIO with
 per-chip wrappers, and the v2 NLL borrow model). The embedded standard library
 is `stdlib/`; the runtime shims are C in `compiler/runtime/`. Emitted C must stay
-valid C99 and pass the strict host and Amiga toolchain legs. `tools/demo/` and
-`tools/vscode/` are separate npm packages and are not part of the Rust
-workspace.
+valid C99 and pass the strict host and Amiga toolchain legs. `tools/demo/`,
+`tools/vscode/`, and `site/` are separate npm packages and are not part of the
+Rust workspace.
 
 ## Commands
 
@@ -83,6 +83,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make bench-test` | Harness unit tests; also part of `make check` |
 | `make bench-shape` | Build the generated-C shape fixture with m68k GCC, vbcc, and the freestanding profile |
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
+| `make site-dev` / `make site-check` | Preview the VitePress site locally; `site-check` performs a clean install and production build and fails on dead internal links |
 | `make setup` | Detect the SDK; `FETCH=1` builds missing public components, `DRY=1` prints the plan, `YES=1` skips confirmation; never downloads media |
 | `make setup-check` | Installer unit tests; also part of `make check` |
 | `make vscode-check` | Build the server in the container, type-check and test `tools/vscode/`, package a `.vsix`, audit it, and run the packaged client |
@@ -102,11 +103,12 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `tools/perf/` | Benchmark harness and its unit tests |
 | `tools/fuzz/` | Deterministic differential fuzzer, committed seeds and goldens, and its unit tests |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
-| `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) |
+| `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) and the Pages site build/deploy (`docs.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
 | `tools/setup/` | Fetch/detect SDK installer and its Python unit tests |
 | `tools/vscode/` | VS Code extension package, LSP client, and headless tests |
+| `site/` | Public VitePress documentation site, custom theme, screenshots, and OG image; deployed by `.github/workflows/docs.yml` |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
 | `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, the target-side fault probes under `examples/robustness/`, and a compile-fail ownership sample |
 | `plans/` | CodeOps plans (one directory per feature) and `plans/00-roadmap.md`; flat layout |
@@ -128,6 +130,8 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
 - `tools/setup/tests/` runs with `make setup-check`; `tools/vscode/test/`
   runs with `make vscode-check` and includes a packaged-client smoke test.
+- `site/` is checked with `make site-check`; the GitHub Pages workflow builds
+  the same production output and deploys only from `main`.
 - `compiler/tests/lsp_spec_test.rs`, `compiler/tests/docgen_spec_test.rs`, and
   `compiler/tests/docs_guide_spec_test.rs` cover the language server, the
   documentation generator, and the guide links.
