@@ -26,15 +26,14 @@ On a real Amiga, or from the ADF, the controls are:
 
 | Control | Action |
 |---|---|
-| ← / → or A / D | Move the paddle |
-| Space or Enter | Fire; starts a game, or starts again from the title |
-| Restart | Reloads the saved opening state |
+| Joystick left / right | Move the paddle |
+| Joystick fire | Start a game, or start again from the title |
 
-The live view restores a running game from the opening serve, so it shows the
-arcade scene without waiting for a boot. The score counts ten points per brick.
-A game starts with three lives; the paddle angle is set by where the ball lands
-on it. After the third miss the title screen returns; press Space to play again
-on the ADF.
+The web player's **Restart** button reloads the saved run. The live view
+restores a running game, so it shows the arcade scene without waiting for a
+boot. The score counts ten points per brick. A game starts with three lives;
+the paddle angle is set by where the ball lands on it. After the third miss the
+title screen returns; press fire to play again on the ADF.
 
 ## What you are looking at
 
