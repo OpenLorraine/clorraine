@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-13
-> **Progress**: 30/31 tasks (97%)
+> **Progress**: 31/31 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -112,7 +112,7 @@ critical/major findings.
 - [x] 4.1.2 Write the final [05-findings.md](05-findings.md) with the benchmark baseline, test counts, review verdicts, and acceptance evidence
 - [x] 4.1.3 Mark this plan and the roadmap row Done; update the roadmap progress count
 - [x] 4.1.4 Close issue #18 with the measured decisions and the delivered change
-- [ ] 4.1.5 Commit the change set and push `main`
+- [x] 4.1.5 Commit the change set and push `main`
 
 **Phase 4 gate**: the plan, roadmap, known limitations, and issue agree with
 the delivered code and the gate evidence.
