@@ -1505,7 +1505,11 @@ fn check_fill_instances(
         let Some(Callee::User(decl)) = program.callee(&instance.function) else {
             continue;
         };
-        let Some(function) = functions.iter().find(|function| function.name == decl.name)
+        // A lifted lambda can share the declaration's IR name; only the
+        // declared body carries the fill under audit.
+        let Some(function) = functions
+            .iter()
+            .find(|function| function.lambda_site.is_none() && function.name == decl.name)
         else {
             continue;
         };

@@ -225,8 +225,9 @@ freestanding profiles:
 The audit also reproduced one pre-existing miscompile on the base: a user
 function legally named `cl_lambda_<site>` in the same module as a lifted lambda
 can reuse the lifted body because both old and new declaration lookups key on
-module and name only. The fix is out of scope for a throughput change; it is
-recorded as issue #32 with a minimal reproduction and fix direction.
+module and name only. The fix is out of scope for a throughput change; it was
+recorded as issue #32 with a minimal reproduction and fix direction. It is now
+fixed by excluding lifted bodies from every declaration-body lookup (DEF-558).
 
 ## 6. Test Counts
 

@@ -716,6 +716,102 @@ func main(): i32 {
     assert_exit("callable-bound-lambda", &output, 5);
 }
 
+/// A user declaration named like a lifted lambda keeps its own body.
+///
+/// Lifted lambda IR functions are named `cl_lambda_<site>`, so they share the
+/// module namespace with declared functions. When a lambda is lowered before a
+/// declaration of the same name, a body lookup keyed only on `(module, name)`
+/// would hand the lifted body to the user declaration. Each name must still
+/// run its own source body.
+#[test]
+fn should_keep_a_user_body_named_like_a_lifted_lambda() {
+    let source = r#"module spec.ci.lambdaname;
+
+func useLambda(value: i32): i32 {
+    let f: func(i32): i32 = (x: i32) => x + 1;
+    return f(value);
+}
+
+func cl_lambda_0(value: i32): i32 {
+    return value + 99;
+}
+
+func main(): i32 {
+    if (useLambda(0) != 1) {
+        return 1;
+    }
+    return cl_lambda_0(1);
+}
+"#;
+    let output = run_host("lambda-name", source);
+    assert_exit("lambda-name", &output, 100);
+}
+
+/// A generic declaration named like a lifted lambda still instantiates.
+///
+/// The generic body calls another generic with its own type parameter. The
+/// instance re-walk must select the declared body, not the lifted lambda that
+/// shares its IR name, so `helper<i32>` is recorded and emitted.
+#[test]
+fn should_instantiate_a_generic_named_like_a_lifted_lambda() {
+    let source = r#"module spec.ci.lambdagen;
+
+func use(v: i32): i32 {
+    let f: func(i32): i32 = (x: i32) => x + 1;
+    return f(v);
+}
+
+func cl_lambda_0<T>(x: T): i32 {
+    return helper(x);
+}
+
+func helper<U>(u: U): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    if (use(0) != 1) {
+        return 1;
+    }
+    return cl_lambda_0<i32>(5) + 93;
+}
+"#;
+    let output = run_host("lambda-generic", source);
+    assert_exit("lambda-generic", &output, 94);
+}
+
+/// A slice local in a generic named like a lifted lambda still emits its type.
+///
+/// The instance's slice types must come from the declared body. Selecting the
+/// lifted body would leave `ClSlice_i32` and its zero helper undeclared.
+#[test]
+fn should_emit_a_slice_local_of_a_generic_named_like_a_lifted_lambda() {
+    let source = r#"module spec.ci.lambdaslice;
+
+func use(v: i32): i32 {
+    let f: func(i32): i32 = (x: i32) => x + 1;
+    return f(v);
+}
+
+func cl_lambda_0<T>(x: T): i32 {
+    let s: T[]? = null;
+    if (s == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    if (use(0) != 1) {
+        return 1;
+    }
+    return cl_lambda_0<i32>(5) + 93;
+}
+"#;
+    let output = run_host("lambda-slice", source);
+    assert_exit("lambda-slice", &output, 94);
+}
+
 /// The unbounded-call golden is rejected exactly as the frozen suite expects.
 #[test]
 fn should_reject_the_unbounded_call_golden_directly() {

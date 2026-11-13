@@ -1051,6 +1051,41 @@ func main(): i32 { demo(); return 0; }
     );
 }
 
+/// A generic declaration named like a lifted lambda is still the fill audit's
+/// subject: selecting the lifted body would hide the substituted fill.
+#[test]
+fn should_reject_a_move_only_fill_in_a_generic_named_like_a_lifted_lambda() {
+    let source = r#"module tests.gs.fill_lambda_name;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func use(v: i32): i32 {
+    let f: func(i32): i32 = (x: i32) => x + 1;
+    return f(v);
+}
+
+func cl_lambda_0<T>(w: Wrap<T>): Wrap<T>[2] {
+    return [; w];
+}
+
+func demo(): void {
+    let w: Wrap<String> = Wrap<String> { v: stringOf("x") };
+    let r: Wrap<String>[2] = cl_lambda_0<String>(w);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-fill-lambda-name",
+        source,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
 /// A fill already concrete at the declaration is the declaration-site guard's
 /// case; the type checker stops the program before the audit runs, so the fill
 /// is reported once even though the enclosing function is generic.

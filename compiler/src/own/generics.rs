@@ -812,9 +812,11 @@ pub fn collect_ir_instances(
         if decl.type_params.len() != instance.args.len() {
             continue;
         }
+        // A lifted lambda can share the declaration's `cl_lambda_<site>` IR
+        // name; the instance re-walk must use the declaration's own body.
         let Some(function) = functions
             .iter()
-            .find(|function| function.name == decl.name)
+            .find(|function| function.lambda_site.is_none() && function.name == decl.name)
         else {
             continue;
         };

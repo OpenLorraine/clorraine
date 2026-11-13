@@ -395,11 +395,17 @@ impl<'a> Emitter<'a> {
             let ret = self.resolve_in_module(&info.module, &info.decl.returns, &params);
             collect_slice_types(&super::substitute_in(&ret, &subst), &mut found);
             let module = info.module.clone();
+            // A lifted lambda can share the instance's IR name; its slice
+            // types are collected through the lifted path, not as this body.
             let Some(body) = self
                 .ownership
                 .functions
                 .iter()
-                .find(|function| function.name == instance.function && function.module == module)
+                .find(|function| {
+                    function.lambda_site.is_none()
+                        && function.name == instance.function
+                        && function.module == module
+                })
             else {
                 continue;
             };

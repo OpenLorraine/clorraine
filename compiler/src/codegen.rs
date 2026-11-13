@@ -1156,9 +1156,14 @@ impl<'a> Emitter<'a> {
 /// wins: that is the body the emitter used before the index existed. One
 /// lookup table replaces a scan per declaration, so emitting many functions
 /// no longer compares every body against every declaration.
+///
+/// Lifted lambda bodies are excluded. Their IR names are `cl_lambda_<site>`,
+/// which can equal a user declaration's name, but they are emitted through the
+/// lifted path with their own signature. Occupying a declaration slot would
+/// let a lambda lowered first hand its body to the same-named user function.
 fn body_index(functions: &[ir::Function]) -> BTreeMap<String, BTreeMap<String, &ir::Function>> {
     let mut index: BTreeMap<String, BTreeMap<String, &ir::Function>> = BTreeMap::new();
-    for function in functions {
+    for function in functions.iter().filter(|f| f.lambda_site.is_none()) {
         index
             .entry(function.module.clone())
             .or_default()
@@ -1228,6 +1233,25 @@ mod tests {
         assert!(std::ptr::eq(index["a"]["same"], &functions[0]));
         assert_eq!(index["a"].len(), 1, "a duplicate record must not win");
         assert!(std::ptr::eq(index["b"]["same"], &functions[2]));
+    }
+
+    #[test]
+    fn a_lifted_lambda_body_never_shadows_a_declared_body() {
+        // Lifted lambdas carry the IR name `cl_lambda_<site>` and are emitted
+        // through their own path, so they must not claim a declaration slot.
+        let mut lifted = ir::Builder::new("cl_lambda_0", Vec::new(), Ty::void()).finish();
+        lifted.module = "a".to_owned();
+        lifted.lambda_site = Some(0);
+        let mut declared = ir::Builder::new("cl_lambda_0", Vec::new(), Ty::void()).finish();
+        declared.module = "a".to_owned();
+        let functions = vec![lifted, declared];
+
+        let index = body_index(&functions);
+
+        assert!(
+            std::ptr::eq(index["a"]["cl_lambda_0"], &functions[1]),
+            "the declared body must win even when the lifted body is first"
+        );
     }
 
     #[test]
