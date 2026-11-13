@@ -94,6 +94,12 @@ pub(super) struct Emitter<'a> {
     out: String,
     /// User functions keyed by `(module, name)`.
     functions: BTreeMap<(String, String), FuncInfo<'a>>,
+    /// Lowered bodies keyed by module and function name.
+    ///
+    /// The emitter looks a body up once per emitted declaration. A linear scan
+    /// of every body would make a program with many functions quadratic, so
+    /// the index is built once alongside the other program tables.
+    bodies: BTreeMap<String, BTreeMap<String, &'a ir::Function>>,
     /// C identifiers the profile runtime and generated helpers already use.
     ///
     /// A user declaration normally emits `cl_<module>_<name>`. When that
@@ -393,6 +399,7 @@ impl<'a> Emitter<'a> {
             profile,
             out: String::new(),
             functions: BTreeMap::new(),
+            bodies: BTreeMap::new(),
             reserved_symbols: BTreeSet::new(),
             user_symbols: BTreeSet::new(),
             ffi_functions: BTreeMap::new(),
@@ -503,6 +510,7 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        self.bodies = body_index(&self.ownership.functions);
         self.collect_reserved_symbols();
         self.check_ffi_collisions();
     }
@@ -908,10 +916,10 @@ impl<'a> Emitter<'a> {
     /// emitted body keeps its written names.
     fn param_c_names(&self, module: &str, decl: &FuncDecl) -> Vec<String> {
         let ir_function = self
-            .ownership
-            .functions
-            .iter()
-            .find(|function| function.module == module && function.name == decl.name);
+            .bodies
+            .get(module)
+            .and_then(|bodies| bodies.get(&decl.name))
+            .copied();
         match ir_function {
             Some(function) => {
                 let names = function.params.iter().map(|param| param.name.as_str());
@@ -1142,6 +1150,24 @@ impl<'a> Emitter<'a> {
     }
 }
 
+/// Indexes lowered bodies by module and declaration name.
+///
+/// A loop's speculative pass can lower one body twice, so the first record
+/// wins: that is the body the emitter used before the index existed. One
+/// lookup table replaces a scan per declaration, so emitting many functions
+/// no longer compares every body against every declaration.
+fn body_index(functions: &[ir::Function]) -> BTreeMap<String, BTreeMap<String, &ir::Function>> {
+    let mut index: BTreeMap<String, BTreeMap<String, &ir::Function>> = BTreeMap::new();
+    for function in functions {
+        index
+            .entry(function.module.clone())
+            .or_default()
+            .entry(function.name.clone())
+            .or_insert(function);
+    }
+    index
+}
+
 /// Applies a substitution to a type.
 fn substitute_in(ty: &Ty, subst: &BTreeMap<String, Ty>) -> Ty {
     crate::types::substitute(ty, subst)
@@ -1184,6 +1210,25 @@ fn is_c_keyword(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_body_index_keys_by_module_and_keeps_the_first_record() {
+        // A speculative loop pass can lower one body twice; the index must
+        // keep the first record, exactly like the linear scan it replaced.
+        let mut first = ir::Builder::new("same", Vec::new(), Ty::void()).finish();
+        first.module = "a".to_owned();
+        let mut duplicate = ir::Builder::new("same", Vec::new(), Ty::void()).finish();
+        duplicate.module = "a".to_owned();
+        let mut other_module = ir::Builder::new("same", Vec::new(), Ty::void()).finish();
+        other_module.module = "b".to_owned();
+        let functions = vec![first, duplicate, other_module];
+
+        let index = body_index(&functions);
+
+        assert!(std::ptr::eq(index["a"]["same"], &functions[0]));
+        assert_eq!(index["a"].len(), 1, "a duplicate record must not win");
+        assert!(std::ptr::eq(index["b"]["same"], &functions[2]));
+    }
 
     #[test]
     fn identifiers_are_sanitized_for_c() {

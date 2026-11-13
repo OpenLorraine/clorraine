@@ -4,7 +4,7 @@
 > **Status**: Done
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-13
-> **Progress**: 581/583 rows done; 0 active; 2 Parked
+> **Progress**: 581/584 rows done; 1 active; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -598,6 +598,7 @@
 | PLAN-35 | Generated-C robustness bundle (#16, #30, #31) | [01-requirements](generated-c-robustness/01-requirements.md) | [generated-c-robustness](generated-c-robustness/00-index.md) | Done | ✅ | 2026-11-12 | 30/30; `__cl_itmp` reservation, owned `text(...)` argument release, module-path precedence (MOD-13/MOD-16) in bodies/initializers, E10309 non-callable declarations; 15 spec + 11 impl; check, ASan 37, UBSan 11, zero bench deltas, bench-shape, differential, full `make verify` green including GUI and advanced SDK legs; #16/#30/#31 closed |
 | PLAN-36 | Constant-array codegen residuals (#18) | [01-requirements](constant-array-residuals/01-requirements.md) | [constant-array-residuals](constant-array-residuals/00-index.md) | Done | ✅ | 2026-11-13 | 31/31; function-local constant scalar arrays emit a block-scope `static const` template + `memcpy`; `local-table` benchmark −8.2% net / −3.9% `.text`, probe `i32[256]` −1,004/−260, `i32[1024]` −4,036/−1,045, `i32[1280]` −5,256/−1,672; 1-byte keeps stores (+211 instructions at `u8[256]`), 2–5 KB band keeps the template (−6,044 `.text`/+41 instructions at `i32[1024]`), short-list tail recorded; local-name and runtime-indexed strict-build collisions fixed; 13 spec + 18 impl; check, ASan 38, UBSan 12, bench-compare, bench-shape, corpus-amiga, differential, verify green; #18 closed |
 | PLAN-37 | Opt-in size build mode (#21) | [01-requirements](size-build-mode/01-requirements.md) | [size-build-mode](size-build-mode/00-index.md) | Done | ✅ | 2026-11-13 | 24/24; `--size` selects `-Os` with release processing on all profiles, `--release`/`--size` conflict, `emit --size` rejected, default debug/`-O2` vectors unchanged; measured against `e65de1c`: host `.text` up to −11.9%, m68k `.text` neutral after GC, `moves` +31.3% net is the opt-in cost; 460 lib + 22 driver spec tests, `make check`, ASan 38, UBSan 12, `bench-shape`, `bench-compare` zero deltas, `corpus-amiga`, `differential`, full `verify` green; #21 closed |
+| PLAN-38 | Compiler throughput (#13) | [01-requirements](compiler-throughput/01-requirements.md) | [compiler-throughput](compiler-throughput/00-index.md) | Executing | 🔄 | 2026-11-13 | 0/25; throughput harness, hot-pass attribution, and a bounded body index for the quadratic codegen lookup |
 
 ## Batch N accounting (2026-10-19)
 

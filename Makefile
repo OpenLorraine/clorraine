@@ -55,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -121,6 +121,12 @@ bench-flags:
 
 bench-test:
 	$(DOCKER_MAKE) exec CMD="python3 -m unittest discover -s tools/perf/tests -t tools/perf -v"
+
+# Compiler-throughput baseline: wall time and peak RSS for the release clc on
+# the spec corpus, benchmarks, large examples, and generated inputs. The
+# harness also compares two result documents (`compile_time.py compare`).
+bench-compile:
+	$(DOCKER_MAKE) exec CMD="cargo build --release --bin clc --quiet && python3 tools/perf/compile_time.py run --clc target/release/clc --label compile-head --out build/perf/compile-head.json"
 
 # Deterministic differential fuzzer. `fuzz-test` runs the harness unit tests;
 # `fuzz-smoke` is the bounded default-gate matrix; `fuzz-smoke-host` is its

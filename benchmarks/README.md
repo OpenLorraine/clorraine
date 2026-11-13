@@ -17,7 +17,14 @@ make bench-flags     # same-compiler old-vs-shipped size/runtime audit
 The harness is `tools/perf/bench.py`. It emits each program with `clc`, builds
 host and m68k artifacts with the shipped release flags, runs them, and records
 emitted-C size, section sizes, the linked file size (`m68k_release_bytes`),
-host time, and the m68k dynamic instruction count. The benchmark checksums use
+host time, and the m68k dynamic instruction count.
+
+Compiler throughput is measured separately by `tools/perf/compile_time.py`:
+`make bench-compile` records release `clc` wall time and peak RSS over the spec
+corpus, these benchmark sources, the largest Amiga examples, and deterministic
+generated inputs. Its `compare` command prints the base/head table and can
+enforce a regression limit. The compile-time numbers are not part of the scored
+runtime gate. The benchmark checksums use
 fixed-width integers so the same expected output is valid on the 64-bit host
 and the 32-bit target.
 

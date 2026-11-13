@@ -159,10 +159,10 @@ impl<'a> Emitter<'a> {
         self.suppress_output = false;
 
         let Some(function) = self
-            .ownership
-            .functions
-            .iter()
-            .find(|function| function.name == info.decl.name && function.module == info.module)
+            .bodies
+            .get(&info.module)
+            .and_then(|module| module.get(&info.decl.name))
+            .copied()
         else {
             // Every clean compile lowers a body for each declared function; a
             // miss means an earlier stage rejected the program, so there is
