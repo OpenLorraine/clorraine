@@ -80,6 +80,7 @@ let offscreen: HTMLCanvasElement | null = null;
 let offscreenContext: CanvasRenderingContext2D | null = null;
 let animation = 0;
 let looping = false;
+let clockStarted = false;
 let disposed = false;
 let leftHeld = false;
 let rightHeld = false;
@@ -202,6 +203,10 @@ function draw(): void {
 
 function loop(now: number): void {
   if (!looping || !emulator) return;
+  if (!clockStarted) {
+    clockStarted = true;
+    emulator.resync_clock();
+  }
   emulator.run(now, 20);
   draw();
   animation = requestAnimationFrame(loop);
@@ -304,14 +309,8 @@ async function start(): Promise<void> {
     machine.set_volume_percent(0);
     machine.load_rom(rom, ext);
     machine.load_state(state);
-    if (props.interactive) {
-      machine.set_port_device(1, "joystick");
-      machine.set_port_device(2, "joystick");
-      machine.set_joystick_port(2, false, false, false, false, false, false);
-    }
     emulator = machine;
     stateBytes = state;
-    machine.resync_clock();
 
     progress.value = 100;
     message.value = "Running in Copperline with AROS";
@@ -333,7 +332,7 @@ function pause(): void {
 
 function resume(): void {
   if (phase.value !== "paused" || !emulator) return;
-  emulator.resync_clock();
+  clockStarted = false;
   phase.value = "running";
   startLoop();
 }
@@ -346,12 +345,10 @@ function toggle(): void {
 function restart(): void {
   if (!emulator || !stateBytes) return;
   emulator.load_state(stateBytes);
-  if (props.interactive) {
-    emulator.set_port_device(1, "joystick");
-    emulator.set_port_device(2, "joystick");
-  }
-  releaseStick();
-  emulator.resync_clock();
+  leftHeld = false;
+  rightHeld = false;
+  fireHeld = false;
+  clockStarted = false;
   if (phase.value === "paused") {
     phase.value = "running";
     startLoop();
@@ -375,7 +372,7 @@ function onVisibility(): void {
     stopLoop();
     if (props.interactive) releaseStick();
   } else if (phase.value === "running") {
-    emulator.resync_clock();
+    clockStarted = false;
     startLoop();
   }
 }
