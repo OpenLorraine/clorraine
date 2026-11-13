@@ -83,5 +83,5 @@ The state is tied to the bundle. If you update `public/copperline/`, regenerate
 the state and the ADF from the same Copperline build; otherwise the player may
 refuse the state or run a different demo. The provenance and regeneration steps
 are in `public/copperline/NOTICE.md`. The ADF is built from
-`examples/amiga/first-light.clo` with the `--release --profile hosted-amiga`
+`examples/amiga/first-light.clo` with the `--release --profile hosted-amiga-13`
 options.

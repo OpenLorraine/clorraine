@@ -18,7 +18,7 @@ filmstrip. It is a release build of a real program, not a mockup.
 |---|---|
 | Machine | Amiga 500, 68000, OCS, 512 KB chip + 512 KB slow RAM |
 | Display | 320×256, 4 bitplanes, 16 colours, PAL |
-| Runtime | Clorraine `hosted-amiga` release build, libnix `nix20` |
+| Runtime | Clorraine `hosted-amiga-13` release build, libnix `nix13` |
 | Emulator | [Copperline](https://copperline.dev/) 1.1.0 with its bundled AROS ROM |
 | Source | [`examples/amiga/first-light.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/first-light.clo) |
 

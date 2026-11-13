@@ -23,7 +23,7 @@ cross-origin isolation headers, which is why it works on GitHub Pages.
 ## First Light demo media
 
 `site/public/demos/first-light.adf` is a bootable ADF containing the release
-build of `examples/amiga/first-light.clo` for the `hosted-amiga` profile.
+build of `examples/amiga/first-light.clo` for the `hosted-amiga-13` profile.
 `site/public/demos/first-light.clstate` is a Copperline save state captured from
 that exact ADF on the A500 machine. The live player loads the state instead of
 booting the floppy, so visitors do not wait for AROS startup.
@@ -37,7 +37,7 @@ No Kickstart ROM or Workbench media is included.
 ## Regenerating
 
 1. Build `examples/amiga/first-light.clo` with
-   `clorraine build --release --profile hosted-amiga`.
+   `clorraine build --release --profile hosted-amiga-13`.
 2. Write the binary and a one-line `startup-sequence` (`DF0:first-light`) into
    a fresh ADF with `xdftool`, and install the `boot1x` boot block.
 3. Boot the ADF on a Copperline A500 with the pinned bundle, wait for the demo,
