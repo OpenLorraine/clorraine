@@ -224,7 +224,7 @@ fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
 fn build_command(options: &Options) -> i32 {
     let built = match build::build(
         options.profile,
-        options.release,
+        options.mode,
         &options.files,
         options.diagnostics,
     ) {
@@ -252,7 +252,7 @@ fn run_command(options: Options) -> i32 {
     }
     let built = match build::build(
         options.profile,
-        options.release,
+        options.mode,
         &options.files,
         options.diagnostics,
     ) {
@@ -303,7 +303,7 @@ fn run_command(options: Options) -> i32 {
 fn run_freestanding(options: Options) -> i32 {
     let built = match build::build(
         options.profile,
-        options.release,
+        options.mode,
         &options.files,
         options.diagnostics,
     ) {
@@ -335,7 +335,7 @@ fn run_freestanding(options: Options) -> i32 {
         return 1;
     };
     let host_bin = artifacts::host_bin_path(options.profile, &stem);
-    if let Err(ice) = build::compile(&tool, options.release, &built.c, &host_bin) {
+    if let Err(ice) = build::compile(&tool, options.mode, &built.c, &host_bin) {
         report_error(options.diagnostics, &ice.to_string());
         return 1;
     }

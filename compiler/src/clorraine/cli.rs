@@ -10,6 +10,7 @@
 //! correctly and still be inapplicable to the chosen command (for example `-o`
 //! with `run`), so the rules are applied only once the whole line is read.
 
+use super::toolchain::BuildMode;
 use crate::diag::DiagnosticFormat;
 use crate::profile::Profile;
 
@@ -40,9 +41,12 @@ pub struct Options {
     pub command: Command,
     /// Target profile; `host` unless `--profile` overrides it.
     pub profile: Profile,
-    /// Optimize with `-O2`; Linux and Amiga release builds also section-GC
-    /// and strip, while freestanding/non-Linux and debug keep symbols.
-    pub release: bool,
+    /// How the C compiler optimizes the build.
+    ///
+    /// `Debug` is the default. `Release` uses `-O2`; `Size` uses `-Os` and
+    /// keeps the same release processing. The mode never changes the emitted
+    /// C, only the C compiler flags.
+    pub mode: BuildMode,
     /// Print the generated C after a build or before a run.
     pub emit_c: bool,
     /// Hand the Amiga run to the host FS-UAE wrapper.
@@ -87,6 +91,7 @@ Commands:
 Options:
   -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
       --release                       Optimize (-O2); strip + section-GC on Linux/Amiga; freestanding/non-Linux and debug keep symbols
+      --size                          Optimize for size (-Os); same release processing; cannot combine with --release
       --emit-c                        Print the generated C after building
       --emulator                      Amiga run: use FS-UAE (host handoff)
       --capture                       Write program stdout to out.txt; print its path
@@ -230,7 +235,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
     let mut options = Options {
         command,
         profile: Profile::Host,
-        release: false,
+        mode: BuildMode::Debug,
         emit_c: false,
         emulator: false,
         capture: false,
@@ -256,7 +261,8 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
                 let raw = value(rest, index, arg)?;
                 options.diagnostics = DiagnosticFormat::parse(&raw)?;
             }
-            "--release" => options.release = true,
+            "--release" => select_mode(&mut options.mode, BuildMode::Release)?,
+            "--size" => select_mode(&mut options.mode, BuildMode::Size)?,
             "--emit-c" => options.emit_c = true,
             "--emulator" => options.emulator = true,
             "--capture" => options.capture = true,
@@ -288,6 +294,21 @@ fn value(rest: &[String], index: usize, flag: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{flag} needs a value"))
 }
 
+/// Applies one optimization mode to a line that may already name another.
+///
+/// Repeating the same flag is harmless and accepted. Two different optimized
+/// modes are ambiguous: one build cannot be both `-O2` and `-Os`.
+fn select_mode(current: &mut BuildMode, requested: BuildMode) -> Result<(), String> {
+    if *current == requested {
+        return Ok(());
+    }
+    if *current == BuildMode::Debug {
+        *current = requested;
+        return Ok(());
+    }
+    Err("--release and --size are mutually exclusive".to_owned())
+}
+
 /// Applies the rules that only hold once the command is known.
 fn validate(options: &Options) -> Result<(), String> {
     if options.files.is_empty() {
@@ -295,8 +316,15 @@ fn validate(options: &Options) -> Result<(), String> {
     }
     if options.command == Command::Emit {
         // `emit` stops after producing C, so build-and-run flags do not apply.
-        if options.release {
-            return Err("--release is not valid with 'emit'".to_owned());
+        // The emitted C is identical in every build mode.
+        match options.mode {
+            BuildMode::Debug => {}
+            BuildMode::Release => {
+                return Err("--release is not valid with 'emit'".to_owned());
+            }
+            BuildMode::Size => {
+                return Err("--size is not valid with 'emit'".to_owned());
+            }
         }
         if options.emit_c {
             return Err("--emit-c is not valid with 'emit'".to_owned());
@@ -365,7 +393,8 @@ mod tests {
         let options = invoke(&["run", "hello.clo"]);
         assert_eq!(options.command, Command::Run);
         assert_eq!(options.profile, Profile::Host);
-        assert!(!options.release && !options.emit_c && !options.emulator && !options.capture);
+        assert_eq!(options.mode, BuildMode::Debug);
+        assert!(!options.emit_c && !options.emulator && !options.capture);
         assert_eq!(options.output, None);
         assert_eq!(options.files, ["hello.clo"]);
     }
@@ -415,6 +444,29 @@ mod tests {
     }
 
     #[test]
+    fn the_size_flag_selects_the_size_mode() {
+        assert_eq!(invoke(&["build", "--size", "a.clo"]).mode, BuildMode::Size);
+        assert_eq!(invoke(&["run", "--size", "a.clo"]).mode, BuildMode::Size);
+    }
+
+    #[test]
+    fn the_build_modes_are_mutually_exclusive() {
+        assert!(
+            parse(&args(&["build", "--release", "--size", "a.clo"])).is_err(),
+            "release and size must not be combined"
+        );
+        assert!(
+            parse(&args(&["build", "--size", "--release", "a.clo"])).is_err(),
+            "the conflict is order-independent"
+        );
+        assert_eq!(
+            invoke(&["build", "--size", "--size", "a.clo"]).mode,
+            BuildMode::Size,
+            "repeating the same mode is idempotent"
+        );
+    }
+
+    #[test]
     fn an_inapplicable_or_malformed_line_is_a_usage_error() {
         for line in [
             vec!["frobnicate", "a.clo"],
@@ -425,6 +477,7 @@ mod tests {
             vec!["build", "--capture", "a.clo"],
             vec!["build", "--emulator", "a.clo"],
             vec!["emit", "--release", "a.clo"],
+            vec!["emit", "--size", "a.clo"],
             vec!["emit", "--emit-c", "a.clo"],
             vec!["run", "--profile", "nope", "a.clo"],
             vec!["--profile"],

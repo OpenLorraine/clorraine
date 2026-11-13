@@ -509,6 +509,163 @@ fn the_two_gcc_release_rows_match_the_shipped_flags() {
     assert_eq!(rows, expected, "the compile matrix must match the shipped rows");
 }
 
+/// `build --size` produces an executable with the size optimization line and
+/// does not run the program.
+#[test]
+fn build_size_mode_writes_an_executable() {
+    let scratch = ScratchDir::new("build-size");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(scratch.path(), &["build", "--size", "hello.clo"]);
+    assert_exit("build-size", &output, 0);
+    let binary = artifact_dir(scratch.path(), "hello", "host").join("hello");
+    assert!(
+        binary.is_file(),
+        "build-size: the executable must exist at {}",
+        binary.display()
+    );
+    assert!(
+        !stdout(&output).contains("Hello, Clorraine!"),
+        "build-size: a build must not run the program"
+    );
+}
+
+/// `run --size` builds and runs the program, showing only its output.
+#[test]
+fn run_size_mode_prints_program_output() {
+    let scratch = ScratchDir::new("run-size");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(scratch.path(), &["run", "--size", "hello.clo"]);
+    assert_exit("run-size", &output, 0);
+    assert_eq!(
+        stdout(&output),
+        "Hello, Clorraine!\n",
+        "run-size: the program output is the only stdout"
+    );
+    assert!(
+        stderr(&output).is_empty(),
+        "run-size: no C toolchain text may be shown, got:\n{}",
+        stderr(&output)
+    );
+}
+
+/// `--release` and `--size` cannot be combined.
+#[test]
+fn size_and_release_are_mutually_exclusive() {
+    let scratch = ScratchDir::new("size-conflict");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(
+        scratch.path(),
+        &["build", "--release", "--size", "hello.clo"],
+    );
+    assert_exit("size-conflict", &output, 2);
+    assert!(
+        stderr(&output).contains("mutually exclusive"),
+        "size-conflict: the error names the conflict, got:\n{}",
+        stderr(&output)
+    );
+}
+
+/// `emit` stops after producing C, so a size build mode is a usage error.
+#[test]
+fn emit_rejects_the_size_mode() {
+    let scratch = ScratchDir::new("emit-size");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(scratch.path(), &["emit", "--size", "hello.clo"]);
+    assert_exit("emit-size", &output, 2);
+    assert!(
+        stderr(&output).contains("--size is not valid with 'emit'"),
+        "emit-size: the error names the flag and command, got:\n{}",
+        stderr(&output)
+    );
+    assert!(
+        stdout(&output).is_empty(),
+        "emit-size: a rejected emit must not print C"
+    );
+}
+
+/// The help text documents the opt-in size mode and its conflict.
+#[test]
+fn help_lists_the_size_mode() {
+    let scratch = ScratchDir::new("size-help");
+    let output = run_driver(scratch.path(), &["--help"]);
+    assert_exit("size-help", &output, 0);
+    let help = stdout(&output);
+    assert!(
+        help.contains("--size"),
+        "size-help: the flag must be listed, got:\n{help}"
+    );
+    assert!(
+        help.contains("-Os"),
+        "size-help: the optimization level must be named, got:\n{help}"
+    );
+    assert!(
+        help.contains("cannot combine with --release"),
+        "size-help: the conflict must be stated, got:\n{help}"
+    );
+}
+
+/// The Amiga toolchain accepts the size line; the case skips without the SDK.
+#[test]
+fn hosted_amiga_size_build_accepts_the_flag() {
+    if !tool_available("m68k-amigaos-gcc") {
+        eprintln!("size-amiga: skipped (m68k-amigaos-gcc is not installed)");
+        return;
+    }
+    let scratch = ScratchDir::new("size-amiga");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(
+        scratch.path(),
+        &[
+            "build",
+            "--size",
+            "--profile",
+            "hosted-amiga",
+            "hello.clo",
+        ],
+    );
+    assert_exit("size-amiga", &output, 0);
+    let binary = artifact_dir(scratch.path(), "hello", "hosted-amiga").join("hello");
+    assert!(
+        binary.is_file(),
+        "size-amiga: the executable must exist at {}",
+        binary.display()
+    );
+}
+
+/// `run --size --profile hosted-amiga` builds with `-Os` and runs the program
+/// under `vamos`; the case skips without the SDK tools.
+#[test]
+fn hosted_amiga_size_run_prints_program_output() {
+    if !tool_available("m68k-amigaos-gcc") || !tool_available("vamos") {
+        eprintln!("size-amiga-run: skipped (the Amiga SDK tools are not installed)");
+        return;
+    }
+    let scratch = ScratchDir::new("run-size-amiga");
+    write_fixture(&scratch, "hello.clo", HELLO_SOURCE);
+
+    let output = run_driver(
+        scratch.path(),
+        &[
+            "run",
+            "--size",
+            "--profile",
+            "hosted-amiga",
+            "hello.clo",
+        ],
+    );
+    assert_exit("size-amiga-run", &output, 0);
+    assert!(
+        stdout(&output).contains("Hello, Clorraine!"),
+        "size-amiga-run: vamos must run the program, got:\n{}",
+        stdout(&output)
+    );
+}
+
 /// The release help names the profiles that are stripped and the ones that
 /// keep symbols.
 #[test]

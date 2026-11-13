@@ -17,14 +17,30 @@ use std::path::Path;
 use super::display;
 use crate::profile::Profile;
 
+/// How a build optimizes the emitted C.
+///
+/// The mode is the single source of truth for the optimization flags, so the
+/// invalid "release and size at the same time" state cannot exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildMode {
+    /// `-O0 -g` with warnings promoted to errors.
+    Debug,
+    /// `-O2`; section GC and strip on the profiles that support them.
+    Release,
+    /// `-Os`; the same release processing, optimized for code size.
+    Size,
+}
+
 /// A C compiler with its fixed flags for one profile.
 pub struct Tool {
     /// The compiler executable name.
     pub program: &'static str,
-    /// Flags that are the same in debug and release.
+    /// Flags that are the same in every build mode.
     pub base: &'static [&'static str],
     /// Release-only flags; the debug line is the same for every profile.
     pub release: &'static [&'static str],
+    /// Size-only flags: release processing with `-Os` in place of `-O2`.
+    pub size: &'static [&'static str],
     /// Link libraries; empty for the host profile.
     pub libs: &'static [&'static str],
 }
@@ -61,6 +77,18 @@ const HOST_RELEASE_GNU: &[&str] = &[
 /// Release flags for a host without the pinned GNU linker: optimize only.
 const HOST_RELEASE_FALLBACK: &[&str] = &["-O2"];
 
+/// Size flags for a Linux host: optimize for size, section-GC, and strip.
+const HOST_SIZE_GNU: &[&str] = &[
+    "-Os",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+];
+
+/// Size flags for a host without the pinned GNU linker: optimize for size.
+const HOST_SIZE_FALLBACK: &[&str] = &["-Os"];
+
 /// Release flags shared by the two Amiga profiles.
 const M68K_RELEASE_FLAGS: &[&str] = &[
     "-O2",
@@ -70,8 +98,20 @@ const M68K_RELEASE_FLAGS: &[&str] = &[
     "-s",
 ];
 
+/// Size flags shared by the two Amiga profiles.
+const M68K_SIZE_FLAGS: &[&str] = &[
+    "-Os",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-s",
+];
+
 /// Release flags for the freestanding m68k and host-run tools: unchanged.
 const FREESTANDING_RELEASE_FLAGS: &[&str] = &["-O2"];
+
+/// Size flags for the freestanding m68k and host-run tools.
+const FREESTANDING_SIZE_FLAGS: &[&str] = &["-Os"];
 
 /// Warning flags for a debug build; warnings are errors.
 ///
@@ -114,6 +154,18 @@ fn host_release_flags(gnu_linker: bool) -> &'static [&'static str] {
     }
 }
 
+/// Selects the host size flags by linker family.
+///
+/// The size line mirrors the release line, so the same predicate keeps the
+/// GNU-only section flags away from a non-GNU linker.
+fn host_size_flags(gnu_linker: bool) -> &'static [&'static str] {
+    if gnu_linker {
+        HOST_SIZE_GNU
+    } else {
+        HOST_SIZE_FALLBACK
+    }
+}
+
 /// True on the Linux host, whose pinned linker accepts `--gc-sections`.
 fn host_is_linux() -> bool {
     cfg!(target_os = "linux")
@@ -126,24 +178,28 @@ pub fn tool(profile: Profile) -> Tool {
             program: "cc",
             base: HOST_BASE,
             release: host_release_flags(host_is_linux()),
+            size: host_size_flags(host_is_linux()),
             libs: &[],
         },
         Profile::HostedAmiga => Tool {
             program: "m68k-amigaos-gcc",
             base: AMIGA_BASE,
             release: M68K_RELEASE_FLAGS,
+            size: M68K_SIZE_FLAGS,
             libs: AMIGA_LIBS,
         },
         Profile::HostedAmiga13 => Tool {
             program: "m68k-amigaos-gcc",
             base: AMIGA_13_BASE,
             release: M68K_RELEASE_FLAGS,
+            size: M68K_SIZE_FLAGS,
             libs: AMIGA_LIBS,
         },
         Profile::Freestanding => Tool {
             program: "m68k-amigaos-gcc",
             base: FREESTANDING_BUILD_BASE,
             release: FREESTANDING_RELEASE_FLAGS,
+            size: FREESTANDING_SIZE_FLAGS,
             libs: FREESTANDING_LIBS,
         },
     }
@@ -177,6 +233,7 @@ pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
                 FREESTANDING_HOST_FALLBACK_BASE
             },
             release: FREESTANDING_RELEASE_FLAGS,
+            size: FREESTANDING_SIZE_FLAGS,
             libs: &[],
         }),
     }
@@ -186,14 +243,18 @@ pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
 ///
 /// The shape is `<compiler> <base> <mode> [warnings] -o <bin> <c> <libs>`,
 /// which is exactly the compile matrix line with the artifact paths filled in.
-/// The warning flags appear in debug only, because the matrix's release line
-/// has none.
-pub fn command(tool: &Tool, release: bool, c_path: &Path, bin_path: &Path) -> Vec<String> {
+/// The warning flags appear in debug only, because neither optimized line has
+/// them.
+pub fn command(tool: &Tool, mode: BuildMode, c_path: &Path, bin_path: &Path) -> Vec<String> {
     let mut args = vec![tool.program.to_owned()];
     args.extend(tool.base.iter().map(|flag| (*flag).to_owned()));
-    let mode = if release { tool.release } else { DEBUG_FLAGS };
-    args.extend(mode.iter().map(|flag| (*flag).to_owned()));
-    if !release {
+    let flags = match mode {
+        BuildMode::Debug => DEBUG_FLAGS,
+        BuildMode::Release => tool.release,
+        BuildMode::Size => tool.size,
+    };
+    args.extend(flags.iter().map(|flag| (*flag).to_owned()));
+    if mode == BuildMode::Debug {
         args.extend(WARNINGS.iter().map(|flag| (*flag).to_owned()));
     }
     args.push("-o".to_owned());
@@ -274,7 +335,7 @@ mod tests {
     fn the_host_command_is_the_cc_line_with_artifact_paths() {
         let tool = tool(Profile::Host);
         assert_eq!(
-            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -O0 -g -Wall -Wextra -Werror -o prog out.c"
         );
         let expected_release = if host_is_linux() {
@@ -283,7 +344,7 @@ mod tests {
             "cc -std=c99 -O2 -o prog out.c"
         };
         assert_eq!(
-            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             expected_release
         );
     }
@@ -294,28 +355,34 @@ mod tests {
             program: "cc",
             base: HOST_BASE,
             release: host_release_flags(false),
+            size: host_size_flags(false),
             libs: &[],
         };
         assert_eq!(
-            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -O2 -o prog out.c"
         );
     }
 
     #[test]
-    fn the_host_release_flags_follow_the_linker_family() {
+    fn the_host_flags_follow_the_linker_family() {
         assert_eq!(
             host_release_flags(true),
             &["-O2", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-s"]
         );
         assert_eq!(host_release_flags(false), &["-O2"]);
+        assert_eq!(
+            host_size_flags(true),
+            &["-Os", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-s"]
+        );
+        assert_eq!(host_size_flags(false), &["-Os"]);
     }
 
     #[test]
     fn the_amiga_command_is_the_gcc_matrix_line_with_float_libraries() {
         let tool = tool(Profile::HostedAmiga);
         assert_eq!(
-            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lamiga -lm"
         );
     }
@@ -324,7 +391,7 @@ mod tests {
     fn the_amiga_release_command_omits_the_warning_flags() {
         let tool = tool(Profile::HostedAmiga);
         assert_eq!(
-            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
         );
     }
@@ -333,11 +400,11 @@ mod tests {
     fn the_a500_command_is_the_nix13_matrix_line() {
         let tool = tool(Profile::HostedAmiga13);
         assert_eq!(
-            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lamiga -lm"
         );
         assert_eq!(
-            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
         );
     }
@@ -394,11 +461,11 @@ mod tests {
     fn the_freestanding_build_command_is_the_no_libc_matrix_line() {
         let tool = tool(Profile::Freestanding);
         assert_eq!(
-            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lg"
         );
         assert_eq!(
-            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&tool, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O2 -o prog out.c -lg"
         );
     }
@@ -408,20 +475,20 @@ mod tests {
         let syscalls = run_tool(Profile::Freestanding, true).expect("freestanding has a run tool");
         assert_eq!(syscalls.program, "cc");
         assert_eq!(
-            command(&syscalls, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&syscalls, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O0 -g -Wall -Wextra -Werror -o prog out.c"
         );
         assert_eq!(
-            command(&syscalls, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&syscalls, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O2 -o prog out.c"
         );
         let fallback = run_tool(Profile::Freestanding, false).expect("freestanding has a run tool");
         assert_eq!(
-            command(&fallback, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&fallback, BuildMode::Debug, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -O0 -g -Wall -Wextra -Werror -o prog out.c"
         );
         assert_eq!(
-            command(&fallback, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            command(&fallback, BuildMode::Release, Path::new("out.c"), Path::new("prog")).join(" "),
             "cc -std=c99 -ffreestanding -fno-builtin -O2 -o prog out.c"
         );
     }
@@ -432,5 +499,67 @@ mod tests {
         assert!(run_tool(Profile::HostedAmiga13, true).is_none());
         assert!(run_tool(Profile::Host, true).is_some());
         assert!(matches!(runner(Profile::Freestanding), Runner::Native));
+    }
+
+    #[test]
+    fn the_host_size_command_is_os_with_release_processing() {
+        let tool = tool(Profile::Host);
+        let expected = if host_is_linux() {
+            "cc -std=c99 -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c"
+        } else {
+            "cc -std=c99 -Os -o prog out.c"
+        };
+        assert_eq!(
+            command(&tool, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            expected
+        );
+    }
+
+    #[test]
+    fn the_non_linux_host_size_line_is_plain_os() {
+        let tool = Tool {
+            program: "cc",
+            base: HOST_BASE,
+            release: host_release_flags(false),
+            size: host_size_flags(false),
+            libs: &[],
+        };
+        assert_eq!(
+            command(&tool, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -Os -o prog out.c"
+        );
+    }
+
+    #[test]
+    fn the_amiga_size_commands_keep_the_release_section_flags() {
+        let amiga = tool(Profile::HostedAmiga);
+        assert_eq!(
+            command(&amiga, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
+        );
+        let a500 = tool(Profile::HostedAmiga13);
+        assert_eq!(
+            command(&a500, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o prog out.c -lamiga -lm"
+        );
+    }
+
+    #[test]
+    fn the_freestanding_size_commands_are_plain_os() {
+        let build = tool(Profile::Freestanding);
+        assert_eq!(
+            command(&build, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -Os -o prog out.c -lg"
+        );
+        let syscalls = run_tool(Profile::Freestanding, true).expect("freestanding has a run tool");
+        assert_eq!(
+            command(&syscalls, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -Os -o prog out.c"
+        );
+        let fallback = run_tool(Profile::Freestanding, false).expect("freestanding has a run tool");
+        assert_eq!(
+            command(&fallback, BuildMode::Size, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -Os -o prog out.c"
+        );
     }
 }

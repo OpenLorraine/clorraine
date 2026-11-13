@@ -16,7 +16,7 @@ use std::process::Command;
 
 use super::artifacts;
 use super::display;
-use super::toolchain::{self, Tool};
+use super::toolchain::{self, BuildMode, Tool};
 use crate::diag::DiagnosticFormat;
 use crate::profile::Profile;
 
@@ -87,11 +87,11 @@ pub fn emit_c(
 /// and the compiler's first error line.
 pub fn compile(
     tool: &Tool,
-    release: bool,
+    mode: BuildMode,
     c_path: &Path,
     bin_path: &Path,
 ) -> Result<(), IceError> {
-    let argv = toolchain::command(tool, release, c_path, bin_path);
+    let argv = toolchain::command(tool, mode, c_path, bin_path);
     let output = Command::new(&argv[0]).args(&argv[1..]).output();
     match output {
         Ok(output) if output.status.success() => Ok(()),
@@ -112,7 +112,7 @@ pub fn compile(
 /// stale binary behind.
 pub fn build(
     profile: Profile,
-    release: bool,
+    mode: BuildMode,
     files: &[String],
     format: DiagnosticFormat,
 ) -> Result<BuildOutput, BuildFailure> {
@@ -131,7 +131,7 @@ pub fn build(
     }
     let bin_path = artifacts::bin_path(profile, &stem);
     let tool = toolchain::tool(profile);
-    compile(&tool, release, &c_path, &bin_path)
+    compile(&tool, mode, &c_path, &bin_path)
         .map_err(|ice| BuildFailure::Error(ice.to_string()))?;
     Ok(BuildOutput {
         c: c_path,
@@ -160,10 +160,16 @@ mod tests {
             program: "false",
             base: &[],
             release: &["-O2"],
+            size: &["-Os"],
             libs: &[],
         };
-        let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))
-            .expect_err("a failing compiler must not succeed");
+        let error = compile(
+            &tool,
+            BuildMode::Debug,
+            Path::new("emitted.c"),
+            Path::new("prog"),
+        )
+        .expect_err("a failing compiler must not succeed");
 
         assert_eq!(error.c_path, Path::new("emitted.c"));
         let message = error.to_string();
@@ -183,10 +189,16 @@ mod tests {
             program: "clorraine-no-such-compiler",
             base: &[],
             release: &["-O2"],
+            size: &["-Os"],
             libs: &[],
         };
-        let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))
-            .expect_err("a missing compiler must not succeed");
+        let error = compile(
+            &tool,
+            BuildMode::Debug,
+            Path::new("emitted.c"),
+            Path::new("prog"),
+        )
+        .expect_err("a missing compiler must not succeed");
         assert!(
             error.first_error.contains("clorraine-no-such-compiler"),
             "the report names the tool, got:\n{}",
