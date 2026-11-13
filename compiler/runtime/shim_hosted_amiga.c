@@ -4163,9 +4163,20 @@ void cl_video_bitmap_indices(void *handle, APTR indices, ULONG count)
     for (y = 0; y < (int)bitmap->height; y++) {
         for (x = 0; x < (int)bitmap->width; x++) {
             UBYTE pen = pixels[(ULONG)y * (ULONG)bitmap->width + (ULONG)x];
+            /*
+             * The loops are already bounded by the bitmap's own dimensions and
+             * the planes were cleared above, so write the bitplane bytes
+             * directly. Calling cl_video_plot_plane here would repeat the
+             * handle, plane, and pixel bounds checks for every set bit, which
+             * dominates a full-screen conversion on a 7 MHz 68000.
+             */
+            UBYTE mask = (UBYTE)(0x80U >> (unsigned)(x & 7));
             for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
                 if ((pen & (UBYTE)(1U << (unsigned)plane)) != 0) {
-                    cl_video_plot_plane(bitmap, plane, x, y, 1);
+                    UBYTE *row = (UBYTE *)bitmap->bitmap.Planes[plane] +
+                                 (size_t)y *
+                                     (size_t)bitmap->bitmap.BytesPerRow;
+                    row[x >> 3] |= mask;
                 }
             }
         }
@@ -4468,11 +4479,21 @@ void cl_video_display_flip(void *handle)
             display->views[index].Modes = 0;
             (void)MakeVPort(&display->views[index],
                             &display->view_ports[index]);
-            (void)MrgCop(&display->views[index]);
-            if (display->views[index].LOFCprList == NULL) {
-                display->failed = 1;
-                display->built = 1;
-                return;
+            /*
+             * Kickstart fills View.LOFCprList in MrgCop. AROS keeps the
+             * copper lists inside its display driver and returns MCOP_OK
+             * instead, so an empty LOFCprList is normal there. Use the
+             * return code on v39 and later, and the classic list on 1.x.
+             */
+            {
+                ULONG merged = (ULONG)MrgCop(&display->views[index]);
+                if (display->views[index].LOFCprList == NULL &&
+                    (GfxBase->LibNode.lib_Version < 39 ||
+                     merged != (ULONG)MCOP_OK)) {
+                    display->failed = 1;
+                    display->built = 1;
+                    return;
+                }
             }
         }
         LoadView(&display->views[0]);

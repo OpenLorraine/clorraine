@@ -1,0 +1,927 @@
+// First Light: the Clorraine showcase demo for the A500 / Kickstart 1.3
+// baseline.
+//
+// The scene is a dawn seascape with a lighthouse on a headland. It is drawn
+// entirely in 16 colours at 320x256. The static scene is rendered once into a
+// chunky byte buffer, then converted to bitplanes in one call; the moving
+// reflection is pre-rendered as an eight-phase filmstrip. That keeps the
+// 68000 work at startup instead of paying a graphics-library call per pixel.
+//
+// The program owns the master view, the two display views, and the filmstrip.
+// The display borrows the two views; every bitmap is released after the
+// display has restored the system screen.
+
+module example.FirstLight;
+
+import {
+    Bitmap, Display,
+    newBitmap, freeBitmap, bitmapBlit, bitmapFromIndices,
+    openDisplay, freeDisplay, displaySetColor,
+    displayFlip, displayFailed, displayIndex
+} from std.amiga.video;
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+import { sin, sqrt } from std.math;
+import { println } from std.io;
+
+/// Frame width in pixels.
+const WIDTH: i32 = 320;
+/// Frame height in pixels.
+const HEIGHT: i32 = 256;
+/// The sea horizon, and the last row of the sky.
+const HORIZON: i32 = 157;
+/// The sun centre. It sits partly below the horizon, so only its cap shows.
+const SUN_X: i32 = 92;
+const SUN_Y: i32 = 172;
+/// The visible sun radius.
+const SUN_R: i32 = 38;
+/// The outer radius of the atmospheric glow.
+const GLOW_R: i32 = 142;
+/// The animated reflection rectangle, and the filmstrip that replaces it.
+const REFLECT_X: i32 = 40;
+const REFLECT_Y: i32 = 158;
+const REFLECT_W: i32 = 120;
+const REFLECT_H: i32 = 90;
+const PHASES: i32 = 8;
+/// The width of the dithered transition above each sky band boundary.
+const SEAM: i32 = 7;
+
+/// Returns the ordered-dither threshold (0..15) for a pixel.
+///
+/// This is the 4x4 Bayer matrix written as two small bit patterns and an
+/// exclusive-or, so no global table is borrowed on the hot path:
+///
+///     0  8  2 10
+///    12  4 14  6
+///     3 11  1  9
+///    15  7 13  5
+func bayer(x: i32, y: i32): i32 {
+    let cx: i32 = x & 3;
+    let cy: i32 = y & 3;
+    let column: i32 = (cx & 1) * 8 + ((cx >> 1) & 1) * 2;
+    let row: i32 = (cy & 1) * 12 + ((cy >> 1) & 1) * 3;
+    return column ^ row;
+}
+
+/// Clamps a pen index to the 16-colour palette.
+func pen(value: i32): u8 {
+    if (value < 0) {
+        return 0;
+    }
+    if (value > 15) {
+        return 15;
+    }
+    return u8(value);
+}
+
+/// Plots one pixel in a chunky, row-major byte buffer.
+func put(borrow pixels: u8[], x: i32, y: i32, colour: i32): void {
+    if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+        pixels[usize(y * WIDTH + x)] = pen(colour);
+    }
+}
+
+/// Fills one horizontal span in a chunky buffer, clipped to the frame.
+func span(borrow pixels: u8[], x0: i32, x1: i32, y: i32, colour: i32): void {
+    if (y < 0 || y >= HEIGHT || x1 < 0 || x0 >= WIDTH) {
+        return;
+    }
+    let a: i32 = x0;
+    let b: i32 = x1;
+    if (a < 0) {
+        a = 0;
+    }
+    if (b >= WIDTH) {
+        b = WIDTH - 1;
+    }
+    while (a <= b) {
+        pixels[usize(y * WIDTH + a)] = pen(colour);
+        a = a + 1;
+    }
+}
+
+/// Returns the sky band index for a row.
+func skyBand(y: i32): i32 {
+    if (y < 46) { return 0; }
+    if (y < 92) { return 1; }
+    if (y < 126) { return 2; }
+    if (y < 144) { return 3; }
+    if (y < HORIZON) { return 4; }
+    return 5;
+}
+
+/// Returns the first row of a band. Band 0 starts at the top of the frame.
+func bandStart(band: i32): i32 {
+    if (band == 1) { return 46; }
+    if (band == 2) { return 92; }
+    if (band == 3) { return 126; }
+    if (band == 4) { return 144; }
+    if (band == 5) { return HORIZON; }
+    return 0;
+}
+
+/// Returns the solid sky pen at a row, or a dithered seam value.
+func skyPen(x: i32, y: i32): i32 {
+    let band: i32 = skyBand(y);
+    if (band < 5) {
+        let next: i32 = bandStart(band + 1);
+        if (y >= next - SEAM) {
+            let t: i32 = (y - (next - SEAM)) * 16 / SEAM;
+            if (bayer(x, y) < t) {
+                return band + 2;
+            }
+            return band + 1;
+        }
+    }
+    return band + 1;
+}
+
+/// Fills the sky with solid bands and short dithered seams.
+func drawSky(borrow pixels: u8[]): void {
+    let y: i32 = 0;
+    while (y < HORIZON) {
+        let band: i32 = skyBand(y);
+        if (band < 5 && y >= bandStart(band + 1) - SEAM) {
+            let x: i32 = 0;
+            while (x < WIDTH) {
+                span(pixels, x, x, y, skyPen(x, y));
+                x = x + 1;
+            }
+        } else {
+            span(pixels, 0, WIDTH - 1, y, band + 1);
+        }
+        y = y + 1;
+    }
+}
+
+/// Draws the radial dawn glow over the sky.
+///
+/// The distance is looked up in a small table indexed by `d squared / 64`.
+/// That removes the per-pixel square root while keeping a smooth falloff.
+func drawGlow(borrow pixels: u8[]): void {
+    let table: u8[316] = [; 0];
+    let i: i32 = 0;
+    while (i < 316) {
+        let d: i32 = sqrt(i * 64);
+        let t: i32 = GLOW_R - d;
+        if (t < 0) {
+            t = 0;
+        }
+        let level: i32 = t * t * 128 / (GLOW_R * GLOW_R);
+        if (level > 128) {
+            level = 128;
+        }
+        table[usize(i)] = u8(level);
+        i = i + 1;
+    }
+
+    let y: i32 = SUN_Y - 120;
+    if (y < 0) {
+        y = 0;
+    }
+    while (y < HORIZON) {
+        let dy: i32 = (y - SUN_Y) * 100 / 82;
+        let dy2: i32 = dy * dy;
+        let x: i32 = SUN_X - 160;
+        if (x < 0) {
+            x = 0;
+        }
+        let limit: i32 = SUN_X + 160;
+        if (limit > WIDTH) {
+            limit = WIDTH;
+        }
+        while (x < limit) {
+            let dx: i32 = x - SUN_X;
+            let d2: i32 = dx * dx + dy2;
+            if (d2 < GLOW_R * GLOW_R) {
+                let index: i32 = d2 / 64;
+                if (index > 315) {
+                    index = 315;
+                }
+                let add: i32 = i32(table[usize(index)]);
+                if (add > 0) {
+                    let base: i32 = skyPen(x, y);
+                    let whole: i32 = add / 16;
+                    let frac: i32 = add % 16;
+                    let target: i32 = base + whole;
+                    if (frac > 0 && bayer(x, y) < frac) {
+                        target = target + 1;
+                    }
+                    if (target > 9) {
+                        target = 9;
+                    }
+                    if (target > base) {
+                        put(pixels, x, y, target);
+                    }
+                }
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+/// Builds the sun disc and its corona.
+func drawSun(borrow pixels: u8[]): void {
+    let y: i32 = SUN_Y - SUN_R - 3;
+    if (y < 0) {
+        y = 0;
+    }
+    while (y <= SUN_Y + SUN_R + 3) {
+        let dy: i32 = y - SUN_Y;
+        let outer2: i32 = (SUN_R + 3) * (SUN_R + 3) - dy * dy;
+        if (outer2 >= 0) {
+            let outer: i32 = sqrt(outer2);
+            let inner2: i32 = SUN_R * SUN_R - dy * dy;
+            let inner: i32 = 0;
+            if (inner2 > 0) {
+                inner = sqrt(inner2);
+            }
+            let x: i32 = SUN_X - outer;
+            while (x <= SUN_X + outer) {
+                let d: i32 = x - SUN_X;
+                if (d < 0) {
+                    d = -d;
+                }
+                if (d <= inner) {
+                    if (d < inner - 7) {
+                        put(pixels, x, y, 12);
+                    } else {
+                        put(pixels, x, y, 11);
+                    }
+                } else {
+                    if (bayer(x, y) > 6) {
+                        put(pixels, x, y, 10);
+                    } else {
+                        put(pixels, x, y, 11);
+                    }
+                }
+                x = x + 1;
+            }
+        }
+        y = y + 1;
+    }
+}
+
+/// Advances a small Lehmer generator. The modulus keeps every product inside
+/// a signed 32-bit integer, so the sequence is identical on every target.
+func nextRandom(seed: i32): i32 {
+    return (seed * 75 + 74) % 65537;
+}
+
+/// Draws the star field, skipping the area covered by the glow.
+func drawStars(borrow pixels: u8[]): void {
+    let seed: i32 = 17;
+    let placed: i32 = 0;
+    let tries: i32 = 0;
+    while (placed < 78 && tries < 500) {
+        tries = tries + 1;
+        seed = nextRandom(seed);
+        let x: i32 = 2 + seed % (WIDTH - 4);
+        seed = nextRandom(seed);
+        let y: i32 = 3 + seed % 114;
+        let dx: i32 = x - SUN_X;
+        let dy: i32 = y - SUN_Y;
+        if (dx * dx + dy * dy >= 128 * 128) {
+            placed = placed + 1;
+            seed = nextRandom(seed);
+            let kind: i32 = seed % 100;
+            if (kind > 90) {
+                put(pixels, x, y, 12);
+                put(pixels, x - 1, y, 10);
+                put(pixels, x + 1, y, 10);
+                put(pixels, x, y - 1, 10);
+                put(pixels, x, y + 1, 10);
+            } else if (kind > 55) {
+                put(pixels, x, y, 11);
+            } else {
+                put(pixels, x, y, 2);
+            }
+        }
+    }
+}
+
+/// Draws one thin cloud bank.
+func wisp(borrow pixels: u8[], cx: i32, cy: i32, halfWidth: i32,
+          thick: i32, seed: i32, lit: bool): void {
+    let row: i32 = 0;
+    while (row < thick) {
+        let y: i32 = cy + row;
+        let distance: i32 = row - (thick - 1) / 2;
+        if (distance < 0) {
+            distance = -distance;
+        }
+        let taper: i32 = halfWidth * (thick - distance) / thick;
+        if (taper >= 4) {
+            let x: i32 = cx - taper;
+            while (x < cx + taper) {
+                let angle: i32 = (x + seed) * 17 / 10;
+                let wob: i32 = 2 * sin(angle) / 256;
+                let edge: bool = x - cx > taper - 5 || cx - x > taper - 5;
+                if (!edge || bayer(x, y) < 10) {
+                    let colour: i32 = 4;
+                    if (row == thick - 1) {
+                        colour = 5;
+                    }
+                    if (lit && row >= thick - 2) {
+                        let gx: i32 = x - SUN_X;
+                        let gy: i32 = y - SUN_Y;
+                        if (gx * gx + gy * gy < 118 * 118 && bayer(x, y) > 3) {
+                            if (row == thick - 1) {
+                                colour = 7;
+                            } else {
+                                colour = 6;
+                            }
+                        }
+                    }
+                    put(pixels, x, y + wob, colour);
+                }
+                x = x + 1;
+            }
+        }
+        row = row + 1;
+    }
+}
+
+/// Draws the cloud banks in front of the glow.
+func drawClouds(borrow pixels: u8[]): void {
+    wisp(pixels, 206, 48, 60, 5, 11, false);
+    wisp(pixels, 84, 72, 78, 5, 29, true);
+    wisp(pixels, 250, 99, 52, 5, 61, false);
+    wisp(pixels, 128, 120, 60, 4, 83, true);
+}
+
+/// Returns the base sea pen at a pixel.
+func seaColour(x: i32, y: i32): i32 {
+    let t: i32 = (y - HORIZON) * 100 / (HEIGHT - HORIZON);
+    let level: i32 = 1405 - t * 115 / 100;
+    let lo: i32 = level / 100;
+    let frac: i32 = level % 100;
+    let colour: i32 = lo;
+    if (frac > 0 && bayer(x, y) * 100 / 16 < frac) {
+        return colour + 1;
+    }
+    return colour;
+}
+
+/// Fills the sea with its gradient, swell lines, and foreground shading.
+func drawSea(borrow pixels: u8[]): void {
+    let y: i32 = HORIZON;
+    while (y < HEIGHT) {
+        let x: i32 = 0;
+        while (x < WIDTH) {
+            put(pixels, x, y, seaColour(x, y));
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+
+    // A warm haze sits on the horizon under the sun.
+    let x: i32 = 0;
+    while (x < WIDTH) {
+        let d: i32 = x - SUN_X;
+        if (d < 0) {
+            d = -d;
+        }
+        if (d < 92) {
+            let t: i32 = 100 - d * 100 / 92;
+            if (t > 55) {
+                put(pixels, x, HORIZON, 9);
+            } else if (bayer(x, HORIZON) * 100 / 16 < t) {
+                put(pixels, x, HORIZON, 8);
+            }
+        }
+        x = x + 1;
+    }
+
+    // Short broken swell lines on the open water.
+    y = HORIZON + 8;
+    while (y < HEIGHT) {
+        x = 0;
+        while (x < 200) {
+            if ((x + y * 3) % 11 == 0) {
+                let d: i32 = x - SUN_X;
+                if (d < 0) {
+                    d = -d;
+                }
+                if (d > 38) {
+                    put(pixels, x, y, 15);
+                }
+            }
+            x = x + 1;
+        }
+        y = y + 9;
+    }
+
+    // Darker foreground water with a few broken crests.
+    y = HEIGHT - 14;
+    while (y < HEIGHT) {
+        x = 0;
+        while (x < WIDTH) {
+            if (bayer(x, y) < 5) {
+                put(pixels, x, y, 13);
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    x = 0;
+    while (x < WIDTH) {
+        if (x % 5 == 0 && bayer(x, HEIGHT - 4) < 1) {
+            put(pixels, x, HEIGHT - 4, 15);
+        }
+        x = x + 1;
+    }
+}
+
+/// Returns the top row of the headland at a column, or `HEIGHT` for open sea.
+func cliffTop(x: i32): i32 {
+    if (x < 210) {
+        return HEIGHT;
+    }
+    if (x < 232) {
+        let t: i32 = (x - 210) * 100 / 22;
+        return 152 - 36 * t * t / 10000;
+    }
+    if (x < 288) {
+        let wob: i32 = (12 * sin(x * 3) + 8 * sin(x * 7)) / 2560;
+        return 116 + wob;
+    }
+    let t: i32 = (x - 288) * 100 / 32;
+    return 116 + 48 * t * t / 10000;
+}
+
+/// Draws the headland, its warm rim, rock cracks, and grass tufts.
+func drawHeadland(borrow pixels: u8[]): void {
+    let x: i32 = 202;
+    while (x < WIDTH) {
+        let top: i32 = cliffTop(x);
+        if (top < HEIGHT) {
+            let y: i32 = top;
+            while (y < HEIGHT) {
+                pixels[usize(y * WIDTH + x)] = 1;
+                y = y + 1;
+            }
+            put(pixels, x, top, 6);
+            if (top + 1 < HEIGHT) {
+                put(pixels, x, top + 1, 4);
+            }
+            if (top + 3 < HEIGHT && bayer(x, top + 3) < 6) {
+                put(pixels, x, top + 3, 2);
+            }
+        }
+        x = x + 1;
+    }
+
+    let seed: i32 = 31;
+    let i: i32 = 0;
+    while (i < 16) {
+        seed = nextRandom(seed);
+        let rx: i32 = 216 + seed % (WIDTH - 216);
+        let top: i32 = cliffTop(rx);
+        if (top < 168) {
+            seed = nextRandom(seed);
+            let ry: i32 = top + 4 + seed % 34;
+            seed = nextRandom(seed);
+            let length: i32 = 2 + seed % 5;
+            let k: i32 = 0;
+            while (k < length && ry + k < HEIGHT) {
+                let offset: i32 = 0;
+                if ((i + k) % 9 == 0) {
+                    offset = 1;
+                }
+                put(pixels, rx + offset, ry + k, 2);
+                k = k + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    // A few horizontal ledges give the headland a rock face instead of a
+    // flat silhouette. They stay short so the cliff still reads at a glance.
+    seed = 41;
+    i = 0;
+    while (i < 12) {
+        seed = nextRandom(seed);
+        let fx: i32 = 216 + seed % (WIDTH - 216);
+        let top: i32 = cliffTop(fx);
+        if (top < 158) {
+            seed = nextRandom(seed);
+            let fy: i32 = top + 8 + seed % 32;
+            seed = nextRandom(seed);
+            let length: i32 = 4 + seed % 11;
+            let k: i32 = 0;
+            while (k < length && fx + k < WIDTH) {
+                put(pixels, fx + k, fy, 2);
+                k = k + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    seed = 23;
+    i = 0;
+    while (i < 88) {
+        seed = nextRandom(seed);
+        let gx: i32 = 210 + seed % (WIDTH - 210);
+        let top: i32 = cliffTop(gx);
+        if (top < 152) {
+            seed = nextRandom(seed);
+            let height: i32 = 2 + seed % 5;
+            seed = nextRandom(seed);
+            let lean: i32 = seed % 3 - 1;
+            let k: i32 = 0;
+            while (k < height) {
+                let px: i32 = gx + lean * k;
+                if (px >= 0 && px < WIDTH) {
+                    put(pixels, px, top - k, 0);
+                }
+                k = k + 1;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+/// Draws the lighthouse: a tapered silhouette with a lit lantern room.
+func drawLighthouse(borrow pixels: u8[]): void {
+    let lx: i32 = 258;
+    let base: i32 = 118;
+    let top: i32 = 56;
+    let y: i32 = top;
+    while (y <= base) {
+        let t: i32 = (y - top) * 100 / (base - top);
+        let half: i32 = 5 + (8 - 5) * t / 100;
+        let x: i32 = lx - half;
+        while (x <= lx + half) {
+            put(pixels, x, y, 0);
+            x = x + 1;
+        }
+        if (y % 6 == 0) {
+            put(pixels, lx - half, y, 6);
+        } else {
+            put(pixels, lx - half, y, 7);
+        }
+        y = y + 1;
+    }
+
+    let band: i32 = 0;
+    while (band < 2) {
+        let by: i32 = 78 + band * 22;
+        let x: i32 = lx - 7;
+        while (x <= lx + 7) {
+            put(pixels, x, by, 1);
+            x = x + 1;
+        }
+        band = band + 1;
+    }
+
+    let x: i32 = lx - 10;
+    while (x <= lx + 10) {
+        put(pixels, x, top, 0);
+        put(pixels, x, top - 1, 6);
+        x = x + 1;
+    }
+    x = lx - 9;
+    while (x <= lx + 9) {
+        let y2: i32 = top - 4;
+        while (y2 < top) {
+            put(pixels, x, y2, 0);
+            y2 = y2 + 1;
+        }
+        x = x + 1;
+    }
+    x = lx - 6;
+    while (x <= lx + 6) {
+        let y2: i32 = top - 13;
+        while (y2 < top - 4) {
+            put(pixels, x, y2, 0);
+            y2 = y2 + 1;
+        }
+        x = x + 1;
+    }
+
+    x = lx - 4;
+    while (x <= lx + 4) {
+        let y2: i32 = top - 12;
+        while (y2 < top - 6) {
+            let d: i32 = x - lx;
+            if (d < 0) {
+                d = -d;
+            }
+            if (d < 2) {
+                put(pixels, x, y2, 12);
+            } else if (d < 4) {
+                put(pixels, x, y2, 11);
+            } else {
+                put(pixels, x, y2, 10);
+            }
+            y2 = y2 + 1;
+        }
+        x = x + 1;
+    }
+
+    let i: i32 = 0;
+    while (i < 6) {
+        x = lx - 6 + i;
+        while (x <= lx + 6 - i) {
+            put(pixels, x, top - 18 + i, 0);
+            x = x + 1;
+        }
+        i = i + 1;
+    }
+    put(pixels, lx, top - 20, 0);
+    put(pixels, lx, top - 21, 10);
+
+}
+
+/// Draws five birds as shallow vees.
+func drawBirds(borrow pixels: u8[]): void {
+    let i: i32 = 0;
+    while (i < 5) {
+        let bx: i32 = 120 + i * 19;
+        let by: i32 = 88 - (i % 3) * 12;
+        let size: i32 = 2 + (i % 3);
+        let k: i32 = 1;
+        while (k <= size) {
+            let lift: i32 = k / 2;
+            put(pixels, bx - k, by - lift, 0);
+            put(pixels, bx + k, by - lift, 0);
+            k = k + 1;
+        }
+        put(pixels, bx, by + 1, 0);
+        i = i + 1;
+    }
+}
+
+/// Draws the whole static scene into a chunky byte buffer.
+func drawScene(borrow pixels: u8[]): void {
+    drawSky(pixels);
+    drawGlow(pixels);
+    drawSun(pixels);
+    drawStars(pixels);
+    drawClouds(pixels);
+    drawSea(pixels);
+    drawHeadland(pixels);
+    drawLighthouse(pixels);
+    drawBirds(pixels);
+}
+
+/// Draws one phase of the reflection region into a 120x90 chunky buffer.
+///
+/// The region covers the sea below the sun, so it carries its own copy of the
+/// sea gradient and swell lines. That lets the animation replace the rectangle
+/// with one blit instead of recomputing the water every frame.
+func drawReflectionRegion(borrow pixels: u8[], phase: i32): void {
+    let ly: i32 = 0;
+    while (ly < REFLECT_H) {
+        let y: i32 = REFLECT_Y + ly;
+        let lx: i32 = 0;
+        while (lx < REFLECT_W) {
+            let x: i32 = REFLECT_X + lx;
+            let colour: i32 = seaColour(x, y);
+            pixels[usize(ly * REFLECT_W + lx)] = pen(colour);
+            lx = lx + 1;
+        }
+        ly = ly + 1;
+    }
+
+    // The same swell lines and foreground shading as the static sea.
+    let y: i32 = HORIZON + 8;
+    while (y < HEIGHT) {
+        let x: i32 = 0;
+        while (x < 200) {
+            if ((x + y * 3) % 11 == 0) {
+                let d: i32 = x - SUN_X;
+                if (d < 0) {
+                    d = -d;
+                }
+                if (d > 38 && x >= REFLECT_X && x < REFLECT_X + REFLECT_W &&
+                    y >= REFLECT_Y && y < REFLECT_Y + REFLECT_H) {
+                    pixels[usize((y - REFLECT_Y) * REFLECT_W +
+                                 (x - REFLECT_X))] = 15;
+                }
+            }
+            x = x + 1;
+        }
+        y = y + 9;
+    }
+    y = HEIGHT - 14;
+    while (y < HEIGHT) {
+        let x: i32 = 0;
+        while (x < WIDTH) {
+            if (bayer(x, y) < 5 && x >= REFLECT_X &&
+                x < REFLECT_X + REFLECT_W && y >= REFLECT_Y &&
+                y < REFLECT_Y + REFLECT_H) {
+                pixels[usize((y - REFLECT_Y) * REFLECT_W +
+                             (x - REFLECT_X))] = 13;
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    let x: i32 = 0;
+    while (x < WIDTH) {
+        if (x % 5 == 0 && bayer(x, HEIGHT - 4) < 1 &&
+            x >= REFLECT_X && x < REFLECT_X + REFLECT_W &&
+            HEIGHT - 4 >= REFLECT_Y &&
+            HEIGHT - 4 < REFLECT_Y + REFLECT_H) {
+            pixels[usize((HEIGHT - 4 - REFLECT_Y) * REFLECT_W +
+                         (x - REFLECT_X))] = 15;
+        }
+        x = x + 1;
+    }
+
+    // The moving reflection: four irregular dashes per row inside a soft
+    // haze. A per-row seed shifts the dash positions so the pattern never
+    // forms the diagonal ladder that a plain modulo pattern produces.
+    ly = 1;
+    while (ly < REFLECT_H) {
+        let sy: i32 = REFLECT_Y + ly;
+        let t: i32 = (sy - HORIZON) * 100 / (HEIGHT - HORIZON);
+        if (t < 96) {
+            let half: i32 = 5 + 18 * t / 100;
+            let wobble: i32 = 3 * sin(sy * 56 + phase * 3) / 256;
+            let centre: i32 = SUN_X + wobble;
+
+            // A wide, very sparse haze softens the edge of the column.
+            let lx: i32 = centre - half - 10 - REFLECT_X;
+            while (lx < centre + half + 10 - REFLECT_X) {
+                if (lx >= 0 && lx < REFLECT_W) {
+                    let x: i32 = REFLECT_X + lx;
+                    if (bayer(x, sy) < 2 &&
+                        (x * 5 + sy * 3 + phase) % 7 < 2) {
+                        pixels[usize(ly * REFLECT_W + lx)] = 15;
+                    }
+                }
+                lx = lx + 1;
+            }
+
+            let seed: i32 = (sy * 37 + phase * 13) % 101;
+            let dashes: i32 = 4;
+            if (t > 55) {
+                dashes = 3;
+            }
+            if (t > 80) {
+                dashes = 2;
+            }
+            let dash: i32 = 0;
+            while (dash < dashes) {
+                let offset: i32 = ((seed + dash * 29) %
+                                   (2 * half + 1)) - half;
+                let length: i32 = 2 + (seed + dash * 11) % 8;
+                let px: i32 = centre + offset;
+                let stop: i32 = px + length;
+                while (px < stop) {
+                    if (px >= REFLECT_X && px < REFLECT_X + REFLECT_W) {
+                        let lx2: i32 = px - REFLECT_X;
+                        let colour: i32 = 10;
+                        if (t < 20) {
+                            colour = 11;
+                        } else if (t > 50) {
+                            colour = 9;
+                        }
+                        let density: i32 = 10;
+                        if (t > 70) {
+                            density = 7;
+                        }
+                        if (t > 88) {
+                            density = 4;
+                        }
+                        if (bayer(px, sy) < density) {
+                            pixels[usize(ly * REFLECT_W + lx2)] = pen(colour);
+                        }
+                    }
+                    px = px + 1;
+                }
+                dash = dash + 1;
+            }
+        }
+        ly = ly + 1;
+    }
+}
+
+/// Renders the static scene into a master bitmap.
+func buildMaster(): Bitmap? {
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HEIGHT));
+    if (canvas == null) {
+        return null;
+    }
+    drawScene(bufferBytes(canvas));
+
+    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (master == null) {
+        return null;
+    }
+    bitmapFromIndices(master, bufferBytes(canvas));
+    return master;
+}
+
+/// Renders the eight reflection phases into one tall filmstrip bitmap.
+func buildStrip(): Bitmap? {
+    let strip: Bitmap? = newBitmap(REFLECT_W, REFLECT_H * PHASES, 4);
+    if (strip == null) {
+        return null;
+    }
+    let canvas: Buffer? = bufferNew(usize(REFLECT_W * REFLECT_H * PHASES));
+    if (canvas == null) {
+        return null;
+    }
+    let full: u8[] = bufferBytes(canvas);
+    let phase: i32 = 0;
+    while (phase < PHASES) {
+        let start: usize = usize(phase * REFLECT_W * REFLECT_H);
+        let end: usize = usize((phase + 1) * REFLECT_W * REFLECT_H);
+        drawReflectionRegion(slice(full, start, end), phase);
+        phase = phase + 1;
+    }
+    bitmapFromIndices(strip, full);
+    return strip;
+}
+
+/// Sets the 16-colour dawn palette.
+func setPalette(borrow display: Display): void {
+    displaySetColor(display, 0, 3, 4, 10);
+    displaySetColor(display, 1, 9, 12, 30);
+    displaySetColor(display, 2, 19, 22, 52);
+    displaySetColor(display, 3, 34, 25, 70);
+    displaySetColor(display, 4, 58, 30, 78);
+    displaySetColor(display, 5, 94, 37, 72);
+    displaySetColor(display, 6, 136, 46, 60);
+    displaySetColor(display, 7, 187, 70, 43);
+    displaySetColor(display, 8, 226, 106, 37);
+    displaySetColor(display, 9, 255, 151, 49);
+    displaySetColor(display, 10, 255, 198, 101);
+    displaySetColor(display, 11, 255, 231, 166);
+    displaySetColor(display, 12, 255, 250, 226);
+    displaySetColor(display, 13, 8, 28, 42);
+    displaySetColor(display, 14, 16, 68, 82);
+    displaySetColor(display, 15, 44, 126, 130);
+}
+
+func main(): i32 {
+    let master: Bitmap? = buildMaster();
+    if (master == null) {
+        println("first-light: master failed");
+        return 1;
+    }
+    let strip: Bitmap? = buildStrip();
+    if (strip == null) {
+        println("first-light: strip failed");
+        return 1;
+    }
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (front == null) {
+        println("first-light: bitmap failed");
+        return 1;
+    }
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (back == null) {
+        println("first-light: bitmap failed");
+        return 1;
+    }
+
+    bitmapBlit(front, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+    bitmapBlit(back, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+    bitmapBlit(front, strip, 0, 0, REFLECT_X, REFLECT_Y,
+               REFLECT_W, REFLECT_H);
+    bitmapBlit(back, strip, 0, 0, REFLECT_X, REFLECT_Y,
+               REFLECT_W, REFLECT_H);
+
+    let display: Display? = openDisplay(front, back);
+    if (display == null) {
+        println("first-light: open failed");
+        return 2;
+    }
+    setPalette(display);
+    displayFlip(display);
+    if (displayFailed(display)) {
+        println("first-light: flip failed");
+        return 2;
+    }
+
+    println("first-light: dawn");
+
+    // Each frame replaces the reflection rectangle with the next pre-rendered
+    // phase. The rest of the scene is static, so one blit and one flip are the
+    // whole per-frame cost.
+    let frame: i32 = 0;
+    while (frame < 1000000) {
+        let phase: i32 = (frame / 3) % PHASES;
+        if (displayIndex(display) == 0) {
+            bitmapBlit(back, strip, 0, phase * REFLECT_H, REFLECT_X,
+                       REFLECT_Y, REFLECT_W, REFLECT_H);
+        } else {
+            bitmapBlit(front, strip, 0, phase * REFLECT_H, REFLECT_X,
+                       REFLECT_Y, REFLECT_W, REFLECT_H);
+        }
+        displayFlip(display);
+        frame = frame + 1;
+    }
+
+    freeDisplay(display);
+    freeBitmap(strip);
+    freeBitmap(back);
+    freeBitmap(front);
+    freeBitmap(master);
+    return 0;
+}
