@@ -154,8 +154,10 @@ documents above:
 | `mixed-4000` | 761.90 ms | 549.02 ms | −27.9% |
 
 The benchmark and real-example sets are inside the noise band; no small
-workload shows a repeatable regression. The generated function shapes cross
-the changed path and improve monotonically with function count.
+workload shows a repeatable regression. The corpus also varies with host load
+across document runs, so a pinned true-alternation CPU check was used: 423.1 ms
+base → 418.8 ms head (−1.0%). The generated function shapes cross the changed
+path and improve monotonically with function count.
 
 ### 4.2 Wall time
 

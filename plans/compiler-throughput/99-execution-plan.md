@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-13
-> **Progress**: 23/25 tasks (92%)
+> **Progress**: 25/25 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -120,9 +120,9 @@ reviews have no critical/major findings.
 ### Step 5.1: The record
 
 - [x] 5.1.1 Write the final [05-findings.md](05-findings.md) with the baseline, hot passes, improvement, memory, test counts, reviews, and gate evidence
-- [ ] 5.1.2 Mark this plan and the roadmap row Done; update the roadmap progress count
-- [ ] 5.1.3 Close issue #13 with the delivered harness and measured result
-- [ ] 5.1.4 Commit and push the change set; confirm the working tree is clean
+- [x] 5.1.2 Mark this plan and the roadmap row Done; update the roadmap progress count
+- [x] 5.1.3 Close issue #13 with the delivered harness and measured result
+- [x] 5.1.4 Commit and push the change set; confirm the working tree is clean
 
 **Phase 5 gate**: the plan, roadmap, documentation, issue, and code agree with
 the delivered gate evidence.

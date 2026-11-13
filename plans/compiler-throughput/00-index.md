@@ -4,7 +4,7 @@
 > compiler passes on the specification corpus, the benchmarks, large real
 > programs, and generated inputs; land a measured improvement only where the
 > measurement shows a bottleneck; keep generated code unchanged.
-> **Status**: Executing
+> **Status**: Done — 25/25; full gate green
 > **Created**: 2026-11-13
 > **Last Updated**: 2026-11-13
 > **Base**: `9c44537` (clean `main == origin/main`, `clc 1.1.2`)
