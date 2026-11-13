@@ -1,0 +1,709 @@
+// Prism: a small brick-breaker for the A500 and the browser.
+//
+// The game owns a 320x256, 32-colour custom display. The playfield, HUD, and
+// title screen are pre-rendered chunky buffers converted to bitplanes once;
+// the paddle, ball, and trail are masked sprites. A frame is two screen blits
+// and a handful of sprite blits, so the 68000 spends its time on the game, not
+// on per-pixel drawing.
+//
+// Controls: a joystick in either port moves the paddle; fire starts a game or
+// restarts after game over. The browser player maps the arrow keys and Space
+// to port 2, so the same build runs on a real Amiga and in Copperline.
+
+module example.Prism;
+
+import {
+    Bitmap, Display,
+    newBitmap, freeBitmap, bitmapBlit, bitmapFill,
+    bitmapFromIndices, openDisplayAt, freeDisplay, displaySetColor,
+    displayFlip, displayFailed
+} from std.amiga.video;
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+import { sin } from std.math;
+import { readJoystick, JOY_LEFT, JOY_RIGHT, JOY_FIRE } from std.amiga.input;
+import { String, stringOf, bytes } from std.text;
+import { println } from std.io;
+
+/// Frame width in pixels.
+const WIDTH: i32 = 320;
+/// Frame height in pixels.
+const HEIGHT: i32 = 256;
+/// The playfield border and the area the bricks live in.
+const FIELD_X: i32 = 12;
+const FIELD_Y: i32 = 44;
+const FIELD_W: i32 = 296;
+const FIELD_H: i32 = 200;
+/// Brick geometry: eight columns of 32-pixel bricks with a four-pixel gap.
+const BRICK_W: i32 = 32;
+const BRICK_H: i32 = 12;
+const BRICK_GAP: i32 = 4;
+const BRICK_COLS: i32 = 8;
+const BRICK_ROWS: i32 = 5;
+const BRICK_X: i32 = 16;
+const BRICK_Y: i32 = 56;
+const BRICK_ROW_H: i32 = 16;
+/// Paddle and ball geometry.
+const PADDLE_W: i32 = 48;
+const PADDLE_H: i32 = 10;
+const PADDLE_Y: i32 = 222;
+const BALL: i32 = 8;
+/// HUD height and the first playfield row.
+const HUD_H: i32 = 40;
+/// Game rules.
+const START_LIVES: i32 = 3;
+const SERVE_DELAY: i32 = 32;
+
+/// Plots one pixel in a chunky, row-major byte buffer.
+func put(borrow pixels: u8[], x: i32, y: i32, colour: i32): void {
+    if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+        pixels[usize(y * WIDTH + x)] = u8(colour & 31);
+    }
+}
+
+/// Fills one horizontal span in a chunky buffer, clipped to the frame.
+func span(borrow pixels: u8[], x0: i32, x1: i32, y: i32, colour: i32): void {
+    if (y < 0 || y >= HEIGHT || x1 < 0 || x0 >= WIDTH) {
+        return;
+    }
+    let a: i32 = x0;
+    let b: i32 = x1;
+    if (a < 0) {
+        a = 0;
+    }
+    if (b >= WIDTH) {
+        b = WIDTH - 1;
+    }
+    while (a <= b) {
+        pixels[usize(y * WIDTH + a)] = u8(colour & 31);
+        a = a + 1;
+    }
+}
+
+/// Draws a line with Bresenham's algorithm into a chunky buffer.
+func line(borrow pixels: u8[], x0: i32, y0: i32, x1: i32, y1: i32,
+          colour: i32): void {
+    let dx: i32 = x1 - x0;
+    let dy: i32 = y1 - y0;
+    let sx: i32 = 1;
+    let sy: i32 = 1;
+    if (dx < 0) {
+        dx = -dx;
+        sx = -1;
+    }
+    if (dy < 0) {
+        dy = -dy;
+        sy = -1;
+    }
+    let err: i32 = dx - dy;
+    let x: i32 = x0;
+    let y: i32 = y0;
+    while (true) {
+        put(pixels, x, y, colour);
+        if (x == x1 && y == y1) {
+            break;
+        }
+        let e2: i32 = err * 2;
+        if (e2 > -dy) {
+            err = err - dy;
+            x = x + sx;
+        }
+        if (e2 < dx) {
+            err = err + dx;
+            y = y + sy;
+        }
+    }
+}
+
+/// Stamps one 5x7 glyph. `rows` holds seven 5-bit rows, MSB on the left.
+func stamp(borrow pixels: u8[], x: i32, y: i32, const rows: u8[7],
+           scale: i32, colour: i32): void {
+    let row: i32 = 0;
+    while (row < 7) {
+        let bits: i32 = i32(rows[usize(row)]);
+        let col: i32 = 0;
+        while (col < 5) {
+            if ((bits & (1 << (4 - col))) != 0) {
+                let px: i32 = x + col * scale;
+                let py: i32 = y + row * scale;
+                let yy: i32 = 0;
+                while (yy < scale) {
+                    span(pixels, px, px + scale - 1, py + yy, colour);
+                    yy = yy + 1;
+                }
+            }
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+}
+
+/// Draws one uppercase glyph from the small arcade font.
+func drawLetter(borrow pixels: u8[], ch: u8, x: i32, y: i32, scale: i32,
+                colour: i32): void {
+    if (ch == 65) {
+        let rows: u8[7] = [14, 17, 17, 31, 17, 17, 17];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 67) {
+        let rows: u8[7] = [14, 17, 16, 16, 16, 17, 14];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 68) {
+        let rows: u8[7] = [30, 17, 17, 17, 17, 17, 30];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 69) {
+        let rows: u8[7] = [31, 16, 16, 30, 16, 16, 31];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 70) {
+        let rows: u8[7] = [31, 16, 16, 30, 16, 16, 16];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 71) {
+        let rows: u8[7] = [14, 17, 16, 23, 17, 17, 15];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 73) {
+        let rows: u8[7] = [31, 4, 4, 4, 4, 4, 31];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 76) {
+        let rows: u8[7] = [16, 16, 16, 16, 16, 16, 31];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 77) {
+        let rows: u8[7] = [17, 27, 21, 21, 17, 17, 17];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 78) {
+        let rows: u8[7] = [17, 25, 21, 19, 17, 17, 17];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 79) {
+        let rows: u8[7] = [14, 17, 17, 17, 17, 17, 14];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 80) {
+        let rows: u8[7] = [30, 17, 17, 30, 16, 16, 16];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 82) {
+        let rows: u8[7] = [30, 17, 17, 30, 20, 18, 17];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 83) {
+        let rows: u8[7] = [15, 16, 16, 14, 1, 1, 30];
+        stamp(pixels, x, y, rows, scale, colour);
+    } else if (ch == 86) {
+        let rows: u8[7] = [17, 17, 17, 17, 17, 10, 4];
+        stamp(pixels, x, y, rows, scale, colour);
+    }
+}
+
+/// Draws a string of uppercase text with the arcade font.
+func drawText(borrow pixels: u8[], x: i32, y: i32, const text: u8[],
+              scale: i32, colour: i32): void {
+    let i: usize = 0;
+    let px: i32 = x;
+    while (i < len(text)) {
+        drawLetter(pixels, text[i], px, y, scale, colour);
+        px = px + 6 * scale;
+        i = i + 1;
+    }
+}
+
+/// Returns the ordered-dither threshold (0..15).
+func bayer(x: i32, y: i32): i32 {
+    let cx: i32 = x & 3;
+    let cy: i32 = y & 3;
+    let column: i32 = (cx & 1) * 8 + ((cx >> 1) & 1) * 2;
+    let row: i32 = (cy & 1) * 12 + ((cy >> 1) & 1) * 3;
+    return column ^ row;
+}
+
+/// Fills the background with a deep indigo-to-navy gradient and stars.
+func drawBackdrop(borrow pixels: u8[]): void {
+    let y: i32 = 0;
+    while (y < HEIGHT) {
+        // Four dark pens, dithered at the seams. The bottom stays navy so
+        // white text and the playfield frame keep their contrast.
+        let level: i32 = 100 + (y * 260) / HEIGHT;
+        let lo: i32 = level / 100;
+        let frac: i32 = level % 100;
+        let x: i32 = 0;
+        while (x < WIDTH) {
+            let colour: i32 = lo;
+            if (frac > 0 && bayer(x, y) * 100 / 16 < frac) {
+                colour = colour + 1;
+            }
+            put(pixels, x, y, colour);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+
+    let seed: i32 = 37;
+    let i: i32 = 0;
+    while (i < 120) {
+        seed = (seed * 75 + 74) % 65537;
+        let x: i32 = seed % WIDTH;
+        seed = (seed * 75 + 74) % 65537;
+        let y: i32 = seed % HEIGHT;
+        seed = (seed * 75 + 74) % 65537;
+        if (seed % 100 > 55) {
+            put(pixels, x, y, 15);
+        } else {
+            put(pixels, x, y, 4);
+        }
+        i = i + 1;
+    }
+}
+
+/// Builds the title screen: the logo, subtitle, prism, and prompt.
+func buildTitle(): Bitmap? {
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HEIGHT));
+    if (canvas == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    drawBackdrop(pixels);
+
+    // A prism triangle with three coloured edges.
+    line(pixels, 160, 118, 94, 196, 15);
+    line(pixels, 94, 196, 226, 196, 15);
+    line(pixels, 226, 196, 160, 118, 15);
+    line(pixels, 160, 132, 110, 190, 12);
+    line(pixels, 110, 190, 210, 190, 10);
+    line(pixels, 210, 190, 160, 132, 8);
+
+    // The wordmark. Each letter gets one prism colour.
+    drawLetter(pixels, 80, 85, 60, 5, 8);
+    drawLetter(pixels, 82, 115, 60, 5, 9);
+    drawLetter(pixels, 73, 145, 60, 5, 10);
+    drawLetter(pixels, 83, 175, 60, 5, 11);
+    drawLetter(pixels, 77, 205, 60, 5, 12);
+
+    let subtitle: String = stringOf("A CLORRAINE ARCADE");
+    drawText(pixels, 102, 104, bytes(subtitle), 1, 15);
+    let prompt: String = stringOf("PRESS FIRE");
+    drawText(pixels, 112, 218, bytes(prompt), 2, 15);
+
+    let title: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (title == null) {
+        return null;
+    }
+    bitmapFromIndices(title, pixels);
+    return title;
+}
+
+/// Builds the playfield background without bricks.
+func buildField(): Bitmap? {
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HEIGHT));
+    if (canvas == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    drawBackdrop(pixels);
+
+    // A frame around the playfield and a bright floor line.
+    let x: i32 = FIELD_X;
+    while (x < FIELD_X + FIELD_W) {
+        put(pixels, x, FIELD_Y, 4);
+        put(pixels, x, FIELD_Y + FIELD_H - 1, 4);
+        x = x + 1;
+    }
+    let y: i32 = FIELD_Y;
+    while (y < FIELD_Y + FIELD_H) {
+        put(pixels, FIELD_X, y, 4);
+        put(pixels, FIELD_X + FIELD_W - 1, y, 4);
+        y = y + 1;
+    }
+    let floor: i32 = 0;
+    while (floor < WIDTH) {
+        if (floor >= FIELD_X + 2 && floor < FIELD_X + FIELD_W - 2) {
+            pixels[usize(PADDLE_Y + PADDLE_H + 2) * usize(WIDTH) + usize(floor)] = 5;
+        }
+        floor = floor + 1;
+    }
+
+    let field: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (field == null) {
+        return null;
+    }
+    bitmapFromIndices(field, pixels);
+    return field;
+}
+
+/// Returns the backdrop pen at a row. Used when a brick is removed.
+func emptyPen(y: i32): i32 {
+    let level: i32 = 100 + (y * 260) / HEIGHT;
+    return level / 100;
+}
+
+/// Returns the pen for a brick row.
+func brickPen(row: i32): i32 {
+    if (row == 0) { return 8; }
+    if (row == 1) { return 9; }
+    if (row == 2) { return 10; }
+    if (row == 3) { return 11; }
+    return 12;
+}
+
+/// Draws all 40 bricks into a playfield bitmap.
+func drawBricks(borrow field: Bitmap): void {
+    let row: i32 = 0;
+    while (row < BRICK_ROWS) {
+        let col: i32 = 0;
+        while (col < BRICK_COLS) {
+            let x: i32 = BRICK_X + col * (BRICK_W + BRICK_GAP);
+            let y: i32 = BRICK_Y + row * BRICK_ROW_H;
+            let pen: i32 = brickPen(row);
+            bitmapFill(field, x, y, x + BRICK_W - 1, y + BRICK_H - 1, u8(pen));
+            bitmapFill(field, x, y, x + BRICK_W - 1, y + 1, 15);
+            bitmapFill(field, x, y + BRICK_H - 1, x + BRICK_W - 1,
+                       y + BRICK_H - 1, 0);
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+}
+
+/// Builds the 320x40 HUD strip.
+func buildHud(): Bitmap? {
+    let hud: Bitmap? = newBitmap(WIDTH, HUD_H, 5);
+    if (hud == null) {
+        return null;
+    }
+    bitmapFill(hud, 0, 0, WIDTH - 1, HUD_H - 1, 0);
+    bitmapFill(hud, 0, HUD_H - 2, WIDTH - 1, HUD_H - 1, 4);
+    bitmapFill(hud, 0, 0, WIDTH - 1, 2, 3);
+    let logo: String = stringOf("PRISM");
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HUD_H));
+    if (canvas == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    drawText(pixels, 8, 10, bytes(logo), 2, 12);
+    let scoreLabel: String = stringOf("SCORE");
+    drawText(pixels, 116, 6, bytes(scoreLabel), 1, 3);
+    let livesLabel: String = stringOf("LIVES");
+    drawText(pixels, 244, 6, bytes(livesLabel), 1, 3);
+    bitmapFromIndices(hud, pixels);
+    let i: i32 = 0;
+    while (i < START_LIVES) {
+        fillBall(hud, 244 + i * 20, 18);
+        i = i + 1;
+    }
+    return hud;
+}
+
+/// Draws one seven-segment digit into the HUD.
+func drawDigit(borrow hud: Bitmap, x: i32, y: i32, digit: i32,
+               colour: u8): void {
+    bitmapFill(hud, x, y, x + 9, y + 14, 0);
+    if (digit == 0 || digit == 2 || digit == 3 || digit == 5 || digit == 6 ||
+        digit == 7 || digit == 8 || digit == 9) {
+        bitmapFill(hud, x + 2, y, x + 7, y + 1, colour);
+    }
+    if (digit == 0 || digit == 4 || digit == 5 || digit == 6 ||
+        digit == 8 || digit == 9) {
+        bitmapFill(hud, x, y + 2, x + 1, y + 6, colour);
+    }
+    if (digit == 0 || digit == 1 || digit == 2 || digit == 3 || digit == 4 ||
+        digit == 7 || digit == 8 || digit == 9) {
+        bitmapFill(hud, x + 8, y + 2, x + 9, y + 6, colour);
+    }
+    if (digit == 2 || digit == 3 || digit == 4 || digit == 5 || digit == 6 ||
+        digit == 8 || digit == 9) {
+        bitmapFill(hud, x + 2, y + 7, x + 7, y + 8, colour);
+    }
+    if (digit == 0 || digit == 2 || digit == 6 || digit == 8) {
+        bitmapFill(hud, x, y + 8, x + 1, y + 13, colour);
+    }
+    if (digit == 0 || digit == 1 || digit == 3 || digit == 4 || digit == 5 ||
+        digit == 6 || digit == 7 || digit == 8 || digit == 9) {
+        bitmapFill(hud, x + 8, y + 8, x + 9, y + 13, colour);
+    }
+    if (digit == 0 || digit == 2 || digit == 3 || digit == 5 || digit == 6 ||
+        digit == 8 || digit == 9) {
+        bitmapFill(hud, x + 2, y + 13, x + 7, y + 14, colour);
+    }
+}
+
+/// Writes the six-digit score and the remaining lives into the HUD.
+func updateHud(borrow hud: Bitmap, score: i32, lives: i32): void {
+    let value: i32 = score;
+    let i: i32 = 5;
+    while (i >= 0) {
+        let digit: i32 = value % 10;
+        drawDigit(hud, 116 + i * 12, 18, digit, 5);
+        value = value / 10;
+        i = i - 1;
+    }
+    let life: i32 = 0;
+    while (life < START_LIVES) {
+        bitmapFill(hud, 244 + life * 20, 18, 244 + life * 20 + BALL - 1,
+                   18 + BALL - 1, 0);
+        if (life < lives) {
+            fillBall(hud, 244 + life * 20, 18);
+        }
+        life = life + 1;
+    }
+}
+
+/// Draws the 8x8 ball as three nested rectangles.
+func fillBall(borrow bitmap: Bitmap, x: i32, y: i32): void {
+    bitmapFill(bitmap, x + 1, y, x + 6, y + 7, 5);
+    bitmapFill(bitmap, x, y + 1, x + 7, y + 6, 5);
+    bitmapFill(bitmap, x + 2, y + 2, x + 5, y + 5, 15);
+    bitmapFill(bitmap, x + 3, y + 3, x + 4, y + 4, 15);
+}
+
+/// Draws the 48x10 paddle as a rounded bar with a bright top edge.
+func fillPaddle(borrow bitmap: Bitmap, x: i32, y: i32): void {
+    bitmapFill(bitmap, x + 2, y + 2, x + 45, y + 7, 5);
+    bitmapFill(bitmap, x + 4, y, x + 43, y + 1, 15);
+    bitmapFill(bitmap, x + 4, y + 8, x + 43, y + 9, 3);
+    bitmapFill(bitmap, x, y + 3, x + 1, y + 6, 12);
+    bitmapFill(bitmap, x + 46, y + 3, x + 47, y + 6, 12);
+}
+
+/// Draws a short, dim trail behind the ball.
+func fillTrail(borrow bitmap: Bitmap, x: i32, y: i32): void {
+    bitmapFill(bitmap, x, y, x + 3, y + 3, 4);
+}
+
+/// Sets the 32-colour palette: deep blues, a prism ramp, and warm accents.
+func setPalette(borrow display: Display): void {
+    displaySetColor(display, 0, 4, 5, 12);
+    displaySetColor(display, 1, 8, 10, 28);
+    displaySetColor(display, 2, 12, 16, 44);
+    displaySetColor(display, 3, 38, 46, 76);
+    displaySetColor(display, 4, 50, 92, 132);
+    displaySetColor(display, 5, 72, 200, 220);
+    displaySetColor(display, 6, 150, 240, 250);
+    displaySetColor(display, 7, 34, 40, 70);
+    displaySetColor(display, 8, 236, 64, 132);
+    displaySetColor(display, 9, 255, 108, 96);
+    displaySetColor(display, 10, 255, 172, 64);
+    displaySetColor(display, 11, 196, 232, 96);
+    displaySetColor(display, 12, 96, 210, 236);
+    displaySetColor(display, 13, 140, 116, 240);
+    displaySetColor(display, 14, 255, 226, 150);
+    displaySetColor(display, 15, 255, 250, 232);
+    displaySetColor(display, 16, 176, 32, 104);
+    displaySetColor(display, 17, 200, 64, 72);
+    displaySetColor(display, 18, 204, 124, 40);
+    displaySetColor(display, 19, 140, 180, 56);
+    displaySetColor(display, 20, 48, 148, 180);
+    displaySetColor(display, 21, 92, 72, 180);
+    displaySetColor(display, 22, 208, 176, 96);
+    displaySetColor(display, 23, 208, 216, 228);
+    displaySetColor(display, 24, 120, 20, 80);
+    displaySetColor(display, 25, 120, 40, 60);
+    displaySetColor(display, 26, 120, 76, 32);
+    displaySetColor(display, 27, 80, 108, 40);
+    displaySetColor(display, 28, 28, 84, 108);
+    displaySetColor(display, 29, 56, 44, 112);
+    displaySetColor(display, 30, 100, 100, 110);
+    displaySetColor(display, 31, 255, 255, 255);
+}
+
+/// Resets the brick map and redraws the playfield.
+func resetBricks(borrow field: Bitmap, borrow empty: Bitmap,
+                 borrow bricks: u8[]): void {
+    bitmapBlit(field, empty, 0, 0, 0, 0, WIDTH, HEIGHT);
+    drawBricks(field);
+    let i: usize = 0;
+    while (i < len(bricks)) {
+        bricks[i] = 1;
+        i = i + 1;
+    }
+}
+
+func main(): i32 {
+    let title: Bitmap? = buildTitle();
+    let empty: Bitmap? = buildField();
+    let field: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (title == null || empty == null || field == null) {
+        println("prism: allocation failed");
+        return 1;
+    }
+    let hud: Bitmap? = buildHud();
+    println("prism: hud");
+    if (hud == null) {
+        println("prism: hud failed");
+        return 1;
+    }
+
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (front == null || back == null) {
+        println("prism: display bitmap failed");
+        return 1;
+    }
+
+    println("prism: open");
+    let display: Display? = openDisplayAt(front, back, 0, 0);
+    if (display == null) {
+        println("prism: display failed");
+        return 2;
+    }
+    setPalette(display);
+    displayFlip(display);
+    if (displayFailed(display)) {
+        println("prism: display failed");
+        return 2;
+    }
+    println("prism: ready");
+
+    // Game state. Positions are in whole pixels; velocities are 8.8.
+    let mode: i32 = 0; // 0 title, 1 playing.
+    let paddleX: i32 = (WIDTH - PADDLE_W) / 2;
+    let ballX: i32 = paddleX + (PADDLE_W - BALL) / 2;
+    let ballY: i32 = PADDLE_Y - BALL - 2;
+    let velX: i32 = 400;
+    let velY: i32 = -460;
+    let score: i32 = 0;
+    let lives: i32 = START_LIVES;
+    let serveDelay: i32 = 0;
+    let lastFire: bool = false;
+    let bricks: u8[40] = [; 0];
+    resetBricks(field, empty, slice(bricks, 0, 40));
+    updateHud(hud, score, lives);
+
+    let frame: i32 = 0;
+    while (frame < 1000000) {
+        let joy: u8 = readJoystick(1) | readJoystick(0);
+        let fire: bool = (joy & JOY_FIRE) != 0;
+
+        if (mode == 0) {
+            bitmapBlit(back, title, 0, 0, 0, 0, WIDTH, HEIGHT);
+            // A ball glides over the title, leaving two fading echoes.
+            let tx: i32 = 160 + (90 * sin(frame * 2)) / 256;
+            let ty: i32 = 174 + (26 * sin(frame * 3)) / 256;
+            fillTrail(back, tx - 9, ty + 4);
+            fillTrail(back, tx - 5, ty + 2);
+            fillBall(back, tx, ty);
+            if (fire && !lastFire) {
+                score = 0;
+                lives = START_LIVES;
+                velX = 400;
+                velY = -460;
+                resetBricks(field, empty, slice(bricks, 0, 40));
+                paddleX = (WIDTH - PADDLE_W) / 2;
+                ballX = paddleX + (PADDLE_W - BALL) / 2;
+                ballY = PADDLE_Y - BALL - 2;
+                velX = 400;
+                velY = -460;
+                serveDelay = SERVE_DELAY;
+                updateHud(hud, score, lives);
+                mode = 1;
+            }
+        } else if (mode == 1) {
+            // Paddle movement.
+            if ((joy & JOY_LEFT) != 0) {
+                paddleX = paddleX - 5;
+            }
+            if ((joy & JOY_RIGHT) != 0) {
+                paddleX = paddleX + 5;
+            }
+            let maxPaddle: i32 = FIELD_X + FIELD_W - PADDLE_W - 2;
+            if (paddleX < FIELD_X + 2) {
+                paddleX = FIELD_X + 2;
+            }
+            if (paddleX > maxPaddle) {
+                paddleX = maxPaddle;
+            }
+
+            if (serveDelay > 0) {
+                serveDelay = serveDelay - 1;
+                ballX = paddleX + (PADDLE_W - BALL) / 2;
+                ballY = PADDLE_Y - BALL - 2;
+            } else {
+                let nextX: i32 = ballX + velX / 256;
+                let nextY: i32 = ballY + velY / 256;
+                // Side walls.
+                if (nextX < FIELD_X + 2) {
+                    ballX = FIELD_X + 2;
+                    velX = -velX;
+                } else if (nextX > FIELD_X + FIELD_W - BALL - 2) {
+                    ballX = FIELD_X + FIELD_W - BALL - 2;
+                    velX = -velX;
+                } else {
+                    ballX = nextX;
+                }
+                // Ceiling.
+                if (nextY < FIELD_Y + 2) {
+                    ballY = FIELD_Y + 2;
+                    velY = -velY;
+                } else {
+                    ballY = nextY;
+                }
+
+                // Paddle bounce. The hit position sets the horizontal angle.
+                if (velY > 0 && ballY + BALL >= PADDLE_Y &&
+                    ballY + BALL <= PADDLE_Y + PADDLE_H &&
+                    ballX + BALL >= paddleX && ballX <= paddleX + PADDLE_W) {
+                    ballY = PADDLE_Y - BALL;
+                    velY = -velY;
+                    let centre: i32 = paddleX + PADDLE_W / 2;
+                    let offset: i32 = (ballX + BALL / 2) - centre;
+                    velX = offset * 28;
+                    if (velX > 520) {
+                        velX = 520;
+                    }
+                    if (velX < -520) {
+                        velX = -520;
+                    }
+                }
+
+                // Brick collision at the ball's centre.
+                let cx: i32 = ballX + BALL / 2;
+                let cy: i32 = ballY + BALL / 2;
+                if (cy >= BRICK_Y && cy < BRICK_Y + BRICK_ROWS * BRICK_ROW_H) {
+                    let col: i32 = (cx - BRICK_X) / (BRICK_W + BRICK_GAP);
+                    let row: i32 = (cy - BRICK_Y) / BRICK_ROW_H;
+                    if (col >= 0 && col < BRICK_COLS && row >= 0 &&
+                        row < BRICK_ROWS) {
+                        let index: i32 = row * BRICK_COLS + col;
+                        if (bricks[usize(index)] != 0) {
+                            bricks[usize(index)] = 0;
+                            let bx: i32 = BRICK_X + col * (BRICK_W + BRICK_GAP);
+                            let by: i32 = BRICK_Y + row * BRICK_ROW_H;
+                            bitmapFill(field, bx, by, bx + BRICK_W - 1,
+                                       by + BRICK_H - 1, u8(emptyPen(by)));
+                            bitmapFill(field, bx, by, bx + BRICK_W - 1, by,
+                                       u8(emptyPen(by) + 1));
+                            score = score + 10;
+                            updateHud(hud, score, lives);
+                            velY = -velY;
+                        }
+                    }
+                }
+
+                // Lost ball.
+                if (ballY > FIELD_Y + FIELD_H) {
+                    lives = lives - 1;
+                    updateHud(hud, score, lives);
+                    if (lives <= 0) {
+                        mode = 0;
+                    } else {
+                        serveDelay = SERVE_DELAY;
+                        ballX = paddleX + (PADDLE_W - BALL) / 2;
+                        ballY = PADDLE_Y - BALL - 2;
+                        velX = 400;
+                        velY = -460;
+                    }
+                }
+            }
+
+            bitmapBlit(back, field, 0, 0, 0, 0, WIDTH, HEIGHT);
+            bitmapBlit(back, hud, 0, 0, 0, 0, WIDTH, HUD_H);
+            fillTrail(back, ballX - 6, ballY + 3);
+            fillPaddle(back, paddleX, PADDLE_Y);
+            fillBall(back, ballX, ballY);
+        }
+
+        lastFire = fire;
+        displayFlip(display);
+        frame = frame + 1;
+    }
+
+    freeDisplay(display);
+    freeBitmap(hud);
+    freeBitmap(field);
+    freeBitmap(empty);
+    freeBitmap(title);
+    freeBitmap(front);
+    freeBitmap(back);
+    return 0;
+}

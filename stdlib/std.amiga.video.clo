@@ -78,6 +78,7 @@ ffi videocore {
     func cl_video_copper_end(borrow copper: Copper): void;
 
     func cl_video_display_open(borrow front: Bitmap, borrow back: Bitmap): Display?;
+    func cl_video_display_open_at(borrow front: Bitmap, borrow back: Bitmap, dx: i32, dy: i32): Display?;
     func cl_video_display_free(take display: Display): void;
     func cl_video_display_set_color(borrow display: Display, index: u8, r: u8, g: u8, b: u8): void;
     func cl_video_display_set_copper(borrow display: Display, take copper: Copper): bool;
@@ -283,6 +284,16 @@ export func copperEnd(borrow copper: Copper): void {
 /// not touch the hardware until the first `displayFlip`.
 export func openDisplay(borrow front: Bitmap, borrow back: Bitmap): Display? {
     return cl_video_display_open(front, back);
+}
+
+/// Opens a double-buffered display at an explicit screen offset.
+///
+/// `dx` and `dy` are the classic `ViewPort` offsets in low-resolution pixels.
+/// A page that presents the raw display itself can use `0, 0` to remove the
+/// centring border the default `openDisplay` keeps for a 640-wide screen.
+export func openDisplayAt(borrow front: Bitmap, borrow back: Bitmap,
+                          dx: i32, dy: i32): Display? {
+    return cl_video_display_open_at(front, back, dx, dy);
 }
 
 /// Closes the display and restores the system view.

@@ -1288,7 +1288,8 @@ struct Library *LayersBase = NULL;
 static void cl_sprite_screen_closing(struct Screen *screen);
 
 /* Open a custom screen; NULL on failure. */
-void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
+static void *cl_open_screen_mode(LONG width, LONG height, UBYTE depth,
+                                 char *title, UWORD view_modes)
 {
     if (GfxBase == NULL) {
         GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
@@ -1310,7 +1311,7 @@ void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
     screen.Depth = depth;
     screen.DetailPen = 0;
     screen.BlockPen = 1;
-    screen.ViewModes = 0;
+    screen.ViewModes = view_modes;
     screen.Type = CUSTOMSCREEN;
     screen.Font = NULL;
     /* Intuition keeps the `DefaultTitle` pointer in the opened screen's
@@ -1320,6 +1321,19 @@ void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
     screen.Gadgets = NULL;
     screen.CustomBitMap = NULL;
     return (void *)OpenScreen(&screen);
+}
+
+/* Open a custom screen with the classic low-resolution pixel mode. */
+void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
+{
+    return cl_open_screen_mode(width, height, depth, title, 0);
+}
+
+/* Open a custom screen with hires pixels, so a 640-wide screen is 640 pixels
+ * wide on the display instead of a 640-pixel low-res screen doubled to 1280. */
+void *cl_open_screen_hires(LONG width, LONG height, UBYTE depth, char *title)
+{
+    return cl_open_screen_mode(width, height, depth, title, HIRES);
 }
 
 /* Set screen color `pen` from 4-bit R/G/B components. */
@@ -4378,7 +4392,8 @@ static void cl_video_display_default_palette(cl_video_display *display)
 }
 
 /* Open a display over two caller-owned bitmaps, or NULL. */
-void *cl_video_display_open(void *front_handle, void *back_handle)
+void *cl_video_display_open_at(void *front_handle, void *back_handle,
+                                LONG dx, LONG dy)
 {
     cl_video_bitmap *front = (cl_video_bitmap *)front_handle;
     cl_video_bitmap *back = (cl_video_bitmap *)back_handle;
@@ -4423,8 +4438,8 @@ void *cl_video_display_open(void *front_handle, void *back_handle)
         display->views[index].ViewPort = &display->view_ports[index];
         display->view_ports[index].DWidth = (WORD)display->width;
         display->view_ports[index].DHeight = (WORD)display->height;
-        display->view_ports[index].DxOffset = 0x81;
-        display->view_ports[index].DyOffset = 0x2c;
+        display->view_ports[index].DxOffset = (WORD)dx;
+        display->view_ports[index].DyOffset = (WORD)dy;
         display->view_ports[index].Modes = 0;
         display->views[index].Modes = 0;
         display->view_ports[index].RasInfo = &display->ras_infos[index];
@@ -4435,6 +4450,12 @@ void *cl_video_display_open(void *front_handle, void *back_handle)
         display->ras_infos[index].Next = NULL;
     }
     return display;
+}
+
+/* Open a display at the classic centred position. */
+void *cl_video_display_open(void *front_handle, void *back_handle)
+{
+    return cl_video_display_open_at(front_handle, back_handle, 0x81, 0x2c);
 }
 
 /* Queue a copper for both viewports before the first flip. */

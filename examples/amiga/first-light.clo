@@ -16,7 +16,7 @@ module example.FirstLight;
 import {
     Bitmap, Display,
     newBitmap, freeBitmap, bitmapBlit, bitmapFromIndices,
-    openDisplay, freeDisplay, displaySetColor,
+    openDisplayAt, freeDisplay, displaySetColor,
     displayFlip, displayFailed, displayIndex
 } from std.amiga.video;
 import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
@@ -887,7 +887,7 @@ func main(): i32 {
     bitmapBlit(back, strip, 0, 0, REFLECT_X, REFLECT_Y,
                REFLECT_W, REFLECT_H);
 
-    let display: Display? = openDisplay(front, back);
+    let display: Display? = openDisplayAt(front, back, 0, 0);
     if (display == null) {
         println("first-light: open failed");
         return 2;

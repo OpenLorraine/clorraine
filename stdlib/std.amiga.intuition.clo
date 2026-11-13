@@ -64,6 +64,7 @@ export const EVENT_INACTIVE: i32 = 7;
 
 ffi stdintuition {
     func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
+    func cl_open_screen_hires(width: i32, height: i32, depth: u8, title: cstring): Screen?;
     func cl_close_screen(take screen: Screen): void;
     func cl_screen_save_native(borrow screen: Screen, path: cstring): bool;
     func cl_open_window(borrow screen: Screen, x: i32, y: i32, width: i32,
@@ -111,6 +112,16 @@ ffi stdintuition {
 /// must check before using the screen.
 export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
     return cl_open_screen(width, height, depth, title);
+}
+
+/// Opens a custom screen with hires pixels.
+///
+/// A 640-wide low-resolution screen is displayed by the hardware as 1280
+/// pixels and clips a 592-wide window on a 640-wide display. Use this entry
+/// point when the layout is designed in 640-pixel hires coordinates.
+export func openScreenHires(width: i32, height: i32, depth: u8,
+                            title: cstring): Screen? {
+    return cl_open_screen_hires(width, height, depth, title);
 }
 
 /// Saves the screen's raw bitmap in the compact `CSCR` capture format.

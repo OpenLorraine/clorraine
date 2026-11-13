@@ -1,0 +1,500 @@
+// Boing: a neon-horizon showcase for the Amiga custom chipset.
+//
+// The scene is a 320x256, 16-colour sunset. The bitmap owns the sun, stars,
+// mountains, and a perspective grid; a copper list recolours the single sky
+// pen every eight scanlines, so the sky is a real copper gradient rather than
+// a dithered bitmap. A 48x48 chrome ball is blitted through a one-plane mask
+// over two chip-memory views.
+//
+// The program is deliberately ambient: it keeps bouncing until the machine is
+// reset. The static background is drawn once into a master bitmap, so a frame
+// costs two small blits and one view flip.
+
+module example.BoingShowcase;
+
+import {
+    Bitmap, Display,
+    newBitmap, freeBitmap, bitmapBlit, bitmapBlitMasked, bitmapFromIndices,
+    openDisplayAt, freeDisplay, displaySetColor,
+    displayFlip, displayFailed, displayIndex
+} from std.amiga.video;
+import { Buffer, bufferNew, bufferBytes } from std.mem;
+import { sin, sqrt } from std.math;
+import { println } from std.io;
+
+/// Frame width in pixels.
+const WIDTH: i32 = 320;
+/// Frame height in pixels.
+const HEIGHT: i32 = 256;
+/// Ball size in pixels (the ball and its mask are both this square).
+const BALL: i32 = 48;
+/// The horizon row. Above it is sky; below it is the perspective grid.
+const HORIZON: i32 = 168;
+
+/// Plots one pixel in a chunky, row-major byte buffer.
+func put(borrow pixels: u8[], x: i32, y: i32, colour: i32): void {
+    if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+        pixels[usize(y * WIDTH + x)] = u8(colour & 15);
+    }
+}
+
+/// Fills one horizontal span in a chunky buffer, clipped to the frame.
+func span(borrow pixels: u8[], x0: i32, x1: i32, y: i32, colour: i32): void {
+    if (y < 0 || y >= HEIGHT || x1 < 0 || x0 >= WIDTH) {
+        return;
+    }
+    let a: i32 = x0;
+    let b: i32 = x1;
+    if (a < 0) {
+        a = 0;
+    }
+    if (b >= WIDTH) {
+        b = WIDTH - 1;
+    }
+    while (a <= b) {
+        pixels[usize(y * WIDTH + a)] = u8(colour & 15);
+        a = a + 1;
+    }
+}
+
+/// Advances a small Lehmer generator. The modulus keeps every product inside a
+/// signed 32-bit integer, so the sequence is identical on every target.
+func nextRandom(seed: i32): i32 {
+    return (seed * 75 + 74) % 65537;
+}
+
+/// Returns the ordered-dither threshold (0..15) for a pixel.
+func bayer(x: i32, y: i32): i32 {
+    let cx: i32 = x & 3;
+    let cy: i32 = y & 3;
+    let column: i32 = (cx & 1) * 8 + ((cx >> 1) & 1) * 2;
+    let row: i32 = (cy & 1) * 12 + ((cy >> 1) & 1) * 3;
+    return column ^ row;
+}
+
+/// Fills the sky with a three-pen sunset gradient and ordered dithering.
+///
+/// The gradient is intentionally short: indigo at the top, plum through the
+/// middle, and hot orange at the horizon. Each seam is dithered over eight
+/// rows, which gives the banded Amiga look without a checkerboard.
+func drawSky(borrow pixels: u8[]): void {
+    let y: i32 = 0;
+    while (y < HORIZON) {
+        let level: i32 = 0;
+        if (y > 48) {
+            level = (y - 48) * 2;
+        }
+        let lo: i32 = 1 + level / 100;
+        let frac: i32 = level % 100;
+        let x: i32 = 0;
+        while (x < WIDTH) {
+            let colour: i32 = lo;
+            if (frac > 0 && bayer(x, y) * 100 / 16 < frac) {
+                colour = colour + 1;
+            }
+            if (colour > 3) {
+                colour = 3;
+            }
+            put(pixels, x, y, colour);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+/// Draws a sparse field of stars above the sun.
+func drawStars(borrow pixels: u8[]): void {
+    let seed: i32 = 23;
+    let placed: i32 = 0;
+    let tries: i32 = 0;
+    while (placed < 74 && tries < 600) {
+        tries = tries + 1;
+        seed = nextRandom(seed);
+        let x: i32 = 3 + seed % (WIDTH - 6);
+        seed = nextRandom(seed);
+        let y: i32 = 4 + seed % 118;
+        let dx: i32 = x - 160;
+        let dy: i32 = y - 156;
+        if (dx * dx + dy * dy < 120 * 120) {
+            placed = placed + 1;
+            seed = nextRandom(seed);
+            let kind: i32 = seed % 100;
+            if (kind > 88) {
+                put(pixels, x, y, 15);
+                put(pixels, x - 1, y, 10);
+                put(pixels, x + 1, y, 10);
+                put(pixels, x, y - 1, 10);
+            } else if (kind > 55) {
+                put(pixels, x, y, 9);
+            } else {
+                put(pixels, x, y, 11);
+            }
+        }
+    }
+}
+
+/// Draws a thin cloud bank. The wobble is a sine lookup, not a random walk.
+func cloud(borrow pixels: u8[], cx: i32, cy: i32, halfWidth: i32,
+           thick: i32, seed: i32): void {
+    let row: i32 = 0;
+    while (row < thick) {
+        let y: i32 = cy + row;
+        let taper: i32 = halfWidth * (thick - row) / thick;
+        if (taper >= 5) {
+            let x: i32 = cx - taper;
+            while (x < cx + taper) {
+                let wobble: i32 = 2 * sin((x + seed) * 17 / 10) / 256;
+                if ((x - cx) * (x - cx) * 100 <
+                    taper * taper * 64) {
+                    put(pixels, x, y + wobble, 11);
+                    if (row == thick - 1) {
+                        put(pixels, x, y + wobble, 10);
+                    }
+                }
+                x = x + 1;
+            }
+        }
+        row = row + 1;
+    }
+}
+
+/// Draws the synthwave sun. Horizontal slits reveal the copper sky.
+func drawSun(borrow pixels: u8[]): void {
+    let cx: i32 = 160;
+    let cy: i32 = 156;
+    let radius: i32 = 54;
+    let y: i32 = cy - radius;
+    while (y <= cy + radius) {
+        let dy: i32 = y - cy;
+        let half: i32 = 0;
+        let inner: i32 = radius * radius - dy * dy;
+        if (inner > 0) {
+            half = sqrt(inner);
+        }
+        if (half > 0) {
+            let x: i32 = cx - half;
+            while (x <= cx + half) {
+                let colour: i32 = 6;
+                if (y < cy - 18) {
+                    colour = 8;
+                } else if (y < cy + 4) {
+                    colour = 7;
+                }
+                put(pixels, x, y, colour);
+                x = x + 1;
+            }
+        }
+        y = y + 1;
+    }
+
+    // Horizontal slits across the lower half of the sun. They are pen 1, so
+    // the copper gradient shows through the gaps.
+    let slit: i32 = 146;
+    while (slit < HORIZON) {
+        let thickness: i32 = 1 + (slit - 140) / 10;
+        let dy: i32 = slit - cy;
+        let inner: i32 = radius * radius - dy * dy;
+        if (inner > 0) {
+            let half: i32 = sqrt(inner);
+            span(pixels, cx - half, cx + half, slit, 1);
+            if (thickness > 1) {
+                span(pixels, cx - half, cx + half, slit + 1, 1);
+            }
+        }
+        slit = slit + 4;
+    }
+}
+
+/// Returns the top row of the far ridge at a column.
+func farRidge(x: i32): i32 {
+    return 146 + (5 * sin(x * 9) + 3 * sin(x * 23)) / 256;
+}
+
+/// Returns the top row of the near ridge at a column.
+func nearRidge(x: i32): i32 {
+    return 154 + (7 * sin(x * 5 + 40) + 4 * sin(x * 17)) / 256;
+}
+
+/// Draws two mountain layers with a lit rim.
+func drawMountains(borrow pixels: u8[]): void {
+    let x: i32 = 0;
+    while (x < WIDTH) {
+        let far: i32 = farRidge(x);
+        let y: i32 = far;
+        while (y < HORIZON) {
+            put(pixels, x, y, 11);
+            y = y + 1;
+        }
+        put(pixels, x, far, 10);
+        let near: i32 = nearRidge(x);
+        y = near;
+        while (y < HORIZON) {
+            put(pixels, x, y, 12);
+            y = y + 1;
+        }
+        put(pixels, x, near, 10);
+        x = x + 1;
+    }
+}
+
+/// Draws the perspective grid below the horizon.
+func drawGrid(borrow pixels: u8[]): void {
+    let y: i32 = HORIZON;
+    while (y < HEIGHT) {
+        span(pixels, 0, WIDTH - 1, y, 0);
+        y = y + 1;
+    }
+
+    // The horizon line is the brightest rule in the frame.
+    span(pixels, 0, WIDTH - 1, HORIZON, 5);
+    span(pixels, 0, WIDTH - 1, HORIZON + 1, 4);
+
+    // Converging verticals from the vanishing point to the bottom edge.
+    let line: i32 = 0;
+    while (line <= 8) {
+        let bottomX: i32 = line * 40;
+        let y: i32 = HORIZON;
+        while (y < HEIGHT) {
+            let depth: i32 = y - HORIZON;
+            let x: i32 = 160 + (bottomX - 160) * depth /
+                               (HEIGHT - 1 - HORIZON);
+            let colour: i32 = 4;
+            if (line % 2 == 0) {
+                colour = 5;
+            }
+            put(pixels, x, y, colour);
+            y = y + 1;
+        }
+        line = line + 1;
+    }
+
+    // Horizontal rules get farther apart toward the viewer.
+    let step: i32 = 1;
+    while (step <= 12) {
+        let y: i32 = HORIZON + (step * step * (HEIGHT - HORIZON - 2)) / 144;
+        let colour: i32 = 4;
+        if (step % 3 == 0) {
+            colour = 5;
+        }
+        span(pixels, 0, WIDTH - 1, y, colour);
+        step = step + 1;
+    }
+}
+
+/// Draws the static background into a chunky byte buffer.
+func drawBackground(borrow pixels: u8[]): void {
+    drawSky(pixels);
+    drawStars(pixels);
+    cloud(pixels, 78, 62, 54, 4, 11);
+    cloud(pixels, 222, 84, 60, 4, 37);
+    cloud(pixels, 148, 112, 46, 3, 61);
+    drawSun(pixels);
+    drawMountains(pixels);
+    drawGrid(pixels);
+}
+
+/// Builds the chrome ball and its one-plane mask.
+func buildBall(): Bitmap? {
+    let ball: Bitmap? = newBitmap(BALL, BALL, 4);
+    if (ball == null) {
+        return null;
+    }
+    let canvas: Buffer? = bufferNew(usize(BALL * BALL));
+    if (canvas == null) {
+        return null;
+    }
+
+    let pixels: u8[] = bufferBytes(canvas);
+    let radius: i32 = BALL / 2;
+    let y: i32 = 0;
+    while (y < BALL) {
+        let x: i32 = 0;
+        while (x < BALL) {
+            let dx: i32 = x - radius;
+            let dy: i32 = y - radius;
+            let distance: i32 = dx * dx + dy * dy;
+            if (distance <= (radius - 1) * (radius - 1)) {
+                // Light sits up and left; the dark side is blue-violet.
+                let lx: i32 = dx + 9;
+                let ly: i32 = dy + 10;
+                let light: i32 = lx * lx + ly * ly;
+                let colour: i32 = 12;
+                if (light < 18) {
+                    colour = 15;
+                } else if (light < 52) {
+                    colour = 9;
+                } else if (light < 120) {
+                    colour = 5;
+                } else if (light < 220) {
+                    colour = 13;
+                } else if (light < 360) {
+                    colour = 11;
+                }
+                // A cyan rim on the lower-right edge keeps the ball reading
+                // against the dark grid.
+                if (distance > (radius - 5) * (radius - 5) && dx > 2) {
+                    colour = 5;
+                }
+                pixels[usize(y * BALL + x)] = u8(colour);
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+
+    bitmapFromIndices(ball, pixels);
+    return ball;
+}
+
+/// Builds a second bitmap for the mask and returns both through a packed pair.
+/// Clorraine has no tuples here, so the ball and mask are built in main.
+func buildMask(): Bitmap? {
+    let mask: Bitmap? = newBitmap(BALL, BALL, 1);
+    if (mask == null) {
+        return null;
+    }
+    let canvas: Buffer? = bufferNew(usize(BALL * BALL));
+    if (canvas == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    let radius: i32 = BALL / 2;
+    let y: i32 = 0;
+    while (y < BALL) {
+        let x: i32 = 0;
+        while (x < BALL) {
+            let dx: i32 = x - radius;
+            let dy: i32 = y - radius;
+            if (dx * dx + dy * dy <= (radius - 1) * (radius - 1)) {
+                pixels[usize(y * BALL + x)] = 1;
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    bitmapFromIndices(mask, pixels);
+    return mask;
+}
+
+/// Sets the fixed half of the palette. Pen 1 is supplied by the copper list.
+func setPalette(borrow display: Display): void {
+    displaySetColor(display, 0, 5, 6, 16);
+    displaySetColor(display, 1, 14, 8, 46);
+    displaySetColor(display, 2, 104, 30, 78);
+    displaySetColor(display, 3, 240, 92, 52);
+    displaySetColor(display, 4, 28, 118, 138);
+    displaySetColor(display, 5, 84, 226, 226);
+    displaySetColor(display, 6, 255, 108, 52);
+    displaySetColor(display, 7, 255, 164, 72);
+    displaySetColor(display, 8, 255, 224, 132);
+    displaySetColor(display, 9, 255, 252, 238);
+    displaySetColor(display, 10, 255, 120, 166);
+    displaySetColor(display, 11, 142, 92, 214);
+    displaySetColor(display, 12, 22, 24, 52);
+    displaySetColor(display, 13, 58, 92, 176);
+    displaySetColor(display, 14, 226, 68, 92);
+    displaySetColor(display, 15, 218, 246, 255);
+}
+
+func main(): i32 {
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HEIGHT));
+    if (canvas == null) {
+        println("boing-showcase: buffer failed");
+        return 1;
+    }
+    drawBackground(bufferBytes(canvas));
+
+    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (master == null || front == null || back == null) {
+        println("boing-showcase: bitmap failed");
+        return 2;
+    }
+    bitmapFromIndices(master, bufferBytes(canvas));
+    bitmapBlit(front, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+    bitmapBlit(back, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+
+    let ball: Bitmap? = buildBall();
+    let mask: Bitmap? = buildMask();
+    if (ball == null || mask == null) {
+        println("boing-showcase: ball failed");
+        return 3;
+    }
+
+    let display: Display? = openDisplayAt(front, back, 0, 0);
+    if (display == null) {
+        println("boing-showcase: display failed");
+        return 5;
+    }
+    setPalette(display);
+    displayFlip(display);
+    if (displayFailed(display)) {
+        println("boing-showcase: display failed");
+        return 5;
+    }
+    println("boing-showcase: running");
+
+    // 8.8 fixed-point position and velocity. The two buffers each remember
+    // their own previous ball position, so restoring the background never
+    // depends on the frame that is currently visible.
+    let posX: i32 = 40 << 8;
+    let posY: i32 = 52 << 8;
+    let velX: i32 = 620;
+    let velY: i32 = 430;
+    let lastX: i32[2] = [-1, -1];
+    let lastY: i32[2] = [-1, -1];
+    let frame: i32 = 0;
+    while (frame < 1000000) {
+        posX = posX + velX;
+        posY = posY + velY;
+        let maxX: i32 = (WIDTH - BALL) << 8;
+        let maxY: i32 = (HEIGHT - BALL) << 8;
+        if (posX < 0) {
+            posX = 0;
+            velX = -velX;
+        }
+        if (posX > maxX) {
+            posX = maxX;
+            velX = -velX;
+        }
+        if (posY < 0) {
+            posY = 0;
+            velY = -velY;
+        }
+        if (posY > maxY) {
+            posY = maxY;
+            velY = -velY;
+        }
+        let bx: i32 = posX >> 8;
+        let by: i32 = posY >> 8;
+        let target: i32 = 1 - i32(displayIndex(display));
+        if (target == 0) {
+            if (lastX[0] >= 0) {
+                bitmapBlit(front, master, lastX[0], lastY[0],
+                           lastX[0], lastY[0], BALL, BALL);
+            }
+            bitmapBlitMasked(front, ball, mask, 0, 0, bx, by, BALL, BALL);
+            lastX[0] = bx;
+            lastY[0] = by;
+        } else {
+            if (lastX[1] >= 0) {
+                bitmapBlit(back, master, lastX[1], lastY[1],
+                           lastX[1], lastY[1], BALL, BALL);
+            }
+            bitmapBlitMasked(back, ball, mask, 0, 0, bx, by, BALL, BALL);
+            lastX[1] = bx;
+            lastY[1] = by;
+        }
+        displayFlip(display);
+        frame = frame + 1;
+    }
+
+    freeDisplay(display);
+    freeBitmap(mask);
+    freeBitmap(ball);
+    freeBitmap(back);
+    freeBitmap(front);
+    freeBitmap(master);
+    return 0;
+}

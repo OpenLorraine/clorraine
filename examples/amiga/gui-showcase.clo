@@ -1,0 +1,210 @@
+// Clorraine Studio: the Kickstart 3.1 Intuition showcase.
+//
+// A 640x512, 16-colour screen with a native Intuition window, menu, string
+// gadget, and button. The content is a small build dashboard: a target card, a
+// progress bar, three summary cards, and a recent-output panel. It is drawn
+// once and then waits for the close gadget or the Project menu.
+
+module examples.amiga.GuiShowcase;
+
+import {
+    Screen, openScreenHires, Window, openWindow, closeWindow, windowWidth,
+    windowHeight, WindowEvent, waitEvent, EVENT_CLOSE, EVENT_MENU, EVENT_NONE,
+    addButton, addString, addMenu, addMenuItemKey, saveScreen
+} from std.amiga.intuition;
+import {
+    setColor, clear, fill, draw, windowFill, windowDraw
+} from std.amiga.graphics;
+import { Font, openFont, defaultFont, drawText, windowText } from std.amiga.text;
+import { String, stringOf, toCString, bytes } from std.text;
+import { delayTicks } from std.amiga.dos;
+import { println } from std.io;
+
+/// Draws one line of text in a window.
+func wtext(borrow window: Window, borrow font: Font, x: i32, y: i32,
+           pen: u8, text: str): void {
+    let s: String = stringOf(text);
+    // The graphics text call takes a baseline; callers pass the top row.
+    windowText(window, font, x, y + 7, pen, bytes(s));
+}
+
+/// Draws one line of text on the screen.
+func stext(borrow screen: Screen, borrow font: Font, x: i32, y: i32,
+           pen: u8, text: str): void {
+    let s: String = stringOf(text);
+    drawText(screen, font, x, y + 7, pen, bytes(s));
+}
+
+/// Fills a rectangle and outlines it with one-pixel rules.
+func panel(borrow window: Window, x1: i32, y1: i32, x2: i32, y2: i32,
+           paper: u8, edge: u8): void {
+    windowFill(window, x1, y1, x2, y2, paper);
+    windowDraw(window, x1, y1, x2, y1, edge);
+    windowDraw(window, x1, y2, x2, y2, edge);
+    windowDraw(window, x1, y1, x1, y2, edge);
+    windowDraw(window, x2, y1, x2, y2, edge);
+}
+
+/// Draws the static dashboard.
+func drawDashboard(borrow window: Window, borrow font: Font): void {
+    let w: i32 = windowWidth(window);
+    let h: i32 = windowHeight(window);
+
+    // Paper, header, and the amber spine.
+    windowFill(window, 0, 0, w - 1, h - 1, 4);
+    windowFill(window, 0, 0, w - 1, 35, 12);
+    windowFill(window, 0, 0, 3, h - 1, 9);
+    windowFill(window, 0, 36, w - 1, 37, 3);
+    wtext(window, font, 16, 7, 1, "CLORRAINE STUDIO");
+    wtext(window, font, 16, 19, 10, "A1200 / Kickstart 3.1");
+    windowFill(window, w - 168, 6, w - 10, 26, 12);
+    windowDraw(window, w - 168, 6, w - 10, 6, 9);
+    windowDraw(window, w - 168, 26, w - 10, 26, 9);
+    wtext(window, font, w - 158, 12, 9, "DEVELOPER PREVIEW");
+
+    // Sidebar.
+    panel(window, 8, 44, 100, 184, 12, 3);
+    windowFill(window, 14, 52, 30, 68, 9);
+    windowFill(window, 18, 56, 26, 64, 12);
+    wtext(window, font, 36, 58, 1, "CL");
+    wtext(window, font, 14, 76, 3, "WORKSPACE");
+    windowFill(window, 10, 88, 98, 102, 11);
+    wtext(window, font, 14, 91, 1, "Overview");
+    wtext(window, font, 14, 105, 10, "Targets");
+    wtext(window, font, 14, 119, 10, "Build");
+    wtext(window, font, 14, 133, 10, "Docs");
+    windowFill(window, 10, 158, 98, 176, 13);
+    wtext(window, font, 14, 162, 15, "6 / 6 checks");
+
+    // Main panel.
+    panel(window, 108, 44, w - 8, 184, 4, 3);
+    wtext(window, font, 118, 52, 3, "BUILD TARGET");
+    wtext(window, font, 118, 64, 5, "A500 / 68000 / OCS");
+    wtext(window, font, 400, 52, 3, "CHECKS");
+    wtext(window, font, 400, 64, 13, "6 / 6");
+    windowFill(window, 118, 78, w - 18, 86, 10);
+    windowFill(window, 118, 78, w - 18, 86, 13);
+    wtext(window, font, 118, 90, 13, "All checks passed");
+
+    // Three summary cards.
+    panel(window, 118, 100, 258, 132, 12, 3);
+    wtext(window, font, 124, 106, 3, "SOURCE");
+    wtext(window, font, 124, 118, 1, "one .clo file");
+    panel(window, 266, 100, 406, 132, 12, 3);
+    wtext(window, font, 272, 106, 3, "OUTPUT");
+    wtext(window, font, 272, 118, 1, "C99 unit");
+    panel(window, 414, 100, w - 18, 132, 12, 3);
+    wtext(window, font, 420, 106, 3, "TARGET");
+    wtext(window, font, 420, 118, 1, "m68k hunk");
+
+    // Recent output.
+    wtext(window, font, 118, 138, 3, "RECENT OUTPUT");
+    panel(window, 118, 146, w - 18, 180, 12, 3);
+    wtext(window, font, 124, 150, 15, "clc examples/amiga/prism.clo");
+    wtext(window, font, 124, 160, 10, "cc -m68000 -mcrt=nix13 ...");
+    wtext(window, font, 124, 170, 13, "prism: ready");
+
+    // Bottom status.
+    wtext(window, font, 14, 192, 3, "Program");
+    wtext(window, font, 14, 204, 13, "Ready / 6 checks passed");
+}
+
+func main(): i32 {
+    let screenTitle: String = stringOf("Clorraine Studio");
+    let screen: Screen? = openScreenHires(640, 256, 4, toCString(screenTitle));
+    if (screen == null) {
+        println("gui-showcase: screen failed");
+        return 1;
+    }
+
+    /* Native Intuition border pens 0..3, then the application palette. */
+    setColor(screen, 0, 112, 124, 146);
+    setColor(screen, 1, 224, 230, 240);
+    setColor(screen, 2, 52, 62, 82);
+    setColor(screen, 3, 160, 170, 190);
+    setColor(screen, 4, 246, 248, 252);
+    setColor(screen, 5, 28, 34, 50);
+    setColor(screen, 6, 36, 160, 170);
+    setColor(screen, 7, 120, 100, 210);
+    setColor(screen, 8, 224, 74, 90);
+    setColor(screen, 9, 245, 165, 36);
+    setColor(screen, 10, 200, 208, 220);
+    setColor(screen, 11, 52, 110, 210);
+    setColor(screen, 12, 20, 26, 42);
+    setColor(screen, 13, 70, 190, 120);
+    setColor(screen, 14, 235, 120, 165);
+    setColor(screen, 15, 255, 255, 255);
+    clear(screen, 12);
+
+    let font: Font? = openFont(toCString(stringOf("topaz.font")), 8, 0);
+    if (font == null) {
+        font = defaultFont();
+    }
+    if (font == null) {
+        println("gui-showcase: font failed");
+        return 1;
+    }
+
+    let windowTitle: String = stringOf("Clorraine Studio");
+    let window: Window? = openWindow(screen, 24, 24, 592, 220,
+                                     toCString(windowTitle));
+    if (window == null) {
+        println("gui-showcase: window failed");
+        return 1;
+    }
+
+    drawDashboard(window, font);
+    let button: bool = addButton(window, 476, 184, 100, 18,
+                                 toCString(stringOf("Build")), 1);
+    if (!button) {
+        println("gui-showcase: button failed");
+    }
+    let field: bool = addString(window, 64, 184, 380, 18,
+                                toCString(stringOf("")),
+                                toCString(stringOf("examples/amiga/prism.clo")),
+                                64, 2);
+    if (!field) {
+        println("gui-showcase: field failed");
+    }
+    let project: i32 = addMenu(window, toCString(stringOf("Project")));
+    if (project == 0) {
+        if (!addMenuItemKey(window, project, toCString(stringOf("Build")),
+                            10, u8(66))) {
+            println("gui-showcase: build menu failed");
+        }
+        if (!addMenuItemKey(window, project, toCString(stringOf("Quit")),
+                            11, u8(81))) {
+            println("gui-showcase: quit menu failed");
+        }
+    }
+
+    // Screen footer.
+    fill(screen, 0, 246, 639, 255, 12);
+    draw(screen, 0, 246, 639, 246, 9);
+    stext(screen, font, 12, 245, 10,
+          "Clorraine / a safe systems language for the Amiga");
+    stext(screen, font, 470, 245, 10, "A1200 / Kickstart 3.1");
+
+    // Give Intuition a moment to paint the native gadgets, then capture the
+    // screen bitmap for the site before entering the event loop.
+    delayTicks(25);
+    let capturePath: String = stringOf("DF0:gui31.cscr");
+    if (!saveScreen(screen, toCString(capturePath))) {
+        println("gui-showcase: capture failed");
+    }
+
+    println("gui-showcase: ready");
+
+    let running: bool = true;
+    while (running) {
+        let event: WindowEvent = waitEvent(window);
+        if (event.kind == EVENT_CLOSE || event.kind == EVENT_NONE) {
+            running = false;
+        } else if (event.kind == EVENT_MENU && event.menu == 11) {
+            running = false;
+        }
+    }
+
+    closeWindow(window);
+    return 0;
+}
