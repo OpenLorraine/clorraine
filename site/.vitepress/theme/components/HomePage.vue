@@ -145,11 +145,11 @@ import { withBase } from "vitepress";
               loading="lazy"
             />
             <span class="cl-arcade__body">
-              <span class="cl-arcade__tag">Playable</span>
+              <span class="cl-arcade__tag">Arcade demo</span>
               <strong>Prism</strong>
               <span>
                 A 32-colour brick-breaker with a title screen, six-digit score,
-                three lives, and a quick restart loop.
+                three lives, and a joystick-playable ADF.
               </span>
             </span>
           </a>

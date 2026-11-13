@@ -24,8 +24,8 @@ browser; the rest are the acceptance programs that prove the Amiga SDK surface.
     ratio="4 / 3"
     alt="Prism: a colourful brick-breaker title screen with a prism triangle and the word PRISM."
     title="Prism"
-    description="A playable 32-colour brick-breaker with a title screen, score, lives, and a restart loop."
-    meta="Playable · A500 · 32 colours"
+    description="A 32-colour brick-breaker with a title screen, score, lives, and a joystick-playable ADF."
+    meta="Arcade demo · A500 · 32 colours"
   />
   <ExampleCard
     href="/examples/graphics"
