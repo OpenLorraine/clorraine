@@ -1,5 +1,21 @@
 # Clorraine
 
+> **Project status: developer preview.** Clorraine is under active
+> development. The compiler core is usable today for the supported language
+> and Amiga SDK surface, but installation, packaging, editor integration, and
+> some platform support are still in progress. Expect changes; do not rely on
+> it for production work yet. See
+> [Known limitations](docs/known-limitations.md) and the
+> [latest release](https://github.com/OpenLorraine/clorraine/releases).
+
+| Area | State |
+|---|---|
+| Compiler, checker, ownership, C99 emission | Usable; guarded by the specification and test suites |
+| Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
+| Linux x86_64 binary | Released (v1.1.2) |
+| Windows/macOS installers, VS Code packaging | In progress |
+| Documentation site | Planned; repository docs are the current reference |
+
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
 the Motorola 68000 family.
 
