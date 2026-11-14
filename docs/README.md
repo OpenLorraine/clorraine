@@ -10,4 +10,3 @@
 | [Phase 1 findings](findings-phase1.md) | Specification rewrite and compile-fail suite |
 | [Phase 2 findings](findings-phase2.md) | Codegen strategy spike |
 | [Ergonomics corpus](ergonomics-corpus.md) | Corpus notes |
-| [YouTube branding](youtube-lorraineos.md) | Channel asset notes |
