@@ -166,8 +166,8 @@ import { withBase } from "vitepress";
               <span class="cl-arcade__tag">Live</span>
               <strong>Boing: Neon Horizon</strong>
               <span>
-                A dithered sunset, a perspective grid, and a masked chrome ball
-                over two chip-memory screens.
+                A 32-colour dithered sunset, a perspective grid, and a masked chrome
+                ball over two chip-memory screens.
               </span>
             </span>
           </a>

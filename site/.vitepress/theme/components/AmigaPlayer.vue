@@ -81,6 +81,7 @@ let offscreenContext: CanvasRenderingContext2D | null = null;
 let animation = 0;
 let looping = false;
 let clockStarted = false;
+let lastFrameAt = 0;
 let disposed = false;
 let leftHeld = false;
 let rightHeld = false;
@@ -173,9 +174,9 @@ function draw(): void {
     }
   }
 
-  // The AROS screen border leaves a small green corner at the top left. A
-  // four-pixel trim removes it without touching the demo picture.
-  const trim = Math.min(4, sourceWidth - 8, sourceHeight - 8);
+  // The AROS screen border leaves a green wedge in the top-left corner. A
+  // sixteen-pixel trim removes it without touching the demo picture.
+  const trim = Math.min(16, sourceWidth - 32, sourceHeight - 32);
   const cropX = sourceX + Math.max(0, trim);
   const cropY = sourceY + Math.max(0, trim);
   const cropWidth = sourceWidth - Math.max(0, trim);
@@ -201,12 +202,23 @@ function draw(): void {
   );
 }
 
+/**
+ * Runs one animation frame.
+ *
+ * `run` steps the emulated machine up to the wall clock, so a host that
+ * cannot emulate a PAL frame in 20 ms starts each callback further behind.
+ * Left alone, Copperline answers by stepping its full 20-frame budget on every
+ * callback, which takes even longer and collapses the page to a slideshow.
+ * Re-anchoring drops that debt and keeps the demo at whatever rate the host can
+ * actually sustain.
+ */
 function loop(now: number): void {
   if (!looping || !emulator) return;
-  if (!clockStarted) {
-    clockStarted = true;
+  if (clockStarted && now - lastFrameAt > 100) {
     emulator.resync_clock();
   }
+  clockStarted = true;
+  lastFrameAt = now;
   emulator.run(now, 20);
   draw();
   animation = requestAnimationFrame(loop);

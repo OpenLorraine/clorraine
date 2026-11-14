@@ -22,17 +22,17 @@ they prove a bitplane, collision, or palette path rather than a visual style.
 ## Prism
 
 <DocFigure
-  src="/screenshots/prism-play.webp"
-  alt="Prism gameplay: a wall of coloured bricks, a score, three lives, a cyan paddle, and a small ball."
-  caption="A500 · 32 colours · a playable brick-breaker written in Clorraine and running in Copperline with AROS."
+  src="/screenshots/prism.webp"
+  alt="Prism: the title screen with the PRISM wordmark, a prism triangle, and a bouncing ball."
+  caption="A500 · 32 colours · the title screen of a brick-breaker written in Clorraine, running in Copperline with AROS."
 />
 
 ## Boing: Neon Horizon
 
 <DocFigure
   src="/screenshots/boing.webp"
-  alt="Boing: a neon sunset, a perspective grid, and a chrome ball bouncing across the screen."
-  caption="A500 · 16 colours · a dithered sunset, a perspective grid, and a masked chrome ball over two chip-memory screens."
+  alt="Boing: a 32-colour neon sunset, a perspective grid, and a chrome ball bouncing across the screen."
+  caption="A500 · 32 colours · a dithered sunset, a perspective grid, and a masked chrome ball over two chip-memory screens."
 />
 
 ## Intuition GUI

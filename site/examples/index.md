@@ -31,10 +31,10 @@ browser; the rest are the acceptance programs that prove the Amiga SDK surface.
     href="/examples/graphics"
     src="/screenshots/boing.webp"
     ratio="4 / 3"
-    alt="Boing: a neon sunset, a perspective grid, and a chrome ball bouncing across the screen."
+    alt="Boing: a 32-colour neon sunset, a perspective grid, and a chrome ball bouncing across the screen."
     title="Boing: Neon Horizon"
-    description="A dithered sunset, a perspective grid, and a masked chrome ball over two chip-memory screens."
-    meta="Live · A500 · 16 colours"
+    description="A 32-colour dithered sunset, a perspective grid, and a masked chrome ball over two chip-memory screens."
+    meta="Live · A500 · 32 colours"
   />
 </div>
 

@@ -8,8 +8,8 @@ description: "Prism: a playable 32-colour brick-breaker written in Clorraine, ru
 A small, complete brick-breaker written in Clorraine. **Prism** opens a
 320×256, 32-colour custom display, draws a title screen, a six-digit score, a
 row of coloured bricks, a glossy paddle, and a ball that bounces through the
-wall. The live view shows a saved game; the ADF is joystick-playable on a real
-A500.
+wall. The live view shows the title screen; the ADF is joystick-playable on a
+real A500.
 
 <AmigaPlayer
   poster="/screenshots/prism.webp"
@@ -17,7 +17,7 @@ A500.
   adf="/demos/prism.adf"
   badge="A500 · 32 colours"
   caption="Prism · a Clorraine arcade game"
-  hint="Runs in your browser with Copperline and AROS. The saved game plays until the title returns; the ADF is the joystick-playable version."
+  hint="Runs in your browser with Copperline and AROS. The saved machine sits on the title screen; the ADF is the playable version."
 />
 
 ## How to play
@@ -29,11 +29,11 @@ On a real Amiga, or from the ADF, the controls are:
 | Joystick left / right | Move the paddle |
 | Joystick fire | Start a game, or start again from the title |
 
-The web player's **Restart** button reloads the saved run. The live view
-restores a running game, so it shows the arcade scene without waiting for a
-boot. The score counts ten points per brick. A game starts with three lives;
-the paddle angle is set by where the ball lands on it. After the third miss the
-title screen returns; press fire to play again on the ADF.
+The web player's **Restart** button reloads the saved machine. The live view
+restores the title screen, so the demo appears without waiting for a boot. The
+score counts ten points per brick. A game starts with three lives; the paddle
+angle is set by where the ball lands on it. After the third miss the title
+screen returns; press fire to play again on the ADF.
 
 ## What you are looking at
 
@@ -55,12 +55,17 @@ title screen returns; press fire to play again on the ADF.
 | Score | Seven-segment digits drawn with bitplane fills |
 | Paddle and ball | Direct bitplane fills; no per-frame sprite allocation |
 | Bricks | Coloured fills with a white top edge and a dark shadow |
-| Animation | One background blit, one HUD blit, and a few fills per frame |
+| Animation | Dirty rectangles: only the pixels under the paddle, ball, and trail are restored |
 | Game loop | Joystick polling, fixed-point physics, and one view flip per frame |
 
 The game avoids per-pixel work on the 68000. The playfield is built once,
-destroyed bricks are replaced with a background fill, and the ball and paddle
-are only a handful of rectangles per frame.
+destroyed bricks are replaced with a background fill, and each frame restores
+only the small rectangles the moving objects covered. Every frame buffer keeps
+its own record of what it still shows, so a flip never lands on a stale frame.
+
+On an A500 the game runs at close to the 50 Hz PAL refresh: 400 frames took
+423 ticks (8.5 seconds). Rendering the whole playfield every frame cost about
+twice that.
 
 ## Run it on your own Amiga
 
