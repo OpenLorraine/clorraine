@@ -89,3 +89,8 @@ regenerate every state and ADF from the same Copperline build; otherwise the
 player may refuse a state or run a different demo. The provenance and
 regeneration steps are in `public/copperline/NOTICE.md`. The ADFs are built from
 their sources with the `--release --profile hosted-amiga-13` options.
+
+The example pages link to the ADFs directly. `site/.env` registers `adf` in
+`VITE_EXTRA_EXTENSIONS`, so VitePress's client router leaves those clicks to the
+browser. Without it, the router treats the link as a documentation page and
+opens the 404 page instead of downloading the file.
