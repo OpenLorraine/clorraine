@@ -174,13 +174,11 @@ function draw(): void {
     }
   }
 
-  // The AROS screen border leaves a green wedge in the top-left corner. A
-  // sixteen-pixel trim removes it without touching the demo picture.
-  const trim = Math.min(16, sourceWidth - 32, sourceHeight - 32);
-  const cropX = sourceX + Math.max(0, trim);
-  const cropY = sourceY + Math.max(0, trim);
-  const cropWidth = sourceWidth - Math.max(0, trim);
-  const cropHeight = sourceHeight - Math.max(0, trim);
+  // The content rectangle is exactly the demo picture, so show all of it.
+  const cropX = sourceX;
+  const cropY = sourceY;
+  const cropWidth = sourceWidth;
+  const cropHeight = sourceHeight;
 
   if (canvas.width !== cropWidth || canvas.height !== cropHeight) {
     canvas.width = cropWidth;
