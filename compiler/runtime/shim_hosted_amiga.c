@@ -1443,6 +1443,7 @@ typedef struct cl_menu_node {
 
 typedef struct cl_window {
     struct Window *window;
+    struct Screen *public_screen; /* non-null when the window uses a public screen */
     char *title;
     UWORD *pointer;
     int pointer_shown;
@@ -1558,6 +1559,102 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
     return handle;
 }
 
+/* Open a window on the default public screen (normally Workbench).
+ *
+ * This is the native Intuition path: the window and standard GadTools gadgets
+ * use the user's Workbench palette and DrawInfo rather than an application
+ * ColorMap. The public screen stays locked until the wrapper is destroyed.
+ *
+ * `LockPubScreen` and `UnlockPubScreen` are Kickstart 2.0 calls. The 1.3
+ * headers do not declare them, so the prototypes are written here; the
+ * version check below keeps the A500 path from calling a missing vector.
+ * On the 2.0 headers both names are inline macros and the declarations are
+ * skipped. */
+#ifndef LockPubScreen
+extern struct Screen * __stdargs LockPubScreen(CONST_STRPTR name);
+extern void __stdargs UnlockPubScreen(struct Screen *screen, struct Screen *pub);
+#endif
+void *cl_open_workbench_window(LONG x, LONG y, LONG width, LONG height,
+                               char *title)
+{
+    cl_window *handle;
+    struct NewWindow nw;
+    struct Screen *public_screen;
+    char *title_copy;
+
+    if (title == NULL || width <= 0 || height <= 0) {
+        return NULL;
+    }
+    if (IntuitionBase == NULL) {
+        IntuitionBase = (struct IntuitionBase *)OpenLibrary(
+            (STRPTR) "intuition.library", 33);
+    }
+    if (GfxBase == NULL) {
+        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
+    }
+    if (IntuitionBase == NULL || GfxBase == NULL) {
+        return NULL;
+    }
+    /* Public screens are a 2.0 feature. Returning null keeps the call safe on
+     * the A500/Kickstart 1.3 profile, whose intuition.library has no vector. */
+    if (IntuitionBase->LibNode.lib_Version < 37) {
+        return NULL;
+    }
+    public_screen = LockPubScreen(NULL);
+    if (public_screen == NULL) {
+        return NULL;
+    }
+    title_copy =
+        cl_window_copy_text(title, CL_WINDOW_TEXT_MAX, CL_WINDOW_TEXT_MAX + 1);
+    if (title_copy == NULL) {
+        UnlockPubScreen(NULL, public_screen);
+        return NULL;
+    }
+    handle = (cl_window *)AllocMem((ULONG)sizeof *handle, MEMF_CLEAR);
+    if (handle == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        UnlockPubScreen(NULL, public_screen);
+        return NULL;
+    }
+    handle->title = title_copy;
+
+    memset(&nw, 0, sizeof nw);
+    nw.LeftEdge = (WORD)x;
+    nw.TopEdge = (WORD)y;
+    nw.Width = (WORD)width;
+    nw.Height = (WORD)height;
+    nw.DetailPen = 0;
+    nw.BlockPen = 1;
+    nw.IDCMPFlags = IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
+                  | IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_VANILLAKEY
+                  | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW
+                  | IDCMP_REFRESHWINDOW;
+    nw.Flags = WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
+             | WFLG_ACTIVATE | WFLG_GIMMEZEROZERO;
+    nw.FirstGadget = NULL;
+    nw.CheckMark = NULL;
+    nw.Title = (STRPTR)title_copy;
+    nw.Screen = public_screen;
+    nw.BitMap = NULL;
+    nw.MinWidth = 0;
+    nw.MinHeight = 0;
+    nw.MaxWidth = 0;
+    nw.MaxHeight = 0;
+    nw.Type = CUSTOMSCREEN;
+
+    handle->window = OpenWindow(&nw);
+    if (handle->window == NULL) {
+        FreeMem(title_copy, CL_WINDOW_TEXT_MAX + 1);
+        FreeMem(handle, (ULONG)sizeof *handle);
+        UnlockPubScreen(NULL, public_screen);
+        return NULL;
+    }
+    handle->public_screen = public_screen;
+    WindowToFront(handle->window);
+    ActivateWindow(handle->window);
+    return handle;
+}
+
 /* Release the wrapper-owned allocations and the Intuition window. */
 static void cl_window_destroy(cl_window *handle)
 {
@@ -1572,6 +1669,10 @@ static void cl_window_destroy(cl_window *handle)
             ClearMenuStrip(handle->window);
         }
         CloseWindow(handle->window);
+    }
+    if (handle->public_screen != NULL) {
+        UnlockPubScreen(NULL, handle->public_screen);
+        handle->public_screen = NULL;
     }
     cl_window_free_gadgets(handle);
     cl_window_free_menus(handle);

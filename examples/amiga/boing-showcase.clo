@@ -1,6 +1,6 @@
 // Boing: a neon-horizon showcase for the Amiga custom chipset.
 //
-// The scene is a 320x256, 16-colour sunset. The bitmap owns the sun, stars,
+// The scene is a 320x256, 32-colour sunset. The bitmap owns the sun, stars,
 // mountains, and a perspective grid; a copper list recolours the single sky
 // pen every eight scanlines, so the sky is a real copper gradient rather than
 // a dithered bitmap. A 48x48 chrome ball is blitted through a one-plane mask
@@ -309,6 +309,13 @@ func buildBall(): Bitmap? {
     }
 
     let pixels: u8[] = bufferBytes(canvas);
+    // bufferNew does not zero its storage; the square corners must be pen 0
+    // rather than whatever the allocator returned.
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(BALL * BALL)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
     let radius: i32 = BALL / 2;
     let y: i32 = 0;
     while (y < BALL) {
@@ -318,26 +325,34 @@ func buildBall(): Bitmap? {
             let dy: i32 = y - radius;
             let distance: i32 = dx * dx + dy * dy;
             if (distance <= (radius - 1) * (radius - 1)) {
-                // Light sits up and left; the dark side is blue-violet.
-                let lx: i32 = dx + 9;
-                let ly: i32 = dy + 10;
-                let light: i32 = lx * lx + ly * ly;
-                let colour: i32 = 23;
-                if (light < 18) {
-                    colour = 27;
-                } else if (light < 52) {
-                    colour = 26;
-                } else if (light < 120) {
-                    colour = 25;
-                } else if (light < 220) {
-                    colour = 24;
-                } else if (light < 360) {
-                    colour = 22;
+                // Directional light from above-left. Pens 21..27 are the
+                // chrome ramp; the brightest pen is the highlight.
+                let z: i32 = sqrt(24 * 24 - distance);
+                let light: i32 = dx * -11 + dy * -13 + z * 20;
+                let shade: i32 = 2 + light / 110;
+                if (shade < 1) {
+                    shade = 1;
                 }
-                // A cyan rim on the lower-right edge keeps the ball reading
-                // against the dark grid.
-                if (distance > (radius - 5) * (radius - 5) && dx > 2) {
-                    colour = 28;
+                if (shade > 7) {
+                    shade = 7;
+                }
+                let colour: i32 = 20 + shade;
+
+                // A hot highlight above and left of centre.
+                let hx: i32 = x - 17;
+                let hy: i32 = y - 15;
+                if (hx * hx + hy * hy <= 16) {
+                    colour = 27;
+                }
+
+                // A cyan rim on the lower-right edge; a cooler edge elsewhere
+                // keeps the silhouette readable against the grid.
+                if (distance > 20 * 20) {
+                    if (dx + dy > 8) {
+                        colour = 28;
+                    } else {
+                        colour = 25;
+                    }
                 }
                 pixels[usize(y * BALL + x)] = u8(colour);
             }
@@ -362,6 +377,13 @@ func buildMask(): Bitmap? {
         return null;
     }
     let pixels: u8[] = bufferBytes(canvas);
+    // The mask is read one byte at a time by the blitter. Clear the whole
+    // square so an uninitialized corner bit cannot leak the ball's pen 0.
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(BALL * BALL)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
     let radius: i32 = BALL / 2;
     let y: i32 = 0;
     while (y < BALL) {
@@ -405,11 +427,11 @@ func setPalette(borrow display: Display): void {
     displaySetColor(display, 18, 26, 90, 120);
     displaySetColor(display, 19, 60, 200, 220);
     displaySetColor(display, 20, 150, 250, 255);
-    displaySetColor(display, 21, 10, 12, 34);
-    displaySetColor(display, 22, 26, 34, 78);
-    displaySetColor(display, 23, 52, 68, 130);
-    displaySetColor(display, 24, 92, 120, 180);
-    displaySetColor(display, 25, 150, 190, 230);
+    displaySetColor(display, 21, 26, 34, 78);
+    displaySetColor(display, 22, 52, 68, 130);
+    displaySetColor(display, 23, 92, 120, 180);
+    displaySetColor(display, 24, 130, 160, 210);
+    displaySetColor(display, 25, 170, 195, 235);
     displaySetColor(display, 26, 210, 235, 255);
     displaySetColor(display, 27, 255, 255, 255);
     displaySetColor(display, 28, 60, 220, 240);

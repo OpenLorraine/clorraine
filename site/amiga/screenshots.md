@@ -23,8 +23,8 @@ they prove a bitplane, collision, or palette path rather than a visual style.
 
 <DocFigure
   src="/screenshots/prism.webp"
-  alt="Prism: the title screen with the PRISM wordmark, a prism triangle, and a bouncing ball."
-  caption="A500 · 32 colours · the title screen of a brick-breaker written in Clorraine, running in Copperline with AROS."
+  alt="Prism: an in-progress brick-breaker game with the PRISM HUD, rows of coloured bricks, a paddle, and a ball."
+  caption="A500 · 32 colours · a game in progress, running in Copperline with AROS. The saved state starts with the first brick already scored."
 />
 
 ## Boing: Neon Horizon
@@ -39,8 +39,8 @@ they prove a bitplane, collision, or palette path rather than a visual style.
 
 <DocFigure
   src="/screenshots/gui31-showcase.png"
-  alt="Clorraine Studio on Kickstart 3.1 with a dark header, sidebar, target cards, and a recent-output panel."
-  caption="A1200 · Kickstart 3.1 · 640×256 hires · 16 colours. Screens, windows, gadgets, menus, and a native Intuition event loop."
+  alt="Clorraine Studio on a real Kickstart 3.1 Workbench screen, with the Workbench icons and a native window containing text gadgets, a string field, and a Build button."
+  caption="A1200 · Kickstart 3.1 · the real Workbench 3.1 screen. Intuition supplies the grey/blue palette, icons, frame, and font; the application sets no colours."
 />
 
 ## ILBM viewer
@@ -75,12 +75,12 @@ they prove a bitplane, collision, or palette path rather than a visual style.
   caption="A500 · Kickstart 1.3. Topaz text, layers, and clipping, held for the native capture."
 />
 
-## Why no Workbench screenshots?
+## Workbench capture
 
-Workbench and Kickstart screens show licensed UI. The project avoids using them
-as marketing images because they can imply endorsement. The showcase captures
-above are Clorraine's own custom screens; the GUI capture is our own application
-on a Kickstart 3.1 screen, not a Workbench screenshot.
+The GUI capture is the full, real Workbench 3.1 screen from a locally licensed
+run. It shows the Workbench screen, its icons, and the Clorraine Studio window.
+The application itself sets no colours and draws no custom gadgets; Intuition
+and GadTools provide the window and controls.
 
-The advanced Workbench gates do run, but their evidence is a report line and a
-native capture used for acceptance, not site branding.
+The advanced Workbench gates run against the same media, but their evidence is
+a report line and a native capture used for acceptance.

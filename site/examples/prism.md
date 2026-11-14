@@ -8,8 +8,8 @@ description: "Prism: a playable 32-colour brick-breaker written in Clorraine, ru
 A small, complete brick-breaker written in Clorraine. **Prism** opens a
 320×256, 32-colour custom display, draws a title screen, a six-digit score, a
 row of coloured bricks, a glossy paddle, and a ball that bounces through the
-wall. The live view shows the title screen; the ADF is joystick-playable on a
-real A500.
+wall. The live view starts in play with the paddle under your control; the ADF
+is joystick-playable on a real A500.
 
 <AmigaPlayer
   poster="/screenshots/prism.webp"
@@ -17,20 +17,23 @@ real A500.
   adf="/demos/prism.adf"
   badge="A500 · 32 colours"
   caption="Prism · a Clorraine arcade game"
-  hint="Runs in your browser with Copperline and AROS. The saved machine sits on the title screen; the ADF is the playable version."
+  interactive
+  hint="Runs in your browser with Copperline and AROS. The saved machine is already in play; click the picture, then use the arrow keys and Space."
 />
 
 ## How to play
 
-On a real Amiga, or from the ADF, the controls are:
+In the browser player, and on a real Amiga or from the ADF:
 
 | Control | Action |
 |---|---|
+| ← / → or A / D | Move the paddle |
+| Space or Enter | Fire |
 | Joystick left / right | Move the paddle |
 | Joystick fire | Start a game, or start again from the title |
 
 The web player's **Restart** button reloads the saved machine. The live view
-restores the title screen, so the demo appears without waiting for a boot. The
+restores an in-play state, so the demo appears without waiting for a boot. The
 score counts ten points per brick. A game starts with three lives; the paddle
 angle is set by where the ball lands on it. After the third miss the title
 screen returns; press fire to play again on the ADF.

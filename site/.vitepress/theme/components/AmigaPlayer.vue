@@ -217,7 +217,12 @@ function loop(now: number): void {
   }
   clockStarted = true;
   lastFrameAt = now;
-  emulator.run(now, 20);
+  // Step one guest frame per presentation. Copperline can render a frame
+  // faster than it can catch up a whole wall-clock deficit; stepping in
+  // batches made the demo advance three frames per draw and look like a
+  // slideshow. One frame per callback keeps the picture moving smoothly at
+  // the rate the host can sustain.
+  emulator.run(now, 1);
   draw();
   animation = requestAnimationFrame(loop);
 }
@@ -314,7 +319,10 @@ async function start(): Promise<void> {
     ]);
     if (disposed) return;
 
-    const machine = new module.WebEmu("A500", "PAL", 2);
+    // The saved state already contains the booted demo. One drive is enough
+    // for these single-disk programs, and it matches how the states were
+    // captured.
+    const machine = new module.WebEmu("A500", "PAL", 1);
     machine.set_floppy_speed(0);
     machine.set_volume_percent(0);
     machine.load_rom(rom, ext);

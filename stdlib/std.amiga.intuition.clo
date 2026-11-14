@@ -69,6 +69,8 @@ ffi stdintuition {
     func cl_screen_save_native(borrow screen: Screen, path: cstring): bool;
     func cl_open_window(borrow screen: Screen, x: i32, y: i32, width: i32,
                         height: i32, title: cstring): Window?;
+    func cl_open_workbench_window(x: i32, y: i32, width: i32, height: i32,
+                                  title: cstring): Window?;
     func cl_close_window(take window: Window): void;
     func cl_window_width(borrow window: Window): i32;
     func cl_window_height(borrow window: Window): i32;
@@ -152,6 +154,21 @@ export func saveScreen(borrow screen: Screen, path: cstring): bool {
 export func openWindow(borrow screen: Screen, x: i32, y: i32, width: i32,
                        height: i32, title: cstring): Window? {
     return cl_open_window(screen, x, y, width, height, title);
+}
+
+/// Opens a native window on the default public screen (normally Workbench).
+///
+/// This is the standard Intuition path: the window frame, title bar, and
+/// gadgets use the user's Workbench palette and DrawInfo. Do not draw custom
+/// screen colours into it; use GadTools gadgets for controls. The public
+/// screen is locked until the window is closed, so the returned window must
+/// outlive its gadgets.
+///
+/// Returns `null` when no public screen is available, the geometry is invalid,
+/// or Intuition cannot open the window.
+export func openWorkbenchWindow(x: i32, y: i32, width: i32, height: i32,
+                                title: cstring): Window? {
+    return cl_open_workbench_window(x, y, width, height, title);
 }
 
 /// Closes an owned window now; the generated drop would otherwise close it at

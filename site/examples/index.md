@@ -5,8 +5,10 @@ description: "First Light, Prism, and Boing: live Amiga programs written in Clor
 
 # Examples
 
-These are real programs from the repository. The first three run in your
-browser; the rest are the acceptance programs that prove the Amiga SDK surface.
+These are real programs from the repository. Three of them run live in your
+browser. Clorraine Studio is a native Intuition program shown from a real A1200
+capture, and the remaining programs are the acceptance tests that prove the
+Amiga SDK surface.
 
 <div class="cl-example-grid">
   <ExampleCard
@@ -46,7 +48,7 @@ rather than a visual style.
 
 | Program | What it proves | Source |
 |---|---|---|
-| Intuition GUI | Screens, windows, gadgets, menus, requesters | [`examples/amiga/gui.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/gui.clo) |
+| Intuition acceptance GUI | Screens, windows, gadgets, menus, requesters | [`examples/amiga/gui.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/gui.clo) |
 | ILBM viewer | DOS, asset loading, ILBM decoding, custom screen | [`examples/amiga/imageviewer.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/imageviewer.clo) |
 | Paddle | Audio channels, input, timers, double buffering | [`examples/amiga/paddle.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/paddle.clo) |
 | Sprite demo | Hardware sprites and collision | [`examples/amiga/sprite-demo.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/sprite-demo.clo) |
@@ -78,6 +80,8 @@ boots FS-UAE. See the [quick start](/guide/quick-start) for the prerequisites.
 
 ## A note on the screenshots
 
-The examples use the project's own custom screens. They do not use Amiga
-Corporation or Hyperion logos, and the site does not use Workbench screenshots
-as marketing images. See the [screenshot gallery](/amiga/screenshots).
+The three live showcases use their own custom screens. Clorraine Studio is the
+exception: it runs as a normal window on the Workbench screen, because that is
+the native Intuition path. Its screenshot is the full, real Workbench 3.1
+screen from a licensed local run. The pages do not use Amiga Corporation or
+Hyperion logos. See the [screenshot gallery](/amiga/screenshots).

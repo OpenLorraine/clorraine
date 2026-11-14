@@ -2,13 +2,14 @@
 //
 // The game owns a 320x256, 32-colour custom display. The playfield, HUD, and
 // title screen are pre-rendered chunky buffers converted to bitplanes once;
-// the paddle, ball, and trail are masked sprites. A frame is two screen blits
-// and a handful of sprite blits, so the 68000 spends its time on the game, not
-// on per-pixel drawing.
+// the paddle and ball are small bitmap fills. A frame restores only the
+// rectangles the moving objects covered, so the 68000 spends its time on the
+// game, not on per-pixel drawing.
 //
-// Controls: a joystick in either port moves the paddle; fire starts a game or
+// Controls: a joystick in port 2 moves the paddle; fire starts a game or
 // restarts after game over. The browser player maps the arrow keys and Space
-// to port 2, so the same build runs on a real Amiga and in Copperline.
+// there, so the same build runs on a real Amiga and in Copperline. Port 1 is
+// left to the mouse.
 
 module example.Prism;
 
@@ -254,6 +255,11 @@ func buildTitle(): Bitmap? {
         return null;
     }
     let pixels: u8[] = bufferBytes(canvas);
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(WIDTH * HEIGHT)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
     drawBackdrop(pixels);
 
     // A prism triangle with three coloured edges.
@@ -291,6 +297,11 @@ func buildField(): Bitmap? {
         return null;
     }
     let pixels: u8[] = bufferBytes(canvas);
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(WIDTH * HEIGHT)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
     drawBackdrop(pixels);
 
     // A frame around the playfield and a bright floor line.
@@ -320,12 +331,6 @@ func buildField(): Bitmap? {
     }
     bitmapFromIndices(field, pixels);
     return field;
-}
-
-/// Returns the backdrop pen at a row. Used when a brick is removed.
-func emptyPen(y: i32): i32 {
-    let level: i32 = 100 + (y * 260) / HEIGHT;
-    return level / 100;
 }
 
 /// Returns the pen for a brick row.
@@ -362,15 +367,29 @@ func buildHud(): Bitmap? {
     if (hud == null) {
         return null;
     }
-    bitmapFill(hud, 0, 0, WIDTH - 1, HUD_H - 1, 0);
-    bitmapFill(hud, 0, HUD_H - 2, WIDTH - 1, HUD_H - 1, 4);
-    bitmapFill(hud, 0, 0, WIDTH - 1, 2, 3);
     let logo: String = stringOf("PRISM");
     let canvas: Buffer? = bufferNew(usize(WIDTH * HUD_H));
     if (canvas == null) {
         return null;
     }
     let pixels: u8[] = bufferBytes(canvas);
+    // The HUD bitmap is replaced from this canvas below, so the background
+    // has to be part of the canvas rather than a dead fill on the bitmap.
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(WIDTH * HUD_H)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
+    let hudY: i32 = 0;
+    while (hudY < HUD_H - 2) {
+        span(pixels, 0, WIDTH - 1, hudY, 0);
+        hudY = hudY + 1;
+    }
+    span(pixels, 0, WIDTH - 1, HUD_H - 2, 4);
+    span(pixels, 0, WIDTH - 1, HUD_H - 1, 4);
+    span(pixels, 0, WIDTH - 1, 0, 3);
+    span(pixels, 0, WIDTH - 1, 1, 3);
+    span(pixels, 0, WIDTH - 1, 2, 3);
     drawText(pixels, 8, 10, bytes(logo), 2, 12);
     let scoreLabel: String = stringOf("SCORE");
     drawText(pixels, 116, 6, bytes(scoreLabel), 1, 3);
@@ -456,11 +475,6 @@ func fillPaddle(borrow bitmap: Bitmap, x: i32, y: i32): void {
     bitmapFill(bitmap, x + 46, y + 3, x + 47, y + 6, 12);
 }
 
-/// Draws a short, dim trail behind the ball.
-func fillTrail(borrow bitmap: Bitmap, x: i32, y: i32): void {
-    bitmapFill(bitmap, x, y, x + 3, y + 3, 4);
-}
-
 /// Sets the 32-colour palette: deep blues, a prism ramp, and warm accents.
 func setPalette(borrow display: Display): void {
     displaySetColor(display, 0, 4, 5, 12);
@@ -534,13 +548,12 @@ func restoreRect(borrow target: Bitmap, borrow bg: Bitmap, x: i32, y: i32,
     bitmapBlit(target, bg, x0, y0, x0, y0, x1 - x0, y1 - y0);
 }
 
-/// Clears the ball and its trail that were drawn last time.
+/// Clears the ball that was drawn last time.
 func eraseBall(borrow target: Bitmap, borrow bg: Bitmap, lastX: i32,
                lastY: i32): void {
     if (lastX < 0) {
         return;
     }
-    restoreRect(target, bg, lastX - 6, lastY + 3, BALL, BALL);
     restoreRect(target, bg, lastX, lastY, BALL, BALL);
 }
 
@@ -578,7 +591,6 @@ func drawSprites(borrow target: Bitmap, borrow bg: Bitmap,
     if (paddleX >= 0) {
         fillPaddle(target, paddleX, PADDLE_Y);
     }
-    fillTrail(target, ballX - 6, ballY + 3);
     fillBall(target, ballX, ballY);
 }
 
@@ -640,7 +652,7 @@ func main(): i32 {
 
     let frame: i32 = 0;
     while (frame < 1000000) {
-        let joy: u8 = readJoystick(1) | readJoystick(0);
+        let joy: u8 = readJoystick(1);
         let fire: bool = (joy & JOY_FIRE) != 0;
 
         // A mode change repaints both buffers once, then each frame only
@@ -762,10 +774,10 @@ func main(): i32 {
                             bricks[usize(index)] = 0;
                             let bx: i32 = BRICK_X + col * (BRICK_W + BRICK_GAP);
                             let by: i32 = BRICK_Y + row * BRICK_ROW_H;
-                            bitmapFill(field, bx, by, bx + BRICK_W - 1,
-                                       by + BRICK_H - 1, u8(emptyPen(by)));
-                            bitmapFill(field, bx, by, bx + BRICK_W - 1, by,
-                                       u8(emptyPen(by) + 1));
+                            // Copy the pristine playfield back into the hole.
+                            // A flat pen fill leaves a dark rectangle over the
+                            // starfield; the empty bitmap has the real backdrop.
+                            restoreRect(field, empty, bx, by, BRICK_W, BRICK_H);
                             // Both buffers still show the brick, so copy the
                             // cleaned patch over each one.
                             restoreRect(front, field, bx, by, BRICK_W, BRICK_H);

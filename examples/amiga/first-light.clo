@@ -806,7 +806,16 @@ func buildMaster(): Bitmap? {
     if (canvas == null) {
         return null;
     }
-    drawScene(bufferBytes(canvas));
+    let pixels: u8[] = bufferBytes(canvas);
+    // bufferNew does not zero its storage. Every scene pixel is drawn below,
+    // but clear first so a future gap cannot leak allocator data into the
+    // master bitmap.
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(WIDTH * HEIGHT)) {
+        pixels[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
+    drawScene(pixels);
 
     let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
     if (master == null) {
@@ -827,6 +836,13 @@ func buildStrip(): Bitmap? {
         return null;
     }
     let full: u8[] = bufferBytes(canvas);
+    // The filmstrip is eight independent phases; clear the whole allocation
+    // before filling each phase so a missed pixel cannot appear as garbage.
+    let clearIndex: usize = 0;
+    while (clearIndex < usize(REFLECT_W * REFLECT_H * PHASES)) {
+        full[clearIndex] = 0;
+        clearIndex = clearIndex + 1;
+    }
     let phase: i32 = 0;
     while (phase < PHASES) {
         let start: usize = usize(phase * REFLECT_W * REFLECT_H);
