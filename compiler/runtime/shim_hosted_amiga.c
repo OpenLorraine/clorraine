@@ -3814,53 +3814,51 @@ static void cl_video_plot_plane(cl_video_bitmap *bitmap, int plane,
     }
 }
 
-/* Fill a horizontal span of one plane, inclusive. */
-static void cl_video_fill_plane(cl_video_bitmap *bitmap, int plane,
-                                int x1, int x2, int y, int on)
+/* Fill a rectangle with one pen through the blitter.
+ *
+ * Writing the planes from C costs a function call and a bounds check per
+ * row per plane, which is slow enough to dominate a game frame on a 7 MHz
+ * 68000. RectFill turns the same rectangle into one blitter pass. */
+void cl_video_bitmap_fill(void *handle, LONG x1, LONG y1, LONG x2, LONG y2,
+                          UBYTE pen)
 {
-    UBYTE *row;
-    int first;
-    int last;
-    int bit_first;
-    int bit_last;
-    UBYTE first_mask;
-    UBYTE last_mask;
-    int index;
+    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
+    struct RastPort rast_port;
 
-    if (!cl_video_bitmap_has_pixel(bitmap, plane, x1, y) ||
-        !cl_video_bitmap_has_pixel(bitmap, plane, x2, y)) {
+    if (bitmap == NULL) {
         return;
     }
-    row = bitmap->bitmap.Planes[plane] +
-          (size_t)y * bitmap->bitmap.BytesPerRow;
-    first = x1 >> 3;
-    last = x2 >> 3;
-    bit_first = x1 & 7;
-    bit_last = x2 & 7;
-    first_mask = (UBYTE)(0xFFU >> (unsigned)bit_first);
-    last_mask = (UBYTE)(0xFFU << (unsigned)(7 - bit_last));
-    if (first == last) {
-        UBYTE mask = (UBYTE)(first_mask & last_mask);
-        if (on) {
-            row[first] |= mask;
-        } else {
-            row[first] &= (UBYTE)~mask;
-        }
+    if (x1 > x2) {
+        LONG swap = x1;
+        x1 = x2;
+        x2 = swap;
+    }
+    if (y1 > y2) {
+        LONG swap = y1;
+        y1 = y2;
+        y2 = swap;
+    }
+    if (x2 < 0 || y2 < 0 || x1 >= (LONG)bitmap->width ||
+        y1 >= (LONG)bitmap->height) {
         return;
     }
-    if (on) {
-        row[first] |= first_mask;
-    } else {
-        row[first] &= (UBYTE)~first_mask;
+    if (x1 < 0) {
+        x1 = 0;
     }
-    for (index = first + 1; index < last; index++) {
-        row[index] = on ? 0xFFU : 0x00U;
+    if (y1 < 0) {
+        y1 = 0;
     }
-    if (on) {
-        row[last] |= last_mask;
-    } else {
-        row[last] &= (UBYTE)~last_mask;
+    if (x2 >= (LONG)bitmap->width) {
+        x2 = (LONG)bitmap->width - 1;
     }
+    if (y2 >= (LONG)bitmap->height) {
+        y2 = (LONG)bitmap->height - 1;
+    }
+    InitRastPort(&rast_port);
+    rast_port.BitMap = &bitmap->bitmap;
+    SetAPen(&rast_port, (ULONG)pen);
+    RectFill(&rast_port, x1, y1, x2, y2);
+    WaitBlit();
 }
 
 /* Clear the bitmap to `pen`. */
@@ -3971,59 +3969,6 @@ void cl_video_bitmap_line(void *handle, LONG x1, LONG y1, LONG x2, LONG y2,
         if (error * 2 < dx) {
             error += dx;
             iy1 += sy;
-        }
-    }
-}
-
-/* Fill an inclusive rectangle, clipping to the bitmap. */
-void cl_video_bitmap_fill(void *handle, LONG x1, LONG y1, LONG x2, LONG y2,
-                          UBYTE pen)
-{
-    cl_video_bitmap *bitmap = (cl_video_bitmap *)handle;
-    int ix1 = (int)x1;
-    int iy1 = (int)y1;
-    int ix2 = (int)x2;
-    int iy2 = (int)y2;
-    int swap;
-    int width;
-    int height;
-    int y;
-    int plane;
-
-    if (bitmap == NULL) {
-        return;
-    }
-    if (ix1 > ix2) {
-        swap = ix1;
-        ix1 = ix2;
-        ix2 = swap;
-    }
-    if (iy1 > iy2) {
-        swap = iy1;
-        iy1 = iy2;
-        iy2 = swap;
-    }
-    width = (int)bitmap->width;
-    height = (int)bitmap->height;
-    if (ix2 < 0 || iy2 < 0 || ix1 >= width || iy1 >= height) {
-        return;
-    }
-    if (ix1 < 0) {
-        ix1 = 0;
-    }
-    if (iy1 < 0) {
-        iy1 = 0;
-    }
-    if (ix2 >= width) {
-        ix2 = width - 1;
-    }
-    if (iy2 >= height) {
-        iy2 = height - 1;
-    }
-    for (y = iy1; y <= iy2; y++) {
-        for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
-            cl_video_fill_plane(bitmap, plane, ix1, ix2, y,
-                                (pen & (UBYTE)(1U << (unsigned)plane)) != 0);
         }
     }
 }

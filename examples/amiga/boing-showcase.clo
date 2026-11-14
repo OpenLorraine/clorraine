@@ -34,7 +34,7 @@ const HORIZON: i32 = 168;
 /// Plots one pixel in a chunky, row-major byte buffer.
 func put(borrow pixels: u8[], x: i32, y: i32, colour: i32): void {
     if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
-        pixels[usize(y * WIDTH + x)] = u8(colour & 15);
+        pixels[usize(y * WIDTH + x)] = u8(colour & 31);
     }
 }
 
@@ -52,7 +52,7 @@ func span(borrow pixels: u8[], x0: i32, x1: i32, y: i32, colour: i32): void {
         b = WIDTH - 1;
     }
     while (a <= b) {
-        pixels[usize(y * WIDTH + a)] = u8(colour & 15);
+        pixels[usize(y * WIDTH + a)] = u8(colour & 31);
         a = a + 1;
     }
 }
@@ -72,18 +72,15 @@ func bayer(x: i32, y: i32): i32 {
     return column ^ row;
 }
 
-/// Fills the sky with a three-pen sunset gradient and ordered dithering.
+/// Fills the sky with an eight-pen sunset gradient and ordered dithering.
 ///
-/// The gradient is intentionally short: indigo at the top, plum through the
-/// middle, and hot orange at the horizon. Each seam is dithered over eight
-/// rows, which gives the banded Amiga look without a checkerboard.
+/// Pens 1 to 8 run from deep indigo through violet and plum to hot orange.
+/// Each seam is dithered over a band of rows, so the eight pens read as a
+/// continuous ramp rather than eight visible stripes.
 func drawSky(borrow pixels: u8[]): void {
     let y: i32 = 0;
     while (y < HORIZON) {
-        let level: i32 = 0;
-        if (y > 48) {
-            level = (y - 48) * 2;
-        }
+        let level: i32 = y * 700 / HORIZON;
         let lo: i32 = 1 + level / 100;
         let frac: i32 = level % 100;
         let x: i32 = 0;
@@ -92,8 +89,8 @@ func drawSky(borrow pixels: u8[]): void {
             if (frac > 0 && bayer(x, y) * 100 / 16 < frac) {
                 colour = colour + 1;
             }
-            if (colour > 3) {
-                colour = 3;
+            if (colour > 8) {
+                colour = 8;
             }
             put(pixels, x, y, colour);
             x = x + 1;
@@ -120,14 +117,14 @@ func drawStars(borrow pixels: u8[]): void {
             seed = nextRandom(seed);
             let kind: i32 = seed % 100;
             if (kind > 88) {
-                put(pixels, x, y, 15);
-                put(pixels, x - 1, y, 10);
-                put(pixels, x + 1, y, 10);
-                put(pixels, x, y - 1, 10);
+                put(pixels, x, y, 31);
+                put(pixels, x - 1, y, 30);
+                put(pixels, x + 1, y, 30);
+                put(pixels, x, y - 1, 30);
             } else if (kind > 55) {
-                put(pixels, x, y, 9);
+                put(pixels, x, y, 30);
             } else {
-                put(pixels, x, y, 11);
+                put(pixels, x, y, 29);
             }
         }
     }
@@ -146,9 +143,9 @@ func cloud(borrow pixels: u8[], cx: i32, cy: i32, halfWidth: i32,
                 let wobble: i32 = 2 * sin((x + seed) * 17 / 10) / 256;
                 if ((x - cx) * (x - cx) * 100 <
                     taper * taper * 64) {
-                    put(pixels, x, y + wobble, 11);
+                    put(pixels, x, y + wobble, 30);
                     if (row == thick - 1) {
-                        put(pixels, x, y + wobble, 10);
+                        put(pixels, x, y + wobble, 29);
                     }
                 }
                 x = x + 1;
@@ -174,11 +171,18 @@ func drawSun(borrow pixels: u8[]): void {
         if (half > 0) {
             let x: i32 = cx - half;
             while (x <= cx + half) {
-                let colour: i32 = 6;
-                if (y < cy - 18) {
-                    colour = 8;
+                let colour: i32 = 9;
+                if (y < cy - 30) {
+                    colour = 12;
+                } else if (y < cy - 18) {
+                    colour = 11;
                 } else if (y < cy + 4) {
-                    colour = 7;
+                    colour = 10;
+                }
+                // A dither seam softens the step between the sun bands.
+                let fade: i32 = (y + 54) % 12;
+                if (fade < 4 && colour < 12) {
+                    colour = colour + 1;
                 }
                 put(pixels, x, y, colour);
                 x = x + 1;
@@ -187,8 +191,8 @@ func drawSun(borrow pixels: u8[]): void {
         y = y + 1;
     }
 
-    // Horizontal slits across the lower half of the sun. They are pen 1, so
-    // the copper gradient shows through the gaps.
+    // Horizontal slits across the lower half of the sun. They use the hot
+    // horizon pen, so the sky shows through the gaps.
     let slit: i32 = 146;
     while (slit < HORIZON) {
         let thickness: i32 = 1 + (slit - 140) / 10;
@@ -196,9 +200,9 @@ func drawSun(borrow pixels: u8[]): void {
         let inner: i32 = radius * radius - dy * dy;
         if (inner > 0) {
             let half: i32 = sqrt(inner);
-            span(pixels, cx - half, cx + half, slit, 1);
+            span(pixels, cx - half, cx + half, slit, 8);
             if (thickness > 1) {
-                span(pixels, cx - half, cx + half, slit + 1, 1);
+                span(pixels, cx - half, cx + half, slit + 1, 8);
             }
         }
         slit = slit + 4;
@@ -222,17 +226,17 @@ func drawMountains(borrow pixels: u8[]): void {
         let far: i32 = farRidge(x);
         let y: i32 = far;
         while (y < HORIZON) {
-            put(pixels, x, y, 11);
+            put(pixels, x, y, 13);
             y = y + 1;
         }
-        put(pixels, x, far, 10);
+        put(pixels, x, far, 14);
         let near: i32 = nearRidge(x);
         y = near;
         while (y < HORIZON) {
-            put(pixels, x, y, 12);
+            put(pixels, x, y, 15);
             y = y + 1;
         }
-        put(pixels, x, near, 10);
+        put(pixels, x, near, 16);
         x = x + 1;
     }
 }
@@ -241,13 +245,13 @@ func drawMountains(borrow pixels: u8[]): void {
 func drawGrid(borrow pixels: u8[]): void {
     let y: i32 = HORIZON;
     while (y < HEIGHT) {
-        span(pixels, 0, WIDTH - 1, y, 0);
+        span(pixels, 0, WIDTH - 1, y, 17);
         y = y + 1;
     }
 
     // The horizon line is the brightest rule in the frame.
-    span(pixels, 0, WIDTH - 1, HORIZON, 5);
-    span(pixels, 0, WIDTH - 1, HORIZON + 1, 4);
+    span(pixels, 0, WIDTH - 1, HORIZON, 20);
+    span(pixels, 0, WIDTH - 1, HORIZON + 1, 19);
 
     // Converging verticals from the vanishing point to the bottom edge.
     let line: i32 = 0;
@@ -258,9 +262,9 @@ func drawGrid(borrow pixels: u8[]): void {
             let depth: i32 = y - HORIZON;
             let x: i32 = 160 + (bottomX - 160) * depth /
                                (HEIGHT - 1 - HORIZON);
-            let colour: i32 = 4;
+            let colour: i32 = 18;
             if (line % 2 == 0) {
-                colour = 5;
+                colour = 19;
             }
             put(pixels, x, y, colour);
             y = y + 1;
@@ -272,9 +276,9 @@ func drawGrid(borrow pixels: u8[]): void {
     let step: i32 = 1;
     while (step <= 12) {
         let y: i32 = HORIZON + (step * step * (HEIGHT - HORIZON - 2)) / 144;
-        let colour: i32 = 4;
+        let colour: i32 = 18;
         if (step % 3 == 0) {
-            colour = 5;
+            colour = 19;
         }
         span(pixels, 0, WIDTH - 1, y, colour);
         step = step + 1;
@@ -295,7 +299,7 @@ func drawBackground(borrow pixels: u8[]): void {
 
 /// Builds the chrome ball and its one-plane mask.
 func buildBall(): Bitmap? {
-    let ball: Bitmap? = newBitmap(BALL, BALL, 4);
+    let ball: Bitmap? = newBitmap(BALL, BALL, 5);
     if (ball == null) {
         return null;
     }
@@ -318,22 +322,22 @@ func buildBall(): Bitmap? {
                 let lx: i32 = dx + 9;
                 let ly: i32 = dy + 10;
                 let light: i32 = lx * lx + ly * ly;
-                let colour: i32 = 12;
+                let colour: i32 = 23;
                 if (light < 18) {
-                    colour = 15;
+                    colour = 27;
                 } else if (light < 52) {
-                    colour = 9;
+                    colour = 26;
                 } else if (light < 120) {
-                    colour = 5;
+                    colour = 25;
                 } else if (light < 220) {
-                    colour = 13;
+                    colour = 24;
                 } else if (light < 360) {
-                    colour = 11;
+                    colour = 22;
                 }
                 // A cyan rim on the lower-right edge keeps the ball reading
                 // against the dark grid.
                 if (distance > (radius - 5) * (radius - 5) && dx > 2) {
-                    colour = 5;
+                    colour = 28;
                 }
                 pixels[usize(y * BALL + x)] = u8(colour);
             }
@@ -378,22 +382,40 @@ func buildMask(): Bitmap? {
 
 /// Sets the fixed half of the palette. Pen 1 is supplied by the copper list.
 func setPalette(borrow display: Display): void {
-    displaySetColor(display, 0, 5, 6, 16);
-    displaySetColor(display, 1, 14, 8, 46);
-    displaySetColor(display, 2, 104, 30, 78);
-    displaySetColor(display, 3, 240, 92, 52);
-    displaySetColor(display, 4, 28, 118, 138);
-    displaySetColor(display, 5, 84, 226, 226);
-    displaySetColor(display, 6, 255, 108, 52);
-    displaySetColor(display, 7, 255, 164, 72);
-    displaySetColor(display, 8, 255, 224, 132);
-    displaySetColor(display, 9, 255, 252, 238);
-    displaySetColor(display, 10, 255, 120, 166);
-    displaySetColor(display, 11, 142, 92, 214);
-    displaySetColor(display, 12, 22, 24, 52);
-    displaySetColor(display, 13, 58, 92, 176);
-    displaySetColor(display, 14, 226, 68, 92);
-    displaySetColor(display, 15, 218, 246, 255);
+    // 0: space. 1-8: sky ramp. 9-12: sun. 13-16: mountains.
+    displaySetColor(display, 0, 4, 4, 20);
+    displaySetColor(display, 1, 8, 6, 30);
+    displaySetColor(display, 2, 18, 10, 52);
+    displaySetColor(display, 3, 42, 12, 72);
+    displaySetColor(display, 4, 78, 16, 82);
+    displaySetColor(display, 5, 120, 22, 78);
+    displaySetColor(display, 6, 170, 40, 70);
+    displaySetColor(display, 7, 220, 74, 52);
+    displaySetColor(display, 8, 252, 120, 46);
+    displaySetColor(display, 9, 255, 168, 60);
+    displaySetColor(display, 10, 255, 206, 96);
+    displaySetColor(display, 11, 255, 232, 140);
+    displaySetColor(display, 12, 255, 248, 200);
+    displaySetColor(display, 13, 36, 20, 66);
+    displaySetColor(display, 14, 96, 44, 120);
+    displaySetColor(display, 15, 16, 14, 44);
+    displaySetColor(display, 16, 60, 28, 92);
+    // 17-20: ground and grid. 21-28: chrome ball. 29-31: stars.
+    displaySetColor(display, 17, 12, 24, 56);
+    displaySetColor(display, 18, 26, 90, 120);
+    displaySetColor(display, 19, 60, 200, 220);
+    displaySetColor(display, 20, 150, 250, 255);
+    displaySetColor(display, 21, 10, 12, 34);
+    displaySetColor(display, 22, 26, 34, 78);
+    displaySetColor(display, 23, 52, 68, 130);
+    displaySetColor(display, 24, 92, 120, 180);
+    displaySetColor(display, 25, 150, 190, 230);
+    displaySetColor(display, 26, 210, 235, 255);
+    displaySetColor(display, 27, 255, 255, 255);
+    displaySetColor(display, 28, 60, 220, 240);
+    displaySetColor(display, 29, 70, 70, 110);
+    displaySetColor(display, 30, 130, 140, 190);
+    displaySetColor(display, 31, 230, 235, 255);
 }
 
 func main(): i32 {
@@ -404,9 +426,9 @@ func main(): i32 {
     }
     drawBackground(bufferBytes(canvas));
 
-    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
-    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
-    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
     if (master == null || front == null || back == null) {
         println("boing-showcase: bitmap failed");
         return 2;

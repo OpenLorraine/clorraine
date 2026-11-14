@@ -16,7 +16,7 @@ import {
     Bitmap, Display,
     newBitmap, freeBitmap, bitmapBlit, bitmapFill,
     bitmapFromIndices, openDisplayAt, freeDisplay, displaySetColor,
-    displayFlip, displayFailed
+    displayFlip, displayFailed, displayIndex
 } from std.amiga.video;
 import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
 import { sin } from std.math;
@@ -509,6 +509,79 @@ func resetBricks(borrow field: Bitmap, borrow empty: Bitmap,
     }
 }
 
+/// Copies one rectangle from the background over the target, clipped.
+func restoreRect(borrow target: Bitmap, borrow bg: Bitmap, x: i32, y: i32,
+                 w: i32, h: i32): void {
+    let x0: i32 = x;
+    let y0: i32 = y;
+    let x1: i32 = x + w;
+    let y1: i32 = y + h;
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > WIDTH) {
+        x1 = WIDTH;
+    }
+    if (y1 > HEIGHT) {
+        y1 = HEIGHT;
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        return;
+    }
+    bitmapBlit(target, bg, x0, y0, x0, y0, x1 - x0, y1 - y0);
+}
+
+/// Clears the ball and its trail that were drawn last time.
+func eraseBall(borrow target: Bitmap, borrow bg: Bitmap, lastX: i32,
+               lastY: i32): void {
+    if (lastX < 0) {
+        return;
+    }
+    restoreRect(target, bg, lastX - 6, lastY + 3, BALL, BALL);
+    restoreRect(target, bg, lastX, lastY, BALL, BALL);
+}
+
+/// Clears the paddle that was drawn last time.
+func erasePaddle(borrow target: Bitmap, borrow bg: Bitmap, lastX: i32): void {
+    if (lastX < 0) {
+        return;
+    }
+    restoreRect(target, bg, lastX, PADDLE_Y, PADDLE_W, PADDLE_H);
+}
+
+/// Repaints one frame buffer with the whole background.
+func paintBackground(borrow front: Bitmap, borrow back: Bitmap,
+                     borrow bg: Bitmap): void {
+    bitmapBlit(front, bg, 0, 0, 0, 0, WIDTH, HEIGHT);
+    bitmapBlit(back, bg, 0, 0, 0, 0, WIDTH, HEIGHT);
+}
+
+/// Repaints the heads-up strip in both frame buffers.
+func paintHud(borrow front: Bitmap, borrow back: Bitmap,
+              borrow hud: Bitmap): void {
+    bitmapBlit(front, hud, 0, 0, 0, 0, WIDTH, HUD_H);
+    bitmapBlit(back, hud, 0, 0, 0, 0, WIDTH, HUD_H);
+}
+
+/// Draws the moving objects into `target` after erasing their old positions.
+///
+/// Only the small rectangles the sprites covered are restored, so a frame
+/// costs a few hundred chip-memory pixels instead of a full-screen copy.
+func drawSprites(borrow target: Bitmap, borrow bg: Bitmap,
+                 ballX: i32, ballY: i32, paddleX: i32,
+                 lastBallX: i32, lastBallY: i32, lastPaddleX: i32): void {
+    eraseBall(target, bg, lastBallX, lastBallY);
+    erasePaddle(target, bg, lastPaddleX);
+    if (paddleX >= 0) {
+        fillPaddle(target, paddleX, PADDLE_Y);
+    }
+    fillTrail(target, ballX - 6, ballY + 3);
+    fillBall(target, ballX, ballY);
+}
+
 func main(): i32 {
     let title: Bitmap? = buildTitle();
     let empty: Bitmap? = buildField();
@@ -518,7 +591,6 @@ func main(): i32 {
         return 1;
     }
     let hud: Bitmap? = buildHud();
-    println("prism: hud");
     if (hud == null) {
         println("prism: hud failed");
         return 1;
@@ -531,7 +603,6 @@ func main(): i32 {
         return 1;
     }
 
-    println("prism: open");
     let display: Display? = openDisplayAt(front, back, 0, 0);
     if (display == null) {
         println("prism: display failed");
@@ -541,12 +612,14 @@ func main(): i32 {
     displayFlip(display);
     if (displayFailed(display)) {
         println("prism: display failed");
+        freeDisplay(display);
         return 2;
     }
     println("prism: ready");
 
     // Game state. Positions are in whole pixels; velocities are 8.8.
     let mode: i32 = 0; // 0 title, 1 playing.
+    let shownMode: i32 = -1;
     let paddleX: i32 = (WIDTH - PADDLE_W) / 2;
     let ballX: i32 = paddleX + (PADDLE_W - BALL) / 2;
     let ballY: i32 = PADDLE_Y - BALL - 2;
@@ -557,6 +630,11 @@ func main(): i32 {
     let serveDelay: i32 = 0;
     let lastFire: bool = false;
     let bricks: u8[40] = [; 0];
+
+    // What each frame buffer still shows: ball x, ball y, paddle x. A -1
+    // means nothing was drawn there, so there is nothing to erase.
+    let marks: i32[6] = [-1, -1, -1, -1, -1, -1];
+
     resetBricks(field, empty, slice(bricks, 0, 40));
     updateHud(hud, score, lives);
 
@@ -565,14 +643,41 @@ func main(): i32 {
         let joy: u8 = readJoystick(1) | readJoystick(0);
         let fire: bool = (joy & JOY_FIRE) != 0;
 
+        // A mode change repaints both buffers once, then each frame only
+        // touches the rectangles the sprites move across.
+        if (mode != shownMode) {
+            if (mode == 0) {
+                paintBackground(front, back, title);
+            } else {
+                paintBackground(front, back, field);
+                paintHud(front, back, hud);
+            }
+            let m: i32 = 0;
+            while (m < 6) {
+                marks[usize(m)] = -1;
+                m = m + 1;
+            }
+            shownMode = mode;
+        }
+
+        let target: i32 = 1 - i32(displayIndex(display));
+        let base: usize = usize(target * 3);
+
         if (mode == 0) {
-            bitmapBlit(back, title, 0, 0, 0, 0, WIDTH, HEIGHT);
             // A ball glides over the title, leaving two fading echoes.
             let tx: i32 = 160 + (90 * sin(frame * 2)) / 256;
             let ty: i32 = 174 + (26 * sin(frame * 3)) / 256;
-            fillTrail(back, tx - 9, ty + 4);
-            fillTrail(back, tx - 5, ty + 2);
-            fillBall(back, tx, ty);
+            if (target == 0) {
+                drawSprites(front, title, tx, ty, -1, marks[base],
+                            marks[base + 1], -1);
+            } else {
+                drawSprites(back, title, tx, ty, -1, marks[base],
+                            marks[base + 1], -1);
+            }
+            marks[base] = tx;
+            marks[base + 1] = ty;
+            marks[base + 2] = -1;
+
             if (fire && !lastFire) {
                 score = 0;
                 lives = START_LIVES;
@@ -582,8 +687,6 @@ func main(): i32 {
                 paddleX = (WIDTH - PADDLE_W) / 2;
                 ballX = paddleX + (PADDLE_W - BALL) / 2;
                 ballY = PADDLE_Y - BALL - 2;
-                velX = 400;
-                velY = -460;
                 serveDelay = SERVE_DELAY;
                 updateHud(hud, score, lives);
                 mode = 1;
@@ -663,8 +766,13 @@ func main(): i32 {
                                        by + BRICK_H - 1, u8(emptyPen(by)));
                             bitmapFill(field, bx, by, bx + BRICK_W - 1, by,
                                        u8(emptyPen(by) + 1));
+                            // Both buffers still show the brick, so copy the
+                            // cleaned patch over each one.
+                            restoreRect(front, field, bx, by, BRICK_W, BRICK_H);
+                            restoreRect(back, field, bx, by, BRICK_W, BRICK_H);
                             score = score + 10;
                             updateHud(hud, score, lives);
+                            paintHud(front, back, hud);
                             velY = -velY;
                         }
                     }
@@ -674,6 +782,7 @@ func main(): i32 {
                 if (ballY > FIELD_Y + FIELD_H) {
                     lives = lives - 1;
                     updateHud(hud, score, lives);
+                    paintHud(front, back, hud);
                     if (lives <= 0) {
                         mode = 0;
                     } else {
@@ -686,11 +795,16 @@ func main(): i32 {
                 }
             }
 
-            bitmapBlit(back, field, 0, 0, 0, 0, WIDTH, HEIGHT);
-            bitmapBlit(back, hud, 0, 0, 0, 0, WIDTH, HUD_H);
-            fillTrail(back, ballX - 6, ballY + 3);
-            fillPaddle(back, paddleX, PADDLE_Y);
-            fillBall(back, ballX, ballY);
+            if (target == 0) {
+                drawSprites(front, field, ballX, ballY, paddleX,
+                            marks[base], marks[base + 1], marks[base + 2]);
+            } else {
+                drawSprites(back, field, ballX, ballY, paddleX,
+                            marks[base], marks[base + 1], marks[base + 2]);
+            }
+            marks[base] = ballX;
+            marks[base + 1] = ballY;
+            marks[base + 2] = paddleX;
         }
 
         lastFire = fire;
