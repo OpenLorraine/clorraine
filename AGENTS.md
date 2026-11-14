@@ -197,10 +197,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 
 - Layout: **flat** — feature plans live at `plans/<feature>/99-execution-plan.md`;
   the roadmap is `plans/00-roadmap.md`. There is no nested `codeops/features/`
-  tree; `codeops/` holds only `specialist-check.json`.
+  tree; `codeops/` holds the specialist check state and the specialist briefs.
 - Branch: `main` is the integration branch (`origin`:
   `git@github.com:OpenLorraine/clorraine.git`).
-- Specialist coverage: **up to date (2026-11-11)** — 75 plan folders recorded in
+- Specialist coverage: **up to date (2026-11-14)** — 85 plan folders recorded in
   `codeops/specialist-check.json`.
 - Do not run the CodeOps installer from inside this repository: it replaces the
   two customized reviewer briefs (`correctness-reviewer`, `semantics-reviewer`)
@@ -208,8 +208,8 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   example, `cd ~`), and after any in-repo install restore those two briefs:
   `git checkout -- .opencode/agents/correctness-reviewer.md
   .opencode/agents/semantics-reviewer.md`. The catalog's other project-scope
-  files stay untracked; only the four project agents under `.opencode/agents/`
-  are committed.
+  files stay untracked; the project agents under `.opencode/agents/` are
+  committed.
 - Keep `plans/*/99-...` and the roadmap in sync through the CodeOps skills, and
   follow the strict quality profile: independent review, stop on critical/major
   findings.
@@ -221,8 +221,15 @@ acceptance gate. `make check` and `make verify` remain authoritative.
     hunt);
   - language-rule changes (lends, captures, evaluation order): those two +
     `semantics-reviewer`, with the `spec/17-codegen` ABI lens where signatures
-    or lowering change.
+    or lowering change;
+  - Amiga platform changes (`std.amiga.*`, hosted-amiga shims, FS-UAE gates,
+    SDK registry rows): add `amiga-platform-reviewer` to the base dispatch.
 - Reviewer packets always include a blast-radius step (every call site,
   exhaustive match, and parallel path of the changed construct) and a
   test-integrity step (an assertion must fail without the fix).
 <!-- CODEOPS-PROJECT:END -->
+
+<!-- CODEOPS-SPECIALISTS:START -->
+Specialist agents (routing: `codeops/codeops.json`; briefs: `codeops/specialists/`):
+- `amiga-platform-reviewer` — "Reviews hosted-amiga and AGA diffs against the Kickstart 1.3-3.1 availability matrix, m68k C crossing rules, and FS-UAE gate mechanics. Read-only." (Required for: any diff that adds or changes std.amiga.*, a hosted-amiga shim, an FS-UAE gate, or an SDK registry row)
+<!-- CODEOPS-SPECIALISTS:END -->
