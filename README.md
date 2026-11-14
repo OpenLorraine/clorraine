@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="site/public/logo.svg" alt="Clorraine" width="72" height="72">
+</p>
+
 # Clorraine
 
 > **Project status: developer preview.** Clorraine is under active
@@ -14,7 +18,8 @@
 | Compiler, checker, ownership, C99 emission | Usable; guarded by the specification and test suites |
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
 | Linux x86_64 binary | Released (v1.1.2) |
-| Windows/macOS installers, VS Code packaging | In progress |
+| VS Code extension | Packages and passes its packaged-client test (`make vscode-check`) |
+| Windows/macOS installers | In progress |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
@@ -28,9 +33,27 @@ Like C and Unix — and later Oberon — the language and the OS are co-designed
 LorraineOS requirements drive Clorraine's feature set, and Clorraine exists to
 make LorraineOS (and Amiga programs) safe and pleasant to write.
 
-## Demo
+## Showcases
 
-![The Clorraine demo poster: the intro card](demo/poster.png)
+Four programs written in Clorraine. Boing, First Light, and Prism are A500
+programs that run live in the browser from the
+[examples site](https://openlorraine.github.io/clorraine/examples/), where each
+ADF is also downloadable. Clorraine Studio is a native Intuition application on
+Workbench 3.1.
+
+| Boing: Neon Horizon | First Light |
+|:---:|:---:|
+| ![A chrome ball above a neon sunset grid](site/public/screenshots/boing.webp) | ![A lighthouse and the sun over a dithered sea](site/public/screenshots/first-light.webp) |
+| **A500 · 32 colours · live in the browser** | **A500 · 16 colours · live in the browser** |
+| **Prism** | **Clorraine Studio** |
+| ![A brick grid, paddle, and ball in an arcade frame](site/public/screenshots/prism.webp) | ![The Clorraine Studio window on a Workbench 3.1 screen](site/public/screenshots/gui31-showcase.png) |
+| **A500 · arcade · keyboard or joystick** | **A1200 · Kickstart 3.1 · native Workbench** |
+
+The programs live in [`examples/amiga/`](examples/amiga). To play the A500 demos
+locally at full speed, `tools/amiga/play-demo.sh <demo>` boots the committed ADF
+in FS-UAE with your own licensed Kickstart 1.3 image.
+
+## Demo
 
 The demo tells the Clorraine story in chapters: a card introducing Clorraine,
 the smallest Clorraine program
@@ -101,7 +124,9 @@ stdlib/    The embedded standard-library `.clo` sources
 spec/      The language specification, grammar, and golden test data
 docker/    The Clorraine SDK: pinned, from-source Amiga toolchain in Docker
 docs/      Findings and review records
+examples/  Small programs, including the Amiga showcases
 site/      The public VitePress documentation site
+tools/     Demo renderer, benchmark and fuzz harnesses, SDK setup, VS Code extension, and the local demo launcher
 plans/     CodeOps feature plans and the roadmap
 spikes/    Phase 1 toolchain spikes
 ```
