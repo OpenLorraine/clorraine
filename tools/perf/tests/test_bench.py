@@ -126,14 +126,18 @@ class FixtureTests(unittest.TestCase):
     def test_real_workload_fixtures_are_complete(self) -> None:
         """Every benchmark directory carries a source, a README, and a golden.
 
-        The two real-workload fixtures are named explicitly so deleting one
-        fails this test instead of silently shrinking the scored suite.
+        The iteration covers the directory tree rather than
+        ``benchmark_names()``, because that helper already filters on
+        ``program.clo`` and would silently drop a benchmark whose source was
+        deleted. The two real-workload fixtures are also named explicitly.
         """
         names = bench.benchmark_names()
         self.assertIn("text-scan", names)
         self.assertIn("container", names)
-        for name in names:
-            directory = bench.BENCHMARKS / name
+        for directory in sorted(bench.BENCHMARKS.iterdir()):
+            if not directory.is_dir() or directory.name == "calibration":
+                continue
+            name = directory.name
             self.assertTrue((directory / "program.clo").is_file(), name)
             self.assertTrue((directory / "README.md").is_file(), name)
             expected = directory / "expected-output.txt"

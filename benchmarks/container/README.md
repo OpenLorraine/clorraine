@@ -3,8 +3,10 @@
 A growable-array workload adapted from
 `spec/tests/corpus/buffer-container/program.clo`. One thousand twenty-four
 `Point` structs are pushed through the monomorphized `Array<Point>` instance,
-then scanned four times through the `get(i)[0]` one-element view API. Each
-element crosses the `sumPoints` call boundary by value.
+then scanned four times through the `get(i)[0]` one-element view API. The
+source copies each element by value through `get` and `sumPoints`; the shipped
+`-O2` build inlines both into `main`, so there is no call boundary in the
+measured binary.
 
 It is a real container workload, not a microbenchmark for one codegen rule.
 The program uses the public `std.mem` API and does not depend on how the

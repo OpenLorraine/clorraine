@@ -16,9 +16,18 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import bench  # noqa: E402
 import flag_audit  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class ScoredSetTests(unittest.TestCase):
+    """The flag audit must cover every scored benchmark."""
+
+    def test_the_scored_set_is_every_discovered_benchmark(self) -> None:
+        """A hardcoded subset must not silently skip a scored workload."""
+        self.assertEqual(tuple(flag_audit.SCORED), tuple(bench.benchmark_names()))
 
 
 def entry(

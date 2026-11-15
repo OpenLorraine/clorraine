@@ -38,7 +38,7 @@ and shipped flag sets and asserts the size/runtime floors.
 
 | Program | Shape |
 |---|---|
-| `calibration` | startup only; its instruction count is subtracted |
+| `calibration` | fixed console path; its instruction count is subtracted |
 | `sieve` | 8,192-slot `u8` fill, module `const` loop bound, nested bounds checks |
 | `matrix` | 32x32 fixed array, row parameter, nested indexing, helper calls |
 | `strings` | template-built Strings, `str` views, byte access, formatting |
@@ -48,8 +48,9 @@ and shipped flag sets and asserts the size/runtime floors.
 | `text-scan` | fixed command line scanned 64 times, `str` indexing, enum dispatch, struct return |
 | `container` | 1,024 structs pushed through `Array<Point>`, four scans through `get(i)[0]` |
 
-Changing a workload requires a new committed baseline in the active
-optimization plan’s `05-findings.md`. The `lookup` baseline is in
-`plans/constant-array-initializer/05-findings.md`; the `local-table` baseline is
-in `plans/constant-array-residuals/05-findings.md`; the earlier suite baseline
-is in `plans/generated-c-optimization/05-findings.md`.
+Changing a workload requires a new committed baseline. The `lookup` baseline
+is in `plans/constant-array-initializer/05-findings.md`; the `local-table`
+baseline is in `plans/constant-array-residuals/05-findings.md`; the
+`text-scan` and `container` baselines are in
+`plans/real-workload-audit/99-execution-plan.md`; the earlier suite baseline is
+in `plans/generated-c-optimization/05-findings.md`.

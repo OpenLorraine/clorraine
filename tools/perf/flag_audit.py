@@ -24,8 +24,9 @@ from pathlib import Path
 
 import bench
 
-# The scored benchmark set; calibration is measured but not scored.
-SCORED = ("sieve", "matrix", "strings", "moves", "lookup")
+# The scored benchmark set is every discovered benchmark; calibration is
+# measured separately and is not scored.
+SCORED = tuple(bench.benchmark_names())
 CALIBRATION = "calibration"
 
 # The four portable 1.3 corpus programs. interrupt-counter is FS-UAE-only.
