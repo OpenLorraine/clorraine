@@ -1,7 +1,7 @@
 # Task: Pin the remaining A500 FS-UAE gates to a deterministic window
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 5/7 tasks (71%)
+> **Progress**: 7/7 tasks (100%) — full `make verify` green
 > **Reasoning**: low — gate harness only. Four shell scripts gain a pinned
 > FS-UAE window, a capture-size assertion, and regenerated goldens; no compiler,
 > runtime, ABI, stdlib, or product change.
@@ -56,8 +56,8 @@ the capture independent of the host without changing what the goldens show.
   every critical/major finding. Both reviews are clean; the two minor
   correctness findings and the four minor platform corrections are recorded
   in the Findings section.
-- [ ] T-06 Run `make check` and the full `make verify` gate; record the results.
-- [ ] T-07 Update the roadmap and close #34.
+- [x] T-06 Run `make check` and the full `make verify` gate; record the results.
+- [x] T-07 Update the roadmap and close #34.
 
 **Verify**: `make check`; `make sdk-a500-boing`; `make sdk-a500-sprites`;
 `make sdk-a500-paddle`; `make sdk-a500-text`; the same four gates on a private
@@ -192,3 +192,14 @@ warning; `import -window` captures the client area, so the saved captures are
 `import` fail and the loop continues, so the assertion does not false-fail
 during initialization; all eight goldens are AE=0 against the pinned captures.
 
+### Gate evidence
+
+The change is committed as `577e4b4b`.
+
+| Gate | Result |
+|---|---|
+| `cargo test --test amiga_a500_spec_test` | 5 passed, including the geometry test and its ordering assertions |
+| `make sdk-a500-boing`, `-sprites`, `-paddle`, `-text` on the desktop | all four report OK |
+| Same four on a private `:99` Xvfb at 1280x720x24 | `xvfb: all four gates passed` |
+| `make check` (inside `make verify`) | exit 0; workspace tests, 103 bench tests, fuzz smoke clean |
+| `make verify` | `verify: all legs passed`, exit 0; the four pinned gates each report OK in the log |

@@ -1,7 +1,7 @@
 # Task: Amortize growable-array growth
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 6/9 tasks (67%)
+> **Progress**: 9/9 tasks (100%) — full `make verify` green
 > **Reasoning**: medium — one growth-policy change in two runtime shims, but it
 > crosses host, hosted-amiga, and every container-using program, so it keeps
 > the full gate and the Amiga platform review.
@@ -52,13 +52,13 @@ stdlib-source, emitted-C, or public-surface change.
 - [x] T-06 Run the independent correctness and Amiga platform reviews; fix
   every critical/major finding. Both reviews are clean; the minor evidence
   gaps are recorded in the Findings section.
-- [ ] T-07 Run `make check`, `make asan`, `make ubsan`, `make bench`,
+- [x] T-07 Run `make check`, `make asan`, `make ubsan`, `make bench`,
   `make bench-base COMMIT=d44c62fd`, `make bench-compare`,
   `make bench-shape`, `make corpus-amiga`, `make differential`, and
-  `make verify`.
-- [ ] T-08 Record the base/head table, allocation evidence, review verdicts,
+  `make verify`. All legs are green; see Gate evidence.
+- [x] T-08 Record the base/head table, allocation evidence, review verdicts,
   and gate results in the task findings.
-- [ ] T-09 Update the roadmap and close #33.
+- [x] T-09 Update the roadmap and close #33.
 
 **Verify**: `make check`; `make asan`; `make ubsan`; `make bench`;
 `make bench-base COMMIT=d44c62fd`; `make bench-compare`;
@@ -213,3 +213,21 @@ cannot truncate, `cap` is read and written only inside the shim, `FreeBuffer`
 and `cl_buffer_ptr` use `data`/`len` only, the allocator is `malloc`/`free`
 rather than `AllocMem`, and both shims build warning-free for nix13, nix20,
 and vbcc with no unused-static warning when a program omits `std.mem`.
+
+### Gate evidence
+
+The change is committed as `05419231`; the final benchmark ran at
+`577e4b4b` (which includes that commit). The head compiler binary is
+`clc 1.1.2`, SHA-256 `38094cf5…`.
+
+| Gate | Result |
+|---|---|
+| `make check` | exit 0; workspace tests, bench harness 103 tests, fuzz smoke `cases=28 host=28 sanitizer=16 target=16 failures=0` |
+| `make asan` | 38 suites, exit 0 |
+| `make ubsan` | 12 suites, exit 0; sanitizer-active probe passed |
+| `make bench` + `make bench-base COMMIT=d44c62fd` | base and head documents written; head at `577e4b4b` |
+| `make bench-compare REQUIRE=container:instructions:70` | `-74.6%` vs required `-70%` PASS; `compare: passed`; every output hash unchanged |
+| `make bench-shape` | gcc host, gcc nix13, vbcc, and freestanding builds warning-free |
+| `make corpus-amiga` | all portable programs match on hosted-amiga |
+| `make differential` | `buffer-container`, `file-copier`, and `string-parser` match |
+| `make verify` | `verify: all legs passed`, exit 0 |
