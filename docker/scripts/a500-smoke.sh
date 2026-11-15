@@ -4,8 +4,11 @@
 # Decrypts the user's licensed Amiga Forever Kickstart 1.3 ROM locally (the
 # decrypted image stays in gitignored build/ and is removed on exit), boots a
 # clean ADF under FS-UAE configured as an A500, waits for the hello line, and
-# captures the real AmigaDOS 1.3 screen. The captured text-line crop is compared
-# to the committed golden image.
+# captures the real AmigaDOS 1.3 screen. The FS-UAE window is pinned to 640x256
+# with no border; FS-UAE's default aspect correction renders the hires screen
+# into a centered 328x256 area, so the crop offsets are valid for that pinned
+# window and aspect default, independent of the host display scale. The crop is
+# compared to the committed golden image.
 #
 # Usage:
 #   scripts/a500-smoke.sh [binary] ["expected line"]
@@ -36,7 +39,7 @@ if [ ! -f "${docker_dir}/.env" ]; then
     echo "a500-smoke: docker/.env is missing; run 'make -C docker init'" >&2
     exit 2
 fi
-for tool in xdotool import convert compare sha1sum; do
+for tool in xdotool import identify convert compare sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -105,6 +108,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=640 --window-height=256 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 30
@@ -122,7 +126,16 @@ while [ "${step}" -lt 30 ]; do
         continue
     fi
     DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" || continue
-    convert "${screenshot}" -crop 430x22+160+88 +repage "${crop}"
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "640x256" ]; then
+        echo "a500-smoke: unexpected FS-UAE window size: ${size:-unknown}" >&2
+        exit 1
+    fi
+    # The window is pinned to 640x256 above, and FS-UAE's default aspect
+    # correction centers the hires screen in it, so the hello line is at the
+    # same offset on every display. Crop the one text line and upscale it 2x
+    # to keep the documented golden size.
+    convert "${screenshot}" -crop 215x8+169+44 +repage -filter point -resize 200% "${crop}"
     metric="$(compare -metric AE "${crop}" "${golden}" null: 2>&1 || true)"
     metric="${metric%% *}"
     if [ "${metric}" = "0" ]; then
