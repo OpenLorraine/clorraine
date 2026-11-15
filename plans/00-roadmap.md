@@ -1,10 +1,10 @@
 # Roadmap: Clorraine
 
 > **Feature-Set**: Clorraine
-> **Status**: Done
+> **Status**: Active
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-11-13
-> **Progress**: 583/585 rows done; 0 active; 2 Parked
+> **Last Updated**: 2026-11-15
+> **Progress**: 583/588 rows done; 2 active; 1 planned; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -600,6 +600,9 @@
 | PLAN-37 | Opt-in size build mode (#21) | [01-requirements](size-build-mode/01-requirements.md) | [size-build-mode](size-build-mode/00-index.md) | Done | ✅ | 2026-11-13 | 24/24; `--size` selects `-Os` with release processing on all profiles, `--release`/`--size` conflict, `emit --size` rejected, default debug/`-O2` vectors unchanged; measured against `e65de1c`: host `.text` up to −11.9%, m68k `.text` neutral after GC, `moves` +31.3% net is the opt-in cost; 460 lib + 22 driver spec tests, `make check`, ASan 38, UBSan 12, `bench-shape`, `bench-compare` zero deltas, `corpus-amiga`, `differential`, full `verify` green; #21 closed |
 | PLAN-38 | Compiler throughput (#13) | [01-requirements](compiler-throughput/01-requirements.md) | [compiler-throughput](compiler-throughput/00-index.md) | Done | ✅ | 2026-11-13 | 25/25; `tools/perf/compile_time.py` + `make bench-compile` measure wall/CPU time and peak RSS over 130 corpus files, 7 benchmarks, 6 Amiga examples, and 8 generated shapes; the quadratic body scan became a module/name index, `functions-8000` −76% wall / −76% CPU, `mixed-4000` −28%, driver −56%; emitted C byte-identical across 5,311 runs / 3,205 C files, scored rows +0.0%; 461 lib + 22 driver + 101 bench tests, check, ASan 38, UBSan 12, bench-shape, corpus-amiga, differential, full `verify` green; pre-existing `cl_lambda_<site>` collision filed as #32; #13 closed |
 | ↳ DEF-558 | A user function named `cl_lambda_<site>` reuses a lifted lambda body | — | — | Done | ✅ | 2026-11-13 | 🟠 major, pre-existing (base `9c44537` and head `3c0b7e5` emit byte-identical wrong C), found by the compiler-throughput emission audit and filed as #32: a user declaration named `cl_lambda_0` lowered after a lambda site reused the lifted body, so `main` returned 2 instead of 100. The same collision also selected the lifted body in the generic instance re-walk, the slice-type collector, and the instance fill audit (missed `E10215`, then a double free). Fixed by excluding lifted bodies (`lambda_site.is_none()`) from all four declaration-body lookups; a body-index unit case plus closure and ownership spec cases cover the concrete body, a generic instance, a `T[]?` local, and a move-only fill; the independent emission audit reports the repository corpus byte-identical and F1/F2 closed; `make check`, UBSan 12, `corpus-amiga`, `differential`, and full `verify` green; #32 closed |
+| PLAN-39 | Real-workload generated-C audit (#14) | — | [real-workload-audit](real-workload-audit/99-execution-plan.md) | Executing | 🔄 | 2026-11-15 | Two corpus-derived workloads (`text-scan` 375,678 net / 24,152 B `.text`; `container` 223,504 / 24,092 B); container allocator 58.0% from exact-size `cl_buffer_reserve`; geometric probe −74.6% net / +16 B `.text`; shipped disassembly shows inlining removes the classify guard and `Array.get`/struct-copy cost, with a ~2.2% digit-loop residual; compiler-shape decision no-op, follow-up #33; fixture commit `d44c62fd`; performance and correctness re-reviews clean after the `.text`/attribution/bookkeeping fixes; `make check`, `bench-shape`, `ubsan`, `bench`, and `bench-compare` green; full `make verify` blocked only at the pre-existing FS-UAE `sdk-a500-smoke` host capture; #14 open |
+| ↳ DEF-559 | The hosted-amiga `UnlockPubScreen` prototype disagrees with the NDK and fails the vbcc `bench-shape` leg | — | — | Executing | 🔄 | 2026-11-15 | 🟠 major (build gate), pre-existing since `6a503fbb`: the shim declared `(struct Screen *screen, struct Screen *pub)` while `clib/intuition_protos.h` declares `(CONST_STRPTR name, struct Screen *screen)`; the calls already passed `(NULL, public_screen)`. Found by the #14 full gate; fixed by matching the NDK signature and comment; Amiga platform review PASS; `make bench-shape` green; the full-verify FS-UAE capture is blocked on the unrelated host-window environment |
+| PLAN-40 | Amortize growable-array growth (#33) | — | [growable-array-growth](growable-array-growth/99-execution-plan.md) | Plan Created | 📋 | 2026-11-15 | Follow-up to #14; geometric growth in `cl_buffer_reserve` on host and hosted-amiga; probe 223,504 → 56,814 net (−74.6%) and 24,092 → 24,108 B `.text` (+16 B, +0.07%, inside the 1% guard); 9 tasks, not started |
 
 ## Batch N accounting (2026-10-19)
 
