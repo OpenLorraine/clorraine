@@ -8,6 +8,12 @@
 # frame proves the display rendered; the checksum crop is compared byte-exact to
 # the committed golden image.
 #
+# The FS-UAE window is pinned to 960x540 with no border, the geometry the
+# committed goldens were captured from: the 320x256 demo display renders at 2x
+# in that window. The captured size is asserted before any crop, so a future
+# window default, display scale, or aspect-correction change fails with the
+# observed size instead of a large image comparison mismatch.
+#
 # This harness mirrors scripts/a500-smoke.sh: the boot path, ROM check, ADF
 # layout, and X11 capture are deliberately the same so both A500 gates exercise
 # the same machine. The polling difference is needed because Boing opens its
@@ -121,6 +127,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=960 --window-height=540 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 10
@@ -144,6 +151,13 @@ while [ "${step}" -lt 60 ]; do
     fi
     if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
         continue
+    fi
+    # The window is pinned above, so an unexpected size is a geometry change,
+    # not a transient capture. Fail with the observed size before cropping.
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "960x540" ]; then
+        echo "a500-boing-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+        exit 1
     fi
     # The Boing view has at least twelve distinct palette colors; the
     # AmigaDOS shell has about seven. This only drives the diagnostic message.

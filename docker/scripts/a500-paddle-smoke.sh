@@ -8,7 +8,10 @@
 # committed goldens.
 #
 # The demo uses a 320x256 Intuition screen, so the live display is the 640x512
-# double-height area at +160+14 in the 960x540 FS-UAE window.
+# double-height area at +160+14 in the FS-UAE window. The window is pinned to
+# 960x540 with no border, the geometry the committed goldens were captured
+# from, and the captured size is asserted before any crop so a future window
+# default or display-scale change fails with the observed size.
 #
 # Usage:
 #   scripts/a500-paddle-smoke.sh [binary]
@@ -49,7 +52,7 @@ if [ ! -f "${docker_dir}/.env" ]; then
     echo "a500-paddle-smoke: docker/.env is missing; run 'make -C docker init'" >&2
     exit 2
 fi
-for tool in xdotool import convert compare sha1sum; do
+for tool in xdotool import convert compare identify sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-paddle-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -118,6 +121,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=960 --window-height=540 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 10
@@ -141,6 +145,13 @@ while [ "${step}" -lt 60 ]; do
     fi
     if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
         continue
+    fi
+    # The window is pinned above, so an unexpected size is a geometry change,
+    # not a transient capture. Fail with the observed size before cropping.
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "960x540" ]; then
+        echo "a500-paddle-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+        exit 1
     fi
     # The held frame is deterministic: the paddle is parked at x=136 and the
     # ball at (160, 100). The crop match is the liveness gate.

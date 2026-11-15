@@ -2,12 +2,38 @@
 //!
 //! The 1.3 profile is the lowest supported Amiga baseline. These cases pin the
 //! profile surface, the module gate, and the `-mcrt=nix13` build before the
-//! profile exists. The host cases always run; the cross-build case skips
-//! when the Amiga toolchain is absent.
+//! profile exists. They also pin the deterministic capture geometry of the
+//! hello and four demo screenshot gates. The host cases always run; the
+//! cross-build case skips when the Amiga toolchain is absent.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Read a repository file relative to the workspace root.
+fn repo_text(relative: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(relative);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+}
+
+/// Split a `WxH+X+Y` crop geometry into its four fields.
+fn parse_crop(script: &str, geometry: &str) -> (u32, u32, u32, u32) {
+    let parts: Vec<&str> = geometry.split(['x', '+']).collect();
+    assert_eq!(
+        parts.len(),
+        4,
+        "{script}: crop {geometry} is not WxH+X+Y"
+    );
+    let parse = |field: &str| {
+        field.parse::<u32>().unwrap_or_else(|_| {
+            panic!("{script}: crop {geometry} has a non-numeric field {field:?}")
+        })
+    };
+    (parse(parts[0]), parse(parts[1]), parse(parts[2]), parse(parts[3]))
+}
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -63,6 +89,77 @@ fn compile_source(tag: &str, profile: &str, source: &str) -> (Output, bool) {
 
 fn tool_available(tool: &str) -> bool {
     Command::new(tool).arg("--version").output().is_ok()
+}
+
+/// The five A500 screenshot gates below pin the FS-UAE window, check the
+/// captured size before cropping, and crop only inside that window.
+///
+/// The capture is the gate's oracle, so a host display scale, window default,
+/// or aspect-correction change must fail with the observed size instead of a
+/// large image comparison mismatch.
+#[test]
+fn the_a500_screenshot_gates_pin_their_capture_geometry() {
+    let gates: [(&str, u32, u32); 5] = [
+        ("docker/scripts/a500-smoke.sh", 640, 256),
+        ("docker/scripts/a500-boing-smoke.sh", 960, 540),
+        ("docker/scripts/a500-sprite-smoke.sh", 960, 540),
+        ("docker/scripts/a500-paddle-smoke.sh", 960, 540),
+        ("docker/scripts/a500-text-smoke.sh", 960, 540),
+    ];
+    for (script, width, height) in gates {
+        let text = repo_text(script);
+        for flag in [
+            format!("--window-width={width}"),
+            format!("--window-height={height}"),
+            "--window-border=0".to_owned(),
+        ] {
+            assert!(
+                text.contains(&flag),
+                "{script} must pin the FS-UAE window with {flag:?}"
+            );
+        }
+        let expected_size = format!("{width}x{height}");
+        assert!(
+            text.contains(&format!("\"${{size}}\" != \"{expected_size}\"")),
+            "{script} must assert a {expected_size} capture"
+        );
+        // The size check must run inside the capture poll loop and before the
+        // first crop, so a wrong-sized window fails before any comparison.
+        let poll = text
+            .find("while [ \"${step}\"")
+            .unwrap_or_else(|| panic!("{script}: no capture poll loop"));
+        let size_check = text
+            .find("identify -format '%wx%h'")
+            .unwrap_or_else(|| panic!("{script}: no capture size check"));
+        let first_crop = text
+            .find("-crop ")
+            .unwrap_or_else(|| panic!("{script}: no crop"));
+        assert!(
+            poll < size_check,
+            "{script}: the capture size check must be inside the poll loop"
+        );
+        assert!(
+            size_check < first_crop,
+            "{script}: the capture size check must precede the first crop"
+        );
+        let tokens: Vec<&str> = text.split_whitespace().collect();
+        let mut crops = 0;
+        for (index, token) in tokens.iter().enumerate() {
+            if *token != "-crop" {
+                continue;
+            }
+            let geometry = tokens
+                .get(index + 1)
+                .unwrap_or_else(|| panic!("{script}: -crop without a geometry"));
+            let (crop_width, crop_height, x, y) = parse_crop(script, geometry);
+            assert!(
+                x + crop_width <= width && y + crop_height <= height,
+                "{script}: crop {geometry} leaves the {expected_size} window"
+            );
+            crops += 1;
+        }
+        assert!(crops > 0, "{script} must crop at least one image");
+    }
 }
 
 /// The drawing surface exists in Kickstart 1.3, so the 1.3 profile accepts it.

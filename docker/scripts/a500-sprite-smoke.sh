@@ -8,7 +8,10 @@
 # committed goldens.
 #
 # The demo uses a 320x256 Intuition screen, so the live display is the 640x512
-# double-height area at +160+14 in the 960x540 FS-UAE window.
+# double-height area at +160+14 in the FS-UAE window. The window is pinned to
+# 960x540 with no border, the geometry the committed goldens were captured
+# from, and the captured size is asserted before any crop so a future window
+# default or display-scale change fails with the observed size.
 #
 # Usage:
 #   scripts/a500-sprite-smoke.sh [binary]
@@ -118,6 +121,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=960 --window-height=540 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 10
@@ -141,6 +145,13 @@ while [ "${step}" -lt 60 ]; do
     fi
     if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
         continue
+    fi
+    # The window is pinned above, so an unexpected size is a geometry change,
+    # not a transient capture. Fail with the observed size before cropping.
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "960x540" ]; then
+        echo "a500-sprite-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+        exit 1
     fi
     colors="$(identify -format '%k' "${screenshot}" 2>/dev/null || echo 0)"
     if [ "${saw_live}" -eq 0 ] && [ "${colors}" -ge 10 ] 2>/dev/null; then
