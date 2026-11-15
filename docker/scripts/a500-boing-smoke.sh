@@ -148,7 +148,13 @@ line_matched=0
 window_seen=0
 step=0
 window=""
-while [ "${step}" -lt 60 ]; do
+# `import -window` reads the FS-UAE client window, so the capture excludes the
+# host pointer and any other window. `xdotool search` returns the stacking
+# order (bottom to top), so the gate keeps the topmost match; a leftover
+# window below it is not selected. The 90 polls (180 s) give the gate three
+# minutes of boot headroom; a loaded host can take longer than two minutes to
+# reach the held frame.
+while [ "${step}" -lt 90 ]; do
     step=$((step + 1))
     sleep 2
     found="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"

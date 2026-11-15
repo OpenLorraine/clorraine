@@ -121,23 +121,42 @@ docker run --rm --name "${container}" \
     --window-width=640 --window-height=256 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
-sleep 30
+sleep 10
 
+# `import -window` reads the FS-UAE client window, so the capture excludes the
+# host pointer and any other window. `xdotool search` returns the stacking
+# order (bottom to top), so the topmost match is the gate's newly mapped
+# window on a private display. Keep the selected window, its geometry, the
+# last three captures, and the closest non-matching capture: a one-pixel
+# failure on a loaded host must be inspectable rather than guessed at.
+poll_log="${work}/poll.log"
+rm -f "${poll_log}" "${work}/near-miss.png" "${work}"/capture-*.png
 metric=1
+best_metric=""
 step=0
-while [ "${step}" -lt 30 ]; do
+while [ "${step}" -lt 120 ]; do
     step=$((step + 1))
-    sleep 5
+    sleep 2
     # FS-UAE can recreate its top-level window while it initialises, so the
     # captured id goes stale. Re-search the visible window on every poll and
-    # keep the first (top-level) match.
-    window="$(DISPLAY="${DISPLAY}" xdotool search --onlyvisible --name 'FS-UAE' 2>/dev/null | head -1 || true)"
+    # keep the topmost match.
+    window="$(DISPLAY="${DISPLAY}" xdotool search --onlyvisible --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
     if [ -z "${window}" ]; then
+        echo "poll ${step}: no FS-UAE window" >> "${poll_log}"
         continue
     fi
-    DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" || continue
+    geometry="$(DISPLAY="${DISPLAY}" xdotool getwindowgeometry --shell "${window}" 2>/dev/null | tr '\n' ' ' || true)"
+    if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
+        echo "poll ${step}: window ${window} ${geometry} import failed" >> "${poll_log}"
+        continue
+    fi
+    cp "${screenshot}" "${work}/capture-${step}.png"
+    if [ "${step}" -gt 3 ]; then
+        rm -f "${work}/capture-$((step - 3)).png"
+    fi
     size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
     if [ "${size}" != "640x256" ]; then
+        echo "poll ${step}: window ${window} ${geometry} size ${size:-unknown}" >> "${poll_log}"
         echo "a500-smoke: unexpected FS-UAE window size: ${size:-unknown}" >&2
         exit 1
     fi
@@ -148,8 +167,13 @@ while [ "${step}" -lt 30 ]; do
     convert "${screenshot}" -crop 215x8+169+44 +repage -filter point -resize 200% "${crop}"
     metric="$(compare -metric AE "${crop}" "${golden}" null: 2>&1 || true)"
     metric="${metric%% *}"
+    echo "poll ${step}: window ${window} ${geometry} AE=${metric}" >> "${poll_log}"
     if [ "${metric}" = "0" ]; then
         break
+    fi
+    if [ -z "${best_metric}" ] || [ "${metric}" -lt "${best_metric}" ]; then
+        best_metric="${metric}"
+        cp "${screenshot}" "${work}/near-miss.png"
     fi
 done
 docker stop -t 5 "${container}" >/dev/null 2>&1 || true
@@ -158,6 +182,10 @@ wait "${runner}" 2>/dev/null || true
 if [ "${metric}" != "0" ]; then
     echo "a500-smoke: captured line differs from ${golden} (AE=${metric})" >&2
     echo "a500-smoke: screen kept at ${screenshot}" >&2
+    if [ -n "${best_metric}" ]; then
+        echo "a500-smoke: closest capture AE=${best_metric} kept at ${work}/near-miss.png" >&2
+    fi
+    echo "a500-smoke: per-poll window, geometry, and AE log at ${poll_log}" >&2
     exit 1
 fi
 

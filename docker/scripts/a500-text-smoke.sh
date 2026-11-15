@@ -143,13 +143,18 @@ docker run --rm --name "${container}" \
 runner=$!
 sleep 10
 
-saw_live=0
 frame_matched=0
 line_matched=0
 window_seen=0
 step=0
 window=""
-while [ "${step}" -lt 60 ]; do
+# `import -window` reads the FS-UAE client window, so the capture excludes the
+# host pointer and any other window. `xdotool search` returns the stacking
+# order (bottom to top), so the gate keeps the topmost match; a leftover
+# window below it is not selected. The 90 polls (180 s) give the gate three
+# minutes of boot headroom; a loaded host can take longer than two minutes to
+# reach the held frame.
+while [ "${step}" -lt 90 ]; do
     step=$((step + 1))
     sleep 2
     found="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
@@ -178,7 +183,6 @@ while [ "${step}" -lt 60 ]; do
     frame_metric="${frame_metric%% *}"
     if [ "${frame_metric}" = "0" ] && [ "${frame_matched}" -eq 0 ]; then
         frame_matched=1
-        saw_live=1
         cp "${screenshot}" "${live}"
     fi
     convert "${screenshot}" -crop 540x22+160+88 +repage "${crop}"
@@ -198,11 +202,6 @@ wait "${runner}" 2>/dev/null || true
 if [ "${window_seen}" -eq 0 ]; then
     echo "a500-text-smoke: no FS-UAE window" >&2
     tail -20 "${work}/fs-uae.log" >&2 || true
-    exit 1
-fi
-if [ "${saw_live}" -eq 0 ]; then
-    echo "a500-text-smoke: never saw the native text display" >&2
-    echo "a500-text-smoke: last screen kept at ${screenshot}" >&2
     exit 1
 fi
 if [ "${frame_matched}" -ne 1 ]; then

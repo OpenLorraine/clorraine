@@ -218,6 +218,92 @@ fn the_a500_screenshot_gates_honour_a_caller_display() {
     }
 }
 
+/// The five A500 screenshot gates capture their own FS-UAE client window and
+/// allow enough polls for a loaded host.
+///
+/// `import -window` reads the client window, so the host pointer and other
+/// windows are not part of the image. `xdotool search` returns the stacking
+/// order (bottom to top), so a gate takes the topmost match. On a private
+/// display the gate's newly mapped window is on top; a leftover window from
+/// an earlier run is below it. The hello gate allows a four-minute boot and
+/// the four demo gates allow three minutes.
+#[test]
+fn the_a500_screenshot_gates_select_their_own_window() {
+    let gates: [(&str, &str, u32); 5] = [
+        (
+            "docker/scripts/a500-smoke.sh",
+            "xdotool search --onlyvisible --name 'FS-UAE' 2>/dev/null | tail -1",
+            120,
+        ),
+        (
+            "docker/scripts/a500-boing-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+        (
+            "docker/scripts/a500-sprite-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+        (
+            "docker/scripts/a500-paddle-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+        (
+            "docker/scripts/a500-text-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+    ];
+    for (script, search, polls) in gates {
+        let text = repo_text(script);
+        assert!(
+            text.contains("import -window \"${window}\""),
+            "{script} must capture the FS-UAE client window"
+        );
+        assert!(
+            !text.contains("import -window root"),
+            "{script} must not capture the root screen: the pinned window size and window-relative crops assume the client window"
+        );
+        assert!(
+            text.contains(search),
+            "{script} must select the topmost FS-UAE window with {search:?}"
+        );
+        assert!(
+            !text.contains("| head -1"),
+            "{script} must not select the bottommost FS-UAE window"
+        );
+        assert!(
+            text.contains(&format!("while [ \"${{step}}\" -lt {polls} ]; do")),
+            "{script} must use the {polls}-poll boot budget"
+        );
+    }
+}
+
+/// Paddle and text report a held-frame failure by naming the held display,
+/// not by claiming the demo never appeared: the kept screen shows whether the
+/// demo ran.
+#[test]
+fn the_a500_paddle_and_text_failures_name_the_held_display() {
+    for script in [
+        "docker/scripts/a500-paddle-smoke.sh",
+        "docker/scripts/a500-text-smoke.sh",
+    ] {
+        let text = repo_text(script);
+        assert!(
+            text.contains("held display never matched"),
+            "{script} must report the held-frame mismatch"
+        );
+        for stale in ["never saw the paddle screen", "never saw the native text display"] {
+            assert!(
+                !text.contains(stale),
+                "{script} must not claim the demo never appeared when only the held frame is known"
+            );
+        }
+    }
+}
+
 /// The drawing surface exists in Kickstart 1.3, so the 1.3 profile accepts it.
 #[test]
 fn the_a500_profile_accepts_the_graphics_surface() {
