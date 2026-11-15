@@ -1566,13 +1566,12 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
  * ColorMap. The public screen stays locked until the wrapper is destroyed.
  *
  * `LockPubScreen` and `UnlockPubScreen` are Kickstart 2.0 calls. The 1.3
- * headers do not declare them, so the prototypes are written here; the
- * version check below keeps the A500 path from calling a missing vector.
- * On the 2.0 headers both names are inline macros and the declarations are
- * skipped. */
+ * headers do not declare them, so the prototypes are written here with the
+ * same signatures as the 2.0 NDK; the version check below keeps the A500
+ * path from calling a missing vector. */
 #ifndef LockPubScreen
 extern struct Screen * __stdargs LockPubScreen(CONST_STRPTR name);
-extern void __stdargs UnlockPubScreen(struct Screen *screen, struct Screen *pub);
+extern void __stdargs UnlockPubScreen(CONST_STRPTR name, struct Screen *screen);
 #endif
 void *cl_open_workbench_window(LONG x, LONG y, LONG width, LONG height,
                                char *title)
