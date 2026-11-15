@@ -98,9 +98,9 @@ where the workload functions are tagged `__attribute__((noinline, used))`;
 that build changes the total (372,902 and 479,470 instructions), so its shares
 are labelled as an analysis build, not as the shipped count. The bounds-check
 detail is read from the shipped `_main` disassembly: the `classify` loop at
-`_main+0x94` is a `dbf` pointer loop with no per-character length comparison;
-the digit loop at `_main+0x20a` still compares the input bound and the
-character count each digit.
+`_main+0x94` is a `dbf` pointer loop with one pointer-bound compare and no
+separate view-length guard; the digit loop at `_main+0x20a` still compares the
+input bound and the character count each digit.
 
 ### Top costs and candidate shapes
 
@@ -181,7 +181,7 @@ review.
 | Shipped bounds-check check | `text-scan` `_main` disassembly: token classification at `_main+0x94` is a `dbf` pointer loop with one pointer-bound compare; digit parsing at `_main+0x20a` retains two bound compares per digit, estimated 8,300 instructions (~2.2%; ~4–6% with the classify loop bound) |
 | Shipped container check | `container` `_main` disassembly: the scan loop at `_main+0x74` reads `x`/`y` directly; the fill loop at `_main+0x1c` contains the inlined exact-size reserve with `realloc` and `memset` |
 | Correctness review | Not clean initially: RV-001 (`.text` profile mix), RV-002 (premature roadmap completion), RV-003 (mislabeled text trace), RV-004 (flag-audit scored set), RV-005 (fixture test tautology), RV-006 (test count), RV-007 (follow-up test duplication), RV-008 (README inlining), RV-009 (issue #33 allocator table). All fixed; re-review clean, no critical/major remains |
-| Performance review | Not clean initially: PE-001 (probe `.text` profile), PE-002 (0x260c load base and 58.0% allocator share), PE-003 (analysis builds were host-shim), PE-004 (digit-loop residual), PE-005 (flag-audit subset), PE-006 (premature roadmap), PE-007..PE-013 (calibration label, test count, fixture test, README inlining, guard counts, baseline list, reasoning). All fixed; re-review pending |
+| Performance review | Not clean initially: PE-001 (probe `.text` profile), PE-002 (0x260c load base and 58.0% allocator share), PE-003 (analysis builds were host-shim), PE-004 (digit-loop residual), PE-005 (flag-audit subset), PE-006 (premature roadmap), PE-007..PE-013 (calibration label, test count, fixture test, README inlining, guard counts, baseline list, reasoning). All fixed; re-review clean, no critical/major remains |
 | Amiga platform review | PASS, no findings; the reviewer confirmed the NDK signature, register order (a0 name, a1 screen), the 1.3/2.0 guard, and identical codegen. It noted the V37 public-screen floor is stricter than the V36 header introduction; the project baseline already states V37, so no change |
 | Full gate, first run | failed at `bench-shape` on pre-existing DEF-559; reproduced with the base compiler |
 | Full gate after DEF-559 | `make check`, `make bench-shape`, and `make ubsan` (12 suites) are green; `make verify` then stops at `sdk-a500-smoke` because the host-window capture differs from the committed golden (AE=1 on a 1x Xvfb capture, AE=3994 at the desktop scale). The audit change does not touch the hello path; the FS-UAE legs need the user's desktop display |
