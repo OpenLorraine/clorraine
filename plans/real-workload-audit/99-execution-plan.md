@@ -1,7 +1,7 @@
 # Task: Audit real-workload generated-C hot shapes
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 7/8 tasks (88%) — T-08 blocked on the local FS-UAE capture
+> **Progress**: 8/8 tasks (100%) — full `make verify` green
 > **Reasoning**: medium — measurement-only audit over two committed real
 > workloads, with one harness test and no compiler change. One gate-unblocking
 > host-shim prototype fix (DEF-559) is included. The follow-up optimization is
@@ -43,13 +43,11 @@ the full gate.
   follow-up issue and its task plan.
 - [x] T-07 Run the independent performance and correctness reviews, and fix
   every critical/major finding.
-- [!] T-08 Run `make check`, `make bench`, `make bench-base`,
+- [x] T-08 Run `make check`, `make bench`, `make bench-base`,
   `make bench-compare`, and the full `make verify` gate; update the roadmap and
-  close #14. **Blocked:** `make check`, `bench-shape`, `ubsan`, `bench`, and
-  `bench-compare` are green; the full `make verify` stops at the pre-existing
-  `sdk-a500-smoke` host-window capture, which differs from the committed golden
-  (AE=1 on a 1x Xvfb capture, AE=3994 on the desktop scale). The audit change
-  does not touch that path; the FS-UAE leg needs the user's desktop display.
+  close #14. The A500 smoke capture was made deterministic (pinned 640x256
+  window, fixed crop, 640x256 size assertion); `make verify` now reports
+  `verify: all legs passed` (exit 0). A500 smoke exit 0 with the final script.
 
 **Verify**: `make check`; `make bench`; `make bench-base COMMIT=d44c62fd`;
 `make bench-compare`; `make verify`.
@@ -162,6 +160,20 @@ comment; the calls and runtime behavior do not change. DEF-559 records the
 defect in the roadmap, and the one-line shim edit receives the Amiga platform
 review.
 
+### A500 capture determinism
+
+The original `sdk-a500-smoke` cropped a fixed `430x22+160+88` region from a
+host-scaled FS-UAE window, so the gate depended on the desktop scale and
+missed the hello line here (AE=3994). The gate now pins the FS-UAE window to
+640x256 with no border, crops the hello line at `215x8+169+44`, and upscales it
+2x to the 430x16 golden. FS-UAE's default aspect correction centers the hires
+screen in that window, so the offsets are valid for the pinned window and
+aspect default, not native framebuffer coordinates. `make sdk-a500-smoke`
+passes on the private Xvfb, and the full `make verify` is green. The Amiga platform review's SR-001 noted the
+aspect-corrected rendering; the comment is corrected and the gate now checks
+that the capture is exactly 640x256 before comparing. The sibling unpinned
+A500 gates are follow-up #34.
+
 ## Evidence log
 
 | Evidence | Result |
@@ -184,7 +196,8 @@ review.
 | Performance review | Not clean initially: PE-001 (probe `.text` profile), PE-002 (0x260c load base and 58.0% allocator share), PE-003 (analysis builds were host-shim), PE-004 (digit-loop residual), PE-005 (flag-audit subset), PE-006 (premature roadmap), PE-007..PE-013 (calibration label, test count, fixture test, README inlining, guard counts, baseline list, reasoning). All fixed; re-review clean, no critical/major remains |
 | Amiga platform review | PASS, no findings; the reviewer confirmed the NDK signature, register order (a0 name, a1 screen), the 1.3/2.0 guard, and identical codegen. It noted the V37 public-screen floor is stricter than the V36 header introduction; the project baseline already states V37, so no change |
 | Full gate, first run | failed at `bench-shape` on pre-existing DEF-559; reproduced with the base compiler |
-| Full gate after DEF-559 | `make check`, `make bench-shape`, and `make ubsan` (12 suites) are green; `make verify` then stops at `sdk-a500-smoke` because the host-window capture differs from the committed golden (AE=1 on a 1x Xvfb capture, AE=3994 at the desktop scale). The audit change does not touch the hello path; the FS-UAE legs need the user's desktop display |
+| Full gate | `make check`, `make bench-shape`, and `make ubsan` (12 suites) green; after the deterministic A500 capture fix, `make verify` reports `verify: all legs passed` (exit 0). `make sdk-a500-smoke` with the final 640x256 size assertion also exits 0 |
+| A500 capture commit | `084d91fc` — `test(amiga): make the A500 smoke capture deterministic`; sibling unpinned A500 gates are follow-up #34 |
 | Flag audit | `SCORED` now covers all eight benchmarks; `make bench-flags` passes the new `container`, `text-scan`, and `local-table` rows but fails the pre-existing `host/lookup` binary floor (`30,912 > 34,880 × 85%`); the floor drift predates the audit and is not a scored-benchmark regression |
 
 ## Review findings
@@ -194,3 +207,4 @@ review.
 | Performance (independent) | Not clean initially; re-review clean | Re-review: no critical/major remains; only the documented FS-UAE environment blocker. PE-001 fixed: the `.text` probe was re-measured hosted-amiga against hosted-amiga at 24,092 → 24,108 B (+16 B, +0.07%), not -4.2%. PE-002 fixed: load base 0x260c and allocator share 58.0%. PE-003 fixed: traces and noinline builds regenerated from hosted-amiga C (226,432 and 378,606; tagged 372,902 and 479,470). PE-004 fixed: the digit loop retains two bound compares; the ~2.2% residual is recorded and the no-op decision stands. PE-005 fixed: `flag_audit.SCORED` is derived from `bench.benchmark_names()` with a test; the new rows pass and the pre-existing `host/lookup` floor is recorded. PE-006 fixed: the roadmap is back to Executing with no premature Done/closed/green claims. PE-007..PE-013 fixed in the plan, tests, and READMEs |
 | Correctness | Not clean initially; re-review clean | Re-review: no critical/major remains; only the documented FS-UAE blocker. RV-001 (the same `.text` mix as PE-001) fixed to +16 B. RV-002 fixed: PLAN-39/DEF-559 are Executing and the header/pending claims match disk. RV-003 fixed: the analysis is now hosted-amiga; text trace 378,606. RV-004 fixed: `SCORED` covers all eight and the test guards it. RV-005 fixed: the fixture test iterates the directory tree and catches a deleted older source (red run with `sieve/program.clo` removed). RV-006 fixed: 103 `make bench-test` tests / 46 in `test_bench.py`. RV-007 fixed: the follow-up reuses `stdlib_impl_test.rs` and the existing growth loop. RV-008 fixed: the READMEs say the source copies by value and the shipped `-O2` build inlines it. RV-009 fixed: the live issue #33 allocator table now reads 15.5/15.4/13.9/13.1, total 58.0% |
 | Amiga platform (DEF-559) | PASS | No findings. The NDK signature, m68k register order, 1.3/2.0 guard, and pre-fix/post-fix codegen were verified; the V37 public-screen floor is the existing project baseline |
+| Amiga platform (A500 capture) | PASS after one minor | SR-001: the pinned window holds an aspect-corrected 328x256 rendering, not native framebuffer pixels; the comment is corrected and the gate now asserts the capture is 640x256. The geometry is deterministic on the pinned FS-UAE build. The sibling unpinned A500 gates are follow-up #34 |
