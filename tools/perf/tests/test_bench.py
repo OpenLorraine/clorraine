@@ -120,6 +120,29 @@ class NormalizationTests(unittest.TestCase):
             bench.confined(Path("/tmp/elsewhere.json"), bench.BUILD)
 
 
+class FixtureTests(unittest.TestCase):
+    """Committed benchmark fixtures are complete and measurable."""
+
+    def test_real_workload_fixtures_are_complete(self) -> None:
+        """Every benchmark directory carries a source, a README, and a golden.
+
+        The two real-workload fixtures are named explicitly so deleting one
+        fails this test instead of silently shrinking the scored suite.
+        """
+        names = bench.benchmark_names()
+        self.assertIn("text-scan", names)
+        self.assertIn("container", names)
+        for name in names:
+            directory = bench.BENCHMARKS / name
+            self.assertTrue((directory / "program.clo").is_file(), name)
+            self.assertTrue((directory / "README.md").is_file(), name)
+            expected = directory / "expected-output.txt"
+            self.assertTrue(expected.is_file(), name)
+            text = expected.read_text(encoding="utf-8")
+            self.assertTrue(text.strip(), name)
+            self.assertTrue(text.endswith("\n"), name)
+
+
 class ParsingTests(unittest.TestCase):
     """Size and delta parsing."""
 

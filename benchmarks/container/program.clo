@@ -1,0 +1,43 @@
+// A real container workload adapted from the buffer-container corpus: a
+// growable Array is filled with point structs, then scanned four times through
+// the std.mem one-element view API. The push and get calls are monomorphized
+// generic instances, each get returns a one-element view that is indexed
+// immediately, and every element crosses the function boundary by value.
+module bench.Container;
+
+import { Array, arrayNew } from std.mem;
+import { println } from std.io;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+// Sums every point through the one-element view returned by get.
+func sumPoints(borrow pts: Array<Point>): i32 {
+    let total: i32 = 0;
+    let i: usize = 0;
+    while (i < pts.len()) {
+        let p: Point = pts.get(i)[0];
+        total = total + p.x * 2 + p.y;
+        i = i + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let pts: Array<Point> = arrayNew<Point>();
+    let i: i32 = 0;
+    while (i < 1024) {
+        pts.push(Point { x: i, y: i * 3 });
+        i = i + 1;
+    }
+    let total: i32 = 0;
+    let pass: i32 = 0;
+    while (pass < 4) {
+        total = total + sumPoints(pts);
+        pass = pass + 1;
+    }
+    println($"container: {total} {pts.len()}");
+    return 0;
+}

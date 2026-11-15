@@ -1,0 +1,101 @@
+// A real text-scanning workload adapted from the string-parser corpus: the
+// fixed command line is split on spaces, every token is classified as a word
+// or a number through an enum and a switch, and the numbers are summed with
+// hand-rolled digit parsing. The scan runs sixty-four times and returns a
+// stats struct by value, so the workload also pays an ordinary struct return.
+module bench.TextScan;
+
+import { println } from std.io;
+
+enum TokenKind : u8 {
+    Word,
+    Number,
+}
+
+struct Stats {
+    tokens: u32;
+    numbers: u32;
+    words: u32;
+    sum: i32;
+}
+
+const INPUT: static str = "MOV 12 34 ADD 5 7 SUB 90 4 MUL 6 7 DIV 100 5 LOAD 101 202 303 STORE 44 55 JMP 16 JEQ 7 8 PUSH 1000 POP 2 CALL 33 RET 0 NOP 1 2 3 4 5 6 MOV 56 78 ADD 9 10 SUB 11 12 MUL 13 14 DIV 15 16";
+
+// Classifies the bytes from start up to (not including) end: all digits means
+// a number, anything else is a word.
+func classify(input: str, start: usize, end: usize): TokenKind {
+    let allDigits: bool = true;
+    let j: usize = start;
+    while (j < end) {
+        if (input[j] < '0' || input[j] > '9') {
+            allDigits = false;
+        }
+        j = j + 1;
+    }
+    if (allDigits) {
+        return TokenKind.Number;
+    }
+    return TokenKind.Word;
+}
+
+// Converts the digit bytes from start up to (not including) end to their
+// integer value. The caller has already classified them as digits.
+func parseNumber(input: str, start: usize, end: usize): i32 {
+    let value: i32 = 0;
+    let j: usize = start;
+    while (j < end) {
+        value = value * 10 + i32(input[j] - '0');
+        j = j + 1;
+    }
+    return value;
+}
+
+// Scans the fixed input once and returns the token counts and number sum.
+func scanOnce(input: str): Stats {
+    let stats: Stats = Stats { tokens: 0, numbers: 0, words: 0, sum: 0 };
+    let total: usize = len(input);
+    let i: usize = 0;
+    while (i < total) {
+        while (i < total && input[i] == ' ') {
+            i = i + 1;
+        }
+        let start: usize = i;
+        while (i < total && input[i] != ' ') {
+            i = i + 1;
+        }
+        if (i > start) {
+            let kind: TokenKind = classify(input, start, i);
+            stats.tokens = stats.tokens + 1;
+            switch (kind) {
+                case TokenKind.Number:
+                    stats.numbers = stats.numbers + 1;
+                    stats.sum = stats.sum + parseNumber(input, start, i);
+                    break;
+                case TokenKind.Word:
+                    stats.words = stats.words + 1;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    return stats;
+}
+
+func main(): i32 {
+    let tokens: u32 = 0;
+    let numbers: u32 = 0;
+    let words: u32 = 0;
+    let sum: i32 = 0;
+    let pass: i32 = 0;
+    while (pass < 64) {
+        let one: Stats = scanOnce(INPUT);
+        tokens = tokens + one.tokens;
+        numbers = numbers + one.numbers;
+        words = words + one.words;
+        sum = sum + one.sum;
+        pass = pass + 1;
+    }
+    println($"text-scan: tokens={tokens} numbers={numbers} words={words} sum={sum}");
+    return 0;
+}

@@ -2,7 +2,7 @@
 
 These are tooling fixtures, not frozen-specification goldens. Each directory
 holds `program.clo`, `expected-output.txt`, and `README.md`. `calibration` is a
-startup-only program; the other six are scored.
+startup-only program; the other eight are scored.
 
 Run the suite inside the pinned SDK container:
 
@@ -45,6 +45,8 @@ and shipped flag sets and asserts the size/runtime floors.
 | `moves` | struct with a fixed-array field, generic identity, one String move |
 | `lookup` | 4,096-entry `i32` sine table, one scan, module-level constant table startup |
 | `local-table` | 256-entry `i32` sine table declared inside a function, one scan |
+| `text-scan` | fixed command line scanned 64 times, `str` indexing, enum dispatch, struct return |
+| `container` | 1,024 structs pushed through `Array<Point>`, four scans through `get(i)[0]` |
 
 Changing a workload requires a new committed baseline in the active
 optimization plan’s `05-findings.md`. The `lookup` baseline is in

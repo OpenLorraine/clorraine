@@ -1,0 +1,1 @@
+text-scan: tokens=3648 numbers=2432 words=1216 sum=146944
