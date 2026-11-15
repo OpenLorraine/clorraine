@@ -162,6 +162,62 @@ fn the_a500_screenshot_gates_pin_their_capture_geometry() {
     }
 }
 
+/// The five A500 screenshot gates accept a caller-supplied X display.
+///
+/// A private Xvfb run needs no edit of the local SDK configuration: a caller
+/// `DISPLAY` (and `XAUTHORITY` when the server needs it) wins over
+/// `docker/.env`, while an unset value keeps the desktop default.
+#[test]
+fn the_a500_screenshot_gates_honour_a_caller_display() {
+    let gates = [
+        "docker/scripts/a500-smoke.sh",
+        "docker/scripts/a500-boing-smoke.sh",
+        "docker/scripts/a500-sprite-smoke.sh",
+        "docker/scripts/a500-paddle-smoke.sh",
+        "docker/scripts/a500-text-smoke.sh",
+    ];
+    for script in gates {
+        let text = repo_text(script);
+        for needle in [
+            "caller_display=\"${DISPLAY:-}\"",
+            "caller_xauthority=\"${XAUTHORITY:-}\"",
+            "DISPLAY=\"${caller_display:-${DISPLAY}}\"",
+            "XAUTHORITY=\"${caller_xauthority:-${XAUTHORITY}}\"",
+        ] {
+            assert!(
+                text.contains(needle),
+                "{script} must honour a caller-supplied display with {needle:?}"
+            );
+        }
+        // The captures must happen before the source block, and the restores
+        // after it; otherwise `set -a` overwrites the caller's value and the
+        // override is dead code.
+        let source = text
+            .find(". \"${docker_dir}/.env\"")
+            .unwrap_or_else(|| panic!("{script}: no docker/.env source"));
+        let capture_display = text
+            .find("caller_display=\"${DISPLAY:-}\"")
+            .expect("checked above");
+        let capture_xauthority = text
+            .find("caller_xauthority=\"${XAUTHORITY:-}\"")
+            .expect("checked above");
+        let restore_display = text
+            .find("DISPLAY=\"${caller_display:-${DISPLAY}}\"")
+            .expect("checked above");
+        let restore_xauthority = text
+            .find("XAUTHORITY=\"${caller_xauthority:-${XAUTHORITY}}\"")
+            .expect("checked above");
+        assert!(
+            capture_display < source && capture_xauthority < source,
+            "{script}: the caller display and authority must be captured before sourcing docker/.env"
+        );
+        assert!(
+            source < restore_display && source < restore_xauthority,
+            "{script}: the caller display and authority must be restored after sourcing docker/.env"
+        );
+    }
+}
+
 /// The drawing surface exists in Kickstart 1.3, so the 1.3 profile accepts it.
 #[test]
 fn the_a500_profile_accepts_the_graphics_surface() {

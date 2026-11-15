@@ -4,7 +4,7 @@
 > **Status**: Active
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-15
-> **Progress**: 587/589 rows done; 0 active; 0 planned; 2 Parked
+> **Progress**: 588/590 rows done; 0 active; 0 planned; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -604,6 +604,7 @@
 | ↳ DEF-559 | The hosted-amiga `UnlockPubScreen` prototype disagrees with the NDK and fails the vbcc `bench-shape` leg | — | — | Done | ✅ | 2026-11-15 | 🟠 major (build gate), pre-existing since `6a503fbb`: the shim declared `(struct Screen *screen, struct Screen *pub)` while `clib/intuition_protos.h` declares `(CONST_STRPTR name, struct Screen *screen)`; the calls already passed `(NULL, public_screen)`. Found by the #14 full gate; fixed by matching the NDK signature and comment (`12b841c0`); Amiga platform review PASS; `make bench-shape` and the full `make verify` green |
 | PLAN-40 | Amortize growable-array growth (#33) | — | [growable-array-growth](growable-array-growth/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 9/9; geometric growth in `cl_buffer_reserve` on host and hosted-amiga; `container` 223,504 → 56,814 net (−74.6%) and 24,092 → 24,108 B `.text` (+16 B, +0.066%); every other scored row +0.0%; reallocs 1,024 → 11; nix13 emit/link/run byte-exact; correctness clean, Amiga platform clean with two evidence notes; `make check`, ASan 38, UBSan 12, `bench-compare` (REQUIRE PASS), `bench-shape`, `corpus-amiga`, `differential`, and full `verify` green; code commit `05419231`; #33 closed |
 | PLAN-41 | Deterministic A500 gate captures (#34) | — | [a500-gate-capture-determinism](a500-gate-capture-determinism/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 7/7; four A500 gates pinned to 960x540 with no border and a capture-size assertion before the first crop; eight goldens AE=0 (metadata-only PNG differences); five-gate static spec test rejects a missing pin, a late size check, and a crop outside the window; desktop plus private Xvfb green; correctness and Amiga platform reviews clean with minor fixes; full `verify` green; follow-up #35; commit `577e4b4b`; #34 closed |
+| PLAN-42 | Caller-display override for the A500 gates (#36) | — | [a500-gate-display-override](a500-gate-display-override/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; five A500 gates preserve a caller `DISPLAY`/`XAUTHORITY` around `docker/.env`; private `:99` Boing/text/hello pass with `.env` untouched, `:97` fails through the no-window path, `env -u` desktop path passes; static spec test pins the capture/source/restore order; correctness clean, Amiga platform clean with three minor evidence fixes; full `verify` green with the five gates on `:99`; follow-up #37 for the host-pointer flake; #36 closed |
 
 ## Batch N accounting (2026-10-19)
 

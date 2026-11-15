@@ -19,6 +19,10 @@
 # window default, display scale, or aspect-correction change fails with the
 # observed size instead of a large image comparison mismatch.
 #
+# Set DISPLAY (and XAUTHORITY when the server needs it) to run the gate on a
+# private X server such as an Xvfb; with neither set, docker/.env supplies the
+# desktop display.
+#
 # Usage:
 #   scripts/a500-text-smoke.sh [binary]
 set -euo pipefail
@@ -63,10 +67,16 @@ for tool in xdotool import convert compare identify sha1sum; do
         || { echo "a500-text-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
 
+# A caller-supplied DISPLAY selects a private X server for the capture; with no
+# caller value the local SDK configuration supplies the desktop display.
+caller_display="${DISPLAY:-}"
+caller_xauthority="${XAUTHORITY:-}"
 set -a
 # shellcheck disable=SC1090
 . "${docker_dir}/.env"
 set +a
+DISPLAY="${caller_display:-${DISPLAY}}"
+XAUTHORITY="${caller_xauthority:-${XAUTHORITY}}"
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
