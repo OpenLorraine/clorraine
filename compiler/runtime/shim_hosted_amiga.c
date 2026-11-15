@@ -781,7 +781,27 @@ ULONG cl_buffer_len(void *handle)
     return ((cl_buffer_block *)handle)->len;
 }
 
-/* Grow a buffer's capacity to at least `cap` bytes. */
+/* The capacity a growth request lands on. A sequence of one-element reserves
+ * would otherwise copy the whole block on every call, so the capacity doubles
+ * from a floor of eight bytes until the request fits. When a doubling would
+ * overflow the capacity type, the exact request is the only safe answer. */
+static ULONG cl_buffer_grown_cap(ULONG cap, ULONG needed)
+{
+    ULONG grown = cap == 0 ? 8 : cap;
+    while (grown < needed) {
+        if (grown > ULONG_MAX / 2) {
+            return needed;
+        }
+        grown *= 2;
+    }
+    return grown;
+}
+
+/* Grow a buffer's capacity to at least `cap` bytes. The capacity rounds up to
+ * the next doubling step, so repeated one-element stores cost amortized
+ * constant time instead of copying the whole block each time. The grown region
+ * is fresh storage; zero it so a container element store reads the canonical
+ * empty state instead of allocator garbage. */
 void cl_buffer_reserve(void *handle, ULONG cap)
 {
     cl_buffer_block *buffer = (cl_buffer_block *)handle;
@@ -789,15 +809,14 @@ void cl_buffer_reserve(void *handle, ULONG cap)
         return;
     }
     ULONG old_cap = buffer->cap;
-    unsigned char *grown = (unsigned char *)realloc(buffer->data, (size_t)cap);
+    ULONG grown_cap = cl_buffer_grown_cap(old_cap, cap);
+    unsigned char *grown = (unsigned char *)realloc(buffer->data, (size_t)grown_cap);
     if (grown == NULL) {
         cl_trap("E1", "out of memory");
     }
-    /* The grown region is fresh storage; zero it so a container element store
-     * reads the canonical empty state instead of allocator garbage. */
-    memset(grown + old_cap, 0, (size_t)(cap - old_cap));
+    memset(grown + old_cap, 0, (size_t)(grown_cap - old_cap));
     buffer->data = grown;
-    buffer->cap = cap;
+    buffer->cap = grown_cap;
 }
 
 /* Append `n` bytes from `src` to a buffer, growing it as needed. */
@@ -809,15 +828,7 @@ void cl_buffer_append(void *handle, APTR src, ULONG n)
     }
     ULONG needed = buffer->len + n;
     if (needed > buffer->cap) {
-        ULONG cap = buffer->cap == 0 ? 8 : buffer->cap;
-        while (cap < needed) {
-            if (cap > ULONG_MAX / 2) {
-                cap = needed;
-                break;
-            }
-            cap *= 2;
-        }
-        cl_buffer_reserve(handle, cap);
+        cl_buffer_reserve(handle, needed);
     }
     memcpy(buffer->data + buffer->len, src, (size_t)n);
     buffer->len = needed;

@@ -170,8 +170,9 @@ fn assert_traps(tag: &str, output: &Output, expected: &str) {
 ///
 /// The specification case writes a fixed buffer and slices it. This case adds
 /// the edges: a buffer built from a byte view, an empty buffer whose view has
-/// length zero, an `Array<i32>` pushed past the first growth boundary so its
-/// backing buffer reallocates, and a `reserve` call before a push.
+/// length zero, an `Array<i32>` pushed past every growth boundary so its
+/// backing buffer reallocates several times, the same values read back against
+/// an independent fixed-array control, and a `reserve` call before a push.
 #[test]
 fn buffer_from_and_array_growth_keep_their_contents() {
     let source = r#"module impl.buffer;
@@ -207,11 +208,24 @@ func main(): i32 {
     let first: i32 = xs.get(0)[0];
     let last: i32 = xs.get(19)[0];
     let count: usize = xs.len();
+    let control: i32[20] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                            10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    let total: i32 = 0;
+    let mismatches: i32 = 0;
+    let j: usize = 0;
+    while (j < xs.len()) {
+        let value: i32 = xs.get(j)[0];
+        if (value != control[j]) {
+            mismatches = mismatches + 1;
+        }
+        total = total + value;
+        j = j + 1;
+    }
     let ys: Array<i32> = arrayNew<i32>();
     ys.reserve(64);
     ys.push(7);
     let reserved: i32 = ys.get(0)[0];
-    println($"impl-buffer: sum={sum} empty={i32(emptyLen)} first={first} last={last} count={i32(count)} reserved={reserved}");
+    println($"impl-buffer: sum={sum} empty={i32(emptyLen)} first={first} last={last} count={i32(count)} total={total} mismatches={mismatches} reserved={reserved}");
     return 0;
 }
 "#;
@@ -219,7 +233,7 @@ func main(): i32 {
     assert_stdout(
         "buffer",
         &output,
-        "impl-buffer: sum=316 empty=0 first=0 last=19 count=20 reserved=7\n",
+        "impl-buffer: sum=316 empty=0 first=0 last=19 count=20 total=190 mismatches=0 reserved=7\n",
     );
 }
 
