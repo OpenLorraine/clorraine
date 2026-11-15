@@ -13,6 +13,15 @@
 # layout, and X11 capture are deliberately the same so every A500 gate exercises
 # the same machine.
 #
+# The FS-UAE window is pinned to 960x540 with no border, the geometry the
+# committed goldens were captured from. The captured size is asserted before
+# the first crop, so a future window default or display-scale change fails
+# with the observed size.
+#
+# Set DISPLAY (and XAUTHORITY when the server needs it) to run the gate on a
+# private X server such as an Xvfb; with neither set, docker/.env supplies the
+# desktop display.
+#
 # Usage:
 #   scripts/a500-assets-smoke.sh [binary]
 set -euo pipefail
@@ -57,15 +66,21 @@ if [ ! -f "${docker_dir}/.env" ]; then
     echo "a500-assets-smoke: docker/.env is missing; run 'make -C docker init'" >&2
     exit 2
 fi
-for tool in xdotool import convert compare sha1sum; do
+for tool in xdotool import convert compare identify sha1sum; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-assets-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
 
+# A caller-supplied DISPLAY selects a private X server for the capture; with no
+# caller value the local SDK configuration supplies the desktop display.
+caller_display="${DISPLAY:-}"
+caller_xauthority="${XAUTHORITY:-}"
 set -a
 # shellcheck disable=SC1090
 . "${docker_dir}/.env"
 set +a
+DISPLAY="${caller_display:-${DISPLAY}}"
+XAUTHORITY="${caller_xauthority:-${XAUTHORITY}}"
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
@@ -133,6 +148,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=960 --window-height=540 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 10
@@ -143,7 +159,7 @@ line_matched=0
 window_seen=0
 step=0
 window=""
-while [ "${step}" -lt 60 ]; do
+while [ "${step}" -lt 90 ]; do
     step=$((step + 1))
     sleep 2
     found="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
@@ -156,6 +172,13 @@ while [ "${step}" -lt 60 ]; do
     fi
     if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
         continue
+    fi
+    # The window is pinned above, so an unexpected size is a geometry change,
+    # not a transient capture. Fail with the observed size before any crop.
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "960x540" ]; then
+        echo "a500-assets-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+        exit 1
     fi
     # The held acceptance frame is deterministic; comparing the display crop
     # proves the decoded image, the palette, and the caption. A second

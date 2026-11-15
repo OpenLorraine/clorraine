@@ -1,6 +1,7 @@
 {
-  "checkedAt": "2026-11-15T13:11:33+01:00",
+  "checkedAt": "2026-11-15T14:44:55+01:00",
   "plans": [
+    "a500-asset-exec-window-pin",
     "a500-capture-stability",
     "a500-gate-capture-determinism",
     "a500-gate-display-override",

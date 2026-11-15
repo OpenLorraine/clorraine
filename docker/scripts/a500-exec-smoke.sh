@@ -7,9 +7,16 @@
 # report file, and compares the visible report line with the committed golden.
 #
 # The demo is a single console command with one output line, so the line crop
-# uses the same origin as the hello gate. The crop must be non-blank and
-# byte-exact; the report file must match the pinned line. No user input is
-# needed. The gate uses the caller's private Xvfb display.
+# uses the same fixed window-relative origin as the other demo gates. The crop
+# must be non-blank and byte-exact; the report file must match the pinned line.
+# No user input is needed.
+#
+# The FS-UAE window is pinned to 960x540 with no border, the geometry the
+# committed golden was captured from. The captured size is asserted before the
+# crop, so a future window default or display-scale change fails with the
+# observed size. Set DISPLAY (and XAUTHORITY when the server needs it) to run
+# the gate on a private X server such as an Xvfb; with neither set, docker/.env
+# supplies the desktop display.
 #
 # Usage:
 #   scripts/a500-exec-smoke.sh [binary] [expected line]
@@ -52,10 +59,16 @@ for tool in xdotool import convert compare identify sha1sum; do
         || { echo "a500-exec-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
 
+# A caller-supplied DISPLAY selects a private X server for the capture; with no
+# caller value the local SDK configuration supplies the desktop display.
+caller_display="${DISPLAY:-}"
+caller_xauthority="${XAUTHORITY:-}"
 set -a
 # shellcheck disable=SC1090
 . "${docker_dir}/.env"
 set +a
+DISPLAY="${caller_display:-${DISPLAY}}"
+XAUTHORITY="${caller_xauthority:-${XAUTHORITY}}"
 image="${IMAGE:-clorraine-sdk:dev}"
 
 cleanup() {
@@ -102,7 +115,7 @@ if ! xdftool list | grep -q ' startup-sequence'; then
 fi
 
 # Boot the real A500/KS1.3 machine. Poll from 10 s, re-find the window on every
-# iteration, and only crop once the report file is visible. The 60-cycle bound
+# iteration, and only crop once the report file is visible. The 90-cycle bound
 # is generous for a loaded host.
 XAUTHORITY="${XAUTHORITY}" DISPLAY="${DISPLAY}"
 docker run --rm --name "${container}" \
@@ -116,6 +129,7 @@ docker run --rm --name "${container}" \
     --kickstart-file="/work/${rom}" \
     --floppy-drive-0="/work/${adf}" \
     --writable-floppy-images=1 \
+    --window-width=960 --window-height=540 --window-border=0 \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 sleep 10
@@ -125,7 +139,7 @@ window_seen=0
 reported=0
 line_matched=0
 step=0
-while [ "${step}" -lt 60 ]; do
+while [ "${step}" -lt 90 ]; do
     step=$((step + 1))
     sleep 2
     found="$(DISPLAY="${DISPLAY}" xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
@@ -139,12 +153,26 @@ while [ "${step}" -lt 60 ]; do
     if ! DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null; then
         continue
     fi
+    # The window is pinned above, so an unexpected size is a geometry change,
+    # not a transient capture. Fail with the observed size before the crop.
+    size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+    if [ "${size}" != "960x540" ]; then
+        echo "a500-exec-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+        exit 1
+    fi
     if [ "${reported}" -eq 0 ] &&
        grep -aq "exec: ok task 464" "${repo_dir}/${adf}" 2>/dev/null; then
         reported=1
         # Let the Shell draw the line after the file is committed.
         sleep 1
         DISPLAY="${DISPLAY}" import -window "${window}" "${screenshot}" 2>/dev/null || true
+        # The re-import replaces the screenshot; assert its size as well so the
+        # cropped image is always the size-checked one.
+        size="$(identify -format '%wx%h' "${screenshot}" 2>/dev/null || true)"
+        if [ "${size}" != "960x540" ]; then
+            echo "a500-exec-smoke: unexpected FS-UAE window size: ${size:-unknown} (pinned 960x540)" >&2
+            exit 1
+        fi
     fi
     if [ "${reported}" -eq 0 ]; then
         continue

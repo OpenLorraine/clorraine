@@ -4,7 +4,7 @@
 > **Status**: Active
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-15
-> **Progress**: 589/591 rows done; 0 active; 0 planned; 2 Parked
+> **Progress**: 590/592 rows done; 0 active; 0 planned; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -606,6 +606,7 @@
 | PLAN-41 | Deterministic A500 gate captures (#34) | — | [a500-gate-capture-determinism](a500-gate-capture-determinism/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 7/7; four A500 gates pinned to 960x540 with no border and a capture-size assertion before the first crop; eight goldens AE=0 (metadata-only PNG differences); five-gate static spec test rejects a missing pin, a late size check, and a crop outside the window; desktop plus private Xvfb green; correctness and Amiga platform reviews clean with minor fixes; full `verify` green; follow-up #35; commit `577e4b4b`; #34 closed |
 | PLAN-42 | Caller-display override for the A500 gates (#36) | — | [a500-gate-display-override](a500-gate-display-override/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; five A500 gates preserve a caller `DISPLAY`/`XAUTHORITY` around `docker/.env`; private `:99` Boing/text/hello pass with `.env` untouched, `:97` fails through the no-window path, `env -u` desktop path passes; static spec test pins the capture/source/restore order; correctness clean, Amiga platform clean with three minor evidence fixes; full `verify` green with the five gates on `:99`; follow-up #37 for the host-pointer flake; #36 closed |
 | PLAN-43 | A500 capture-window selection and boot budget (#37) | — | [a500-capture-stability](a500-capture-stability/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; all five gates take the topmost FS-UAE window; single exact-match oracle; hello 120 x 2 s with poll log, last-three captures, and near-miss archive; demos 90 x 2 s; paddle/text held-display message; stale-window reproduction (head AE=1612 fail, tail OK), final hello 8/8, demo gates 4/4, one `AE=1` one-off recorded as undiagnosed; correctness clean with RV-001 fixed, Amiga platform AP-001..AP-008 resolved; full `verify: all legs passed`; commit `ea088292`; #37 closed |
+| PLAN-44 | Pin the A500 asset and exec gates (#35) | — | [a500-asset-exec-window-pin](a500-asset-exec-window-pin/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; both gates pinned to 960x540 with a pre-crop size assertion (including the exec golden re-import), caller display override, crops unchanged, goldens regenerated AE=0, seven-gate geometry/caller/topmost tests, 90-poll budgets; reviews clean on critical/major with AP-001..AP-004 and RV-001..RV-002 fixed; full `verify: all legs passed`; #35 closed |
 
 ## Batch N accounting (2026-10-19)
 

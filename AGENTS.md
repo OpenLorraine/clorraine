@@ -200,7 +200,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   tree; `codeops/` holds the specialist check state and the specialist briefs.
 - Branch: `main` is the integration branch (`origin`:
   `git@github.com:OpenLorraine/clorraine.git`).
-- Specialist coverage: **up to date (2026-11-15)** — 90 plan folders recorded in
+- Specialist coverage: **up to date (2026-11-15)** — 91 plan folders recorded in
   `codeops/specialist-check.json`.
 - Do not run the CodeOps installer from inside this repository: it replaces the
   two customized reviewer briefs (`correctness-reviewer`, `semantics-reviewer`)

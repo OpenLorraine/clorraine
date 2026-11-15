@@ -2,9 +2,9 @@
 //!
 //! The 1.3 profile is the lowest supported Amiga baseline. These cases pin the
 //! profile surface, the module gate, and the `-mcrt=nix13` build before the
-//! profile exists. They also pin the deterministic capture geometry of the
-//! hello and four demo screenshot gates. The host cases always run; the
-//! cross-build case skips when the Amiga toolchain is absent.
+//! profile exists. They also pin the deterministic capture geometry and
+//! display handling of the A500 screenshot gates. The host cases always run;
+//! the cross-build case skips when the Amiga toolchain is absent.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -91,20 +91,22 @@ fn tool_available(tool: &str) -> bool {
     Command::new(tool).arg("--version").output().is_ok()
 }
 
-/// The five A500 screenshot gates below pin the FS-UAE window, check the
-/// captured size before cropping, and crop only inside that window.
+/// The A500 screenshot gates below pin the FS-UAE window, check the captured
+/// size before cropping, and crop only inside that window.
 ///
-/// The capture is the gate's oracle, so a host display scale, window default,
-/// or aspect-correction change must fail with the observed size instead of a
-/// large image comparison mismatch.
+/// The capture is the gate's oracle, so a host display scale or window-default
+/// change fails with the observed size; an aspect or scaling change inside the
+/// pinned window is caught by the crop's AE comparison instead.
 #[test]
 fn the_a500_screenshot_gates_pin_their_capture_geometry() {
-    let gates: [(&str, u32, u32); 5] = [
+    let gates: [(&str, u32, u32); 7] = [
         ("docker/scripts/a500-smoke.sh", 640, 256),
         ("docker/scripts/a500-boing-smoke.sh", 960, 540),
         ("docker/scripts/a500-sprite-smoke.sh", 960, 540),
         ("docker/scripts/a500-paddle-smoke.sh", 960, 540),
         ("docker/scripts/a500-text-smoke.sh", 960, 540),
+        ("docker/scripts/a500-assets-smoke.sh", 960, 540),
+        ("docker/scripts/a500-exec-smoke.sh", 960, 540),
     ];
     for (script, width, height) in gates {
         let text = repo_text(script);
@@ -162,7 +164,7 @@ fn the_a500_screenshot_gates_pin_their_capture_geometry() {
     }
 }
 
-/// The five A500 screenshot gates accept a caller-supplied X display.
+/// The A500 screenshot gates accept a caller-supplied X display.
 ///
 /// A private Xvfb run needs no edit of the local SDK configuration: a caller
 /// `DISPLAY` (and `XAUTHORITY` when the server needs it) wins over
@@ -175,6 +177,8 @@ fn the_a500_screenshot_gates_honour_a_caller_display() {
         "docker/scripts/a500-sprite-smoke.sh",
         "docker/scripts/a500-paddle-smoke.sh",
         "docker/scripts/a500-text-smoke.sh",
+        "docker/scripts/a500-assets-smoke.sh",
+        "docker/scripts/a500-exec-smoke.sh",
     ];
     for script in gates {
         let text = repo_text(script);
@@ -218,7 +222,7 @@ fn the_a500_screenshot_gates_honour_a_caller_display() {
     }
 }
 
-/// The five A500 screenshot gates capture their own FS-UAE client window and
+/// The seven A500 screenshot gates capture their own FS-UAE client window and
 /// allow enough polls for a loaded host.
 ///
 /// `import -window` reads the client window, so the host pointer and other
@@ -226,10 +230,10 @@ fn the_a500_screenshot_gates_honour_a_caller_display() {
 /// order (bottom to top), so a gate takes the topmost match. On a private
 /// display the gate's newly mapped window is on top; a leftover window from
 /// an earlier run is below it. The hello gate allows a four-minute boot and
-/// the four demo gates allow three minutes.
+/// the six demo gates allow three minutes.
 #[test]
 fn the_a500_screenshot_gates_select_their_own_window() {
-    let gates: [(&str, &str, u32); 5] = [
+    let gates: [(&str, &str, u32); 7] = [
         (
             "docker/scripts/a500-smoke.sh",
             "xdotool search --onlyvisible --name 'FS-UAE' 2>/dev/null | tail -1",
@@ -252,6 +256,16 @@ fn the_a500_screenshot_gates_select_their_own_window() {
         ),
         (
             "docker/scripts/a500-text-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+        (
+            "docker/scripts/a500-assets-smoke.sh",
+            "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
+            90,
+        ),
+        (
+            "docker/scripts/a500-exec-smoke.sh",
             "xdotool search --name 'FS-UAE' 2>/dev/null | tail -1",
             90,
         ),
