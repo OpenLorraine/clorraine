@@ -1,226 +1,252 @@
-# Release Runbook: Clorraine v1.1.2
+# Release Runbook: Clorraine v1.2.0
 
-This document is the release runbook for Clorraine v1.1.2. It records the
-approved release decision, the licence and metadata audit, the verification
-gates, the artifact build, and the publication sequence. Publication is
-authorized by the user once every gate is green; the local release can be
-complete while the tag and artifacts remain unpublished.
+This document owns the v1.2.0 candidate, its evidence and the publication gate.
+It records what may be built locally, what the two manual workflows may upload
+as drafts, and what the user must approve before anything becomes public.
+Publication is not implied by a green build, a draft upload or a private
+acceptance run.
 
 ## Release decision
 
 | Item | Decision |
 | ---- | -------- |
-| Version | `1.1.2` |
-| Release date | 2026-11-11 |
-| Licence | MIT |
-| Source | Annotated Git tag `v1.1.2` on `main` |
-| Binary artefact | Linux x86_64 tarball |
-| Integrity | `SHA256SUMS` |
-| Release notes | `RELEASE-NOTES.md` and one `CHANGELOG.md` entry |
-| Specification | Frozen v1.0 chapters plus the approved v1.1 amendments; the two GCC release rows in §13 were updated by the separate PLAN-26 ruling |
-| aarch64 artefact | Deferred; aarch64 host builds remain supported |
+| Version | `1.2.0` |
+| Release target | Native Linux x86_64: installer, three compiler binaries, support, editor payload |
+| Status | Candidate. Drafts may be prepared; publication waits for explicit approval |
+| Licence | Apache License 2.0 with the Clorraine Output Exception |
+| Distribution tags | `v1.2.0`, then `v1.2.0-rN` for packaging-only or support-only revisions |
+| Component namespace | `components-<identity>` |
+| Support namespace | `support-<identity>` |
+| Source identity | The reviewed compiler commit and a reviewed support lock |
+| Distribution assets | `install.sh`, `install.pyz`, `manifest.json` |
+| Publication approval | Explicit user approval bound to the reviewed manifest hash and evidence |
 
-> **License change after publication (2026-11-13).** v1.1.2 was published
-> under the MIT License, as recorded in this runbook. The repository now uses
-> the Apache License 2.0 with the Clorraine Output Exception for future
-> releases. The published v1.1.2 artifacts are unchanged and remain available
-> under MIT. Future release artifacts should include `LICENSE`,
-> `LICENSE-EXCEPTION.md`, `NOTICE`, and `TRADEMARKS.md`.
+Support and component releases are immutable payload stores. They are created as
+drafts, are never marked latest, and are excluded from both default and exact
+installer selection. The installable distribution is the only release the
+installer selects by tag.
 
-The version of record is set in `compiler/Cargo.toml` and mirrored in
-`Cargo.lock`. The workspace extension version in `tools/vscode/package.json`
-and its lock are bumped with the release. The release is manual; release
-automation is out of scope.
+`v1.2.0-rN` may reuse unchanged compiler binaries and the exact prior component
+version while a changed helper, VSIX or support set advances the distribution
+identity. Changed bytes always need a new identity; a retry may only verify and
+reuse identical existing bytes.
 
-**Publication status (2026-11-11):** **published** as
-[v1.1.2](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2). The
-annotated tag `v1.1.2` (tag object `5beec93`, commit `ed439ae`) points at the
-evidence commit; the source tarball, Linux x86_64 tarball, `SHA256SUMS`, and
-the release notes are published.
+## Version records
 
-## Pre-release gates
+The version of record is `compiler/Cargo.toml`, mirrored in `Cargo.lock`. The
+editor version is `tools/vscode/package.json`, mirrored in
+`tools/vscode/package-lock.json`. All four record `1.2.0` for this release.
+`tools/demo/`, `site/` and unrelated npm dependencies keep their own package
+versions.
 
-Gated commit: `74d4380a540bf609f46f005c882dd4ee2c06f371` (`C1`). The evidence
-commit is the tag commit; its diff from the gated commit is documentation and
-plan records only. `make` targets run on the host and enter the pinned
-container internally; `make vscode-check` needs Node 22 on `PATH`, and `gh`
-runs on the host.
+## Local candidate assembly
 
-- [x] `make check` — specification check, registry, setup-check, Rust
-      workspace suites, benchmark harness tests, fuzzer tests, and the fuzzer
-      smoke matrix
-- [x] `make asan` — every suite that references `RDC_ASAN`, one bounded process
-      per suite
-- [x] `make ubsan` — the UBSan leg with the active-leg overflow probe
-- [x] `make corpus-amiga` — portable corpus on hosted-amiga plus the vbcc build
-      and the FS-UAE-only programs
-- [x] `make differential` — host and hosted-amiga output match for the three
-      differential programs
-- [x] `make bench-shape` — generated-C shape fixture with m68k GCC, vbcc, and
-      the freestanding profile
-- [x] `make bench-base COMMIT=v1.1.1` / `make bench` /
-      `make bench-compare REQUIRE="lookup:instructions:20 lookup:text:20"` —
-      the release-tree comparison; both lookup floors pass, no scored
-      regression
-- [x] `make bench-flags` — same-compiler old/GC/shipped audit; `runs: 2`;
-      floors, constructors, and repeat pass
-- [x] `make verify` — all acceptance legs; must print `verify: all legs passed`
-- [x] `make vscode-check` — the extension type-check, tests, package audit,
-      and packaged-client smoke
+Run as an ordinary user from the repository root. These commands never publish,
+create tags, install a candidate or fetch a missing dependency.
 
-Gate evidence for the gated commit:
+1. Build the three Linux x86_64 binaries on the Ubuntu 22.04-compatible
+   baseline:
 
-| Gate | Result |
-| ---- | ------ |
-| `make check` | exit 0; `spec check: OK (27 files, 114 compile-fail tests)`; fuzzer smoke `cases=28 host=28 sanitizer=16 target=16 failures=0` |
-| `make asan` | 30/30 suites passed |
-| `make ubsan` | 4/4 suites passed; the active-leg sanitizer check passed |
-| `make corpus-amiga` | all portable programs match; vbcc builds are warning-free; FS-UAE-only programs built |
-| `make differential` | 3/3 programs match |
-| `make bench-shape` | m68k GCC, GCC nix13, vbcc, and freestanding shapes are warning-free |
-| `make bench-base` / `make bench` / `make bench-compare` | base v1.1.1 (`2d1eb30`, `dirty: false`); head `74d4380` (`dirty: false`); lookup 13,653 → 9,470 instructions (−30.6%), `.text` 64,328 → 39,904 (−38.0%); both requirements PASS; other scored benchmarks unchanged |
-| `make bench-flags` | `runs: 2`; base/head/flags identities clean; five scored benchmarks `.text` 57.1–69.3%, binaries 64.2–74.7%; host binaries 20.6–36.5%; 1.3 audit set 49.1–88.9%; calibration 3,372 → 2,928 instructions (2.0) / 3,348 → 2,947 (1.3); constructors and repeat pass |
-| `make verify` | exit 0; `verify: all legs passed` |
-| `make vscode-check` | exit 0; extension type-check, tests, `.vsix` package audit, and packaged-client smoke passed (Node 22.23.3) |
+   ```sh
+   cargo build --release --workspace
+   ```
 
-## Licence and metadata audit (v1.1.2, as published)
+2. Archive the core and its five first-party notice files:
 
-- [x] `LICENSE` contains the MIT text with the OpenLorraine copyright line
-- [x] `compiler/Cargo.toml` declares `version = "1.1.2"`, `license = "MIT"`, a
-      description, and the repository URL
-- [x] `Cargo.lock` records `clc` version `1.1.2`
-- [x] `tools/vscode/package.json` and its lock record `1.1.2`
-- [x] `tools/demo/package.json` keeps its own package version and declares
-      `"license": "MIT"`
-- [x] `tools/demo/package-lock.json` records `"license": "MIT"` on the root
-      package
-- [x] `README.md` names MIT, links `LICENSE`, and names v1.1.2 as the current
-      release
-- [x] `THIRD_PARTY_NOTICES.md` preserves the upstream Hamurabi MIT notice
-- [x] `docs/known-limitations.md` exists, is linked from `README.md` and
-      `spec/README.md`, and is included in the binary tarball
+   ```sh
+   python3 tools/distribution/package_core.py archive \
+       --binaries target/release --output build/release/components/core.tar
+   ```
 
-| File | Expected | Observed |
-| ---- | -------- | -------- |
-| `LICENSE` | MIT text, OpenLorraine copyright | present |
-| `compiler/Cargo.toml` | `1.1.2`, `MIT`, description, repository | present |
-| `Cargo.lock` | `clc 1.1.2` | present |
-| `tools/vscode/package.json` / lock | `1.1.2`, `MIT` | present |
-| `tools/demo/package.json` / lock | own version, `MIT` | present |
-| `README.md` | MIT section, `LICENSE`, v1.1.2 current release | present |
-| `THIRD_PARTY_NOTICES.md` | upstream Hamurabi MIT text | present |
-| `spec/README.md` | known-limitations link | present |
+3. Package the current editor payload and copy it to the component directory:
 
-## Build and artefact packaging
+   ```sh
+   make vscode-package
+   cp build/vscode/clorraine-1.2.0.vsix build/release/components/clorraine.vsix
+   ```
 
-Run from the repository root in the pinned SDK container; `gh` runs on the
-host.
+4. Place the nine support inputs in one directory: `support-lock.json`,
+   `amiga.tar`, `amiga-audit.json`, `preparation.tar`,
+   `preparation-audit.json`, `cp310.tar`, `cp310-audit.json`, `cp312.tar`,
+   `cp312-audit.json`. The support workflow creates the same set from the
+   locked build.
 
-1. Create the annotated tag on the evidence commit and assert it:
-   `git tag -a v1.1.2 -m "Clorraine v1.1.2"`, `git cat-file -t v1.1.2`,
-   `git rev-parse v1.1.2^{commit}`.
-2. Assert a clean tree and `HEAD == v1.1.2^{commit}`.
-3. `cargo build --release --workspace`
-4. Assert `target/release/clc --version` prints exactly `clc 1.1.2`.
-5. Assert `target/release/clorraine --version` prints exactly
-   `clorraine 1.1.2`.
-6. Confirm both binaries are Linux x86_64 ELF files and are not stripped.
-7. Compile and run `examples/hello/hello.clo` with both release binaries:
-   `target/release/clc --profile host -o build/release/hello.c examples/hello/hello.clo`,
-   `cc -std=c99 -O2 -o build/release/hello build/release/hello.c`,
-   `build/release/hello`; and
-   `target/release/clorraine build --release --profile host examples/hello/hello.clo`,
-   `build/clorraine/hello/host/hello`. Both print
-   `Hello, Amiga, from Clorraine!`.
+5. Assemble the candidate. `--support-inputs` is the directory from step 4:
 
-Artefacts are written under `build/release/v1.1.2/` and stay gitignored:
+   ```sh
+   python3 tools/distribution/package_release.py assemble \
+       --release v1.2.0 --components <component-id> --support <support-id> \
+       --core build/release/components/core.tar \
+       --vsix build/release/components/clorraine.vsix \
+       --support-inputs build/release/support-inputs \
+       --output build/release/distribution
+   ```
 
-| Artefact | Contents |
-| -------- | -------- |
-| `clorraine-1.1.2-src.tar.gz` | Source tree from the annotated tag, prefix `clorraine-1.1.2/` |
-| `clorraine-1.1.2-linux-x86_64.tar.gz` | `clc`, `clorraine`, `LICENSE`, `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`, and `docs/known-limitations.md` |
-| `SHA256SUMS` | SHA-256 for both tarballs |
+   The output contains exactly `install.sh`, `install.pyz` and `manifest.json`.
+   Assembly is deterministic, validates every input before publishing and
+   refuses an existing output.
 
-The source archive is the tag snapshot. Its runbook records the
-pre-publication state; the publication record is added to the repository and
-the release page after publication.
+6. Check reusable component bytes before upload:
 
-Before publication, verify that neither archive contains NDK content, ROMs,
-Workbench media, `build/` output, `target/` output, `docker/.env`, or
-`docker/compose.override.yaml`. The committed `docker/.env.example` and
-`docker/compose.override.yaml.example` are allowed.
+   ```sh
+   python3 tools/distribution/package_release.py verify-component \
+       --components <component-id> \
+       --core build/release/components/core.tar \
+       --vsix build/release/components/clorraine.vsix \
+       --existing build/release/component-existing
+   ```
 
-## Conditional publication
+   `--existing` is optional and holds the assets downloaded from an existing
+   `components-<identity>` release. Identical bytes report `reuse`; changed
+   bytes under the same identity fail and require a new identity.
 
-These steps run only after the user authorizes publication; the authorization
-for v1.1.2 is recorded in the release decision.
+7. Bind the release specification to the actual local candidate:
 
-- [x] Push `main` and the annotated tag `v1.1.2` after the archive audit
-- [x] Create the release as a draft:
-      `gh release create v1.1.2 --draft --title "Clorraine v1.1.2" --notes-file RELEASE-NOTES.md build/release/v1.1.2/clorraine-1.1.2-src.tar.gz build/release/v1.1.2/clorraine-1.1.2-linux-x86_64.tar.gz build/release/v1.1.2/SHA256SUMS`
-- [x] Verify `gh release view v1.1.2 --json isDraft,assets`: `isDraft: true`
-      and exactly three assets with the expected names and sizes
-- [x] Publish: `gh release edit v1.1.2 --draft=false`
-- [x] Confirm the published page lists the notes and all three checksummed
-      assets; the URL and asset table are below
+   ```sh
+   CLORRAINE_RELEASE_CORE=$PWD/build/release/components/core.tar \
+   CLORRAINE_RELEASE_VSIX=$PWD/build/release/components/clorraine.vsix \
+   python3 -m unittest -v tools/distribution/tests/test_release_spec.py
+   ```
 
-Published assets:
+## The two manual workflows
 
-| Asset | Size (bytes) | SHA-256 |
-| ----- | -----------: | ------- |
-| `clorraine-1.1.2-src.tar.gz` | 5,135,518 | `44337730938d6dfa767370d325380aeae337fb350c4f6e476d286a6141139194` |
-| `clorraine-1.1.2-linux-x86_64.tar.gz` | 4,489,640 | `52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe` |
-| `SHA256SUMS` | 195 | covers both tarballs |
+Both workflows are dispatch-only, validate every input as literal data, pin
+their actions, keep default permissions read-only and give only the final upload
+job `contents: write`.
 
-If publication is blocked, the tag and artifacts stay unpublished, the exact
-names and SHA-256 values are reported, and the blocker is recorded here.
+### `support-release.yml`
 
-## Historical publication: v1.1.1
+Inputs are the exact source commit and a new immutable support identity. On a
+self-hosted runner labelled `clorraine-release` with verified source staging and
+the inspected offline image, it validates the lock, runs the locked support and
+wheel producers, assembles the sdk/preparation/cp310/cp312 payloads, creates the
+four audited archives, and uploads them with their audits and lock as a draft
+`support-<identity>` release. It does not mark the release latest or publish it.
 
-The v1.1.1 release was published on 2026-11-09 as
-[v1.1.1](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.1). Its
-assets were `clorraine-1.1.1-src.tar.gz`,
-`clorraine-1.1.1-linux-x86_64.tar.gz`, and `SHA256SUMS`, with
-`RELEASE-NOTES.md` and one `CHANGELOG.md` entry. The binary tarball contained
-six files and omitted both `THIRD_PARTY_NOTICES.md` and
-`docs/known-limitations.md`, which its README and notes linked; v1.1.2 fixes
-that packaging gap. The published assets were:
+Runner variables:
 
-| Asset | Size (bytes) | SHA-256 |
-| ----- | -----------: | ------- |
-| `clorraine-1.1.1-src.tar.gz` | 4,963,679 | `a292933d163f317a7f95bc1a2ad6b163621ac9a28aa9130382fc5c5bbc9f281e` |
-| `clorraine-1.1.1-linux-x86_64.tar.gz` | 4,475,046 | `26847a3ed36f60c587f392fceb062e313973b7f5d287eecefeaef9c13acdd161` |
-| `SHA256SUMS` | 195 | covers both tarballs |
+| Variable | Meaning |
+| --- | --- |
+| `CLORRAINE_RELEASE_SOURCES` | Verified read-only source staging directory matching the lock |
+| `CLORRAINE_RELEASE_IMAGE_ID` | Full immutable `sha256:` identity of the inspected offline build image |
 
-## Historical publication: v1.1.0
+### `distribution-release.yml`
 
-The v1.1.0 release was published on 2026-11-08 as
-[v1.1.0](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.0). Its
-assets were `clorraine-1.1.0-src.tar.gz`,
-`clorraine-1.1.0-linux-x86_64.tar.gz`, and `SHA256SUMS`, with
-`RELEASE-NOTES.md` and one `CHANGELOG.md` entry.
+Inputs are the exact compiler commit, distribution tag, new component identity,
+exact support identity, prior component identities for unchanged core and VSIX
+bytes (or `none`), and the approved manifest hash (or `none` for drafts only).
+It builds or reuses core and VSIX independently, validates their metadata,
+downloads the nine support inputs, assembles the distribution, checks the same
+bytes on Ubuntu 22.04 and 24.04, and creates draft
+`components-<identity>` and `<release>` releases.
 
-## Historical publication: v1.0.0
+A non-`none` approved hash must equal the assembled `manifest.json` before any
+promotion. The workflow then runs the local `promotion` command over the exact
+downloaded assets and publishes support, component and distribution in that
+order. Support and component releases are patched to `make_latest=false`; the
+distribution may become latest only after approval.
 
-The v1.0.0 release was published on 2026-11-04 as
-[v1.0.0](https://github.com/OpenLorraine/clorraine/releases/tag/v1.0.0). Its
-assets were `clorraine-1.0.0-src.tar.gz`,
-`clorraine-1.0.0-linux-x86_64.tar.gz`, and `SHA256SUMS`, with
-`RELEASE-NOTES.md` and one `CHANGELOG.md` entry.
+### Promotion eligibility
+
+The local check is:
+
+```sh
+python3 tools/distribution/package_release.py promotion \
+    --manifest build/release/distribution/manifest.json \
+    --assets build/release/approval-assets \
+    --approval build/release/approval.json
+```
+
+`approval.json` has exactly `schema`, `release`, `manifest_sha256`, `approved`,
+`unresolved_major` and `st56`. Promotion requires a matching manifest hash,
+`approved: true`, zero unresolved major findings and every referenced local
+payload present with matching size, hash and archive inventory. The upstream NDK
+is referenced by its locked URL and is not repackaged here.
+
+ST-56 is post-publication evidence. `st56: pending` keeps pre-publication
+promotion eligible while `final_completion_ready` stays false. `st56: passed`
+clears final completion; `st56: failed` exits nonzero.
+
+## Candidate acceptance
+
+Candidate-green means ST-53–ST-55 and every applicable earlier case, not a
+successful build alone:
+
+- ST-53: clean Ubuntu 22.04 and 24.04 installation from the shipped bootstrap
+  with only prerequisites, no repository or original SDK access and a cleared
+  `PYTHONPATH`; host and both Amiga-profile smoke, update/failure recovery and
+  relocation.
+- ST-54: native FS-UAE and the full legacy Amiga gates on private displays;
+  `make verify`, `make vscode-check` and `make site-check` pass.
+- ST-55: the user's actual WSL2 machine installs the candidate, runs the CLI,
+  the language server and editor Build/Run. Missing machine evidence blocks.
+  Automatic Windows FS-UAE launch is not required; the generated Amiga
+  executable is moved to the user's emulator manually.
+
+The v1.2.0 runbook is not a claim that any of these have passed. Evidence is
+recorded with the exact candidate identities in the release records.
+
+## Publication sequence
+
+1. Complete candidate evidence, the evidence/hash-mismatch controls, the full
+   `make verify`, `make vscode-check`, `make site-check` and independent
+   acceptance review. Resolve every critical/major finding.
+2. Request explicit user approval bound to the reviewed manifest hash, component
+   identity and support identity. Any byte or evidence change invalidates it.
+3. Dispatch `distribution-release.yml` with the approved hash. It rechecks the
+   hash, runs `promotion`, publishes support first and then the component, both
+   without latest.
+4. Verify every referenced public URL and payload hash. A missing, private or
+   mismatched payload blocks distribution promotion.
+5. Publish the distribution, then perform ST-56 with fresh anonymous downloads
+   and compare the public bytes to the approved hashes. Missing ST-56 blocks
+   final completion.
+
+No workflow run in this repository has performed step 3 or later for v1.2.0.
+This planning delivery creates draft definitions and local producers only.
 
 ## Failure handling
 
 | Failure | Action |
-| ------- | ------ |
-| A verification gate fails | An environmental/tooling fix may be applied; a compiler or test failure stops the release and needs a user ruling |
-| A flaky environmental leg | One rerun with the failing leg and output recorded; a second failure stops |
-| The version does not match | Fix `compiler/Cargo.toml`, regenerate `Cargo.lock`, and rebuild |
-| A licence or metadata field is missing | Add it and rerun `./spec/check.sh`, `make check`, and the affected gates |
-| A dirty tree before measurement | Clean or commit; restore an unintended RTG capture; investigate a material difference; then rerun |
-| `v1.1.2` exists locally only | Delete and recreate after confirming `origin` lacks it |
-| `v1.1.2` exists on `origin` | Stop; never force-move a published tag |
-| The release build fails after the local tag | Environmental/tooling fix only; recreate the local tag before it is pushed. After the push, rebuild from the same tag and never move it |
-| The `bench-base` worktree race | Retry once with the retained `build/perf/base-clc`; the commit identity must be unchanged |
-| A partial asset upload | Retry `gh release upload`; never replace an asset or delete the release without a recorded ruling |
-| A push is rejected because `origin` advanced | Stop; do not rebase the measured commit |
-| An artefact would contain NDK, ROM, or Workbench content | Do not publish; rebuild the artefact from allowlisted sources |
+| --- | --- |
+| A gate fails | Stop. A compiler or test failure needs a user ruling; an environmental fix may be retried once with the log retained |
+| A payload hash does not match | Do not promote. Rebuild or select the exact reviewed bytes; never replace an existing asset |
+| A referenced support/component payload is missing or private | Do not promote the distribution |
+| A finding is critical/major | Stop for the user's ruling before continuing |
+| Approval is absent or its hash changed | Do not publish; obtain new approval bound to the current candidate |
+| ST-56 is missing | Final completion stays open; it does not authorise replacing the distribution |
+| A release identity already exists | Verify identical bytes and reuse; changed bytes need a new identity |
+| A draft is partially uploaded | Retry the missing upload; never delete or overwrite a released identity without a recorded ruling |
+
+## Historical publication: v1.1.2
+
+v1.1.2 was published on 2026-11-11 and was **published under the MIT License**.
+The repository license changed to Apache License 2.0 with the Clorraine Output
+Exception after publication; the published artifacts are unchanged and remain
+available under MIT.
+
+| Item | Historical record |
+| --- | --- |
+| Annotated tag | `v1.1.2`, tag object `5beec93`, commit `ed439ae` |
+| Current licence at publication | MIT |
+| Source archive | `clorraine-1.1.2-src.tar.gz`, 5,135,518 bytes, SHA-256 `44337730938d6dfa767370d325380aeae337fb350c4f6e476d286a6141139194` |
+| Linux binary archive | `clorraine-1.1.2-linux-x86_64.tar.gz`, 4,489,640 bytes, SHA-256 `52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe` |
+| Checksums | `SHA256SUMS`, 195 bytes, covering both archives |
+
+The v1.1.2 binary archive contained `clc`, `clorraine`, `LICENSE`, `README.md`,
+`RELEASE-NOTES.md`, `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md` and
+`docs/known-limitations.md`. It did not contain `clorraine-lsp`.
+
+## Historical publications: v1.1.1, v1.1.0 and v1.0.0
+
+The v1.1.1 release was published on 2026-11-09. Its source archive SHA-256 was
+`a292933d163f317a7f95bc1a2ad6b163621ac9a28aa9130382fc5c5bbc9f281e`, and its
+Linux binary archive SHA-256 was
+`26847a3ed36f60c587f392fceb062e313973b7f5d287eecefeaef9c13acdd161`. Its binary
+archive omitted `THIRD_PARTY_NOTICES.md` and `docs/known-limitations.md`, which
+v1.1.2 fixed.
+
+The v1.1.0 and v1.0.0 releases were published on 2026-11-08 and 2026-11-04.
+Each used `clorraine-<version>-src.tar.gz`,
+`clorraine-<version>-linux-x86_64.tar.gz` and `SHA256SUMS` with one
+`CHANGELOG.md` entry and `RELEASE-NOTES.md`.

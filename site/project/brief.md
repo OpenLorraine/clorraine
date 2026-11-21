@@ -6,7 +6,7 @@ outline: false
 
 # Clorraine — project brief
 
-**Developer preview · v1.1.2 · Updated 13 November 2026**
+**Developer preview · v1.2.0 candidate · Updated 21 November 2026**
 
 Clorraine is a compiler for 68K Amiga systems. It compiles a C-like language
 with Rust-style ownership to plain C99 and uses the AmigaPorts m68k GCC
@@ -22,7 +22,7 @@ This page is the brief. It is written to be forwarded without a call.
 |---|---|
 | **Project** | Clorraine, an independent compiler for 68K Amiga systems |
 | **Owner** | OpenLorraine |
-| **Status** | Developer preview; v1.1.2 is the current release |
+| **Status** | Developer preview; v1.2.0 is the current release record and native Linux candidate |
 | **Language** | C-like syntax, Rust-style ownership, no garbage collector |
 | **Output** | One C99 translation unit, built with the AmigaPorts m68k GCC toolchain |
 | **Targets** | `host`, `hosted-amiga`, `hosted-amiga-13`, `freestanding` |

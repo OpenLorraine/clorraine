@@ -25,7 +25,7 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga` profile | <StatusBadge state="ready" label="Usable" /> | m68k GCC builds, `vamos` runs, FS-UAE gates |
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
-| Linux x86_64 binaries | <StatusBadge state="ready" label="Released" /> | [v1.1.2 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2) |
+| Linux x86_64 installer | <StatusBadge state="progress" label="Candidate" /> | v1.2.0 candidate; artifacts remain drafts until publication approval |
 | Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
 | VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
 | Windows and macOS installers | <StatusBadge state="progress" /> | No release yet |
@@ -88,8 +88,10 @@ NDK policy.
 
 ## Release and license state
 
-The current release is **v1.1.2**, published under the MIT License. The
-repository now uses the **Apache License 2.0** with the
+The current release record is **v1.2.0**, a native Linux delivery candidate. Its
+artifacts remain drafts until the explicit publication approval recorded in the
+repository runbook. The latest published release is **v1.1.2**, published under
+the MIT License. The repository now uses the **Apache License 2.0** with the
 [Clorraine Output Exception](/project/licensing) for future releases. Published
 v1.1.2 artifacts are unchanged.
 

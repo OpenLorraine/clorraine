@@ -430,8 +430,24 @@ and whether a negative control fails when the fix is absent.
 ## Execution evidence
 
 Entries appear newest first. Each records the state at its timestamp; the top
-entry is the current Phase4 result. Older entries retain their historical
+entry is the current Phase5 result. Older entries retain their historical
 task counts and holds.
+
+### Phase 5 release suite authored and red — 2026-11-21 19:03
+
+`tools/distribution/tests/test_release_spec.py` adds 13 independent cases for
+ST-47–ST-52. The first run is red for the intended absent behavior: two missing
+workflows, no `validate`, `verify-component` or `promotion` producer operation,
+1.1.2 version records, and pre-release documentation. Sixteen subtest failures
+and one downstream JSON error resolve to those absent surfaces; no production
+file was changed to obtain the red state.
+
+Historical document controls bind the published v1.1.2 record rather than
+current targets: tag object `5beec93`, published binary SHA-256
+`52f9e36461e27d85f06bdd7242f4ab0a4d3fe9ff07aa5eccabde9d9d33d38fbe`, the
+2026-11-11 changelog heading, and the published MIT terms. The red log is
+`build/tmp/native-phase5-20261121/spec-red/red.log` during execution and is
+removed at session close; the case file is the durable evidence.
 
 ### Phase 4 closes after clean fix-diff re-review — 2026-11-21 12:05
 

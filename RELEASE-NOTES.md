@@ -1,83 +1,103 @@
-# Clorraine v1.1.2
+# Clorraine v1.2.0
 
-> **Historical release.** v1.1.2 was published under the MIT License. The
-> repository now uses the Apache License 2.0 with the Clorraine Output
-> Exception; see `LICENSE`, `LICENSE-EXCEPTION.md`, and the README for the
-> current terms.
+> **Candidate release record.** v1.2.0 is the current release target. Its
+> artifacts are prepared as drafts and remain private until the explicit
+> publication approval recorded in `RELEASE.md` is supplied. v1.1.2 remains the
+> latest published release and is unchanged under its MIT terms.
 
 Clorraine is a compiler for the frozen v1.0 language with the approved v1.1
 language surfaces, plus a build/run driver for the `host`, `hosted-amiga`,
-`hosted-amiga-13`, and `freestanding` profiles. v1.1.2 is a patch release; the
-language and command-line surface are unchanged.
+`hosted-amiga-13`, and `freestanding` profiles. v1.2.0 adds a native Linux
+installation path and editor actions without changing the language rules.
 
 ## Highlights
 
-- **Eligible constant arrays become data.** A module-level fixed array with a
-  2- or 4-byte non-float scalar leaf, a complete guard-free constant list, at
-  least 16 elements and 64 bytes, and no `volatile` now emits one read-only
-  data template and one copy instead of one store per element. Byte,
-  short/empty lists, `const`, fill, multi-extent, struct/view/float, and
-  freestanding arrays keep the stores; the conditions are recorded in `docs/known-limitations.md` §13.
-  On the `lookup` benchmark, isolated under the previous flags, net
-  instructions fell 13,653 → 9,470 (−30.6%), `.text`
-  117,440 → 92,976 (−20.8%), and emitted C 474,430 → 340,503 bytes (−28.2%).
-- **Much smaller release programs.** Release programs on Linux host,
-  `hosted-amiga`, and `hosted-amiga-13` now use section garbage collection and
-  release stripping:
-  `-O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s`. Measured
-  with one compiler and the same sources, the five `hosted-amiga` scored
-  benchmarks are `.text` 57.1–69.3% smaller and their stripped binaries
-  64.2–74.7% smaller; host stripped release binaries fall 20.6–36.5%; the
-  `hosted-amiga-13` audit set falls 49.1–88.9% in `.text`; calibration falls
-  3,372 → 2,928 instructions on 2.0 and 3,348 → 2,947 on 1.3. The two GCC
-  release rows in the frozen compile matrix match the new commands.
-- **Release programs are stripped; tools and debug builds are not.** The
-  `clc` and `clorraine` binaries keep their symbols. Debug builds keep
-  symbols. Freestanding and non-Linux host program builds keep the `-O2` line
-  and symbols. Use a debug build when you need to diagnose a release program.
-- **No collision with user `ffi` symbols.** The new data template uses a
-  collision-free symbol; it cannot shadow a user `ffi` name. The collision
-  existed only in unreleased builds.
+- **One native Linux installer.** `install.sh` downloads a hash-pinned helper,
+  verifies its exact length and SHA-256, and runs it with isolated Python. The
+  installer places the three compiler binaries, a reusable prebuilt Amiga SDK,
+  the NDK preparation helpers and a CPython 3.10/3.12 `vamos` wheel set under
+  `~/.clorraine` by default. It never compiles installation dependencies.
+- **Transactional updates and recovery.** Installation builds a complete
+  candidate before activation, keeps the previous working version and refuses a
+  concurrent writer. `--root` and `--release` select a custom root or an exact
+  distribution tag explicitly.
+- **Editor Build/Run.** The VS Code extension adds Build, Run and Run in FS-UAE
+  actions. They save the active `.clo` entry, ask the language server for the
+  canonical saved-source closure, and pass the entry and its imported sources
+  directly to the driver. Machine-scoped settings find `~/.clorraine/bin`
+  without a terminal `PATH`.
+- **Remote-WSL and manual Windows use.** The extension runs in the Linux remote
+  host; FS-UAE itself remains a user-provided Windows or Linux application. The
+  guide documents moving the generated Amiga executable to that emulator.
+- **Bounded release automation.** Two manually dispatched workflows build
+  support and compiler/editor/distribution drafts. They never publish on a
+  build; promotion needs a separately reviewed manifest hash.
 
 ## Verification
 
-The v1.1.2 release gate runs `make check`, `make asan`, `make ubsan`,
-`make corpus-amiga`, `make differential`, `make bench-shape`,
-`make bench-base COMMIT=v1.1.1`, `make bench`,
-`make bench-compare REQUIRE="lookup:instructions:20 lookup:text:20"`,
-`make bench-flags`, `make verify`, and `make vscode-check` on the gated
-release commit. `make verify` prints `verify: all legs passed`.
-
-Against v1.1.1, with the shipped flags applied to both trees, `lookup` net
-instructions are 13,653 → 9,470 (−30.6%), `.text` 64,328 → 39,904 (−38.0%),
-the binary 82,544 → 41,740 (−49.4%), and emitted C 474,430 → 340,503 bytes
-(−28.2%). The other four scored benchmarks have identical net instructions,
-`.text`, and emitted C. The flag audit's constructor proof shows the four
-remaining libnix constructors still run on both m68k profiles.
+The v1.2.0 candidate gate is `make verify`, `make vscode-check`, `make
+site-check`, the clean Ubuntu 22.04/24.04 installation runs, the native FS-UAE
+and legacy Amiga gates on private displays, and the user's actual WSL2/Remote-WSL
+record. The final candidate also needs the release specification suite and an
+independent acceptance review before any promotion. Missing WSL2 evidence, an
+unresolved critical/major finding, a changed approved byte or a missing
+post-publication check blocks the corresponding stage; it is never replaced by
+a host-only or miniature-fixture result.
 
 ## Known limitations
 
-- Programs built by `clorraine build --release` on Linux host, `hosted-amiga`,
-  or `hosted-amiga-13` are stripped; a debug build is the symbol-bearing
-  artifact for diagnosis.
-- `freestanding` and non-Linux host program builds keep the plain `-O2` line
-  and symbols.
-- The Linux x86_64 tarball contains `clc` and `clorraine`, not
-  `clorraine-lsp`; build the server from source with
-  `cargo build --workspace`.
-- `--gc-sections` removes the unused libnix `__amigapath`/`environ`
-  constructor objects and their init entries. No current standard-library API
-  observes that state; a future API that does will need a targeted keep.
-- The accepted limitations are recorded in `docs/known-limitations.md`,
-  including the remaining volatile-copy shapes, the A500 media requirement,
-  the RTG scope, and the v1.1 `Box<T>` and hook boundaries.
+- Native Windows, native macOS and ARM artifacts are not part of this release.
+  Windows users compile through WSL2 and run FS-UAE themselves.
+- FS-UAE and licensed Kickstart/Workbench media are user-provided. No emulator,
+  ROM or Workbench content is redistributed.
+- Automatic Windows emulator launch, native emulator capture and automatic
+  shell-profile or extension changes are outside this delivery.
+- Support assets retain third-party terms. The exact `libamiga.a` input and its
+  unresolved legal review are recorded in `THIRD_PARTY_NOTICES.md`; public
+  promotion stays separately authorised.
+- The accepted language and platform limitations remain in
+  `docs/known-limitations.md`.
 
 ## Licence
 
-MIT, as published for v1.1.2. Third-party notices, including the Hamurabi
-port, are in `THIRD_PARTY_NOTICES.md`. The binary tarball includes that file and
-`docs/known-limitations.md`, so the licence and limitations links in the
-shipped README resolve; the other README links point to the source tree.
+First-party v1.2.0 artifacts use the Apache License 2.0 with the Clorraine
+Output Exception. Required first-party terms are `LICENSE`,
+`LICENSE-EXCEPTION.md`, `NOTICE`, `TRADEMARKS.md` and
+`THIRD_PARTY_NOTICES.md`. Third-party components keep their original terms; the
+notices do not relicense them.
+
+## Historical release: v1.1.2
+
+> **Historical release.** v1.1.2 was published under the MIT License. The
+> repository now uses the Apache License 2.0 with the Clorraine Output
+> Exception. The published v1.1.2 artifacts are unchanged and remain available
+> under MIT.
+
+v1.1.2 is a patch release; the language and command-line surface are unchanged.
+Its highlights were:
+
+- **Eligible constant arrays become data.** A module-level fixed array with a
+  2- or 4-byte non-float scalar leaf, a complete guard-free constant list, at
+  least 16 elements and 64 bytes, and no `volatile` emits one read-only data
+  template and one copy instead of one store per element. On the `lookup`
+  benchmark, net instructions fell 13,653 → 9,470 (−30.6%), `.text`
+  117,440 → 92,976 (−20.8%), and emitted C 474,430 → 340,503 bytes (−28.2%).
+- **Much smaller release programs.** Release programs on Linux host,
+  `hosted-amiga`, and `hosted-amiga-13` use section garbage collection and
+  release stripping. The five `hosted-amiga` scored benchmarks are `.text`
+  57.1–69.3% smaller and their stripped binaries 64.2–74.7% smaller; host
+  stripped release binaries fall 20.6–36.5%.
+- **No collision with user `ffi` symbols.** The data template uses a
+  collision-free symbol.
+
+The v1.1.2 gate ran `make check`, `make asan`, `make ubsan`,
+`make corpus-amiga`, `make differential`, `make bench-shape`,
+`make bench-base COMMIT=v1.1.1`, `make bench`,
+`make bench-compare REQUIRE="lookup:instructions:20 lookup:text:20"`,
+`make bench-flags`, `make verify`, and `make vscode-check`. The published
+Linux x86_64 tarball contained `clc` and `clorraine`, not `clorraine-lsp`.
+Licence terms and asset identities are recorded in `RELEASE.md` and
+`CHANGELOG.md` as history.
 
 No NDK, ROM, Workbench media, or other restrictively licensed third-party file
-is redistributed in the source or binary release artifacts.
+was redistributed in the v1.1.2 source or binary release artifacts.

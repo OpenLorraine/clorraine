@@ -254,6 +254,57 @@ fail). This is support proof, not phase full-gate, installer/editor/WSL or
 publication acceptance. No licence clearance is inferred, including for the
 explicitly directed ordinary libamiga archive.
 
+## Release assembly and promotion eligibility
+
+The support orchestrator is a thin entry over the proved `assemble_payload` API:
+
+```sh
+python3 tools/distribution/assemble_support.py assemble --kind sdk \
+    --lock PATH --sources DIR --producer DIR --output DIR
+python3 tools/distribution/assemble_support.py assemble --kind preparation \
+    --lock PATH --sources DIR --producer DIR --sdk-base DIR --output DIR
+```
+
+Valid kinds are `sdk`, `cp310`, `cp312` and `preparation`. Preparation requires
+the complete assembled SDK baseline; the other kinds reject `--sdk-base`. This
+command does not build, fetch, archive, publish or approve anything.
+
+The bootstrap producer has three non-publishing operations alongside `assemble`:
+
+```sh
+python3 tools/distribution/package_release.py validate \
+    --release v1.2.0 --components ID --support ID --commit COMMIT
+python3 tools/distribution/package_release.py verify-component \
+    --components ID --core PATH --vsix PATH [--existing DIR]
+python3 tools/distribution/package_release.py promotion \
+    --manifest PATH --assets DIR --approval PATH
+```
+
+`validate` also accepts the support-only form `--support ID --commit COMMIT`.
+`verify-component` snapshots and validates both payloads, reports `publish` or
+`reuse` independently, and rejects changed bytes in an existing identity.
+`promotion` checks every referenced local payload's size, hash and archive
+inventory against the manifest plus an exact approval record:
+
+```json
+{"approved": true, "manifest_sha256": "<64 lowercase hex>", "release": "v1.2.0",
+ "schema": 1, "st56": "pending", "unresolved_major": 0}
+```
+
+`st56: pending` still permits pre-publication promotion but leaves
+`final_completion_ready` false. `st56: passed` clears final completion;
+`st56: failed` exits nonzero. The upstream NDK is referenced by its locked URL
+and is not repackaged as a distribution asset.
+
+The two dispatch-only workflow definitions are
+`.github/workflows/support-release.yml` and
+`.github/workflows/distribution-release.yml`. They validate literal inputs,
+pin actions, keep default permissions read-only, upload drafts only, and use
+`make_latest=false` for support/component releases. The support workflow needs a
+self-hosted runner labelled `clorraine-release` with
+`CLORRAINE_RELEASE_SOURCES` and `CLORRAINE_RELEASE_IMAGE_ID` prepared. Neither
+workflow has been dispatched for v1.2.0; draft definitions are not publication.
+
 ## Local tests and mandatory archive acceptance
 
 `make distribution-check` runs the 93 local support specification methods,

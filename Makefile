@@ -86,7 +86,7 @@ distribution-check:
 	cd tools/distribution/tests && python3 -m unittest -v \
 		test_support_spec.SupportContractTests support_build_spec support_preparation_spec \
 		support_wheels_spec support_ownership_spec support_wheel_selection_spec \
-		test_support_impl test_distribution_check_impl
+		test_support_impl test_distribution_check_impl test_release_impl
 
 # Type-check, test, package, and audit the VS Code extension. The language
 # server is built in the pinned container; Node.js 22+ must be on the host PATH

@@ -2,16 +2,35 @@
 
 ## [Unreleased]
 
+No changes since v1.2.0.
+
+## [1.2.0] - 2026-11-21
+
 ### Added
 
+- Native Linux x86_64 installation through `install.sh` and a hash-pinned
+  `install.pyz`: prebuilt `clc`, `clorraine` and `clorraine-lsp`, a reusable
+  Amiga SDK, preparation helpers and CPython 3.10/3.12 vamos wheels.
+- Transactional installation under `~/.clorraine` by default, with explicit
+  `--root`/`--release` selection, previous-version recovery and no dependency
+  compilation during installation.
+- VS Code Build, Run and Run in FS-UAE actions over the saved entry file and its
+  imported sources, machine-scoped tool settings and Remote-WSL guidance.
+- A read-only `clorraine/sourceFiles` language-server request with bounded,
+  canonical saved-source selection for both hosted-Amiga profiles.
+- Manual `support-release` and `distribution-release` workflows that build
+  drafts only and require a separate approved manifest hash to promote.
+
+### Changed
+
+- Compiler, Cargo lock, extension and extension lock versions advance to 1.2.0.
+- The native support and distribution artifacts use the Apache License 2.0 with
+  the Clorraine Output Exception; v1.1.2 remains published under MIT.
 - `clorraine build --size` (and `run --size`) compiles with `-Os` and the same
   release processing as `--release`; it cannot be combined with `--release`,
   and `emit` rejects both. Host `.text` falls by up to 11.9%, while m68k
   `.text` is roughly neutral after section GC. `moves` net instructions rise
   31.3% under `--size`, so the mode is opt-in.
-
-### Changed
-
 - Integer formatting writes decimal digits directly into the string block
   instead of calling `snprintf`: `strings` net instructions fall 2,964,051 →
   1,489,187 (−49.8%).
@@ -27,12 +46,6 @@
 - Growable buffers grow geometrically instead of by an exact size: `container`
   falls 223,504 → 56,814 net instructions (−74.6%), reallocations fall
   1,024 → 11, and `.text` grows 16 bytes.
-- The repository license changed from MIT to the OSI-approved Apache License
-  2.0, with the Clorraine Output Exception for compiled programs and embedded
-  runtime and standard-library code. Clorraine is now open source: forks,
-  bundling, and commercial distribution are allowed. The trademark policy is
-  in TRADEMARKS.md. Releases published before the change remain available under
-  MIT.
 
 ### Fixed
 
@@ -50,6 +63,8 @@
 - The hosted-amiga shim declares `UnlockPubScreen` with the NDK prototype
   (`CONST_STRPTR`, `struct Screen *`), removing vbcc warning 68 from the
   emitted C; generated code is unchanged.
+- Qualified module references no longer omit compiler-accepted user modules, and
+  editor actions stop when a relevant saved source changes during selection.
 
 ## [1.1.2] - 2026-11-11
 

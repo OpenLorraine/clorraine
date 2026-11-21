@@ -1,0 +1,302 @@
+name: Distribution release
+
+# Manual candidate assembly. A dispatch creates immutable component and
+# distribution drafts. Publishing runs only when the separate approval hash is
+# supplied and matches the assembled manifest exactly.
+on:
+  workflow_dispatch:
+    inputs:
+      compiler_commit:
+        description: Full lowercase compiler commit to build or reuse
+        required: true
+        type: string
+      release:
+        description: Installable distribution tag such as v1.2.0 or v1.2.0-r1
+        required: true
+        type: string
+      components:
+        description: New immutable compiler/editor component identity
+        required: true
+        type: string
+      support:
+        description: Exact immutable support identity
+        required: true
+        type: string
+      previous_core:
+        description: Prior component identity supplying unchanged core bytes, or none
+        required: true
+        type: string
+      previous_vsix:
+        description: Prior component identity supplying unchanged VSIX bytes, or none
+        required: true
+        type: string
+      approved_manifest_sha256:
+        description: Reviewed manifest hash authorising promotion, or none for drafts only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distribution-release-${{ inputs.release }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.compiler_commit }}
+          persist-credentials: false
+      - name: Validate literal dispatch values
+        env:
+          COMPILER_COMMIT: ${{ inputs.compiler_commit }}
+          RELEASE_TAG: ${{ inputs.release }}
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+          SUPPORT_IDENTITY: ${{ inputs.support }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMPILER_COMMIT"
+          python3 tools/distribution/package_release.py validate \
+            --release "$RELEASE_TAG" --components "$COMPONENT_IDENTITY" \
+            --support "$SUPPORT_IDENTITY" --commit "$COMPILER_COMMIT" \
+            > build/release-inputs.json
+          cat build/release-inputs.json
+
+  build:
+    needs: validate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.compiler_commit }}
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Build or reuse core and VSIX independently
+        env:
+          COMPILER_COMMIT: ${{ inputs.compiler_commit }}
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+          PREVIOUS_CORE: ${{ inputs.previous_core }}
+          PREVIOUS_VSIX: ${{ inputs.previous_vsix }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMPILER_COMMIT"
+          mkdir -p build/release/components build/release/previous build/release/target-existing
+          if [ "$PREVIOUS_CORE" != none ]; then
+            gh release download "components-$PREVIOUS_CORE" \
+              --pattern core.tar --dir build/release/previous
+            cp build/release/previous/core.tar build/release/components/core.tar
+          else
+            cargo build --release --workspace
+            python3 tools/distribution/package_core.py archive \
+              --binaries target/release --output build/release/components/core.tar
+          fi
+          if [ "$PREVIOUS_VSIX" != none ]; then
+            gh release download "components-$PREVIOUS_VSIX" \
+              --pattern clorraine.vsix --dir build/release/previous
+            cp build/release/previous/clorraine.vsix build/release/components/clorraine.vsix
+          else
+            make vscode-package
+            cp build/vscode/clorraine-1.2.0.vsix build/release/components/clorraine.vsix
+          fi
+          if gh release view "components-$COMPONENT_IDENTITY" >/dev/null 2>&1; then
+            gh release download "components-$COMPONENT_IDENTITY" \
+              --pattern core.tar --pattern clorraine.vsix \
+              --dir build/release/target-existing
+          fi
+          python3 tools/distribution/package_release.py verify-component \
+            --components "$COMPONENT_IDENTITY" \
+            --core build/release/components/core.tar \
+            --vsix build/release/components/clorraine.vsix \
+            --existing build/release/target-existing \
+            > build/release/component.json
+          cat build/release/component.json
+      - name: Assemble the bootstrap candidate
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+          SUPPORT_IDENTITY: ${{ inputs.support }}
+        run: |
+          gh release download "support-$SUPPORT_IDENTITY" \
+            --dir build/release/support-inputs
+          python3 tools/distribution/package_release.py assemble \
+            --release "$RELEASE_TAG" \
+            --components "$COMPONENT_IDENTITY" \
+            --support "$SUPPORT_IDENTITY" \
+            --core build/release/components/core.tar \
+            --vsix build/release/components/clorraine.vsix \
+            --support-inputs build/release/support-inputs \
+            --output build/release/distribution
+          sha256sum build/release/components/* build/release/distribution/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: distribution-${{ inputs.release }}
+          path: |
+            build/release/components
+            build/release/distribution
+            build/release/component.json
+            build/release/support-inputs
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.compiler_commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: distribution-${{ inputs.release }}
+          path: build/release
+      - name: Check the same candidate bytes on this Ubuntu baseline
+        env:
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+        run: |
+          python3 - "$COMPONENT_IDENTITY" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+core = Path("build/release/components/core.tar").read_bytes()
+record = json.loads(Path("build/release/component.json").read_bytes())
+assert hashlib.sha256(core).hexdigest() == record["core"]["sha256"]
+assert record["core"]["identity"] == sys.argv[1] + "-core"
+print("component: core bytes match the recorded identity")
+PY
+          python3 tools/distribution/package_release.py verify-component \
+            --components "$COMPONENT_IDENTITY" \
+            --core build/release/components/core.tar \
+            --vsix build/release/components/clorraine.vsix
+          python3 tools/vscode/scripts/audit_vsix.py \
+            --vsix build/release/components/clorraine.vsix \
+            --extract build/release/vsix-extracted
+          python3 - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, ".")
+from tools.distribution.manifest import parse_manifest
+parse_manifest(Path("build/release/distribution/manifest.json").read_bytes())
+print("distribution: manifest valid on this baseline")
+PY
+
+  upload:
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: distribution-${{ inputs.release }}
+          path: build/release
+      - name: Create immutable drafts without latest
+        env:
+          COMPILER_COMMIT: ${{ inputs.compiler_commit }}
+          RELEASE_TAG: ${{ inputs.release }}
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+          SUPPORT_IDENTITY: ${{ inputs.support }}
+        run: |
+          if ! gh release view "components-$COMPONENT_IDENTITY" >/dev/null 2>&1; then
+            gh release create "components-$COMPONENT_IDENTITY" \
+              --draft \
+              --target "$COMPILER_COMMIT" \
+              --title "Clorraine components $COMPONENT_IDENTITY" \
+              --notes "Immutable compiler/editor payload; not an install target." \
+              build/release/components/core.tar \
+              build/release/components/clorraine.vsix
+            component_release=$(gh release view "components-$COMPONENT_IDENTITY" --json databaseId --jq .databaseId)
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$component_release" \
+              -f make_latest=false
+          else
+            mkdir -p build/release/component-existing
+            gh release download "components-$COMPONENT_IDENTITY" \
+              --pattern core.tar --pattern clorraine.vsix \
+              --dir build/release/component-existing
+            cmp build/release/component-existing/core.tar build/release/components/core.tar
+            cmp build/release/component-existing/clorraine.vsix build/release/components/clorraine.vsix
+          fi
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --target "$COMPILER_COMMIT" \
+              --title "Clorraine $RELEASE_TAG" \
+              --notes "Native Linux distribution draft; promotion needs the approved manifest hash." \
+              build/release/distribution/install.sh \
+              build/release/distribution/install.pyz \
+              build/release/distribution/manifest.json
+            distribution_release=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$distribution_release" \
+              -f make_latest=false
+          else
+            gh release download "$RELEASE_TAG" \
+              --pattern install.sh --pattern install.pyz --pattern manifest.json \
+              --dir build/release/distribution-existing
+            cmp build/release/distribution-existing/install.sh build/release/distribution/install.sh
+            cmp build/release/distribution-existing/install.pyz build/release/distribution/install.pyz
+            cmp build/release/distribution-existing/manifest.json build/release/distribution/manifest.json
+          fi
+      - name: Promote only the approved candidate
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          COMPONENT_IDENTITY: ${{ inputs.components }}
+          SUPPORT_IDENTITY: ${{ inputs.support }}
+          APPROVED_MANIFEST_SHA256: ${{ inputs.approved_manifest_sha256 }}
+        run: |
+          if [ "$APPROVED_MANIFEST_SHA256" = none ]; then
+            echo "No approved manifest hash; drafts remain private."
+            exit 0
+          fi
+          actual=$(sha256sum build/release/distribution/manifest.json | cut -d' ' -f1)
+          test "$actual" = "$APPROVED_MANIFEST_SHA256"
+          mkdir -p build/release/approval-assets
+          gh release download "support-$SUPPORT_IDENTITY" \
+            --dir build/release/approval-assets
+          gh release download "components-$COMPONENT_IDENTITY" \
+            --pattern core.tar --pattern clorraine.vsix \
+            --dir build/release/approval-assets
+          python3 - "$APPROVED_MANIFEST_SHA256" "$RELEASE_TAG" \
+            build/release/approval.json <<'PY'
+import json
+from pathlib import Path
+import sys
+Path("build/release/approval.json").write_text(json.dumps({
+    "schema": 1, "release": sys.argv[2], "manifest_sha256": sys.argv[1],
+    "approved": True, "unresolved_major": 0, "st56": "pending",
+}, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+          python3 tools/distribution/package_release.py promotion \
+            --manifest build/release/distribution/manifest.json \
+            --assets build/release/approval-assets \
+            --approval build/release/approval.json
+          gh release edit "support-$SUPPORT_IDENTITY" --draft=false
+          support_release=$(gh release view "support-$SUPPORT_IDENTITY" --json databaseId --jq .databaseId)
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$support_release" \
+            -f make_latest=false
+          gh release edit "components-$COMPONENT_IDENTITY" --draft=false
+          component_release=$(gh release view "components-$COMPONENT_IDENTITY" --json databaseId --jq .databaseId)
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$component_release" \
+            -f make_latest=false
+          gh release edit "$RELEASE_TAG" --draft=false
+          distribution_release=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$distribution_release" \
+            -f make_latest=true
+          gh release view "$RELEASE_TAG" --json isDraft,isLatest,assets

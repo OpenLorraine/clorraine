@@ -18,7 +18,7 @@ Internal planning records are not published here.
 | Amiga SDK: 81 tracked capabilities across 11 bundles | Done |
 | v1.1 surfaces: `Box<T>`, ordinary `freedBy` deleters, C-hook trampolines | Done |
 | A500/Kickstart 1.3 baseline with OCS and 512 KB chip RAM | Done |
-| Linux x86_64 binary release | v1.1.2 |
+| Linux x86_64 installer | v1.2.0 candidate; publication approval pending |
 | VS Code extension packaging and packaged-client smoke test | Done from source |
 | Language server over stdio | Done from source |
 | Apache 2.0 licensing with an output exception | Done |
@@ -55,4 +55,5 @@ See [Verification](/project/verification) for the full picture.
 
 Release notes and artifacts are published on
 [GitHub Releases](https://github.com/OpenLorraine/clorraine/releases). The
-current release is **v1.1.2**.
+current release record is **v1.2.0**; v1.1.2 remains the latest published
+release until the v1.2.0 publication approval is supplied.

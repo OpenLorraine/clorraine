@@ -1,8 +1,8 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-21 12:05
-> **Progress**: 67/91 tasks (74%)
+> **Last Updated**: 2026-11-21 20:05
+> **Progress**: 79/91 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Execution contract
@@ -498,24 +498,24 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 
 ### Session 5.1: Specification tests
 
-- [ ] 5.1.1 [spec-author] Write workflow/payload/identity cases ST-47–ST-51 — `tools/distribution/tests/test_release_spec.py`.
-- [ ] 5.1.2 [spec-author] Add version/documentation case ST-52 to the release suite.
-- [ ] 5.1.3 Run release suite red; record historical document controls — `07-testing-strategy.md`.
+- [x] 5.1.1 [spec-author] Write workflow/payload/identity cases ST-47–ST-51 — `tools/distribution/tests/test_release_spec.py`. ✅ (authored: 2026-11-21 19:03; 13 independent cases cover manual-input validation, pinned least-privilege workflows, actual/fixture payload identity, independent core/VSIX reuse, support-only revision and promotion blockers; public producer only, no implementation imports)
+- [x] 5.1.2 [spec-author] Add version/documentation case ST-52 to the release suite. ✅ (authored: 2026-11-21 19:03; version records, runbook/notes/changelog, README, quick-start, licence set and immutable v1.1.2 facts/hashes pinned)
+- [x] 5.1.3 Run release suite red; record historical document controls — `07-testing-strategy.md`. ✅ (red: 2026-11-21 19:03; 13 cases ran, 16 subtest failures plus 1 downstream error: missing workflows, absent validate/verify-component/promotion commands, 1.1.2 records and old docs; historical controls bind v1.1.2 MIT, tag object 5beec93 and published binary hash 52f9e364…; no implementation file changed)
 
 ### Session 5.2: Implementation
 
-- [ ] 5.2.1 Update compiler version records and run the existing Phase 2 core producer with final versions — `compiler/Cargo.toml`, `Cargo.lock`; ST-48/ST-57.
-- [ ] 5.2.2 Update extension version records and verify VSIX payload — `tools/vscode/package.json`, `package-lock.json`; ST-48.
-- [ ] 5.2.3 Extend Phase 3 assembly with immutable component/distribution identities, independent core/VSIX reuse and promotion eligibility — `tools/distribution/package_release.py`; ST-49–ST-51.
-- [ ] 5.2.4 Add manual support workflow calling proved local commands — `.github/workflows/support-release.yml`; ST-47/ST-49.
-- [ ] 5.2.5 Add manual distribution workflow managing both compiler/editor component and distribution drafts — `.github/workflows/distribution-release.yml`; ST-47/ST-50.
-- [ ] 5.2.6 Update v1.2.0 runbook/notes/changelog while preserving historical facts — `RELEASE.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`; ST-52.
-- [ ] 5.2.7 Update native quick-start/root README and installation links — `site/guide/quick-start.md`, `README.md`; ST-52.
-- [ ] 5.2.8 Run release specifications green against locally assembled candidates — `tools/distribution/tests/test_release_spec.py`.
+- [x] 5.2.1 Update compiler version records and run the existing Phase 2 core producer with final versions — `compiler/Cargo.toml`, `Cargo.lock`; ST-48/ST-57. ✅ (verified: 2026-11-21 19:10; Ubuntu22 builder used pinned Rust1.99/glibc2.35; all three release binaries report1.2.0; core archive9960d775… 18,544,640 bytes with five notices and exact core.json; existing producer suite45 tests passed with only the two expected missing-actual-input setup errors excluded from the fast target; no clobber/publication)
+- [x] 5.2.2 Update extension version records and verify VSIX payload — `tools/vscode/package.json`, `package-lock.json`; ST-48. ✅ (verified: 2026-11-21 19:10; manifest and lock root both1.2.0; makevscode-package produced clorraine-1.2.0.vsix with name/publisher/version match; final rebuilt VSIX ed0c803d… 26,556 bytes; audit_vsix ok14 entries; packaged client later passed)
+- [x] 5.2.3 Extend Phase 3 assembly with immutable component/distribution identities, independent core/VSIX reuse and promotion eligibility — `tools/distribution/package_release.py`; ST-49–ST-51. ✅ (verified: 2026-11-21 19:40; validate/verify-component/promotion added; private snapshots, identity/digest reuse, exact approval binding, per-asset size/hash/inventory and ST-56 separation; frozen release cases13/13 and implementation controls10/10 pass; no publication or output mutation)
+- [x] 5.2.4 Add manual support workflow calling proved local commands — `.github/workflows/support-release.yml`; ST-47/ST-49. ✅ (verified: 2026-11-21 19:40; manual only, required inputs, SHA-pinned actions, read-only default, one write upload job, self-hosted prepared sources/image, draft support release with make_latest=false; structural cases pass; not dispatched)
+- [x] 5.2.5 Add manual distribution workflow managing both compiler/editor component and distribution drafts — `.github/workflows/distribution-release.yml`; ST-47/ST-50. ✅ (verified: 2026-11-21 19:40; independent core/VSIX reuse, Ubuntu22/24.04 checks, component+distribution drafts, exact approved-hash gate and promotion; one write job, SHA-pinned actions, no run-body interpolation; not dispatched)
+- [x] 5.2.6 Update v1.2.0 runbook/notes/changelog while preserving historical facts — `RELEASE.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`; ST-52. ✅ (verified: 2026-11-21 19:55; v1.2.0 candidate records, two-workflow/promotion commands and Apache terms; v1.1.2 MIT tag5beec93 and published hashes443377…/52f9e364… preserved historical; old unreleased compiler notes folded into1.2.0 with no loss)
+- [x] 5.2.7 Update native quick-start/root README and installation links — `site/guide/quick-start.md`, `README.md`; ST-52. ✅ (verified: 2026-11-21 19:55; installer/PATH/VSIX/prerequisite/WSL boundaries and v1.2.0 candidate status documented; site status/brief/roadmap aligned; no publication or WSL acceptance claimed)
+- [x] 5.2.8 Run release specifications green against locally assembled candidates — `tools/distribution/tests/test_release_spec.py`. ✅ (verified: 2026-11-21 20:03; 13/13 pass with actual core9960d775… and VSIXed0c803d… plus miniature reuse/promotion controls; actual payload checks bind three binaries, five notices and1.2.0 VSIX metadata; no real-machine claim)
 
 ### Session 5.3: Hardening and gate
 
-- [ ] 5.3.1 Add payload/reuse/input-validation implementation tests — `tools/distribution/tests/test_release_impl.py`.
+- [x] 5.3.1 Add payload/reuse/input-validation implementation tests — `tools/distribution/tests/test_release_impl.py`. ✅ (verified: 2026-11-21 19:42; 10 controls cover mode/identity/commit rejection, changed VSIX metadata, alias/FIFO existing assets, independent reuse, approval schema/duplicates, unreadable payload and inventory mismatch; distribution-check103 tests passes; no source/test pin weakened)
 - [ ] 5.3.2 Run full/editor/site gates and independent release-security review — `99-execution-plan.md`.
 
 **Verify (gate)**: `make verify`, `make vscode-check`, `make site-check`.

@@ -1,0 +1,178 @@
+name: Support release
+
+# Manual, draft-only support build. The self-hosted runner must already hold
+# the verified lock sources and the inspected offline build image; this
+# workflow never acquires either. Promotion is performed by the distribution
+# workflow only after its separate publication approval.
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full lowercase commit that owns the support lock and recipes
+        required: true
+        type: string
+      support_identity:
+        description: New immutable lowercase support identity
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: support-release-${{ inputs.support_identity }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: [self-hosted, linux, x64, clorraine-release]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+      - name: Validate literal dispatch values
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          SUPPORT_IDENTITY: ${{ inputs.support_identity }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          python3 tools/distribution/package_release.py validate \
+            --support "$SUPPORT_IDENTITY" --commit "$SOURCE_COMMIT" \
+            > build/release-support-inputs.json
+
+  build:
+    needs: validate
+    runs-on: [self-hosted, linux, x64, clorraine-release]
+    timeout-minutes: 480
+    env:
+      RELEASE_SOURCES: ${{ vars.CLORRAINE_RELEASE_SOURCES }}
+      RELEASE_IMAGE_ID: ${{ vars.CLORRAINE_RELEASE_IMAGE_ID }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+      - name: Build locked support payloads
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test -n "$RELEASE_SOURCES" && test -n "$RELEASE_IMAGE_ID"
+          python3 tools/distribution/support.py validate-lock \
+            --lock tools/distribution/support-lock.json
+          tools/distribution/build-support.sh \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --image-id "$RELEASE_IMAGE_ID" \
+            --output build/release/support/sdk-producer
+          tools/distribution/build-wheels.sh \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --image-id "$RELEASE_IMAGE_ID" --abi cp310 \
+            --output build/release/support/cp310-producer
+          tools/distribution/build-wheels.sh \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --image-id "$RELEASE_IMAGE_ID" --abi cp312 \
+            --output build/release/support/cp312-producer
+      - name: Assemble audited payloads
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          python3 tools/distribution/assemble_support.py assemble --kind sdk \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --producer build/release/support/sdk-producer \
+            --output build/release/support/sdk
+          python3 tools/distribution/assemble_support.py assemble --kind cp310 \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --producer build/release/support/cp310-producer \
+            --output build/release/support/cp310
+          python3 tools/distribution/assemble_support.py assemble --kind cp312 \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --producer build/release/support/cp312-producer \
+            --output build/release/support/cp312
+          python3 tools/distribution/assemble_support.py assemble --kind preparation \
+            --lock tools/distribution/support-lock.json \
+            --sources "$RELEASE_SOURCES" \
+            --producer build/release/support/sdk-producer \
+            --sdk-base build/release/support/sdk/payload \
+            --output build/release/support/preparation
+      - name: Create immutable support archives
+        run: |
+          mkdir -p build/release/support/assets
+          python3 tools/distribution/package_support.py \
+            --lock tools/distribution/support-lock.json \
+            --payload build/release/support/sdk/payload \
+            --audit build/release/support/sdk/audit.json \
+            --output build/release/support/assets/amiga.tar
+          cp build/release/support/sdk/audit.json \
+            build/release/support/assets/amiga-audit.json
+          python3 tools/distribution/package_support.py \
+            --lock tools/distribution/support-lock.json \
+            --payload build/release/support/preparation/payload \
+            --audit build/release/support/preparation/audit.json \
+            --output build/release/support/assets/preparation.tar
+          cp build/release/support/preparation/audit.json \
+            build/release/support/assets/preparation-audit.json
+          python3 tools/distribution/package_support.py \
+            --lock tools/distribution/support-lock.json \
+            --payload build/release/support/cp310/payload \
+            --audit build/release/support/cp310/audit.json \
+            --output build/release/support/assets/cp310.tar
+          cp build/release/support/cp310/audit.json \
+            build/release/support/assets/cp310-audit.json
+          python3 tools/distribution/package_support.py \
+            --lock tools/distribution/support-lock.json \
+            --payload build/release/support/cp312/payload \
+            --audit build/release/support/cp312/audit.json \
+            --output build/release/support/assets/cp312.tar
+          cp build/release/support/cp312/audit.json \
+            build/release/support/assets/cp312-audit.json
+          cp tools/distribution/support-lock.json \
+            build/release/support/assets/support-lock.json
+      - name: Record exact draft identities
+        run: |
+          cd build/release/support/assets
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: support-${{ inputs.support_identity }}
+          path: build/release/support/assets
+          if-no-files-found: error
+          retention-days: 7
+
+  upload:
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: support-${{ inputs.support_identity }}
+          path: build/release/support/assets
+      - name: Create draft support release without latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          SUPPORT_IDENTITY: ${{ inputs.support_identity }}
+        run: |
+          test "$(sha256sum build/release/support/assets/amiga.tar | cut -d' ' -f1)" \
+            = "$(grep ' amiga.tar$' build/release/support/assets/SHA256SUMS | cut -d' ' -f1)"
+          gh release create "support-$SUPPORT_IDENTITY" \
+            --draft \
+            --target "$SOURCE_COMMIT" \
+            --title "Clorraine support $SUPPORT_IDENTITY" \
+            --notes "Immutable native support draft; not an install target." \
+            build/release/support/assets/*
+          release_id=$(gh release view "support-$SUPPORT_IDENTITY" --json databaseId --jq .databaseId)
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -f make_latest=false
+          gh release view "support-$SUPPORT_IDENTITY" --json isDraft,isLatest,assets

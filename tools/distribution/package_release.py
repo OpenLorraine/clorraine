@@ -102,6 +102,189 @@ def _helper(destination: Path) -> None:
     destination.chmod(0o755)
 
 
+def _strict_json(path: Path, label: str) -> object:
+    """Read bounded JSON while rejecting duplicate keys before any field is used."""
+    with ordinary(path) as source:
+        data = source.read(16 * 1024 * 1024 + 1)
+    if len(data) > 16 * 1024 * 1024:
+        raise ValueError(label + ": metadata exceeds 16 MiB")
+    def unique(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError(label + ": duplicate JSON key")
+            result[name] = value
+        return result
+    try:
+        return json.loads(data.decode("utf-8"), object_pairs_hook=unique,
+                          parse_constant=_reject_number)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(label + ": invalid JSON or UTF-8") from error
+
+
+def _reject_number(value: str) -> None:
+    """Keep floating-point or nonfinite numbers out of release decisions."""
+    raise ValueError("release metadata: numeric fields must be bounded integers")
+
+
+def _ordinary_directory(path: Path, label: str) -> Path:
+    """Require a caller-owned directory without following a final alias."""
+    if path.is_symlink() or not path.is_dir():
+        raise ValueError(label + ": expected an ordinary directory")
+    return path
+
+
+def _current_core_version() -> str:
+    """Read the one authoritative compiler version record."""
+    manifest = (_ROOT / "compiler/Cargo.toml").read_text(encoding="utf-8")
+    match = re.search(r'(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$', manifest)
+    if match is None:
+        raise ValueError("core: current version record is missing")
+    return match.group(1)
+
+
+def _current_extension() -> dict:
+    """Read the current editor package record used to bind a VSIX payload."""
+    value = json.loads((_ROOT / "tools/vscode/package.json").read_bytes())
+    if not isinstance(value, dict):
+        raise ValueError("extension: current package record is not an object")
+    return value
+
+
+def _verified_core(path: Path) -> dict:
+    """Return embedded core metadata and require the current version."""
+    with ordinary(path) as source, tarfile.open(fileobj=source, mode="r:") as archive:
+        metadata = core_metadata(archive)
+    if metadata["core_version"] != _current_core_version():
+        raise ValueError("core: archive version differs from compiler/Cargo.toml")
+    return metadata
+
+
+def _verified_extension(path: Path) -> dict:
+    """Return VSIX package metadata and require the current editor record."""
+    package, _count, _bytes = inspect_vsix(path)
+    current = _current_extension()
+    for field in ("name", "publisher", "version"):
+        if package.get(field) != current.get(field):
+            raise ValueError("VSIX: name/publisher/version differs from current extension metadata")
+    return package
+
+
+def _component_decisions(component: str, core: Path, vsix: Path,
+                         existing: Path | None) -> dict:
+    """Classify independently reusable payloads without changing existing bytes."""
+    with tempfile.TemporaryDirectory(prefix=".release-verify-") as temporary:
+        work = Path(temporary)
+        snapshots = (work / "core.tar", work / "clorraine.vsix")
+        _snapshot(core, snapshots[0])
+        _snapshot(vsix, snapshots[1])
+        current = _current_core_version()
+        _verified_core(snapshots[0])
+        package = _verified_extension(snapshots[1])
+        result = {"schema": 1, "component_release": "components-" + component,
+                  "core_version": current, "extension_version": package["version"],
+                  "core": {"identity": component + "-core",
+                           "bytes": snapshots[0].stat().st_size,
+                           "sha256": _digest(snapshots[0]), "decision": "publish"},
+                  "vsix": {"identity": component + "-vsix",
+                           "bytes": snapshots[1].stat().st_size,
+                           "sha256": _digest(snapshots[1]), "decision": "publish"}}
+        if existing is None:
+            return result
+        _ordinary_directory(existing, "existing")
+        for name, record in (("core.tar", result["core"]),
+                             ("clorraine.vsix", result["vsix"])):
+            path = existing / name
+            if not os.path.lexists(path):
+                continue
+            with ordinary(path) as source:
+                prior = source.read(1024 * 1024 * 1024 + 1)
+            if len(prior) > 1024 * 1024 * 1024:
+                raise ValueError("identity: existing asset exceeds the size ceiling")
+            if (len(prior) != record["bytes"]
+                    or hashlib.sha256(prior).hexdigest() != record["sha256"]):
+                raise ValueError("identity: existing " + name
+                                 + " bytes differ; use a new identity")
+            record["decision"] = "reuse"
+        return result
+
+
+def _approval(value: object) -> dict:
+    """Require the complete approval record and its exact field set."""
+    fields = {"schema", "release", "manifest_sha256", "approved",
+              "unresolved_major", "st56"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("approval: unknown or missing fields")
+    if type(value["schema"]) is not int or value["schema"] != 1:
+        raise ValueError("approval: unsupported schema")
+    if not isinstance(value["manifest_sha256"], str) or re.fullmatch(
+            r"[0-9a-f]{64}", value["manifest_sha256"]) is None:
+        raise ValueError("approval: invalid manifest hash")
+    if type(value["approved"]) is not bool:
+        raise ValueError("approval: approved must be boolean")
+    if type(value["unresolved_major"]) is not int or value["unresolved_major"] < 0:
+        raise ValueError("approval: unresolved_major must be a nonnegative integer")
+    if value["st56"] not in ("pending", "passed", "failed"):
+        raise ValueError("approval: invalid ST-56 state")
+    return value
+
+
+def _asset_file(assets: Path, asset: dict) -> Path:
+    """Resolve one referenced local asset by its literal published filename."""
+    name = asset["url"].rsplit("/", 1)[-1]
+    if not name or name in (".", "..") or "/" in name or "\\" in name:
+        raise ValueError("asset: invalid published filename")
+    return assets / name
+
+
+def _promotion(args: argparse.Namespace) -> dict:
+    """Evaluate pre-promotion eligibility without publishing or mutating assets."""
+    with ordinary(args.manifest) as source:
+        data = source.read(16 * 1024 * 1024 + 1)
+    manifest = parse_manifest(data)
+    approval = _approval(_strict_json(args.approval, "approval"))
+    assets = _ordinary_directory(args.assets, "assets")
+    blockers: list[str] = []
+    if approval["release"] != manifest["release"]:
+        blockers.append("approval release differs from the candidate")
+    if approval["manifest_sha256"] != hashlib.sha256(data).hexdigest():
+        blockers.append("approval manifest hash differs from the candidate")
+    if approval["approved"] is not True:
+        blockers.append("explicit publication approval is absent")
+    if approval["unresolved_major"] != 0:
+        blockers.append("unresolved major findings remain")
+    for asset in manifest["assets"]:
+        if asset["kind"] == "ndk":
+            continue  # Upstream source is referenced by the lock, not republished here.
+        path = _asset_file(assets, asset)
+        if not os.path.lexists(path):
+            blockers.append("missing payload: " + asset["identity"])
+            continue
+        try:
+            with ordinary(path) as source:
+                size = os.fstat(source.fileno()).st_size
+                observed = hashlib.sha256()
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    observed.update(block)
+            if size != asset["bytes"]:
+                blockers.append("size mismatch: " + asset["identity"])
+            if observed.hexdigest() != asset["sha256"]:
+                blockers.append("hash mismatch: " + asset["identity"])
+            count, expanded = ((0, 0) if asset["root"] is None else
+                               (inspect_vsix(path)[1:] if asset["kind"] == "vsix"
+                                else measure_tar(path)))
+            if (count, expanded) != (asset["entries"], asset["expanded_bytes"]):
+                blockers.append("inventory mismatch: " + asset["identity"])
+        except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile):
+            blockers.append("unreadable payload: " + asset["identity"])
+    ready = not blockers
+    passed = ready and approval["st56"] == "passed"
+    return {"schema": 1, "release": manifest["release"], "promotion_ready": ready,
+            "final_completion_ready": passed, "blockers": blockers,
+            "st56": approval["st56"],
+            "post_publication": [] if passed else ["ST-56"]}
+
+
 def assemble(args: argparse.Namespace) -> None:
     """Validate snapshots and publish exactly shell/helper/manifest without clobbering output."""
     validate_release_tag(args.release)
@@ -200,8 +383,27 @@ def assemble(args: argparse.Namespace) -> None:
         publish_directory(candidate, output)
 
 
+def validate_inputs(args: argparse.Namespace) -> dict:
+    """Validate literal dispatch values before a workflow uses them in paths or commands."""
+    if args.support is None:
+        raise ValueError("support: required identity is missing")
+    if (args.release is None) != (args.components is None):
+        raise ValueError("release/components: supply both distribution values or neither")
+    if args.release is not None:
+        validate_release_tag(args.release)
+    if (args.components is not None and _ID.fullmatch(args.components) is None
+            or _ID.fullmatch(args.support) is None):
+        raise ValueError("identity: expected a component/support token")
+    if re.fullmatch(r"[0-9a-f]{40}", args.commit) is None:
+        raise ValueError("commit: expected a full lowercase commit identity")
+    record = {"schema": 1, "support": args.support, "commit": args.commit}
+    if args.release is not None:
+        record.update(release=args.release, components=args.components)
+    return record
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Run the maintainer-only assemble command; return usage/content/success status."""
+    """Run a maintainer-only release operation; return usage/content/success status."""
     arguments = list(sys.argv[1:] if argv is None else argv)
     # Argparse may echo unknown options before content validation runs. Reject
     # controls at the literal-argv boundary so even usage errors remain safe.
@@ -216,16 +418,42 @@ def main(argv: list[str] | None = None) -> int:
         operation.add_argument("--" + name, required=True)
     for name in ("core", "vsix", "support-inputs", "output"):
         operation.add_argument("--" + name, required=True, type=Path)
+    validate = operations.add_parser("validate", allow_abbrev=False)
+    for name in ("release", "components", "support", "commit"):
+        validate.add_argument("--" + name, required=False)
+    verify = operations.add_parser("verify-component", allow_abbrev=False)
+    verify.add_argument("--components", required=True)
+    for name in ("core", "vsix"):
+        verify.add_argument("--" + name, required=True, type=Path)
+    verify.add_argument("--existing", required=False, type=Path)
+    promotion = operations.add_parser("promotion", allow_abbrev=False)
+    for name in ("manifest", "assets", "approval"):
+        promotion.add_argument("--" + name, required=True, type=Path)
     args = parser.parse_args(arguments)
     try:
-        assemble(args)
+        if args.operation == "assemble":
+            assemble(args)
+        elif args.operation == "validate":
+            record = validate_inputs(args)
+            sys.stdout.buffer.write(encoded(record))
+        elif args.operation == "verify-component":
+            if _ID.fullmatch(args.components) is None:
+                raise ValueError("identity: expected a component token")
+            record = _component_decisions(args.components, args.core, args.vsix, args.existing)
+            sys.stdout.buffer.write(encoded(record))
+        else:
+            record = _promotion(args)
+            sys.stdout.buffer.write(encoded(record))
+            if not record["promotion_ready"] or record["st56"] == "failed":
+                return 1
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, RecursionError,
             SupportError, tarfile.TarError, zipfile.BadZipFile) as error:
         message = "".join(character if character.isprintable()
                           else f"\\u{ord(character):04x}" for character in str(error))
         print("package-release: " + message[:8192], file=sys.stderr)
         return 1
-    print(args.output.absolute())
+    if args.operation == "assemble":
+        print(args.output.absolute())
     return 0
 
 

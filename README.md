@@ -17,10 +17,34 @@
 |---|---|
 | Compiler, checker, ownership, C99 emission | Usable; guarded by the specification and test suites |
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
-| Linux x86_64 binary | Released (v1.1.2) |
+| Linux x86_64 native installer | v1.2.0 candidate; drafts and local candidates only until publication approval |
 | VS Code extension | Packages and passes its packaged-client test (`make vscode-check`) |
 | Windows/macOS installers | In progress |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
+
+## Install on Linux
+
+The v1.2.0 release target is a self-contained installer for Ubuntu 22.04 and
+24.04 on x86_64. It installs prebuilt compiler binaries, the Amiga SDK and the
+`vamos` runtime; it never compiles installation dependencies.
+
+```sh
+curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh
+sh install.sh --release v1.2.0
+export PATH="$HOME/.clorraine/bin:$PATH"
+clorraine --version
+```
+
+The installer prints the exact `code --install-extension` command for the
+packaged VSIX. It also accepts `--root <path>` for a custom installation
+directory. System prerequisites are `gcc`, `libc6-dev`, `python3`,
+`python3-venv`, `curl` and `ca-certificates`; the installer names any missing
+package and does not change shell startup files automatically.
+
+> **Publication status.** v1.2.0 artifacts are candidates until the explicit
+> approval recorded in [RELEASE.md](RELEASE.md) is supplied. v1.1.2 remains the
+> latest published release. Local candidates can be assembled with the
+> producers in [RELEASE.md](RELEASE.md) before that approval.
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
 the Motorola 68000 family.
@@ -79,8 +103,12 @@ committed; `demo/poster.png` is the one checked-in still.
 - **Language server** — `clorraine-lsp` speaks LSP over stdio and provides
   diagnostics, hover, go to definition, completion, and document symbols.
   Build it with `make -C docker exec CMD="cargo build --workspace"`.
-- **VS Code extension** — `tools/vscode/` launches the server and registers the
-  canonical grammar; `make vscode-check` packages and audits a `.vsix`.
+- **VS Code extension** — `tools/vscode/` launches the server, registers the
+  canonical grammar, and provides Build, Run and Run in FS-UAE actions over the
+  saved entry file and its imported sources. It discovers `~/.clorraine/bin`
+  without a terminal `PATH`, and supports Remote-WSL with FS-UAE left as a
+  user-provided Windows or Linux application. `make vscode-check` packages and
+  audits a `.vsix`.
 - **SDK installer** — `make setup` detects Docker, the pinned image, the
   toolchain, the NDK, and licensed media; `make setup FETCH=1` builds missing
   public components without ever downloading media.
@@ -95,8 +123,10 @@ committed; `demo/poster.png` is the one checked-in still.
 
 ## Status
 
-Clorraine v1.1.2 is the current release. The reproducible Docker toolchain, the
-stable v1.0 specification, and the approved v1.1 language surfaces are in place:
+Clorraine v1.2.0 is the current release record and native Linux delivery
+candidate. v1.1.2 remains the latest published release. The reproducible Docker
+toolchain, the stable v1.0 specification, and the approved v1.1 language
+surfaces are in place:
 `clc` compiles the corpus subset and the v1.1 surfaces to one C99 translation
 unit for the `host`, `hosted-amiga`, `hosted-amiga-13`, and `freestanding`
 profiles, and the host and target acceptance suites are green. The

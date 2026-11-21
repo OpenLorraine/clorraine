@@ -1,38 +1,57 @@
 ---
 title: Quick start
-description: "Run Clorraine on Linux today, build from source, or use the pinned Amiga SDK in Docker. Every command shown works with v1.1.2."
+description: "Install Clorraine on Linux with the v1.2.0 candidate installer, or build from source or use the pinned Amiga SDK in Docker."
 ---
 
 # Quick start
 
-Clorraine is a developer preview. The **Linux x86_64** path works today; the
-Docker SDK is the supported way to build for the Amiga. One-click installers for
-Windows and macOS are in progress and are not shown here as if they existed.
+Clorraine is a developer preview. The **Linux x86_64** path installs prebuilt
+compiler binaries, the Amiga SDK and the `vamos` runtime without compiling
+dependencies. One-click installers for Windows and macOS are in progress and
+are not shown here as if they existed.
 
 ## Choose a path
 
 | Option | What it gives you | Requirements |
 |---|---|---|
-| **Linux x86_64 tarball** | `clc` and `clorraine` binaries | glibc 2.34+; a C compiler for the `host` profile |
+| **Linux x86_64 installer** | `clc`, `clorraine`, `clorraine-lsp`, Amiga SDK and `vamos` | Ubuntu 22.04/24.04 x86_64; the system prerequisites below |
 | **Docker SDK** | Full m68k toolchain, `vamos`, FS-UAE, NDK headers | Docker; network; a 30–90 minute first image build |
 | **Build from source** | All three binaries, including the language server | Rust stable; no external crates |
 | **One-click installers** | Planned for Linux, macOS, and Windows | Not available yet |
 
-## Linux binary
+## Linux installer
 
-Download the current release and verify it:
+The v1.2.0 installer is the current release target. Its artifacts remain
+candidates until the explicit approval recorded in
+[RELEASE.md](https://github.com/OpenLorraine/clorraine/blob/main/RELEASE.md) is
+supplied. Once the distribution is published, install with:
 
 ```sh
-curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.1.2/clorraine-1.1.2-linux-x86_64.tar.gz
-curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.1.2/SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing
-tar xzf clorraine-1.1.2-linux-x86_64.tar.gz
-export PATH="$PWD/clorraine-1.1.2:$PATH"
+curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh
+sh install.sh --release v1.2.0
+export PATH="$HOME/.clorraine/bin:$PATH"
 clorraine --version
 ```
 
-The tarball contains `clc` and `clorraine`. It does **not** contain
-`clorraine-lsp`; build the language server from source.
+The default root is `~/.clorraine`. Use `--root <path>` to select another
+user-owned directory. The installer verifies the helper length and SHA-256,
+checks the host distribution and Python ABI, builds a complete candidate, and
+activates it only after the installed tools pass their smoke checks. A failed
+update leaves the previous working version active.
+
+System prerequisites:
+
+```sh
+sudo apt install gcc libc6-dev python3 python3-venv curl ca-certificates
+```
+
+The installer prints the exact `code --install-extension` command for the
+packaged VSIX. It does not edit shell startup files or install the extension
+automatically. FS-UAE and licensed Kickstart/Workbench media remain
+user-provided; the SDK never downloads or copies them.
+
+The previous published release, v1.1.2, remains available under its MIT terms
+at <https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2>.
 
 ## Your first program
 
@@ -65,6 +84,20 @@ Hello, Amiga, from Clorraine!
 `clorraine` emits one C99 translation unit, compiles it with the host C
 compiler, and runs the result. Use `clorraine emit hello.clo -p host` to read the
 generated C.
+
+## VS Code
+
+The installer places `clorraine.vsix` under the selected root and prints:
+
+```sh
+code --install-extension ~/.clorraine/clorraine.vsix
+```
+
+The extension adds **Clorraine: Build**, **Clorraine: Run** and **Clorraine: Run
+in FS-UAE**, and discovers the installed driver and language server without a
+terminal `PATH`. For Remote-WSL, install the VSIX in the Linux remote host; the
+extension README documents moving a generated Amiga executable to a Windows
+FS-UAE installation. Automatic Windows emulator launch is not supported.
 
 ## Amiga SDK in Docker
 
