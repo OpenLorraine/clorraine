@@ -21,35 +21,35 @@
 | CA-401 | 4 | MAJOR | saved-dependency-selection-race | resolved; approved guard independently re-reviewed clean2026-11-21 |
 | RV-C401 | 4 | MAJOR | qualified-module-head-classification | resolved; bounded helper/field-first policy independently re-reviewed clean2026-11-21 |
 | SA-401 | 4 | MAJOR | vscode-task-variable-instructions | resolved; `${` restriction independently re-reviewed clean2026-11-21 |
-| RV-501 | 5 | MAJOR | workflow-yaml-heredoc-indentation | resolved; workflow YAML now parses and shell/python snippets check; fix re-review pending |
-| RV-502 | 5 | MAJOR | workflow-validation-output-directory | resolved; validation output moved to `$RUNNER_TEMP`; fix re-review pending |
-| RV-503 | 5 | MAJOR | support-producer-payload-path | resolved; workflow passes each builder's `payload` directory; fix re-review pending |
-| RV-504 | 5 | MAJOR | preparation-bundle-not-built | resolved; `bundle-preparation` builds the locked descriptor/inputs/helpers; fix re-review pending |
-| RV-505 | 5 | MAJOR | draft-support-read-handoff | resolved; distribution uses the support run artifact and `actions: read`; fix re-review pending |
-| RV-506 | 5 | MAJOR | unpinned-rust-node-build | resolved; Rust 1.99.0 and Node 22.23.3 pinned; fix re-review pending |
-| RV-507 | 5 | MAJOR | no-public-url-verification | resolved; anonymous URL/hash verification added before distribution publication; fix re-review pending |
-| RV-508 | 5 | MAJOR | actual-candidate-not-discriminating | resolved; exact reviewed core/VSIX hashes and size floors required; fix re-review pending |
-| RV-509 | 5 | MAJOR | runbook-suite-working-directory | resolved; command runs from `tools/distribution/tests`; fix re-review pending |
-| RV-510 | 5 | MAJOR | support-rerun-partial-drafts | resolved; existing releases compare and upload only missing assets; fix re-review pending |
-| RV-511 | 5 | MINOR | quick-start-vsix-path | resolved; guide uses the installer-printed path; fix re-review pending |
-| RV-512 | 5 | MINOR | assemble-support-kind-mismatch | resolved; kind checks bundle/wheel layout and ABI; fix re-review pending |
-| RV-513 | 5 | MINOR | previous-and-approval-input-validation | resolved; previous identities, support run id and approved digest validated; fix re-review pending |
-| RV-514 | 5 | MINOR | verify-job-does-not-execute-core | resolved; both matrix legs extract and execute all three binaries; fix re-review pending |
-| RV-515 | 5 | MINOR | release-spec-not-in-fast-gate | resolved; deterministic spec classes/methods added to `distribution-check`; fix re-review pending |
+| RV-501 | 5 | MAJOR | workflow-yaml-heredoc-indentation | resolved; workflow YAML now parses and shell/python snippets check; verified |
+| RV-502 | 5 | MAJOR | workflow-validation-output-directory | resolved; validation output moved to `$RUNNER_TEMP`; verified |
+| RV-503 | 5 | MAJOR | support-producer-payload-path | resolved; workflow passes each builder's `payload` directory; verified |
+| RV-504 | 5 | MAJOR | preparation-bundle-not-built | resolved; `bundle-preparation` builds the locked descriptor/inputs/helpers; verified |
+| RV-505 | 5 | MAJOR | draft-support-read-handoff | resolved; distribution uses the support run artifact and `actions: read`; verified |
+| RV-506 | 5 | MAJOR | unpinned-rust-node-build | resolved; Rust 1.99.0 and Node 22.23.3 pinned; verified |
+| RV-507 | 5 | MAJOR | no-public-url-verification | resolved; anonymous URL/hash verification added before distribution publication; verified |
+| RV-508 | 5 | MAJOR | actual-candidate-not-discriminating | resolved; exact reviewed core/VSIX hashes and size floors required; verified |
+| RV-509 | 5 | MAJOR | runbook-suite-working-directory | resolved; command runs from `tools/distribution/tests`; verified |
+| RV-510 | 5 | MAJOR | support-rerun-partial-drafts | resolved; existing releases compare and upload only missing assets; verified |
+| RV-511 | 5 | MINOR | quick-start-vsix-path | resolved; guide uses the installer-printed path; verified |
+| RV-512 | 5 | MINOR | assemble-support-kind-mismatch | resolved; kind checks bundle/wheel layout and ABI; verified |
+| RV-513 | 5 | MINOR | previous-and-approval-input-validation | resolved; previous identities, support run id and approved digest validated; verified |
+| RV-514 | 5 | MINOR | verify-job-does-not-execute-core | resolved; both matrix legs extract and execute all three binaries; verified |
+| RV-515 | 5 | MINOR | release-spec-not-in-fast-gate | resolved; deterministic spec classes/methods added to `distribution-check`; verified |
 | RV-516 | 5 | MINOR | approval-binds-manifest-only | documented limitation; entry bytes are protected by draft identity comparison, not the manifest hash |
-| RV-517 | 5 | MINOR | component-concurrency-group | resolved; component identity added to the group; fix re-review pending |
-| RV-518 | 5 | MAJOR | preparation-bundle-base-field | resolved; descriptor now includes `base`, consumer schema test added; fix re-review pending |
-| RV-519 | 5 | MAJOR | published-release-rerun-mutation | resolved; support/component/distribution reruns require `isDraft=true`; fix re-review pending |
-| RV-520 | 5 | MINOR | bundle-check-then-open | resolved; bundle files use `O_NOFOLLOW`/`O_NONBLOCK` ordinary-file reads; fix re-review pending |
-| RV-521 | 5 | MINOR | bundle-output-no-clobber-race | resolved; exclusive output directory creation with owned cleanup; fix re-review pending |
-| RV-522 | 5 | MINOR | fix-path-test-coverage | resolved; workflow assertions pin artifact handoff, public verification, rerun uploads and `isDraft`; fix re-review pending |
+| RV-517 | 5 | MINOR | component-concurrency-group | resolved; component identity added to the group; verified |
+| RV-518 | 5 | MAJOR | preparation-bundle-base-field | resolved; descriptor now includes `base`, consumer schema test added; verified |
+| RV-519 | 5 | MAJOR | published-release-rerun-mutation | resolved; support/component/distribution reruns require `isDraft=true`; verified |
+| RV-520 | 5 | MINOR | bundle-check-then-open | resolved; bundle files use `O_NOFOLLOW`/`O_NONBLOCK` ordinary-file reads; verified |
+| RV-521 | 5 | MINOR | bundle-output-no-clobber-race | resolved; exclusive output directory creation with owned cleanup; verified |
+| RV-522 | 5 | MINOR | fix-path-test-coverage | resolved; workflow assertions pin artifact handoff, public verification, rerun uploads and `isDraft`; verified |
 | RV-523 | 5 | MINOR | evidence-count-drift | resolved; records now say 139 distribution tests and 27 release cases (16+11) |
 | RV-524 | 5 | MINOR | draft-tag-claim-overbroad | resolved; runbook separates the distribution artifact handoff from the write-job draft rerun lookup |
-| SA-501 | 5 | MINOR | workflow-validation-output-directory | resolved; validation output moved to `$RUNNER_TEMP`; fix re-review pending |
-| SA-502 | 5 | MINOR | promotion-command-without-checkout | resolved; promotion moved to a read-only checked-out job; fix re-review pending |
-| SA-503 | 5 | MINOR | support-component-latest-race | resolved; single draft-and-latest API transition; fix re-review pending |
-| SA-504 | 5 | MINOR | previous-component-identity-validation | resolved; `none`/token validation added; fix re-review pending |
-| SA-505 | 5 | MINOR | release-test-gate-coverage | resolved; workflow/promotion spec classes in distribution-check plus rogue-workflow and checkout assertions; fix re-review pending |
+| SA-501 | 5 | MINOR | workflow-validation-output-directory | resolved; validation output moved to `$RUNNER_TEMP`; verified |
+| SA-502 | 5 | MINOR | promotion-command-without-checkout | resolved; promotion moved to a read-only checked-out job; verified |
+| SA-503 | 5 | MINOR | support-component-latest-race | resolved; single draft-and-latest API transition; verified |
+| SA-504 | 5 | MINOR | previous-component-identity-validation | resolved; `none`/token validation added; verified |
+| SA-505 | 5 | MINOR | release-test-gate-coverage | resolved; workflow/promotion spec classes in distribution-check plus rogue-workflow and checkout assertions; verified |
 
 ## Phase 5 review dispatch — 2026-11-21 20:06
 
@@ -82,8 +82,14 @@ defect before any dispatch. The correction set:
 
 The release suite now has 27 cases (16 specification, 11 implementation) and
 `distribution-check` has 139 tests. `make check` and `make site-check` pass after
-the correction. A single fix-diff re-review follows; no publication or dispatch
-occurred.
+the correction. A single fix-diff re-review confirmed the accepted findings and
+identified two residual majors: the preparation descriptor lacked the required
+`base` inventory, and rerun branches could add assets to a published release.
+Final fix tree `8608a774` adds `base` (validated by the consumer schema), requires
+`isDraft=true` for every rerun, uses no-follow ordinary reads, creates the bundle
+output exclusively, and pins the artifact/public/rerun paths in tests. No third
+review was performed; the residual fixes were verified locally by the consumer
+schema and the 139-test/27-case suites. No publication or dispatch occurred.
 
 ## Consolidated correction approval — 2026-11-21 11:10
 

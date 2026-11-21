@@ -452,8 +452,21 @@ five security minors. All necessary corrections are in pushed fix tree
 |Candidate discriminating test|Actual test requires reviewed core/VSIX SHA-256 values and size floors|
 |Coverage|`distribution-check` 139 tests; release suite 27/27; workflow scan covers all YAML, artifact handoff, public verification, rerun drafts and checkout-before-repository-command|
 
-The single fix-diff re-review is running against exactly `935c1a34..971e62b5`.
-No workflow was dispatched and no release or publication was created.
+The single fix-diff re-review confirmed the accepted findings and found two
+residual majors: the preparation descriptor lacked the required `base` inventory,
+and rerun branches could add assets to a published release. Final fix tree
+`8608a774` adds `base` (accepted by the consumer schema), requires
+`isDraft=true` for every rerun, uses no-follow ordinary reads, creates the bundle
+output exclusively, and pins the artifact/public/rerun paths in tests.
+
+Final Phase 5 gates: `make check` exit 0 with 139 distribution tests and fuzz
+smoke 28/28; `make site-check` production build exit 0; release suite 27/27
+(16 specification, 11 implementation) against core `9960d775…` and VSIX
+`ed0c803d…`. The earlier full `make verify` (4,796 Rust instances, all
+acceptance legs) and `make vscode-check` receipts remain applicable because the
+fix cohorts change release producers, workflows, tests and docs, not compiler or
+extension runtime bytes. No third review, workflow dispatch, tag, release or
+publication occurred. Phase 5 closes at 80/91.
 
 ### Phase 5 implementation and gates green — 2026-11-21 20:05
 

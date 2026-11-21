@@ -1,8 +1,8 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-21 20:35
-> **Progress**: 79/91 tasks (87%)
+> **Last Updated**: 2026-11-21 20:45
+> **Progress**: 80/91 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Execution contract
@@ -516,7 +516,7 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 ### Session 5.3: Hardening and gate
 
 - [x] 5.3.1 Add payload/reuse/input-validation implementation tests — `tools/distribution/tests/test_release_impl.py`. ✅ (verified: 2026-11-21 19:42; 11 controls cover mode/identity/commit rejection, changed VSIX metadata, alias/FIFO existing assets, independent reuse, approval schema/duplicates, unreadable payload, inventory mismatch and the locked preparation bundle; distribution-check139 tests passes; no source/test pin weakened)
-- [~] 5.3.2 Run full/editor/site gates and independent release-security review — `99-execution-plan.md`. (gates green:check, verify4796/alllegs, editor, site; actual core9960d775/VSIXed0c803d; initial correctness/security reviews found one major YAML defect, nine major correctness gaps and five security minors; fix cohort971e62b5 adds valid workflows, preparation bundle, support-run handoff, pins, public URL checks, partial reruns, exact-candidate hashes and gate coverage; 26 release cases/138 distribution tests pass; single fix-diff re-review running.)
+- [x] 5.3.2 Run full/editor/site gates and independent release-security review — `99-execution-plan.md`. ✅ (verified: 2026-11-21 20:45; initial correctness/security reviews found one major YAML defect, nine major correctness gaps and five security minors; fix cohorts971e62b5 and8608a774 corrected them with valid YAML, preparation bundle, support-run artifact handoff, pinned tools, public URL checks, draft-only reruns, exact-candidate hashes and gate coverage; single fix-diff re-review confirmed the accepted findings and its residual preparation/rerun findings were fixed and locally verified by consumer schema/tests; final makecheck139 distribution tests/fuzz28, releasesuite27/27, sitecheck pass; earlier full4796Rust/alllegs and editor receipts remain on unchanged compiler/extension bytes; no workflow dispatch, tag, release, commit before review, or publication)
 
 **Verify (gate)**: `make verify`, `make vscode-check`, `make site-check`.
 
