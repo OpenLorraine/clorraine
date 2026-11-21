@@ -1,7 +1,7 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-21 20:05
+> **Last Updated**: 2026-11-21 20:06
 > **Progress**: 79/91 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
@@ -515,8 +515,8 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 
 ### Session 5.3: Hardening and gate
 
-- [x] 5.3.1 Add payload/reuse/input-validation implementation tests — `tools/distribution/tests/test_release_impl.py`. ✅ (verified: 2026-11-21 19:42; 10 controls cover mode/identity/commit rejection, changed VSIX metadata, alias/FIFO existing assets, independent reuse, approval schema/duplicates, unreadable payload and inventory mismatch; distribution-check103 tests passes; no source/test pin weakened)
-- [ ] 5.3.2 Run full/editor/site gates and independent release-security review — `99-execution-plan.md`.
+- [x] 5.3.1 Add payload/reuse/input-validation implementation tests — `tools/distribution/tests/test_release_impl.py`. ✅ (verified: 2026-11-21 19:42; 10 controls cover mode/identity/commit rejection, changed VSIX metadata, alias/FIFO existing assets, independent reuse, approval schema/duplicates, unreadable payload and inventory mismatch; distribution-check123 tests passes; no source/test pin weakened)
+- [~] 5.3.2 Run full/editor/site gates and independent release-security review — `99-execution-plan.md`. (gates green:check103, verify4796/alllegs, editor169+1documented skip+fresh packaged1, site build; actual core9960d775/VSIXed0c803d; independent correctness/API and supply-chain reviews dispatched on frozen935c1a34; findings pending. No commit/publication after review.)
 
 **Verify (gate)**: `make verify`, `make vscode-check`, `make site-check`.
 

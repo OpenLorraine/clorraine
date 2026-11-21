@@ -40,7 +40,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
           python3 tools/distribution/package_release.py validate \
             --support "$SUPPORT_IDENTITY" --commit "$SOURCE_COMMIT" \
-            > build/release-support-inputs.json
+            > "$RUNNER_TEMP/release-support-inputs.json"
+          cat "$RUNNER_TEMP/release-support-inputs.json"
 
   build:
     needs: validate
@@ -84,22 +85,26 @@ jobs:
           python3 tools/distribution/assemble_support.py assemble --kind sdk \
             --lock tools/distribution/support-lock.json \
             --sources "$RELEASE_SOURCES" \
-            --producer build/release/support/sdk-producer \
+            --producer build/release/support/sdk-producer/payload \
             --output build/release/support/sdk
           python3 tools/distribution/assemble_support.py assemble --kind cp310 \
             --lock tools/distribution/support-lock.json \
             --sources "$RELEASE_SOURCES" \
-            --producer build/release/support/cp310-producer \
+            --producer build/release/support/cp310-producer/payload \
             --output build/release/support/cp310
           python3 tools/distribution/assemble_support.py assemble --kind cp312 \
             --lock tools/distribution/support-lock.json \
             --sources "$RELEASE_SOURCES" \
-            --producer build/release/support/cp312-producer \
+            --producer build/release/support/cp312-producer/payload \
             --output build/release/support/cp312
+          python3 tools/distribution/assemble_support.py bundle-preparation \
+            --lock tools/distribution/support-lock.json \
+            --sdk-payload build/release/support/sdk-producer/payload \
+            --output build/release/support/preparation-producer
           python3 tools/distribution/assemble_support.py assemble --kind preparation \
             --lock tools/distribution/support-lock.json \
             --sources "$RELEASE_SOURCES" \
-            --producer build/release/support/sdk-producer \
+            --producer build/release/support/preparation-producer \
             --sdk-base build/release/support/sdk/payload \
             --output build/release/support/preparation
       - name: Create immutable support archives
@@ -138,7 +143,7 @@ jobs:
       - name: Record exact draft identities
         run: |
           cd build/release/support/assets
-          sha256sum * > SHA256SUMS
+          sha256sum *.tar *.json > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -153,6 +158,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -166,12 +172,26 @@ jobs:
         run: |
           test "$(sha256sum build/release/support/assets/amiga.tar | cut -d' ' -f1)" \
             = "$(grep ' amiga.tar$' build/release/support/assets/SHA256SUMS | cut -d' ' -f1)"
-          gh release create "support-$SUPPORT_IDENTITY" \
-            --draft \
-            --target "$SOURCE_COMMIT" \
-            --title "Clorraine support $SUPPORT_IDENTITY" \
-            --notes "Immutable native support draft; not an install target." \
-            build/release/support/assets/*
+          if gh release view "support-$SUPPORT_IDENTITY" >/dev/null 2>&1; then
+            mkdir -p build/release/support/existing
+            gh release download "support-$SUPPORT_IDENTITY" \
+              --dir build/release/support/existing
+            for file in build/release/support/assets/*; do
+              name=$(basename "$file")
+              if [ -f "build/release/support/existing/$name" ]; then
+                cmp "build/release/support/existing/$name" "$file"
+              else
+                gh release upload "support-$SUPPORT_IDENTITY" "$file"
+              fi
+            done
+          else
+            gh release create "support-$SUPPORT_IDENTITY" \
+              --draft \
+              --target "$SOURCE_COMMIT" \
+              --title "Clorraine support $SUPPORT_IDENTITY" \
+              --notes "Immutable native support draft; not an install target." \
+              build/release/support/assets/*
+          fi
           release_id=$(gh release view "support-$SUPPORT_IDENTITY" --json databaseId --jq .databaseId)
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
             -f make_latest=false

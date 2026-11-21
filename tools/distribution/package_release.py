@@ -399,6 +399,21 @@ def validate_inputs(args: argparse.Namespace) -> dict:
     record = {"schema": 1, "support": args.support, "commit": args.commit}
     if args.release is not None:
         record.update(release=args.release, components=args.components)
+    for name in ("previous_core", "previous_vsix"):
+        value = getattr(args, name)
+        if value is not None:
+            if value != "none" and _ID.fullmatch(value) is None:
+                raise ValueError(name.replace("_", "-") + ": expected a component token or none")
+            record[name] = value
+    if args.support_run_id is not None:
+        if re.fullmatch(r"[1-9][0-9]{0,19}", args.support_run_id) is None:
+            raise ValueError("support-run-id: expected a positive decimal run identity")
+        record["support_run_id"] = args.support_run_id
+    if args.approved_manifest_sha256 is not None:
+        value = args.approved_manifest_sha256
+        if value != "none" and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ValueError("approved-manifest-sha256: expected a lowercase digest or none")
+        record["approved_manifest_sha256"] = value
     return record
 
 
@@ -419,8 +434,10 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("core", "vsix", "support-inputs", "output"):
         operation.add_argument("--" + name, required=True, type=Path)
     validate = operations.add_parser("validate", allow_abbrev=False)
-    for name in ("release", "components", "support", "commit"):
-        validate.add_argument("--" + name, required=False)
+    for name in ("release", "components", "support", "commit",
+                 "previous-core", "previous-vsix", "support-run-id",
+                 "approved-manifest-sha256"):
+        validate.add_argument("--" + name, required=False, dest=name.replace("-", "_"))
     verify = operations.add_parser("verify-component", allow_abbrev=False)
     verify.add_argument("--components", required=True)
     for name in ("core", "vsix"):

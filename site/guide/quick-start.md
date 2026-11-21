@@ -45,10 +45,12 @@ System prerequisites:
 sudo apt install gcc libc6-dev python3 python3-venv curl ca-certificates
 ```
 
-The installer prints the exact `code --install-extension` command for the
-packaged VSIX. It does not edit shell startup files or install the extension
-automatically. FS-UAE and licensed Kickstart/Workbench media remain
-user-provided; the SDK never downloads or copies them.
+The installer prints the exact `code --install-extension ...` command for the
+packaged VSIX. Run that printed command; the VSIX lives beside the installed
+version, not at a fixed path guessed from the root. It does not edit shell
+startup files or install the extension automatically. FS-UAE and licensed
+Kickstart/Workbench media remain user-provided; the SDK never downloads or
+copies them.
 
 The previous published release, v1.1.2, remains available under its MIT terms
 at <https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2>.
@@ -87,11 +89,15 @@ generated C.
 
 ## VS Code
 
-The installer places `clorraine.vsix` under the selected root and prints:
+The installer places `clorraine.vsix` beside the installed version and prints
+the exact installation command. Copy and run that printed command, for example:
 
 ```sh
-code --install-extension ~/.clorraine/clorraine.vsix
+# Use the exact path printed by the installer, not a guessed root path:
+code --install-extension /path/printed/by/installer/clorraine.vsix
 ```
+
+Do not assume a fixed path under the root; use the path the installer printed.
 
 The extension adds **Clorraine: Build**, **Clorraine: Run** and **Clorraine: Run
 in FS-UAE**, and discovers the installed driver and language server without a

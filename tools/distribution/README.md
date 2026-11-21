@@ -260,14 +260,20 @@ The support orchestrator is a thin entry over the proved `assemble_payload` API:
 
 ```sh
 python3 tools/distribution/assemble_support.py assemble --kind sdk \
-    --lock PATH --sources DIR --producer DIR --output DIR
+    --lock PATH --sources DIR --producer DIR/payload --output DIR
+python3 tools/distribution/assemble_support.py bundle-preparation \
+    --lock PATH --sdk-payload DIR/payload --output DIR
 python3 tools/distribution/assemble_support.py assemble --kind preparation \
     --lock PATH --sources DIR --producer DIR --sdk-base DIR --output DIR
 ```
 
-Valid kinds are `sdk`, `cp310`, `cp312` and `preparation`. Preparation requires
-the complete assembled SDK baseline; the other kinds reject `--sdk-base`. This
-command does not build, fetch, archive, publish or approve anything.
+Valid kinds are `sdk`, `cp310`, `cp312` and `preparation`. `--producer` is the
+payload directory produced by the locked builder, not its parent. Preparation
+requires the complete assembled SDK baseline and a descriptor bundle containing
+`preparation.json`; `bundle-preparation` creates that bundle from the locked
+script/inputs and the SDK helper executables, while `assemble` verifies the
+kind and wheel ABI before delegating. None of these commands builds, fetches,
+archives, publishes or approves anything.
 
 The bootstrap producer has three non-publishing operations alongside `assemble`:
 
@@ -307,8 +313,8 @@ workflow has been dispatched for v1.2.0; draft definitions are not publication.
 
 ## Local tests and mandatory archive acceptance
 
-`make distribution-check` runs the 93 local support specification methods,
-17 implementation methods and three Makefile wiring controls. `make check`
+`make distribution-check` runs the 137 local support and release specification
+methods plus implementation and Makefile wiring controls. `make check`
 always invokes it. Like setup tests, it runs on the host using Python unittest.
 It requires Git for synthetic source fixtures and the existing wheel builder's
 Python `packaging` dependency for wheel-selection tests. It installs nothing.

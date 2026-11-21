@@ -180,6 +180,38 @@ class ReleaseWorkflowSpecTests(ReleaseSpecCase):
                 self.assertNotRegex(block, r"(?m)^  (?:push|pull_request|pull_request_target|"
                                            r"schedule|release):")
                 self.assertNotRegex(text, r"(?m)^\s*repository:\s")
+        # A release-capable workflow must be one of the two reviewed files.
+        for path in list(WORKFLOWS.glob("*.yml")) + list(WORKFLOWS.glob("*.yaml")):
+            if path in (SUPPORT_WORKFLOW, DISTRIBUTION_WORKFLOW):
+                continue
+            text = _workflow_text(path)
+            self.assertNotIn("contents: write", text,
+                             path.name + " grants release write authority")
+            self.assertNotIn("gh release", text,
+                             path.name + " manages release assets")
+
+    def test_should_keep_every_workflow_line_structurally_indented(self) -> None:
+        """A heredoc body at column zero would break the YAML document."""
+        for path in (SUPPORT_WORKFLOW, DISTRIBUTION_WORKFLOW):
+            for number, line in enumerate(_workflow_text(path).splitlines(), 1):
+                if not line or line[0].isspace() or line.startswith(("#", "---")):
+                    continue
+                with self.subTest(workflow=path.name, line=number):
+                    self.assertRegex(line, r"^[A-Za-z0-9_-]+:",
+                                     "unindented workflow content breaks YAML")
+
+    def test_should_run_repository_commands_only_in_checked_out_jobs(self) -> None:
+        """A job that executes tools/ must first check out the reviewed commit."""
+        for path in (SUPPORT_WORKFLOW, DISTRIBUTION_WORKFLOW):
+            text = _workflow_text(path)
+            jobs = re.split(r"(?m)^  (?=[A-Za-z0-9_-]+:$)", text.split("\njobs:\n", 1)[1])
+            for block in jobs[1:]:
+                name = block.split(":", 1)[0].strip()
+                if "python3 tools/" not in block:
+                    continue
+                with self.subTest(workflow=path.name, job=name):
+                    self.assertIn("actions/checkout@", block,
+                                  "job runs repository code without a checkout")
 
     def test_should_require_named_inputs_and_reject_unsafe_identity_values(self) -> None:
         """Literal values stay data; traversal, case and terminal controls fail locally."""
@@ -188,24 +220,26 @@ class ReleaseWorkflowSpecTests(ReleaseSpecCase):
         self.assertEqual(set(support_inputs), {"source_commit", "support_identity"})
         self.assertTrue(all(support_inputs.values()), "all support inputs must be required")
         self.assertEqual(set(distribution_inputs), {
-            "compiler_commit", "release", "components", "support",
+            "compiler_commit", "release", "components", "support", "support_run_id",
             "previous_core", "previous_vsix", "approved_manifest_sha256",
         })
         self.assertTrue(all(distribution_inputs.values()),
                         "all distribution inputs must be required")
         valid = self._producer([
             "validate", "--release", RELEASE, "--components", COMPONENTS,
-            "--support", SUPPORT, "--commit", "a" * 40,
+            "--support", SUPPORT, "--commit", "a" * 40, "--support-run-id", "123",
         ])
         self.assertEqual(valid.returncode, 0, valid.stderr)
         self.assertEqual(json.loads(valid.stdout)["release"], RELEASE)
         for name, value in (("release", "v1.2.0\n"), ("release", "1.2.0"),
                             ("components", "../escape"), ("components", "Upper"),
                             ("support", "bad\x1b[31m"), ("commit", "A" * 40),
-                            ("commit", "a" * 39)):
+                            ("commit", "a" * 39), ("support-run-id", "0"),
+                            ("support-run-id", "12x")):
             with self.subTest(field=name, value=value):
                 arguments = ["validate", "--release", RELEASE, "--components", COMPONENTS,
-                             "--support", SUPPORT, "--commit", "a" * 40]
+                             "--support", SUPPORT, "--commit", "a" * 40,
+                             "--support-run-id", "123"]
                 arguments[arguments.index("--" + name) + 1] = value
                 result = self._producer(arguments)
                 self.assertNotEqual(result.returncode, 0)
@@ -217,7 +251,7 @@ class ReleaseWorkflowSpecTests(ReleaseSpecCase):
         for path in (SUPPORT_WORKFLOW, DISTRIBUTION_WORKFLOW):
             with self.subTest(workflow=path.name):
                 text = _workflow_text(path)
-                self.assertRegex(text, r"(?m)^permissions:\n  contents: read$")
+                self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n(?:  actions: read\n)?")
                 self.assertIn("persist-credentials: false", text)
                 for action in re.findall(r"(?m)^\s*uses:\s*(\S+)(?:\s|$)", text):
                     if action.startswith("./"):
@@ -270,12 +304,22 @@ class ReleasePayloadSpecTests(ReleaseSpecCase):
         """Actual 1.2.0 archives and all notices are required; miniatures cannot pass."""
         core_value, vsix_value = (os.environ.get("CLORRAINE_RELEASE_CORE"),
                                   os.environ.get("CLORRAINE_RELEASE_VSIX"))
-        if not core_value or not vsix_value:
-            self.fail("set CLORRAINE_RELEASE_CORE and CLORRAINE_RELEASE_VSIX to the "
-                      "locally built v1.2.0 core archive and VSIX")
+        core_sha = os.environ.get("CLORRAINE_RELEASE_CORE_SHA256")
+        vsix_sha = os.environ.get("CLORRAINE_RELEASE_VSIX_SHA256")
+        if not core_value or not vsix_value or not core_sha or not vsix_sha:
+            self.fail("set CLORRAINE_RELEASE_CORE, CLORRAINE_RELEASE_VSIX and their "
+                      "SHA-256 values to the locally built v1.2.0 candidate")
         core, vsix = Path(core_value), Path(vsix_value)
         self.assertTrue(core.is_file(), "actual core archive is missing")
         self.assertTrue(vsix.is_file(), "actual VSIX is missing")
+        self.assertEqual(digest(core.read_bytes()), core_sha,
+                         "core bytes differ from the approved candidate identity")
+        self.assertEqual(digest(vsix.read_bytes()), vsix_sha,
+                         "VSIX bytes differ from the approved candidate identity")
+        self.assertGreaterEqual(core.stat().st_size, 10_000_000,
+                                "a miniature core is not an actual candidate")
+        self.assertGreaterEqual(vsix.stat().st_size, 20_000,
+                                "a miniature VSIX is not an actual candidate")
         result = self._verify_component(core=core, vsix=vsix)
         self.assertEqual(result.returncode, 0, result.stderr)
         record = json.loads(result.stdout)

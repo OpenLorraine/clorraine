@@ -22,6 +22,10 @@ on:
         description: Exact immutable support identity
         required: true
         type: string
+      support_run_id:
+        description: Successful support-release workflow run holding the support artifact
+        required: true
+        type: string
       previous_core:
         description: Prior component identity supplying unchanged core bytes, or none
         required: true
@@ -37,9 +41,10 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: distribution-release-${{ inputs.release }}
+  group: distribution-release-${{ inputs.release }}-${{ inputs.components }}
   cancel-in-progress: false
 
 jobs:
@@ -57,13 +62,20 @@ jobs:
           RELEASE_TAG: ${{ inputs.release }}
           COMPONENT_IDENTITY: ${{ inputs.components }}
           SUPPORT_IDENTITY: ${{ inputs.support }}
+          SUPPORT_RUN_ID: ${{ inputs.support_run_id }}
+          PREVIOUS_CORE: ${{ inputs.previous_core }}
+          PREVIOUS_VSIX: ${{ inputs.previous_vsix }}
+          APPROVED_MANIFEST_SHA256: ${{ inputs.approved_manifest_sha256 }}
         run: |
           test "$(git rev-parse HEAD)" = "$COMPILER_COMMIT"
           python3 tools/distribution/package_release.py validate \
             --release "$RELEASE_TAG" --components "$COMPONENT_IDENTITY" \
             --support "$SUPPORT_IDENTITY" --commit "$COMPILER_COMMIT" \
-            > build/release-inputs.json
-          cat build/release-inputs.json
+            --support-run-id "$SUPPORT_RUN_ID" \
+            --previous-core "$PREVIOUS_CORE" --previous-vsix "$PREVIOUS_VSIX" \
+            --approved-manifest-sha256 "$APPROVED_MANIFEST_SHA256" \
+            > "$RUNNER_TEMP/release-inputs.json"
+          cat "$RUNNER_TEMP/release-inputs.json"
 
   build:
     needs: validate
@@ -77,25 +89,27 @@ jobs:
           ref: ${{ inputs.compiler_commit }}
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install 1.99.0 --profile minimal
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version: "22.23.3"
       - name: Build or reuse core and VSIX independently
         env:
           COMPILER_COMMIT: ${{ inputs.compiler_commit }}
           COMPONENT_IDENTITY: ${{ inputs.components }}
           PREVIOUS_CORE: ${{ inputs.previous_core }}
           PREVIOUS_VSIX: ${{ inputs.previous_vsix }}
+          SUPPORT_IDENTITY: ${{ inputs.support }}
+          SUPPORT_RUN_ID: ${{ inputs.support_run_id }}
         run: |
           test "$(git rev-parse HEAD)" = "$COMPILER_COMMIT"
-          mkdir -p build/release/components build/release/previous build/release/target-existing
+          mkdir -p build/release/components build/release/previous
           if [ "$PREVIOUS_CORE" != none ]; then
             gh release download "components-$PREVIOUS_CORE" \
               --pattern core.tar --dir build/release/previous
             cp build/release/previous/core.tar build/release/components/core.tar
           else
-            cargo build --release --workspace
+            cargo +1.99.0 build --release --workspace
             python3 tools/distribution/package_core.py archive \
               --binaries target/release --output build/release/components/core.tar
           fi
@@ -107,16 +121,14 @@ jobs:
             make vscode-package
             cp build/vscode/clorraine-1.2.0.vsix build/release/components/clorraine.vsix
           fi
-          if gh release view "components-$COMPONENT_IDENTITY" >/dev/null 2>&1; then
-            gh release download "components-$COMPONENT_IDENTITY" \
-              --pattern core.tar --pattern clorraine.vsix \
-              --dir build/release/target-existing
-          fi
+          mkdir -p build/release/support-inputs
+          gh run download "$SUPPORT_RUN_ID" \
+            --name "support-$SUPPORT_IDENTITY" \
+            --dir build/release/support-inputs
           python3 tools/distribution/package_release.py verify-component \
             --components "$COMPONENT_IDENTITY" \
             --core build/release/components/core.tar \
             --vsix build/release/components/clorraine.vsix \
-            --existing build/release/target-existing \
             > build/release/component.json
           cat build/release/component.json
       - name: Assemble the bootstrap candidate
@@ -125,8 +137,6 @@ jobs:
           COMPONENT_IDENTITY: ${{ inputs.components }}
           SUPPORT_IDENTITY: ${{ inputs.support }}
         run: |
-          gh release download "support-$SUPPORT_IDENTITY" \
-            --dir build/release/support-inputs
           python3 tools/distribution/package_release.py assemble \
             --release "$RELEASE_TAG" \
             --components "$COMPONENT_IDENTITY" \
@@ -168,17 +178,12 @@ jobs:
         env:
           COMPONENT_IDENTITY: ${{ inputs.components }}
         run: |
-          python3 - "$COMPONENT_IDENTITY" <<'PY'
-import hashlib
-import json
-from pathlib import Path
-import sys
-core = Path("build/release/components/core.tar").read_bytes()
-record = json.loads(Path("build/release/component.json").read_bytes())
-assert hashlib.sha256(core).hexdigest() == record["core"]["sha256"]
-assert record["core"]["identity"] == sys.argv[1] + "-core"
-print("component: core bytes match the recorded identity")
-PY
+          mkdir -p build/release/core-extract
+          tar -xf build/release/components/core.tar -C build/release/core-extract
+          test "$(build/release/core-extract/bin/clc --version)" = "clc 1.2.0"
+          test "$(build/release/core-extract/bin/clorraine --version)" = "clorraine 1.2.0"
+          test "$(build/release/core-extract/bin/clorraine-lsp --version)" = "clorraine-lsp 1.2.0"
+          python3 -c 'import hashlib,json,sys; core=open("build/release/components/core.tar","rb").read(); record=json.load(open("build/release/component.json")); assert hashlib.sha256(core).hexdigest()==record["core"]["sha256"]; assert record["core"]["identity"]==sys.argv[1]+"-core"; print("component: core bytes match the recorded identity")' "$COMPONENT_IDENTITY"
           python3 tools/distribution/package_release.py verify-component \
             --components "$COMPONENT_IDENTITY" \
             --core build/release/components/core.tar \
@@ -186,21 +191,55 @@ PY
           python3 tools/vscode/scripts/audit_vsix.py \
             --vsix build/release/components/clorraine.vsix \
             --extract build/release/vsix-extracted
-          python3 - <<'PY'
-from pathlib import Path
-import sys
-sys.path.insert(0, ".")
-from tools.distribution.manifest import parse_manifest
-parse_manifest(Path("build/release/distribution/manifest.json").read_bytes())
-print("distribution: manifest valid on this baseline")
-PY
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"."); from tools.distribution.manifest import parse_manifest; parse_manifest(Path("build/release/distribution/manifest.json").read_bytes()); print("distribution: manifest valid on this baseline")'
+
+  promotion:
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.compiler_commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: distribution-${{ inputs.release }}
+          path: build/release
+      - name: Evaluate exact pre-promotion eligibility
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          APPROVED_MANIFEST_SHA256: ${{ inputs.approved_manifest_sha256 }}
+        run: |
+          mkdir -p build/release/promotion-assets
+          cp build/release/components/core.tar build/release/promotion-assets/core.tar
+          cp build/release/components/clorraine.vsix build/release/promotion-assets/clorraine.vsix
+          cp build/release/support-inputs/* build/release/promotion-assets/
+          if [ "$APPROVED_MANIFEST_SHA256" = none ]; then
+            printf '%s\n' '{"promotion_ready":false,"reason":"no approved manifest hash"}' \
+              > build/release/promotion.json
+            exit 0
+          fi
+          python3 -c 'import json,sys; from pathlib import Path; Path("build/release/approval.json").write_text(json.dumps({"schema":1,"release":sys.argv[2],"manifest_sha256":sys.argv[1],"approved":True,"unresolved_major":0,"st56":"pending"},sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")' "$APPROVED_MANIFEST_SHA256" "$RELEASE_TAG"
+          python3 tools/distribution/package_release.py promotion \
+            --manifest build/release/distribution/manifest.json \
+            --assets build/release/promotion-assets \
+            --approval build/release/approval.json \
+            > build/release/promotion.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: promotion-${{ inputs.release }}
+          path: build/release/promotion.json
+          if-no-files-found: error
+          retention-days: 7
 
   upload:
-    needs: verify
+    needs: promotion
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -208,6 +247,10 @@ PY
         with:
           name: distribution-${{ inputs.release }}
           path: build/release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: promotion-${{ inputs.release }}
+          path: build/release/promotion
       - name: Create immutable drafts without latest
         env:
           COMPILER_COMMIT: ${{ inputs.compiler_commit }}
@@ -231,8 +274,14 @@ PY
             gh release download "components-$COMPONENT_IDENTITY" \
               --pattern core.tar --pattern clorraine.vsix \
               --dir build/release/component-existing
-            cmp build/release/component-existing/core.tar build/release/components/core.tar
-            cmp build/release/component-existing/clorraine.vsix build/release/components/clorraine.vsix
+            for file in build/release/components/core.tar build/release/components/clorraine.vsix; do
+              name=$(basename "$file")
+              if [ -f "build/release/component-existing/$name" ]; then
+                cmp "build/release/component-existing/$name" "$file"
+              else
+                gh release upload "components-$COMPONENT_IDENTITY" "$file"
+              fi
+            done
           fi
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
@@ -250,53 +299,55 @@ PY
             gh release download "$RELEASE_TAG" \
               --pattern install.sh --pattern install.pyz --pattern manifest.json \
               --dir build/release/distribution-existing
-            cmp build/release/distribution-existing/install.sh build/release/distribution/install.sh
-            cmp build/release/distribution-existing/install.pyz build/release/distribution/install.pyz
-            cmp build/release/distribution-existing/manifest.json build/release/distribution/manifest.json
+            for file in build/release/distribution/install.sh \
+                        build/release/distribution/install.pyz \
+                        build/release/distribution/manifest.json; do
+              name=$(basename "$file")
+              if [ -f "build/release/distribution-existing/$name" ]; then
+                cmp "build/release/distribution-existing/$name" "$file"
+              else
+                gh release upload "$RELEASE_TAG" "$file"
+              fi
+            done
           fi
-      - name: Promote only the approved candidate
+      - name: Publish referenced support and component releases
         env:
-          RELEASE_TAG: ${{ inputs.release }}
           COMPONENT_IDENTITY: ${{ inputs.components }}
           SUPPORT_IDENTITY: ${{ inputs.support }}
-          APPROVED_MANIFEST_SHA256: ${{ inputs.approved_manifest_sha256 }}
         run: |
-          if [ "$APPROVED_MANIFEST_SHA256" = none ]; then
-            echo "No approved manifest hash; drafts remain private."
+          if [ "$(jq -r .promotion_ready build/release/promotion/promotion.json)" != true ]; then
+            echo "Promotion is not approved; drafts remain private."
             exit 0
           fi
-          actual=$(sha256sum build/release/distribution/manifest.json | cut -d' ' -f1)
-          test "$actual" = "$APPROVED_MANIFEST_SHA256"
-          mkdir -p build/release/approval-assets
-          gh release download "support-$SUPPORT_IDENTITY" \
-            --dir build/release/approval-assets
-          gh release download "components-$COMPONENT_IDENTITY" \
-            --pattern core.tar --pattern clorraine.vsix \
-            --dir build/release/approval-assets
-          python3 - "$APPROVED_MANIFEST_SHA256" "$RELEASE_TAG" \
-            build/release/approval.json <<'PY'
-import json
-from pathlib import Path
-import sys
-Path("build/release/approval.json").write_text(json.dumps({
-    "schema": 1, "release": sys.argv[2], "manifest_sha256": sys.argv[1],
-    "approved": True, "unresolved_major": 0, "st56": "pending",
-}, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
-PY
-          python3 tools/distribution/package_release.py promotion \
-            --manifest build/release/distribution/manifest.json \
-            --assets build/release/approval-assets \
-            --approval build/release/approval.json
-          gh release edit "support-$SUPPORT_IDENTITY" --draft=false
           support_release=$(gh release view "support-$SUPPORT_IDENTITY" --json databaseId --jq .databaseId)
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$support_release" \
-            -f make_latest=false
-          gh release edit "components-$COMPONENT_IDENTITY" --draft=false
+            -F draft=false -f make_latest=false
           component_release=$(gh release view "components-$COMPONENT_IDENTITY" --json databaseId --jq .databaseId)
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$component_release" \
-            -f make_latest=false
-          gh release edit "$RELEASE_TAG" --draft=false
+            -F draft=false -f make_latest=false
+      - name: Verify every public manifest URL before distribution promotion
+        run: |
+          if [ "$(jq -r .promotion_ready build/release/promotion/promotion.json)" != true ]; then
+            echo "Promotion is not approved; no public verification is required."
+            exit 0
+          fi
+          python3 -c 'import json; data=json.load(open("build/release/distribution/manifest.json")); [print(asset["url"], asset["sha256"]) for asset in data["assets"]]' > build/release/public-assets.txt
+          while read -r url expected; do
+            curl --disable --silent --show-error --fail --location \
+              --proto '=https' --proto-redir '=https' \
+              --connect-timeout 15 --max-time 300 \
+              --output build/release/public-asset "$url"
+            test "$(sha256sum build/release/public-asset | cut -d' ' -f1)" = "$expected"
+          done < build/release/public-assets.txt
+      - name: Publish the approved distribution
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          if [ "$(jq -r .promotion_ready build/release/promotion/promotion.json)" != true ]; then
+            echo "Promotion is not approved; the distribution remains a draft."
+            exit 0
+          fi
           distribution_release=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$distribution_release" \
-            -f make_latest=true
+            -F draft=false -f make_latest=true
           gh release view "$RELEASE_TAG" --json isDraft,isLatest,assets

@@ -433,6 +433,37 @@ Entries appear newest first. Each records the state at its timestamp; the top
 entry is the current Phase5 result. Older entries retain their historical
 task counts and holds.
 
+### Phase 5 implementation and gates green — 2026-11-21 20:05
+
+The release suite was authored first and ran red as intended: 13 cases, 16
+subtest failures and one downstream JSON error for missing workflows, absent
+`validate`/`verify-component`/`promotion`, 1.1.2 records and old docs. After the
+bounded implementation the same suite passes unchanged.
+
+The final core was built on Ubuntu 22.04.5 with glibc 2.35 and the pinned Rust
+1.99 toolchain: three executables report 1.2.0, the archive is
+`9960d77503bf5f392aa8d2631270a9b4af7672ce213838b6364e3418d350b2ab`
+(18,544,640 bytes) and contains the five notices. The final VSIX is
+`ed0c803d0e4e2bcf03512ea5c5ebb331acbeabd91c828a3d3bfcac72ed29a3e8`
+(26,556 bytes) with matching name, publisher and version.
+
+Gates on the Phase 5 tree:
+
+| Gate | Result |
+|---|---|
+|`make check`|exit 0; distribution-check 123 tests; fuzz smoke 28/28|
+|`make verify`|`verify: all legs passed`; 4,796 Rust instances; all FS-UAE/legacy legs|
+|`make vscode-check`|169 pass, 1 documented generic-suite skip, then fresh packaged client 1/1|
+|`make site-check`|production build exit 0|
+|Release suite|13 specification + 10 implementation cases pass against the actual candidates|
+
+The first two A500 smoke attempts used an invalid host Xvfb (`AE=1`, then a
+missing GLX context/authorization). The gate passed once the SDK image's proven
+`Xvfb -ac +extension GLX` display replaced it; the successful `make verify` log
+records `a500-smoke: OK`. No product change was made for the display correction.
+The local core/VSIX pair is a candidate, not a published artifact; no workflow
+was dispatched and no release, tag or publication was created.
+
 ### Phase 5 release suite authored and red — 2026-11-21 19:03
 
 `tools/distribution/tests/test_release_spec.py` adds 13 independent cases for

@@ -94,6 +94,10 @@ class ReleaseInputValidationTests(ReleaseImplCase):
             ["--components", "Upper", "--support", SUPPORT, "--commit", "a" * 40],
             ["--release", "v1.2.0\n", "--components", COMPONENTS,
              "--support", SUPPORT, "--commit", "a" * 40],
+            ["--support", SUPPORT, "--commit", "a" * 40,
+             "--previous-core", "../escape"],
+            ["--support", SUPPORT, "--commit", "a" * 40,
+             "--previous-vsix", "Upper"],
         ]
         for arguments in cases:
             with self.subTest(arguments=arguments):
@@ -101,6 +105,12 @@ class ReleaseInputValidationTests(ReleaseImplCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertTrue(result.stderr.strip())
+        accepted = self._run(PRODUCER, ["validate", "--support", SUPPORT,
+                                        "--commit", "a" * 40,
+                                        "--previous-core", "none",
+                                        "--previous-vsix", "prior-vsix"])
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(json.loads(accepted.stdout)["previous_vsix"], "prior-vsix")
 
     def test_should_keep_assemble_support_modes_narrow_and_non_root(self) -> None:
         """Preparation needs a baseline; other kinds cannot accept one; unknown kinds fail."""
@@ -114,6 +124,41 @@ class ReleaseInputValidationTests(ReleaseImplCase):
         self.assertIn("only valid", extra.stderr)
         unknown = self._run(ASSEMBLER, [*base, "--kind", "other"])
         self.assertEqual(unknown.returncode, 2)
+        wheel = self.root / "wheel-producer"
+        wheel.mkdir()
+        (wheel / "wheels.json").write_text("{}\n", encoding="utf-8")
+        mismatched = self._run(ASSEMBLER, ["assemble", "--kind", "sdk",
+                                           "--lock", "lock", "--sources", "sources",
+                                           "--producer", str(wheel), "--output", "output"])
+        self.assertEqual(mismatched.returncode, 1)
+        self.assertIn("wheel payload", mismatched.stderr)
+
+    def test_should_build_the_preparation_bundle_from_locked_inputs(self) -> None:
+        """The bundle contains the locked script/inputs and exact SDK helpers."""
+        payload = self.root / "sdk-payload"
+        (payload / "bin").mkdir(parents=True)
+        for identity in ("lha", "fd2sfd", "sfdc"):
+            (payload / "bin" / identity).write_bytes(b"helper " + identity.encode())
+            (payload / "bin" / identity).chmod(0o755)
+        output = self.root / "preparation-bundle"
+        result = self._run(ASSEMBLER, ["bundle-preparation",
+                                       "--lock", str(ROOT / "tools/distribution/support-lock.json"),
+                                       "--sdk-payload", str(payload),
+                                       "--output", str(output)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        metadata = json.loads((output / "preparation.json").read_bytes())
+        self.assertEqual(set(metadata), {"schema", "lock_sha256", "archive", "helpers",
+                                         "inputs", "inventory", "notices"})
+        self.assertEqual(set(metadata["helpers"]), {"lha", "fd2sfd", "sfdc"})
+        self.assertTrue((output / "prepare_ndk.py").is_file())
+        self.assertTrue((output / "ndk-inputs/helper-headers/alib.h").is_file())
+        second = self._run(ASSEMBLER, ["bundle-preparation",
+                                       "--lock", str(ROOT / "tools/distribution/support-lock.json"),
+                                       "--sdk-payload", str(payload),
+                                       "--output", str(output)])
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("existing output", second.stderr)
+        self.assertTrue((output / "preparation.json").is_file())
 
 
 class ReleasePayloadValidationTests(ReleaseImplCase):

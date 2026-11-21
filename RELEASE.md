@@ -103,9 +103,12 @@ create tags, install a candidate or fetch a missing dependency.
 7. Bind the release specification to the actual local candidate:
 
    ```sh
-   CLORRAINE_RELEASE_CORE=$PWD/build/release/components/core.tar \
-   CLORRAINE_RELEASE_VSIX=$PWD/build/release/components/clorraine.vsix \
-   python3 -m unittest -v tools/distribution/tests/test_release_spec.py
+   cd tools/distribution/tests
+   CLORRAINE_RELEASE_CORE=$PWD/../../../build/release/components/core.tar \
+   CLORRAINE_RELEASE_VSIX=$PWD/../../../build/release/components/clorraine.vsix \
+   CLORRAINE_RELEASE_CORE_SHA256=<reviewed-core-sha256> \
+   CLORRAINE_RELEASE_VSIX_SHA256=<reviewed-vsix-sha256> \
+   python3 -m unittest -v test_release_spec
    ```
 
 ## The two manual workflows
@@ -121,7 +124,11 @@ self-hosted runner labelled `clorraine-release` with verified source staging and
 the inspected offline image, it validates the lock, runs the locked support and
 wheel producers, assembles the sdk/preparation/cp310/cp312 payloads, creates the
 four audited archives, and uploads them with their audits and lock as a draft
-`support-<identity>` release. It does not mark the release latest or publish it.
+`support-<identity>` release. The preparation asset is built from the locked
+script/inputs and the SDK helpers, not copied from the SDK payload. The workflow
+also uploads the same asset set as a run artifact for the distribution workflow;
+draft support releases are never read through the tag API. It does not mark the
+release latest or publish it.
 
 Runner variables:
 
@@ -133,18 +140,22 @@ Runner variables:
 ### `distribution-release.yml`
 
 Inputs are the exact compiler commit, distribution tag, new component identity,
-exact support identity, prior component identities for unchanged core and VSIX
-bytes (or `none`), and the approved manifest hash (or `none` for drafts only).
-It builds or reuses core and VSIX independently, validates their metadata,
-downloads the nine support inputs, assembles the distribution, checks the same
-bytes on Ubuntu 22.04 and 24.04, and creates draft
-`components-<identity>` and `<release>` releases.
+exact support identity and its successful support-workflow run id, prior
+component identities for unchanged core and VSIX bytes (or `none`), and the
+approved manifest hash (or `none` for drafts only). It builds or reuses core and
+VSIX independently, validates their metadata, downloads the support artifact
+from the recorded support run, assembles the distribution, checks the same bytes
+and executes all three binaries on Ubuntu 22.04 and 24.04, and creates draft
+`components-<identity>` and `<release>` releases. Draft support releases are not
+read through the tag API; the workflow artifact is the handoff.
 
 A non-`none` approved hash must equal the assembled `manifest.json` before any
-promotion. The workflow then runs the local `promotion` command over the exact
-downloaded assets and publishes support, component and distribution in that
-order. Support and component releases are patched to `make_latest=false`; the
-distribution may become latest only after approval.
+promotion. A separate read-only job runs the local `promotion` command over the
+exact downloaded assets. The upload job then publishes support, component and
+distribution in that order, but only after every manifest URL has been fetched
+anonymously and compared to its declared hash. Support and component releases are
+patched to `make_latest=false`; the distribution may become latest only after
+approval.
 
 ### Promotion eligibility
 
@@ -166,6 +177,12 @@ is referenced by its locked URL and is not repackaged here.
 ST-56 is post-publication evidence. `st56: pending` keeps pre-publication
 promotion eligible while `final_completion_ready` stays false. `st56: passed`
 clears final completion; `st56: failed` exits nonzero.
+
+The approved manifest hash covers the eleven referenced payload assets.
+`install.sh` and `install.pyz` are not entries in that manifest, so the workflow
+does not claim the approval hash binds them; it requires any existing draft entry
+bytes to compare identical before reuse. Verify their exact identities through
+the downloaded draft evidence.
 
 ## Candidate acceptance
 
