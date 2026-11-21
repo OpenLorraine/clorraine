@@ -433,6 +433,28 @@ Entries appear newest first. Each records the state at its timestamp; the top
 entry is the current Phase5 result. Older entries retain their historical
 task counts and holds.
 
+### Phase 5 review correction and re-review — 2026-11-21 20:35
+
+The initial independent reviews found one major workflow-definition defect
+(column-zero heredoc bodies broke YAML) and nine major correctness findings plus
+five security minors. All necessary corrections are in pushed fix tree
+`971e62b5`:
+
+| Correction | Evidence |
+|---|---|
+|Workflow YAML and shell validity|Both workflows load with PyYAML; every `run` body passes `bash -n`; inline Python compiles|
+|Validation output|Both validate jobs write to `$RUNNER_TEMP`|
+|Support producer handoff|SDK/wheel assembles pass `payload` directories; `bundle-preparation` builds the locked descriptor/input/helper bundle|
+|Draft handoff|Distribution uses `support_run_id` and the support workflow artifact with `actions: read`|
+|Build pins|Rust 1.99.0 and Node 22.23.3|
+|Publication gate|Read-only promotion job; support/component published first, every manifest URL anonymously hash-checked, then distribution|
+|Partial reruns|Existing support/component/distribution assets compare and only missing assets upload|
+|Candidate discriminating test|Actual test requires reviewed core/VSIX SHA-256 values and size floors|
+|Coverage|`distribution-check` 139 tests; release suite 27/27; workflow scan covers all YAML, artifact handoff, public verification, rerun drafts and checkout-before-repository-command|
+
+The single fix-diff re-review is running against exactly `935c1a34..971e62b5`.
+No workflow was dispatched and no release or publication was created.
+
 ### Phase 5 implementation and gates green — 2026-11-21 20:05
 
 The release suite was authored first and ran red as intended: 13 cases, 16
@@ -451,7 +473,7 @@ Gates on the Phase 5 tree:
 
 | Gate | Result |
 |---|---|
-|`make check`|exit 0; distribution-check 123 tests; fuzz smoke 28/28|
+|`make check`|exit 0; distribution-check 139 tests; fuzz smoke 28/28|
 |`make verify`|`verify: all legs passed`; 4,796 Rust instances; all FS-UAE/legacy legs|
 |`make vscode-check`|169 pass, 1 documented generic-suite skip, then fresh packaged client 1/1|
 |`make site-check`|production build exit 0|

@@ -99,7 +99,7 @@ jobs:
             --output build/release/support/cp312
           python3 tools/distribution/assemble_support.py bundle-preparation \
             --lock tools/distribution/support-lock.json \
-            --sdk-payload build/release/support/sdk-producer/payload \
+            --sdk-payload build/release/support/sdk/payload \
             --output build/release/support/preparation-producer
           python3 tools/distribution/assemble_support.py assemble --kind preparation \
             --lock tools/distribution/support-lock.json \
@@ -173,6 +173,7 @@ jobs:
           test "$(sha256sum build/release/support/assets/amiga.tar | cut -d' ' -f1)" \
             = "$(grep ' amiga.tar$' build/release/support/assets/SHA256SUMS | cut -d' ' -f1)"
           if gh release view "support-$SUPPORT_IDENTITY" >/dev/null 2>&1; then
+            test "$(gh release view "support-$SUPPORT_IDENTITY" --json isDraft --jq .isDraft)" = true
             mkdir -p build/release/support/existing
             gh release download "support-$SUPPORT_IDENTITY" \
               --dir build/release/support/existing

@@ -38,6 +38,13 @@
 | RV-515 | 5 | MINOR | release-spec-not-in-fast-gate | resolved; deterministic spec classes/methods added to `distribution-check`; fix re-review pending |
 | RV-516 | 5 | MINOR | approval-binds-manifest-only | documented limitation; entry bytes are protected by draft identity comparison, not the manifest hash |
 | RV-517 | 5 | MINOR | component-concurrency-group | resolved; component identity added to the group; fix re-review pending |
+| RV-518 | 5 | MAJOR | preparation-bundle-base-field | resolved; descriptor now includes `base`, consumer schema test added; fix re-review pending |
+| RV-519 | 5 | MAJOR | published-release-rerun-mutation | resolved; support/component/distribution reruns require `isDraft=true`; fix re-review pending |
+| RV-520 | 5 | MINOR | bundle-check-then-open | resolved; bundle files use `O_NOFOLLOW`/`O_NONBLOCK` ordinary-file reads; fix re-review pending |
+| RV-521 | 5 | MINOR | bundle-output-no-clobber-race | resolved; exclusive output directory creation with owned cleanup; fix re-review pending |
+| RV-522 | 5 | MINOR | fix-path-test-coverage | resolved; workflow assertions pin artifact handoff, public verification, rerun uploads and `isDraft`; fix re-review pending |
+| RV-523 | 5 | MINOR | evidence-count-drift | resolved; records now say 139 distribution tests and 27 release cases (16+11) |
+| RV-524 | 5 | MINOR | draft-tag-claim-overbroad | resolved; runbook separates the distribution artifact handoff from the write-job draft rerun lookup |
 | SA-501 | 5 | MINOR | workflow-validation-output-directory | resolved; validation output moved to `$RUNNER_TEMP`; fix re-review pending |
 | SA-502 | 5 | MINOR | promotion-command-without-checkout | resolved; promotion moved to a read-only checked-out job; fix re-review pending |
 | SA-503 | 5 | MINOR | support-component-latest-race | resolved; single draft-and-latest API transition; fix re-review pending |
@@ -73,8 +80,8 @@ defect before any dispatch. The correction set:
 |SA-504: previous core/VSIX identities bypassed validation | `validate` now accepts only `none` or an identity token for both |
 |SA-505: workflow/promotion regression could pass the fast gate; rogue-workflow scan was incomplete | Deterministic spec classes and two payload methods are in `distribution-check`; tests scan all workflow files for release authority and require a checkout before repository commands |
 
-The release suite now has 24 cases (13 specification, 11 implementation) and
-`distribution-check` has 137 tests. `make check` and `make site-check` pass after
+The release suite now has 27 cases (16 specification, 11 implementation) and
+`distribution-check` has 139 tests. `make check` and `make site-check` pass after
 the correction. A single fix-diff re-review follows; no publication or dispatch
 occurred.
 

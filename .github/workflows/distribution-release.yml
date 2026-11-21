@@ -270,6 +270,7 @@ jobs:
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$component_release" \
               -f make_latest=false
           else
+            test "$(gh release view "components-$COMPONENT_IDENTITY" --json isDraft --jq .isDraft)" = true
             mkdir -p build/release/component-existing
             gh release download "components-$COMPONENT_IDENTITY" \
               --pattern core.tar --pattern clorraine.vsix \
@@ -296,6 +297,7 @@ jobs:
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$distribution_release" \
               -f make_latest=false
           else
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
             gh release download "$RELEASE_TAG" \
               --pattern install.sh --pattern install.pyz --pattern manifest.json \
               --dir build/release/distribution-existing

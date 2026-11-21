@@ -190,6 +190,24 @@ class ReleaseWorkflowSpecTests(ReleaseSpecCase):
             self.assertNotIn("gh release", text,
                              path.name + " manages release assets")
 
+    def test_should_pin_rerun_artifact_and_public_promotion_paths(self) -> None:
+        """The fix paths cannot disappear while the structural suite stays green."""
+        distribution = _workflow_text(DISTRIBUTION_WORKFLOW)
+        support = _workflow_text(SUPPORT_WORKFLOW)
+        self.assertIn('gh run download "$SUPPORT_RUN_ID"', distribution)
+        self.assertIn('--name "support-$SUPPORT_IDENTITY"', distribution)
+        self.assertIn("actions: read", distribution)
+        self.assertIn("actions: read", support)
+        self.assertEqual(distribution.count("--json isDraft --jq .isDraft"), 2)
+        self.assertEqual(support.count("--json isDraft --jq .isDraft"), 1)
+        self.assertIn("gh release upload", distribution)
+        self.assertIn("gh release upload", support)
+        self.assertIn("--proto-redir '=https'", distribution)
+        self.assertIn("sha256sum build/release/public-asset", distribution)
+        self.assertLess(distribution.index("build/release/public-assets.txt"),
+                        distribution.index("-F draft=false -f make_latest=true"),
+                        "public verification must precede distribution publication")
+
     def test_should_keep_every_workflow_line_structurally_indented(self) -> None:
         """A heredoc body at column zero would break the YAML document."""
         for path in (SUPPORT_WORKFLOW, DISTRIBUTION_WORKFLOW):

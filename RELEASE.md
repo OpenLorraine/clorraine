@@ -127,8 +127,9 @@ four audited archives, and uploads them with their audits and lock as a draft
 `support-<identity>` release. The preparation asset is built from the locked
 script/inputs and the SDK helpers, not copied from the SDK payload. The workflow
 also uploads the same asset set as a run artifact for the distribution workflow;
-draft support releases are never read through the tag API. It does not mark the
-release latest or publish it.
+the distribution build consumes that artifact, while the support upload job alone
+resolves its existing draft by tag with the write token to complete a rerun. It
+does not mark the release latest or publish it.
 
 Runner variables:
 
@@ -146,8 +147,12 @@ approved manifest hash (or `none` for drafts only). It builds or reuses core and
 VSIX independently, validates their metadata, downloads the support artifact
 from the recorded support run, assembles the distribution, checks the same bytes
 and executes all three binaries on Ubuntu 22.04 and 24.04, and creates draft
-`components-<identity>` and `<release>` releases. Draft support releases are not
-read through the tag API; the workflow artifact is the handoff.
+`components-<identity>` and `<release>` releases. The distribution build handoff
+does not read draft support releases through the tag API; the upload job resolves
+its own existing drafts by tag with the write token so it can complete a partial
+upload idempotently. The support
+artifact is retained for seven days, so dispatch the distribution workflow
+within that window or retain the nine exact inputs separately.
 
 A non-`none` approved hash must equal the assembled `manifest.json` before any
 promotion. A separate read-only job runs the local `promotion` command over the

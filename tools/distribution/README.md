@@ -313,7 +313,7 @@ workflow has been dispatched for v1.2.0; draft definitions are not publication.
 
 ## Local tests and mandatory archive acceptance
 
-`make distribution-check` runs the 137 local support and release specification
+`make distribution-check` runs the 139 local support and release specification
 methods plus implementation and Makefile wiring controls. `make check`
 always invokes it. Like setup tests, it runs on the host using Python unittest.
 It requires Git for synthetic source fixtures and the existing wheel builder's

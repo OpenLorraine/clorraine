@@ -147,11 +147,17 @@ class ReleaseInputValidationTests(ReleaseImplCase):
                                        "--output", str(output)])
         self.assertEqual(result.returncode, 0, result.stderr)
         metadata = json.loads((output / "preparation.json").read_bytes())
-        self.assertEqual(set(metadata), {"schema", "lock_sha256", "archive", "helpers",
-                                         "inputs", "inventory", "notices"})
+        self.assertEqual(set(metadata), {"schema", "lock_sha256", "archive", "base",
+                                         "helpers", "inputs", "inventory", "notices"})
         self.assertEqual(set(metadata["helpers"]), {"lha", "fd2sfd", "sfdc"})
         self.assertTrue((output / "prepare_ndk.py").is_file())
         self.assertTrue((output / "ndk-inputs/helper-headers/alib.h").is_file())
+        sys.path.insert(0, str(ROOT / "tools/distribution"))
+        try:
+            import prepare_ndk
+            prepare_ndk._metadata(metadata)
+        finally:
+            sys.path.pop(0)
         second = self._run(ASSEMBLER, ["bundle-preparation",
                                        "--lock", str(ROOT / "tools/distribution/support-lock.json"),
                                        "--sdk-payload", str(payload),
