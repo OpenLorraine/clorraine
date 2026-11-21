@@ -5,12 +5,12 @@
 //! protocol work lives in `client.ts`, so the same client is exercised by the
 //! headless tests.
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import * as vscode from "vscode";
 
+import { registerActions } from "./actions";
+import { resolveTool } from "./discovery";
 import {
   CompletionItem,
   Diagnostic as LspDiagnostic,
@@ -30,6 +30,8 @@ class Session implements vscode.Disposable {
   private exitedOnce = false;
 
   readonly client: LspClient;
+  /** Negotiated saved-source selection capability, independent of other LSP features. */
+  sourceFilesVersion: unknown;
   private readonly context: vscode.ExtensionContext;
 
   constructor(client: LspClient, context: vscode.ExtensionContext) {
@@ -242,6 +244,10 @@ class Session implements vscode.Disposable {
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  registerActions(context, () => session);
+  context.subscriptions.push(
+    vscode.workspace.onDidGrantWorkspaceTrust(() => { void restart(context); }),
+  );
   await start(context);
 }
 
@@ -252,11 +258,15 @@ export async function deactivate(): Promise<void> {
 
 /** Starts one server session. */
 async function start(context: vscode.ExtensionContext): Promise<void> {
+  // Restricted workspaces must not even probe their development executables.
+  if (!vscode.workspace.isTrusted) {
+    return;
+  }
   const configuration = vscode.workspace.getConfiguration("clorraine");
   const profile = configuration.get<string>("profile") ?? "hosted-amiga";
   let command: string;
   try {
-    command = resolveServer();
+    command = resolveTool("clorraine-lsp");
   } catch (error) {
     void vscode.window.showErrorMessage(
       `Clorraine: ${error instanceof Error ? error.message : String(error)}`,
@@ -284,7 +294,12 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   created = new Session(client, context);
   session = created;
   try {
-    await client.start();
+    const initialization = await client.start();
+    const experimental = initialization.capabilities?.experimental;
+    created.sourceFilesVersion =
+      typeof experimental === "object" && experimental !== null &&
+      "clorraineSourceFilesVersion" in experimental
+        ? experimental.clorraineSourceFilesVersion : undefined;
     starting = false;
     created.register();
   } catch (error) {
@@ -319,59 +334,6 @@ async function stop(): Promise<void> {
 async function restart(context: vscode.ExtensionContext): Promise<void> {
   await stop();
   await start(context);
-}
-
-/** Resolves the server executable from settings, environment, build, or PATH. */
-function resolveServer(): string {
-  const configured = vscode.workspace
-    .getConfiguration("clorraine")
-    .get<string>("lsp.path")
-    ?.trim();
-  if (configured) {
-    return configured;
-  }
-  if (process.env.CLORRAINE_LSP) {
-    return process.env.CLORRAINE_LSP;
-  }
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    for (const profile of ["debug", "release"]) {
-      const candidate = path.join(
-        folder.uri.fsPath,
-        "target",
-        profile,
-        "clorraine-lsp",
-      );
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  const onPath = findOnPath("clorraine-lsp");
-  if (onPath) {
-    return onPath;
-  }
-  throw new Error(
-    "no clorraine-lsp found; set clorraine.lsp.path, CLORRAINE_LSP, or build target/debug/clorraine-lsp",
-  );
-}
-
-/** Finds an executable on PATH without spawning a shell. */
-function findOnPath(name: string): string | undefined {
-  const pathValue = process.env.PATH ?? "";
-  const separator = process.platform === "win32" ? ";" : ":";
-  for (const directory of pathValue.split(separator)) {
-    if (!directory) {
-      continue;
-    }
-    const candidate = path.join(directory, name);
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return candidate;
-    } catch {
-      // Not here; keep looking.
-    }
-  }
-  return undefined;
 }
 
 /** Builds LSP text-document and position params. */

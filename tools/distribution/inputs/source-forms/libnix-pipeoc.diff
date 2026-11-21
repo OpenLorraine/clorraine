@@ -1,0 +1,133 @@
+--- gnuplot-3.7.1/amiga.c
++++ libnix/sources/nix/extra/pipeoc.c
+@@ -1,7 +1,3 @@
+-/* $Id: amiga.c,v 1.3 1998/03/22 22:31:17 drd Exp $ */
+-
+-/* GNUPLOT - amiga.c */
+-
+ /*[
+  * Copyright 1986 - 1993, 1998   Thomas Williams, Colin Kelley
+  *
+@@ -33,7 +29,7 @@
+ ]*/
+ 
+ /*
+- * amiga.c
++ * $Id: amiga.c,v 1.1.1.2 1998/04/15 19:21:59 lhecking Exp $
+  *
+  * Written by Carsten Steger <stegerc@informatik.tu-muenchen.de>
+  *
+@@ -42,11 +38,10 @@
+  * Additionally, they install an exit trap that closes all open pipes,
+  * should the program terminate abnormally.
+  */
+-
+-
+-#include <stdio.h>
+-#include <ios1.h>
+-#include <error.h>
++#ifndef __KICK13__
++#include "stdio.h"
++//#include <ios1.h>
++//#include <error.h>
+ #include <string.h>
+ #include <stdlib.h>
+ 
+@@ -57,7 +52,6 @@
+ #include <proto/exec.h>
+ #include <proto/dos.h>
+ 
+-#ifdef PIPES  /* dont bother if pipes are not being used elsewhere */
+ 
+ /* Maximum number of open pipes. If this is set to a number > 10, the code
+  * that constructs the pipe names in popen () will have to be modified.
+@@ -67,6 +61,7 @@
+ /* We need at least this Dos version to work. */
+ #define DOS_VERSION 37
+ 
++#include <errno.h>
+ 
+ /* This data structure is sent to the child process with sm_Cmd set to the
+  * command to be executed. When the child is done it sets sm_RetCode to
+@@ -97,6 +92,9 @@
+ /* Are we called for the first time? */
+ static LONG FirstCall = TRUE;
+ 
++#ifndef __saveds
++#define __saveds
++#endif
+ 
+ /* Prototypes for the functions below. */
+ FILE *popen (const char *command, const char *mode);
+@@ -124,8 +122,8 @@
+     {NP_Entry, (Tag) ChildEntry},
+     {NP_Cli, TRUE},
+     {NP_StackSize, 4096},
+-    {NP_Input, NULL},
+-    {NP_Output, NULL},
++    {NP_Input, 0},
++    {NP_Output, 0},
+     {NP_CloseInput, FALSE},
+     {NP_CloseOutput, FALSE},
+     {TAG_DONE, 0}
+@@ -143,7 +141,7 @@
+   if (FirstCall) {
+     /* Initialise pipe file descriptor table. */
+     memset (OpenPipes, 0, sizeof (OpenPipes));
+-    
++
+     /* Install our exit trap. */
+     if (atexit (CleanUpPipes) != 0) {
+       errno = EPIPE;
+@@ -189,7 +187,7 @@
+    * but it doesn't need sprintf and therefore makes programs that don't
+    * use printf a lot shorter.
+    */
+-  strcpy (PipeName, "PIPE:00000000_0");
++  strcpy ((char*)PipeName, "PIPE:00000000_0");
+   NextChar = PipeName + 12;
+   ProcAddress = (ULONG) ThisProcess;
+   while (ProcAddress != 0) {
+@@ -211,7 +209,7 @@
+    * while the parent's side is opened with fopen ().
+    */
+   ChildPipe = Open (PipeName, ChildPipeMode);
+-  ParentPipe = fopen (PipeName, mode);
++  ParentPipe = fopen ((const char*)PipeName, mode);
+   if (ChildPipeMode == MODE_NEWFILE) {
+     NewProcTags[3].ti_Data = Input ();
+     NewProcTags[4].ti_Data = ChildPipe;
+@@ -223,7 +221,7 @@
+     NewProcTags[5].ti_Data = TRUE;
+     NewProcTags[6].ti_Data = FALSE;
+   }
+-  if (ChildPipe == NULL || ParentPipe == NULL) {
++  if (ChildPipe == 0 || ParentPipe == 0) {
+     errno = EPIPE;
+     goto cleanup;
+   }
+@@ -234,7 +232,7 @@
+     errno = ENOMEM;
+     goto cleanup;
+   }
+-  strcpy (PipeToUse->pfd_Msg.sm_Cmd, command);
++  strcpy ((char *)PipeToUse->pfd_Msg.sm_Cmd, command);
+   PipeToUse->pfd_Msg.sm_Msg.mn_ReplyPort = CreateMsgPort ();
+   if (PipeToUse->pfd_Msg.sm_Msg.mn_ReplyPort == NULL) {
+     errno = ENOMEM;
+@@ -345,7 +343,7 @@
+   /* We need to open this library, because we don't inherit it from our
+    * parent process.
+    */
+-  DOSBase = (struct DosLibrary *) OpenLibrary ("dos.library", DOS_VERSION);
++  DOSBase = (struct DosLibrary *) OpenLibrary ((CONST_STRPTR)"dos.library", DOS_VERSION);
+ 
+   /* Get the childs process structure. */
+   ChildProc = (struct Process *) FindTask (NULL);
+@@ -369,5 +367,4 @@
+ 
+   return 0;
+ }
+-
+-#endif /* PIPES */
++#endif

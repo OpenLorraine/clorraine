@@ -3,8 +3,8 @@
 > **Feature-Set**: Clorraine
 > **Status**: Active
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-11-15
-> **Progress**: 590/592 rows done; 0 active; 0 planned; 2 Parked
+> **Last Updated**: 2026-11-21
+> **Progress**: 596/600 rows done; 1 active; 0 planned; 0 blocked; 1 deferred; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -607,6 +607,29 @@
 | PLAN-42 | Caller-display override for the A500 gates (#36) | — | [a500-gate-display-override](a500-gate-display-override/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; five A500 gates preserve a caller `DISPLAY`/`XAUTHORITY` around `docker/.env`; private `:99` Boing/text/hello pass with `.env` untouched, `:97` fails through the no-window path, `env -u` desktop path passes; static spec test pins the capture/source/restore order; correctness clean, Amiga platform clean with three minor evidence fixes; full `verify` green with the five gates on `:99`; follow-up #37 for the host-pointer flake; #36 closed |
 | PLAN-43 | A500 capture-window selection and boot budget (#37) | — | [a500-capture-stability](a500-capture-stability/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; all five gates take the topmost FS-UAE window; single exact-match oracle; hello 120 x 2 s with poll log, last-three captures, and near-miss archive; demos 90 x 2 s; paddle/text held-display message; stale-window reproduction (head AE=1612 fail, tail OK), final hello 8/8, demo gates 4/4, one `AE=1` one-off recorded as undiagnosed; correctness clean with RV-001 fixed, Amiga platform AP-001..AP-008 resolved; full `verify: all legs passed`; commit `ea088292`; #37 closed |
 | PLAN-44 | Pin the A500 asset and exec gates (#35) | — | [a500-asset-exec-window-pin](a500-asset-exec-window-pin/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; both gates pinned to 960x540 with a pre-crop size assertion (including the exec golden re-import), caller display override, crops unchanged, goldens regenerated AE=0, seven-gate geometry/caller/topmost tests, 90-poll budgets; reviews clean on critical/major with AP-001..AP-004 and RV-001..RV-002 fixed; full `verify: all legs passed`; commit `bb9cdeca`; #35 closed |
+| PLAN-45 | v1.2.0 native Linux delivery | — | [v1.2.0-release-installer](v1.2.0-release-installer/00-index.md) | Executing | 🔄 | 2026-11-21 | 67/91; Phase4 closes after clean fix-diff re-review; Phase5 next |
+| ↳ DEF-581 | Phase4 major review corrections | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-21 | CA-401/RV-C401/SA-401 fixed, full gates green, one re-review clean; no third review |
+| ↳ DEF-580 | Editor implementation verification ordering | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-21 | user approves ordered4.2.1–4.2.5 cohort and restart/full-gate rules; no automatic promotion |
+| ↳ DEF-579 | Verified receipt fix and Phase3 disposition | — | [Handoff](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-21 | user accepts verified RV-Q303 bounded fix and Phase3 closure; no third review/commit/publication |
+| ↳ DEF-578 | Independent receipt regression author unavailable | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-21 | user approves parent-authored behavioral regression exception; all other verification/final-disposition gates retained |
+| ↳ DEF-577 | Pending-receipt cleanup correction ruling | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-20 | user approves one-method safe-retention fix and verification; RV-Q303/final disposition remain open |
+| ↳ DEF-576 | Phase 3 review correction ruling | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-20 | user approves five bounded major corrections, red-first and one fix review; findings still open, minors report-only |
+| ↳ DEF-575 | Installer implementation verification ordering | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approves ordered cohort; all nine stay unverified until unchanged task gate/local suites pass |
+| ↳ DEF-574 | Installer/bootstrap authoring contracts | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approved bounded exact manifest/producer/test-transport contract amendment; apply before tests |
+| ↳ DEF-573 | Verified RV-301 and Phase 2 disposition | — | [Handoff](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-19 | user explicitly accepted verified bounded fix and Phase 2 closure; no third review/commit/publication |
+| ↳ DEF-572 | Artifact-directory-alias correction ruling | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-19 | user approved retaining both exclusions, red regressions and actual/full verification; final disposition pending |
+| ↳ DEF-571 | Snapshot executable oracle amendment | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approved independent queried-snapshot byte identity assertion/helper amendment; all other expectations retained |
+| ↳ DEF-570 | Phase 2 review correction ruling | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-19 | user approved SR-201/SR-202/RV-C201 corrections and verification; findings not yet resolved |
+| ↳ DEF-569 | Actual LSP core-version entry | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approved exact --version fast path and additive independent tests; core/LSP oracles unchanged |
+| ↳ DEF-568 | Native ROM filename representation | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approved bounded local per-run ROM copy; original/ordinary paths preserved; test-first implementation remains PLAN-45 |
+| ↳ DEF-567 | Native installed-layout contract | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-19 | user approved concrete metadata/pairing/Python/local-producer amendment; tests/implementation remain PLAN-45 |
+| ↳ DEF-566 | GCC SDK relocation into space paths | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved bounded private-build patch and corresponding-source updates; implementation remains PLAN-45 |
+| ↳ DEF-565 | Greenlet runtime wheel test contents | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved exact subtree exclusion with RECORD/runtime/source preservation; implementation remains PLAN-45 |
+| ↳ DEF-564 | Ubuntu loader package-ownership oracle | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved canonical ownership controls/correction; implementation remains PLAN-45 |
+| ↳ DEF-563 | Git-ident checkout-byte identity ruling | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user chose raw blobs; retain strict checker and original evidence; implementation/reproof remains PLAN-45 |
+| ↳ DEF-562 | Real Ubuntu package-name grammar ruling | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved package-only grammar and tests; source IDs/pins/dependencies unchanged; implementation remains PLAN-45 |
+| ↳ DEF-561 | Native-object format and lock-order ruling | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved AR-34; accurate Amiga-object records/tests and 91-task producer-first order; implementation remains PLAN-45 |
+| ↳ DEF-560 | libamiga legal review — user-owned | — | [Evidence](../tools/distribution/inputs/licence-review.md) | Deferred | ⏸️ | 2026-11-17 | user owns legalities; nonblocking local implementation; no licence-clearance claim or public promotion |
 
 ## Batch N accounting (2026-10-19)
 

@@ -84,15 +84,18 @@ pub fn emit_c(
 /// Compiles `c_path` into `bin_path` with `tool`.
 ///
 /// A non-zero compiler exit becomes an [`IceError`] carrying the emitted-C path
-/// and the compiler's first error line.
+/// and the compiler's first error line. `compiler` overrides only the executable:
+/// the profile's existing flag and library arrays remain unchanged.
 pub fn compile(
     tool: &Tool,
     mode: BuildMode,
     c_path: &Path,
     bin_path: &Path,
+    compiler: Option<&Path>,
 ) -> Result<(), IceError> {
     let argv = toolchain::command(tool, mode, c_path, bin_path);
-    let output = Command::new(&argv[0]).args(&argv[1..]).output();
+    let program = compiler.unwrap_or_else(|| Path::new(&argv[0]));
+    let output = Command::new(program).args(&argv[1..]).output();
     match output {
         Ok(output) if output.status.success() => Ok(()),
         Ok(output) => Err(IceError {
@@ -101,7 +104,7 @@ pub fn compile(
         }),
         Err(error) => Err(IceError {
             c_path: c_path.to_path_buf(),
-            first_error: format!("could not run '{}': {error}", argv[0]),
+            first_error: format!("could not run '{}': {error}", program.display()),
         }),
     }
 }
@@ -109,12 +112,14 @@ pub fn compile(
 /// Emits and compiles one program, returning the built artifact paths.
 ///
 /// The program directory is recreated first, so a failed build never leaves a
-/// stale binary behind.
+/// stale binary behind. An already-resolved native compiler path is used as
+/// supplied, without looking it up again through PATH or an activation alias.
 pub fn build(
     profile: Profile,
     mode: BuildMode,
     files: &[String],
     format: DiagnosticFormat,
+    compiler: Option<&Path>,
 ) -> Result<BuildOutput, BuildFailure> {
     let stem = artifacts::program_stem(files).ok_or_else(|| {
         BuildFailure::Error("clorraine: an input file name has no file stem\n".to_owned())
@@ -131,7 +136,7 @@ pub fn build(
     }
     let bin_path = artifacts::bin_path(profile, &stem);
     let tool = toolchain::tool(profile);
-    compile(&tool, mode, &c_path, &bin_path)
+    compile(&tool, mode, &c_path, &bin_path, compiler)
         .map_err(|ice| BuildFailure::Error(ice.to_string()))?;
     Ok(BuildOutput {
         c: c_path,
@@ -168,6 +173,7 @@ mod tests {
             BuildMode::Debug,
             Path::new("emitted.c"),
             Path::new("prog"),
+            None,
         )
         .expect_err("a failing compiler must not succeed");
 
@@ -197,6 +203,7 @@ mod tests {
             BuildMode::Debug,
             Path::new("emitted.c"),
             Path::new("prog"),
+            None,
         )
         .expect_err("a missing compiler must not succeed");
         assert!(

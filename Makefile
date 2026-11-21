@@ -61,6 +61,7 @@ check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
 	$(MAKE) setup-check
+	$(MAKE) distribution-check
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 	$(MAKE) bench-test
 	$(MAKE) fuzz-test
@@ -75,6 +76,17 @@ setup:
 
 setup-check:
 	cd tools/setup && python3 -m unittest discover -s tests -t tests -v
+
+# Local support metadata/build/selection tests use Git and the existing wheel
+# builder's Python packaging dependency. Real archives require a separate
+# isolated Ubuntu/NDK acceptance context; they never become optional skips here.
+.PHONY: distribution-check
+distribution-check:
+	@echo "Local support tests only; real archive/GCC acceptance remains required on both isolated Ubuntu baselines."
+	cd tools/distribution/tests && python3 -m unittest -v \
+		test_support_spec.SupportContractTests support_build_spec support_preparation_spec \
+		support_wheels_spec support_ownership_spec support_wheel_selection_spec \
+		test_support_impl test_distribution_check_impl
 
 # Type-check, test, package, and audit the VS Code extension. The language
 # server is built in the pinned container; Node.js 22+ must be on the host PATH

@@ -1,0 +1,13 @@
+--- a/gcc/gcc.cc
++++ b/gcc/gcc.cc
+@@ -10814,7 +10814,9 @@
+     abort ();
+ 
+   file = find_file (argv[0]);
+-  return file;
++  /* The specs engine reparses this result.  Quote active characters so an
++     installation path remains a single literal filename argument.  */
++  return quote_spec (xstrdup (file));
+ }
+ 
+ 

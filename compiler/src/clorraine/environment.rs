@@ -1,23 +1,197 @@
 //! Environment checks for the `clorraine` developer driver.
 //!
-//! The driver is a tool of the pinned SDK container: Amiga and freestanding
-//! commands need the cross C compiler and the `vamos` runner that the
-//! container image installs. Two checks keep the failure mode clear:
+//! Native SDK selection is resolved once from explicit options, environment or
+//! the canonical installed executable. A selected invalid installation never
+//! falls back to another location. Without a native selection, legacy commands
+//! keep the pinned container marker and PATH checks.
 //!
-//! - [`sdk_present`] proves the process is inside the SDK image by looking for
-//!   a marker file the image always ships. Outside the image, an Amiga or
-//!   freestanding command stops with guidance; the host profile and `emit`
-//!   continue because they use only the host compiler.
-//! - [`missing_tool_in`] names the first required tool absent from `PATH`, so
-//!   a broken image reports the exact tool instead of a generic spawn failure.
-//!
-//! Both take their inputs as parameters (a marker path, a tool list) so unit
-//! tests can exercise them without touching the host environment.
+//! Host and emit commands ignore unused SDK settings. Receipt validation does
+//! not run the tools it validates or replace the installer's archive audit.
 
 use std::path::{Path, PathBuf};
 
+use super::cli::{Command, Options};
+use super::{display, native_metadata};
+use crate::profile::Profile;
+
 /// The file the SDK image always contains; its presence marks the container.
 pub const SDK_MARKER: &str = "/opt/amiga/BUILD-PROVENANCE.txt";
+
+/// Native paths pinned beneath one canonical assembly for this invocation.
+pub struct NativeSdk {
+    /// Absolute compiler spelling within the selected, immutable SDK.
+    pub compiler: PathBuf,
+    /// Paired venv-spelled interpreter, present only when a vamos run needs it.
+    pub python: Option<PathBuf>,
+}
+
+/// An environment failure with the driver's established observable status.
+pub struct EnvironmentError {
+    /// Two for invalid selection, one for a missing required executable/config.
+    pub code: i32,
+    /// Terminal-sanitised message suitable for text or NDJSON diagnostics.
+    pub message: String,
+}
+
+/// Selects and validates a native assembly without consulting lower priorities.
+///
+/// `None` means the caller retains its existing host/legacy checks. Explicit
+/// options override environment, which overrides adjacent installed discovery.
+/// Returned paths never traverse the mutable `current` alias again.
+pub fn resolve_sdk(options: &Options) -> Result<Option<NativeSdk>, EnvironmentError> {
+    if options.profile == Profile::Host || options.command == Command::Emit {
+        return Ok(None);
+    }
+    if let Some(root) = &options.sdk_root {
+        return load_sdk(Path::new(root), options).map(Some);
+    }
+    if let Some(root) = std::env::var_os("CLORRAINE_SDK") {
+        return load_sdk(Path::new(&root), options).map(Some);
+    }
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|error| invalid_sdk(Path::new("installed executable"), &error.to_string()))?;
+    if let Some(bin) = executable.parent().filter(|path| path.file_name().is_some_and(|name| name == "bin")) {
+        if let Some(root) = bin.parent() {
+            let candidate = ["installation.json", "sdk"].iter().any(|name| {
+                // Unlike exists(), symlink_metadata also notices dangling
+                // entries. Permission errors cannot safely mean "no SDK".
+                match std::fs::symlink_metadata(root.join(name)) {
+                    Ok(_) => true,
+                    Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+                }
+            });
+            if candidate {
+                return load_sdk(&root.join("sdk/amiga"), options).map(Some);
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Resolves the assembly prefix before following any SDK leaf directory.
+///
+/// Canonicalising sdk/amiga first would silently adopt another installation
+/// when that leaf is an escaping alias. Only the enclosing root/current alias
+/// is resolved; real SDK directories and internal tool containment follow.
+fn load_sdk(selected: &Path, options: &Options) -> Result<NativeSdk, EnvironmentError> {
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return Err(invalid_sdk(selected, "native SDKs require Linux x86_64"));
+    }
+    if selected.file_name().is_none_or(|name| name != "amiga")
+        || selected.parent().and_then(Path::file_name).is_none_or(|name| name != "sdk")
+    {
+        return Err(invalid_sdk(selected, "select the installation's sdk/amiga directory with --sdk-root or CLORRAINE_SDK"));
+    }
+    let root = selected.parent().and_then(Path::parent)
+        .ok_or_else(|| invalid_sdk(selected, "missing installation root"))?;
+    let root = if root.as_os_str().is_empty() { Path::new(".") } else { root };
+    let root = root.canonicalize().map_err(|error| invalid_sdk(selected, &error.to_string()))?;
+    real_directory(&root.join("sdk"), selected)?;
+    let sdk = root.join("sdk/amiga");
+    real_directory(&sdk, selected)?;
+    let descriptor = root.join("installation.json");
+    let metadata = native_metadata::installation(&descriptor)
+        .map_err(|error| invalid_sdk(selected, &format!("installation.json: {error}")))?;
+    native_metadata::preparation(&sdk.join(".ndk-prepared.json"), &metadata)
+        .map_err(|error| invalid_sdk(selected, &format!(".ndk-prepared.json: {error}")))?;
+    let compiler = sdk.join("bin/m68k-amigaos-gcc");
+    contained_tool(&compiler, &sdk, selected, "m68k-amigaos-gcc", false)?;
+    let python = if options.command == Command::Run && !options.emulator
+        && matches!(options.profile, Profile::HostedAmiga | Profile::HostedAmiga13)
+    {
+        Some(companion_python(&root, selected, &metadata)?)
+    } else {
+        None
+    };
+    Ok(NativeSdk { compiler, python })
+}
+
+/// Requires real SDK roots, rather than aliases to a different assembly.
+fn real_directory(path: &Path, selected: &Path) -> Result<(), EnvironmentError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        _ => Err(invalid_sdk(selected, &format!("{} must be a real directory", path.display()))),
+    }
+}
+
+/// Validates only the command-required paired venv, retaining its Python name.
+fn companion_python(
+    root: &Path,
+    selected: &Path,
+    metadata: &native_metadata::Installation,
+) -> Result<PathBuf, EnvironmentError> {
+    let venv = root.join("sdk/vamos");
+    match std::fs::symlink_metadata(&venv) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(missing_native_tool(selected, "vamos"));
+        }
+        _ => real_directory(&venv, selected)?,
+    }
+    let config = venv.join("pyvenv.cfg");
+    if std::fs::symlink_metadata(&config).is_err_and(|error| {
+        error.kind() == std::io::ErrorKind::NotFound
+    }) {
+        return Err(missing_native_tool(selected, "pyvenv.cfg"));
+    }
+    native_metadata::ordinary_text(&config)
+        .map_err(|error| invalid_sdk(selected, &format!("pyvenv.cfg: {error}")))?;
+    native_metadata::wheels(&venv.join("wheels.json"), metadata)
+        .map_err(|error| invalid_sdk(selected, &format!("wheels.json: {error}")))?;
+    let bin = venv.join("bin");
+    let canonical_bin = bin.canonicalize().map_err(|_| missing_native_tool(selected, "python"))?;
+    if !canonical_bin.starts_with(&venv) {
+        return Err(invalid_sdk(selected, "vamos bin directory escapes the paired environment"));
+    }
+    let python = bin.join("python");
+    contained_tool(&python, &venv, selected, "python", true)?;
+    Ok(python)
+}
+
+/// Allows internal compiler aliases, and the venv's system-interpreter link.
+///
+/// The returned invocation still uses the original absolute spelling: using
+/// the final Python symlink target would discard the venv's prefix selection.
+fn contained_tool(
+    path: &Path,
+    owner: &Path,
+    selected: &Path,
+    name: &str,
+    system_interpreter: bool,
+) -> Result<(), EnvironmentError> {
+    let canonical = path.canonicalize().map_err(|_| missing_native_tool(selected, name))?;
+    if !system_interpreter && !canonical.starts_with(owner) {
+        return Err(invalid_sdk(selected, &format!("{name} escapes the selected SDK")));
+    }
+    if !is_executable_file(path) {
+        return Err(missing_native_tool(selected, name));
+    }
+    Ok(())
+}
+
+/// Names the selected location without leaking terminal control bytes.
+fn invalid_sdk(selected: &Path, detail: &str) -> EnvironmentError {
+    EnvironmentError {
+        code: 2,
+        message: display::sanitize(&format!(
+            "clorraine: invalid selected SDK '{}': {detail}\n\
+             select a complete native sdk/amiga with --sdk-root or CLORRAINE_SDK",
+            selected.display(),
+        )).into_owned(),
+    }
+}
+
+/// A well-formed assembly with an absent executable/config remains exit one.
+fn missing_native_tool(selected: &Path, name: &str) -> EnvironmentError {
+    EnvironmentError {
+        code: 1,
+        message: display::sanitize(&format!(
+            "clorraine: native SDK '{}': required tool/config '{name}' is missing or not executable\n\
+             restore the installation or select a complete SDK with --sdk-root / CLORRAINE_SDK",
+            selected.display(),
+        )).into_owned(),
+    }
+}
 
 /// True when the SDK image marker exists.
 ///
@@ -52,7 +226,7 @@ fn tool_on_path(dirs: &[PathBuf], tool: &str) -> bool {
 /// instead of failing later with a confusing spawn error. Symbolic links are
 /// followed, matching how a shell resolves a `PATH` entry.
 #[cfg(unix)]
-fn is_executable_file(path: &Path) -> bool {
+pub(super) fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path)
         .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
@@ -61,7 +235,7 @@ fn is_executable_file(path: &Path) -> bool {
 
 /// Non-Unix fallback: a regular file stands in for an executable one.
 #[cfg(not(unix))]
-fn is_executable_file(path: &Path) -> bool {
+pub(super) fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 

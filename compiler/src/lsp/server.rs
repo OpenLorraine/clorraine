@@ -242,6 +242,19 @@ impl<W: Write> Server<W> {
                 self.send_error(id, SERVER_NOT_INITIALIZED, "send initialize first");
                 None
             }
+            "clorraine/sourceFiles" => {
+                match crate::lsp::source_files::select(&params) {
+                    Ok(files) => {
+                        self.send_result(id, Json::object([(
+                            "files", Json::Array(files.into_iter().map(Json::String).collect())
+                        )]));
+                    }
+                    Err(message) => {
+                        self.send_error(id, INVALID_PARAMS, &message);
+                    }
+                }
+                None
+            }
             "textDocument/hover" => {
                 let result = self
                     .request_position(&params)
@@ -492,6 +505,10 @@ impl<W: Write> Server<W> {
         self.profile = profile;
         self.initialized = true;
         let capabilities = Json::object([
+            (
+                "experimental",
+                Json::object([("clorraineSourceFilesVersion", Json::Number(1))]),
+            ),
             ("positionEncoding", Json::String("utf-16".to_owned())),
             ("textDocumentSync", Json::Number(1)),
             ("hoverProvider", Json::Bool(true)),

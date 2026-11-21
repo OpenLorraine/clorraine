@@ -9,6 +9,7 @@
 //! The program's own exit code is returned unchanged, so a failing run is
 //! visible to scripts.
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -34,13 +35,33 @@ pub struct RunResult {
 /// nothing is streamed. The reported code is the program's exit code, or 1
 /// when it was killed by a signal or the driver could not spawn it. A driver
 /// failure is reported in `format`, so JSON mode never receives a human line.
+/// `python` selects the already-paired native venv only for an Amiga runner.
+/// Legacy vamos and native host execution retain their original command forms.
 pub fn run_program(
     runner: &Runner,
     bin: &Path,
     capture: Option<&Path>,
     format: DiagnosticFormat,
+    python: Option<&Path>,
 ) -> RunResult {
-    let argv = toolchain::runner_command(runner, bin);
+    let argv = match python.filter(|_| matches!(runner, Runner::Vamos)) {
+        Some(python) => {
+            let absolute = match bin.canonicalize() {
+                Ok(path) => path,
+                Err(error) => {
+                    eprint!("{}", format_error(format, &format!(
+                        "clorraine: cannot resolve program '{}': {}",
+                        display::sanitize(&bin.display().to_string()),
+                        display::sanitize(&error.to_string()),
+                    )));
+                    return RunResult { code: 1, captured: false };
+                }
+            };
+            toolchain::native_vamos_command(python, &absolute)
+        }
+        None => toolchain::runner_command(runner, bin)
+            .into_iter().map(OsString::from).collect(),
+    };
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
     command.stderr(Stdio::inherit());
@@ -62,7 +83,7 @@ pub fn run_program(
                     format,
                     &format!(
                         "clorraine: cannot run '{}': {error}",
-                        display::sanitize(&argv[0])
+                        display::sanitize(&argv[0].to_string_lossy())
                     )
                 )
             );
@@ -81,7 +102,7 @@ pub fn run_program(
                     format,
                     &format!(
                         "clorraine: cannot wait for '{}': {error}",
-                        display::sanitize(&argv[0])
+                        display::sanitize(&argv[0].to_string_lossy())
                     )
                 )
             );
@@ -142,6 +163,7 @@ mod tests {
             Path::new("/bin/true"),
             Some(Path::new("/no/such/clorraine/dir/out.txt")),
             DiagnosticFormat::Human,
+            None,
         );
         assert!(
             !result.captured,

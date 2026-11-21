@@ -1,0 +1,9 @@
+--- a/SFD/exec_lib.sfd
++++ b/SFD/exec_lib.sfd
+@@ -1,5 +1,6 @@
+ ==id $VER: exec_lib.sfd 47.5 (30.11.2021)
+ * "exec.library"
++==basetype struct ExecBase *
+ ==base _SysBase
+ ==basetype struct ExecBase *
+ ==libname exec.library

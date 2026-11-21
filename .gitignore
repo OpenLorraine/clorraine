@@ -1,6 +1,8 @@
 # Amiga build outputs
 *.o
 *.a
+# The distribution carries this one byte-pinned upstream target library.
+!/tools/distribution/inputs/libamiga.a
 *.prg
 *.hunk
 *.lha

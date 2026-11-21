@@ -26,6 +26,8 @@ debug_env="${RUN_DEBUG:-}"
 capture_env="${RUN_CAPTURE:-}"
 kickstart_env="${KICKSTART:-}"
 model_env="${AMIGA_MODEL:-}"
+caller_display="${DISPLAY:-}"
+caller_xauthority="${XAUTHORITY:-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -40,6 +42,9 @@ if [ -n "${debug_env}" ]; then RUN_DEBUG="${debug_env}"; fi
 if [ -n "${capture_env}" ]; then RUN_CAPTURE="${capture_env}"; fi
 if [ -n "${kickstart_env}" ]; then KICKSTART="${kickstart_env}"; fi
 if [ -n "${model_env}" ]; then AMIGA_MODEL="${model_env}"; fi
+# A private capture display must survive both this load and the emulator wrapper.
+DISPLAY="${caller_display:-${DISPLAY}}"
+XAUTHORITY="${caller_xauthority:-${XAUTHORITY}}"
 
 if [ "$#" -lt 1 ]; then
     echo "usage: $0 <amiga-executable> [fs-uae arguments...]" >&2

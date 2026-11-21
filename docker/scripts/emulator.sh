@@ -16,10 +16,15 @@ if [ ! -f "${env_file}" ]; then
     "${script_dir}/init-env.sh"
 fi
 
+# Keep a caller's private display/authentication pair; otherwise use SDK defaults.
+caller_display="${DISPLAY:-}"
+caller_xauthority="${XAUTHORITY:-}"
 set -a
 # shellcheck disable=SC1090
 . "${env_file}"
 set +a
+DISPLAY="${caller_display:-${DISPLAY}}"
+XAUTHORITY="${caller_xauthority:-${XAUTHORITY}}"
 
 if [ ! -f "${XAUTHORITY}" ]; then
     echo "ERROR: X11 cookie file not found: ${XAUTHORITY}" >&2

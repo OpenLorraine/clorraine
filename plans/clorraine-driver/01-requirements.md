@@ -102,6 +102,19 @@ AR-21, AR-22).
 
 ## Acceptance Criteria
 
+> **Native-distribution amendment approved 2026-11-16:** The completed
+> container workflow below remains the historical baseline. The user explicitly
+> authorised extending R9's container-only boundary for installed native SDKs;
+> implementation belongs to the
+> [v1.2.0 native Linux delivery plan](../v1.2.0-release-installer/00-index.md),
+> not this completed execution plan. Its AR-19/29 require installed SDK discovery
+> and native FS-UAE execution while preserving R5's exact Docker handoff and
+> existing container specification tests. Native FS-UAE waits for emulator exit
+> and reports the emulator's status, not the guest program's status; native
+> FS-UAE capture is explicitly unsupported in this release. Host/vamos capture
+> and container capture retain their existing contract. These native additions
+> are approved requirements, not claims of completed implementation.
+
 1. [x] `clorraine run hello.clo` builds and runs on `host` and prints the
    program's output, with no C toolchain detail shown.
 2. [x] `clorraine run --profile hosted-amiga` builds with `m68k-amigaos-gcc` and

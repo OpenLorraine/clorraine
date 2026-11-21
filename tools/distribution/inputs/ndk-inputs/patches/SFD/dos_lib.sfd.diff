@@ -1,0 +1,9 @@
+--- a/SFD/dos_lib.sfd
++++ b/SFD/dos_lib.sfd
+@@ -1,5 +1,6 @@
+ ==id $VER: dos_lib.sfd 47.1 (30.11.2021)
+ * "dos.library"
++==basetype struct DosLibrary * 
+ ==base _DOSBase
+ ==basetype struct DosLibrary *
+ ==libname dos.library

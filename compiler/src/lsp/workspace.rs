@@ -25,6 +25,11 @@ pub const MAX_ANALYSIS_FILES: usize = 256;
 /// Directories the workspace scan never enters.
 const SKIP_DIRS: &[&str] = &[".git", "build", "target", "node_modules"];
 
+/// Shared directory exclusions for live indexing and saved-disk selection.
+pub(super) fn excluded_directory(name: &str) -> bool {
+    SKIP_DIRS.contains(&name) || name.starts_with('.')
+}
+
 /// Unsaved editor buffers, keyed by the URI spelling.
 #[derive(Default)]
 pub struct DocumentStore {
@@ -132,7 +137,7 @@ impl ModuleIndex {
                     continue;
                 }
                 if metadata.is_dir() {
-                    if !SKIP_DIRS.contains(&name) && !name.starts_with('.') {
+                    if !excluded_directory(name) {
                         stack.push(path);
                     }
                     continue;

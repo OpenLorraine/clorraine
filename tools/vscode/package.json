@@ -16,6 +16,11 @@
   "activationEvents": ["onLanguage:clorraine"],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      { "command": "clorraine.build", "title": "Clorraine: Build" },
+      { "command": "clorraine.run", "title": "Clorraine: Run" },
+      { "command": "clorraine.runInFsUae", "title": "Clorraine: Run in FS-UAE" }
+    ],
     "languages": [
       {
         "id": "clorraine",
@@ -37,13 +42,38 @@
         "clorraine.lsp.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the clorraine-lsp executable. Empty searches CLORRAINE_LSP, target/debug, target/release, and PATH."
+          "scope": "machine",
+          "description": "Language server executable. Empty searches CLORRAINE_LSP, ~/.clorraine/bin, trusted development builds, and PATH."
+        },
+        "clorraine.driver.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Clorraine driver executable. Empty searches ~/.clorraine/bin, trusted development builds, and PATH."
+        },
+        "clorraine.sdk.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Native Amiga SDK root. Empty lets the driver discover its SDK."
+        },
+        "clorraine.fsUae.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Native Linux FS-UAE executable used by Run in FS-UAE."
+        },
+        "clorraine.kickstart.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Locally licensed Kickstart ROM used by Run in FS-UAE."
         },
         "clorraine.profile": {
           "type": "string",
           "enum": ["hosted-amiga", "hosted-amiga-13", "host", "freestanding"],
           "default": "hosted-amiga",
-          "description": "Compiler profile used for diagnostics and navigation."
+          "description": "Compiler profile shared by diagnostics, navigation and Build/Run actions."
         }
       }
     }

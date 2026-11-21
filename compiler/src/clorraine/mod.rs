@@ -16,7 +16,9 @@ mod build;
 mod cli;
 mod docgen;
 mod display;
+mod emulator;
 mod environment;
+mod native_metadata;
 mod run;
 mod toolchain;
 
@@ -88,14 +90,42 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
 /// The marker path and the `PATH` value are parameters so the two environment
 /// gates can be exercised with synthetic inputs.
 fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
-    if let Some((code, message)) = environment_exit(&options, marker, search_path) {
+    let native = match environment::resolve_sdk(&options) {
+        Ok(native) => native,
+        Err(error) => {
+            report_error(options.diagnostics, &error.message);
+            return error.code;
+        }
+    };
+    if native.is_none() && (options.fs_uae.is_some() || options.kickstart.is_some()) {
+        report_error(options.diagnostics,
+            "usage error: --fs-uae and --kickstart require a native SDK; select --sdk-root or CLORRAINE_SDK");
+        return EXIT_USAGE;
+    }
+    if native.is_some() && options.emulator && options.capture {
+        report_error(options.diagnostics,
+            "usage error: --capture is unsupported for native FS-UAE runs");
+        return EXIT_USAGE;
+    }
+    if let Some((code, message)) = environment_exit(&options, marker, search_path, native.as_ref()) {
         report_error(options.diagnostics, &message);
         return code;
     }
+    let emulator = if native.is_some() && options.emulator {
+        match emulator::Emulator::resolve(&options, search_path) {
+            Ok(emulator) => Some(emulator),
+            Err(error) => {
+                report_error(options.diagnostics, &error.message);
+                return error.code;
+            }
+        }
+    } else {
+        None
+    };
     match options.command {
         Command::Emit => emit(&options),
-        Command::Build => build_command(&options),
-        Command::Run => run_command(options),
+        Command::Build => build_command(&options, native.as_ref()),
+        Command::Run => run_command(options, native.as_ref(), emulator),
     }
 }
 
@@ -106,11 +136,27 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
 /// the tool check. A required tool that is missing or not executable on `PATH`
 /// is reported by name (exit 1). Both inputs are parameters so unit tests need
 /// not touch the process environment.
-fn environment_exit(options: &Options, marker: &str, search_path: &OsStr) -> Option<(i32, String)> {
-    if sdk_required(options) && !environment::sdk_present(marker) {
+fn environment_exit(
+    options: &Options,
+    marker: &str,
+    search_path: &OsStr,
+    native: Option<&environment::NativeSdk>,
+) -> Option<(i32, String)> {
+    if sdk_required(options) && native.is_none() && !environment::sdk_present(marker) {
         return Some((EXIT_USAGE, environment::sdk_guidance()));
     }
-    environment::missing_tool_in(&required_tools(options), search_path)
+    // Native compilers and paired Python were checked as resolved paths.
+    // Only the freestanding host execution leg still needs a PATH tool.
+    let tools = if native.is_some() {
+        if options.profile == Profile::Freestanding && options.command == Command::Run {
+            vec!["cc"]
+        } else {
+            Vec::new()
+        }
+    } else {
+        required_tools(options)
+    };
+    environment::missing_tool_in(&tools, search_path)
         .map(|tool| (1, environment::missing_tool_message(&tool)))
 }
 
@@ -221,12 +267,13 @@ fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
 }
 
 /// Builds the program and reports the artifact path.
-fn build_command(options: &Options) -> i32 {
+fn build_command(options: &Options, native: Option<&environment::NativeSdk>) -> i32 {
     let built = match build::build(
         options.profile,
         options.mode,
         &options.files,
         options.diagnostics,
+        native.map(|sdk| sdk.compiler.as_path()),
     ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
@@ -246,15 +293,20 @@ fn build_command(options: &Options) -> i32 {
 }
 
 /// Builds, then runs the program (or hands it off to FS-UAE).
-fn run_command(options: Options) -> i32 {
+fn run_command(
+    options: Options,
+    native: Option<&environment::NativeSdk>,
+    emulator: Option<emulator::Emulator>,
+) -> i32 {
     if options.profile == Profile::Freestanding {
-        return run_freestanding(options);
+        return run_freestanding(options, native);
     }
     let built = match build::build(
         options.profile,
         options.mode,
         &options.files,
         options.diagnostics,
+        native.map(|sdk| sdk.compiler.as_path()),
     ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
@@ -267,6 +319,17 @@ fn run_command(options: Options) -> i32 {
         print_c(&built.c);
     }
     if options.emulator {
+        if let Some(emulator) = emulator {
+            return match emulator.run(&built.bin) {
+                Ok(code) => code,
+                Err(error) => {
+                    report_error(options.diagnostics, &display::sanitize(&format!(
+                        "clorraine: {error}"
+                    )));
+                    1
+                }
+            };
+        }
         // The run is handed to the host; printing the command is success.
         print!(
             "{}",
@@ -285,6 +348,7 @@ fn run_command(options: Options) -> i32 {
         &built.bin,
         capture.as_deref(),
         options.diagnostics,
+        native.and_then(|sdk| sdk.python.as_deref()),
     );
     if result.captured {
         if let Some(path) = &capture {
@@ -300,12 +364,13 @@ fn run_command(options: Options) -> i32 {
 /// on, so `run` proves the program's semantics with the same translation unit
 /// built for the host. The m68k build still runs first, so a `run` also proves
 /// the target link. `--capture` writes the host run's output as usual.
-fn run_freestanding(options: Options) -> i32 {
+fn run_freestanding(options: Options, native: Option<&environment::NativeSdk>) -> i32 {
     let built = match build::build(
         options.profile,
         options.mode,
         &options.files,
         options.diagnostics,
+        native.map(|sdk| sdk.compiler.as_path()),
     ) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
@@ -335,7 +400,7 @@ fn run_freestanding(options: Options) -> i32 {
         return 1;
     };
     let host_bin = artifacts::host_bin_path(options.profile, &stem);
-    if let Err(ice) = build::compile(&tool, options.mode, &built.c, &host_bin) {
+    if let Err(ice) = build::compile(&tool, options.mode, &built.c, &host_bin, None) {
         report_error(options.diagnostics, &ice.to_string());
         return 1;
     }
@@ -349,6 +414,7 @@ fn run_freestanding(options: Options) -> i32 {
         &host_bin,
         capture.as_deref(),
         options.diagnostics,
+        None,
     );
     if result.captured {
         if let Some(path) = &capture {
@@ -400,7 +466,7 @@ mod tests {
     #[test]
     fn an_absent_sdk_marker_exits_two_and_prints_guidance() {
         let options = invoke_options(&["run", "--profile", "hosted-amiga", "hello.clo"]);
-        let (code, message) = environment_exit(&options, "/no/such/sdk-marker", &OsString::new())
+        let (code, message) = environment_exit(&options, "/no/such/sdk-marker", &OsString::new(), None)
             .expect("an absent marker must stop an Amiga command");
         assert_eq!(code, EXIT_USAGE);
         assert!(
@@ -421,12 +487,12 @@ mod tests {
     fn a_bare_host_runs_emit_and_the_host_profile_without_the_marker() {
         let emit = invoke_options(&["emit", "hello.clo"]);
         assert!(
-            environment_exit(&emit, "/no/such/sdk-marker", &OsString::new()).is_none(),
+            environment_exit(&emit, "/no/such/sdk-marker", &OsString::new(), None).is_none(),
             "emit only needs the in-process compiler"
         );
 
         let host = invoke_options(&["run", "hello.clo"]);
-        let (code, message) = environment_exit(&host, "/no/such/sdk-marker", &OsString::new())
+        let (code, message) = environment_exit(&host, "/no/such/sdk-marker", &OsString::new(), None)
             .expect("the host profile still needs cc");
         assert_eq!(code, 1, "a missing host tool is not an SDK-marker error");
         assert!(message.contains("'cc'"), "the report names cc, got:\n{message}");
@@ -436,7 +502,7 @@ mod tests {
     fn a_missing_required_tool_is_named_and_exits_one() {
         let options = invoke_options(&["run", "hello.clo"]);
         // The host profile needs `cc`; an empty search path finds nothing.
-        let (code, message) = environment_exit(&options, PRESENT_MARKER, &OsString::new())
+        let (code, message) = environment_exit(&options, PRESENT_MARKER, &OsString::new(), None)
             .expect("a missing tool must stop the driver");
         assert_eq!(code, 1);
         assert!(
@@ -462,7 +528,7 @@ mod tests {
         }
 
         let options = invoke_options(&["build", "hello.clo"]);
-        let gate = environment_exit(&options, PRESENT_MARKER, &OsString::from(dir.as_os_str()));
+        let gate = environment_exit(&options, PRESENT_MARKER, &OsString::from(dir.as_os_str()), None);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(gate.is_none(), "a ready tool must let the command through");
     }

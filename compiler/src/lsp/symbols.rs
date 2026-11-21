@@ -205,9 +205,11 @@ impl SymbolTable {
             }
             Item::GlobalLet(decl) => {
                 self.push(file, module, &decl.name, SymbolKind::Global, decl.name_span, decl.span, None, None);
+                self.expr(file, module, &decl.value, decl.span);
             }
             Item::GlobalConst(decl) => {
                 self.push(file, module, &decl.name, SymbolKind::Constant, decl.name_span, decl.span, None, None);
+                self.expr(file, module, &decl.value, decl.span);
             }
         }
     }
@@ -257,13 +259,17 @@ impl SymbolTable {
     ) {
         match statement {
             Stmt::Let(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                // Initializers see the outer scope; the new name becomes visible
+                // only after this declaration, including in dependency queries.
+                let visible = Span { start: decl.span.end, ..scope };
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, visible);
                 if let Some(value) = &decl.value {
                     self.expr(file, module, value, function);
                 }
             }
             Stmt::Const(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                let visible = Span { start: decl.span.end, ..scope };
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, visible);
                 self.expr(file, module, &decl.value, function);
             }
             Stmt::If(decl) => {
@@ -282,13 +288,15 @@ impl SymbolTable {
             Stmt::ForC(decl) => {
                 match &decl.init {
                     Some(ForInit::Let(binding)) => {
-                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span);
+                        let visible = Span { start: binding.span.end, ..decl.span };
+                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, visible);
                         if let Some(value) = &binding.value {
                             self.expr(file, module, value, function);
                         }
                     }
                     Some(ForInit::Const(binding)) => {
-                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, decl.span);
+                        let visible = Span { start: binding.span.end, ..decl.span };
+                        self.push_local(file, module, &binding.name, binding.name_span, binding.span, function, visible);
                         self.expr(file, module, &binding.value, function);
                     }
                     Some(ForInit::Expr(expressions)) => {
@@ -307,7 +315,9 @@ impl SymbolTable {
                 self.block(file, module, &decl.body, function);
             }
             Stmt::ForIn(decl) => {
-                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, scope);
+                // The element name belongs only to the body, not the iterable
+                // expression or the statements after the loop.
+                self.push_local(file, module, &decl.name, decl.name_span, decl.span, function, decl.body.span);
                 self.expr(file, module, &decl.iterable, function);
                 self.block(file, module, &decl.body, function);
             }
@@ -484,7 +494,8 @@ impl SymbolTable {
         })
     }
 
-    /// The innermost local in `file` with `name` that is visible at `offset`.
+    /// The innermost local visible at `offset`, or the binding being declared
+    /// when the offset is on its own name token.
     pub fn local_at(&self, file: FileId, name: &str, offset: u32) -> Option<&Symbol> {
         self.symbols
             .iter()
@@ -495,7 +506,8 @@ impl SymbolTable {
             })
             .filter(|symbol| symbol.name == name)
             .filter(|symbol| {
-                symbol
+                (symbol.name_span.start <= offset && offset < symbol.name_span.end)
+                    || symbol
                     .scope_span
                     .map(|span| span.start <= offset && offset < span.end)
                     .unwrap_or(false)

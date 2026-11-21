@@ -49,8 +49,15 @@ pub struct Options {
     pub mode: BuildMode,
     /// Print the generated C after a build or before a run.
     pub emit_c: bool,
-    /// Hand the Amiga run to the host FS-UAE wrapper.
+    /// Run the Amiga program in FS-UAE, or print the legacy container handoff.
     pub emulator: bool,
+    /// Explicit native Amiga SDK root; environment and adjacent discovery are
+    /// considered only when this option is absent.
+    pub sdk_root: Option<String>,
+    /// Explicit FS-UAE executable for a native Amiga emulator run.
+    pub fs_uae: Option<String>,
+    /// Explicit user-provided Kickstart ROM for a native Amiga emulator run.
+    pub kickstart: Option<String>,
     /// Write the program stdout to `out.txt` and print that path.
     pub capture: bool,
     /// Diagnostic output format.
@@ -93,7 +100,10 @@ Options:
       --release                       Optimize (-O2); strip + section-GC on Linux/Amiga; freestanding/non-Linux and debug keep symbols
       --size                          Optimize for size (-Os); same release processing; cannot combine with --release
       --emit-c                        Print the generated C after building
-      --emulator                      Amiga run: use FS-UAE (host handoff)
+      --emulator                      Amiga run: use FS-UAE (legacy SDK: host handoff)
+      --sdk-root PATH                 Non-host build/run: native sdk/amiga root (or CLORRAINE_SDK)
+      --fs-uae PATH                   Native Amiga run --emulator: executable (or CLORRAINE_FS_UAE, then PATH)
+      --kickstart PATH                Native Amiga run --emulator: ROM (or CLORRAINE_KICKSTART)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
       --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
@@ -104,8 +114,11 @@ Options:
 
 Exit codes:
   0  success (including help, version, and the FS-UAE handoff)
-  1  Clorraine diagnostic, missing tool, or C compiler failure
-  2  usage error, or the driver is not inside the SDK container
+  1  Clorraine diagnostic, missing tool/media, C compiler or emulator failure
+  2  usage error or invalid SDK selection
+
+Native FS-UAE runs wait and return the emulator process status, not guest status.
+Native FS-UAE --capture is unsupported; host, vamos and legacy capture are unchanged.
 
 A run exits with the program's own code, so a program that exits 2 is
 indistinguishable from a usage or environment error.
@@ -238,6 +251,9 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
         mode: BuildMode::Debug,
         emit_c: false,
         emulator: false,
+        sdk_root: None,
+        fs_uae: None,
+        kickstart: None,
         capture: false,
         diagnostics: DiagnosticFormat::Human,
         output: None,
@@ -260,6 +276,18 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
                 index += 1;
                 let raw = value(rest, index, arg)?;
                 options.diagnostics = DiagnosticFormat::parse(&raw)?;
+            }
+            "--sdk-root" => {
+                index += 1;
+                options.sdk_root = Some(path_value(rest, index, arg)?);
+            }
+            "--fs-uae" => {
+                index += 1;
+                options.fs_uae = Some(path_value(rest, index, arg)?);
+            }
+            "--kickstart" => {
+                index += 1;
+                options.kickstart = Some(path_value(rest, index, arg)?);
             }
             "--release" => select_mode(&mut options.mode, BuildMode::Release)?,
             "--size" => select_mode(&mut options.mode, BuildMode::Size)?,
@@ -294,6 +322,17 @@ fn value(rest: &[String], index: usize, flag: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{flag} needs a value"))
 }
 
+/// Reads a literal tool/media path without trimming spaces or interpreting it
+/// as shell text. An empty argument is malformed, not an implicit tool default.
+fn path_value(rest: &[String], index: usize, flag: &str) -> Result<String, String> {
+    let path = value(rest, index, flag)?;
+    if path.is_empty() {
+        Err(format!("{flag} needs a nonempty path"))
+    } else {
+        Ok(path)
+    }
+}
+
 /// Applies one optimization mode to a line that may already name another.
 ///
 /// Repeating the same flag is harmless and accepted. Two different optimized
@@ -313,6 +352,22 @@ fn select_mode(current: &mut BuildMode, requested: BuildMode) -> Result<(), Stri
 fn validate(options: &Options) -> Result<(), String> {
     if options.files.is_empty() {
         return Err("at least one input file is required".to_owned());
+    }
+    if options.sdk_root.is_some()
+        && (options.profile == Profile::Host || options.command == Command::Emit)
+    {
+        return Err("--sdk-root is only valid with non-host 'build' or 'run'".to_owned());
+    }
+    let amiga_emulator = options.command == Command::Run
+        && options.emulator
+        && matches!(options.profile, Profile::HostedAmiga | Profile::HostedAmiga13);
+    for (flag, setting) in [
+        ("--fs-uae", &options.fs_uae),
+        ("--kickstart", &options.kickstart),
+    ] {
+        if setting.is_some() && !amiga_emulator {
+            return Err(format!("{flag} is only valid with an Amiga 'run --emulator'"));
+        }
     }
     if options.command == Command::Emit {
         // `emit` stops after producing C, so build-and-run flags do not apply.
