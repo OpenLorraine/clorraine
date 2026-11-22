@@ -207,6 +207,107 @@ makes no WSL or Windows support claim; their absence is not an acceptance gap.
 The v1.2.0 runbook is not a claim that any of these have passed. Evidence is
 recorded with the exact candidate identities in the release records.
 
+### Candidate directory
+
+Place the complete candidate in one ordinary directory. It must contain exactly:
+
+```text
+install.sh
+install.pyz
+manifest.json
+core.tar
+clorraine.vsix
+support-lock.json
+amiga.tar
+amiga-audit.json
+preparation.tar
+preparation-audit.json
+cp310.tar
+cp310-audit.json
+cp312.tar
+cp312-audit.json
+```
+
+The distribution draft supplies `install.sh`, `install.pyz` and `manifest.json`;
+the component release supplies `core.tar` and `clorraine.vsix`; the support release
+supplies the lock, four archives and four audits. Verify their hashes against the
+reviewed manifest before moving them into the directory.
+
+### Staged acceptance command
+
+The acceptance test is stage-aware. Pre-publication accepts pending ST-56;
+post-publication requires passed ST-56.
+
+```sh
+cd tools/distribution/tests
+CLORRAINE_ACCEPTANCE_CANDIDATE=/absolute/candidate-directory \
+CLORRAINE_ACCEPTANCE_EVIDENCE=/absolute/evidence.json \
+python3 -m unittest -v test_acceptance_spec.ActualCandidateAcceptance
+
+# After approved publication and a fresh anonymous installation:
+CLORRAINE_ACCEPTANCE_STAGE=post \
+CLORRAINE_ACCEPTANCE_CANDIDATE=/absolute/candidate-directory \
+CLORRAINE_ACCEPTANCE_EVIDENCE=/absolute/evidence.json \
+python3 -m unittest -v test_acceptance_spec.ActualCandidateAcceptance
+```
+
+The evidence record has exactly `schema`, `release`, `candidate`, `st53`, `st54`
+and `st56`. `candidate` binds `manifest_sha256`, `core_sha256`, `vsix_sha256`,
+`install_sh_sha256` and `install_pyz_sha256`. `st53.ubuntu` is `["22.04",
+"24.04"]` and `st53.python` is `{"22.04":"3.10","24.04":"3.12"}`. Every value
+under `st53.checks` and `st54` is an explicit `true`: `cli`, `lsp`, `vsix`,
+`host`, `vamos`, `exit7`, `profiles`, `update`, `failure`, `relocation`,
+`hashes`; `private_display`, `make_verify`, `make_vscode_check`,
+`make_site_check`, `native_fs_uae`, `legacy_gates`. `st56.state` is `pending`
+before publication, and `passed` with `anonymous`, `links`, `hashes_match` and
+`install` true after publication.
+
+### ST-53: clean Ubuntu installation
+
+Run on a fresh Ubuntu 22.04 and a fresh Ubuntu 24.04 x86_64 environment. The
+repository, build tree and existing SDK must be inaccessible, `PYTHONPATH` must
+be cleared, and only system prerequisites may be installed:
+
+```sh
+sudo apt install gcc libc6-dev python3 python3-venv curl ca-certificates
+sh install.sh --release v1.2.0 --root "$HOME/clorraine-acceptance"
+export PATH="$HOME/clorraine-acceptance/bin:$PATH"
+clorraine --version
+clorraine-lsp --version
+```
+
+Run a host program and both Amiga profiles through `vamos`; observe the
+documented runtime-fault exit 7; perform an update, a failed-update recovery and
+a whole-root relocation with the original prefix unavailable. Install the printed
+VSIX command and verify the language server and editor Build/Run. Record exact
+candidate/payload hashes, Ubuntu/Python versions, commands and observed output.
+
+### ST-54: private-display native and legacy gates
+
+Start the SDK image's Xvfb on a private display (`Xvfb :N -screen 0
+1280x1024x24 -ac +extension GLX -noreset`), export it only to the gate process,
+and run:
+
+```sh
+make verify
+make vscode-check
+make site-check
+```
+
+The native FS-UAE A1200/KS3.1 action and the existing legacy Amiga gates must run
+on that private display. No gate may open on the desktop or include licensed
+media in published evidence. `make verify` must print `verify: all legs passed`.
+
+### ST-56: post-publication anonymous install
+
+Run only after the explicit publication approval. Start from a fresh login with
+no repository, credentials or prior installation. Download the published
+`install.sh` and every referenced asset through the public HTTPS URLs, compare
+their bytes with the approved manifest hashes, install with `--release v1.2.0`,
+and run the host, both `vamos` profiles and the Linux editor checks. Record the
+public release identity, hashes, commands and observed output. Missing ST-56
+blocks final completion, not an earlier approval request.
+
 ## Publication sequence
 
 1. Complete candidate evidence, the evidence/hash-mismatch controls, the full

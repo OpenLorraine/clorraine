@@ -91,7 +91,8 @@ distribution-check:
 		test_release_spec.ReleaseReuseSpecTests \
 		test_release_spec.ReleasePromotionSpecTests \
 		test_release_spec.ReleasePayloadSpecTests.test_should_read_version_records_from_the_final_v1_2_0_release \
-		test_release_spec.ReleasePayloadSpecTests.test_should_validate_the_current_documentation_and_historical_record
+		test_release_spec.ReleasePayloadSpecTests.test_should_validate_the_current_documentation_and_historical_record \
+		test_acceptance_spec.AcceptanceSpecCase
 
 # Type-check, test, package, and audit the VS Code extension. The language
 # server is built in the pinned container; Node.js 22+ must be on the host PATH

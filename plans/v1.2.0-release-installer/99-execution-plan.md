@@ -1,8 +1,8 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-22 11:42
-> **Progress**: 80/91 tasks (88%)
+> **Last Updated**: 2026-11-22 12:10
+> **Progress**: 82/91 tasks (90%)
 > **CodeOps Artifact Schema**: 1
 
 ## Execution contract
@@ -529,17 +529,22 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 Reference: [03-04 §Draft acceptance](03-04-editor-and-release.md#draft-acceptance-and-public-promotion);
 AR-22/24/49. The release is Linux x86_64 only; WSL2/Remote-WSL are outside scope.
 
+**Execution status (2026-11-22):** tasks 6.1.1–6.1.2 are verified. Tasks
+6.2.1–6.2.4 are blocked because the repository has no registered self-hosted
+`clorraine-release` runner (`actions/runners` total_count 0), so the support
+workflow cannot produce the artifact required by the distribution workflow.
+
 ### Session 6.1: Specification acceptance
 
-- [ ] 6.1.1 [spec-author] Write candidate completeness checks and exact manual input/output acceptance steps ST-53, ST-54 and ST-56 (ST-55 retired by AR-49) — `tools/distribution/tests/test_acceptance_spec.py`, `RELEASE.md`.
-- [ ] 6.1.2 Run acceptance checks red on absent/incomplete candidate evidence; record negative controls — `07-testing-strategy.md`.
+- [x] 6.1.1 [spec-author] Write candidate completeness checks and exact manual input/output acceptance steps ST-53, ST-54 and ST-56 (ST-55 retired by AR-49) — `tools/distribution/tests/test_acceptance_spec.py`, `RELEASE.md`. ✅ (authored: 2026-11-22 12:05; candidate directory exact14 files, manifest/hash/helper checks, stage-aware evidence schema for ST-53/ST-54/ST-56, Linux-only rejection, and exact clean-Ubuntu/private-display/anonymous steps documented; no real evidence claimed)
+- [x] 6.1.2 Run acceptance checks red on absent/incomplete candidate evidence; record negative controls — `07-testing-strategy.md`. ✅ (red: 2026-11-22 12:05; 7 tests, 6 fixture negative controls pass and the actual-candidate case fails for absent candidate/evidence; missing files, changed hash, incomplete ST-53/ST-54, early/failed ST-56 and extra WSL/Windows scope all reject; no real acceptance claimed)
 
 ### Session 6.2: Candidate execution and green
 
-- [ ] 6.2.1 Dispatch the two implemented workflows for draft candidates after implementation authorisation; record resulting identities — `RELEASE.md`; ST-47–ST-51.
-- [ ] 6.2.2 Run clean Ubuntu, relocated install/update and desktop candidate proof — `RELEASE.md`; ST-53.
-- [ ] 6.2.3 Run private-display native/legacy Amiga gates — `RELEASE.md`; ST-54.
-- [ ] 6.2.4 Verify pre-publication specification cases green: ST-53 and ST-54 plus applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`.
+- [!] 6.2.1 Dispatch the two implemented workflows for draft candidates after implementation authorisation; record resulting identities — `RELEASE.md`; ST-47–ST-51. Blocked: `gh api repos/OpenLorraine/clorraine/actions/runners` reports `total_count: 0`; the support workflow requires a registered self-hosted `clorraine-release` runner with prepared sources/image, so no support artifact exists for the distribution workflow.
+- [!] 6.2.2 Run clean Ubuntu, relocated install/update and desktop candidate proof — `RELEASE.md`; ST-53. Blocked: depends on the workflow-produced draft candidate from 6.2.1.
+- [!] 6.2.3 Run private-display native/legacy Amiga gates — `RELEASE.md`; ST-54. Blocked: depends on the workflow-produced draft candidate from 6.2.1.
+- [!] 6.2.4 Verify pre-publication specification cases green: ST-53 and ST-54 plus applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`. Blocked: depends on 6.2.1–6.2.3 evidence.
 
 ### Session 6.3: Hardening, approval and public gate
 

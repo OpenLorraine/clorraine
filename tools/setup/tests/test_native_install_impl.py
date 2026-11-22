@@ -45,7 +45,9 @@ class NativeStateImplTests(unittest.TestCase):
 
     def setUp(self) -> None:
         """Register cleanup for exactly this test's child directory before using it."""
-        parent = os.environ.get("CODEOPS_TMPDIR") or os.environ.get("TMPDIR") or str(_ROOT / "build/tmp")
+        parent = Path(os.environ.get("CODEOPS_TMPDIR") or os.environ.get("TMPDIR")
+                      or str(_ROOT / "build/tmp"))
+        parent.mkdir(parents=True, exist_ok=True)
         self.temporary = tempfile.TemporaryDirectory(prefix="native-state-", dir=parent)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)

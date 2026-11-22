@@ -430,8 +430,38 @@ and whether a negative control fails when the fix is absent.
 ## Execution evidence
 
 Entries appear newest first. Each records the state at its timestamp; the top
-entry is the current Phase5 result. Older entries retain their historical
+entry is the current Phase6 result. Older entries retain their historical
 task counts and holds.
+
+### Phase 6.2 blocked: no self-hosted release runner — 2026-11-22 12:10
+
+`gh api repos/OpenLorraine/clorraine/actions/runners` returns
+`total_count: 0`. The support workflow is defined for a self-hosted
+`clorraine-release` runner with verified source staging and the inspected build
+image; without it no draft support artifact exists for the distribution
+workflow. Workflow dispatch, clean-cohort acceptance and native gate execution
+therefore stop at task 6.2.1 and remain blocked; no candidate evidence is
+claimed. The host CI failure discovered after the restart came from installer
+tests assuming `build/tmp` existed; the test parents now create that directory,
+and `make setup-check` passes 105/105 in a previously absent scratch root.
+
+### Phase 6 acceptance specification authored and red — 2026-11-22 12:05
+
+`tools/distribution/tests/test_acceptance_spec.py` adds the Linux-only candidate
+acceptance contract for ST-53, ST-54 and ST-56. It requires a complete 14-file
+candidate directory, exact manifest/core/VSIX/install hashes, pinned helper
+bytes, both Ubuntu/CPython cohorts, every ST-53/ST-54 observation and a
+stage-aware ST-56 record. ST-56 must remain pending before publication and
+passed with anonymous/link/hash/install evidence after it. WSL/Windows scope
+evidence is rejected under AR-49.
+
+The first run is red for absent real candidate/evidence: six fixture controls
+pass (they prove missing files, changed hashes, incomplete ST-53/ST-54, early or
+failed ST-56 and extra platform scope reject) and the actual-candidate case fails
+with the explicit missing-environment message. The deterministic
+`AcceptanceSpecCase` is wired into `distribution-check`, which now runs 145
+tests. No clean-Ubuntu, native-FS-UAE or public-install acceptance is claimed by
+this specification task.
 
 ### Linux-only scope decision — 2026-11-22 11:42
 
