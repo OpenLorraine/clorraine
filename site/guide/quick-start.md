@@ -7,8 +7,8 @@ description: "Install Clorraine on Linux with the v1.2.0 candidate installer, or
 
 Clorraine is a developer preview. The **Linux x86_64** path installs prebuilt
 compiler binaries, the Amiga SDK and the `vamos` runtime without compiling
-dependencies. One-click installers for Windows and macOS are in progress and
-are not shown here as if they existed.
+dependencies. v1.2.0 supports Linux x86_64 only; WSL2, Remote-WSL and native
+Windows/macOS are outside this release.
 
 ## Choose a path
 
@@ -17,7 +17,7 @@ are not shown here as if they existed.
 | **Linux x86_64 installer** | `clc`, `clorraine`, `clorraine-lsp`, Amiga SDK and `vamos` | Ubuntu 22.04/24.04 x86_64; the system prerequisites below |
 | **Docker SDK** | Full m68k toolchain, `vamos`, FS-UAE, NDK headers | Docker; network; a 30–90 minute first image build |
 | **Build from source** | All three binaries, including the language server | Rust stable; no external crates |
-| **One-click installers** | Planned for Linux, macOS, and Windows | Not available yet |
+| **One-click installers** | Not part of v1.2.0; Linux x86_64 only | — |
 
 ## Linux installer
 
@@ -101,9 +101,8 @@ Do not assume a fixed path under the root; use the path the installer printed.
 
 The extension adds **Clorraine: Build**, **Clorraine: Run** and **Clorraine: Run
 in FS-UAE**, and discovers the installed driver and language server without a
-terminal `PATH`. For Remote-WSL, install the VSIX in the Linux remote host; the
-extension README documents moving a generated Amiga executable to a Windows
-FS-UAE installation. Automatic Windows emulator launch is not supported.
+terminal `PATH`. v1.2.0 supports the Linux desktop only; it does not provide a
+WSL2/Remote-WSL or Windows extension-host path.
 
 ## Amiga SDK in Docker
 

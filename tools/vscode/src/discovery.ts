@@ -72,7 +72,7 @@ function explicit(value: string, setting: string): string {
 }
 
 /**
- * Resolve a driver or LSP in the extension host, never on the Windows side of WSL.
+ * Resolve a driver or LSP in the extension host process, never outside it.
  * Call only in a trusted workspace, before task launch or server startup.
  * @throws When an explicit choice is invalid or no executable is available.
  * @example resolveTool("clorraine")

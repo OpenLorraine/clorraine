@@ -191,7 +191,7 @@ the downloaded draft evidence.
 
 ## Candidate acceptance
 
-Candidate-green means ST-53–ST-55 and every applicable earlier case, not a
+Candidate-green means ST-53, ST-54 and every applicable earlier case, not a
 successful build alone:
 
 - ST-53: clean Ubuntu 22.04 and 24.04 installation from the shipped bootstrap
@@ -200,10 +200,9 @@ successful build alone:
   relocation.
 - ST-54: native FS-UAE and the full legacy Amiga gates on private displays;
   `make verify`, `make vscode-check` and `make site-check` pass.
-- ST-55: the user's actual WSL2 machine installs the candidate, runs the CLI,
-  the language server and editor Build/Run. Missing machine evidence blocks.
-  Automatic Windows FS-UAE launch is not required; the generated Amiga
-  executable is moved to the user's emulator manually.
+
+ST-55 (WSL2/Remote-WSL) is retired under AR-49. v1.2.0 is Linux x86_64 only and
+makes no WSL or Windows support claim; their absence is not an acceptance gap.
 
 The v1.2.0 runbook is not a claim that any of these have passed. Evidence is
 recorded with the exact candidate identities in the release records.

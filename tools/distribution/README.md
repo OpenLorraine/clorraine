@@ -250,7 +250,7 @@ original six artifact assertions.
 outputs, candidate hashes and copied-test identities.
 `support-acceptance-summary.json` cross-checks 28 strict corpus compile/runs
 and ten focused GCC queries per cohort (three deliberate invalid queries must
-fail). This is support proof, not phase full-gate, installer/editor/WSL or
+fail). This is support proof, not phase full-gate, installer/editor or
 publication acceptance. No licence clearance is inferred, including for the
 explicitly directed ordinary libamiga archive.
 
@@ -371,7 +371,8 @@ Ubuntu's initial venv bootstrap wheels are recorded separately: pip 22.0.2 and
 setuptools 59.6.0 on 22.04, pip 24.0 and setuptools 68.1.2 on 24.04. They are not
 the shipped pip 26.2.1 wheel. Acceptance replaces pip from the verified offline
 wheel set before checking runtime dependencies. Download/bootstrap transport,
-WSL2/Remote-WSL and FS-UAE are separate later acceptance surfaces.
+WSL2/Remote-WSL and FS-UAE are outside v1.2.0 (AR-49); FS-UAE is a separate
+local acceptance surface.
 
 ## Private-display verification
 

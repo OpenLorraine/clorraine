@@ -15,7 +15,8 @@ No changes since v1.2.0.
   `--root`/`--release` selection, previous-version recovery and no dependency
   compilation during installation.
 - VS Code Build, Run and Run in FS-UAE actions over the saved entry file and its
-  imported sources, machine-scoped tool settings and Remote-WSL guidance.
+  imported sources, machine-scoped tool settings and Linux desktop guidance.
+  WSL2/Remote-WSL and Windows access are outside v1.2.0.
 - A read-only `clorraine/sourceFiles` language-server request with bounded,
   canonical saved-source selection for both hosted-Amiga profiles.
 - Manual `support-release` and `distribution-release` workflows that build
@@ -24,6 +25,8 @@ No changes since v1.2.0.
 ### Changed
 
 - Compiler, Cargo lock, extension and extension lock versions advance to 1.2.0.
+- v1.2.0 is Linux x86_64 only. WSL2/Remote-WSL and native Windows/macOS access
+  are outside this release and are not support claims.
 - The native support and distribution artifacts use the Apache License 2.0 with
   the Clorraine Output Exception; v1.1.2 remains published under MIT.
 - `clorraine build --size` (and `run --size`) compiles with `-Os` and the same

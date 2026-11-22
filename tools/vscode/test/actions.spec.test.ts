@@ -2,7 +2,7 @@
  * Editor actions must use a trusted, saved active entry and an explicit saved
  * dependency selection. These tests observe the compiled extension's registered
  * callbacks, real LSP transport and the external VS Code process-task boundary.
- * They do not prove compiler, emulator, desktop or Remote-WSL acceptance.
+ * They do not prove compiler, emulator, desktop or real-machine acceptance.
  */
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";

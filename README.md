@@ -19,7 +19,7 @@
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
 | Linux x86_64 native installer | v1.2.0 candidate; drafts and local candidates only until publication approval |
 | VS Code extension | Packages and passes its packaged-client test (`make vscode-check`) |
-| Windows/macOS installers | In progress |
+| Windows/macOS/WSL support | Outside v1.2.0; Linux x86_64 is the release target |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 
 ## Install on Linux
@@ -106,9 +106,9 @@ committed; `demo/poster.png` is the one checked-in still.
 - **VS Code extension** — `tools/vscode/` launches the server, registers the
   canonical grammar, and provides Build, Run and Run in FS-UAE actions over the
   saved entry file and its imported sources. It discovers `~/.clorraine/bin`
-  without a terminal `PATH`, and supports Remote-WSL with FS-UAE left as a
-  user-provided Windows or Linux application. `make vscode-check` packages and
-  audits a `.vsix`.
+  without a terminal `PATH`. v1.2.0 supports the Linux desktop only; WSL2,
+  Remote-WSL and Windows are outside this release. `make vscode-check` packages
+  and audits a `.vsix`.
 - **SDK installer** — `make setup` detects Docker, the pinned image, the
   toolchain, the NDK, and licensed media; `make setup FETCH=1` builds missing
   public components without ever downloading media.

@@ -99,6 +99,6 @@ uses a generic reviewer carrying the same read-only checklist.
 Private-display gate setup → support proof → native driver with local core
 staging → installer with packaged bootstrap → editor/source selection → release
 automation → candidate review → approval → public verification.
-The last phase requires the user's real WSL2 machine and
-local licensed-media gates; their absence blocks acceptance rather than
-silently reducing the platform claim.
+The last phase requires local licensed-media gate evidence. WSL2, Remote-WSL and
+Windows access are outside the approved Linux-only scope (AR-49); their absence
+is not a release blocker because no such support is claimed.

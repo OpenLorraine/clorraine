@@ -27,7 +27,7 @@ Internal planning records are not published here.
 
 | Item | Why it matters |
 |---|---|
-| Linux, macOS, and Windows installers | Remove the Docker prerequisite for the first run |
+| WSL2/Remote-WSL and Windows/macOS installers | Outside v1.2.0; Linux x86_64 only |
 | Published VS Code extension | Make editor setup a single install |
 | Clearer NDK setup and diagnostics | Make the Amiga boundary easier to understand |
 | Broader host-platform testing and CI | Catch platform-specific issues before release |

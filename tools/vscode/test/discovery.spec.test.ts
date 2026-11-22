@@ -3,7 +3,7 @@
  * and trusted development/PATH fallbacks remain available. Workspace settings
  * cannot supply executable overrides. Public lifecycle/profile observations use
  * the unchanged staged extension and real subprocess LSP framing.
- * This is not desktop, compiler, emulator or Remote-WSL acceptance.
+ * This is not desktop, compiler, emulator or real-machine acceptance.
  */
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";

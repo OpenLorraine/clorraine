@@ -51,6 +51,16 @@
 | SA-504 | 5 | MINOR | previous-component-identity-validation | resolved; `none`/token validation added; verified |
 | SA-505 | 5 | MINOR | release-test-gate-coverage | resolved; workflow/promotion spec classes in distribution-check plus rogue-workflow and checkout assertions; verified |
 
+## Linux-only scope decision — 2026-11-22
+
+The user ruled **“linux only. no WSL”**. AR-49 resolves the final platform scope:
+v1.2.0 supports Linux x86_64 only; WSL2/Remote-WSL and Windows access are not
+supported, tested or claimed. ST-55 is retired; Phase 6 acceptance is ST-53 and
+ST-54 with post-publication ST-56. Requirements, plans, release docs, site and
+editor guidance were updated. The VSIX was rebuilt for the changed shipped
+README (`c0b4e4ae…`, 25,749 bytes); `make vscode-check` and the 27-case release
+suite pass. No publication or workflow dispatch occurred.
+
 ## Phase 5 review dispatch — 2026-11-21 20:06
 
 Phase 5 was implemented, pushed as `935c1a34` and frozen for independent

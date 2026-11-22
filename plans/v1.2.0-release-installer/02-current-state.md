@@ -79,8 +79,9 @@ licences need the same support-payload audit.
 (setup 29, performance 103, fuzz 28), plus registry/spec checks and fuzzer smoke
 `cases=28 host=28 sanitizer=16 target=16 failures=0`.
 
-No native package, Ubuntu 22.04 relocation, WSL2, or native FS-UAE acceptance
-run has happened. Earlier platform/build-time/size estimates are not evidence.
+No native package, Ubuntu 22.04 relocation, Linux desktop editor or native
+FS-UAE acceptance run has happened. Earlier platform/build-time/size estimates
+are not evidence.
 
 ## Principal risks
 
@@ -91,8 +92,8 @@ run has happened. Earlier platform/build-time/size estimates are not evidence.
 | Missing or incompatible wheels | Offline binary-only install on both supported interpreter versions. |
 | NDK preparation mismatch | Compare local preparation to the same locked reference build and compile both profiles. |
 | Partial update/publication | Single activation point locally; reference assets public before distribution promotion. |
-| Editor/driver drift | Editor calls the driver; packaged VSIX acceptance from desktop and Remote-WSL. |
-| Unknown licensed-media/WSL evidence | Block candidate acceptance until the named external/local runs exist. |
+| Editor/driver drift | Editor calls the driver; packaged VSIX acceptance from the Linux desktop. |
+| Unknown licensed-media evidence | Block candidate acceptance until the named local emulator runs exist. |
 
 ## Execution source research — 2026-11-17
 

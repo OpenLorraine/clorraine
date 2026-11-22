@@ -15,7 +15,7 @@ edge cases and their workarounds, is
 | Limitation | Impact | Guidance |
 |---|---|---|
 | Developer preview | Interfaces, packaging, and platform support may change | Use it for experiments and feedback, not production work |
-| Linux x86_64 binary only | Windows and macOS users must build from source or use Docker | Installers are in progress |
+| Linux x86_64 only | WSL2/Remote-WSL, native Windows and macOS are outside v1.2.0 and are not supported claims | Build from source on another platform at your own risk; no WSL/Windows acceptance is provided |
 | Host-only CI | The GitHub Actions runner does not execute the Amiga legs | Run `make verify` locally for full acceptance |
 | Amiga gates need licensed media | Advanced Workbench gates cannot run on a bare machine | Supply your own media; no ROM or Workbench image is distributed |
 | `clorraine-lsp` is not in the binary tarball | The release tarball has `clc` and `clorraine` only | Build the workspace from source |

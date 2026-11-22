@@ -6,7 +6,7 @@ outline: false
 
 # Clorraine — project brief
 
-**Developer preview · v1.2.0 candidate · Updated 21 November 2026**
+**Developer preview · v1.2.0 candidate · Updated 22 November 2026**
 
 Clorraine is a compiler for 68K Amiga systems. It compiles a C-like language
 with Rust-style ownership to plain C99 and uses the AmigaPorts m68k GCC
@@ -88,7 +88,8 @@ contains no ROM or Workbench image.
 
 ## Roadmap
 
-- One-click installers for Linux, macOS, and Windows.
+- Linux x86_64 support. WSL2/Remote-WSL, native Windows and macOS are outside
+  the v1.2.0 scope.
 - A published VS Code extension; the packaged VSIX and its smoke test already
   pass from source.
 - Clearer NDK setup and diagnostics.

@@ -28,9 +28,10 @@ both wrappers, then prove the actual private emulator environment before any
 full gate. A caller's `DISPLAY` alone is not proof.
 
 Candidate acceptance has two explicit stages. Pre-publication checks require
-ST-53–ST-55, applicable earlier cases, evidence-integrity controls and independent
-review; they do not require public-install evidence. Post-publication checks
-require ST-56 and matching approved hashes. A stage-aware acceptance invocation
+ST-53 and ST-54, applicable earlier cases, evidence-integrity controls and
+independent review; they do not require public-install evidence. ST-55 is
+retired (AR-49). Post-publication checks require ST-56 and matching approved
+hashes. A stage-aware acceptance invocation
 must state which evidence is required; missing required evidence fails rather
 than skipping. Publication approval follows the pre-publication gate.
 
@@ -53,11 +54,11 @@ new Python suites must run explicitly until connected to `make check`.
 | Installer state contexts | `tools/setup/tests/native_install_acceptance_spec.py` | Explicit `NativeInstallActualAcceptance`, `NativeInstallAbiTransitionAcceptance`, `NativeInstallForeignRootAcceptance`; no implicit skip | Initial/update/negative cases on both cohorts; ABI transition on actual Ubuntu24 with real Ubuntu22 seed; dedicated tmpfs ownership rejection |
 | Bootstrap packaging | `tools/distribution/tests/test_bootstrap_package_spec.py` | Python unittest discovery, pattern `test_bootstrap_package_spec.py` | ST-58 before Phase 3's installed-package gate |
 | Bootstrap actual context | `tools/distribution/tests/bootstrap_package_acceptance_spec.py` | Explicit `BootstrapPackageActualAcceptance` class with the required actual installer context | Same exact shell/helper/manifest/payload bytes and closed imports on both real cohorts; missing context errors |
-| Editor | `tools/vscode/test/actions.spec.test.ts`, `discovery.spec.test.ts` | Existing Node test command and `make vscode-check` | ST-40–ST-46; desktop and Remote-WSL observations |
+| Editor | `tools/vscode/test/actions.spec.test.ts`, `discovery.spec.test.ts` | Existing Node test command and `make vscode-check` | ST-40–ST-46; Linux desktop observations |
 | Source selection | `compiler/tests/editor_sources_spec_test.rs`, `tools/vscode/test/actions.spec.test.ts` | Rust integration suite plus editor gate | ST-59 real LSP and multi-file driver execution |
 | Approved Phase4 corrections | `compiler/tests/editor_review_spec_test.rs`, `tools/vscode/test/actions.review.spec.test.ts` | New independent Rust/Node regressions, existing helpers and runners, plus all frozen suites and private full gate | Clean-after-save invalidation; full member-chain policy; final task-variable input rejection |
 | Release | `tools/distribution/tests/test_release_spec.py` | Python unittest discovery, pattern `test_release_spec.py` | ST-47–ST-52 against drafts and eventual public bytes |
-| Candidate | `tools/distribution/tests/test_acceptance_spec.py` | Explicit candidate test invocation with required asset paths; no implicit skip | ST-53–ST-56 plus real-machine records |
+| Candidate | `tools/distribution/tests/test_acceptance_spec.py` | Explicit candidate test invocation with required asset paths; no implicit skip | ST-53, ST-54 and ST-56 plus real-machine records; ST-55 retired |
 
 Use existing Python unittest, Rust integration and Node runners. Python filenames
 follow existing `test_*` discovery and distinguish `_spec` from `_impl`. A release
@@ -68,15 +69,14 @@ separate and mandatory.
 
 ### Real editor acceptance procedure
 
-These are required future observations for ST-46/ST-55, not evidence from the
-Node API fixtures. Bind each run to the exact packaged candidate and its VSIX.
-Task4.2.6 owns the Linux desktop observation; Phase6 owns final candidate
-repetition and the user's actual WSL2/Remote-WSL records. Missing access or
-evidence blocks the owning acceptance task.
+These are required future observations for ST-46, not evidence from the Node API
+fixtures. Bind each run to the exact packaged candidate and its VSIX. Task4.2.6
+owns the Linux desktop observation; Phase6 owns final candidate repetition.
+WSL2 and Remote-WSL are outside v1.2.0 (AR-49) and are not acceptance steps.
 
 **Inputs and isolation:** Record date, Ubuntu22.04/24.04 x86_64 and Python ABI,
-VS Code/Remote-WSL versions, distribution/core/support identities, compiler
-commit and SHA-256/lengths of assets, installed binaries, VSIX and saved sources.
+VS Code version, distribution/core/support identities, compiler commit and
+SHA-256/lengths of assets, installed binaries, VSIX and saved sources.
 Use an owned disposable login/HOME and editor user/extensions profile, not a
 personal installation. Keep checkout/development binaries inaccessible.
 Establish the private authenticated display prerequisite before emulator work.
@@ -109,14 +109,14 @@ acceptance; the authoring task has not compiled or executed this example.
 | Editing and tasks | Grant workspace trust. Introduce a deliberate `i32`/`null` error, observe real Problems diagnostics, restore valid saved code and observe them clear. Hover and Go to Definition resolve `message` across files. Build/Run host and both Amiga profiles; retain visible process-task output, selected installed driver, containing-root CWD, ordered explicit source argv, expected stdout and status. |
 | Saved sources and negative controls | Save a distinct dependency output marker and rerun. The installed CLI with entry only must fail for the missing dependency; the editor's complete selection then succeeds. With valid default tools still present, set an invalid user LSP/driver override and observe actionable failure without fallback/task; clear it and re-prove success. Reload/reactivate and invoke one Build, observing one task and working language features. |
 | Native Linux FS-UAE | Set user/machine SDK, FS-UAE and licensed KS3.1 paths. Invoke Run in FS-UAE for both Amiga profiles on the private authenticated display. Observe the real A1200/KS3.1 guest line, effective process/configuration/isolation and closing behavior. Emulator process completion is not guest exit status. Keep ROM/media and display authentication private. |
-| Actual WSL2/Remote-WSL | User records Windows/WSL2 and supported Linux cohort versions, installs exact candidate bytes and proves CLI host/both-vamos outputs. Open a real Remote-WSL window and install the VSIX in the Linux extension host. Record remote indicators/Running Extensions, Linux HOME/tool identities and PATH without Clorraine tools. Repeat diagnostics/navigation, Build/Run for all three runnable profiles, dependency-change and invalid-override controls with actual Linux tasks. A Windows-local extension or terminal-export workaround is not proof. |
-| Manual Windows emulator guide | Validate that the Remote-WSL guide explains Build output, the generated Amiga executable, transfer through the WSL share into a user-selected Windows directory and byte/hash comparison. It must explain mounting only that directory in the user's existing Windows FS-UAE with licensed media and manual startup. Confirm the guide is usable in the user's workflow; do not add a native Windows emulator acceptance leg or claim automatic Windows launch from the Linux action. |
+| WSL2 / Remote-WSL | Out of scope for v1.2.0 (AR-49); no Windows editor, WSL tool-execution or manual Windows-emulator guidance is required or claimed. |
 
 Retain dated candidate-bound, redacted logs/screenshots and their hashes.
 Never publish user paths, secrets, authentication files or licensed media.
 An API facade, fake LSP/tool signature, headless process-task observation or
-Linux desktop pass cannot replace actual Remote-WSL proof. No additional
-platform support or automatic shell/extension change is introduced.
+Linux desktop pass is sufficient only for the Linux desktop acceptance it
+actually exercises. No WSL/Windows support or automatic shell/extension change
+is introduced.
 
 ### Actual installer context and positive root/guidance proof
 
@@ -362,7 +362,7 @@ not an installer rejection or positive acceptance result.
 | ST-43 | Second-root or standalone entry and imports; spaces/metacharacters; source basename beginning with hyphen | Request root and CWD match containing root/parent; every selected absolute path is a literal argv element; no shell or unsupported `--` delimiter; real driver accepts argv | R9; AR-21 |
 | ST-44 | Desktop-launched editor with installed tools absent from PATH; machine override, invalid override and workspace-only override variants | Default install discovered; valid machine override honoured; invalid explicit setting errors; workspace override cannot silently select executable | R10; 03-04 §Tool discovery |
 | ST-45 | Existing LSP actions plus new commands, profile change and extension deactivate/reactivate | LSP behavior remains covered by existing tests; action profile follows setting; command registrations disposed without duplicate tasks | R9/R10; 03-04 §Tool discovery |
-| ST-46 | Packaged VSIX in Linux desktop and actual Remote-WSL host using installed candidate | Editing diagnostics, Build and Run work; native Linux FS-UAE action works with configured media; WSL tools execute in Linux and manual Windows-emulator guidance is usable | R9–R11; AR-21/23/24 |
+| ST-46 | Packaged VSIX on the Linux desktop using the installed candidate | Editing diagnostics, Build and Run work; native Linux FS-UAE action works with configured media; no WSL/Windows requirement | R9–R11; AR-21/49 |
 
 ### Release and candidate acceptance
 
@@ -371,12 +371,12 @@ not an installer rejection or positive acceptance result.
 | ST-47 | Workflow definitions and manual inputs including path/shell syntax | Only manual dispatch, validated identities, pinned actions/build inputs, scoped credentials and bounded concurrency/timeouts; invalid input rejected | R12/R13; 03-04 §Two bounded workflows |
 | ST-48 | Distribution candidate core archive and VSIX at v1.2.0 | Three executable binaries with correct core version; required first-party and third-party licence files present; VSIX metadata matches | R2/R10/R14; 03-04 §Two bounded workflows |
 | ST-49 | Existing support/core/VSIX identity with different bytes; identical rerun; interrupted component/distribution promotion | Changed bytes rejected; identical assets verified before reuse; retry never mutates released identity or exposes unavailable references | R12/R13; AR-22 |
-| ST-50 | Initial or support-only candidate with missing/private support/core/VSIX/source payload; missing WSL, changed evidence/hash, unresolved major or absent approval | Distribution promotion blocked; component/support tags not latest; all pre-publication controls/review precede approval; changed approved bytes invalidate approval; missing ST-56 blocks final completion only | R13; 03-04 §Draft acceptance and public promotion |
+| ST-50 | Initial or support-only candidate with missing/private support/core/VSIX/source payload; changed evidence/hash, unresolved major or absent approval | Distribution promotion blocked; component/support tags not latest; all pre-publication controls/review precede approval; changed approved bytes invalidate approval; missing ST-56 blocks final completion only | R13; 03-04 §Draft acceptance and public promotion |
 | ST-51 | Support-only v1.2.0-r1 candidate references exact prior core bytes | Core is reused; distribution identity advances; candidate tests use revised support and record both identities | R12; AR-22 |
 | ST-52 | Current release docs/version records and preserved v1.1.2 historical record | New records agree on 1.2.0 and current licence set; published v1.1.2 facts/terms remain historical and unchanged | R14; AR-25 |
 | ST-53 | Shipped bootstrap candidate on fresh Ubuntu 22.04/24.04, prerequisites only, repository/original SDK inaccessible, `PYTHONPATH` cleared | CLI/LSP/VSIX present; host/vamos success and exit-7, both profiles, updates/failures and relocation pass; helper/manifest/payload hashes recorded | R1–R10; AR-24 |
 | ST-54 | Candidate native FS-UAE and full legacy gates, all displays private | ST-37 observed; `make verify`, `make vscode-check`, `make site-check` pass; no desktop interference or media in published evidence | R7–R10/R13; AR-24 |
-| ST-55 | User's actual WSL2 machine follows candidate install/Remote-WSL instructions | Install, CLI build/run, LSP and editor Build/Run work; user supplies dated candidate-specific evidence; absent machine/evidence blocks acceptance | R11/R13; AR-23/24 |
+| ST-55 | Retired: WSL2/Remote-WSL Linux host acceptance | Not part of v1.2.0 under AR-49; no Windows/WSL support is claimed or required | — |
 | ST-56 | Later approved promotion followed by public quick-start; fresh anonymous download | All links/hashes resolve and documented installation succeeds; public evidence identifies exact released assets without credentials/media | R5/R13/R14; AR-22/25 |
 
 ### Early producers and saved-source selection
@@ -421,7 +421,7 @@ internals. Use small modules and the existing runners.
 External steps are structured manual acceptance, not new automation platforms.
 Record OS/Python/FS-UAE/VS Code versions, candidate hashes, commands and observed
 outputs in the v1.2.0 release evidence. Keep private paths/media out of published
-logs. ST-37/ST-46/ST-55 are not considered passed by an argv mock.
+logs. ST-37/ST-46 are not considered passed by an argv mock.
 
 Spec authors receive these cases and the owning contracts without reading new
 implementation logic. Reviewers check every affected call site/parallel path
@@ -432,6 +432,20 @@ and whether a negative control fails when the fix is absent.
 Entries appear newest first. Each records the state at its timestamp; the top
 entry is the current Phase5 result. Older entries retain their historical
 task counts and holds.
+
+### Linux-only scope decision — 2026-11-22 11:42
+
+The user ruled **“linux only. no WSL”** (AR-49). v1.2.0 is Linux x86_64 only:
+WSL2/Remote-WSL and Windows access are removed from requirements, acceptance,
+Phase 6 and release claims. ST-55 is retired; candidate-green is ST-53 and ST-54,
+with ST-56 post-publication.
+
+The extension README no longer documents Remote-WSL or manual Windows transfer.
+The VSIX was rebuilt after that documentation change: 25,749 bytes, SHA-256
+`c0b4e4ae93e652f5cb065326417b52c10aac09889054132a6e2aac3c985811eb`.
+`make vscode-check` passed with a fresh packaged client, and the release suite
+passed 27/27 against the new VSIX and the unchanged core. The candidate scope is
+now explicitly Linux-only; no WSL/Windows acceptance or support is claimed.
 
 ### Phase 5 review correction and re-review — 2026-11-21 20:35
 
@@ -462,7 +476,7 @@ output exclusively, and pins the artifact/public/rerun paths in tests.
 Final Phase 5 gates: `make check` exit 0 with 139 distribution tests and fuzz
 smoke 28/28; `make site-check` production build exit 0; release suite 27/27
 (16 specification, 11 implementation) against core `9960d775…` and VSIX
-`ed0c803d…`. The earlier full `make verify` (4,796 Rust instances, all
+`c0b4e4ae…`. The earlier full `make verify` (4,796 Rust instances, all
 acceptance legs) and `make vscode-check` receipts remain applicable because the
 fix cohorts change release producers, workflows, tests and docs, not compiler or
 extension runtime bytes. No third review, workflow dispatch, tag, release or
@@ -479,8 +493,8 @@ The final core was built on Ubuntu 22.04.5 with glibc 2.35 and the pinned Rust
 1.99 toolchain: three executables report 1.2.0, the archive is
 `9960d77503bf5f392aa8d2631270a9b4af7672ce213838b6364e3418d350b2ab`
 (18,544,640 bytes) and contains the five notices. The final VSIX is
-`ed0c803d0e4e2bcf03512ea5c5ebb331acbeabd91c828a3d3bfcac72ed29a3e8`
-(26,556 bytes) with matching name, publisher and version.
+`c0b4e4ae93e652f5cb065326417b52c10aac09889054132a6e2aac3c985811eb`
+(25,749 bytes) with matching name, publisher and version.
 
 Gates on the Phase 5 tree:
 

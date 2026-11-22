@@ -21,14 +21,12 @@ installation path and editor actions without changing the language rules.
   candidate before activation, keeps the previous working version and refuses a
   concurrent writer. `--root` and `--release` select a custom root or an exact
   distribution tag explicitly.
-- **Editor Build/Run.** The VS Code extension adds Build, Run and Run in FS-UAE
-  actions. They save the active `.clo` entry, ask the language server for the
-  canonical saved-source closure, and pass the entry and its imported sources
+- **Linux desktop editor.** The VS Code extension adds Build, Run and Run in
+  FS-UAE actions. They save the active `.clo` entry, ask the language server for
+  the canonical saved-source closure, and pass the entry and its imported sources
   directly to the driver. Machine-scoped settings find `~/.clorraine/bin`
-  without a terminal `PATH`.
-- **Remote-WSL and manual Windows use.** The extension runs in the Linux remote
-  host; FS-UAE itself remains a user-provided Windows or Linux application. The
-  guide documents moving the generated Amiga executable to that emulator.
+  without a terminal `PATH`. v1.2.0 supports the Linux desktop only; WSL2,
+  Remote-WSL and Windows are outside this release.
 - **Bounded release automation.** Two manually dispatched workflows build
   support and compiler/editor/distribution drafts. They never publish on a
   build; promotion needs a separately reviewed manifest hash.
@@ -37,21 +35,23 @@ installation path and editor actions without changing the language rules.
 
 The v1.2.0 candidate gate is `make verify`, `make vscode-check`, `make
 site-check`, the clean Ubuntu 22.04/24.04 installation runs, the native FS-UAE
-and legacy Amiga gates on private displays, and the user's actual WSL2/Remote-WSL
-record. The final candidate also needs the release specification suite and an
-independent acceptance review before any promotion. Missing WSL2 evidence, an
-unresolved critical/major finding, a changed approved byte or a missing
-post-publication check blocks the corresponding stage; it is never replaced by
-a host-only or miniature-fixture result.
+and legacy Amiga gates on private displays, and the Linux desktop editor record.
+The final candidate also needs the release specification suite and an
+independent acceptance review before any promotion. An unresolved
+critical/major finding, a changed approved byte or a missing post-publication
+check blocks the corresponding stage; it is never replaced by a host-only or
+miniature-fixture result. WSL2/Remote-WSL and Windows are not acceptance gates
+because v1.2.0 does not claim them.
 
 ## Known limitations
 
-- Native Windows, native macOS and ARM artifacts are not part of this release.
-  Windows users compile through WSL2 and run FS-UAE themselves.
+- Native Windows, macOS, WSL2/Remote-WSL and ARM artifacts are not part of this
+  release. Windows and WSL users are outside the v1.2.0 support claim.
 - FS-UAE and licensed Kickstart/Workbench media are user-provided. No emulator,
   ROM or Workbench content is redistributed.
 - Automatic Windows emulator launch, native emulator capture and automatic
-  shell-profile or extension changes are outside this delivery.
+  shell-profile or extension changes are outside this delivery. The release
+  makes no WSL2/Remote-WSL or Windows support claim.
 - Support assets retain third-party terms. The exact `libamiga.a` input and its
   unresolved legal review are recorded in `THIRD_PARTY_NOTICES.md`; public
   promotion stays separately authorised.

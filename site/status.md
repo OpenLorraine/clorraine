@@ -28,7 +28,7 @@ statement here disagrees with a release note, the release note wins.
 | Linux x86_64 installer | <StatusBadge state="progress" label="Candidate" /> | v1.2.0 candidate; artifacts remain drafts until publication approval |
 | Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
 | VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
-| Windows and macOS installers | <StatusBadge state="progress" /> | No release yet |
+| WSL2/Remote-WSL and Windows/macOS | <StatusBadge state="progress" label="Not in v1.2.0" /> | Linux x86_64 is the only release target |
 | Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 | First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
 | Prism demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/prism) |
@@ -65,8 +65,8 @@ The detailed list is on the [verification page](/project/verification).
 
 ## What is not ready
 
-- **One-click installers.** The Linux x86_64 tarball is available. Windows and
-  macOS packaging is not.
+- **Platform scope.** v1.2.0 supports Linux x86_64 only. WSL2, Remote-WSL and
+  native Windows/macOS access are outside this release and are not claimed.
 - **A published editor extension.** The VS Code client builds, packages, and
   passes a packaged-client smoke test, but it is not in a marketplace.
 - **Broad platform testing.** The host CI runner is Linux. Amiga legs need the

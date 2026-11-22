@@ -8,6 +8,9 @@
 > **Original SHA-256 (iteration 1)**: `54538d957d8a9ef801806981ff3929607444a1947baa9cc2cf3b97634fdc8746`
 > **Code baseline**: `daa2fba0fb0114921f5e49638ac3a20eb2cd7050`
 > **Last Updated**: 2026-11-16 14:53
+> **Scope update (2026-11-22)**: AR-49 removed WSL2/Remote-WSL and Windows access
+> from v1.2.0. WSL references below are historical; they no longer define a
+> current acceptance gate.
 > **CodeOps Artifact Schema**: 1
 
 **SAME-SESSION REVIEW:** This plan was created in the current session. Five
@@ -262,19 +265,20 @@ evidence controls and review.
 A post-publication-only review cannot prevent an immutable bad release.
 Treating anonymous public-install evidence as pre-publication proof is circular.
 
-**Recommendation — A:** Define candidate-green as ST-53–ST-55 plus all applicable
-earlier cases, evidence-integrity controls and independent review. Bind the
-publication approval to those reviewed hashes. Then publish, run ST-56, and
-compare public bytes with the approved candidate.
+**Recommendation — A:** Define candidate-green as ST-53 and ST-54 plus all
+applicable earlier cases, evidence-integrity controls and independent review.
+ST-55 is retired under AR-49 (Linux-only scope). Bind the publication approval to
+those reviewed hashes. Then publish, run ST-56, and compare public bytes with
+the approved candidate.
 
 **Confidence:** High; some public transport failures are necessarily discoverable
 only after publication, which is why ST-56 remains a separate completion gate.
 **Hardening:** Clarified the two acceptance boundaries. **Challenger:** Converged.
 
-**Required verification:** Missing WSL evidence, changed candidate hashes,
-unresolved major findings or absent approval blocks promotion. Missing ST-56
-evidence blocks final completion, not the earlier approval request. Apply to
-initial and support-only releases.
+**Required verification:** Missing licensed-media evidence, changed candidate
+hashes, unresolved major findings or absent approval blocks promotion. Missing
+ST-56 evidence blocks final completion, not the earlier approval request. Apply
+to initial and support-only releases.
 
 **User Decision:** Approved Option A; same explicit six-major approval and
 plan-only fix/re-scan instruction. **Fix state:** Verified — resolved at plan level.

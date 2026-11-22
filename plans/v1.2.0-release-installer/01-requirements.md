@@ -17,10 +17,10 @@
 | R8 | Native FS-UAE Run stages a program, launches the user's emulator as A1200/KS3.1, waits, and cleans its own run data. Its status describes FS-UAE, not the guest process. | AR-14/19 |
 | R9 | Provide trusted-workspace VS Code Build, Run and Run in FS-UAE actions over the saved active entry file and its imported user sources, sharing driver behavior. | AR-21 |
 | R10 | Make language-server and driver discovery work in desktop-launched VS Code without inherited terminal PATH. Provide the VSIX and explicit install guidance. | AR-20/21 |
-| R11 | Support and verify Linux install/build plus VS Code Remote-WSL on WSL2. | AR-23/24 |
+| R11 | Support and verify native Linux install/build and VS Code on Linux. WSL2, Remote-WSL and Windows access are not part of v1.2.0. | AR-49 |
 | R12 | Prebuild support independently, reuse exact support identities across compiler releases, and allow support-only distribution revisions without recompiling an unchanged core. | AR-13/22 |
 | R13 | Publish only after explicit approval and complete acceptance evidence; release assets and manifests are versioned and immutable. | AR-22/24 |
-| R14 | Update release version records, notices, runbook, installation/WSL/editor guidance and roadmap without losing historical release facts. | AR-25 |
+| R14 | Update release version records, notices, runbook, installation/editor guidance and roadmap without losing historical release facts. | AR-25/49 |
 
 ## Boundaries
 
@@ -29,10 +29,10 @@ language profiles or m68k CPU flags. Both `nix13` and `nix20` builds remain
 required. The existing SDK acceptance matrix remains authoritative for older
 Amiga systems.
 
-Native Windows/macOS packaging, Linux/Windows ARM artifacts, automatic
-WSL-to-Windows emulator launch, bundled FS-UAE/media, native FS-UAE capture,
-Workbench provisioning and automatic shell-profile/extension changes are outside
-this delivery under AR-12/14/16/19/20/23. The two parked roadmap features remain
+Native Windows/macOS packaging, WSL2/Remote-WSL access, Linux/Windows ARM
+artifacts, automatic Windows emulator launch, bundled FS-UAE/media, native
+FS-UAE capture, Workbench provisioning and automatic shell-profile/extension
+changes are outside this delivery under AR-12/14/16/19/20/49. The two parked roadmap features remain
 parked. Existing Docker capture and host/vamos capture remain supported.
 
 ## Compatibility and security requirements
@@ -63,7 +63,7 @@ test.
 
 Required evidence includes clean Ubuntu installations, relocation with the
 original prefix unavailable, host and both Amiga-profile output, native FS-UAE
-execution, desktop VS Code, actual WSL2, update/failure recovery, complete source
+execution, Linux desktop VS Code, update/failure recovery, complete source
 records and notices, and a truthful quick-start walkthrough.
 
 Coverage is by required behavior and negative controls, not an invented

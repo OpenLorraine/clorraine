@@ -1,7 +1,7 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-21 20:45
+> **Last Updated**: 2026-11-22 11:42
 > **Progress**: 80/91 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
@@ -505,13 +505,13 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 ### Session 5.2: Implementation
 
 - [x] 5.2.1 Update compiler version records and run the existing Phase 2 core producer with final versions — `compiler/Cargo.toml`, `Cargo.lock`; ST-48/ST-57. ✅ (verified: 2026-11-21 19:10; Ubuntu22 builder used pinned Rust1.99/glibc2.35; all three release binaries report1.2.0; core archive9960d775… 18,544,640 bytes with five notices and exact core.json; existing producer suite45 tests passed with only the two expected missing-actual-input setup errors excluded from the fast target; no clobber/publication)
-- [x] 5.2.2 Update extension version records and verify VSIX payload — `tools/vscode/package.json`, `package-lock.json`; ST-48. ✅ (verified: 2026-11-21 19:10; manifest and lock root both1.2.0; makevscode-package produced clorraine-1.2.0.vsix with name/publisher/version match; final rebuilt VSIX ed0c803d… 26,556 bytes; audit_vsix ok14 entries; packaged client later passed)
+- [x] 5.2.2 Update extension version records and verify VSIX payload — `tools/vscode/package.json`, `package-lock.json`; ST-48. ✅ (verified: 2026-11-21 19:10; manifest and lock root both1.2.0; makevscode-package produced clorraine-1.2.0.vsix with name/publisher/version match; final Linux-only-scope rebuild VSIX c0b4e4ae… 25,749 bytes; audit_vsix ok14 entries; packaged client passed 2026-11-22)
 - [x] 5.2.3 Extend Phase 3 assembly with immutable component/distribution identities, independent core/VSIX reuse and promotion eligibility — `tools/distribution/package_release.py`; ST-49–ST-51. ✅ (verified: 2026-11-21 19:40; validate/verify-component/promotion added; private snapshots, identity/digest reuse, exact approval binding, per-asset size/hash/inventory and ST-56 separation; frozen release cases13/13 and implementation controls10/10 pass; no publication or output mutation)
 - [x] 5.2.4 Add manual support workflow calling proved local commands — `.github/workflows/support-release.yml`; ST-47/ST-49. ✅ (verified: 2026-11-21 19:40; manual only, required inputs, SHA-pinned actions, read-only default, one write upload job, self-hosted prepared sources/image, draft support release with make_latest=false; structural cases pass; not dispatched)
 - [x] 5.2.5 Add manual distribution workflow managing both compiler/editor component and distribution drafts — `.github/workflows/distribution-release.yml`; ST-47/ST-50. ✅ (verified: 2026-11-21 19:40; independent core/VSIX reuse, Ubuntu22/24.04 checks, component+distribution drafts, exact approved-hash gate and promotion; one write job, SHA-pinned actions, no run-body interpolation; not dispatched)
 - [x] 5.2.6 Update v1.2.0 runbook/notes/changelog while preserving historical facts — `RELEASE.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`; ST-52. ✅ (verified: 2026-11-21 19:55; v1.2.0 candidate records, two-workflow/promotion commands and Apache terms; v1.1.2 MIT tag5beec93 and published hashes443377…/52f9e364… preserved historical; old unreleased compiler notes folded into1.2.0 with no loss)
 - [x] 5.2.7 Update native quick-start/root README and installation links — `site/guide/quick-start.md`, `README.md`; ST-52. ✅ (verified: 2026-11-21 19:55; installer/PATH/VSIX/prerequisite/WSL boundaries and v1.2.0 candidate status documented; site status/brief/roadmap aligned; no publication or WSL acceptance claimed)
-- [x] 5.2.8 Run release specifications green against locally assembled candidates — `tools/distribution/tests/test_release_spec.py`. ✅ (verified: 2026-11-21 20:03; 13/13 pass with actual core9960d775… and VSIXed0c803d… plus miniature reuse/promotion controls; actual payload checks bind three binaries, five notices and1.2.0 VSIX metadata; no real-machine claim)
+- [x] 5.2.8 Run release specifications green against locally assembled candidates — `tools/distribution/tests/test_release_spec.py`. ✅ (verified: 2026-11-21 20:03; 13/13 pass with actual core9960d775… and VSIXc0b4e4ae… after the Linux-only scope rebuild plus miniature reuse/promotion controls; actual payload checks bind three binaries, five notices and1.2.0 VSIX metadata; no real-machine claim)
 
 ### Session 5.3: Hardening and gate
 
@@ -527,19 +527,19 @@ Reference: [03-04](03-04-editor-and-release.md); AR-17/22/25.
 > **Lenses**: integration, Amiga platform, release integrity
 
 Reference: [03-04 §Draft acceptance](03-04-editor-and-release.md#draft-acceptance-and-public-promotion);
-AR-22/24. Actual WSL2 evidence is owned by the user; missing evidence blocks.
+AR-22/24/49. The release is Linux x86_64 only; WSL2/Remote-WSL are outside scope.
 
 ### Session 6.1: Specification acceptance
 
-- [ ] 6.1.1 [spec-author] Write candidate completeness checks and exact manual input/output acceptance steps ST-53–ST-56 — `tools/distribution/tests/test_acceptance_spec.py`, `RELEASE.md`.
+- [ ] 6.1.1 [spec-author] Write candidate completeness checks and exact manual input/output acceptance steps ST-53, ST-54 and ST-56 (ST-55 retired by AR-49) — `tools/distribution/tests/test_acceptance_spec.py`, `RELEASE.md`.
 - [ ] 6.1.2 Run acceptance checks red on absent/incomplete candidate evidence; record negative controls — `07-testing-strategy.md`.
 
 ### Session 6.2: Candidate execution and green
 
 - [ ] 6.2.1 Dispatch the two implemented workflows for draft candidates after implementation authorisation; record resulting identities — `RELEASE.md`; ST-47–ST-51.
 - [ ] 6.2.2 Run clean Ubuntu, relocated install/update and desktop candidate proof — `RELEASE.md`; ST-53.
-- [ ] 6.2.3 Run private-display native/legacy Amiga gates and obtain user's real WSL2/Remote-WSL evidence — `RELEASE.md`; ST-54/ST-55.
-- [ ] 6.2.4 Verify pre-publication specification cases green: ST-53–ST-55 and applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`.
+- [ ] 6.2.3 Run private-display native/legacy Amiga gates — `RELEASE.md`; ST-54.
+- [ ] 6.2.4 Verify pre-publication specification cases green: ST-53 and ST-54 plus applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`.
 
 ### Session 6.3: Hardening, approval and public gate
 
@@ -550,7 +550,7 @@ AR-22/24. Actual WSL2 evidence is owned by the user; missing evidence blocks.
 - [ ] 6.3.5 Close release evidence, sync roadmap and run post-completion project analysis through their skills — `RELEASE.md`, `plans/00-roadmap.md`.
 
 **Verify (gate)**: `make verify`, `make vscode-check`, `make site-check`,
-ST-53–ST-56 with real-machine evidence.
+ST-53, ST-54 and ST-56 with real-machine evidence; ST-55 is retired.
 
 ## Review and stop conditions
 
@@ -566,5 +566,7 @@ dispatch and reopen scope rather than silently extending this plan.
 
 Critical/major findings require the user's ruling before work continues.
 Unsupported dependency/redistribution/portability assumptions stop at Phase 1.
-Unavailable licensed media or actual WSL2 evidence blocks acceptance. Public
-promotion always waits for the explicit approval in AR-22.
+Unavailable licensed media blocks acceptance. WSL2/Remote-WSL and native
+Windows/macOS access are out of scope (AR-49); their absence is not a blocker
+because no such support is claimed. Public promotion always waits for the
+explicit approval in AR-22.

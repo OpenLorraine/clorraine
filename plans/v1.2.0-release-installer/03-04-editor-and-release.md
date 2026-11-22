@@ -110,10 +110,9 @@ installed driver, trusted development build or PATH executable. An explicit
 invalid setting produces a configuration error rather than silently selecting
 another executable. Custom roots use machine path settings.
 
-Remote-WSL resolves all tool paths inside the Linux extension host. Document
-installing the VSIX in that remote host. Automatic Windows FS-UAE launch is
-outside the approved action contract; document transfer/use of the generated
-Amiga executable in the user's Windows emulator separately.
+The extension host is Linux. v1.2.0 does not support WSL2, Remote-WSL or a
+Windows extension host (AR-49), and the release makes no Windows editor claim.
+Automatic Windows FS-UAE launch is outside the approved action contract.
 
 Keep action construction and discovery in focused modules under
 `tools/vscode/src/`; reuse the current LSP lifecycle. Register/dispose commands
@@ -590,9 +589,10 @@ The workflows can prepare drafts after implementation is authorised. They do
 not automatically publish. Promotion requires the later explicit user go
 specified by AR-22:
 
-1. Finish all candidate evidence, including real desktop VS Code, WSL2 and
-   licensed local emulator gates. Candidate-green means ST-53–ST-55 and all
-   applicable earlier cases; ST-56 is post-publication evidence.
+1. Finish all candidate evidence, including real Linux desktop VS Code and
+   licensed local emulator gates. Candidate-green means ST-53 and ST-54 plus all
+   applicable earlier cases; ST-56 is post-publication evidence. ST-55 (WSL2)
+   is retired under AR-49 and is not an acceptance gate.
 2. Complete evidence/hash-mismatch controls, full/editor/site gates and
    independent acceptance review. Resolve all required findings. Verify exact
    asset identities and required corresponding-source/notices.
@@ -624,8 +624,9 @@ the v1.1.2 record, published MIT terms and immutable asset identities as history
 new first-party artifacts use the current repository licence set.
 Document system prerequisites, explicit updates, root/release selection,
 PATH/VSIX commands, SDK discovery, both Run choices, native capture limitation,
-media ownership, Python-ABI changes and WSL boundaries by referring to the
-owning contracts, not claiming future acceptance already passed.
+media ownership and Python-ABI changes by referring to the owning contracts, not
+claiming future acceptance already passed. The release is Linux x86_64 only;
+state that WSL2/Remote-WSL and native Windows/macOS access are outside v1.2.0.
 
 ## Acceptance ownership
 
@@ -634,8 +635,8 @@ owning contracts, not claiming future acceptance already passed.
 | Clean Ubuntu package and offline wheel tests | Repository commands in CI and clean local environments |
 | Existing full compiler/Amiga gates | Local pinned SDK with licensed media |
 | Native FS-UAE | Local Linux; private X display and local KS3.1 |
-| Desktop VS Code | Packaged VSIX, installed candidate tools, no terminal PATH |
-| Actual WSL2 and Remote-WSL | User's Windows test machine; record candidate identities and commands |
+| Desktop VS Code | Linux desktop, packaged VSIX, installed candidate tools, no terminal PATH |
+| WSL2 and Remote-WSL | Out of scope for v1.2.0 (AR-49); no support or acceptance claim |
 
 All evidence binds to candidate bytes/source revisions. A change affecting a
 tested artifact invalidates the relevant evidence and requires rerun.
