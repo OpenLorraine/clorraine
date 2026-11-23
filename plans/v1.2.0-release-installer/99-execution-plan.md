@@ -1,8 +1,8 @@
 # Execution plan: native Linux delivery
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-22 12:10
-> **Progress**: 82/91 tasks (90%)
+> **Last Updated**: 2026-11-23 10:55
+> **Progress**: 82/91 tasks (90%) — plan superseded; remaining tasks closed
 > **CodeOps Artifact Schema**: 1
 
 ## Execution contract
@@ -541,18 +541,18 @@ workflow cannot produce the artifact required by the distribution workflow.
 
 ### Session 6.2: Candidate execution and green
 
-- [!] 6.2.1 Dispatch the two implemented workflows for draft candidates after implementation authorisation; record resulting identities — `RELEASE.md`; ST-47–ST-51. Blocked: `gh api repos/OpenLorraine/clorraine/actions/runners` reports `total_count: 0`; the support workflow requires a registered self-hosted `clorraine-release` runner with prepared sources/image, so no support artifact exists for the distribution workflow.
-- [!] 6.2.2 Run clean Ubuntu, relocated install/update and desktop candidate proof — `RELEASE.md`; ST-53. Blocked: depends on the workflow-produced draft candidate from 6.2.1.
-- [!] 6.2.3 Run private-display native/legacy Amiga gates — `RELEASE.md`; ST-54. Blocked: depends on the workflow-produced draft candidate from 6.2.1.
-- [!] 6.2.4 Verify pre-publication specification cases green: ST-53 and ST-54 plus applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`. Blocked: depends on 6.2.1–6.2.3 evidence.
+- [!] 6.2.1 Dispatch the two implemented workflows for draft candidates after implementation authorisation; record resulting identities — `RELEASE.md`; ST-47–ST-51. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.2.2 Run clean Ubuntu, relocated install/update and desktop candidate proof — `RELEASE.md`; ST-53. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.2.3 Run private-display native/legacy Amiga gates — `RELEASE.md`; ST-54. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.2.4 Verify pre-publication specification cases green: ST-53 and ST-54 plus applicable earlier cases, with ST-56 explicitly post-publication — `RELEASE.md`. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
 
 ### Session 6.3: Hardening, approval and public gate
 
-- [ ] 6.3.1 Add evidence/hash-mismatch negative-control implementation tests — `tools/distribution/tests/test_acceptance_impl.py`.
-- [ ] 6.3.2 Run final full/editor/site gates and independent acceptance audit against exact candidate bytes; resolve required findings before any publication — `99-execution-plan.md`.
-- [ ] 6.3.3 Request and record explicit publication approval bound to reviewed hashes/evidence; block if absent or invalidated — `RELEASE.md`; ST-50.
-- [ ] 6.3.4 Publish/verify support and compiler/editor payloads, promote distribution, then pass anonymous-install ST-56 against approved hashes — `RELEASE.md`; 03-04 §Draft acceptance and public promotion.
-- [ ] 6.3.5 Close release evidence, sync roadmap and run post-completion project analysis through their skills — `RELEASE.md`, `plans/00-roadmap.md`.
+- [!] 6.3.1 Add evidence/hash-mismatch negative-control implementation tests — `tools/distribution/tests/test_acceptance_impl.py`. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.3.2 Run final full/editor/site gates and independent acceptance audit against exact candidate bytes; resolve required findings before any publication — `99-execution-plan.md`. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.3.3 Request and record explicit publication approval bound to reviewed hashes/evidence; block if absent or invalidated — `RELEASE.md`; ST-50. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.3.4 Publish/verify support and compiler/editor payloads, promote distribution, then pass anonymous-install ST-56 against approved hashes — `RELEASE.md`; 03-04 §Draft acceptance and public promotion. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
+- [!] 6.3.5 Close release evidence, sync roadmap and run post-completion project analysis through their skills — `RELEASE.md`, `plans/00-roadmap.md`. Blocked: plan closed as superseded on 2026-11-23; no further execution under this plan.
 
 **Verify (gate)**: `make verify`, `make vscode-check`, `make site-check`,
 ST-53, ST-54 and ST-56 with real-machine evidence; ST-55 is retired.

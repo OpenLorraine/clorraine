@@ -429,6 +429,9 @@ and whether a negative control fails when the fix is absent.
 
 ## Execution evidence
 
+> **Plan status:** Superseded on 2026-11-23 (AR-50). The evidence below is
+> historical. No asset was published; remaining Phase 6 tasks are closed.
+
 Entries appear newest first. Each records the state at its timestamp; the top
 entry is the current Phase6 result. Older entries retain their historical
 task counts and holds.

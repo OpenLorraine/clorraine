@@ -5,6 +5,10 @@ description: "Install Clorraine on Linux with the v1.2.0 candidate installer, or
 
 # Quick start
 
+> **No prebuilt release is currently published.** The previous v1.2.0 Linux
+> installer was superseded on 2026-11-23. Until the new cross-platform installer
+> ships, build from source or use the Docker SDK below.
+
 Clorraine is a developer preview. The **Linux x86_64** path installs prebuilt
 compiler binaries, the Amiga SDK and the `vamos` runtime without compiling
 dependencies. v1.2.0 supports Linux x86_64 only; WSL2, Remote-WSL and native
@@ -19,38 +23,12 @@ Windows/macOS are outside this release.
 | **Build from source** | All three binaries, including the language server | Rust stable; no external crates |
 | **One-click installers** | Not part of v1.2.0; Linux x86_64 only | — |
 
-## Linux installer
+## Prebuilt installer
 
-The v1.2.0 installer is the current release target. Its artifacts remain
-candidates until the explicit approval recorded in
-[RELEASE.md](https://github.com/OpenLorraine/clorraine/blob/main/RELEASE.md) is
-supplied. Once the distribution is published, install with:
-
-```sh
-curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh
-sh install.sh --release v1.2.0
-export PATH="$HOME/.clorraine/bin:$PATH"
-clorraine --version
-```
-
-The default root is `~/.clorraine`. Use `--root <path>` to select another
-user-owned directory. The installer verifies the helper length and SHA-256,
-checks the host distribution and Python ABI, builds a complete candidate, and
-activates it only after the installed tools pass their smoke checks. A failed
-update leaves the previous working version active.
-
-System prerequisites:
-
-```sh
-sudo apt install gcc libc6-dev python3 python3-venv curl ca-certificates
-```
-
-The installer prints the exact `code --install-extension ...` command for the
-packaged VSIX. Run that printed command; the VSIX lives beside the installed
-version, not at a fixed path guessed from the root. It does not edit shell
-startup files or install the extension automatically. FS-UAE and licensed
-Kickstart/Workbench media remain user-provided; the SDK never downloads or
-copies them.
+No prebuilt Linux/macOS/Windows installer is currently published. The previous
+v1.2.0 Linux installer design was superseded on 2026-11-23, and its artifacts
+were never published. Use the Docker SDK or build from source below until the
+cross-platform installer ships.
 
 The previous published release, v1.1.2, remains available under its MIT terms
 at <https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2>.

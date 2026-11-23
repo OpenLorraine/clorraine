@@ -1,5 +1,9 @@
 # Execution findings
 
+> **Plan status:** Superseded on 2026-11-23. No asset was published. The
+> remaining Phase 6 tasks are closed under AR-50; see the new cross-platform
+> delivery plan.
+
 | Finding | Phase | Severity | Area | Ruling |
 |---|---|---|---|---|
 | RV-001 | 1 | MINOR | distribution-status-docs | deferred |

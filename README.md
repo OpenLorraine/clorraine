@@ -22,29 +22,14 @@
 | Windows/macOS/WSL support | Outside v1.2.0; Linux x86_64 is the release target |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 
-## Install on Linux
+## Install
 
-The v1.2.0 release target is a self-contained installer for Ubuntu 22.04 and
-24.04 on x86_64. It installs prebuilt compiler binaries, the Amiga SDK and the
-`vamos` runtime; it never compiles installation dependencies.
+No prebuilt v1.2.0 release is published. The previous Python-installer/support
+pipeline was superseded on 2026-11-23 by a cross-platform CLI + FS-UAE delivery
+plan. Until the new installer ships, build the CLI from source with
+`cargo build --workspace`; the Docker SDK remains the development environment.
 
-```sh
-curl -LO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh
-sh install.sh --release v1.2.0
-export PATH="$HOME/.clorraine/bin:$PATH"
-clorraine --version
-```
-
-The installer prints the exact `code --install-extension` command for the
-packaged VSIX. It also accepts `--root <path>` for a custom installation
-directory. System prerequisites are `gcc`, `libc6-dev`, `python3`,
-`python3-venv`, `curl` and `ca-certificates`; the installer names any missing
-package and does not change shell startup files automatically.
-
-> **Publication status.** v1.2.0 artifacts are candidates until the explicit
-> approval recorded in [RELEASE.md](RELEASE.md) is supplied. v1.1.2 remains the
-> latest published release. Local candidates can be assembled with the
-> producers in [RELEASE.md](RELEASE.md) before that approval.
+v1.1.2 remains the latest published release, under its MIT terms.
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
 the Motorola 68000 family.

@@ -1,10 +1,19 @@
 # Clorraine v1.2.0 native Linux delivery
 
-> **Status**: Plan Preflighted — all nine findings resolved
+> **Status**: Superseded — 2026-11-23. Unpublished; replaced by the cross-platform
+> CLI and FS-UAE delivery plan.
 > **Created**: 2026-11-16
 > **Implements**: — (standalone user-requested feature)
 > **Roadmap**: PLAN-45
 > **CodeOps Artifact Schema**: 1
+
+> **Closure.** The user redirected the product goal to a CLI-first workflow that
+> works on Windows, Linux and macOS and runs programs in FS-UAE. The upstream
+> AmigaPorts toolchain is prebuilt for all three platforms, so the Python
+> installer, support pipeline, audits, self-hosted runner and promotion
+> workflows from this plan are no longer the chosen design. No asset from this
+> plan was published. Reusable pieces (the FS-UAE driver path, discovery, editor
+> actions, language server) carry into the new plan. See AR-50.
 
 Deliver the confirmed Linux installation and editing/build/run workflow. The
 approved decisions are in the [register](00-ambiguity-register.md), AR-12–29.
