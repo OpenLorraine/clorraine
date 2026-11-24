@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 24/28 tasks (86%)
+> **Progress**: 25/28 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -256,7 +256,7 @@ product path.
 
 - [x] 4.1.1 [spec-author] Add `acceptance_spec.py` first: valid record, wrong platform/arch, wrong toolchain tag/hash, old FS-UAE, wrong hello/corpus output, missing VSIX, and candidate-hash mismatch; then implement `make acceptance-check EVIDENCE=... CANDIDATE=...`. ✅ (completed: 2026-11-24 22:59)
   - **Task verify**: the spec fails before implementation and passes after; ST-25 cases pass.
-- [ ] 4.1.2 Add `make acceptance` to install the exact candidate into a fresh HOME, verify and extract the supplied toolchain archive against the rc24 pin, run setup/build/FS-UAE for hello, four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and an rc-1 negative; assert no FS-UAE/Xvfb process remains after each run; write `evidence.json` with archive/installer/VSIX/toolchain-archive/ROM/FS-UAE/negative/corpus/output hashes.
+- [x] 4.1.2 Add `make acceptance` to install the exact candidate into a fresh HOME, verify and extract the supplied toolchain archive against the rc24 pin, run setup/build/FS-UAE for hello, four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and an rc-1 negative; assert no FS-UAE/Xvfb process remains after each run; write `evidence.json` with archive/installer/VSIX/toolchain-archive/ROM/FS-UAE/negative/corpus/output hashes. ✅ (completed: 2026-11-24 23:01)
   - **Task verify**: ST-20 and the evidence schema pass; the output is the expected hello line.
 
 ### Step 4.2: Remove the old pipeline
@@ -282,6 +282,14 @@ product path.
   archive/installer mismatch, and missing fields.
 - **Target:** `make acceptance-check EVIDENCE=... CANDIDATE=...` runs the
   checker; `make dist-check` runs the spec hermetically.
+- **Acceptance run:** `make acceptance` installed the exact candidate into a
+  fresh HOME, verified and extracted the pinned rc24 archive, and ran hello,
+  the four hosted-amiga corpus programs, the hosted-amiga-13 file-copier, and
+  the rc-1 negative on FS-UAE 3.2.35. Every guest matched and every run left
+  no FS-UAE/Xvfb survivor. Evidence:
+  `build/acceptance/20261124T220050Z/evidence.json`; `make acceptance-check`
+  reports `ok`. The evidence records glibc 2.43, the candidate hashes, the
+  rc24 and ROM pins, and the corpus hashes.
 
 **Deliverables**: acceptance evidence, old pipeline removed, full gate, closeout.
 **Phase gate**: `make acceptance-check` + `make check` + `make verify`.
