@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 12/28 tasks (43%)
+> **Progress**: 13/28 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -110,7 +110,7 @@ product path.
   - **Task verify**: ST-14–ST-16 pass, including the timeout and cleanup-ordering cases.
 - [x] 2.2.4 Add `--emulator --capture` writing the guest output to `out.txt` before cleanup; remove the old rejection; accept both Amiga profiles. ✅ (completed: 2026-11-24 21:08)
   - **Task verify**: ST-17 passes and the existing A500-profile CLI test still passes.
-- [ ] 2.2.5 Add `make fs-uae-check KICKSTART=PATH`; run hello, the four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and a temporary rc-1 negative via the candidate driver on a real A1200/KS3.1 FS-UAE; compare outputs and require the negative to exit 1.
+- [x] 2.2.5 Add `make fs-uae-check KICKSTART=PATH`; run hello, the four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and a temporary rc-1 negative via the candidate driver on a real A1200/KS3.1 FS-UAE; compare outputs and require the negative to exit 1. ✅ (completed: 2026-11-24 21:22)
   - **Task verify**: the real guest output is `Hello, Amiga, from Clorraine!`; the rc-1 negative exits 1 with no status; record the FS-UAE and ROM versions/hashes.
 
 ### Step 2.3: Gate
@@ -138,6 +138,11 @@ product path.
 - **Module split:** the runner now lives in
   `compiler/src/clorraine/emulator/{mod,select,storage,observe,diagnostics}.rs`
   (each under 300 lines); the spec suite and `make check` stay green.
+- **Real guests:** `make fs-uae-check` passed hello, file-copier,
+  string-parser, buffer-container, volatile-mmio, the hosted-amiga-13
+  file-copier, and the rc-1 negative on FS-UAE 3.2.35 with rc24 and the
+  licensed 524,299-byte KS3.1 A1200 ROM (SHA-256 `541f7467…1bb0`). No FS-UAE
+  or Xvfb process survived. The log is `build/tmp/fs-uae-check.log`.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.
