@@ -200,7 +200,7 @@ product path.
   bootstrap template; `dist.spec.test.sh` failed 33 checks because the
   packaging script was absent. Logs are `build/tmp/install-spec-red.log` and
   `build/tmp/dist-spec-red.log`.
-- **Installer green:** 45 public installer checks and 19 internal checks pass.
+- **Installer green:** 81 public installer checks and 21 internal checks pass.
 - **Producer green:** 36 packaging checks pass, including exact layout,
   version mismatch, extra/forbidden files, stale installer pins, missing VSIX,
   SHA256SUMS coverage, and release README links.
@@ -214,7 +214,7 @@ product path.
   `distribution-check` and `setup-check` now runs only the Docker SDK tests
   (`test_cli`, `test_detect`, `test_fetch`). The old target and files are
   removed after acceptance in Phase 4.
-- **Editor:** 171 editor tests pass, including `~/.local/bin` discovery,
+- **Editor:** 174 editor tests pass, including `~/.local/bin` discovery,
   `toolchain.path`, one `--toolchain` argument, the one-time legacy warning,
   the manifest settings, and the packaged client. `make vscode-check` passes.
 - **Local E2E:** the final candidate installed into a temp HOME from its exact
@@ -222,10 +222,10 @@ product path.
   `clorraine 1.2.0` ran hello, file-copier, string-parser, buffer-container,
   volatile-mmio, the hosted-amiga-13 file-copier, and the rc-1 negative on
   FS-UAE 3.2.35. The log records `no fs-uae/Xvfb survivor` after every guest
-  and `processes after: none`. Assets: archive 6,530,173 bytes
-  `d906c2ac…fbd9`, installer 20,180 bytes `6ba739ef…dac7`, VSIX 26,435 bytes
-  `7ff7a4b1…15fd`; ROM `541f7467…1bb0`. Log
-  `build/tmp/phase3-local-e2e-final.log`.
+  and `processes after: none`. Assets (final build): archive 6,530,342 bytes
+  `7c43a330…80f0`, installer 20,193 bytes `f9924eb5…2478`, VSIX 26,435 bytes
+  `9385b870…6904`; ROM `541f7467…1bb0`. Log
+  `build/tmp/phase3-local-e2e-final2.log`.
 - **Phase gate:** `make check`, `make dist-check`, `make dist-verify`,
   `make vscode-check`, `make site-check`, and the installed-candidate E2E pass.
   `build/dist` contains the archive, VSIX, installer, and checksums. The
@@ -233,8 +233,11 @@ product path.
 - **Review:** correctness found one major (purge coverage) and a set of
   minor test/hardening gaps; security found four minor installer hardening
   findings; the Amiga specialist found three minor evidence/docs findings. All
-  are fixed: 81 installer spec checks, 21 internal checks, 36 producer checks,
-  and the final E2E with explicit survivor evidence. No critical remains.
+  are fixed: 83 installer spec checks, 21 internal checks, 36 producer checks,
+  174 editor tests, and the final E2E with explicit survivor evidence. The
+  fix-diff re-review found no critical/major; its four residual observations
+  (purge assertion, test-root registry, EXIT-trap cleanup, design command list)
+  are fixed and recorded without a third review pass.
 - **Boundary:** the candidate is local; no tag, release, upload, or publication
   occurred.
 

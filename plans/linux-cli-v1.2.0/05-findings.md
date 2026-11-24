@@ -83,3 +83,13 @@ Fix-diff re-review (2026-11-24): no CRITICAL or MAJOR. SR-001 and RV-020–RV-02
 | SR-005 | 3 | MINOR | Asset identity | Fixed with RV-042. |
 | SR-006 | 3 | MINOR | Survivor evidence | Fixed: the final E2E logs an explicit no-survivor line after every guest and prints `processes after: none`. |
 | SR-007 | 3 | MINOR | Stale docs | Fixed: limitations, changelog, release notes, and quick start describe the local candidate and remaining acceptance/removal work. |
+
+Fix-diff re-review (2026-11-24): no CRITICAL or MAJOR. RV-029–RV-042 and SA-001–SA-004 are verified fixed. Four residuals were reported and fixed without a third review pass:
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-043 | 3 | MINOR | Purge empty-dir assertion | Fixed: the test purges again after removing the sibling and asserts the directory; the HOME purge also asserts its config directory. |
+| RV-044 | 3 | MINOR | Test-root registry | Fixed: roots are recorded in a shared file read by the EXIT trap; the post-fix runs leave no roots. |
+| RV-045 | 3 | MINOR | EXIT-trap cleanup | Fixed: `rollback` returns 0 so the trap always releases the lock and removes private storage; the foreign-symlink test asserts no verified copy remains. |
+| RV-046 | 3 | OBS | Design command/lock text | Fixed: `sleep` and `tr` are in the required-command list; the lock section documents the bounded missing-owner wait. |
+| SR-008 | 3 | OBS | Plan evidence counts | Fixed: the final 83/21/36 and 174 editor counts are recorded. |

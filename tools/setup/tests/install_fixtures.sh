@@ -15,14 +15,22 @@ package_script="$repo/tools/setup/package.sh"
 
 failures=0
 checks=0
-test_roots=()
+roots_base="${CODEOPS_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$roots_base"
+test_roots_file="$(mktemp "$roots_base/clorraine-test-roots.XXXXXX")"
 
 # Removes every root this suite created, including roots that failed early.
+# `new_root` runs in a command substitution, so a shared file is used instead
+# of a shell array that would only change in the subshell.
 cleanup_test_roots() {
     local root
-    for root in "${test_roots[@]}"; do
-        [ -n "$root" ] && rm -rf "$root"
-    done
+    if [ -f "$test_roots_file" ]; then
+        while IFS= read -r root; do
+            [ -n "$root" ] && rm -rf "$root"
+        done <"$test_roots_file"
+        rm -f "$test_roots_file"
+    fi
+    return 0
 }
 trap cleanup_test_roots EXIT
 
@@ -112,7 +120,7 @@ new_root() {
     mkdir -p "$base"
     local root
     root="$(mktemp -d "$base/clorraine-installer.XXXXXX")"
-    test_roots+=("$root")
+    printf '%s\n' "$root" >>"$test_roots_file"
     printf '%s\n' "$root"
 }
 

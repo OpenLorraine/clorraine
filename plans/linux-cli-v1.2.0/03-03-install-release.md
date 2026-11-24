@@ -83,7 +83,8 @@ release script; there is no version-selection flag.
 
 Always required: `uname`, `tar`, `gzip`, `sha256sum`, `getconf`, `mktemp`,
 `awk`, `sed`, `grep`, `find`, `wc`, `basename`, `dirname`, `sort`, `ln`, `mv`,
-`rm`, `mkdir`, `cp`, `chmod`. `curl` is required only for network mode;
+`rm`, `mkdir`, `cp`, `chmod`, `readlink`, `sleep`, `tr`. `curl` is required
+only for network mode;
 `--archive/--checksums` works offline without it.
 
 The 2.38 floor comes from the rc24 toolchain, not the CLI (built on bookworm
@@ -172,10 +173,14 @@ Cross-version updates keep the old `versions/<version>-<sha12>` directory.
 
 The lock is `PREFIX/share/clorraine.lock`, a sibling of the purge target, created atomically with `mkdir`.
 It contains `pid` and the process start time from `/proc/<pid>/stat` field 22.
-A lock is stale when the PID is absent or its start time differs. The installer
-removes a stale lock and retries `mkdir` once; a second concurrent winner is an
-error naming the owner. Live locks fail immediately. Install and uninstall take
-the same lock. Tests cover live, stale, and concurrent installers.
+A lock is stale when a valid owner records an absent PID or a different start
+time. A missing or partially written owner is not stale: a concurrent creator
+may be between `mkdir` and the owner write, so the installer waits a bounded
+0.5 seconds for the owner and then fails without removing the lock. The
+installer removes a validated stale lock and retries `mkdir` once; a second
+concurrent winner is an error naming the owner. Live locks fail immediately.
+Install and uninstall take the same lock. Tests cover live, stale, PID-reuse,
+and uninitialized-owner locks.
 
 ### PATH
 

@@ -453,6 +453,7 @@ rollback() {
         link="$PREFIX/bin/$name"
         [ -L "$link" ] && rm -f "$link"
     done
+    return 0
 }
 
 # Installs one verified archive.

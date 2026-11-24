@@ -291,9 +291,8 @@ purge_scope_is_exact() {
     check_exists "$root/config/clorraine/keep" "purge keeps a sibling"
     check_exists "$root/config/clorraine" "purge keeps a non-empty config dir"
     rm -f "$root/config/clorraine/keep"
-    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall)"
-    check_status 0 "$status" "uninstall after purge"
-    rmdir "$root/config/clorraine" 2>/dev/null || true
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall --purge)"
+    check_status 0 "$status" "purge after removing the sibling"
     check_absent "$root/config/clorraine" "empty config dir is gone"
 
     status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
@@ -303,6 +302,7 @@ purge_scope_is_exact() {
     status="$(HOME="$root/home" XDG_CONFIG_HOME= PATH="$root/fake:$PATH" "$installer" --prefix "$prefix" --uninstall --purge >"$root/stdout" 2>"$root/stderr"; printf '%s' "$?")"
     check_status 0 "$status" "purge with HOME config"
     check_absent "$root/home/.config/clorraine/config" "home purge removes config"
+    check_absent "$root/home/.config/clorraine" "home purge removes the empty config dir"
     check_absent "$prefix/share/clorraine" "home purge removes share"
 
     status="$(run_installer "$root" "$installer" --prefix "$prefix" --purge)"
@@ -318,6 +318,11 @@ foreign_symlinks_are_not_owned() {
     status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
     check_status 1 "$status" "foreign symlink install"
     check_contains "$root/stderr" "not a Clorraine symlink" "foreign-symlink message"
+    if [ -z "$(find "$root/run_tmp" -maxdepth 1 -name 'clorraine-verified.*' -print -quit 2>/dev/null)" ]; then
+        pass
+    else
+        fail "foreign-symlink failure left a private verified copy"
+    fi
     rm -f "$prefix/bin/clorraine"
 
     status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
