@@ -54,7 +54,9 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
 | `make fs-uae-check KICKSTART=… [TOOLCHAIN=…]` | Run hello, the four hosted-amiga corpus programs, one hosted-amiga-13 corpus program, and an rc-1 negative in a real A1200/KS3.1 FS-UAE; compare output and reject a surviving emulator/Xvfb process |
 | `make dist` | Build release binaries and the VSIX, then write the local candidate archive, installer, and `SHA256SUMS` under `build/dist`; no publication |
-| `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes; run the hermetic installer/producer tests |
+| `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes; run the hermetic installer/producer/acceptance/removal tests |
+| `make acceptance CANDIDATE=… TOOLCHAIN_ARCHIVE=… KICKSTART=…` | Install the exact candidate into an isolated HOME, run the rc24/FS-UAE matrix, and write local acceptance evidence |
+| `make acceptance-check EVIDENCE=… CANDIDATE=…` | Validate a recorded acceptance record against the candidate bytes and corpus goldens |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |

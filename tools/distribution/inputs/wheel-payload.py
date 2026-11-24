@@ -1,3 +1,6 @@
+# Historical reference only: the native support pipeline and its
+# prepare_ndk.py guard were removed. This file is retained as provenance and is
+# not runnable.
 """Produce fixed-source vamos wheels using the selected preinstalled build environment."""
 
 from __future__ import annotations

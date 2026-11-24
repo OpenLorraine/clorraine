@@ -94,6 +94,21 @@ The assets are the versioned archive, `install.sh`, the VSIX, and `SHA256SUMS`.
 `make dist-check` runs the hermetic installer and producer tests. Nothing is
 tagged, published, or uploaded.
 
+The local acceptance run uses a fresh HOME and the pinned inputs:
+
+```sh
+make acceptance CANDIDATE=build/dist \
+  TOOLCHAIN_ARCHIVE="$HOME/toolchains/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz" \
+  KICKSTART="$HOME/amiga/roms/amiga-os-310-a1200.rom"
+make acceptance-check EVIDENCE=build/acceptance/<stamp>/evidence.json \
+  CANDIDATE=build/dist
+```
+
+Acceptance executes the self-built candidate installer with your privileges; do
+not point it at an untrusted candidate. The checker proves the record's format
+and the candidate/corpus bytes, not that the run happened; keep the raw
+acceptance directory. Publication remains a separate approval.
+
 Install the exact local bytes:
 
 ```sh

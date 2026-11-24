@@ -2,7 +2,10 @@
 
 The acceptance run writes a JSON record beside the raw output. This module checks
 the record against the exact candidate files and the repository's expected
-corpus bytes. It never downloads, builds, or runs anything.
+corpus bytes. It never downloads, builds, or runs anything. It proves the
+record's format and the candidate/corpus bytes, not that the recorded run
+happened; retain the raw acceptance directory and treat publication as a
+separate approval.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ from pathlib import Path
 
 HELLO = "Hello, Amiga, from Clorraine!"
 VERSION = "1.2.0"
+ARCHIVE_NAME = f"clorraine-{VERSION}-x86_64-linux.tar.gz"
+VSIX_NAME = f"clorraine-{VERSION}.vsix"
 CORPUS = [
     ("file-copier", "hosted-amiga"),
     ("string-parser", "hosted-amiga"),
@@ -105,6 +110,7 @@ def normalized_corpus_sha(path: Path) -> str:
 
 def _candidate_file(candidate: Path, name: str, context: str) -> Path:
     path = candidate / name
+    _require(not path.is_symlink(), f"{context} must not be a symlink: {path}")
     _require(path.is_file(), f"{context} is missing {path}")
     return path
 
@@ -207,6 +213,10 @@ def check(record: object, candidate: Path, repo: Path | None = None) -> None:
     _check_glibc(entry["glibc"])
     _check_candidate_archive(entry, candidate, "archive")
     _check_candidate_archive(entry, candidate, "vsix")
+    _require(entry["archive"]["name"] == ARCHIVE_NAME,
+             f"archive name must be {ARCHIVE_NAME}")
+    _require(entry["vsix"]["name"] == VSIX_NAME,
+             f"VSIX name must be {VSIX_NAME}")
     _check_candidate_archive(entry, candidate, "installer")
     _check_toolchain(entry["toolchain"])
     kickstart = _keys(entry["kickstart"], KICKSTART_KEYS, "kickstart")

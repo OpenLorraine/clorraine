@@ -133,15 +133,12 @@ fs-uae-check:
 setup:
 	python3 tools/setup/install_sdk.py $(if $(filter 1,$(FETCH)),--fetch,) $(if $(filter 1,$(DRY)),--dry-run,) $(if $(filter 1,$(YES)),--yes,)
 
-# The Docker SDK installer tests only. The replaced release bootstrap and the
-# old native installer suites are superseded by the Linux candidate and are
-# removed after acceptance; they must not pin the new tools/setup/install.sh.
+# The Docker SDK installer tests only. Installer/producer/acceptance/removal
+# suites run under `make dist-check`; `setup-check` must not pin the new
+# tools/setup/install.sh.
 setup-check:
 	cd tools/setup && python3 -m unittest discover -s tests -t tests -p 'test_[cdf]*.py' -v
 
-# Local support metadata/build/selection tests use Git and the existing wheel
-# builder's Python packaging dependency. Real archives require a separate
-# isolated Ubuntu/NDK acceptance context; they never become optional skips here.
 # Type-check, test, package, and audit the VS Code extension. The language
 # server is built in the pinned container; Node.js 22+ must be on the host PATH
 # (the same requirement as `make demo-check`).

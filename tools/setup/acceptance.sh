@@ -5,6 +5,9 @@
 # the candidate into an isolated HOME, verifies and extracts the pinned rc24
 # archive, runs setup and the verified FS-UAE matrix, and writes `evidence.json`
 # beside the raw output. It never downloads, tags, publishes, or uploads.
+#
+# This executes the self-built candidate installer with the caller's privileges.
+# Do not point it at an untrusted candidate; use a dedicated user or container.
 set -euo pipefail
 
 candidate=${1:-}
@@ -41,7 +44,9 @@ fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 out="${OUTDIR:-$repo/build/acceptance/$stamp}"
 work="$out/work"
+umask 077
 mkdir -p "$work/home" "$work/config" "$work/tmp" "$work/prefix" "$work/run" "$work/toolchain"
+chmod 700 "$out" "$work"
 export HOME="$work/home" XDG_CONFIG_HOME="$work/config" TMPDIR="$work/tmp"
 prefix="$work/prefix"
 
@@ -66,7 +71,7 @@ no_survivor() {
         echo "acceptance: $1 left an FS-UAE or Xvfb process" >&2
         exit 1
     fi
-    echo "acceptance: $1 no fs-uae/Xvfb survivor"
+    echo "acceptance: $1 no fs-uae/Xvfb survivor" | tee -a "$out/fs-uae.log"
 }
 
 archive_bytes=$(stat -c %s "$archive")
@@ -81,6 +86,20 @@ toolchain_sha=$(sha "$toolchain_archive")
     { echo 'acceptance: toolchain archive SHA-256 is not the rc24 pin' >&2; exit 2; }
 kickstart_sha=$(sha "$kickstart")
 
+# Keep the exact candidate bytes and command record in the evidence directory;
+# the installer and checker then use the same private copies.
+cp -- "$archive" "$out/$archive_name"
+cp -- "$vsix" "$out/$vsix_name"
+cp -- "$installer" "$out/install.sh"
+cp -- "$sums" "$out/SHA256SUMS"
+chmod 600 "$out/$archive_name" "$out/$vsix_name" "$out/SHA256SUMS"
+chmod 700 "$out/install.sh"
+archive="$out/$archive_name"
+vsix="$out/$vsix_name"
+installer="$out/install.sh"
+sums="$out/SHA256SUMS"
+[ "$(sha "$installer")" = "$installer_sha" ] || { echo 'acceptance: private installer copy mismatch' >&2; exit 1; }
+
 echo "acceptance: install candidate"
 "$installer" --prefix "$prefix" --archive "$archive" --checksums "$sums" >"$out/install.log" 2>&1
 installed_version=$("$prefix/bin/clorraine" --version)
@@ -90,7 +109,14 @@ installed_version=$("$prefix/bin/clorraine" --version)
 }
 
 echo "acceptance: extract the rc24 toolchain"
-tar -xJf "$toolchain_archive" -C "$work/toolchain"
+toolchain_copy="$work/toolchain.tar.xz"
+cp -- "$toolchain_archive" "$toolchain_copy"
+chmod 600 "$toolchain_copy"
+[ "$(stat -c %s "$toolchain_copy")" = 69868548 ] ||
+    { echo 'acceptance: private toolchain copy size mismatch' >&2; exit 1; }
+[ "$(sha "$toolchain_copy")" = "$toolchain_sha" ] ||
+    { echo 'acceptance: private toolchain copy hash mismatch' >&2; exit 1; }
+tar -xJf "$toolchain_copy" -C "$work/toolchain"
 compiler=$(find "$work/toolchain" -maxdepth 3 -path '*/bin/m68k-amigaos-gcc' -print -quit)
 [ -n "$compiler" ] || { echo 'acceptance: extracted toolchain has no compiler' >&2; exit 1; }
 toolchain_root=${compiler%/bin/m68k-amigaos-gcc}
@@ -144,11 +170,15 @@ grep -q 'exited with code 1' "$out/negative.err" || {
 }
 retained=$(sed -n "s/.*retained at '\\([^']*\\)'.*/\\1/p" "$out/negative.err" | tail -1)
 [ -n "$retained" ] && [ -d "$retained" ] || { echo 'acceptance: the negative did not retain its run' >&2; exit 1; }
+case "$retained" in
+    "$work"/*|"$out"/*) ;;
+    *) echo "acceptance: retained run is outside the private work tree: $retained" >&2; exit 1 ;;
+esac
 [ "$(tr -d '\r\n' <"$retained/drive/clorraine-rc.txt")" = 1 ] ||
     { echo 'acceptance: the negative did not record rc 1' >&2; exit 1; }
 [ ! -f "$retained/drive/clorraine-status.txt" ] ||
     { echo 'acceptance: the negative wrote a success status' >&2; exit 1; }
-rm -rf "$retained"
+rm -rf -- "$retained"
 no_survivor negative
 
 hello_output=$(cat "$out/hello.txt")
@@ -232,5 +262,16 @@ with open(sys.argv[1], "w", encoding="utf-8") as target:
 PY
 
 rm -rf "$work"
+{
+    printf 'candidate: %s\n' "$candidate"
+    printf 'archive: %s\n' "$archive"
+    printf 'installer: %s\n' "$installer"
+    printf 'vsix: %s\n' "$vsix"
+    printf 'toolchain archive: %s\n' "$toolchain_archive"
+    printf 'kickstart: %s\n' "$kickstart"
+    printf 'fs-uae: %s\n' "$fs_uae"
+    printf 'profile matrix: hello, file-copier, string-parser, buffer-container, volatile-mmio, file-copier-a500, rc-1 negative\n'
+} >"$out/commands.txt"
+chmod 600 "$out"/* 2>/dev/null || true
 echo "acceptance: evidence $out/evidence.json"
 echo "acceptance: candidate $out"

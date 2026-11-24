@@ -49,6 +49,10 @@ No changes since v1.2.0.
 - The superseded native installer, support/distribution producers and tests,
   and their release workflows are removed after local acceptance. Retained
   licence/origin inputs, the notices, and the Docker SDK installer remain.
+- Local acceptance: `make acceptance` installs the exact candidate into a fresh
+  HOME, runs the verified FS-UAE matrix, and writes `evidence.json`;
+  `make acceptance-check` validates the record against the candidate bytes and
+  corpus goldens.
 - The candidate uses a user-supplied rc24 toolchain and the Apache License 2.0
   with the Clorraine Output Exception; v1.1.2 remains published under MIT.
 - `clorraine build --size` (and `run --size`) compiles with `-Os` and the same

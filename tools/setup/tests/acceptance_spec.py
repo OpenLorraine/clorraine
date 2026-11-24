@@ -112,6 +112,53 @@ class AcceptanceSpecTests(unittest.TestCase):
     def test_valid_record_passes(self) -> None:
         acceptance.check(self.evidence, self.candidate)
 
+    def test_wrong_version_is_rejected(self) -> None:
+        self.reject(lambda record: record.update(version="1.1.2"), "version")
+
+    def test_non_ok_guest_status_is_rejected(self) -> None:
+        self.reject(lambda record: record["guest"].update(status="failed"), "guest status")
+
+    def test_non_ok_corpus_status_is_rejected(self) -> None:
+        self.reject(
+            lambda record: record["corpus"][0].update(status="failed"),
+            "corpus status",
+        )
+
+    def test_path_like_kickstart_name_is_rejected(self) -> None:
+        self.reject(
+            lambda record: record["kickstart"].update(name="../x.rom"),
+            "kickstart name",
+        )
+
+    def test_malformed_kickstart_hash_is_rejected(self) -> None:
+        self.reject(
+            lambda record: record["kickstart"].update(sha256="not-a-hash"),
+            "kickstart hash",
+        )
+
+    def test_empty_timestamp_is_rejected(self) -> None:
+        self.reject(lambda record: record.update(timestamp=""), "timestamp")
+
+    def test_wrong_archive_name_is_rejected(self) -> None:
+        self.reject(
+            lambda record: record["archive"].update(name="anything.tgz"),
+            "archive name",
+        )
+
+    def test_wrong_vsix_name_is_rejected(self) -> None:
+        self.reject(
+            lambda record: record["vsix"].update(name="anything.vsix"),
+            "vsix name",
+        )
+
+    def test_symlink_candidate_file_is_rejected(self) -> None:
+        target = self.candidate / "real-archive"
+        target.write_bytes(self.archive.read_bytes())
+        self.archive.unlink()
+        self.archive.symlink_to(target)
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.check(self.evidence, self.candidate)
+
     def test_wrong_platform_is_rejected(self) -> None:
         self.reject(lambda record: record.update(platform="darwin"), "platform")
 

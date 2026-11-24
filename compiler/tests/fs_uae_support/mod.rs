@@ -254,9 +254,9 @@ pub fn exit(output: &Output, expected: i32) -> String {
 
 /// A guest body that records a successful run and one result line.
 pub const SUCCESS: &str = "\
+printf 'Hello, Amiga, from Clorraine!\\r\\n' > \"$drive/clorraine-result.txt\"\n\
 printf '0\\n' > \"$drive/clorraine-rc.txt\"\n\
-printf 'ok\\n' > \"$drive/clorraine-status.txt\"\n\
-printf 'Hello, Amiga, from Clorraine!\\r\\n' > \"$drive/clorraine-result.txt\"\n";
+printf 'ok\\n' > \"$drive/clorraine-status.txt\"\n";
 
 /// Builds a full native emulator invocation for `hello.clo`.
 pub fn run_args(

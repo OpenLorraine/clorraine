@@ -43,10 +43,10 @@ validates a user-supplied upstream toolchain and builds without Docker.
   lookup and FS-UAE host handoff for development. A user host with a compiler on
   PATH but no selection is told to run `setup`.
 
-The local installer/archive and VSIX are implemented, and the superseded native
-installer/support pipeline is removed; retained licence inputs, notices, and
-the Docker SDK setup remain. No tag, release, upload, or publication has
-occurred.
+The local installer/archive, VSIX, and acceptance evidence are implemented, and
+the superseded native installer/support pipeline is removed; retained licence
+inputs, notices, and the Docker SDK setup remain. Publication remains a
+separate approval; no tag, release, upload, or publication has occurred.
 
 ## Verification
 
@@ -57,7 +57,8 @@ KICKSTART=<KS3.1 A1200> TOOLCHAIN=<rc24 root>`, `make dist`, `make dist-verify`,
 the A500-profile corpus program, and the rc-1 negative on FS-UAE 3.2.35 with the
 licensed 524,299-byte KS3.1 A1200 ROM. The full acceptance gate is `make verify`,
 which needs the pinned SDK image, an X display, and the licensed media. The
-installer and archive acceptance evidence are added in later phases.
+local acceptance record and checker are implemented; publication remains a
+separate approval.
 
 ## Known limitations
 

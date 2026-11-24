@@ -35,6 +35,11 @@ or its complete source snapshot.
 
 ## Rebuild context and commands
 
+> **Historical context.** The `support.py`/`support_build.py` commands and the
+> `build-inputs/` recipe were part of the removed native pipeline. This patch
+> is retained as provenance; the current candidate path is `make dist` and
+> `docs/linux-cli.md`.
+
 The supplied original `amiga-gcc` source archive contains the build orchestration.
 Use the locked Ubuntu 22.04 environment recipe, original dependency sources,
 component versions and fixed build settings in `build-inputs/`.

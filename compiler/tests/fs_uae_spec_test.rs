@@ -304,8 +304,8 @@ fn a_nonzero_guest_code_is_a_failure_with_the_result() {
         let s = Scratch::new(&format!("guest-{code}"));
         let toolchain = s.toolchain("toolchain");
         let body = format!(
-            "printf '{code}\\n' > \"$drive/clorraine-rc.txt\"\n\
-             printf 'partial result\\n' > \"$drive/clorraine-result.txt\"\n"
+            "printf 'partial result\\n' > \"$drive/clorraine-result.txt\"\n\
+             printf '{code}\\n' > \"$drive/clorraine-rc.txt\"\n"
         );
         let emulator = s.fs_uae("fs-uae", "3.2.35", &body);
         let rom = s.rom("kickstart.rom", 524_299);
@@ -448,9 +448,9 @@ fn the_emulator_is_killed_and_reaped() {
     let s = Scratch::new("unreaped");
     let toolchain = s.toolchain("toolchain");
     let body = "\
+        printf 'done\\n' > \"$drive/clorraine-result.txt\"\n\
         printf '0\\n' > \"$drive/clorraine-rc.txt\"\n\
         printf 'ok\\n' > \"$drive/clorraine-status.txt\"\n\
-        printf 'done\\n' > \"$drive/clorraine-result.txt\"\n\
         printf '%s\\n' \"$$\" > \"$TEST_LOG/emulator.pid\"\n\
         while :; do sleep 1; done\n";
     let emulator = s.fs_uae("fs-uae", "3.2.35", body);
