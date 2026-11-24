@@ -46,6 +46,9 @@ No changes since v1.2.0.
   outside this release and are not support claims.
 - `--sdk-root` and `CLORRAINE_SDK` are removed. The old native SDK assembly and
   its native-driver suites are retired; the legacy handoff tests remain.
+- The superseded native installer, support/distribution producers and tests,
+  and their release workflows are removed after local acceptance. Retained
+  licence/origin inputs, the notices, and the Docker SDK installer remain.
 - The candidate uses a user-supplied rc24 toolchain and the Apache License 2.0
   with the Clorraine Output Exception; v1.1.2 remains published under MIT.
 - `clorraine build --size` (and `run --size`) compiles with `-Os` and the same

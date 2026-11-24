@@ -103,7 +103,7 @@ dist-check:
 	bash tools/setup/tests/install.spec.test.sh
 	bash tools/setup/tests/install.impl.test.sh
 	bash tools/setup/tests/dist.spec.test.sh
-	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec -v
+	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec test_retained_inputs -v
 
 # Run the full local acceptance from an exact candidate and pinned inputs.
 acceptance:
@@ -142,20 +142,6 @@ setup-check:
 # Local support metadata/build/selection tests use Git and the existing wheel
 # builder's Python packaging dependency. Real archives require a separate
 # isolated Ubuntu/NDK acceptance context; they never become optional skips here.
-.PHONY: distribution-check
-distribution-check:
-	@echo "Local support tests only; real archive/GCC acceptance remains required on both isolated Ubuntu baselines."
-	cd tools/distribution/tests && python3 -m unittest -v \
-		test_support_spec.SupportContractTests support_build_spec support_preparation_spec \
-		support_wheels_spec support_ownership_spec support_wheel_selection_spec \
-		test_support_impl test_distribution_check_impl test_release_impl \
-		test_release_spec.ReleaseWorkflowSpecTests \
-		test_release_spec.ReleaseReuseSpecTests \
-		test_release_spec.ReleasePromotionSpecTests \
-		test_release_spec.ReleasePayloadSpecTests.test_should_read_version_records_from_the_final_v1_2_0_release \
-		test_release_spec.ReleasePayloadSpecTests.test_should_validate_the_current_documentation_and_historical_record \
-		test_acceptance_spec.AcceptanceSpecCase
-
 # Type-check, test, package, and audit the VS Code extension. The language
 # server is built in the pinned container; Node.js 22+ must be on the host PATH
 # (the same requirement as `make demo-check`).

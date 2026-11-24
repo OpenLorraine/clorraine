@@ -43,9 +43,10 @@ validates a user-supplied upstream toolchain and builds without Docker.
   lookup and FS-UAE host handoff for development. A user host with a compiler on
   PATH but no selection is told to run `setup`.
 
-Acceptance evidence and the legacy-pipeline removal are the next phases. The
-local installer/archive and VSIX are implemented. No tag, release, upload, or
-publication has occurred.
+The local installer/archive and VSIX are implemented, and the superseded native
+installer/support pipeline is removed; retained licence inputs, notices, and
+the Docker SDK setup remain. No tag, release, upload, or publication has
+occurred.
 
 ## Verification
 

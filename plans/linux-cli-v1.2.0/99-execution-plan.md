@@ -261,7 +261,7 @@ product path.
 
 ### Step 4.2: Remove the old pipeline
 
-- [ ] 4.2.1 First add `test_retained_inputs.py` red; then remove the old native installer, native tests, support/distribution producers/tests, and release workflows; keep `install_sdk.py`, its tests, `tools/distribution/inputs/`, and the notices; remove `distribution-check` and keep `dist-check` in `make check`; update CI, `AGENTS.md`, site, release notes, changelog, and retained README refs.
+- [~] 4.2.1 First add `test_retained_inputs.py` red; then remove the old native installer, native tests, support/distribution producers/tests, and release workflows; keep `install_sdk.py`, its tests, `tools/distribution/inputs/`, and the notices; remove `distribution-check` and keep `dist-check` in `make check`; update CI, `AGENTS.md`, site, release notes, changelog, and retained README refs. ⏳ (implemented: 2026-11-24 23:02)
   - **Task verify**: ST-26–ST-28 pass; retained inputs/notices/README refs resolve; no dangling old target, workflow, site, or release-note command.
 
 ### Step 4.3: Re-verify and close

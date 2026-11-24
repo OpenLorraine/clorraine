@@ -248,9 +248,10 @@ C-hook trampoline surfaces.
 ## 9. Linux CLI v1.2.0 candidate
 
 The Linux CLI candidate has a local installer/archive and a locally built VSIX.
-Acceptance evidence and the old-pipeline removal remain. No release asset is
-published. Build from source or run `make dist` and install the exact local
-bytes with the printed `install.sh`; download the upstream toolchain yourself.
+The old native installer/support pipeline is removed; retained licence inputs,
+notices, and the Docker SDK setup remain. No release asset is published. Build
+from source or run `make dist` and install the exact local bytes with the
+printed `install.sh`; download the upstream toolchain yourself.
 
 - **Host floor.** Linux x86_64 with glibc 2.38 or newer. Ubuntu 24.04 is the
   minimum baseline; the full spike path ran on Ubuntu 26.04. Ubuntu 22.04 cannot
