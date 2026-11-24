@@ -93,3 +93,27 @@ Fix-diff re-review (2026-11-24): no CRITICAL or MAJOR. RV-029–RV-042 and SA-00
 | RV-045 | 3 | MINOR | EXIT-trap cleanup | Fixed: `rollback` returns 0 so the trap always releases the lock and removes private storage; the foreign-symlink test asserts no verified copy remains. |
 | RV-046 | 3 | OBS | Design command/lock text | Fixed: `sleep` and `tr` are in the required-command list; the lock section documents the bounded missing-owner wait. |
 | SR-008 | 3 | OBS | Plan evidence counts | Fixed: the final 83/21/36 and 174 editor counts are recorded. |
+
+## Phase 4 review (2026-11-24/25)
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-047 | 4 | MINOR | Evidence self-containment | Fixed: the acceptance directory now holds the exact archive, VSIX, `install.sh`, `SHA256SUMS`, and `commands.txt`; survivor lines append to `fs-uae.log`. |
+| RV-048 | 4 | MINOR | Makefile prose | Fixed: the orphaned `distribution-check` comment is gone; `setup-check`/`dist-check` ownership is stated. |
+| RV-049 | 4 | MINOR | Historical runbook | Accepted: `RELEASE.md` is explicitly historical and names the current `make dist` path; rewriting its archived commands would erase the old design record. |
+| RV-050 | 4 | MINOR | Spec controls | Fixed: 28 acceptance cases include version, guest/corpus status, kickstart name/hash, timestamp, exact asset names, and a symlink candidate. |
+| RV-051 | 4 | OBS | Red evidence wording | Fixed: the plan now says three removal cases plus one over-strict notice assertion failed before removal. |
+| RV-052 | 4 | OBS | Roadmap/index counts | Fixed: both record 28/28 and Phase 4 complete. |
+| RV-053 | 4 | MINOR | Fixture race | Fixed: the fake emulator writes the result before rc/status, matching the compiled wrapper; the fs-UAE suites pass 19+4. |
+| SA-006 | 4 | MINOR | Retained-path deletion | Fixed: the retained run must sit under the private work/out tree; `rm -rf --` is used. |
+| SA-007 | 4 | MINOR | Toolchain/installer TOCTOU | Fixed: private copies are re-hashed before extraction/execution. |
+| SA-008 | 4 | MINOR | Exact asset names | Fixed: the checker requires the versioned archive and VSIX names. |
+| SA-009 | 4 | MINOR | Acceptance docs | Fixed: AGENTS, `docs/linux-cli.md`, changelog, and release notes name the acceptance targets. |
+| SA-010 | 4 | OBS | Trust boundary | Fixed: the acceptance script and docs state that it executes self-built candidate code with the caller's privileges. |
+| SA-011 | 4 | OBS | Temporary permissions | Fixed: `umask 077`, 0700 evidence/work, 0600 assets, 0700 installer. |
+| SA-012 | 4 | OBS | Retained history refs | Fixed: the retained wheel/compiler-patch files are annotated as non-runnable history. |
+| SA-013 | 4 | OBS | Symlink candidate | Fixed: candidate asset symlinks are rejected. |
+| SA-014 | 4 | OBS | Makefile comment | Fixed with RV-048. |
+| SA-015 | 4 | OBS | Checker scope | Fixed: the checker documents that it proves format plus candidate/corpus bytes, not run provenance. |
+
+Phase 4 review verdict: no CRITICAL or MAJOR. The fixes were re-run through `make dist-check` (37 tests), the acceptance run and checker, `make check`, and `make site-check`; no third review pass was required.

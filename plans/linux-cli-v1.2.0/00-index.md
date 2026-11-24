@@ -1,6 +1,6 @@
 # Linux CLI v1.2.0
 
-> **Status**: 🔄 Executing — Phase 3 complete (23/28); post-phase review running
+> **Status**: ✅ Complete — local candidate accepted (28/28); publication awaits separate approval
 > **Version**: 1.2.0
 > **Scope**: Linux x86_64 only
 > **Evidence**: `spikes/07-linux-cli-fs-uae/README.md`
@@ -87,7 +87,8 @@ Full details: [00-decisions.md](00-decisions.md).
 | [03-04-editor-migration.md](03-04-editor-migration.md) | VS Code settings/actions, old pipeline removal |
 | [07-testing-strategy.md](07-testing-strategy.md) | ST-1–ST-28, commands, evidence |
 | [99-execution-plan.md](99-execution-plan.md) | 28 tasks and phase gates |
-| [05-findings.md](05-findings.md) | Phase 1 review rulings |
+| [05-findings.md](05-findings.md) | Phase review rulings |
+| [06-publication-handoff.md](06-publication-handoff.md) | Exact candidate, evidence, gates, and publication boundary |
 | [00-preflight-report.md](00-preflight-report.md) | Independent review findings |
 
 ## Review routing

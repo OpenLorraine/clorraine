@@ -1,8 +1,8 @@
 # Execution Plan: Linux CLI v1.2.0
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-24 21:14
-> **Progress**: 27/28 tasks (96%)
+> **Last Updated**: 2026-11-25 00:01
+> **Progress**: 28/28 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -268,7 +268,7 @@ product path.
 
 - [x] 4.3.1 Re-run `make check`, `make dist-check`, `make acceptance-check EVIDENCE=<file> CANDIDATE=<dir>`, `make site-check`, and `make verify`; confirm the removal did not change compiler behavior. ✅ (completed: 2026-11-24 23:07)
   - **Task verify**: all pass; `make verify` covers the existing A500/A1200/RTG gates. If the pinned SDK image or media is unavailable, record the blocker and do not mark the task complete.
-- [~] 4.3.2 Final review: update the index/roadmap to complete, confirm no publication/tag/upload occurred, and write the publication handoff note. ⏳ (implemented: 2026-11-24 23:46)
+- [x] 4.3.2 Final review: update the index/roadmap to complete, confirm no publication/tag/upload occurred, and write the publication handoff note. ✅ (completed: 2026-11-24 23:46)
   - **Task verify**: the plan tree is clean, the roadmap is current, and the publication boundary is explicit.
 
 ### Phase 4 evidence
@@ -301,8 +301,18 @@ product path.
   `build/tmp/phase4-verify-xvfb.log`. The first attempt on the desktop
   Xwayland display failed the existing `sdk-a500-paddle` capture because the
   host X auth was rotated; the same gate passes under the private Xvfb, which
-  is the documented SDK-display path. `make acceptance-check` still reports
-  `ok` on the recorded candidate.
+  is the documented SDK-display path.
+- **Phase 4 review:** correctness returned no critical/major (RV-047–RV-053);
+  security returned no critical/major (SA-006–SA-015). The evidence directory
+  is now self-contained; the acceptance script uses private copies of the
+  toolchain/installer; the checker requires exact asset names and rejects
+  symlinks; the fake-emulator result/rc ordering race is fixed. `make
+  dist-check` runs 37 tests; the re-run acceptance evidence is
+  `build/acceptance/20261124T225355Z/evidence.json` and `acceptance-check`
+  reports `ok`.
+- **Closeout:** `06-publication-handoff.md` records the exact candidate,
+  evidence, gates, and approval boundary. No tag, release, upload, or
+  publication occurred; existing tags stop at v1.1.2.
 
 **Deliverables**: acceptance evidence, old pipeline removed, full gate, closeout.
 **Phase gate**: `make acceptance-check` + `make check` + `make verify`.
