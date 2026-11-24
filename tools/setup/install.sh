@@ -22,8 +22,6 @@ ARCHIVE_URL='@ARCHIVE_URL@'
 ARCHIVE_BYTES='@ARCHIVE_BYTES@'
 ARCHIVE_SHA256='@ARCHIVE_SHA256@'
 
-PROGRAM=clorraine
-
 usage() {
     cat <<EOF
 Usage: install.sh [OPTIONS]
@@ -41,13 +39,22 @@ Options:
 EOF
 }
 
+# Removes terminal-control bytes from dynamic message text.
+sanitize() {
+    if command -v tr >/dev/null 2>&1; then
+        printf '%s' "$1" | LC_ALL=C tr -d '\000-\011\013-\037\177'
+    else
+        printf '%s' "$1"
+    fi
+}
+
 die() {
-    printf 'clorraine: %s\n' "$*" >&2
+    printf 'clorraine: %s\n' "$(sanitize "$*")" >&2
     exit 1
 }
 
 usage_error() {
-    printf 'clorraine: %s\n' "$*" >&2
+    printf 'clorraine: %s\n' "$(sanitize "$*")" >&2
     usage >&2
     exit 2
 }
@@ -144,7 +151,9 @@ read_lock_owner() {
 # True when the recorded process is gone or was replaced.
 lock_is_stale() {
     local owner=$1 stat start
-    read_lock_owner "$owner" || return 0
+    # An absent or partially written owner is not proof of a stale lock: a
+    # concurrent creator writes it just after mkdir. Treat it as live.
+    read_lock_owner "$owner" || return 1
     if ! kill -0 "$LOCK_PID" 2>/dev/null; then
         return 0
     fi
@@ -171,6 +180,15 @@ acquire_lock() {
         write_lock_owner "$lock"
         return 0
     fi
+    # Wait out the short mkdir -> owner write window before deciding.
+    local attempts=0
+    while [ "$attempts" -lt 10 ]; do
+        if read_lock_owner "$lock/owner"; then
+            break
+        fi
+        sleep 0.05
+        attempts=$((attempts + 1))
+    done
     if lock_is_stale "$lock/owner"; then
         rm -rf "$lock"
         if mkdir "$lock" 2>/dev/null; then
@@ -186,6 +204,33 @@ acquire_lock() {
 
 release_lock() {
     [ -n "${lock:-}" ] && rm -rf "$lock"
+}
+
+# Removes only this invocation's private download and verification storage.
+cleanup_temp() {
+    if [ -n "${download_dir:-}" ]; then
+        rm -rf "$download_dir"
+    fi
+    if [ -n "${verified_dir:-}" ]; then
+        rm -rf "$verified_dir"
+    fi
+    return 0
+}
+
+# Canonical install tree for link ownership checks.
+share_root() {
+    readlink -f "$PREFIX/share/clorraine" 2>/dev/null || printf '%s' "$PREFIX/share/clorraine"
+}
+
+# True only when the link resolves inside this prefix's Clorraine share tree.
+link_is_owned() {
+    local link=$1 share resolved
+    share=$(share_root)
+    resolved=$(readlink -f "$link" 2>/dev/null || true)
+    case "$resolved" in
+        "$share"/*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # POSIX single-quote escaping for a shell word.
@@ -254,7 +299,7 @@ local_checksum() {
 
 # Verifies a local archive against its checksum file.
 verify_local_archive() {
-    local archive=$1 checksums=$2 base expected actual bytes
+    local archive=$1 checksums=$2 expected actual bytes
     [ -f "$archive" ] || die "archive '$archive' is not a readable file"
     [ -f "$checksums" ] || die "checksum file '$checksums' is not a readable file"
     expected=$(local_checksum "$archive" "$checksums")
@@ -301,9 +346,9 @@ download_archive() {
 # Rejects absolute, parent-relative, and non-regular archive members.
 validate_archive() {
     local archive=$1 listing types first top name type
-    listing=$(tar -tzf "$archive" 2>/dev/null) || die "archive '$archive' is not a readable tarball"
+    listing=$(tar -tzPf "$archive" 2>/dev/null) || die "archive '$archive' is not a readable tarball"
     [ -n "$listing" ] || die "archive '$archive' is empty"
-    types=$(tar -tvzf "$archive" 2>/dev/null) || die "archive '$archive' is not a readable tarball"
+    types=$(tar -tvzPf "$archive" 2>/dev/null) || die "archive '$archive' is not a readable tarball"
     while IFS= read -r line; do
         type=${line%"${line#?}"}
         case "$type" in
@@ -358,19 +403,20 @@ verify_tree() {
 
 # Creates or replaces only Clorraine-owned bin symlinks.
 link_bins() {
-    local share=$1 name link target
+    local name link target
     mkdir -p "$PREFIX/bin" || die "cannot create '$PREFIX/bin'"
     # Check every destination before replacing any link, so a foreign file
-    # cannot leave a half-updated bin directory.
+    # cannot leave a half-updated bin directory. Remember which names were
+    # absent so rollback removes only those links.
+    absent_links=
     for name in clc clorraine clorraine-lsp; do
         link="$PREFIX/bin/$name"
         if [ -L "$link" ]; then
-            case "$(readlink "$link")" in
-                *share/clorraine/*) ;;
-                *) die "'$link' already exists and is not a Clorraine symlink" ;;
-            esac
+            link_is_owned "$link" || die "'$link' already exists and is not a Clorraine symlink"
         elif [ -e "$link" ]; then
             die "'$link' already exists and is not a Clorraine symlink"
+        else
+            absent_links="$absent_links $name"
         fi
     done
     for name in clc clorraine clorraine-lsp; do
@@ -378,7 +424,6 @@ link_bins() {
         target="../share/clorraine/current/bin/$name"
         rm -f "$link"
         ln -s "$target" "$link" || die "cannot create '$link'"
-        created_links="$created_links $link"
     done
 }
 
@@ -397,21 +442,22 @@ activate() {
 
 # Restores the previous current and removes links this invocation created.
 rollback() {
-    local share=$1
+    local share=$1 name link
     [ "${activation_started:-0}" = 1 ] || return 0
     if [ -n "${old_current:-}" ]; then
         ln -sfn "$old_current" "$share/current"
     else
         rm -f "$share/current"
     fi
-    for link in ${created_links:-}; do
-        [ -L "$link" ] && case "$(readlink "$link")" in *share/clorraine/*) rm -f "$link" ;; esac
+    for name in ${absent_links:-}; do
+        link="$PREFIX/bin/$name"
+        [ -L "$link" ] && rm -f "$link"
     done
 }
 
 # Installs one verified archive.
 install_archive() {
-    local archive=$1 share version_dir staging sha12 top
+    local archive=$1 share version_dir staging sha12
     share="$PREFIX/share/clorraine"
     mkdir -p "$share/versions" || die "cannot create '$share/versions'"
     sha12=$(sha256sum "$archive" | awk '{print substr($1, 1, 12)}')
@@ -427,16 +473,15 @@ install_archive() {
     fi
     verify_tree "$share/$version_dir"
     activate "$share" "$version_dir"
-    link_bins "$share"
-    [ -n "${download_dir:-}" ] && rm -rf "$download_dir"
+    link_bins
     rm -rf "$staging"
-    printf 'installed Clorraine %s in %s\n' "$VERSION" "$PREFIX"
     if [ "$MODIFY_PATH" = 1 ]; then
         modify_path
         printf 'updated %s\n' "$HOME/.profile"
     else
-        printf 'add this to your shell profile: export PATH="%s/bin:$PATH"\n' "$PREFIX"
+        printf 'add this to your shell profile: export PATH=%s:$PATH\n' "$(single_quote "$PREFIX/bin")"
     fi
+    printf 'installed Clorraine %s in %s\n' "$VERSION" "$PREFIX"
 }
 
 # Removes this prefix's links, current, and PATH block; keeps versions/config.
@@ -444,10 +489,8 @@ uninstall() {
     local share="$PREFIX/share/clorraine" name link
     for name in clc clorraine clorraine-lsp; do
         link="$PREFIX/bin/$name"
-        if [ -L "$link" ]; then
-            case "$(readlink "$link")" in
-                *share/clorraine/*) rm -f "$link" ;;
-            esac
+        if [ -L "$link" ] && link_is_owned "$link"; then
+            rm -f "$link"
         fi
     done
     rm -f "$share/current"
@@ -475,9 +518,13 @@ main() {
     download_dir=
     downloaded=
     archive=
-    created_links=
+    absent_links=
     activation_started=0
     old_current=
+    verified_dir=
+    downloaded=
+    download_dir=
+    trap 'cleanup_temp' EXIT
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -528,32 +575,41 @@ main() {
         usage_error "--archive and --checksums must be used together"
     fi
 
-    check_prefix
     require_commands uname tar gzip sha256sum getconf mktemp awk sed grep find \
-        wc basename dirname sort ln mv rm mkdir cp chmod readlink
+        wc basename dirname sort ln mv rm mkdir cp chmod readlink sleep tr
+    check_prefix
     check_host
 
     if [ "$UNINSTALL" = 1 ]; then
         acquire_lock
-        trap 'release_lock' EXIT
+        trap 'release_lock; cleanup_temp' EXIT
         uninstall
         [ "$PURGE" = 1 ] && purge
         release_lock
+        cleanup_temp
         trap - EXIT
         return 0
     fi
 
     if [ -n "$ARCHIVE" ]; then
         verify_local_archive "$ARCHIVE" "$CHECKSUMS"
-        archive=$ARCHIVE
+        # Verify and use the same private copy; never re-open a user path for
+        # extraction after the digest check.
+        verified_dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-verified.XXXXXXXX") ||
+            die "cannot create private archive storage"
+        archive="$verified_dir/$(basename "$ARCHIVE")"
+        cp "$ARCHIVE" "$archive" || die "cannot copy the archive into private storage"
+        verify_local_archive "$archive" "$CHECKSUMS"
     else
         download_archive
+        archive=$downloaded
     fi
 
     acquire_lock
-    trap 'rollback "$PREFIX/share/clorraine"; release_lock' EXIT
+    trap 'rollback "$PREFIX/share/clorraine"; rm -rf "$PREFIX/share/clorraine/.tmp.$$"; release_lock; cleanup_temp' EXIT
     install_archive "$archive"
     release_lock
+    cleanup_temp
     trap - EXIT
 }
 

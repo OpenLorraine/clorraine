@@ -38,7 +38,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 
 | Command | Purpose |
 |---------|---------|
-| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `make setup-check`, `cargo test --workspace` in the container, then `bench-test`, `fuzz-test`, and `fuzz-smoke` |
+| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `make setup-check`, `make dist-check`, `cargo test --workspace` in the container, then `bench-test`, `fuzz-test`, and `fuzz-smoke` |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make ubsan` | Run every suite that references `RDC_UBSAN` under UndefinedBehaviorSanitizer; a known-overflow probe proves the leg is active, and the runner links children with `-no-pie`; part of `make verify` |
 | `make fuzz-test` | Fuzzer unit tests; part of `make check` |
@@ -132,7 +132,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 - `#[cfg(test)] mod tests` inside `compiler/src/` holds focused unit tests.
 - `tools/demo/test/*.spec.test.ts` and `*.impl.test.ts` follow the same split;
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
-- `tools/setup/tests/` runs with `make setup-check`; `tools/vscode/test/`
+- `tools/setup/tests/test_{cli,detect,fetch}.py` (Docker SDK) runs with `make setup-check`; the installer/producer shell suites run with `make dist-check`; `tools/vscode/test/`
   runs with `make vscode-check` and includes a packaged-client smoke test.
 - `site/` is checked with `make site-check`; the GitHub Pages workflow builds
   the same production output and deploys only from `main`.

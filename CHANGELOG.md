@@ -92,9 +92,9 @@ No changes since v1.2.0.
 
 ### Not yet
 
-- The Linux installer, separate VSIX, verified FS-UAE runner, acceptance
-  evidence, and legacy-pipeline removal are later phases. No release asset is
-  published.
+- Acceptance evidence and the legacy-pipeline removal are later phases. The
+  local installer/archive, VSIX, and verified FS-UAE runner are implemented; no
+  release asset is published.
 
 ## [1.1.2] - 2026-11-11
 

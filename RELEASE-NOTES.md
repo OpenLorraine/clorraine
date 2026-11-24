@@ -43,8 +43,9 @@ validates a user-supplied upstream toolchain and builds without Docker.
   lookup and FS-UAE host handoff for development. A user host with a compiler on
   PATH but no selection is told to run `setup`.
 
-The crash-safe installer with separate VSIX and the legacy-pipeline removal are
-the next phases. No tag, release, upload, or publication has occurred.
+Acceptance evidence and the legacy-pipeline removal are the next phases. The
+local installer/archive and VSIX are implemented. No tag, release, upload, or
+publication has occurred.
 
 ## Verification
 

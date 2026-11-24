@@ -29,7 +29,7 @@ run_without_curl() {
     local minimal="$root/minimal"
     mkdir -p "$minimal"
     for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find wc \
-        basename dirname sort ln mv rm mkdir cp chmod readlink head tr; do
+        basename dirname sort ln mv rm mkdir cp chmod readlink head tr sleep; do
         if [ -x "$root/fake/$tool" ]; then
             cp "$root/fake/$tool" "$minimal/$tool"
         else
@@ -73,7 +73,7 @@ command_checks_are_enforced() {
     local bare="$root/bare"
     mkdir -p "$bare"
     for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find wc \
-        basename dirname sort ln mv rm mkdir cp chmod readlink head tr; do
+        basename dirname sort ln mv rm mkdir cp chmod readlink head tr sleep; do
         if [ -x "$root/fake/$tool" ]; then
             cp "$root/fake/$tool" "$bare/$tool"
         else
@@ -113,8 +113,18 @@ local_checksums_are_exact() {
 network_download_is_verified() {
     fixture
     local status
-    status="$(FAKE_CURL_SOURCE="$archive" run_installer "$root" "$installer" --prefix "$prefix")"
+    status="$(FAKE_CURL_SOURCE="$archive" FAKE_CURL_LOG="$root/curl-args" run_installer "$root" "$installer" --prefix "$prefix")"
     check_status 0 "$status" "network install"
+    local curl_args
+    curl_args="$(cat "$root/curl-args" 2>/dev/null || true)"
+    for expected in "--disable" "--fail" "--location" "--proto =https" \
+        "--proto-redir =https" "--connect-timeout 20" "--max-time 600" \
+        "--max-filesize $(($(wc -c <"$archive") + 1))"; do
+        case "$curl_args" in
+            *"$expected"*) pass ;;
+            *) fail "curl arguments lack $expected" ;;
+        esac
+    done
     check_symlink "$prefix/bin/clorraine" "../share/clorraine/current/bin/clorraine" "network driver link"
 
     local truncated="$root/truncated.tar.gz"
@@ -189,6 +199,14 @@ locks_are_live_and_stale_safe() {
     status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
     check_status 0 "$status" "stale lock"
     check_symlink "$prefix/bin/clorraine" "../share/clorraine/current/bin/clorraine" "stale-lock install"
+
+    rm -rf "$prefix/share/clorraine.lock"
+    mkdir -p "$prefix/share/clorraine.lock"
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 1 "$status" "uninitialized lock"
+    check_contains "$root/stderr" "another install" "uninitialized-lock message"
+    check_exists "$prefix/share/clorraine.lock" "uninitialized lock is not deleted"
+    rm -rf "$prefix/share/clorraine.lock"
 }
 
 # --modify-path writes one quoted block; a second install replaces it and
@@ -225,8 +243,98 @@ path_block_is_quoted_replaced_and_removed() {
     check_not_contains "$root/home/.profile" "# >>> clorraine >>>" "block removed"
 }
 
+# Hardlink and absolute members are rejected before extraction.
+hostile_member_types_are_rejected() {
+    fixture
+    ln "$stage/bin/clc" "$stage/bin/clc-hard"
+    archive="$(make_archive "$root" "$stage")"
+    write_checksums "$archive" "$checksums"
+    assemble_installer "$installer_template" "$installer" 1.2.0 "$archive"
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 1 "$status" "hardlink member"
+    check_contains "$root/stderr" "unsafe member" "hardlink message"
+
+    local absolute="$root/absolute.tar.gz"
+    python3 - "$absolute" <<'TARPY'
+import io, sys, tarfile
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    info = tarfile.TarInfo("/absolute-member")
+    info.size = 1
+    archive.addfile(info, io.BytesIO(b"x"))
+TARPY
+    write_checksums "$absolute" "$root/absolute-sums"
+    assemble_installer "$installer_template" "$installer" 1.2.0 "$absolute"
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$absolute" --checksums "$root/absolute-sums")"
+    check_status 1 "$status" "absolute member"
+    check_contains "$root/stderr" "unsafe member" "absolute-member message"
+}
+
+# Uninstall keeps data; purge removes only this prefix and config file.
+purge_scope_is_exact() {
+    fixture
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "install before uninstall"
+    mkdir -p "$root/config/clorraine"
+    printf 'toolchain=/tmp/x\n' >"$root/config/clorraine/config"
+    printf 'sibling\n' >"$root/config/clorraine/keep"
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall)"
+    check_status 0 "$status" "uninstall"
+    check_exists "$prefix/share/clorraine/versions" "uninstall keeps versions"
+    check_exists "$root/config/clorraine/config" "uninstall keeps config"
+
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall --purge)"
+    check_status 0 "$status" "purge with a sibling file"
+    check_absent "$prefix/share/clorraine" "purge removes share"
+    check_absent "$root/config/clorraine/config" "purge removes config file"
+    check_exists "$root/config/clorraine/keep" "purge keeps a sibling"
+    check_exists "$root/config/clorraine" "purge keeps a non-empty config dir"
+    rm -f "$root/config/clorraine/keep"
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall)"
+    check_status 0 "$status" "uninstall after purge"
+    rmdir "$root/config/clorraine" 2>/dev/null || true
+    check_absent "$root/config/clorraine" "empty config dir is gone"
+
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "reinstall for home purge"
+    mkdir -p "$root/home/.config/clorraine"
+    printf 'x\n' >"$root/home/.config/clorraine/config"
+    status="$(HOME="$root/home" XDG_CONFIG_HOME= PATH="$root/fake:$PATH" "$installer" --prefix "$prefix" --uninstall --purge >"$root/stdout" 2>"$root/stderr"; printf '%s' "$?")"
+    check_status 0 "$status" "purge with HOME config"
+    check_absent "$root/home/.config/clorraine/config" "home purge removes config"
+    check_absent "$prefix/share/clorraine" "home purge removes share"
+
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --purge)"
+    check_status 2 "$status" "purge without uninstall"
+}
+
+# A foreign symlink is never adopted and never removed by uninstall.
+foreign_symlinks_are_not_owned() {
+    fixture
+    mkdir -p "$prefix/bin"
+    ln -s "/srv/other/share/clorraine/current/bin/clorraine" "$prefix/bin/clorraine"
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 1 "$status" "foreign symlink install"
+    check_contains "$root/stderr" "not a Clorraine symlink" "foreign-symlink message"
+    rm -f "$prefix/bin/clorraine"
+
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "valid install before foreign uninstall"
+    rm -f "$prefix/bin/clorraine"
+    ln -s "/srv/other/share/clorraine/current/bin/clorraine" "$prefix/bin/clorraine"
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --uninstall)"
+    check_status 0 "$status" "uninstall with a foreign link"
+    check_exists "$prefix/bin/clorraine" "foreign link is left in place"
+    rm -f "$prefix/bin/clorraine"
+}
+
 host_checks_are_enforced
 command_checks_are_enforced
+foreign_symlinks_are_not_owned
+hostile_member_types_are_rejected
+purge_scope_is_exact
 local_checksums_are_exact
 network_download_is_verified
 unsafe_archive_members_are_rejected

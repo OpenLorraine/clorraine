@@ -23,7 +23,7 @@ const workspaceLevels = ["workspaceValue", "workspaceFolderValue",
   "workspaceLanguageValue", "workspaceFolderLanguageValue"];
 
 /** Candidate directories are real, isolated executable locations. */
-type Location = "installed" | "debug" | "release" | "path" | "custom" | "environment" | "workspace";
+type Location = "installed" | "legacy" | "debug" | "release" | "path" | "custom" | "environment" | "workspace";
 /** Public configuration inspection fields, retaining precedence independently. */
 type Levels = Record<string, string>;
 /** One fresh extension-host scenario; no extension-private inputs are accepted. */
@@ -99,7 +99,8 @@ function run(scenario: Scenario = {}) {
     const home = join(scratch, "home");
     const workspace = join(scratch, "source workspace");
     const dirs: Record<Location, string> = {
-      installed: join(home, ".local/bin"), debug: join(workspace, "target/debug"),
+      installed: join(home, ".local/bin"), legacy: join(home, ".clorraine/bin"),
+      debug: join(workspace, "target/debug"),
       release: join(workspace, "target/release"), path: join(scratch, "desktop-path"),
       custom: join(scratch, "custom root ; $ literal/bin"),
       environment: join(scratch, "environment/bin"), workspace: join(workspace, "workspace-tools"),
@@ -230,6 +231,7 @@ for (const [name, driver, setting, expected] of [
   ["installed as the only candidate", ["installed"], false, "installed"],
   ["desktop default without terminal PATH", ["installed", "debug", "release"], false, "installed"],
   ["installed before PATH", ["installed", "path"], false, "installed"],
+  ["legacy installation is ignored", ["legacy", "path"], false, "path"],
   ["trusted debug before release and PATH", ["debug", "release", "path"], false, "debug"],
   ["trusted release before PATH", ["release", "path"], false, "release"],
   ["PATH fallback", ["path"], false, "path"],

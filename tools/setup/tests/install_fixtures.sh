@@ -15,6 +15,16 @@ package_script="$repo/tools/setup/package.sh"
 
 failures=0
 checks=0
+test_roots=()
+
+# Removes every root this suite created, including roots that failed early.
+cleanup_test_roots() {
+    local root
+    for root in "${test_roots[@]}"; do
+        [ -n "$root" ] && rm -rf "$root"
+    done
+}
+trap cleanup_test_roots EXIT
 
 # Records a failed check and keeps the suite running.
 fail() {
@@ -100,7 +110,10 @@ finish() {
 new_root() {
     local base="${CODEOPS_TMPDIR:-${TMPDIR:-/tmp}}"
     mkdir -p "$base"
-    mktemp -d "$base/clorraine-installer.XXXXXX"
+    local root
+    root="$(mktemp -d "$base/clorraine-installer.XXXXXX")"
+    test_roots+=("$root")
+    printf '%s\n' "$root"
 }
 
 # Creates a fixture release stage tree and prints its path.
@@ -186,6 +199,9 @@ printf '%s\n' "${FAKE_GLIBC:-glibc 2.39}"
 EOF
     cat >"$fake/curl" <<'EOF'
 #!/bin/sh
+if [ -n "${FAKE_CURL_LOG:-}" ]; then
+    printf '%s\n' "$*" >>"$FAKE_CURL_LOG"
+fi
 out=
 while [ "$#" -gt 0 ]; do
     case "$1" in

@@ -43,8 +43,10 @@ lock_owner_liveness_is_checked() {
     if lock_is_stale "$owner"; then fail "live lock marked stale"; else pass; fi
     printf '%s %s\n' 999999 0 >"$owner"
     if lock_is_stale "$owner"; then pass; else fail "dead lock not marked stale"; fi
+    printf '%s %s\n' "$$" "$(($(awk '{print $22}' "/proc/$$/stat") + 1))" >"$owner"
+    if lock_is_stale "$owner"; then pass; else fail "reused PID with a different start time is stale"; fi
     rm -f "$owner"
-    if lock_is_stale "$owner"; then pass; else fail "missing owner not stale"; fi
+    if lock_is_stale "$owner"; then fail "missing owner treated as stale"; else pass; fi
     rm -rf "$root"
 }
 
@@ -137,7 +139,15 @@ rollback_before_activation_keeps_current() {
     rm -rf "$root"
 }
 
+# Terminal control bytes never reach an error message.
+sanitize_removes_terminal_controls() {
+    local actual
+    actual=$(sanitize "$(printf 'a\033b\001c')")
+    if [ "$actual" = "abc" ]; then pass; else fail "sanitize: $actual"; fi
+}
+
 single_quote_is_posix_safe
+sanitize_removes_terminal_controls
 config_dir_uses_an_absolute_xdg_home_only
 lock_owner_liveness_is_checked
 path_block_is_stripped

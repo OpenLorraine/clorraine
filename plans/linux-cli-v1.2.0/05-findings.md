@@ -56,3 +56,30 @@ Fix-diff re-review (2026-11-24): no CRITICAL or MAJOR. SR-001 and RV-020–RV-02
 | RV-026 | 2 | MINOR | Capture scope | Fixed: the success-only rule is scoped to verified guests; host, `vamos`, and freestanding capture stdout regardless of exit code. |
 | RV-027 | 2 | OBS | Dirty-start evidence | Re-recorded with the committed script: exit 2, clean-start message, no retained temporary directory (`build/tmp/fs-uae-gate-dirty4.log`). |
 | SR-004 | 2 | MINOR | Gate retention wording | Fixed: the script header, design, and ledger now distinguish a failed check (evidence kept), a dirty-start preflight (empty temporary directory removed), and a successful check (removed). |
+
+## Phase 3 review (2026-11-24)
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-028 | 3 | MAJOR | Purge coverage | Fixed: the installer spec now covers uninstall keeping data, purge with a sibling file, purge with `XDG_CONFIG_HOME` unset, empty config-directory removal, and `--purge` without `--uninstall`. |
+| RV-029 | 3 | MINOR | Lock PID reuse/concurrency | Fixed: an alive PID with a different start time is stale; an uninitialized owner is live; a second installer is refused. |
+| RV-030 | 3 | MINOR | Lock initialization race | Fixed: a missing/partial owner is not stale, and the loser waits briefly for the owner before failing. |
+| RV-031 | 3 | MINOR | Hostile member types | Fixed: validation lists with `-P` and rejects absolute names; hardlink and absolute-member tests pass. |
+| RV-032 | 3 | MINOR | Curl flags | Fixed: the fake curl records its argv; the network test pins `--disable`, HTTPS protos, timeouts, and the size cap. |
+| RV-033 | 3 | MINOR | Rollback links | Fixed: rollback removes only links that were absent before the invocation. |
+| RV-034 | 3 | MINOR | Temp cleanup/TOCTOU | Fixed: local archives are verified in a private copy; download/verification temp trees are removed on every exit. |
+| RV-035 | 3 | MINOR | New-key precedence | Fixed: a both-keys editor test asserts `toolchain.path` wins with no warning. |
+| RV-036 | 3 | MINOR | Legacy discovery | Fixed: a `~/.clorraine/bin` fixture is ignored in favor of `PATH`. |
+| RV-037 | 3 | MINOR | Success line ordering | Fixed: the success line follows the PATH update. |
+| RV-038 | 3 | MINOR | Check documentation | Fixed: `AGENTS.md` lists `dist-check` and splits the SDK/installer test commands. |
+| RV-039 | 3 | OBS | PATH hint quoting | Fixed: the non-`--modify-path` hint uses the same single-quote escaping. |
+| RV-040 | 3 | OBS | Dead code | Fixed: unused `PROGRAM`, parameters, and locals are gone. |
+| RV-041 | 3 | OBS | Test root cleanup | Fixed: a suite trap removes every fixture root; leaked roots were deleted. |
+| RV-042 | 3 | OBS | Asset identity | Fixed: the plan records one final candidate identity. |
+| SA-001 | 3 | MINOR | Lock initialization | Fixed with RV-030. |
+| SA-002 | 3 | MINOR | Link ownership | Fixed: `readlink -f` prefix containment; a foreign symlink is refused and left in place on uninstall. |
+| SA-003 | 3 | MINOR | Local archive TOCTOU | Fixed with RV-034's private verified copy. |
+| SA-004 | 3 | MINOR | Rollback word splitting | Fixed with RV-033's fixed link names. |
+| SR-005 | 3 | MINOR | Asset identity | Fixed with RV-042. |
+| SR-006 | 3 | MINOR | Survivor evidence | Fixed: the final E2E logs an explicit no-survivor line after every guest and prints `processes after: none`. |
+| SR-007 | 3 | MINOR | Stale docs | Fixed: limitations, changelog, release notes, and quick start describe the local candidate and remaining acceptance/removal work. |

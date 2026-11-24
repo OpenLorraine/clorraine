@@ -204,9 +204,9 @@ product path.
 - **Producer green:** 36 packaging checks pass, including exact layout,
   version mismatch, extra/forbidden files, stale installer pins, missing VSIX,
   SHA256SUMS coverage, and release README links.
-- **Candidate:** `make dist` wrote `build/dist/clorraine-1.2.0-x86_64-linux.tar.gz`
-  (6,530,325 bytes), `clorraine-1.2.0.vsix` (25,749 bytes), `install.sh`
-  (18,260 bytes), and `SHA256SUMS`. `make dist-verify` passes.
+- **Candidate:** `make dist` wrote the versioned archive, VSIX, `install.sh`,
+  and `SHA256SUMS`; `make dist-verify` passes. The final asset identity is
+  recorded in the local E2E bullet below.
 - **Gates:** `make dist-check` and `make check` pass; CI runs on Ubuntu 24.04
   with `make dist-check` and `make setup-check`.
 - **Supersession:** replacing `tools/setup/install.sh` invalidated the old
@@ -217,18 +217,24 @@ product path.
 - **Editor:** 171 editor tests pass, including `~/.local/bin` discovery,
   `toolchain.path`, one `--toolchain` argument, the one-time legacy warning,
   the manifest settings, and the packaged client. `make vscode-check` passes.
-- **Local E2E:** the candidate installed into a temp HOME from its exact archive,
-  `setup --toolchain` accepted rc24, and the installed `clorraine 1.2.0` ran
-  hello, file-copier, string-parser, buffer-container, volatile-mmio, the
-  hosted-amiga-13 file-copier, and the rc-1 negative on FS-UAE 3.2.35. No
-  FS-UAE/Xvfb process survived. Assets: archive 6,530,683 bytes
-  `6feac563…3aa8`, installer 18,260 bytes `14b2e9ef…f7c1`, VSIX 26,435 bytes
-  `dd8e30ca…62d9`; ROM `541f7467…1bb0`. Log
-  `build/tmp/phase3-local-e2e.log`.
+- **Local E2E:** the final candidate installed into a temp HOME from its exact
+  archive, `setup --toolchain` accepted rc24, and the installed
+  `clorraine 1.2.0` ran hello, file-copier, string-parser, buffer-container,
+  volatile-mmio, the hosted-amiga-13 file-copier, and the rc-1 negative on
+  FS-UAE 3.2.35. The log records `no fs-uae/Xvfb survivor` after every guest
+  and `processes after: none`. Assets: archive 6,530,173 bytes
+  `d906c2ac…fbd9`, installer 20,180 bytes `6ba739ef…dac7`, VSIX 26,435 bytes
+  `7ff7a4b1…15fd`; ROM `541f7467…1bb0`. Log
+  `build/tmp/phase3-local-e2e-final.log`.
 - **Phase gate:** `make check`, `make dist-check`, `make dist-verify`,
   `make vscode-check`, `make site-check`, and the installed-candidate E2E pass.
   `build/dist` contains the archive, VSIX, installer, and checksums. The
   installed driver reports `clorraine 1.2.0`.
+- **Review:** correctness found one major (purge coverage) and a set of
+  minor test/hardening gaps; security found four minor installer hardening
+  findings; the Amiga specialist found three minor evidence/docs findings. All
+  are fixed: 81 installer spec checks, 21 internal checks, 36 producer checks,
+  and the final E2E with explicit survivor evidence. No critical remains.
 - **Boundary:** the candidate is local; no tag, release, upload, or publication
   occurred.
 

@@ -210,6 +210,17 @@ test("should use the legacy SDK path once as a toolchain and warn once", () => {
   assert.equal(warnings.length, 1, "the legacy warning is shown once per profile");
 });
 
+test("should prefer toolchain.path over the legacy SDK path without a warning", () => {
+  const actual = invoke({ configuredPaths: true, legacySdk: true, command: "clorraine.build" });
+  assert.equal(actual.result.tasks.length, 1);
+  const args = actual.result.tasks[0].args;
+  assert.ok(strings(args));
+  assert.equal(args[args.indexOf("--toolchain") + 1], actual.settings["toolchain.path"]);
+  assert.equal(args.filter((arg) => arg === "--toolchain").length, 1);
+  assert.equal(actual.result.messages.filter((message) => message.includes("toolchain.path")).length, 0,
+    "the new key suppresses the legacy warning");
+});
+
 test("should activate the compiled extension and initialize its real LSP client under the facade", () => {
   const { result } = run();
   assert.ok(result.events.some((event) => event.method === "initialize"));

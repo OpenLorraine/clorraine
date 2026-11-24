@@ -58,3 +58,30 @@ are replaced by the smaller contract above. Git history retains the old record.
 **Reopen rule:** new evidence that breaks one of these assumptions reopens the
 owning decision, updates this table and `03-02-fs-uae.md`, and re-runs the
 Phase 2 gates.
+
+### AR-27 — Installer/bootstrap supersession ordering
+
+- **Authority**: AI — delegated by `--auto-design` (policy version 1; root
+  invocation ID `linux-cli-v1.2.0-phase3-20261124`).
+- **Eligibility**: delivery sequencing inside the approved plan; no product
+  behavior, scope, or acceptance change.
+- **Objective**: keep `make check` green while the new Linux installer replaces
+  the old bootstrap template.
+- **Decision**: `setup-check` runs only the retained Docker SDK tests
+  (`test_cli`, `test_detect`, `test_fetch`); `make check` stops calling
+  `distribution-check`; the old target and native/bootstrap files are removed
+  after acceptance in Phase 4.
+- **Evidence**: replacing `tools/setup/install.sh` broke 58 old tests that
+  pinned its helper slots; the retained Docker SDK suite passes 29 tests.
+- **Rejected alternatives**: keep the old template at a second path (confusing
+  and still broken); remove the old pipeline before acceptance (out of order
+  and against the plan's safety rule).
+- **Strongest counterargument**: the old native tests no longer run before
+  removal, so a latent defect could escape. Accepted: the old pipeline is
+  superseded and not a product path; the new installer has its own 100 checks.
+- **Confidence**: High — the retained suite is the documented Docker SDK suite.
+- **Hardening**: the Phase 4 removal test checks retained inputs and notices.
+- **Policy version**: 1 · **Root invocation ID**:
+  `linux-cli-v1.2.0-phase3-20261124`
+- **Reopen triggers**: the old pipeline is reinstated, or a retained Docker SDK
+  test starts depending on the release template.

@@ -157,9 +157,10 @@ code --install-extension build/vscode/clorraine-1.2.0.vsix
 ```
 
 The extension adds **Clorraine: Build**, **Clorraine: Run**, and **Clorraine: Run
-in FS-UAE**. The candidate editor update uses `~/.local/bin` and
-`clorraine.toolchain.path`; until it ships, set `clorraine.driver.path` if
-discovery fails. v1.2.0 supports the Linux desktop only.
+in FS-UAE**. It discovers `~/.local/bin` and uses `clorraine.toolchain.path` for
+the upstream root; set `clorraine.driver.path` if a custom installation is not
+discovered. The removed `clorraine.sdk.path` is read once with a warning.
+v1.2.0 supports the Linux desktop only.
 
 ## Amiga SDK in Docker
 
