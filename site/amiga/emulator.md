@@ -11,7 +11,7 @@ host with two emulators:
 | Tool | Best for | Speed | ROM |
 |---|---|---|---|
 | `vamos` | Console programs, output checks, CI | Fast | None |
-| FS-UAE | Graphics, audio, Intuition, timers | Slower | AROS by default; original ROMs optional |
+| FS-UAE | Graphics, audio, Intuition, timers | Slower | AROS manual-only; a licensed Kickstart 3.1 A1200 ROM for verified Linux CLI runs |
 
 ## `vamos`
 
@@ -55,7 +55,7 @@ make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1 CAPTUR
 ## Media policy
 
 - **No ROM is required for `vamos`.**
-- **FS-UAE defaults to its built-in AROS replacement ROM.**
+- **FS-UAE can use its built-in AROS replacement ROM for manual experiments;** the verified Linux CLI runner requires a licensed Kickstart 3.1 A1200 ROM.
 - **Original Kickstart and Workbench media is user-supplied.** It is never
   downloaded, copied, or committed by the project.
 - **The advanced Workbench gates** need licensed media and are not part of a

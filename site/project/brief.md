@@ -79,7 +79,7 @@ Clorraine does not distribute Kickstart ROMs or Workbench media. The repository
 contains no ROM or Workbench image.
 
 - `vamos` runs AmigaOS CLI binaries on the host without a ROM.
-- FS-UAE's built-in AROS replacement ROM is the default emulator setup.
+- FS-UAE's built-in AROS replacement ROM can be used for manual experiments; the verified Linux CLI runner requires a licensed Kickstart 3.1 A1200 ROM.
 - Licensed Kickstart and Workbench media is supplied by the person running the
   advanced acceptance gates and is never committed.
 - The SDK image builds its toolchain from pinned public upstream sources. It

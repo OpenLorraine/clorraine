@@ -1,6 +1,6 @@
-# Known Limitations (v1.1)
+# Known Limitations (v1.2)
 
-This document records the accepted limitations of Clorraine v1.0 and v1.1. It is deliberately short: a new
+This document records the accepted limitations of Clorraine v1.0 through v1.2. It is deliberately short: a new
 accepted limitation must be added here and to the production-readiness ambiguity register before
 release.
 
@@ -244,3 +244,37 @@ C-hook trampoline surfaces.
 | Link-time collection | `--gc-sections` removes unreachable runtime/shim sections, including the unused libnix `__amigapath`/`environ` constructor objects and their init entries. No current standard-library API observes that state. | If a future API needs environment or path state, add a targeted keep and re-run the flag audit. |
 | Host attribution | The host release-binary reduction includes symbol removal; scored host `.text` falls 19.7–59.9% (calibration falls 80.2%), while the file size falls 20.6–36.5%. | Compare `.text` for code size and the stripped file for the shipped artifact. |
 | Non-GNU Linux | The host predicate selects Linux, not the linker family; a non-GNU linker on Linux would receive GNU-only flags. The tested and shipped host is the pinned GNU toolchain. | Use a GNU-compatible linker or extend the predicate with a linker probe. |
+
+## 9. Linux CLI v1.2.0 candidate
+
+The Linux CLI candidate is not a published installer yet. Until the installer
+and acceptance phases complete, build the CLI from source and download the
+upstream toolchain yourself. No VSIX is published, and no release asset should
+be treated as a v1.2.0 publication.
+
+- **Host floor.** Linux x86_64 with glibc 2.38 or newer. Ubuntu 24.04 is the
+  minimum baseline; the full spike path ran on Ubuntu 26.04. Ubuntu 22.04 cannot
+  run the rc24 host tools.
+- **Toolchain.** The supported pin is AmigaPorts `m68k-amigaos-gcc` v16.2-rc24.
+  Clorraine validates the extracted root but does not bundle, mirror, or
+  redistribute it. Other versions are rejected by `setup`.
+- **Emulator host.** FS-UAE 3.2.0 or newer. Ubuntu 24.04's `fs-uae` package is
+  3.1.66, below the requirement; install the official 3.2.35 build.
+- **Guest media.** The tested format is a licensed 512 KB Kickstart 3.1 A1200
+  ROM. KS3.0 is untested. FS-UAE's built-in AROS can boot manually, but it is
+  not a supported or acceptance path and the CLI does not launch it silently.
+- **Guest result.** The verified FS-UAE runner is a later phase. A native
+  toolchain selection reports that the runner is unavailable, and the marked SDK
+  container keeps its legacy handoff. Neither path proves guest success; do not
+  use it as acceptance evidence. The A500/Kickstart 1.3 profile remains covered by the SDK
+  development gates, not by the Linux CLI emulator recipe.
+- **Editor.** The extension is a separate local artifact built with
+  `make vscode-package`. The installer does not place it, and no marketplace
+  release is published.
+- **Platforms.** macOS, Windows, WSL, and ARM hosts are outside v1.2.0.
+
+The candidate toolchain/build check is:
+
+```sh
+make toolchain-check TOOLCHAIN=/path/to/m68k-amigaos-gcc-16.2
+```

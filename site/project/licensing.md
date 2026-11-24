@@ -92,7 +92,7 @@ running them.
 For local development:
 
 - `vamos` runs AmigaOS CLI binaries without a ROM.
-- FS-UAE's built-in AROS replacement ROM is the default and needs no ROM file.
+- FS-UAE's built-in AROS replacement ROM can be used for manual experiments and needs no ROM file; the verified Linux CLI runner requires a licensed Kickstart 3.1 A1200 ROM.
 - To use original media, supply your own licensed Kickstart ROMs and Workbench
   disks. [Amiga Forever](https://www.amigaforever.com/) is one licensed source.
 

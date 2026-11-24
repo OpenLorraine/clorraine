@@ -25,6 +25,7 @@ Commands:
   run     Build and run a program
   build   Build a program without running it
   emit    Print the generated C (or write it with -o)
+  setup   Validate and store an Amiga toolchain
 ```
 
 | Option | Meaning |
@@ -33,7 +34,8 @@ Commands:
 | `--release` | Optimize with `-O2`; strip and section-GC on Linux/Amiga |
 | `--size` | Optimize for size with `-Os`; same release processing; cannot combine with `--release` |
 | `--emit-c` | Print the generated C after building |
-| `--emulator` | Amiga run: use FS-UAE (host handoff) |
+| `--emulator` | Amiga run: marked SDK container legacy handoff; native toolchains report the verified runner is unavailable until the next phase |
+| `--toolchain PATH` | Toolchain root for `setup`, non-host `build`, and non-host `run` |
 | `--capture` | Write program stdout to `out.txt` and print its path |
 | `-o FILE` | `emit` only: write C to `FILE` (default stdout) |
 | `--doc [-o DIR] FILE...` | Generate Markdown from `///` comments |
@@ -46,10 +48,17 @@ Options that take a value accept both `--profile host` and `--profile=host`.
 For `--diagnostics=json`, place the option after the command:
 `clorraine build --diagnostics=json -p host file.clo`.
 
+`setup --toolchain PATH` validates the upstream rc24 root and stores its
+canonical path. `build` and `run` resolve a toolchain in this order:
+`--toolchain`, `CLORRAINE_TOOLCHAIN`, the stored config, then the marker-gated
+`PATH` fallback inside the pinned SDK container. `--sdk-root` and
+`CLORRAINE_SDK` are removed. Host builds do not need a toolchain.
+
 ### Examples
 
 ```sh
 clorraine run hello.clo
+clorraine setup --toolchain ~/toolchains/m68k-amigaos-gcc-16.2
 clorraine run hello.clo -p hosted-amiga
 clorraine build hello.clo -p hosted-amiga-13 --release
 clorraine emit hello.clo -p host -o build/hello.c
@@ -61,9 +70,9 @@ clorraine --doc -o build/api examples/hello/hello.clo
 
 | Code | Meaning |
 |---|---|
-| `0` | Success, including help, version, and the FS-UAE handoff |
-| `1` | Clorraine diagnostic, missing tool, or C compiler failure |
-| `2` | Usage error, or the driver is not inside the SDK container |
+| `0` | Success, including help, version, and the legacy FS-UAE handoff |
+| `1` | Clorraine diagnostic, missing tool, failed toolchain probe, or C compiler failure |
+| `2` | Usage error, invalid toolchain selection, or no toolchain selected |
 
 A `run` exits with the program's own code, so a program that exits 2 is
 indistinguishable from a usage or environment error.

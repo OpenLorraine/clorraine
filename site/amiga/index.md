@@ -57,7 +57,7 @@ every A500 gate.
 | Tool | Use it for | Needs a ROM? |
 |---|---|---|
 | `vamos` | Console programs, fast iteration, CI | No |
-| FS-UAE | Graphics, audio, Intuition, timers | No with the built-in AROS ROM |
+| FS-UAE | Graphics, audio, Intuition, timers | Manual AROS only; a licensed KS3.1 A1200 ROM for verified Linux CLI runs |
 | FS-UAE with licensed media | Original Kickstart/Workbench behavior | Yes, user-supplied |
 
 Inside the repository:
@@ -84,7 +84,9 @@ The `host` profile exists for fast tests. It is not an Amiga artifact.
 
 Clorraine does not distribute Kickstart ROMs or Workbench media. No ROM or
 Workbench image is stored in the repository. FS-UAE's built-in AROS replacement
-ROM is the default; licensed media is supplied by the person running the gate.
+ROM can be used for manual experiments, but it is not an acceptance path for the
+Linux CLI. Verified guest runs require a licensed Kickstart 3.1 A1200 ROM,
+supplied by the person running the gate.
 
 Read the [licensing and provenance page](/project/licensing#media-and-the-ndk).
 

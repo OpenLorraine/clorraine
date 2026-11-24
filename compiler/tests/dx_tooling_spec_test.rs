@@ -389,7 +389,7 @@ fn json_renders_an_environment_error() {
     assert_eq!(stdout(&output), "");
     assert_eq!(
         stderr(&output),
-        "{\"code\":null,\"severity\":\"error\",\"message\":\"clorraine: required tool 'cc' was not found on PATH\\ninstall the SDK toolchain or run inside the container (make -C docker shell)\",\"help\":null,\"file\":null,\"line\":null,\"column\":null,\"endLine\":null,\"endColumn\":null}\n"
+        "{\"code\":null,\"severity\":\"error\",\"message\":\"clorraine: required tool 'cc' was not found on PATH\\ninstall a C compiler (cc)\",\"help\":null,\"file\":null,\"line\":null,\"column\":null,\"endLine\":null,\"endColumn\":null}\n"
     );
 }
 

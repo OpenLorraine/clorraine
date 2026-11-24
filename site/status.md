@@ -25,7 +25,7 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga` profile | <StatusBadge state="ready" label="Usable" /> | m68k GCC builds, `vamos` runs, FS-UAE gates |
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
-| Linux x86_64 installer | <StatusBadge state="progress" label="Not published" /> | Previous design superseded; cross-platform installer planned |
+| Linux x86_64 CLI | <StatusBadge state="progress" label="Not published" /> | Toolchain setup and native builds implemented; installer, VSIX and verified FS-UAE runner are later phases |
 | Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
 | VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
 | WSL2/Remote-WSL and Windows/macOS | <StatusBadge state="progress" label="Not in v1.2.0" /> | Linux x86_64 is the only release target |
@@ -80,8 +80,9 @@ The detailed list is on the [verification page](/project/verification).
 
 The A500, A600, A1200, and A4000 FS-UAE gates use licensed media supplied by the
 person running the gate. No ROM or Workbench image is committed or distributed.
-`vamos` runs need no ROM, and the default FS-UAE setup uses its built-in AROS
-replacement ROM.
+`vamos` runs need no ROM. The Linux CLI's verified FS-UAE runner requires a
+licensed Kickstart 3.1 A1200 ROM; FS-UAE's built-in AROS is manual-only and is
+not an acceptance path.
 
 Read the [licensing and provenance page](/project/licensing) for the media and
 NDK policy.

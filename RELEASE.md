@@ -1,9 +1,9 @@
 # Release Runbook: Clorraine v1.2.0
 
-> **Superseded 2026-11-23.** This Python-installer/support-pipeline design was
-> replaced by the cross-platform CLI + FS-UAE delivery plan (AR-50). No v1.2.0
-> asset was published. Keep this document as historical design and evidence; do
-> not use it for a release.
+> **Superseded 2026-11-24.** This Python-installer/support-pipeline design was
+> replaced by the Linux CLI v1.2.0 plan in `plans/linux-cli-v1.2.0`. No v1.2.0
+> asset was published. Keep this document as historical design and evidence;
+> do not run its commands or use it for a release.
 
 This document owns the v1.2.0 candidate, its evidence and the publication gate.
 It records what may be built locally, what the two manual workflows may upload

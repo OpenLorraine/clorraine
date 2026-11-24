@@ -8,18 +8,17 @@
 //!
 //! Exit codes are part of the contract: 0 on success (or a printed help,
 //! version, or FS-UAE handoff), 1 for a Clorraine diagnostic, a missing tool,
-//! or a C compiler failure, and 2 for a malformed command line or a command
-//! that needs the SDK container but runs outside it.
+//! or a C compiler failure, and 2 for a malformed command line or an invalid
+//! or missing toolchain selection.
 
 mod artifacts;
 mod build;
 mod cli;
 mod docgen;
 mod display;
-mod emulator;
 mod environment;
-mod native_metadata;
 mod run;
+mod setup;
 mod toolchain;
 
 use std::ffi::OsStr;
@@ -31,6 +30,9 @@ use cli::{Action, Command, Options};
 
 /// Exit code for command-line and environment problems.
 const EXIT_USAGE: i32 = 2;
+
+/// The command a user runs to select an upstream toolchain.
+pub(super) const SETUP_GUIDANCE: &str = "clorraine setup --toolchain PATH";
 
 /// Runs the driver with the given arguments (without the program name).
 ///
@@ -90,7 +92,16 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
 /// The marker path and the `PATH` value are parameters so the two environment
 /// gates can be exercised with synthetic inputs.
 fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
-    let native = match environment::resolve_sdk(&options) {
+    if options.command == Command::Setup {
+        return match setup::run(&options) {
+            Ok(()) => 0,
+            Err(error) => {
+                report_error(options.diagnostics, &error.message);
+                error.code
+            }
+        };
+    }
+    let native = match environment::resolve_sdk(&options, marker) {
         Ok(native) => native,
         Err(error) => {
             report_error(options.diagnostics, &error.message);
@@ -99,33 +110,25 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
     };
     if native.is_none() && (options.fs_uae.is_some() || options.kickstart.is_some()) {
         report_error(options.diagnostics,
-            "usage error: --fs-uae and --kickstart require a native SDK; select --sdk-root or CLORRAINE_SDK");
+            "usage error: --fs-uae and --kickstart require a native toolchain; select --toolchain or run 'clorraine setup --toolchain PATH'");
         return EXIT_USAGE;
     }
-    if native.is_some() && options.emulator && options.capture {
-        report_error(options.diagnostics,
-            "usage error: --capture is unsupported for native FS-UAE runs");
-        return EXIT_USAGE;
-    }
-    if let Some((code, message)) = environment_exit(&options, marker, search_path, native.as_ref()) {
+    if let Some((code, message)) = environment_exit(&options, search_path, native.as_ref()) {
         report_error(options.diagnostics, &message);
         return code;
     }
-    let emulator = if native.is_some() && options.emulator {
-        match emulator::Emulator::resolve(&options, search_path) {
-            Ok(emulator) => Some(emulator),
-            Err(error) => {
-                report_error(options.diagnostics, &error.message);
-                return error.code;
-            }
-        }
-    } else {
-        None
-    };
+    if native.is_some() && options.emulator {
+        report_error(
+            options.diagnostics,
+            "clorraine: the verified native FS-UAE runner is not available in this build; use the marked SDK container handoff",
+        );
+        return EXIT_USAGE;
+    }
     match options.command {
         Command::Emit => emit(&options),
         Command::Build => build_command(&options, native.as_ref()),
-        Command::Run => run_command(options, native.as_ref(), emulator),
+        Command::Run => run_command(options, native.as_ref()),
+        Command::Setup => unreachable!("setup is handled before resolution"),
     }
 }
 
@@ -138,38 +141,29 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
 /// not touch the process environment.
 fn environment_exit(
     options: &Options,
-    marker: &str,
     search_path: &OsStr,
     native: Option<&environment::NativeSdk>,
 ) -> Option<(i32, String)> {
-    if sdk_required(options) && native.is_none() && !environment::sdk_present(marker) {
-        return Some((EXIT_USAGE, environment::sdk_guidance()));
-    }
-    // Native compilers and paired Python were checked as resolved paths.
-    // Only the freestanding host execution leg still needs a PATH tool.
+    // A native compiler was checked as an absolute path. A freestanding run
+    // still needs the host cc; a native Amiga run without FS-UAE needs vamos
+    // from PATH. The legacy container branch checks every tool on PATH.
     let tools = if native.is_some() {
+        let mut tools = Vec::new();
         if options.profile == Profile::Freestanding && options.command == Command::Run {
-            vec!["cc"]
-        } else {
-            Vec::new()
+            tools.push("cc");
         }
+        if matches!(options.profile, Profile::HostedAmiga | Profile::HostedAmiga13)
+            && options.command == Command::Run
+            && !options.emulator
+        {
+            tools.push("vamos");
+        }
+        tools
     } else {
         required_tools(options)
     };
     environment::missing_tool_in(&tools, search_path)
         .map(|tool| (1, environment::missing_tool_message(&tool)))
-}
-
-/// True when the selected command needs the pinned SDK image.
-///
-/// `emit` only runs the in-process compiler, and the host profile builds with
-/// the host `cc`, so both work on a bare host. The Amiga and freestanding
-/// profiles need the SDK cross toolchain and emulator.
-fn sdk_required(options: &Options) -> bool {
-    match options.command {
-        Command::Emit => false,
-        Command::Build | Command::Run => options.profile != Profile::Host,
-    }
 }
 
 /// The external tools a command needs before it can run.
@@ -180,7 +174,7 @@ fn sdk_required(options: &Options) -> bool {
 fn required_tools(options: &Options) -> Vec<&'static str> {
     let mut tools = Vec::new();
     match options.command {
-        Command::Emit => {}
+        Command::Emit | Command::Setup => {}
         Command::Build => tools.push(toolchain::tool(options.profile).program),
         Command::Run => {
             tools.push(toolchain::tool(options.profile).program);
@@ -293,11 +287,7 @@ fn build_command(options: &Options, native: Option<&environment::NativeSdk>) -> 
 }
 
 /// Builds, then runs the program (or hands it off to FS-UAE).
-fn run_command(
-    options: Options,
-    native: Option<&environment::NativeSdk>,
-    emulator: Option<emulator::Emulator>,
-) -> i32 {
+fn run_command(options: Options, native: Option<&environment::NativeSdk>) -> i32 {
     if options.profile == Profile::Freestanding {
         return run_freestanding(options, native);
     }
@@ -319,18 +309,8 @@ fn run_command(
         print_c(&built.c);
     }
     if options.emulator {
-        if let Some(emulator) = emulator {
-            return match emulator.run(&built.bin) {
-                Ok(code) => code,
-                Err(error) => {
-                    report_error(options.diagnostics, &display::sanitize(&format!(
-                        "clorraine: {error}"
-                    )));
-                    1
-                }
-            };
-        }
-        // The run is handed to the host; printing the command is success.
+        // A native selection is rejected before the build; this is the marked
+        // SDK-container handoff, which leaves FS-UAE to the host.
         print!(
             "{}",
             toolchain::fs_uae_handoff(&built.bin, options.capture, options.profile)
@@ -348,7 +328,6 @@ fn run_command(
         &built.bin,
         capture.as_deref(),
         options.diagnostics,
-        native.and_then(|sdk| sdk.python.as_deref()),
     );
     if result.captured {
         if let Some(path) = &capture {
@@ -414,7 +393,6 @@ fn run_freestanding(options: Options, native: Option<&environment::NativeSdk>) -
         &host_bin,
         capture.as_deref(),
         options.diagnostics,
-        None,
     );
     if result.captured {
         if let Some(path) = &capture {
@@ -459,42 +437,18 @@ mod tests {
         }
     }
 
-    /// A marker path that exists on every host, so the environment gate passes
-    /// and the tool check is the one under test.
-    const PRESENT_MARKER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-
     #[test]
-    fn an_absent_sdk_marker_exits_two_and_prints_guidance() {
-        let options = invoke_options(&["run", "--profile", "hosted-amiga", "hello.clo"]);
-        let (code, message) = environment_exit(&options, "/no/such/sdk-marker", &OsString::new(), None)
-            .expect("an absent marker must stop an Amiga command");
-        assert_eq!(code, EXIT_USAGE);
-        assert!(
-            message.contains("SDK container"),
-            "the guidance names the SDK container, got:\n{message}"
-        );
-        // The whole run entry point returns the same code.
-        assert_eq!(
-            run_with_marker(
-                args(&["run", "--profile", "hosted-amiga", "hello.clo"]),
-                "/no/such/sdk-marker"
-            ),
-            EXIT_USAGE
-        );
-    }
-
-    #[test]
-    fn a_bare_host_runs_emit_and_the_host_profile_without_the_marker() {
+    fn a_bare_host_runs_emit_and_the_host_profile_without_a_toolchain() {
         let emit = invoke_options(&["emit", "hello.clo"]);
         assert!(
-            environment_exit(&emit, "/no/such/sdk-marker", &OsString::new(), None).is_none(),
+            environment_exit(&emit, &OsString::new(), None).is_none(),
             "emit only needs the in-process compiler"
         );
 
         let host = invoke_options(&["run", "hello.clo"]);
-        let (code, message) = environment_exit(&host, "/no/such/sdk-marker", &OsString::new(), None)
+        let (code, message) = environment_exit(&host, &OsString::new(), None)
             .expect("the host profile still needs cc");
-        assert_eq!(code, 1, "a missing host tool is not an SDK-marker error");
+        assert_eq!(code, 1, "a missing host tool is not a toolchain-selection error");
         assert!(message.contains("'cc'"), "the report names cc, got:\n{message}");
     }
 
@@ -502,7 +456,7 @@ mod tests {
     fn a_missing_required_tool_is_named_and_exits_one() {
         let options = invoke_options(&["run", "hello.clo"]);
         // The host profile needs `cc`; an empty search path finds nothing.
-        let (code, message) = environment_exit(&options, PRESENT_MARKER, &OsString::new(), None)
+        let (code, message) = environment_exit(&options, &OsString::new(), None)
             .expect("a missing tool must stop the driver");
         assert_eq!(code, 1);
         assert!(
@@ -512,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn a_present_marker_and_an_executable_tool_proceed() {
+    fn a_present_host_tool_proceeds() {
         let dir = std::env::temp_dir().join(format!("clorraine-gate-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create the search directory");
         let tool = dir.join("cc");
@@ -528,7 +482,7 @@ mod tests {
         }
 
         let options = invoke_options(&["build", "hello.clo"]);
-        let gate = environment_exit(&options, PRESENT_MARKER, &OsString::from(dir.as_os_str()), None);
+        let gate = environment_exit(&options, &OsString::from(dir.as_os_str()), None);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(gate.is_none(), "a ready tool must let the command through");
     }

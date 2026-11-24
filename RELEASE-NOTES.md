@@ -1,60 +1,58 @@
 # Clorraine v1.2.0
 
-> **Candidate release record.** v1.2.0 is the current release target. Its
-> artifacts are prepared as drafts and remain private until the explicit
-> publication approval recorded in `RELEASE.md` is supplied. v1.1.2 remains the
-> latest published release and is unchanged under its MIT terms.
+> **Candidate release record.** v1.2.0 is the current Linux x86_64 CLI
+> candidate. Its installer, VSIX and verified FS-UAE runner are later phases;
+> no release asset is published. v1.1.2 remains the latest published release
+> under its MIT terms.
 
 Clorraine is a compiler for the frozen v1.0 language with the approved v1.1
 language surfaces, plus a build/run driver for the `host`, `hosted-amiga`,
-`hosted-amiga-13`, and `freestanding` profiles. v1.2.0 adds a native Linux
-installation path and editor actions without changing the language rules.
+`hosted-amiga-13`, and `freestanding` profiles. v1.2.0 adds a Linux CLI that
+validates a user-supplied upstream toolchain and builds without Docker.
 
-## Highlights
+## Candidate highlights
 
-- **One native Linux installer.** `install.sh` downloads a hash-pinned helper,
-  verifies its exact length and SHA-256, and runs it with isolated Python. The
-  installer places the three compiler binaries, a reusable prebuilt Amiga SDK,
-  the NDK preparation helpers and a CPython 3.10/3.12 `vamos` wheel set under
-  `~/.clorraine` by default. It never compiles installation dependencies.
-- **Transactional updates and recovery.** Installation builds a complete
-  candidate before activation, keeps the previous working version and refuses a
-  concurrent writer. `--root` and `--release` select a custom root or an exact
-  distribution tag explicitly.
-- **Linux desktop editor.** The VS Code extension adds Build, Run and Run in
-  FS-UAE actions. They save the active `.clo` entry, ask the language server for
-  the canonical saved-source closure, and pass the entry and its imported sources
-  directly to the driver. Machine-scoped settings find `~/.clorraine/bin`
-  without a terminal `PATH`. v1.2.0 supports the Linux desktop only; WSL2,
-  Remote-WSL and Windows are outside this release.
-- **Bounded release automation.** Two manually dispatched workflows build
-  support and compiler/editor/distribution drafts. They never publish on a
-  build; promotion needs a separately reviewed manifest hash.
+- **User-supplied toolchain.** `clorraine setup --toolchain PATH` validates the
+  AmigaPorts `m68k-amigaos-gcc` v16.2-rc24 root, checks both `nix20` and `nix13`
+  link probes, and stores the canonical path. Clorraine does not bundle, mirror,
+  or redistribute the toolchain.
+- **One selection contract.** `--toolchain` and `CLORRAINE_TOOLCHAIN` override
+  the stored config. `--sdk-root` and `CLORRAINE_SDK` are removed. Host builds
+  need no toolchain.
+- **Native build path.** `clc` and `clorraine` build the existing profiles with
+  the selected absolute compiler. The `make toolchain-check` target builds
+  hello, the portable corpus, and the freestanding program with rc24.
+- **Linux desktop editor candidate.** The VS Code extension remains a separate
+  local VSIX. The installer does not place it and no marketplace release is
+  published.
+- **Legacy SDK container.** The pinned Docker SDK keeps its marker-gated PATH
+  lookup and FS-UAE host handoff for development. A user host with a compiler on
+  PATH but no selection is told to run `setup`.
+
+The verified FS-UAE runner, crash-safe installer with separate VSIX, and the
+legacy-pipeline removal are the next phases. No tag, release, upload, or
+publication has occurred.
 
 ## Verification
 
-The v1.2.0 candidate gate is `make verify`, `make vscode-check`, `make
-site-check`, the clean Ubuntu 22.04/24.04 installation runs, the native FS-UAE
-and legacy Amiga gates on private displays, and the Linux desktop editor record.
-The final candidate also needs the release specification suite and an
-independent acceptance review before any promotion. An unresolved
-critical/major finding, a changed approved byte or a missing post-publication
-check blocks the corresponding stage; it is never replaced by a host-only or
-miniature-fixture result. WSL2/Remote-WSL and Windows are not acceptance gates
-because v1.2.0 does not claim them.
+The Phase 1 candidate checks are `cargo test --workspace`,
+`make toolchain-check TOOLCHAIN=<rc24 root>`, `make check`, and `make site-check`.
+The full acceptance gate is `make verify`, which needs the pinned SDK image, an
+X display, and the licensed media. The installer and FS-UAE acceptance evidence
+are added in later phases.
 
 ## Known limitations
 
-- Native Windows, macOS, WSL2/Remote-WSL and ARM artifacts are not part of this
-  release. Windows and WSL users are outside the v1.2.0 support claim.
-- FS-UAE and licensed Kickstart/Workbench media are user-provided. No emulator,
-  ROM or Workbench content is redistributed.
-- Automatic Windows emulator launch, native emulator capture and automatic
-  shell-profile or extension changes are outside this delivery. The release
-  makes no WSL2/Remote-WSL or Windows support claim.
-- Support assets retain third-party terms. The exact `libamiga.a` input and its
-  unresolved legal review are recorded in `THIRD_PARTY_NOTICES.md`; public
-  promotion stays separately authorised.
+- Linux x86_64 with glibc 2.38 or newer; Ubuntu 24.04 is the minimum baseline.
+  Ubuntu 22.04 cannot run the rc24 host tools.
+- The supported toolchain is rc24; other versions are rejected by `setup`.
+- FS-UAE 3.2.0 or newer. Ubuntu 24.04's 3.1.66 package is below the requirement.
+- The tested guest media is a licensed 512 KB Kickstart 3.1 A1200 ROM. KS3.0 is
+  untested; AROS is manual-only and not an acceptance path.
+- A native toolchain selection reports that the verified `--emulator` runner is
+  unavailable in this phase; the marked SDK container keeps its legacy handoff.
+  Neither proves guest success; the verified runner is the next phase.
+- macOS, Windows, WSL, and ARM hosts are outside v1.2.0.
 - The accepted language and platform limitations remain in
   `docs/known-limitations.md`.
 

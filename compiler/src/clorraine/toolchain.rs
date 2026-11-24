@@ -12,7 +12,6 @@
 //! strip the artifact; the freestanding profile and non-Linux hosts keep the
 //! plain `-O2` line, and debug builds keep their symbols.
 
-use std::ffi::OsString;
 use std::path::Path;
 
 use super::display;
@@ -280,30 +279,6 @@ pub fn runner_command(runner: &Runner, bin: &Path) -> Vec<String> {
         Runner::Native => vec![bin.display().to_string()],
         Runner::Vamos => vec!["vamos".to_owned(), bin.display().to_string()],
     }
-}
-
-/// Fixed entry-point selection inside the paired, isolated Python environment.
-const VAMOS_ENTRY: &str = r#"import importlib.metadata
-import sys
-entries = [entry for entry in importlib.metadata.distribution("amitools").entry_points
-           if entry.group == "console_scripts" and entry.name == "vamos"]
-if len(entries) != 1:
-    raise SystemExit("clorraine: expected exactly one installed vamos entry point")
-sys.argv = ["vamos", *sys.argv[1:]]
-raise SystemExit(entries[0].load()())"#;
-
-/// Assembles native vamos execution without a relocation-sensitive shebang.
-///
-/// Both paths have already been resolved by the caller. Keep their OS spelling
-/// in actual arguments; only diagnostics may use a sanitised display string.
-pub fn native_vamos_command(python: &Path, bin: &Path) -> Vec<OsString> {
-    vec![
-        python.as_os_str().to_owned(),
-        OsString::from("-I"),
-        OsString::from("-c"),
-        OsString::from(VAMOS_ENTRY),
-        bin.as_os_str().to_owned(),
-    ]
 }
 
 /// The exact host-side command that boots FS-UAE for a built program.

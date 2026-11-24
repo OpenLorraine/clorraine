@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24
-> **Progress**: 0/28 tasks (0%)
+> **Progress**: 7/28 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -35,35 +35,57 @@ product path.
 
 ## Phase 1: Toolchain selection and build
 
-> **Phase baseline tree**: record at execution start
+> **Phase baseline tree**: `ba82931ba75c2a428633aa01bb8320ebfafb3430`
+> **Expected modification set**: `compiler/src/clorraine/{cli,mod,environment,setup,toolchain,build,run}.rs`, `compiler/src/clorraine/native_metadata.rs` (retired), `compiler/src/clorraine/emulator.rs` (retired until Phase 2), the toolchain/setup, legacy-driver, and DX message tests under `compiler/tests/`, `tools/setup/toolchain_check.sh`, `Makefile`, `AGENTS.md`, `README.md`, `docs/`, `site/` (including `guide/known-limitations.md`), `RELEASE-NOTES.md`, `CHANGELOG.md`, `RELEASE.md`, the legacy distribution documentation assertion, roadmap/progress metadata, and this plan
+> **Scope**: strict
 > **Reasoning**: high — the public toolchain contract replaces the old SDK
 > assembly and touches every build path
 
 ### Step 1.1: Specification tests first
 
-- [ ] 1.1.1 [spec-author] Add `compiler/tests/toolchain_setup_spec_test.rs` covering ST-7–ST-11: invalid roots, both-crt probe, atomic config, resolver precedence (including marker-gated legacy PATH), and absolute compiler invocation. Rewrite or retire the old `native_driver_spec_test.rs`/`native_driver_impl_test.rs` cases under AR-16; keep the legacy handoff test red/green contract explicit.
+- [x] 1.1.1 [spec-author] ✅ (completed: 2026-11-24 17:04) Add `compiler/tests/toolchain_setup_spec_test.rs` covering ST-7–ST-11: invalid roots, both-crt probe, atomic config, resolver precedence (including marker-gated legacy PATH), and absolute compiler invocation. Rewrite or retire the old `native_driver_spec_test.rs`/`native_driver_impl_test.rs` cases under AR-16; keep the legacy handoff test red/green contract explicit.
   - **Task verify**: `cargo test --test toolchain_setup_spec_test` fails for the intended missing behavior; the old native spec/impl cases are explicitly rewritten or retired; record the red output.
 
 ### Step 1.2: CLI, config, validator, resolver
 
-- [ ] 1.2.1 Add the `setup` command in `compiler/src/clorraine/setup.rs`, `--toolchain` on `setup`/`build`/`run`, config parsing and atomic write, and remove `--sdk-root`/`CLORRAINE_SDK`; update help and usage tests.
+- [x] 1.2.1 ✅ (completed: 2026-11-24 17:04) Add the `setup` command in `compiler/src/clorraine/setup.rs`, `--toolchain` on `setup`/`build`/`run`, config parsing and atomic write, and remove `--sdk-root`/`CLORRAINE_SDK`; update help and usage tests.
   - **Task verify**: CLI/config unit tests pass; `--sdk-root` is a usage error.
-- [ ] 1.2.2 Implement the full validator: canonical root, compiler/`m68k-amigaos` checks, glibc 2.38 message, rc24 `--version`, and both `-mcrt` probes; leave the old config untouched on failure.
+- [x] 1.2.2 ✅ (completed: 2026-11-24 17:04) Implement the full validator: canonical root, compiler/`m68k-amigaos` checks, glibc 2.38 message, rc24 `--version`, and both `-mcrt` probes; leave the old config untouched on failure.
   - **Task verify**: ST-7–ST-9 spec cases pass, including the probe failure case.
-- [ ] 1.2.3 Replace the old native-assembly resolver with flag > env > config; keep the marker-gated legacy `PATH`/handoff branch for the Docker SDK and its tests; pass the absolute compiler for native selections; keep the existing flag tables; remove the bundled venv; keep `vamos` as a `PATH` tool for non-emulator runs; rewrite/remove the old `native_driver_support`, `native_gate`, and marker tests; keep the legacy handoff tests green.
+- [x] 1.2.3 ✅ (completed: 2026-11-24 17:04) Replace the old native-assembly resolver with flag > env > config; keep the marker-gated legacy `PATH`/handoff branch for the Docker SDK and its tests; pass the absolute compiler for native selections; keep the existing flag tables; remove the bundled venv; keep `vamos` as a `PATH` tool for non-emulator runs; rewrite/remove the old `native_driver_support`, `native_gate`, and marker tests; keep the legacy handoff tests green.
   - **Task verify**: ST-10–ST-11 spec cases pass; a host build needs no toolchain.
-- [ ] 1.2.4 Add `make toolchain-check TOOLCHAIN=PATH` to build hello, the four corpus programs, and the freestanding skeleton with rc24; run it against the pinned asset.
+- [x] 1.2.4 ✅ (completed: 2026-11-24 17:15) Add `make toolchain-check TOOLCHAIN=PATH` to build hello, the four corpus programs, and the freestanding skeleton with rc24; run it against the pinned asset.
   - **Task verify**: hello, all four corpus programs, and the freestanding skeleton build; record the commands and sizes.
 
 ### Step 1.3: Documentation and gate
 
-- [ ] 1.3.1 Document the rc24 URL/size/SHA-256, glibc 2.38+ requirement, setup/config, wrapper oracle, KS3.1 limitation, and A500-vs-A1200 caveat in `docs/`, the root README, `site/`, `RELEASE-NOTES.md`, `CHANGELOG.md`, and `RELEASE.md`; update `docs/known-limitations.md` and the `AGENTS.md` command table for `toolchain-check`.
-  - **Task verify**: `make check` and `make site-check` pass; every new command in the docs is copy-paste valid; the claims grep finds no Ubuntu 22.04/bundled-SDK/installer-VSIX text.
-- [ ] 1.3.2 Phase gate: run `make check`, `make site-check`, and `make toolchain-check TOOLCHAIN=<pinned rc24>`; record the baseline tree and evidence.
+- [x] 1.3.1 ✅ (completed: 2026-11-24 17:15) Document the rc24 URL/size/SHA-256, glibc 2.38+ requirement, setup/config, wrapper oracle, KS3.1 limitation, and A500-vs-A1200 caveat in `docs/`, the root README, `site/`, `RELEASE-NOTES.md`, `CHANGELOG.md`, and `RELEASE.md`; update `docs/known-limitations.md` and the `AGENTS.md` command table for `toolchain-check`.
+  - **Task verify**: `make check` and `make site-check` pass; every new command in the docs is copy-paste valid; the claims grep finds no positive Ubuntu 22.04 support, `~/.clorraine` path, bundled SDK/`vamos`, or installer-placed VSIX claim (negative “cannot” statements are allowed).
+- [x] 1.3.2 ✅ (completed: 2026-11-24 17:15) Phase gate: run `make check`, `make site-check`, and `make toolchain-check TOOLCHAIN=<pinned rc24>`; record the baseline tree and evidence.
   - **Task verify**: both commands pass; no `--sdk-root` remains in the CLI/compiler code or tests. The editor update is tracked in Phase 3.
 
+### Phase 1 evidence
+
+- **Red:** `cargo test --test toolchain_setup_spec_test` failed 6 of 8 cases with
+  `unknown command 'setup'`; the captured log is `build/tmp/toolchain-setup-red.log`.
+- **Spec green:** 13/13 setup/selection cases pass, including the glibc floor,
+  both runtime probes, config preservation, precedence, no-fallback, the
+  native-emulator phase gate, and the `vamos` dependency.
+- **Real toolchain:** `setup` on rc24 reported
+  `m68k-amigaos-gcc (AmigaDev 16.2-rc24) 16.2.1b 20261010182711` and stored its
+  canonical root in a temporary XDG config.
+- **Real builds:** `make toolchain-check` built hello (430,000 bytes),
+  file-copier (440,708), string-parser (437,272), buffer-container (437,872),
+  volatile-mmio (429,732), and freestanding (8,160).
+- **Review fixes:** the post-phase review’s major findings were fixed; the
+  added failure-path tests (probe timeout and config-rename cleanup) are green.
+  The only red log remains the initial public-path run; the fix tests target the
+  corrected failure paths and are recorded here rather than re-simulated.
+- **Gates:** `make check`, `make site-check`, and the real rc24
+  `make toolchain-check` pass; logs are under `build/tmp/phase1-*.log`.
+
 **Deliverables**: setup command, validator, resolver, build path, docs, real build evidence.
-**Phase gate**: `make check` + `make toolchain-check`.
+**Phase gate**: `make check` + `make site-check` + `make toolchain-check`.
 
 ## Phase 2: Verified FS-UAE guest run
 

@@ -51,6 +51,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
+| `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
@@ -85,7 +86,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make demo-check` | Type-check and test `tools/demo/` (`tsc --noEmit`, `node --test`) |
 | `make site-dev` / `make site-check` | Preview the VitePress site locally; `site-check` performs a clean install and production build and fails on dead internal links |
 | `make setup` | Detect the SDK; `FETCH=1` builds missing public components, `DRY=1` prints the plan, `YES=1` skips confirmation; never downloads media |
-| `make setup-check` | Installer unit tests; also part of `make check` |
+| `make setup-check` | Docker SDK installer tests; also part of `make check` |
 | `make vscode-check` | Build the server in the container, type-check and test `tools/vscode/`, package a `.vsix`, audit it, and run the packaged client |
 | `make vscode-package` | Build and package `build/vscode/clorraine-<version>.vsix` |
 | `make demo`, `make demo-youtube`, `make channel-assets` | Host-only media renders; `demo`/`demo-youtube` need Chrome, VHS, ffmpeg, and the SDK/emulator; `channel-assets` needs Chrome |

@@ -1,6 +1,6 @@
 # Linux CLI v1.2.0
 
-> **Status**: ✅ Preflight passed with notes — 28 tasks, ready for execution
+> **Status**: 🔄 Executing — Phase 1 complete (7/28); post-phase review clean
 > **Version**: 1.2.0
 > **Scope**: Linux x86_64 only
 > **Evidence**: `spikes/07-linux-cli-fs-uae/README.md`
@@ -87,6 +87,7 @@ Full details: [00-decisions.md](00-decisions.md).
 | [03-04-editor-migration.md](03-04-editor-migration.md) | VS Code settings/actions, old pipeline removal |
 | [07-testing-strategy.md](07-testing-strategy.md) | ST-1–ST-28, commands, evidence |
 | [99-execution-plan.md](99-execution-plan.md) | 28 tasks and phase gates |
+| [05-findings.md](05-findings.md) | Phase 1 review rulings |
 | [00-preflight-report.md](00-preflight-report.md) | Independent review findings |
 
 ## Review routing

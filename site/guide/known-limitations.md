@@ -1,6 +1,6 @@
 ---
 title: Known limitations
-description: "The accepted limitations of Clorraine v1.1, summarised for users and linked to the authoritative list."
+description: "The accepted limitations of Clorraine v1.2, summarised for users and linked to the authoritative list."
 ---
 
 # Known limitations
@@ -16,10 +16,13 @@ edge cases and their workarounds, is
 |---|---|---|
 | Developer preview | Interfaces, packaging, and platform support may change | Use it for experiments and feedback, not production work |
 | Linux x86_64 only | WSL2/Remote-WSL, native Windows and macOS are outside v1.2.0 and are not supported claims | Build from source on another platform at your own risk; no WSL/Windows acceptance is provided |
+| Linux CLI candidate | Installer, VSIX and the verified FS-UAE runner are later phases; no binary release is published | Build from source, download the rc24 toolchain, and run `clorraine setup --toolchain PATH` |
+| Host floor | glibc 2.38+; Ubuntu 24.04 is the minimum baseline | Ubuntu 22.04 cannot run the rc24 host tools |
+| Toolchain and emulator | rc24 only; FS-UAE 3.2.0+; licensed Kickstart 3.1 A1200 ROM for verified runs | KS3.0 is untested; AROS is manual-only and not an acceptance path |
 | Host-only CI | The GitHub Actions runner does not execute the Amiga legs | Run `make verify` locally for full acceptance |
 | Amiga gates need licensed media | Advanced Workbench gates cannot run on a bare machine | Supply your own media; no ROM or Workbench image is distributed |
-| `clorraine-lsp` is not in the binary tarball | The release tarball has `clc` and `clorraine` only | Build the workspace from source |
-| VS Code extension is not published | Editor setup is manual | `make vscode-check` builds and audits a VSIX |
+| No binary release is published | The CLI is built from source in the candidate phase | `cargo build --workspace` writes all three binaries to `target/debug/` |
+| VS Code extension is not published | Editor setup is manual | `make vscode-package` builds a local VSIX; `make vscode-check` audits the packaged client |
 
 ## Platform profiles
 

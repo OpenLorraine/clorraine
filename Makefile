@@ -55,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -66,6 +66,15 @@ check:
 	$(MAKE) bench-test
 	$(MAKE) fuzz-test
 	$(MAKE) fuzz-smoke
+
+# Build the portable programs with a user-supplied upstream Amiga toolchain.
+# This is a local product check; it does not install, configure, or run an
+# emulator. TOOLCHAIN is the extracted root containing bin/m68k-amigaos-gcc.
+toolchain-check:
+	@test -n "$(TOOLCHAIN)" || { echo 'usage: make toolchain-check TOOLCHAIN=PATH'; exit 2; }
+	@mkdir -p "$(CURDIR)/build/tmp"
+	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" $(DOCKER_MAKE) exec CMD="cargo build --workspace"
+	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" bash tools/setup/toolchain_check.sh "$(TOOLCHAIN)"
 
 # Detect and optionally prepare the Amiga SDK. `FETCH=1` builds the pinned
 # image from public upstream sources; `DRY=1` reports the plan without running

@@ -1,37 +1,95 @@
 ---
 title: Quick start
-description: "Install Clorraine on Linux with the v1.2.0 candidate installer, or build from source or use the pinned Amiga SDK in Docker."
+description: "Build Clorraine from source, select an upstream Amiga toolchain, or use the pinned Amiga SDK in Docker."
 ---
 
 # Quick start
 
-> **No prebuilt release is currently published.** The previous v1.2.0 Linux
-> installer was superseded on 2026-11-23. Until the new cross-platform installer
-> ships, build from source or use the Docker SDK below.
+> **No prebuilt release is currently published.** The Linux CLI candidate is
+> being completed in phases. The toolchain setup and native build path are
+> implemented; the installer, VSIX publication and verified FS-UAE runner are
+> later phases.
 
-Clorraine is a developer preview. The **Linux x86_64** path installs prebuilt
-compiler binaries, the Amiga SDK and the `vamos` runtime without compiling
-dependencies. v1.2.0 supports Linux x86_64 only; WSL2, Remote-WSL and native
-Windows/macOS are outside this release.
+Clorraine is a developer preview. v1.2.0 targets **Linux x86_64** only. WSL2,
+Remote-WSL, Windows, and macOS are outside this release.
 
 ## Choose a path
 
 | Option | What it gives you | Requirements |
 |---|---|---|
-| **Linux x86_64 installer** | `clc`, `clorraine`, `clorraine-lsp`, Amiga SDK and `vamos` | Ubuntu 22.04/24.04 x86_64; the system prerequisites below |
-| **Docker SDK** | Full m68k toolchain, `vamos`, FS-UAE, NDK headers | Docker; network; a 30–90 minute first image build |
-| **Build from source** | All three binaries, including the language server | Rust stable; no external crates |
-| **One-click installers** | Not part of v1.2.0; Linux x86_64 only | — |
+| **Linux CLI candidate** | `clc`, `clorraine`, `clorraine-lsp`; toolchain setup and native builds | Linux x86_64, glibc 2.38+, Rust to build from source, the upstream rc24 toolchain |
+| **Docker SDK** | Full m68k toolchain, `vamos`, FS-UAE, NDK headers, Amiga gates | Docker; network; a 30–90 minute first image build |
+| **Verified FS-UAE runner** | A1200/KS3.1 guest run with rc/status evidence | Next phase; not yet part of the candidate |
+| **VSIX** | The VS Code client | Built locally with `make vscode-package`; not published |
 
-## Prebuilt installer
+No one-click installer or marketplace extension is published.
 
-No prebuilt Linux/macOS/Windows installer is currently published. The previous
-v1.2.0 Linux installer design was superseded on 2026-11-23, and its artifacts
-were never published. Use the Docker SDK or build from source below until the
-cross-platform installer ships.
+## Linux CLI candidate
 
-The previous published release, v1.1.2, remains available under its MIT terms
-at <https://github.com/OpenLorraine/clorraine/releases/tag/v1.1.2>.
+The candidate uses a user-downloaded upstream toolchain. Clorraine validates it
+and never bundles or mirrors it.
+
+### 1. Build the CLI
+
+```sh
+git clone https://github.com/OpenLorraine/clorraine.git
+cd clorraine
+cargo build --workspace
+```
+
+The binaries are written to `target/debug/`. Building from source needs Rust
+stable; the Docker SDK remains the development environment.
+
+### 2. Download and select the toolchain
+
+Use AmigaPorts `m68k-amigaos-gcc` v16.2-rc24:
+
+| Field | Value |
+|---|---|
+| Asset | `m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz` |
+| Bytes | `69,868,548` |
+| SHA-256 | `b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100` |
+
+Extract it and select the **root** containing `bin/m68k-amigaos-gcc` and
+`m68k-amigaos/`:
+
+```sh
+./target/debug/clorraine setup --toolchain "$HOME/toolchains/m68k-amigaos-gcc-16.2"
+```
+
+`setup` checks the layout, the `16.2-rc24` version, the NDK headers, and both
+`nix20` and `nix13` link probes. It writes the canonical path only after every
+check passes. The config is `$XDG_CONFIG_HOME/clorraine/config` when absolute,
+otherwise `~/.config/clorraine/config`.
+
+Selection order is `--toolchain`, `CLORRAINE_TOOLCHAIN`, the stored config, then
+the marker-gated `PATH` fallback inside the pinned SDK container only.
+`--sdk-root` and `CLORRAINE_SDK` are removed.
+
+### 3. Build a program
+
+```sh
+./target/debug/clorraine build -p hosted-amiga examples/hello/hello.clo
+./target/debug/clorraine build -p freestanding \
+  spec/tests/corpus/freestanding/program.clo
+```
+
+The portable toolchain check is:
+
+```sh
+make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
+```
+
+### 4. FS-UAE
+
+The verified guest runner is the next phase. It will boot an A1200 with a
+licensed 512 KB Kickstart 3.1 A1200 ROM, run the program through a wrapper that
+records the return code, and write a status marker only for a zero exit. The
+native `--emulator` path reports that the verified runner is unavailable in this
+phase, while the marked SDK container keeps its legacy handoff. Neither proves
+guest success; do not use it as acceptance evidence. FS-UAE 3.2.0 or newer is required; Ubuntu 24.04's
+3.1.66 package is too old. AROS is manual-only and is not an acceptance path.
+The A500/Kickstart 1.3 gates remain in the Docker development environment.
 
 ## Your first program
 
@@ -52,7 +110,7 @@ func main(): i32 {
 Run it with the host profile:
 
 ```sh
-clorraine run hello.clo
+./target/debug/clorraine run hello.clo
 ```
 
 Output:
@@ -67,100 +125,64 @@ generated C.
 
 ## VS Code
 
-The installer places `clorraine.vsix` beside the installed version and prints
-the exact installation command. Copy and run that printed command, for example:
+The extension is a separate local artifact; the installer does not place it and
+no marketplace release is published.
 
 ```sh
-# Use the exact path printed by the installer, not a guessed root path:
-code --install-extension /path/printed/by/installer/clorraine.vsix
+make vscode-package
+code --install-extension build/vscode/clorraine-1.2.0.vsix
 ```
 
-Do not assume a fixed path under the root; use the path the installer printed.
-
-The extension adds **Clorraine: Build**, **Clorraine: Run** and **Clorraine: Run
-in FS-UAE**, and discovers the installed driver and language server without a
-terminal `PATH`. v1.2.0 supports the Linux desktop only; it does not provide a
-WSL2/Remote-WSL or Windows extension-host path.
+The extension adds **Clorraine: Build**, **Clorraine: Run**, and **Clorraine: Run
+in FS-UAE**. The candidate editor update uses `~/.local/bin` and
+`clorraine.toolchain.path`; until it ships, set `clorraine.driver.path` if
+discovery fails. v1.2.0 supports the Linux desktop only.
 
 ## Amiga SDK in Docker
 
-The SDK image is the reproducible Amiga environment. It builds GCC, binutils,
-libnix, the NDK headers, vbcc, `vamos`, and FS-UAE support from pinned upstream
-sources. The first build compiles the toolchain and takes roughly 30–90 minutes.
+The SDK image is the reproducible Amiga development environment. It builds GCC,
+binutils, libnix, the NDK headers, vbcc, `vamos`, and FS-UAE support from pinned
+upstream sources. The first build takes roughly 30–90 minutes.
 
 ```sh
-git clone https://github.com/OpenLorraine/clorraine.git
-cd clorraine
 make setup FETCH=1
-```
-
-`make setup FETCH=1` detects the host tools, builds the pinned image if it is
-missing, and re-checks the result. To see the plan without changing anything:
-
-```sh
-make setup DRY=1
-```
-
-Then run a program through the driver inside the SDK:
-
-```sh
 make run FILE=examples/hello/hello.clo
 make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga
 ```
 
-The second command builds for `hosted-amiga` and runs the program under `vamos`.
-No Kickstart ROM is needed for a console program on that path.
-
-For a graphics demo, boot FS-UAE on the host:
+The second command builds for `hosted-amiga` and runs under `vamos`; no Kickstart
+ROM is needed for that console path. For graphics:
 
 ```sh
 make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1
 ```
 
-The A500 path needs the licensed Kickstart 1.3 ROM in `~/amiga/roms`. If you only
-want to try the toolchain, the `vamos` path above needs no media at all.
+The A500 path needs the licensed Kickstart 1.3 ROM in `~/amiga/roms`.
 
 ## What you need for the Amiga path
 
 | Requirement | Provided by | Notes |
 |---|---|---|
-| `m68k-amigaos-gcc` and NDK headers | Docker SDK | Built from pinned public sources |
-| `vamos` | Docker SDK | Runs CLI binaries on the host without a ROM |
-| FS-UAE | Docker SDK and host | Graphics and audio need an X display |
-| Kickstart ROM | You | Only for FS-UAE with original media; AROS is the default |
-| Workbench media | You | Only for the advanced Workbench gates |
+| `m68k-amigaos-gcc` and NDK headers | You, or the Docker SDK | rc24 for the native CLI; built from pinned sources in Docker |
+| `vamos` | Docker SDK or your `PATH` | Runs CLI binaries without a ROM |
+| FS-UAE | You, or the Docker SDK | 3.2.0+ for the native path; an X display |
+| Kickstart 3.1 A1200 ROM | You | Required for the verified Linux emulator path; KS3.0 is untested |
+| Kickstart 1.3 / Workbench media | You | Only for the A500 and advanced Docker gates |
 
 The SDK never downloads or copies licensed media. See the
 [media and NDK policy](/project/licensing#media-and-the-ndk).
 
 ## Build from source
 
-The Rust workspace has one member and no external crates:
-
 ```sh
-git clone https://github.com/OpenLorraine/clorraine.git
-cd clorraine
 cargo build --workspace
-```
-
-The binaries are written to `target/debug/`:
-
-| Binary | Purpose |
-|---|---|
-| `clc` | Compile `.clo` sources to one C99 file |
-| `clorraine` | Build, run, emit, document, and explain diagnostics |
-| `clorraine-lsp` | Stdio language server for editors |
-
-Run the fast verification gate from the repository root:
-
-```sh
 make check
 ```
 
-`make check` runs the spec check, the Rust test suites, the SDK installer tests,
-the benchmark harness tests, and the fuzz smoke matrix in the pinned container.
-The full Amiga acceptance gate is `make verify`; it needs the SDK, an X display,
-and the licensed media.
+`make check` runs the spec check, workspace tests, installer tests, benchmark
+harness tests, and the fuzz smoke matrix in the pinned container. The full Amiga
+acceptance gate is `make verify`; it needs the SDK, an X display, and the
+licensed media.
 
 ## If something fails
 
@@ -171,6 +193,5 @@ and the licensed media.
 - For Docker, X11, ROM, and emulator problems, see
   [docker/README.md](https://github.com/OpenLorraine/clorraine/blob/main/docker/README.md).
 
-Include the command, the profile, the compiler version (`clorraine --version`),
-and the generated C when you report a code-generation problem. A small,
-complete source file is the most useful reproduction.
+Include the command, profile, compiler version (`clorraine --version`), and the
+generated C when reporting a code-generation problem.

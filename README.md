@@ -17,7 +17,7 @@
 |---|---|
 | Compiler, checker, ownership, C99 emission | Usable; guarded by the specification and test suites |
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
-| Linux x86_64 native installer | v1.2.0 candidate; drafts and local candidates only until publication approval |
+| Linux x86_64 native CLI | v1.2.0 candidate; toolchain setup and builds implemented; installer/VSIX publication pending |
 | VS Code extension | Packages and passes its packaged-client test (`make vscode-check`) |
 | Windows/macOS/WSL support | Outside v1.2.0; Linux x86_64 is the release target |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
@@ -25,9 +25,15 @@
 ## Install
 
 No prebuilt v1.2.0 release is published. The previous Python-installer/support
-pipeline was superseded on 2026-11-23 by a cross-platform CLI + FS-UAE delivery
-plan. Until the new installer ships, build the CLI from source with
-`cargo build --workspace`; the Docker SDK remains the development environment.
+pipeline was superseded by the Linux CLI v1.2.0 plan. The candidate now has
+`clorraine setup --toolchain PATH` and native builds; the installer, VSIX and
+verified FS-UAE runner are later phases. Until the installer ships, build the
+CLI from source with `cargo build --workspace`, download the upstream rc24
+toolchain yourself, and select it with `clorraine setup --toolchain PATH`.
+
+See [Linux CLI](docs/linux-cli.md) for the pinned toolchain, host requirements,
+and the current FS-UAE limitation. The Docker SDK remains the development
+environment.
 
 v1.1.2 remains the latest published release, under its MIT terms.
 
@@ -90,10 +96,11 @@ committed; `demo/poster.png` is the one checked-in still.
   Build it with `make -C docker exec CMD="cargo build --workspace"`.
 - **VS Code extension** — `tools/vscode/` launches the server, registers the
   canonical grammar, and provides Build, Run and Run in FS-UAE actions over the
-  saved entry file and its imported sources. It discovers `~/.clorraine/bin`
-  without a terminal `PATH`. v1.2.0 supports the Linux desktop only; WSL2,
-  Remote-WSL and Windows are outside this release. `make vscode-check` packages
-  and audits a `.vsix`.
+  saved entry file and its imported sources. It discovers the installed CLI
+  (the v1.2.0 installer uses `~/.local/bin`; until the editor update ships, set
+  `clorraine.driver.path` if needed). v1.2.0 supports the Linux desktop only;
+  WSL2, Remote-WSL and Windows are outside this release. `make vscode-check`
+  packages and audits a `.vsix`; the VSIX is not published.
 - **SDK installer** — `make setup` detects Docker, the pinned image, the
   toolchain, the NDK, and licensed media; `make setup FETCH=1` builds missing
   public components without ever downloading media.
@@ -148,6 +155,9 @@ spikes/    Phase 1 toolchain spikes
 
 ## Quick start
 
+For the native Linux CLI path, see [docs/linux-cli.md](docs/linux-cli.md). The
+Docker SDK remains the development environment:
+
 ```sh
 cd docker
 make image     # build the SDK image (first time only, compiles the toolchain)
@@ -166,7 +176,7 @@ lives in its own repository.
 
 ## Known limitations
 
-The accepted limitations of the v1.0 and v1.1 releases are recorded in
+The accepted limitations of the v1.0 through v1.2 releases are recorded in
 [docs/known-limitations.md](docs/known-limitations.md).
 
 ## License

@@ -27,7 +27,7 @@ Path:
 1. `$XDG_CONFIG_HOME/clorraine/config` when `XDG_CONFIG_HOME` is absolute.
 2. Otherwise `$HOME/.config/clorraine/config`.
 
-Format is one line; unknown keys are ignored with a warning:
+Format is one line; unknown keys are ignored silently in this release:
 
 ```
 toolchain=/home/user/toolchains/amiga-gcc-16.2

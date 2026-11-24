@@ -4,31 +4,36 @@
 
 No changes since v1.2.0.
 
-## [1.2.0] - 2026-11-21
+## [1.2.0] - 2026-11-24
 
 ### Added
 
-- Native Linux x86_64 installation through `install.sh` and a hash-pinned
-  `install.pyz`: prebuilt `clc`, `clorraine` and `clorraine-lsp`, a reusable
-  Amiga SDK, preparation helpers and CPython 3.10/3.12 vamos wheels.
-- Transactional installation under `~/.clorraine` by default, with explicit
-  `--root`/`--release` selection, previous-version recovery and no dependency
-  compilation during installation.
+- `clorraine setup --toolchain PATH` validates the upstream AmigaPorts rc24
+  root, checks both `nix20` and `nix13` link probes, and stores the canonical
+  path in the XDG config.
+- Native `build`/`run` selection through `--toolchain`, `CLORRAINE_TOOLCHAIN`,
+  or the stored config. Host builds need no toolchain.
+- `make toolchain-check TOOLCHAIN=PATH` builds hello, the portable corpus, and
+  the freestanding program with the selected upstream compiler.
 - VS Code Build, Run and Run in FS-UAE actions over the saved entry file and its
   imported sources, machine-scoped tool settings and Linux desktop guidance.
   WSL2/Remote-WSL and Windows access are outside v1.2.0.
 - A read-only `clorraine/sourceFiles` language-server request with bounded,
   canonical saved-source selection for both hosted-Amiga profiles.
-- Manual `support-release` and `distribution-release` workflows that build
-  drafts only and require a separate approved manifest hash to promote.
+- The pinned SDK container keeps its marker-gated PATH lookup and FS-UAE host
+  handoff for development. No release workflow or publication is part of this
+  candidate.
 
 ### Changed
 
 - Compiler, Cargo lock, extension and extension lock versions advance to 1.2.0.
-- v1.2.0 is Linux x86_64 only. WSL2/Remote-WSL and native Windows/macOS access
-  are outside this release and are not support claims.
-- The native support and distribution artifacts use the Apache License 2.0 with
-  the Clorraine Output Exception; v1.1.2 remains published under MIT.
+- v1.2.0 is Linux x86_64 only. glibc 2.38 or newer is required; Ubuntu 24.04 is
+  the minimum baseline. WSL2/Remote-WSL and native Windows/macOS access are
+  outside this release and are not support claims.
+- `--sdk-root` and `CLORRAINE_SDK` are removed. The old native SDK assembly and
+  its native-driver suites are retired; the legacy handoff tests remain.
+- The candidate uses a user-supplied rc24 toolchain and the Apache License 2.0
+  with the Clorraine Output Exception; v1.1.2 remains published under MIT.
 - `clorraine build --size` (and `run --size`) compiles with `-Os` and the same
   release processing as `--release`; it cannot be combined with `--release`,
   and `emit` rejects both. Host `.text` falls by up to 11.9%, while m68k
@@ -68,6 +73,14 @@ No changes since v1.2.0.
   emitted C; generated code is unchanged.
 - Qualified module references no longer omit compiler-accepted user modules, and
   editor actions stop when a relevant saved source changes during selection.
+- Missing-tool guidance points at `clorraine setup --toolchain PATH` instead of
+  the retired container-only SDK path.
+
+### Not yet
+
+- The Linux installer, separate VSIX, verified FS-UAE runner, acceptance
+  evidence, and legacy-pipeline removal are later phases. No release asset is
+  published.
 
 ## [1.1.2] - 2026-11-11
 

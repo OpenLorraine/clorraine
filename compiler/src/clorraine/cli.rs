@@ -23,6 +23,8 @@ pub enum Command {
     Build,
     /// Produce the C translation unit only.
     Emit,
+    /// Validate and persist an Amiga toolchain.
+    Setup,
 }
 
 /// The documentation-generator options.
@@ -41,6 +43,8 @@ pub struct Options {
     pub command: Command,
     /// Target profile; `host` unless `--profile` overrides it.
     pub profile: Profile,
+    /// True when `--profile` was written; `setup` rejects an explicit profile.
+    pub profile_explicit: bool,
     /// How the C compiler optimizes the build.
     ///
     /// `Debug` is the default. `Release` uses `-O2`; `Size` uses `-Os` and
@@ -51,9 +55,9 @@ pub struct Options {
     pub emit_c: bool,
     /// Run the Amiga program in FS-UAE, or print the legacy container handoff.
     pub emulator: bool,
-    /// Explicit native Amiga SDK root; environment and adjacent discovery are
-    /// considered only when this option is absent.
-    pub sdk_root: Option<String>,
+    /// Explicit upstream toolchain root; environment and config are considered
+    /// only when this option is absent.
+    pub toolchain: Option<String>,
     /// Explicit FS-UAE executable for a native Amiga emulator run.
     pub fs_uae: Option<String>,
     /// Explicit user-provided Kickstart ROM for a native Amiga emulator run.
@@ -94,16 +98,17 @@ Commands:
   run     Build and run a program
   build   Build a program without running it
   emit    Print the generated C (or write it with -o)
+  setup   Validate and store an Amiga toolchain
 
 Options:
   -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
       --release                       Optimize (-O2); strip + section-GC on Linux/Amiga; freestanding/non-Linux and debug keep symbols
       --size                          Optimize for size (-Os); same release processing; cannot combine with --release
       --emit-c                        Print the generated C after building
-      --emulator                      Amiga run: use FS-UAE (legacy SDK: host handoff)
-      --sdk-root PATH                 Non-host build/run: native sdk/amiga root (or CLORRAINE_SDK)
-      --fs-uae PATH                   Native Amiga run --emulator: executable (or CLORRAINE_FS_UAE, then PATH)
-      --kickstart PATH                Native Amiga run --emulator: ROM (or CLORRAINE_KICKSTART)
+      --emulator                      Amiga run: marked SDK-container host handoff; native runner unavailable in this build
+      --toolchain PATH                Toolchain root (setup/build/run; or CLORRAINE_TOOLCHAIN)
+      --fs-uae PATH                   Reserved for the verified native runner (not available in this build)
+      --kickstart PATH                Reserved for the verified native runner (not available in this build)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
       --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
@@ -114,11 +119,11 @@ Options:
 
 Exit codes:
   0  success (including help, version, and the FS-UAE handoff)
-  1  Clorraine diagnostic, missing tool/media, C compiler or emulator failure
-  2  usage error or invalid SDK selection
+  1  Clorraine diagnostic, missing tool/media, or C compiler failure
+  2  usage error, invalid/missing toolchain selection, or native emulator unavailable
 
-Native FS-UAE runs wait and return the emulator process status, not guest status.
-Native FS-UAE --capture is unsupported; host, vamos and legacy capture are unchanged.
+The marked SDK container prints the FS-UAE host handoff. The verified native
+runner is not available in this build.
 
 A run exits with the program's own code, so a program that exits 2 is
 indistinguishable from a usage or environment error.
@@ -168,6 +173,7 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
         "run" => Command::Run,
         "build" => Command::Build,
         "emit" => Command::Emit,
+        "setup" => Command::Setup,
         other if other.starts_with('-') => return Err(format!("unknown option '{other}'")),
         other => return Err(format!("unknown command '{other}'")),
     };
@@ -248,10 +254,11 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
     let mut options = Options {
         command,
         profile: Profile::Host,
+        profile_explicit: false,
         mode: BuildMode::Debug,
         emit_c: false,
         emulator: false,
-        sdk_root: None,
+        toolchain: None,
         fs_uae: None,
         kickstart: None,
         capture: false,
@@ -260,6 +267,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
         files: Vec::new(),
     };
     let mut profile: Option<String> = None;
+    let mut profile_explicit = false;
     let mut index = 0;
     while index < rest.len() {
         let arg = rest[index].as_str();
@@ -267,6 +275,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
             "-p" | "--profile" => {
                 index += 1;
                 profile = Some(value(rest, index, arg)?);
+                profile_explicit = true;
             }
             "-o" => {
                 index += 1;
@@ -277,9 +286,9 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
                 let raw = value(rest, index, arg)?;
                 options.diagnostics = DiagnosticFormat::parse(&raw)?;
             }
-            "--sdk-root" => {
+            "--toolchain" => {
                 index += 1;
-                options.sdk_root = Some(path_value(rest, index, arg)?);
+                options.toolchain = Some(path_value(rest, index, arg)?);
             }
             "--fs-uae" => {
                 index += 1;
@@ -296,6 +305,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
             "--capture" => options.capture = true,
             _ if arg.starts_with("--profile=") => {
                 profile = Some(arg["--profile=".len()..].to_owned());
+                profile_explicit = true;
             }
             _ if arg.starts_with("--diagnostics=") => {
                 options.diagnostics = DiagnosticFormat::parse(&arg["--diagnostics=".len()..])?;
@@ -305,6 +315,7 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
         }
         index += 1;
     }
+    options.profile_explicit = profile_explicit;
     if let Some(name) = profile {
         options.profile = Profile::parse(&name).ok_or_else(|| {
             format!(
@@ -350,13 +361,37 @@ fn select_mode(current: &mut BuildMode, requested: BuildMode) -> Result<(), Stri
 
 /// Applies the rules that only hold once the command is known.
 fn validate(options: &Options) -> Result<(), String> {
+    if options.command == Command::Setup {
+        if options.toolchain.is_none() {
+            return Err("--toolchain is required with 'setup'".to_owned());
+        }
+        if !options.files.is_empty() {
+            return Err("'setup' does not accept input files".to_owned());
+        }
+        if options.profile_explicit || options.profile != Profile::Host {
+            return Err("--profile is not valid with 'setup'".to_owned());
+        }
+        if options.diagnostics == crate::diag::DiagnosticFormat::Json {
+            return Err("--diagnostics=json is not valid with 'setup'".to_owned());
+        }
+        if options.mode != BuildMode::Debug {
+            return Err("--release and --size are not valid with 'setup'".to_owned());
+        }
+        if options.output.is_some() {
+            return Err("-o is only valid with 'emit'".to_owned());
+        }
+        if options.emulator || options.capture || options.fs_uae.is_some() || options.kickstart.is_some() || options.emit_c {
+            return Err("build/run flags are not valid with 'setup'".to_owned());
+        }
+        return Ok(());
+    }
     if options.files.is_empty() {
         return Err("at least one input file is required".to_owned());
     }
-    if options.sdk_root.is_some()
+    if options.toolchain.is_some()
         && (options.profile == Profile::Host || options.command == Command::Emit)
     {
-        return Err("--sdk-root is only valid with non-host 'build' or 'run'".to_owned());
+        return Err("--toolchain is only valid with non-host 'build' or 'run', or 'setup'".to_owned());
     }
     let amiga_emulator = options.command == Command::Run
         && options.emulator
@@ -448,8 +483,10 @@ mod tests {
         let options = invoke(&["run", "hello.clo"]);
         assert_eq!(options.command, Command::Run);
         assert_eq!(options.profile, Profile::Host);
+        assert!(!options.profile_explicit);
         assert_eq!(options.mode, BuildMode::Debug);
         assert!(!options.emit_c && !options.emulator && !options.capture);
+        assert_eq!(options.toolchain, None);
         assert_eq!(options.output, None);
         assert_eq!(options.files, ["hello.clo"]);
     }
@@ -466,6 +503,43 @@ mod tests {
             invoke(&["run", "--profile", "hosted-amiga-13", "a.clo"]).profile,
             Profile::HostedAmiga13
         );
+    }
+
+    #[test]
+    fn setup_reads_its_toolchain_and_has_no_input_files() {
+        let options = invoke(&["setup", "--toolchain", "/opt/amiga"]);
+        assert_eq!(options.command, Command::Setup);
+        assert_eq!(options.toolchain.as_deref(), Some("/opt/amiga"));
+        assert!(options.files.is_empty());
+    }
+
+    #[test]
+    fn setup_rejects_missing_or_extra_arguments() {
+        for line in [
+            vec!["setup"],
+            vec!["setup", "--toolchain", "/opt/amiga", "a.clo"],
+            vec!["setup", "--toolchain", "/opt/amiga", "--release"],
+            vec!["setup", "--toolchain", "/opt/amiga", "--emulator"],
+            vec!["setup", "--toolchain", "/opt/amiga", "--fs-uae", "/bin/fs-uae"],
+            vec!["setup", "--profile", "host", "--toolchain", "/opt/amiga"],
+            vec!["setup", "--toolchain", "/opt/amiga", "--diagnostics=json"],
+        ] {
+            assert!(parse(&args(&line)).is_err(), "{line:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn toolchain_is_only_for_non_host_build_run_and_setup() {
+        assert!(parse(&args(&["build", "--toolchain", "/opt/amiga", "a.clo"])).is_err());
+        assert!(parse(&args(&["run", "--toolchain", "/opt/amiga", "a.clo"])).is_err());
+        assert!(parse(&args(&["emit", "--toolchain", "/opt/amiga", "a.clo"])).is_err());
+        assert!(parse(&args(&["build", "--profile", "hosted-amiga", "--toolchain", "/opt/amiga", "a.clo"])).is_ok());
+        assert!(parse(&args(&["run", "--profile", "freestanding", "--toolchain", "/opt/amiga", "a.clo"])).is_ok());
+    }
+
+    #[test]
+    fn the_old_sdk_root_flag_is_not_accepted() {
+        assert!(parse(&args(&["build", "--profile", "hosted-amiga", "--sdk-root", "/opt/amiga", "a.clo"])).is_err());
     }
 
     #[test]
