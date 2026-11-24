@@ -13,57 +13,10 @@
 mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use support::*;
-
-/// Builds a full native emulator invocation for `hello.clo`.
-fn run_args(
-    toolchain: &Path,
-    fs_uae: Option<&Path>,
-    kickstart: Option<&Path>,
-    profile: &str,
-    extra: &[&str],
-) -> Vec<String> {
-    let mut args = vec![
-        "run".to_owned(),
-        "--profile".to_owned(),
-        profile.to_owned(),
-        "--toolchain".to_owned(),
-        toolchain.display().to_string(),
-        "--emulator".to_owned(),
-    ];
-    if let Some(fs_uae) = fs_uae {
-        args.push("--fs-uae".to_owned());
-        args.push(fs_uae.display().to_string());
-    }
-    if let Some(kickstart) = kickstart {
-        args.push("--kickstart".to_owned());
-        args.push(kickstart.display().to_string());
-    }
-    args.extend(extra.iter().map(|item| (*item).to_owned()));
-    args.push("hello.clo".to_owned());
-    args
-}
-
-/// Borrows an owned argument vector for the test harness.
-fn argv(args: &[String]) -> Vec<&str> {
-    args.iter().map(String::as_str).collect()
-}
-
-/// Creates a fake emulator that reports a successful guest.
-fn successful(s: &Scratch, name: &str) -> PathBuf {
-    s.fs_uae(name, "3.2.35", SUCCESS)
-}
-
-/// Returns the private directory the fake emulator recorded.
-fn recorded_private(s: &Scratch) -> PathBuf {
-    let text = s.log("private-dir.txt");
-    let path = text.trim();
-    assert!(!path.is_empty(), "the fake emulator did not record its directory");
-    PathBuf::from(path)
-}
 
 #[test]
 fn a_missing_fs_uae_is_a_selection_error() {
@@ -176,10 +129,14 @@ fn staging_compiles_the_wrapper_and_uses_the_cnext_startup() {
     let s = Scratch::new("staging");
     let toolchain = s.toolchain("toolchain");
     let body = format!(
-        "{SUCCESS}\
+        "cp \"$PWD/run.fs-uae\" \"$TEST_LOG/run.fs-uae\"\n\
+         printf '%s\\n' \"$HOME\" \"$XDG_CONFIG_HOME\" \"$XDG_DATA_HOME\" \"$XDG_CACHE_HOME\" \"$XDG_STATE_HOME\" \"$FS_UAE_BASE_DIR\" \"$TMPDIR\" > \"$TEST_LOG/emulator-env.txt\"\n\
+         stat -c '%a' \"$PWD\" > \"$TEST_LOG/mode.txt\"\n\
+         find \"$drive\" -maxdepth 1 -type f -printf '%f\\n' | sort > \"$TEST_LOG/drive-files.txt\"\n\
          cp \"$drive/s/startup-sequence\" \"$TEST_LOG/startup-sequence\"\n\
          cp \"$drive/runner\" \"$TEST_LOG/runner\"\n\
-         cp \"$drive/program\" \"$TEST_LOG/program\"\n"
+         cp \"$drive/program\" \"$TEST_LOG/program\"\n\
+         {SUCCESS}"
     );
     let emulator = s.fs_uae("fs-uae", "3.2.35", &body);
     let rom = s.rom("kickstart.rom", 524_299);
@@ -224,6 +181,82 @@ fn staging_compiles_the_wrapper_and_uses_the_cnext_startup() {
             "the wrapper compile lacks {flag}:\n{wrapper_line}"
         );
     }
+
+    let private = recorded_private(&s);
+    let config = s.read(&s.logs.join("run.fs-uae"));
+    for line in [
+        "[fs-uae]",
+        "end_config=1",
+        "amiga_model=A1200",
+        "hard_drive_0_label=CNEXT",
+        "hard_drive_0_priority=0",
+        "floppy_drive_0=",
+        "floppy_drive_1=",
+        "cdrom_drive_0=",
+    ] {
+        assert!(
+            config.lines().any(|entry| entry == line),
+            "the A1200 config lacks {line}:\n{config}"
+        );
+    }
+    assert!(
+        !config.contains(&rom.display().to_string()),
+        "the config must not embed a host ROM path:\n{config}"
+    );
+
+    let args = s.log("fs-uae.log");
+    for (name, path) in [
+        ("base_dir", private.join("base")),
+        ("cache_dir", private.join("cache")),
+        ("save_states_dir", private.join("state")),
+        ("logs_dir", private.join("logs")),
+        ("kickstarts_dir", private.join("kickstarts")),
+        ("hard_drive_0", private.join("drive")),
+    ] {
+        let expected = format!("--{name}={}", path.display());
+        assert!(
+            args.contains(&expected),
+            "the emulator argv lacks {expected}:\n{args}"
+        );
+    }
+    let rom_option = format!("--kickstart_file={}", rom.display());
+    assert!(
+        args.contains(&rom_option),
+        "the emulator argv lacks the ROM option:\n{args}"
+    );
+
+    let env = s.read(&s.logs.join("emulator-env.txt"));
+    let env_lines: Vec<&str> = env.lines().collect();
+    let expected_env: Vec<String> = [
+        "home",
+        "home/.config",
+        "home/.local/share",
+        "cache",
+        "state",
+        "base",
+        "tmp",
+    ]
+    .iter()
+    .map(|relative| private.join(relative).display().to_string())
+    .collect();
+    assert_eq!(
+        env_lines,
+        expected_env.iter().map(String::as_str).collect::<Vec<_>>(),
+        "the emulator environment is isolated under the private run"
+    );
+    assert_eq!(
+        s.read(&s.logs.join("mode.txt")).trim(),
+        "700",
+        "the private run is owner-only"
+    );
+
+    let drive_files = s.read(&s.logs.join("drive-files.txt"));
+    assert!(drive_files.lines().any(|name| name == "program"));
+    assert!(drive_files.lines().any(|name| name == "runner"));
+    assert!(
+        !drive_files.contains("kickstart") && !drive_files.contains(".rom"),
+        "no ROM may be copied into the guest drive:\n{drive_files}"
+    );
 }
 
 #[test]
@@ -534,13 +567,15 @@ fn a_capture_write_failure_retains_the_private_run() {
         "hosted-amiga",
         &["--capture"],
     );
-    let stderr = exit(
-        &s.run(&argv(&args), &[("FAKE_BLOCK_CAPTURE", "1".into())]),
-        1,
-    );
+    let output = s.run(&argv(&args), &[("FAKE_BLOCK_CAPTURE", "1".into())]);
+    let stderr = exit(&output, 1);
     assert!(
         stderr.contains("cannot write") && stderr.contains("retained at"),
         "a capture failure retains the run, got:\n{stderr}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Hello, Amiga, from Clorraine!"),
+        "a capture failure still prints the readable guest output"
     );
     let retained = s.retained(&stderr);
     assert!(retained.is_dir(), "the captured result is still readable there");

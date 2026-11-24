@@ -97,8 +97,9 @@ its path.
 
 FS-UAE is selected by `--fs-uae`, `CLORRAINE_FS_UAE`, then `PATH`; the ROM by
 `--kickstart` then `CLORRAINE_KICKSTART`. The timeout defaults to 90 seconds and
-is set with `CLORRAINE_EMULATOR_TIMEOUT_SECONDS` (1–3600). `--capture` writes
-the guest output to `out.txt` and prints its path.
+is set with `CLORRAINE_EMULATOR_TIMEOUT_SECONDS` (1–3600). `--capture` writes a
+successful guest's output to `out.txt` and prints its path; a failed guest
+prints its output and retains the run, so no `out.txt` is written.
 
 The local guest check runs hello, the four corpus programs, one A500-profile
 corpus program, and a return-1 negative:

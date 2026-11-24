@@ -187,7 +187,15 @@ pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentErro
 
 /// Resolves the optional guest timeout from the environment.
 pub(super) fn resolve_timeout() -> Result<Duration, EnvironmentError> {
-    let Some(value) = std::env::var_os("CLORRAINE_EMULATOR_TIMEOUT_SECONDS") else {
+    resolve_timeout_value(std::env::var_os("CLORRAINE_EMULATOR_TIMEOUT_SECONDS"))
+}
+
+/// Validates one optional timeout value.
+///
+/// The value is a parameter so the bounds are unit-testable without mutating
+/// the process environment shared by parallel tests.
+fn resolve_timeout_value(value: Option<OsString>) -> Result<Duration, EnvironmentError> {
+    let Some(value) = value else {
         return Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
     };
     let Some(text) = value.to_str() else {
@@ -209,6 +217,35 @@ pub(super) fn resolve_timeout() -> Result<Duration, EnvironmentError> {
                 display::sanitize(text)
             ),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_timeout_is_ninety_seconds() {
+        assert_eq!(
+            resolve_timeout_value(None).expect("default timeout"),
+            Duration::from_secs(90)
+        );
+    }
+
+    #[test]
+    fn timeout_values_are_bounded() {
+        for value in ["1", "3600"] {
+            assert!(
+                resolve_timeout_value(Some(value.into())).is_ok(),
+                "{value} is accepted"
+            );
+        }
+        for value in ["0", "3601", "abc", ""] {
+            assert!(
+                resolve_timeout_value(Some(value.into())).is_err(),
+                "{value} is rejected"
+            );
+        }
     }
 }
 

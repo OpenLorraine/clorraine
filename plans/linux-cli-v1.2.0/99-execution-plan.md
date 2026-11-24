@@ -90,14 +90,14 @@ product path.
 ## Phase 2: Verified FS-UAE guest run
 
 > **Phase baseline tree**: `052694c6131b584400096fb87c1ee45de728d008`
-> **Expected modification set**: `compiler/src/clorraine/emulator/` (new) and `compiler/src/clorraine/{mod,cli,environment,artifacts,run}.rs`, `compiler/runtime/emulator_runner.c` (new), `compiler/tests/fs_uae_spec_test.rs` and `compiler/tests/fs_uae_support/` (new), `compiler/tests/toolchain_setup_spec_test.rs`, `tools/setup/fs_uae_check.sh` (new), `Makefile`, `docs/linux-cli.md`, `site/` (CLI/emulator/limitations pages), `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, roadmap/progress metadata, and this plan
+> **Expected modification set**: `compiler/src/clorraine/emulator/` (new) and `compiler/src/clorraine/{mod,cli,environment,artifacts,run}.rs`, `compiler/runtime/emulator_runner.c` (new), `compiler/tests/fs_uae_spec_test.rs`, `compiler/tests/fs_uae_selection_spec_test.rs`, and `compiler/tests/fs_uae_support/` (new), `compiler/tests/toolchain_setup_spec_test.rs`, `tools/setup/fs_uae_check.sh` (new), `Makefile`, `docs/linux-cli.md`, `site/` (CLI/emulator/limitations pages), `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, roadmap/progress metadata, and this plan
 > **Scope**: strict
 > **Reasoning**: high — process lifecycle, guest marker, cleanup, and output
 > correctness
 
 ### Step 2.1: Specification tests first
 
-- [x] 2.1.1 [spec-author] ✅ (completed: 2026-11-24 21:05) Add `compiler/tests/fs_uae_spec_test.rs` with fake `fs-uae` and fake `m68k-amigaos-gcc` seams covering ST-12–ST-17: version/ROM/timeout errors, wrapper staging/compile, rc 1/5/9, partial status, read/capture failure, bounded wait, and read-before-cleanup.
+- [x] 2.1.1 [spec-author] ✅ (completed: 2026-11-24 21:05) Add `compiler/tests/fs_uae_spec_test.rs` and `compiler/tests/fs_uae_selection_spec_test.rs` with fake `fs-uae` and fake `m68k-amigaos-gcc` seams covering ST-12–ST-17: version/ROM/timeout errors, wrapper staging/compile, rc 1/5/9, partial status, read/capture failure, bounded wait, and read-before-cleanup.
   - **Task verify**: the new test fails for the intended missing behavior; record the red output.
 
 ### Step 2.2: Runner
@@ -146,6 +146,12 @@ product path.
 - **Phase gate:** `make check`, `make site-check`, and the real
   `make fs-uae-check` pass after the docs update. The final logs are
   `build/tmp/phase2-final-{check,site,fs-uae}.log`.
+- **Review:** correctness returned no critical/major (ledger RV-020–RV-024); the
+  Amiga specialist found one major gate-process finding (SR-001) and two minor
+  documentation findings. SR-001 is fixed with a required `pgrep`, a clean
+  process start, and an empty-process assertion after every invocation; the
+  minor and observation findings are fixed. Fix logs are
+  `build/tmp/phase2-fix-*.log`. A fix-diff re-review is the final review pass.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.

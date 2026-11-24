@@ -85,7 +85,8 @@ With a native toolchain selected, `run --emulator` boots an A1200 with your
 licensed 512 KB Kickstart 3.1 A1200 ROM. A compiled wrapper records the guest
 return code and writes a status marker only for zero; the CLI accepts the run
 only for rc 0 plus status `ok`, reads the output, and removes the private run.
-Failed or timed-out runs retain the directory and print its path.
+Failed or timed-out runs print their output and retain the directory; only a
+successful guest is captured with `--capture`.
 
 ```sh
 ./target/debug/clorraine run -p hosted-amiga --emulator \

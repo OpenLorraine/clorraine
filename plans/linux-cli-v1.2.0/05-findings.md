@@ -23,3 +23,26 @@
 | RV-019 | 1 | OBS | Regression red evidence | Accepted with note: the initial public-path red run is recorded; the review-added failure tests (probe timeout, config-rename cleanup) are green and target the corrected failure paths. |
 
 Re-review result: no CRITICAL or MAJOR findings. RV-017–RV-019 are fixed or accepted as notes above; RV-004R/RV-007R/RV-010R are resolved in the final diff.
+
+## Phase 2 review (2026-11-24)
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-020 | 2 | MINOR | Capture failure output | Fixed: a capture-write failure prints the readable guest result before the retained diagnostic; the spec asserts stdout. |
+| RV-021 | 2 | MINOR | Staging coverage | Fixed: the staging test asserts the A1200 config, literal argv options, isolated environment, 0700 mode, and that no ROM enters the guest drive. |
+| RV-022 | 2 | MINOR | Wrapper build failure | Fixed: `FAKE_COMPILER_FAIL` seam and a test assert exit 1, no emulator start, and no retained private run. |
+| RV-023 | 2 | MINOR | Selection coverage | Fixed: environment selection, both no-fallback directions, the 3.2.0 boundary (`3.1.99`/`3.2.0`/`3.2.35-2`), and pure timeout bounds (1/90/3600/0/3601/abc) are tested. |
+| RV-024 | 2 | OBS | Site selection wording | Fixed: the Amiga emulator page says "with a native toolchain selected". |
+| SR-001 | 2 | MAJOR | Gate process leak | Fixed: `pgrep` is required, the check starts from a clean process set, and it asserts no FS-UAE/Xvfb survivor after every invocation, including failures and the negative. A dirty-start run exits 2; the real gate is green. |
+| SR-002 | 2 | MINOR | Guest exit codes | Fixed: help and the CLI reference state that a verified guest failure exits 1 for every nonzero guest code; host/`vamos`/freestanding keep their own code. |
+| SR-003 | 2 | MINOR | Capture wording | Fixed: help and docs say capture is success-only; a failed guest prints its output and retains the run. |
+
+Open-question rulings:
+
+- The staging spec now asserts the effective A1200 config and ROM option; the
+  real A1200/KS3.1 boot remains the platform evidence.
+- `make fs-uae-check` stays a local product check, like `make toolchain-check`;
+  it needs a licensed ROM and a native toolchain, so it is not added to
+  `make verify`.
+- Failure evidence retention is intentional and documented: a failed check
+  keeps its temporary run and prints the path; a successful check removes it.

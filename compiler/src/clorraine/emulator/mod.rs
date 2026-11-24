@@ -133,7 +133,7 @@ impl Emulator {
                             "cannot write '{}': {error}",
                             display::sanitize(&path.display().to_string())
                         );
-                        return diagnostics::fail_retained(&storage, format, &reason, None);
+                        return diagnostics::fail_retained(&storage, format, &reason, Some(&result));
                     }
                 } else {
                     diagnostics::print_result(&result);

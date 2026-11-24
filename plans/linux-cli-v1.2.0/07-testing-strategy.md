@@ -8,7 +8,7 @@
 | Layer | Location | Runs in |
 |---|---|---|
 | Public CLI/toolchain contract | `compiler/tests/toolchain_setup_spec_test.rs` | `cargo test --workspace` / `make check` |
-| FS-UAE runner contract | `compiler/tests/fs_uae_spec_test.rs` | `cargo test --workspace` / `make check` |
+| FS-UAE runner contract | `compiler/tests/fs_uae_spec_test.rs`, `compiler/tests/fs_uae_selection_spec_test.rs` | `cargo test --workspace` / `make check` |
 | Internal parsing/staging | `#[cfg(test)]` in `setup.rs`, `environment.rs`, `emulator.rs`, `cli.rs` | `cargo test --workspace` |
 | Installer shell contract | `tools/setup/tests/install.spec.test.sh`, `install.impl.test.sh` | `make dist-check` |
 | Producer contract | `tools/setup/tests/dist.spec.test.sh` | `make dist-check` |
@@ -68,7 +68,8 @@ Before marking a scenario green:
 - For the FS-UAE tests, verify the fake emulator can write rc 1/5/9 and a
   partial status; confirm the runner fails and retains output.
 - For the real guest, build a temporary rc-1 program and confirm the wrapper
-  produces no status and the CLI exits 1.
+  produces no status and the CLI exits 1. Confirm the process table is empty
+  after every run, including a failing guest and the negative.
 - For the editor, verify the legacy warning key is persistent and a second
   activation does not warn; verify new-key precedence.
 - For acceptance-check, remove or alter one required field/value and confirm

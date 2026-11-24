@@ -10,6 +10,11 @@
 #   KICKSTART  licensed 512 KB Kickstart 3.1 A1200 ROM
 #   TOOLCHAIN  extracted rc24 root; when omitted, the stored CLI selection is
 #              used and the caller's real home/config is read.
+#
+# The check requires a clean process start: close any FS-UAE or Xvfb process
+# before running it. Every invocation is followed by the no-survivor assertion,
+# including a failing guest or the negative. On failure the temporary evidence
+# directory is kept and its path is printed; a successful run removes it.
 set -euo pipefail
 
 rom="${1:-}"
@@ -36,6 +41,10 @@ fi
 fs_uae="$(command -v fs-uae || true)"
 if [ -z "$fs_uae" ]; then
     echo 'fs-uae-check: fs-uae was not found on PATH; install FS-UAE 3.2.0 or newer' >&2
+    exit 2
+fi
+if ! command -v pgrep >/dev/null 2>&1; then
+    echo 'fs-uae-check: pgrep is required to verify that no emulator process survives' >&2
     exit 2
 fi
 
@@ -85,13 +94,17 @@ processes() {
     { pgrep -x fs-uae || true; pgrep -x Xvfb || true; } | sort -u
 }
 
-# Fails when a run leaves an FS-UAE or Xvfb process behind.
-assert_no_new_processes() {
-    local before="$1" after new
-    after="$(processes)"
-    new="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed '/^$/d')"
-    if [ -n "$new" ]; then
-        echo "fs-uae-check: leaked processes: $new" >&2
+# Fails when any FS-UAE or Xvfb process is alive.
+#
+# The check starts from a clean process set and asserts it again after every
+# invocation, including failures and the negative. That makes a survivor from
+# this run, or an earlier one, visible instead of hiding behind a baseline.
+assert_no_processes() {
+    local alive
+    alive="$(processes)"
+    if [ -n "$alive" ]; then
+        echo "fs-uae-check: FS-UAE or Xvfb process still alive:" >&2
+        printf '%s\n' "$alive" >&2
         return 1
     fi
 }
@@ -99,8 +112,7 @@ assert_no_new_processes() {
 # Runs one source and compares stdout with its expected output.
 run_guest() {
     local name="$1" profile="$2" source="$3" expected="$4"
-    local before out err status
-    before="$(processes)"
+    local out err status
     out="$tmp/out-$name.txt"
     err="$tmp/err-$name.txt"
     set +e
@@ -112,15 +124,24 @@ run_guest() {
     if [ "$status" -ne 0 ]; then
         echo "fs-uae-check: $name exited $status" >&2
         sed -n '1,20p' "$err" >&2
+    fi
+    assert_no_processes || return 1
+    if [ "$status" -ne 0 ]; then
         return 1
     fi
-    assert_no_new_processes "$before"
     if ! diff -u <(tr -d '\r' <"$expected") <(tr -d '\r' <"$out"); then
         echo "fs-uae-check: $name output differs" >&2
         return 1
     fi
     echo "fs-uae-check: $name ok"
 }
+
+if [ -n "$(processes)" ]; then
+    echo 'fs-uae-check: close existing FS-UAE/Xvfb processes before this check' >&2
+    processes >&2
+    keep=0
+    exit 2
+fi
 
 printf 'Hello, Amiga, from Clorraine!\n' >"$tmp/hello.expected"
 run_guest hello hosted-amiga "$repo/examples/hello/hello.clo" "$tmp/hello.expected"
@@ -144,7 +165,6 @@ func main(): i32 {
     return 1;
 }
 EOF
-before="$(processes)"
 set +e
 "${prefix[@]}" "$driver" run --profile hosted-amiga "${selection[@]}" \
     --emulator --fs-uae "$fs_uae" --kickstart "$rom" "$negative" \
@@ -154,6 +174,9 @@ set -e
 if [ "$status" -ne 1 ]; then
     echo "fs-uae-check: the rc-1 negative exited $status, expected 1" >&2
     sed -n '1,20p' "$tmp/negative.err" >&2
+fi
+assert_no_processes || exit 1
+if [ "$status" -ne 1 ]; then
     exit 1
 fi
 if ! grep -q 'exited with code 1' "$tmp/negative.err"; then
@@ -161,7 +184,6 @@ if ! grep -q 'exited with code 1' "$tmp/negative.err"; then
     sed -n '1,20p' "$tmp/negative.err" >&2
     exit 1
 fi
-assert_no_new_processes "$before"
 retained="$(sed -n "s/.*retained at '\\([^']*\\)'.*/\\1/p" "$tmp/negative.err" | tail -1)"
 if [ -z "$retained" ] || [ ! -d "$retained" ]; then
     echo 'fs-uae-check: the rc-1 negative did not retain its run' >&2

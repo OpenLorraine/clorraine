@@ -64,9 +64,9 @@ clorraine run hello.clo -p hosted-amiga --emulator \
 The CLI validates FS-UAE 3.2.0 or newer and a 512 KB Kickstart 3.1 A1200 ROM,
 stages a private directory drive, and runs the program through a compiled
 wrapper. The wrapper records the return code and writes `ok` only for zero; the
-host reads both markers before cleanup. `--capture` writes the guest output to
-`out.txt`. A failed or timed-out run keeps its private directory and prints the
-path.
+host reads both markers before cleanup. `--capture` writes a successful guest's
+output to `out.txt`. A failed or timed-out run prints its output, keeps its
+private directory, and prints the path; no `out.txt` is written.
 
 Run the whole local matrix with:
 

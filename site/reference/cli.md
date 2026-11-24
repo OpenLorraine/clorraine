@@ -38,7 +38,7 @@ Commands:
 | `--fs-uae PATH` | FS-UAE executable for a native emulator run (`CLORRAINE_FS_UAE`, then `PATH`) |
 | `--kickstart PATH` | Kickstart 3.1 A1200 ROM for a native emulator run (`CLORRAINE_KICKSTART`) |
 | `--toolchain PATH` | Toolchain root for `setup`, non-host `build`, and non-host `run` |
-| `--capture` | Write program stdout to `out.txt` and print its path |
+| `--capture` | Write a successful program stdout to `out.txt` and print its path; a failed guest prints its output and retains the run |
 | `-o FILE` | `emit` only: write C to `FILE` (default stdout) |
 | `--doc [-o DIR] FILE...` | Generate Markdown from `///` comments |
 | `--explain CODE` | Print the registry entry for a diagnostic code |
@@ -84,8 +84,9 @@ clorraine --doc -o build/api examples/hello/hello.clo
 | `1` | Clorraine diagnostic, missing tool, failed toolchain probe, C compiler failure, or guest failure |
 | `2` | Usage error, invalid toolchain, or invalid emulator, ROM, or timeout selection |
 
-A `run` exits with the program's own code, so a program that exits 2 is
-indistinguishable from a usage or environment error.
+Host, `vamos`, and freestanding runs exit with the program's own code. A
+verified guest failure exits 1 for every nonzero guest code, so a guest
+`return 2` is not reported as 2.
 
 ## `clc`
 

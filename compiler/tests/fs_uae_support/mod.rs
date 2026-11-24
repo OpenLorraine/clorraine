@@ -11,6 +11,10 @@
 //! tree, so a failed assertion leaves its evidence nearby without touching the
 //! user's files.
 
+// The support module is compiled into each FS-UAE spec binary, so a fixture
+// used by one suite can be unused in another.
+#![allow(dead_code)]
+
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -139,6 +143,14 @@ impl Scratch {
              \tcase \"$arg\" in *emulator_runner.c) cp \"$arg\" \"$TEST_LOG/wrapper.c\" ;; esac\n\
              \tprev=$arg\n\
              done\n\
+             case \"$out\" in\n\
+             \t*/drive/runner)\n\
+             \t\tif [ \"${{FAKE_COMPILER_FAIL:-0}}\" = 1 ]; then\n\
+             \t\t\techo 'fake wrapper compile failure' >&2\n\
+             \t\t\texit 1\n\
+             \t\tfi\n\
+             \t\t;;\n\
+             esac\n\
              if [ -n \"$out\" ]; then\n\
              \t: > \"$out\"\n\
              \tif [ \"${{FAKE_BLOCK_CAPTURE:-0}}\" = 1 ]; then mkdir -p \"$(dirname \"$out\")/out.txt\"; fi\n\
@@ -245,3 +257,50 @@ pub const SUCCESS: &str = "\
 printf '0\\n' > \"$drive/clorraine-rc.txt\"\n\
 printf 'ok\\n' > \"$drive/clorraine-status.txt\"\n\
 printf 'Hello, Amiga, from Clorraine!\\r\\n' > \"$drive/clorraine-result.txt\"\n";
+
+/// Builds a full native emulator invocation for `hello.clo`.
+pub fn run_args(
+    toolchain: &Path,
+    fs_uae: Option<&Path>,
+    kickstart: Option<&Path>,
+    profile: &str,
+    extra: &[&str],
+) -> Vec<String> {
+    let mut args = vec![
+        "run".to_owned(),
+        "--profile".to_owned(),
+        profile.to_owned(),
+        "--toolchain".to_owned(),
+        toolchain.display().to_string(),
+        "--emulator".to_owned(),
+    ];
+    if let Some(fs_uae) = fs_uae {
+        args.push("--fs-uae".to_owned());
+        args.push(fs_uae.display().to_string());
+    }
+    if let Some(kickstart) = kickstart {
+        args.push("--kickstart".to_owned());
+        args.push(kickstart.display().to_string());
+    }
+    args.extend(extra.iter().map(|item| (*item).to_owned()));
+    args.push("hello.clo".to_owned());
+    args
+}
+
+/// Borrows an owned argument vector for the test harness.
+pub fn argv(args: &[String]) -> Vec<&str> {
+    args.iter().map(String::as_str).collect()
+}
+
+/// Creates a fake emulator that reports a successful guest.
+pub fn successful(s: &Scratch, name: &str) -> PathBuf {
+    s.fs_uae(name, "3.2.35", SUCCESS)
+}
+
+/// Returns the private directory the fake emulator recorded.
+pub fn recorded_private(s: &Scratch) -> PathBuf {
+    let text = s.log("private-dir.txt");
+    let path = text.trim();
+    assert!(!path.is_empty(), "the fake emulator did not record its directory");
+    PathBuf::from(path)
+}
