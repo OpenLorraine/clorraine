@@ -170,8 +170,9 @@ AROS for a missing ROM.
 ## Harness leak found after the spike
 
 The ad-hoc scripts launched `xvfb-run -a fs-uae ...` in the background and killed
-only the `xvfb-run` PID. That left the FS-UAE and Xvfb children orphaned: 29
-FS-UAE plus 29 Xvfb processes survived after the temp directory was removed.
+only the `xvfb-run` PID. That left the FS-UAE and Xvfb children orphaned: 28
+FS-UAE plus 28 Xvfb processes (56 total) survived after the temp directory was
+removed.
 They were terminated manually after the spike, and their `:99`–`:126` X sockets
 and locks were removed. The product runner must spawn FS-UAE directly and
 kill/wait that child; it must not wrap FS-UAE in a background `xvfb-run`. The
