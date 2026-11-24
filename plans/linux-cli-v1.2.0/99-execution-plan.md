@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 23/28 tasks (82%)
+> **Progress**: 24/28 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -246,13 +246,15 @@ product path.
 
 ## Phase 4: Acceptance and legacy removal
 
-> **Phase baseline tree**: record after Phase 3
+> **Phase baseline tree**: `261344e6eca285e256e8176e4b1e5248e5823200`
+> **Expected modification set**: `tools/setup/{acceptance.py,acceptance.sh,install_sdk.py}`, `tools/setup/tests/{acceptance_spec.py,test_retained_inputs.py}`, the removed native installer/tests and `tools/distribution/` producers/tests (except `inputs/`), `.github/workflows/` release definitions, `Makefile`, `AGENTS.md`, `README.md`, `docs/`, `site/`, `RELEASE.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`, roadmap/progress metadata, and this plan
+> **Scope**: strict
 > **Reasoning**: high — destructive removal and release evidence must follow
 > proof
 
 ### Step 4.1: Acceptance
 
-- [ ] 4.1.1 [spec-author] Add `acceptance_spec.py` first: valid record, wrong platform/arch, wrong toolchain tag/hash, old FS-UAE, wrong hello/corpus output, missing VSIX, and candidate-hash mismatch; then implement `make acceptance-check EVIDENCE=... CANDIDATE=...`.
+- [x] 4.1.1 [spec-author] Add `acceptance_spec.py` first: valid record, wrong platform/arch, wrong toolchain tag/hash, old FS-UAE, wrong hello/corpus output, missing VSIX, and candidate-hash mismatch; then implement `make acceptance-check EVIDENCE=... CANDIDATE=...`. ✅ (completed: 2026-11-24 22:59)
   - **Task verify**: the spec fails before implementation and passes after; ST-25 cases pass.
 - [ ] 4.1.2 Add `make acceptance` to install the exact candidate into a fresh HOME, verify and extract the supplied toolchain archive against the rc24 pin, run setup/build/FS-UAE for hello, four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and an rc-1 negative; assert no FS-UAE/Xvfb process remains after each run; write `evidence.json` with archive/installer/VSIX/toolchain-archive/ROM/FS-UAE/negative/corpus/output hashes.
   - **Task verify**: ST-20 and the evidence schema pass; the output is the expected hello line.
@@ -268,6 +270,18 @@ product path.
   - **Task verify**: all pass; `make verify` covers the existing A500/A1200/RTG gates. If the pinned SDK image or media is unavailable, record the blocker and do not mark the task complete.
 - [ ] 4.3.2 Final review: update the index/roadmap to complete, confirm no publication/tag/upload occurred, and write the publication handoff note.
   - **Task verify**: the plan tree is clean, the roadmap is current, and the publication boundary is explicit.
+
+### Phase 4 evidence
+
+- **Acceptance spec red:** `PYTHONPATH=tests python3 -m unittest acceptance_spec`
+  failed with `ModuleNotFoundError: No module named 'acceptance'`; log
+  `build/tmp/acceptance-spec-red.log`.
+- **Acceptance spec green:** 19/19 cases pass, covering the valid record,
+  platform/arch/glibc, toolchain tag/hash/bytes, FS-UAE floor, hello output and
+  hash, guest rc, corpus hash/profile/set, negative, missing VSIX, candidate
+  archive/installer mismatch, and missing fields.
+- **Target:** `make acceptance-check EVIDENCE=... CANDIDATE=...` runs the
+  checker; `make dist-check` runs the spec hermetically.
 
 **Deliverables**: acceptance evidence, old pipeline removed, full gate, closeout.
 **Phase gate**: `make acceptance-check` + `make check` + `make verify`.
