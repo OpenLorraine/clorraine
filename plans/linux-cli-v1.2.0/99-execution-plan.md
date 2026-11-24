@@ -1,7 +1,7 @@
 # Execution Plan: Linux CLI v1.2.0
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-24
+> **Last Updated**: 2026-11-24 21:05
 > **Progress**: 7/28 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
@@ -89,13 +89,15 @@ product path.
 
 ## Phase 2: Verified FS-UAE guest run
 
-> **Phase baseline tree**: record after Phase 1
+> **Phase baseline tree**: `052694c6131b584400096fb87c1ee45de728d008`
+> **Expected modification set**: `compiler/src/clorraine/{emulator,mod,cli,environment,artifacts,run}.rs`, `compiler/runtime/emulator_runner.c` (new), `compiler/tests/fs_uae_spec_test.rs` and `compiler/tests/fs_uae_support/` (new), `compiler/tests/toolchain_setup_spec_test.rs`, `tools/setup/fs_uae_check.sh` (new), `Makefile`, `docs/linux-cli.md`, `site/` (CLI/emulator/limitations pages), `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, roadmap/progress metadata, and this plan
+> **Scope**: strict
 > **Reasoning**: high — process lifecycle, guest marker, cleanup, and output
 > correctness
 
 ### Step 2.1: Specification tests first
 
-- [ ] 2.1.1 [spec-author] Add `compiler/tests/fs_uae_spec_test.rs` with fake `fs-uae` and fake `m68k-amigaos-gcc` seams covering ST-12–ST-17: version/ROM/timeout errors, wrapper staging/compile, rc 1/5/9, partial status, read/capture failure, bounded wait, and read-before-cleanup.
+- [x] 2.1.1 [spec-author] ✅ (completed: 2026-11-24 21:05) Add `compiler/tests/fs_uae_spec_test.rs` with fake `fs-uae` and fake `m68k-amigaos-gcc` seams covering ST-12–ST-17: version/ROM/timeout errors, wrapper staging/compile, rc 1/5/9, partial status, read/capture failure, bounded wait, and read-before-cleanup.
   - **Task verify**: the new test fails for the intended missing behavior; record the red output.
 
 ### Step 2.2: Runner
@@ -115,6 +117,13 @@ product path.
 
 - [ ] 2.3.1 Phase gate: run `make check` and `make fs-uae-check KICKSTART=<KS3.1 A1200>`; run the four corpus programs as guests and compare expected output.
   - **Task verify**: all four corpus outputs match; one `hosted-amiga-13` corpus run matches; the rc-1 negative fails; no emulator run remains after the command.
+
+### Phase 2 evidence
+
+- **Spec red:** `cargo test --test fs_uae_spec_test` failed 19 of 19 cases
+  because the native runner is unavailable; the captured log is
+  `build/tmp/fs-uae-red.log`. Selection-error cases also fail because their
+  messages name the new validation, not the phase-boundary rejection.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.
