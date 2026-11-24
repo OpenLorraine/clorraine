@@ -90,7 +90,7 @@ product path.
 ## Phase 2: Verified FS-UAE guest run
 
 > **Phase baseline tree**: `052694c6131b584400096fb87c1ee45de728d008`
-> **Expected modification set**: `compiler/src/clorraine/{emulator,mod,cli,environment,artifacts,run}.rs`, `compiler/runtime/emulator_runner.c` (new), `compiler/tests/fs_uae_spec_test.rs` and `compiler/tests/fs_uae_support/` (new), `compiler/tests/toolchain_setup_spec_test.rs`, `tools/setup/fs_uae_check.sh` (new), `Makefile`, `docs/linux-cli.md`, `site/` (CLI/emulator/limitations pages), `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, roadmap/progress metadata, and this plan
+> **Expected modification set**: `compiler/src/clorraine/emulator/` (new) and `compiler/src/clorraine/{mod,cli,environment,artifacts,run}.rs`, `compiler/runtime/emulator_runner.c` (new), `compiler/tests/fs_uae_spec_test.rs` and `compiler/tests/fs_uae_support/` (new), `compiler/tests/toolchain_setup_spec_test.rs`, `tools/setup/fs_uae_check.sh` (new), `Makefile`, `docs/linux-cli.md`, `site/` (CLI/emulator/limitations pages), `README.md`, `RELEASE-NOTES.md`, `CHANGELOG.md`, roadmap/progress metadata, and this plan
 > **Scope**: strict
 > **Reasoning**: high — process lifecycle, guest marker, cleanup, and output
 > correctness
@@ -135,6 +135,9 @@ product path.
   (`feat(cli): run verified FS-UAE guests`). Capture is part of the same
   observe/capture/cleanup path, so splitting it would leave a non-building
   intermediate commit.
+- **Module split:** the runner now lives in
+  `compiler/src/clorraine/emulator/{mod,select,storage,observe,diagnostics}.rs`
+  (each under 300 lines); the spec suite and `make check` stay green.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.
