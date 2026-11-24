@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 14/28 tasks (50%)
+> **Progress**: 19/28 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -158,24 +158,26 @@ product path.
 
 ## Phase 3: Installer, candidate archive, editor
 
-> **Phase baseline tree**: record after Phase 2
+> **Phase baseline tree**: `227a8804de40c9a8dc567ece04c48e61e555e58d`
+> **Expected modification set**: `tools/setup/{install.sh,package.sh}`, `tools/setup/tests/{install.spec.test.sh,install.impl.test.sh,dist.spec.test.sh,install_fixtures.sh}`, `Makefile`, `.github/workflows/check.yml`, `tools/vscode/src/{discovery,actions}.ts`, `tools/vscode/test/*` and fixtures, `tools/vscode/package.json`, `tools/vscode/README.md`, `README.md`, `docs/`, `site/`, `RELEASE-NOTES.md`, `CHANGELOG.md`, `RELEASE.md`, `AGENTS.md`, roadmap/progress metadata, and this plan
+> **Scope**: strict
 > **Reasoning**: high — download integrity, atomic activation, and editor
 > executable selection
 
 ### Step 3.1: Installer specification tests first
 
-- [ ] 3.1.1 [spec-author] Add `install.spec.test.sh`, `install.impl.test.sh`, and `dist.spec.test.sh` with fixture stage trees and fake `uname`/`getconf`/`curl`/`sha256sum` covering ST-1–ST-6, ST-18, ST-19, and ST-24.
+- [x] 3.1.1 [spec-author] Add `install.spec.test.sh`, `install.impl.test.sh`, and `dist.spec.test.sh` with fixture stage trees and fake `uname`/`getconf`/`curl`/`sha256sum` covering ST-1–ST-6, ST-18, ST-19, and ST-24. ✅ (completed: 2026-11-24 22:03)
   - **Task verify**: the tests fail for the intended missing behavior; the fixture covers producer version/extra-file/stale-pin failures and installer host checks; record the red output.
 
 ### Step 3.2: Candidate and installer
 
-- [ ] 3.2.1 Add `make dist VERSION=1.2.0` and `make dist-verify`: build binaries in the pinned container, validate VERSION against Cargo/VSIX, build the VSIX, generate release README/notice, package the exact layout with `tools/setup/package.sh`, produce `SHA256SUMS` covering archive/VSIX/installer, assemble `install.sh` with pinned bytes/hash, and check all pins/contents; no publication.
+- [x] 3.2.1 Add `make dist VERSION=1.2.0` and `make dist-verify`: build binaries in the pinned container, validate VERSION against Cargo/VSIX, build the VSIX, generate release README/notice, package the exact layout with `tools/setup/package.sh`, produce `SHA256SUMS` covering archive/VSIX/installer, assemble `install.sh` with pinned bytes/hash, and check all pins/contents; no publication. ✅ (completed: 2026-11-24 22:07)
   - **Task verify**: `make dist-verify` passes; the archive contains no toolchain, ROM, FS-UAE, or Python helper.
-- [ ] 3.2.2 Implement host checks (Linux/x86_64, glibc 2.38, conditional `curl`, fake-test seams), network download with HTTPS-only/redirect/timeout/max-size flags, exact byte/hash verification, and the local direct-hash `--archive/--checksums` mode.
+- [x] 3.2.2 Implement host checks (Linux/x86_64, glibc 2.38, conditional `curl`, fake-test seams), network download with HTTPS-only/redirect/timeout/max-size flags, exact byte/hash verification, and the local direct-hash `--archive/--checksums` mode. ✅ (completed: 2026-11-24 22:07)
   - **Task verify**: ST-1–ST-5 pass; a bad hash/size never extracts.
-- [ ] 3.2.3 Implement member-type validation, PID+starttime lock with stale retry, unique `versions/<version>-<sha12>` directories, atomic `current` switch, rollback, prefix-safe symlinks, quoted/replaced PATH block, XDG config resolution, and `--uninstall [--purge]`.
+- [x] 3.2.3 Implement member-type validation, PID+starttime lock with stale retry, unique `versions/<version>-<sha12>` directories, atomic `current` switch, rollback, prefix-safe symlinks, quoted/replaced PATH block, XDG config resolution, and `--uninstall [--purge]`. ✅ (completed: 2026-11-24 22:07)
   - **Task verify**: ST-6 passes, including interrupted activation, live/stale/concurrent locks, PATH quoting/replacement, and purge with/without XDG.
-- [ ] 3.2.4 Add `make dist-check` to `make check`; update `.github/workflows/check.yml` to Ubuntu 24.04 and the hermetic installer tests; keep `setup-check` for the Docker SDK installer; add `dist-check` to the `AGENTS.md` command table.
+- [x] 3.2.4 Add `make dist-check` to `make check`; update `.github/workflows/check.yml` to Ubuntu 24.04 and the hermetic installer tests; keep `setup-check` for the Docker SDK installer; add `dist-check` to the `AGENTS.md` command table. ✅ (completed: 2026-11-24 22:07)
   - **Task verify**: `make check` and `make dist-check` pass with no network or Docker.
 
 ### Step 3.3: Editor
@@ -191,6 +193,29 @@ product path.
   - **Task verify**: ST-20 passes from the candidate archive, not a checkout.
 - [ ] 3.4.2 Phase gate: run `make check`, `make dist-check`, `make dist-verify`, `make vscode-check`, and `make site-check`; re-run the local install E2E.
   - **Task verify**: all pass; the installed `clorraine --version` is `1.2.0`.
+
+### Phase 3 evidence
+
+- **Spec red:** `install.spec.test.sh` failed 25 checks against the old
+  bootstrap template; `dist.spec.test.sh` failed 33 checks because the
+  packaging script was absent. Logs are `build/tmp/install-spec-red.log` and
+  `build/tmp/dist-spec-red.log`.
+- **Installer green:** 45 public installer checks and 19 internal checks pass.
+- **Producer green:** 36 packaging checks pass, including exact layout,
+  version mismatch, extra/forbidden files, stale installer pins, missing VSIX,
+  SHA256SUMS coverage, and release README links.
+- **Candidate:** `make dist` wrote `build/dist/clorraine-1.2.0-x86_64-linux.tar.gz`
+  (6,530,325 bytes), `clorraine-1.2.0.vsix` (25,749 bytes), `install.sh`
+  (18,260 bytes), and `SHA256SUMS`. `make dist-verify` passes.
+- **Gates:** `make dist-check` and `make check` pass; CI runs on Ubuntu 24.04
+  with `make dist-check` and `make setup-check`.
+- **Supersession:** replacing `tools/setup/install.sh` invalidated the old
+  native/bootstrap tests that pinned its slots, so `make check` stopped calling
+  `distribution-check` and `setup-check` now runs only the Docker SDK tests
+  (`test_cli`, `test_detect`, `test_fetch`). The old target and files are
+  removed after acceptance in Phase 4.
+- **Boundary:** the candidate is local; no tag, release, upload, or publication
+  occurred.
 
 **Deliverables**: installer, archive, editor update, local candidate E2E.
 **Phase gate**: `make check` + `make dist-check` + `make vscode-check` + E2E.

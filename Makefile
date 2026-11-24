@@ -55,13 +55,13 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check dist dist-verify dist-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
 	$(MAKE) setup-check
-	$(MAKE) distribution-check
+	$(MAKE) dist-check
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 	$(MAKE) bench-test
 	$(MAKE) fuzz-test
@@ -75,6 +75,34 @@ toolchain-check:
 	@mkdir -p "$(CURDIR)/build/tmp"
 	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" $(DOCKER_MAKE) exec CMD="cargo build --workspace"
 	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" bash tools/setup/toolchain_check.sh "$(TOOLCHAIN)"
+
+# Build a local candidate archive, VSIX, installer, and checksums.
+# Docker and Node are maintainer build dependencies; the output stays in
+# build/dist and nothing is tagged, published, or uploaded.
+dist:
+	@test "$(VERSION)" = "$$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)".*/\1/p' tools/vscode/package.json | head -1)" || { echo "dist: VERSION $(VERSION) does not match tools/vscode/package.json"; exit 1; }
+	$(DOCKER_MAKE) exec CMD="cargo build --release --workspace"
+	@command -v node >/dev/null || { echo "dist: Node.js 22+ is required on PATH"; exit 2; }
+	$(MAKE) vscode-package
+	rm -rf build/dist/stage
+	mkdir -p "build/dist/stage/clorraine-$(VERSION)-x86_64-linux/bin"
+	cp target/release/clc target/release/clorraine target/release/clorraine-lsp \
+		"build/dist/stage/clorraine-$(VERSION)-x86_64-linux/bin/"
+	cp LICENSE LICENSE-EXCEPTION.md NOTICE THIRD_PARTY_NOTICES.md \
+		"build/dist/stage/clorraine-$(VERSION)-x86_64-linux/"
+	printf '# Clorraine %s\n' "$(VERSION)" >"build/dist/stage/clorraine-$(VERSION)-x86_64-linux/README.md"
+	bash tools/setup/package.sh --stage "build/dist/stage/clorraine-$(VERSION)-x86_64-linux" \
+		--output build/dist --version "$(VERSION)" --vsix "build/vscode/clorraine-$(VERSION).vsix"
+
+# Check the pins, versions, layout, and checksums of an existing candidate.
+dist-verify:
+	bash tools/setup/package.sh --verify --output build/dist --version "$(VERSION)"
+
+# Hermetic installer and producer tests; no Docker, network, toolchain, or ROM.
+dist-check:
+	bash tools/setup/tests/install.spec.test.sh
+	bash tools/setup/tests/install.impl.test.sh
+	bash tools/setup/tests/dist.spec.test.sh
 
 # Run the verified FS-UAE guest path with a licensed KS3.1 A1200 ROM.
 # TOOLCHAIN is optional when the CLI already has a stored selection.
@@ -91,8 +119,11 @@ fs-uae-check:
 setup:
 	python3 tools/setup/install_sdk.py $(if $(filter 1,$(FETCH)),--fetch,) $(if $(filter 1,$(DRY)),--dry-run,) $(if $(filter 1,$(YES)),--yes,)
 
+# The Docker SDK installer tests only. The replaced release bootstrap and the
+# old native installer suites are superseded by the Linux candidate and are
+# removed after acceptance; they must not pin the new tools/setup/install.sh.
 setup-check:
-	cd tools/setup && python3 -m unittest discover -s tests -t tests -v
+	cd tools/setup && python3 -m unittest discover -s tests -t tests -p 'test_[cdf]*.py' -v
 
 # Local support metadata/build/selection tests use Git and the existing wheel
 # builder's Python packaging dependency. Real archives require a separate

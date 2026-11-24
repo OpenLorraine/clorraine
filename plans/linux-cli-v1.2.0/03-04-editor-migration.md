@@ -108,7 +108,9 @@ installers are not confused.
 
 ### Makefile and CI
 
-- Remove `distribution-check` from `.PHONY` and `make check`.
+- Remove `distribution-check` from `.PHONY` and `make check`. Its `make check`
+  call was already removed in Phase 3 when the new installer replaced the
+  bootstrap template those tests pinned; the target and files are removed here.
 - Add `dist-check` to `.PHONY` and `make check`.
 - Keep `setup-check` for `install_sdk.py` tests.
 - Update `.github/workflows/check.yml` to `runs-on: ubuntu-24.04` and replace
