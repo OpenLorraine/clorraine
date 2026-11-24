@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 25/28 tasks (89%)
+> **Progress**: 27/28 tasks (96%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -261,14 +261,14 @@ product path.
 
 ### Step 4.2: Remove the old pipeline
 
-- [~] 4.2.1 First add `test_retained_inputs.py` red; then remove the old native installer, native tests, support/distribution producers/tests, and release workflows; keep `install_sdk.py`, its tests, `tools/distribution/inputs/`, and the notices; remove `distribution-check` and keep `dist-check` in `make check`; update CI, `AGENTS.md`, site, release notes, changelog, and retained README refs. ⏳ (implemented: 2026-11-24 23:02)
+- [x] 4.2.1 First add `test_retained_inputs.py` red; then remove the old native installer, native tests, support/distribution producers/tests, and release workflows; keep `install_sdk.py`, its tests, `tools/distribution/inputs/`, and the notices; remove `distribution-check` and keep `dist-check` in `make check`; update CI, `AGENTS.md`, site, release notes, changelog, and retained README refs. ✅ (completed: 2026-11-24 23:02)
   - **Task verify**: ST-26–ST-28 pass; retained inputs/notices/README refs resolve; no dangling old target, workflow, site, or release-note command.
 
 ### Step 4.3: Re-verify and close
 
-- [ ] 4.3.1 Re-run `make check`, `make dist-check`, `make acceptance-check EVIDENCE=<file> CANDIDATE=<dir>`, `make site-check`, and `make verify`; confirm the removal did not change compiler behavior.
+- [x] 4.3.1 Re-run `make check`, `make dist-check`, `make acceptance-check EVIDENCE=<file> CANDIDATE=<dir>`, `make site-check`, and `make verify`; confirm the removal did not change compiler behavior. ✅ (completed: 2026-11-24 23:07)
   - **Task verify**: all pass; `make verify` covers the existing A500/A1200/RTG gates. If the pinned SDK image or media is unavailable, record the blocker and do not mark the task complete.
-- [ ] 4.3.2 Final review: update the index/roadmap to complete, confirm no publication/tag/upload occurred, and write the publication handoff note.
+- [~] 4.3.2 Final review: update the index/roadmap to complete, confirm no publication/tag/upload occurred, and write the publication handoff note. ⏳ (implemented: 2026-11-24 23:46)
   - **Task verify**: the plan tree is clean, the roadmap is current, and the publication boundary is explicit.
 
 ### Phase 4 evidence
@@ -290,6 +290,19 @@ product path.
   `build/acceptance/20261124T220050Z/evidence.json`; `make acceptance-check`
   reports `ok`. The evidence records glibc 2.43, the candidate hashes, the
   rc24 and ROM pins, and the corpus hashes.
+- **Removal red/green:** `test_retained_inputs.py` failed 4 cases before the
+  removal (old paths and `distribution-check` present); after removal 9/9
+  pass. The retained `libamiga.a` hash, notices, retained README, removed
+  paths, new Makefile targets, and current-doc claims are checked. `make
+  dist-check` runs 28 tests; `make setup-check` runs 29; `make check` and
+  `make site-check` pass.
+- **Full gate:** `make verify` passes on a private Xvfb
+  (`DISPLAY=:99`, `-ac`), printing `verify: all legs passed`; log
+  `build/tmp/phase4-verify-xvfb.log`. The first attempt on the desktop
+  Xwayland display failed the existing `sdk-a500-paddle` capture because the
+  host X auth was rotated; the same gate passes under the private Xvfb, which
+  is the documented SDK-display path. `make acceptance-check` still reports
+  `ok` on the recorded candidate.
 
 **Deliverables**: acceptance evidence, old pipeline removed, full gate, closeout.
 **Phase gate**: `make acceptance-check` + `make check` + `make verify`.
