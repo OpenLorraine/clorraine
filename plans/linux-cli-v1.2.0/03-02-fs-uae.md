@@ -60,9 +60,10 @@ logs/, kickstarts/, tmp/              isolated emulator directories
 ```
 
 The native compiler path from the resolver is passed into the emulator; the
-legacy handoff branch has no emulator. The wrapper is compiled from
-`compiler/runtime/emulator_runner.c` with the selected native toolchain and the
-existing `nix20` flags:
+legacy handoff branch has no emulator. The wrapper source is embedded in the
+driver at build time and written into the private run, because the release
+archive contains only the CLI binaries. It is compiled with the selected native
+toolchain and the existing `nix20` flags:
 
 ```
 <compiler> -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -Wall -Wextra -Werror \
@@ -116,8 +117,11 @@ CD-ROM drives. The existing environment isolation (`HOME`, `XDG_*`,
    failure. A nonzero rc is a guest failure even if a stale/partial status
    exists. A missing rc/status at the timeout is a failure.
 5. On a complete result:
-   - read the rc, status, and result files into memory;
-   - kill the child and wait with a bounded timeout (5 seconds, then SIGKILL);
+   - read the rc, status, and result files into memory; carriage returns are
+     stripped from the result before it is printed or captured;
+   - kill the child with SIGKILL and poll its reaping for up to five seconds;
+     the standard library has no SIGTERM binding and the crate forbids unsafe
+     code, so there is no graceful signal stage;
    - if termination cannot be confirmed, retain the private directory and
      report its path; otherwise remove the directory.
 6. On a read error, malformed marker, nonzero rc, or timeout:
@@ -125,8 +129,13 @@ CD-ROM drives. The existing environment isolation (`HOME`, `XDG_*`,
    - kill/wait as above;
    - report the reason and the retained path;
    - never remove a directory whose result has not been read.
-7. `--capture` writes the result to the normal `out.txt` **before** cleanup;
-   a capture-write failure retains the directory and returns 1.
+   An emulator that exits before a complete marker is re-read once and then
+   reported as missing success, not as a full timeout. A deadline with no
+   marker at all is the timeout case.
+7. `--capture` writes a **successful** guest result to the normal `out.txt`
+   before cleanup; a capture-write failure retains the directory and returns 1.
+   A failed guest keeps its output in the retained directory and prints it to
+   stdout.
 
 The result is never read after cleanup. The status/rc files are never treated as
 a partial success: a status without a zero rc is a failure.

@@ -377,23 +377,3 @@ fn an_invalid_selection_does_not_fall_back() {
         &[("CLORRAINE_TOOLCHAIN", invalid.as_os_str().to_owned())]), 2);
     assert!(s.log(&good).is_empty(), "the stored toolchain must not run after env failure");
 }
-
-/// The verified native emulator runner belongs to the next phase; the old
-/// native staging path must not be reachable in this build.
-#[test]
-fn native_emulator_runner_is_explicitly_unavailable() {
-    let s = Scratch::new("native-emulator");
-    let root = s.toolchain("selected", "m68k-amigaos-gcc (AmigaDev 16.2-rc24) 16.2.1b", false);
-    exit(&s.run(&["setup", "--toolchain", root.to_str().unwrap()], &[]), 0);
-    let stderr = exit(
-        &s.run(
-            &["run", "--profile", "hosted-amiga", "--toolchain", root.to_str().unwrap(), "--emulator", "hello.clo"],
-            &[],
-        ),
-        2,
-    );
-    assert!(
-        stderr.contains("verified native FS-UAE runner is not available"),
-        "the phase boundary is explicit, got:\n{stderr}"
-    );
-}

@@ -16,6 +16,7 @@ mod build;
 mod cli;
 mod docgen;
 mod display;
+mod emulator;
 mod environment;
 mod run;
 mod setup;
@@ -117,17 +118,23 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
         report_error(options.diagnostics, &message);
         return code;
     }
-    if native.is_some() && options.emulator {
-        report_error(
-            options.diagnostics,
-            "clorraine: the verified native FS-UAE runner is not available in this build; use the marked SDK container handoff",
-        );
-        return EXIT_USAGE;
-    }
+    // A native emulator selection is validated before the build, so a missing
+    // emulator or ROM never produces a half-built program.
+    let guest = if options.emulator && native.is_some() {
+        match emulator::Emulator::prepare(&options, search_path) {
+            Ok(prepared) => Some(prepared),
+            Err(error) => {
+                report_error(options.diagnostics, &error.message);
+                return error.code;
+            }
+        }
+    } else {
+        None
+    };
     match options.command {
         Command::Emit => emit(&options),
         Command::Build => build_command(&options, native.as_ref()),
-        Command::Run => run_command(options, native.as_ref()),
+        Command::Run => run_command(options, native.as_ref(), guest),
         Command::Setup => unreachable!("setup is handled before resolution"),
     }
 }
@@ -287,7 +294,11 @@ fn build_command(options: &Options, native: Option<&environment::NativeSdk>) -> 
 }
 
 /// Builds, then runs the program (or hands it off to FS-UAE).
-fn run_command(options: Options, native: Option<&environment::NativeSdk>) -> i32 {
+fn run_command(
+    options: Options,
+    native: Option<&environment::NativeSdk>,
+    guest: Option<emulator::Emulator>,
+) -> i32 {
     if options.profile == Profile::Freestanding {
         return run_freestanding(options, native);
     }
@@ -309,8 +320,37 @@ fn run_command(options: Options, native: Option<&environment::NativeSdk>) -> i32
         print_c(&built.c);
     }
     if options.emulator {
-        // A native selection is rejected before the build; this is the marked
-        // SDK-container handoff, which leaves FS-UAE to the host.
+        if let Some(prepared) = guest {
+            // The verified runner needs the selected native compiler; the
+            // selection check above guarantees it is present.
+            let compiler = native
+                .expect("a prepared emulator has a native toolchain")
+                .compiler
+                .as_path();
+            let capture = if options.capture {
+                artifacts::program_stem(&options.files)
+                    .map(|stem| artifacts::out_path(options.profile, &stem))
+            } else {
+                None
+            };
+            let result = emulator::Emulator::run(
+                prepared,
+                compiler,
+                &built.bin,
+                capture.as_deref(),
+                options.diagnostics,
+            );
+            if result.captured {
+                if let Some(path) = &capture {
+                    println!(
+                        "captured {}",
+                        display::sanitize(&path.display().to_string())
+                    );
+                }
+            }
+            return result.code;
+        }
+        // The marked SDK-container handoff leaves FS-UAE to the host.
         print!(
             "{}",
             toolchain::fs_uae_handoff(&built.bin, options.capture, options.profile)

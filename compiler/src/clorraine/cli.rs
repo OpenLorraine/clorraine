@@ -105,10 +105,10 @@ Options:
       --release                       Optimize (-O2); strip + section-GC on Linux/Amiga; freestanding/non-Linux and debug keep symbols
       --size                          Optimize for size (-Os); same release processing; cannot combine with --release
       --emit-c                        Print the generated C after building
-      --emulator                      Amiga run: marked SDK-container host handoff; native runner unavailable in this build
+      --emulator                      Amiga run: verified FS-UAE guest run (marked SDK container: host handoff)
       --toolchain PATH                Toolchain root (setup/build/run; or CLORRAINE_TOOLCHAIN)
-      --fs-uae PATH                   Reserved for the verified native runner (not available in this build)
-      --kickstart PATH                Reserved for the verified native runner (not available in this build)
+      --fs-uae PATH                   FS-UAE executable for a native emulator run (or CLORRAINE_FS_UAE, then PATH)
+      --kickstart PATH                Kickstart 3.1 A1200 ROM for a native emulator run (or CLORRAINE_KICKSTART)
       --capture                       Write program stdout to out.txt; print its path
   -o FILE                             emit only: write C to FILE (default: stdout)
       --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
@@ -120,10 +120,10 @@ Options:
 Exit codes:
   0  success (including help, version, and the FS-UAE handoff)
   1  Clorraine diagnostic, missing tool/media, or C compiler failure
-  2  usage error, invalid/missing toolchain selection, or native emulator unavailable
+  2  usage error, invalid/missing toolchain, or invalid emulator, ROM, or timeout selection
 
-The marked SDK container prints the FS-UAE host handoff. The verified native
-runner is not available in this build.
+A native emulator run uses FS-UAE 3.2.0 or newer with a 512 KB Kickstart 3.1
+A1200 ROM. The marked SDK container prints the FS-UAE host handoff instead.
 
 A run exits with the program's own code, so a program that exits 2 is
 indistinguishable from a usage or environment error.

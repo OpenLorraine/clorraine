@@ -1,8 +1,8 @@
 # Execution Plan: Linux CLI v1.2.0
 
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-24 21:05
-> **Progress**: 7/28 tasks (25%)
+> **Last Updated**: 2026-11-24 21:14
+> **Progress**: 12/28 tasks (43%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -102,13 +102,13 @@ product path.
 
 ### Step 2.2: Runner
 
-- [ ] 2.2.1 Resolve FS-UAE (`--fs-uae` > `CLORRAINE_FS_UAE` > PATH), require `3.2.0` or newer with `3.2.35` as the tested output, validate a 512 KB KS3.1 A1200 ROM (524,299 tested; 524,288 accepted size), validate the 1–3600 timeout, and reject 256 KB with the A1200 message.
+- [x] 2.2.1 Resolve FS-UAE (`--fs-uae` > `CLORRAINE_FS_UAE` > PATH), require `3.2.0` or newer with `3.2.35` as the tested output, validate a 512 KB KS3.1 A1200 ROM (524,299 tested; 524,288 accepted size), validate the 1–3600 timeout, and reject 256 KB with the A1200 message. ✅ (completed: 2026-11-24 21:08)
   - **Task verify**: ST-12 cases pass.
-- [ ] 2.2.2 Stage the private 0700 drive with the compiled `runner`, `program`, `CNEXT:runner` startup, A1200 config, and isolated emulator directories; compile `compiler/runtime/emulator_runner.c` to `drive/runner` with the native compiler, `-mcrt=nix20`, `-O2 -Wall -Wextra -Werror`, and `-lamiga -lm`.
+- [x] 2.2.2 Stage the private 0700 drive with the compiled `runner`, `program`, `CNEXT:runner` startup, A1200 config, and isolated emulator directories; compile `compiler/runtime/emulator_runner.c` to `drive/runner` with the native compiler, `-mcrt=nix20`, `-O2 -Wall -Wextra -Werror`, and `-lamiga -lm`. ✅ (completed: 2026-11-24 21:08)
   - **Task verify**: ST-13 staging test passes; no old `program\n` script remains.
-- [ ] 2.2.3 Implement the rc/status poll, child stdout/stderr redirection, read-before-cleanup, bounded kill/wait, read/capture failure retention, and cleanup; success requires rc 0 plus status `ok`; honor the 90-second default and reject invalid timeout values. Spawn FS-UAE directly, never as a background `xvfb-run` child, and verify no emulator process remains.
+- [x] 2.2.3 Implement the rc/status poll, child stdout/stderr redirection, read-before-cleanup, bounded kill/wait, read/capture failure retention, and cleanup; success requires rc 0 plus status `ok`; honor the 90-second default and reject invalid timeout values. Spawn FS-UAE directly, never as a background `xvfb-run` child, and verify no emulator process remains. ✅ (completed: 2026-11-24 21:08)
   - **Task verify**: ST-14–ST-16 pass, including the timeout and cleanup-ordering cases.
-- [ ] 2.2.4 Add `--emulator --capture` writing the guest output to `out.txt` before cleanup; remove the old rejection; accept both Amiga profiles.
+- [x] 2.2.4 Add `--emulator --capture` writing the guest output to `out.txt` before cleanup; remove the old rejection; accept both Amiga profiles. ✅ (completed: 2026-11-24 21:08)
   - **Task verify**: ST-17 passes and the existing A500-profile CLI test still passes.
 - [ ] 2.2.5 Add `make fs-uae-check KICKSTART=PATH`; run hello, the four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and a temporary rc-1 negative via the candidate driver on a real A1200/KS3.1 FS-UAE; compare outputs and require the negative to exit 1.
   - **Task verify**: the real guest output is `Hello, Amiga, from Clorraine!`; the rc-1 negative exits 1 with no status; record the FS-UAE and ROM versions/hashes.
@@ -124,6 +124,17 @@ product path.
   because the native runner is unavailable; the captured log is
   `build/tmp/fs-uae-red.log`. Selection-error cases also fail because their
   messages name the new validation, not the phase-boundary rejection.
+- **Spec green:** 19/19 runner cases pass, including selection, the two ROM
+  sizes, staging and wrapper flags, CR-trimmed output, rc 1/5/9, partial and
+  malformed markers, prompt exit, timeout, termination, read/capture failure,
+  noisy emulator streams, capture ordering, and the A500 profile.
+- **Scoped checks:** 12/12 toolchain setup cases and 56 driver unit tests pass;
+  `make check` passes. The runtime choices AR-19–AR-26 are recorded in
+  `00-decisions.md`, and `03-02-fs-uae.md` matches the implemented loop.
+- **Commit:** the four runner tasks share one module and land in one commit
+  (`feat(cli): run verified FS-UAE guests`). Capture is part of the same
+  observe/capture/cleanup path, so splitting it would leave a non-building
+  intermediate commit.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.

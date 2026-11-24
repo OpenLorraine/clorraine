@@ -30,3 +30,31 @@
 The blocked `cross-platform-cli-fs-uae` plan and its 33-item register are
 superseded. Its unresolved installer, release, and acceptance contradictions
 are replaced by the smaller contract above. Git history retains the old record.
+
+## Runtime decisions (auto-design)
+
+> **Authority**: AI — delegated by `--auto-design` (policy version 1; root
+> invocation ID `linux-cli-v1.2.0-phase2-20261124`).
+> **Eligibility**: implementation mechanisms inside the approved Phase 2
+> runner design. No product behavior, scope, acceptance criterion, or reserved
+> decision changes.
+> **Objective**: make the verified runner work from the installed binary-only
+> archive with bounded, inspectable failure handling.
+> **Hardening**: the Phase 2 post-phase review checks these choices against the
+> staging, timeout, termination, cleanup, and capture tests. The mechanisms are
+> local and reversible, so no separate design challenger was required.
+
+| ID | Decision | Evidence | Rejected alternatives | Strongest counterargument | Confidence | Reopen triggers |
+|---|---|---|---|---|---|---|
+| AR-19 | Embed `compiler/runtime/emulator_runner.c` with `include_str!`, write it into the private run, and compile it there. | The release archive contains only `bin/` binaries and release docs, so a run-time source lookup fails after install. | Look up the source relative to the driver (fails outside a checkout); ship the source in the archive (adds a release file and a path contract). | Embedding duplicates the wrapper bytes in the binary. Accepted: the wrapper is small and the staging test inspects the compiled source. | High | The archive starts shipping runtime sources, or the wrapper moves. |
+| AR-20 | Terminate FS-UAE with `Child::kill` (SIGKILL) and poll `try_wait` for up to five seconds; retain the run when reaping is unconfirmed. | The crate forbids unsafe code and the standard library exposes no SIGTERM binding; the guest markers are complete before termination. | Declare the libc `kill` symbol (blocked by `#![forbid(unsafe_code)]`); call an external `kill` tool (adds a runtime dependency and a PATH seam). | SIGKILL denies FS-UAE a graceful shutdown. Accepted: the result is already read and the private directory is host-owned. | High | The crate starts allowing a signal crate or a safe SIGTERM API. |
+| AR-21 | Re-read both markers once after `try_wait` reports exit; if still incomplete, fail with "did not report success" instead of waiting for the timeout. | An exited process cannot write more markers; the wrapper writes rc after the program returns. | Wait for the full timeout (slow and adds no evidence). | A marker could be written by a surviving grandchild. Accepted: the runner owns the direct child; a grandchild is outside the verified contract. | High | FS-UAE starts leaving a marker-writing helper after the main process exits. |
+| AR-22 | Strip carriage returns from guest output and write the remaining bytes unchanged to stdout or `out.txt`. | The fake-emulator tests write CRLF; the existing `vamos` path already strips CR. | Preserve raw bytes (terminal noise); decode as UTF-8 (guest output need not be text). | A program that intentionally prints CR loses it. Accepted: CR is a line-ending convention, and the CLI already normalizes it for Amiga runs. | High | The product documents raw-byte output. |
+| AR-23 | Parse the leading `major.minor[.patch]` numbers of the first stdout token and ignore a package suffix. | `3.2.35` is the tested output; packaged builds spell versions such as `3.2.35-2`. | Require an exact `3.2.35` string (rejects equivalent packaged builds); parse the whole line as a semver (no semver crate). | A malformed suffix could hide an older build. Accepted: the numeric prefix is the ordering fact, and the minimum is 3.2.0. | High | FS-UAE changes its version-line format. |
+| AR-24 | A deadline with no marker is a timeout; an incomplete marker or an exited child is "did not report success"; a partial marker is re-read for at most one second. | Distinguishes "never started" from "started but incomplete" and bounds the empty/partial marker race the spike observed. | Treat every deadline as a timeout (loses the missing-marker distinction); wait indefinitely for a partial marker (unbounded). | A slow filesystem could exceed the one-second stabilization window. Accepted: the markers are tiny and the wrapper writes rc before status. | High | Real runs show a marker taking longer than one second to become complete. |
+| AR-25 | Write `--capture` only for a successful guest; failure output goes to stdout and the run is retained. | `out.txt` is the success artifact; a failed run keeps its evidence in the retained directory. | Capture failures too (confuses the success artifact with retained evidence). | Scripts may expect capture on failure. Accepted: the exit code and retained path carry the failure. | Med | A requirement asks for failed-run capture. |
+| AR-26 | `make fs-uae-check` accepts an optional `TOOLCHAIN` (otherwise the stored config), uses `xvfb-run -a` when `DISPLAY` is unset, and fails when a new FS-UAE or Xvfb process survives a run. | The plan's command names only `KICKSTART`; the local check must work with a stored setup and without a desktop. | Require both arguments (breaks the documented command); require a display (fails headless). | The stored config may point at a stale toolchain. Accepted: the driver validates it before the first build. | High | The check becomes a CI gate or the stored-config path is removed. |
+
+**Reopen rule:** new evidence that breaks one of these assumptions reopens the
+owning decision, updates this table and `03-02-fs-uae.md`, and re-runs the
+Phase 2 gates.

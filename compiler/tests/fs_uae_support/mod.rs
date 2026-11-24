@@ -35,6 +35,8 @@ pub struct Scratch {
     pub tools: PathBuf,
     /// Directory where helpers write observations and emulator noise.
     pub logs: PathBuf,
+    /// Private parent for the driver's `TMPDIR`.
+    pub run_tmp: PathBuf,
 }
 
 impl Scratch {
@@ -63,7 +65,8 @@ impl Scratch {
         let work = root.join("work");
         let tools = root.join("path tools");
         let logs = root.join("logs");
-        for path in [&home, &config_home, &work, &tools, &logs] {
+        let run_tmp = root.join("run-tmp");
+        for path in [&home, &config_home, &work, &tools, &logs, &run_tmp] {
             fs::create_dir_all(path).expect("create scratch directory");
         }
         fs::write(
@@ -71,15 +74,21 @@ impl Scratch {
             "module hello;\nfunc main(): i32 { return 0; }\n",
         )
         .expect("write hello program");
-        Self { root, home, config_home, work, tools, logs }
+        Self { root, home, config_home, work, tools, logs, run_tmp }
     }
 
     /// Runs the driver in this scratch tree with a bounded child process.
     ///
-    /// `PATH` contains only the helper directory, so a test never finds the
-    /// host's real FS-UAE by accident. A test that needs the host tools passes
-    /// its own `PATH` value in `env`.
+    /// `PATH` contains the helper directory plus the standard system
+    /// directories the fake helpers need for `mkdir`, `cp`, and `sleep`. A test
+    /// that must hide the host's real FS-UAE passes `PATH=<tools>` in `env`.
     pub fn run(&self, args: &[&str], env: &[(&str, OsString)]) -> Output {
+        let path = std::env::join_paths([
+            self.tools.clone(),
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/bin"),
+        ])
+        .expect("join test PATH");
         let mut command = Command::new("/usr/bin/timeout");
         command
             .arg("60s")
@@ -88,7 +97,8 @@ impl Scratch {
             .current_dir(&self.work)
             .env("HOME", &self.home)
             .env("XDG_CONFIG_HOME", &self.config_home)
-            .env("PATH", &self.tools)
+            .env("PATH", path)
+            .env("TMPDIR", &self.run_tmp)
             .env("TEST_FS_UAE_LOG", self.logs.join("fs-uae.log"))
             .env("TEST_PRIVATE_DIR", self.logs.join("private-dir.txt"))
             .env("TEST_LOG", &self.logs)

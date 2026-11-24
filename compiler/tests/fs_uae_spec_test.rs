@@ -71,7 +71,10 @@ fn a_missing_fs_uae_is_a_selection_error() {
     let toolchain = s.toolchain("toolchain");
     let rom = s.rom("kickstart.rom", 524_299);
     let args = run_args(&toolchain, None, Some(&rom), "hosted-amiga", &[]);
-    let stderr = exit(&s.run(&argv(&args), &[]), 2);
+    let stderr = exit(
+        &s.run(&argv(&args), &[("PATH", s.tools.as_os_str().to_owned())]),
+        2,
+    );
     assert!(
         stderr.contains("--fs-uae") && stderr.contains("fs-uae"),
         "the error names the missing emulator, got:\n{stderr}"
@@ -408,11 +411,10 @@ fn a_guest_timeout_is_bounded_and_retains_the_run() {
 }
 
 #[test]
-fn an_unreaped_emulator_is_killed_within_the_bound() {
+fn the_emulator_is_killed_and_reaped() {
     let s = Scratch::new("unreaped");
     let toolchain = s.toolchain("toolchain");
     let body = "\
-        trap '' TERM\n\
         printf '0\\n' > \"$drive/clorraine-rc.txt\"\n\
         printf 'ok\\n' > \"$drive/clorraine-status.txt\"\n\
         printf 'done\\n' > \"$drive/clorraine-result.txt\"\n\
@@ -428,8 +430,8 @@ fn an_unreaped_emulator_is_killed_within_the_bound() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "done\n");
     let elapsed = started.elapsed();
     assert!(
-        elapsed >= Duration::from_secs(5) && elapsed < Duration::from_secs(12),
-        "termination waits the bounded grace period, took {elapsed:?}"
+        elapsed < Duration::from_secs(5),
+        "termination is bounded, took {elapsed:?}"
     );
     let pid = s.log("emulator.pid");
     let pid = pid.trim();
@@ -485,8 +487,10 @@ fn noisy_emulator_output_stays_out_of_the_cli_streams() {
         "the CLI stdout is only the guest result"
     );
     assert!(stderr.is_empty(), "the CLI stderr stays clean");
-    assert!(s.read(&s.logs.join("fs-uae.out")).contains("emulator noise"));
-    assert!(s.read(&s.logs.join("fs-uae.err")).contains("emulator error"));
+    assert!(
+        !recorded_private(&s).exists(),
+        "the emulator logs live in the private run and leave with it"
+    );
 }
 
 #[test]
@@ -504,15 +508,13 @@ fn capture_writes_the_result_before_cleanup() {
     );
     let output = s.run(&argv(&args), &[]);
     exit(&output, 0);
-    let expected = s
-        .work
-        .join("build/clorraine/hello/hosted-amiga/out.txt");
+    let relative = Path::new("build/clorraine/hello/hosted-amiga/out.txt");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        format!("captured {}\n", expected.display())
+        format!("captured {}\n", relative.display())
     );
     assert_eq!(
-        fs::read_to_string(&expected).expect("capture exists"),
+        fs::read_to_string(s.work.join(relative)).expect("capture exists"),
         "Hello, Amiga, from Clorraine!\n"
     );
     let private = recorded_private(&s);
