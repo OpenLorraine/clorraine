@@ -170,6 +170,10 @@ A500 profile to accept `--emulator` stays valid.
 - Paths with control characters or commas in `TMPDIR` keep their existing
   rejection.
 - The host never writes a Kickstart ROM into the guest drive.
+- The runner owns FS-UAE as a direct child and kills/waits it; it does not put
+  FS-UAE in a background `xvfb-run` wrapper. After a run, no FS-UAE or Xvfb
+  process from that invocation remains. The acceptance wrapper runs the CLI
+  under `xvfb-run` and checks the process table after each run.
 
 ## Test seam
 

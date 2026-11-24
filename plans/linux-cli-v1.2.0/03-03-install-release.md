@@ -299,7 +299,8 @@ Acceptance uses an isolated `HOME`, installs with
 `TOOLCHAIN_ARCHIVE` directly against the pinned rc24 hash, extracts it into a
 private root, runs `setup --toolchain` with that root,
 builds hello and the corpus, and runs each through the real FS-UAE with the
-licensed KS3.1 A1200 ROM. It uses `xvfb-run -a` when the host has no display. The raw
+licensed KS3.1 A1200 ROM. It uses `xvfb-run -a` when the host has no display, and after each guest run
+asserts that no `fs-uae` or `Xvfb` process from that run remains. The raw
 output, hashes, and commands are kept under `build/acceptance/`.
 
 The checker does not download anything and does not contact GitHub.

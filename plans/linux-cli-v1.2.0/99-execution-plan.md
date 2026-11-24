@@ -82,7 +82,7 @@ product path.
   - **Task verify**: ST-12 cases pass.
 - [ ] 2.2.2 Stage the private 0700 drive with the compiled `runner`, `program`, `CNEXT:runner` startup, A1200 config, and isolated emulator directories; compile `compiler/runtime/emulator_runner.c` to `drive/runner` with the native compiler, `-mcrt=nix20`, `-O2 -Wall -Wextra -Werror`, and `-lamiga -lm`.
   - **Task verify**: ST-13 staging test passes; no old `program\n` script remains.
-- [ ] 2.2.3 Implement the rc/status poll, child stdout/stderr redirection, read-before-cleanup, bounded kill/wait, read/capture failure retention, and cleanup; success requires rc 0 plus status `ok`; honor the 90-second default and reject invalid timeout values.
+- [ ] 2.2.3 Implement the rc/status poll, child stdout/stderr redirection, read-before-cleanup, bounded kill/wait, read/capture failure retention, and cleanup; success requires rc 0 plus status `ok`; honor the 90-second default and reject invalid timeout values. Spawn FS-UAE directly, never as a background `xvfb-run` child, and verify no emulator process remains.
   - **Task verify**: ST-14–ST-16 pass, including the timeout and cleanup-ordering cases.
 - [ ] 2.2.4 Add `--emulator --capture` writing the guest output to `out.txt` before cleanup; remove the old rejection; accept both Amiga profiles.
   - **Task verify**: ST-17 passes and the existing A500-profile CLI test still passes.
@@ -146,7 +146,7 @@ product path.
 
 - [ ] 4.1.1 [spec-author] Add `acceptance_spec.py` first: valid record, wrong platform/arch, wrong toolchain tag/hash, old FS-UAE, wrong hello/corpus output, missing VSIX, and candidate-hash mismatch; then implement `make acceptance-check EVIDENCE=... CANDIDATE=...`.
   - **Task verify**: the spec fails before implementation and passes after; ST-25 cases pass.
-- [ ] 4.1.2 Add `make acceptance` to install the exact candidate into a fresh HOME, verify and extract the supplied toolchain archive against the rc24 pin, run setup/build/FS-UAE for hello, four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and an rc-1 negative; write `evidence.json` with archive/installer/VSIX/toolchain-archive/ROM/FS-UAE/negative/corpus/output hashes.
+- [ ] 4.1.2 Add `make acceptance` to install the exact candidate into a fresh HOME, verify and extract the supplied toolchain archive against the rc24 pin, run setup/build/FS-UAE for hello, four `hosted-amiga` corpus programs, one `hosted-amiga-13` corpus, and an rc-1 negative; assert no FS-UAE/Xvfb process remains after each run; write `evidence.json` with archive/installer/VSIX/toolchain-archive/ROM/FS-UAE/negative/corpus/output hashes.
   - **Task verify**: ST-20 and the evidence schema pass; the output is the expected hello line.
 
 ### Step 4.2: Remove the old pipeline
