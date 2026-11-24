@@ -44,8 +44,12 @@ interface Scenario {
   pendingChange?: "dependency" | "entry-dirty" | "editor";
   /** The active entry belongs to the second root or no workspace root. */
   location?: "second" | "standalone";
-  /** Supply existing machine/user SDK, emulator and media fixture paths. */
+  /** Supply existing machine/user toolchain, emulator and media fixture paths. */
   configuredPaths?: boolean;
+  /** Supply only the legacy sdk.path to exercise the one-time warning. */
+  legacySdk?: boolean;
+  /** Invoke the selected command twice in one activation. */
+  repeat?: boolean;
 }
 
 /** JSON observations contain no private extension objects. */
@@ -121,15 +125,17 @@ function run(scenario: Scenario = {}) {
     writeFileSync(driver, "#!/usr/bin/env node\nif (process.argv[2] === '--version') console.log('clorraine 1.1.2'); else process.exitCode = 97;\n");
     chmodSync(driver, 0o755);
     const settings = {
-      "sdk.path": scenario.configuredPaths ? join(external, "SDK ; literal", "amiga") : "",
+      "toolchain.path": scenario.configuredPaths ? join(external, "toolchain ; literal") : "",
+      "sdk.path": scenario.legacySdk ? join(external, "legacy SDK ; literal", "amiga") : "",
       "fsUae.path": scenario.configuredPaths ? join(external, "fs-uae") : "",
       "kickstart.path": scenario.configuredPaths ? join(external, "Kick ; literal.rom") : "",
     };
     if (scenario.configuredPaths) {
-      mkdirSync(settings["sdk.path"], { recursive: true });
+      mkdirSync(settings["toolchain.path"], { recursive: true });
       copyFileSync(driver, settings["fsUae.path"]);
       writeFileSync(settings["kickstart.path"], "Test-only bytes, not licensed media.\n");
     }
+    if (scenario.legacySdk) mkdirSync(settings["sdk.path"], { recursive: true });
     for (const workspace of [first, second]) {
       const candidate = join(workspace, "target/debug");
       mkdirSync(candidate, { recursive: true });
@@ -190,6 +196,20 @@ function rejected(scenario: Scenario, remedy: RegExp) {
   return actual;
 }
 
+test("should use the legacy SDK path once as a toolchain and warn once", () => {
+  const actual = invoke({ legacySdk: true, repeat: true, command: "clorraine.build" });
+  assert.equal(actual.result.tasks.length, 2, "one activation submits one task per invocation");
+  for (const task of actual.result.tasks) {
+    const args = task.args;
+    assert.ok(strings(args), "ProcessExecution requires a string argument array");
+    assert.equal(args[args.indexOf("--toolchain") + 1], actual.settings["sdk.path"]);
+    assert.ok(!args.includes("--sdk-root"), "the removed flag must not return");
+    assert.equal(args.filter((arg) => arg === "--toolchain").length, 1, "never append two toolchain flags");
+  }
+  const warnings = actual.result.messages.filter((message) => message.includes("toolchain.path"));
+  assert.equal(warnings.length, 1, "the legacy warning is shown once per profile");
+});
+
 test("should activate the compiled extension and initialize its real LSP client under the facade", () => {
   const { result } = run();
   assert.ok(result.events.some((event) => event.method === "initialize"));
@@ -229,7 +249,7 @@ for (const profile of profiles) {
       assert.ok(!task.args.includes("--"), "the driver does not support a -- delimiter");
       assert.equal(task.args.filter((arg) => arg === "--emulator").length, emulator ? 1 : 0);
       for (const [flag, value, applies] of [
-        ["--sdk-root", settings["sdk.path"], profile !== "host"],
+        ["--toolchain", settings["toolchain.path"] || settings["sdk.path"], profile !== "host"],
         ["--fs-uae", settings["fsUae.path"], emulator],
         ["--kickstart", settings["kickstart.path"], emulator],
       ] as const) {

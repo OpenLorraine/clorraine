@@ -37,6 +37,26 @@ const ACTIONS: readonly Action[] = [
   { id: "clorraine.runInFsUae", title: "Run in FS-UAE", verb: "run", emulator: true },
 ];
 
+/** Persistent key for the one-time legacy SDK-path warning. */
+const LEGACY_WARNING_KEY = "clorraine.legacySdkPathWarningShown";
+
+/**
+ * Warns once per VS Code profile that the old SDK layout is no longer used.
+ *
+ * The warning never blocks the action: the legacy value is passed to the CLI,
+ * which reports the actual validation error. `globalState` persists the key
+ * across activations.
+ */
+function warnLegacySdkOnce(context: vscode.ExtensionContext): void {
+  if (context.globalState.get<boolean>(LEGACY_WARNING_KEY)) {
+    return;
+  }
+  void context.globalState.update(LEGACY_WARNING_KEY, true);
+  void vscode.window.showWarningMessage(
+    "The old clorraine.sdk.path setting is no longer used. Select the upstream Amiga toolchain root in clorraine.toolchain.path.",
+  );
+}
+
 /** Reject malformed server responses before their values can become process arguments. */
 function selectedFiles(value: unknown, root: string, entry: string): string[] {
   if (typeof value !== "object" || value === null || !("files" in value) ||
@@ -238,9 +258,14 @@ export function registerActions(
         requireSavedDependencies(files);
         const args = [action.verb, "--profile", profile];
         if (profile !== "host") {
-          const sdk = machinePath("sdk.path");
-          if (sdk) {
-            args.push("--sdk-root", sdk);
+          const toolchain = machinePath("toolchain.path");
+          const legacy = toolchain ? "" : machinePath("sdk.path");
+          const selected = toolchain || legacy;
+          if (selected) {
+            args.push("--toolchain", selected);
+          }
+          if (!toolchain && legacy) {
+            warnLegacySdkOnce(context);
           }
         }
         if (action.emulator) {

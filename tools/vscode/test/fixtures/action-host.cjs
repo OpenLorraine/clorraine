@@ -17,6 +17,7 @@ const tasks = [];
 const saves = [];
 const discovery = [];
 const providers = [];
+const globalState = new Map();
 const children = [];
 const listeners = new Map();
 let saveAllCalls = 0;
@@ -100,7 +101,7 @@ const settings = {
   ...(config.profile === undefined ? {} : { profile: config.profile }),
   ...(config.settings ?? {}),
 };
-const defaults = { profile: "hosted-amiga", "sdk.path": "", "fsUae.path": "", "kickstart.path": "" };
+const defaults = { profile: "hosted-amiga", "toolchain.path": "", "sdk.path": "", "fsUae.path": "", "kickstart.path": "" };
 
 /** Preserve literal argv and options at the real task API boundary. */
 class ProcessExecution {
@@ -273,6 +274,10 @@ async function main() {
   const context = {
     subscriptions: [], extensionPath: path.dirname(path.dirname(config.extension)),
     extensionUri: Uri.file(path.dirname(path.dirname(config.extension))),
+    globalState: {
+      get(key, fallback) { return globalState.has(key) ? globalState.get(key) : fallback; },
+      async update(key, value) { globalState.set(key, value); },
+    },
   };
   let startup;
   try {
@@ -299,6 +304,9 @@ async function main() {
         fs.writeFileSync(config.release, "");
       }
       await running;
+      if (config.repeat) {
+        await Promise.resolve().then(() => callback());
+      }
     }
     return { startup, commands: registered, messages, tasks, saves, saveAllCalls,
       discovery, events: events(), unrelatedDirty: unrelated.isDirty };

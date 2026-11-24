@@ -1,9 +1,10 @@
 # Clorraine v1.2.0
 
 > **Candidate release record.** v1.2.0 is the current Linux x86_64 CLI
-> candidate. Toolchain setup, native builds, and the verified FS-UAE runner are
-> implemented; the installer and VSIX are later phases. No release asset is
-> published. v1.1.2 remains the latest published release under its MIT terms.
+> candidate. Toolchain setup, native builds, the verified FS-UAE runner, a local
+> installer/archive, and a locally built VSIX are implemented. No release asset
+> is published. v1.1.2 remains the latest published release under its MIT
+> terms.
 
 Clorraine is a compiler for the frozen v1.0 language with the approved v1.1
 language surfaces, plus a build/run driver for the `host`, `hosted-amiga`,
@@ -31,6 +32,10 @@ validates a user-supplied upstream toolchain and builds without Docker.
   rc 0 plus status `ok`; a successful guest's output is printed or captured, and
   a failed guest prints its output and is retained with its path. Both Amiga
   profiles run on the A1200 recipe.
+- **Local installer and archive.** `make dist` writes the versioned archive,
+  `install.sh`, the VSIX, and `SHA256SUMS` under `build/dist`; the installer
+  checks the host and archive, activates side by side, and supports uninstall
+  and purge. `make dist-verify` and the hermetic `make dist-check` pass.
 - **Real guest check.** `make fs-uae-check KICKSTART=PATH [TOOLCHAIN=PATH]` runs
   hello, the four portable corpus programs, one A500-profile corpus program, and
   a return-1 negative, and rejects a surviving FS-UAE or Xvfb process.
@@ -45,8 +50,8 @@ the next phases. No tag, release, upload, or publication has occurred.
 
 The candidate checks are `cargo test --workspace`, 19 FS-UAE runner spec cases,
 `make toolchain-check TOOLCHAIN=<rc24 root>`, `make fs-uae-check
-KICKSTART=<KS3.1 A1200> TOOLCHAIN=<rc24 root>`, `make check`, and
-`make site-check`. The real guest check passed hello, the four corpus programs,
+KICKSTART=<KS3.1 A1200> TOOLCHAIN=<rc24 root>`, `make dist`, `make dist-verify`,
+`make dist-check`, `make check`, and `make site-check`. The real guest check passed hello, the four corpus programs,
 the A500-profile corpus program, and the rc-1 negative on FS-UAE 3.2.35 with the
 licensed 524,299-byte KS3.1 A1200 ROM. The full acceptance gate is `make verify`,
 which needs the pinned SDK image, an X display, and the licensed media. The

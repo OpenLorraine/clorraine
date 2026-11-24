@@ -9,10 +9,15 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-/** Machine-only path settings; language/workspace overrides are deliberately ignored. */
+/**
+ * Machine-only path settings; language/workspace overrides are deliberately
+ * ignored. `sdk.path` is not contributed any more; it is read only for the
+ * one-time migration warning when `toolchain.path` is empty.
+ */
 export type PathSetting =
   | "lsp.path"
   | "driver.path"
+  | "toolchain.path"
   | "sdk.path"
   | "fsUae.path"
   | "kickstart.path";
@@ -89,7 +94,7 @@ export function resolveTool(name: "clorraine" | "clorraine-lsp"): string {
   if (name === "clorraine-lsp" && process.env.CLORRAINE_LSP) {
     return explicit(process.env.CLORRAINE_LSP, "CLORRAINE_LSP");
   }
-  const installed = path.join(homedir(), ".clorraine", "bin", name);
+  const installed = path.join(homedir(), ".local", "bin", name);
   if (executable(installed)) {
     return installed;
   }

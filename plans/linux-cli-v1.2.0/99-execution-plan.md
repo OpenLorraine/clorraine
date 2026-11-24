@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 19/28 tasks (68%)
+> **Progress**: 23/28 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -182,16 +182,16 @@ product path.
 
 ### Step 3.3: Editor
 
-- [ ] 3.3.1 First extend `discovery.spec.test.ts`, `actions.spec.test.ts`, `actions.review.spec.test.ts`, `manifest.test.ts`, and the shared fixtures with failing cases; then update discovery to `~/.local/bin`, add `clorraine.toolchain.path`, remove `sdk.path`, implement new-key precedence and the persistent legacy warning, and update actions to one `--toolchain` flag.
+- [x] 3.3.1 First extend `discovery.spec.test.ts`, `actions.spec.test.ts`, `actions.review.spec.test.ts`, `manifest.test.ts`, and the shared fixtures with failing cases; then update discovery to `~/.local/bin`, add `clorraine.toolchain.path`, remove `sdk.path`, implement new-key precedence and the persistent legacy warning, and update actions to one `--toolchain` flag. ✅ (completed: 2026-11-24 22:21)
   - **Task verify**: ST-21–ST-23 pass; the review spec and fixtures are updated; a second activation does not warn again.
-- [ ] 3.3.2 Update `package.json`, `tools/vscode/README.md`, and site/release docs for `toolchain.path`, the VSIX install command, and the legacy warning; remove `--sdk-root` from docs.
+- [x] 3.3.2 Update `package.json`, `tools/vscode/README.md`, and site/release docs for `toolchain.path`, the VSIX install command, and the legacy warning; remove `--sdk-root` from docs. ✅ (completed: 2026-11-24 22:21)
   - **Task verify**: ST-22/ST-23 pass; `make vscode-check` and `make site-check` pass.
 
 ### Step 3.4: Local install end-to-end and gate
 
-- [ ] 3.4.1 Install the candidate into a temporary HOME with `--archive/--checksums`, run `setup --toolchain`, build hello, run it in FS-UAE, and record the archive/installer/VSIX hashes and output.
+- [x] 3.4.1 Install the candidate into a temporary HOME with `--archive/--checksums`, run `setup --toolchain`, build hello, run it in FS-UAE, and record the archive/installer/VSIX hashes and output. ✅ (completed: 2026-11-24 22:21)
   - **Task verify**: ST-20 passes from the candidate archive, not a checkout.
-- [ ] 3.4.2 Phase gate: run `make check`, `make dist-check`, `make dist-verify`, `make vscode-check`, and `make site-check`; re-run the local install E2E.
+- [x] 3.4.2 Phase gate: run `make check`, `make dist-check`, `make dist-verify`, `make vscode-check`, and `make site-check`; re-run the local install E2E. ✅ (completed: 2026-11-24 22:21)
   - **Task verify**: all pass; the installed `clorraine --version` is `1.2.0`.
 
 ### Phase 3 evidence
@@ -214,6 +214,21 @@ product path.
   `distribution-check` and `setup-check` now runs only the Docker SDK tests
   (`test_cli`, `test_detect`, `test_fetch`). The old target and files are
   removed after acceptance in Phase 4.
+- **Editor:** 171 editor tests pass, including `~/.local/bin` discovery,
+  `toolchain.path`, one `--toolchain` argument, the one-time legacy warning,
+  the manifest settings, and the packaged client. `make vscode-check` passes.
+- **Local E2E:** the candidate installed into a temp HOME from its exact archive,
+  `setup --toolchain` accepted rc24, and the installed `clorraine 1.2.0` ran
+  hello, file-copier, string-parser, buffer-container, volatile-mmio, the
+  hosted-amiga-13 file-copier, and the rc-1 negative on FS-UAE 3.2.35. No
+  FS-UAE/Xvfb process survived. Assets: archive 6,530,683 bytes
+  `6feac563…3aa8`, installer 18,260 bytes `14b2e9ef…f7c1`, VSIX 26,435 bytes
+  `dd8e30ca…62d9`; ROM `541f7467…1bb0`. Log
+  `build/tmp/phase3-local-e2e.log`.
+- **Phase gate:** `make check`, `make dist-check`, `make dist-verify`,
+  `make vscode-check`, `make site-check`, and the installed-candidate E2E pass.
+  `build/dist` contains the archive, VSIX, installer, and checksums. The
+  installed driver reports `clorraine 1.2.0`.
 - **Boundary:** the candidate is local; no tag, release, upload, or publication
   occurred.
 

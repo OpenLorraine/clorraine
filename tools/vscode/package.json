@@ -43,19 +43,19 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Language server executable. Empty searches CLORRAINE_LSP, ~/.clorraine/bin, trusted development builds, and PATH."
+          "description": "Language server executable. Empty searches CLORRAINE_LSP, ~/.local/bin, trusted development builds, and PATH."
         },
         "clorraine.driver.path": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Clorraine driver executable. Empty searches ~/.clorraine/bin, trusted development builds, and PATH."
+          "description": "Clorraine driver executable. Empty searches ~/.local/bin, trusted development builds, and PATH."
         },
-        "clorraine.sdk.path": {
+        "clorraine.toolchain.path": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Native Amiga SDK root. Empty lets the driver discover its SDK."
+          "description": "Upstream Amiga toolchain root containing bin/m68k-amigaos-gcc. Empty uses CLORRAINE_TOOLCHAIN or the CLI config. The old clorraine.sdk.path is read once with a warning."
         },
         "clorraine.fsUae.path": {
           "type": "string",

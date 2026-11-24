@@ -7,7 +7,7 @@ Clorraine programs without Docker. The v1.2.0 candidate is still in progress:
 |---|---|
 | `clorraine setup --toolchain` and config | Implemented in the candidate |
 | `--toolchain` selection and builds | Implemented in the candidate |
-| Linux installer and VSIX publication | Not published; installer is a later phase |
+| Linux installer, archive, and VSIX | Local candidate in `build/dist`; no publication |
 | Verified FS-UAE runner | Implemented; needs FS-UAE 3.2.0+, a licensed KS3.1 A1200 ROM, and a native toolchain |
 | macOS, Windows, WSL | Outside v1.2.0 |
 
@@ -24,8 +24,8 @@ No release is published from the candidate branch. Build from source for now.
 - A licensed 512 KB Kickstart 3.1 A1200 ROM for emulator runs. KS3.0 is not
   tested. The CLI does not treat FS-UAE's built-in AROS as a verified run.
 
-The installer is not published yet. Building from source needs Rust stable; the
-pinned Docker SDK remains the development image.
+The installer is a local candidate, not a published download. Building from
+source needs Rust stable; the pinned Docker SDK remains the development image.
 
 ## Toolchain pin
 
@@ -79,6 +79,36 @@ To check a toolchain without running a guest:
 make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
 ```
 
+## Local candidate and installer
+
+`make dist` builds the release binaries in the pinned container, packages the
+VSIX, writes the release documents, and creates the local candidate under
+`build/dist`:
+
+```sh
+make dist
+make dist-verify
+```
+
+The assets are the versioned archive, `install.sh`, the VSIX, and `SHA256SUMS`.
+`make dist-check` runs the hermetic installer and producer tests. Nothing is
+tagged, published, or uploaded.
+
+Install the exact local bytes:
+
+```sh
+build/dist/install.sh --archive build/dist/clorraine-1.2.0-x86_64-linux.tar.gz \
+  --checksums build/dist/SHA256SUMS --modify-path
+```
+
+The default prefix is `~/.local`, so the driver lands at
+`~/.local/bin/clorraine`. The installer checks Linux x86_64, glibc 2.38+, and
+the archive hash before extraction; it activates side by side with an atomic
+`current` switch. `--uninstall` removes the active version and PATH block;
+`--purge` also removes the retained versions and the CLI config. A network
+install verifies the pinned archive size and SHA-256 before extraction and is
+only meaningful after a release is published.
+
 ## FS-UAE
 
 With a native toolchain selected, `run --emulator` boots an A1200 with your
@@ -123,9 +153,9 @@ code --install-extension build/vscode/clorraine-1.2.0.vsix
 ```
 
 The installer does not bundle or place the VSIX, and no marketplace release is
-published. The extension update that follows this candidate uses
-`~/.local/bin` and `clorraine.toolchain.path`; until it ships, set
-`clorraine.driver.path` to the built `clorraine` binary if discovery fails.
+published. The extension discovers `~/.local/bin/clorraine` and uses
+`clorraine.toolchain.path` for the upstream root. The removed
+`clorraine.sdk.path` is read once with a warning when the new key is empty.
 
 ## Related
 

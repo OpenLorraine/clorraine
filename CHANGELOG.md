@@ -23,6 +23,12 @@ No changes since v1.2.0.
 - `make fs-uae-check KICKSTART=PATH [TOOLCHAIN=PATH]` runs hello, the four
   portable corpus programs, one A500-profile corpus program, and a return-1
   negative, and rejects a surviving FS-UAE or Xvfb process.
+- A local Linux candidate: `make dist` writes the versioned archive,
+  `install.sh`, VSIX, and `SHA256SUMS`; the installer checks the host and
+  archive, activates side by side, and supports uninstall/purge. `make
+  dist-verify` and `make dist-check` verify the candidate and its tests.
+- The editor discovers `~/.local/bin`, uses `clorraine.toolchain.path`, and
+  reads the removed `clorraine.sdk.path` once with a warning.
 - VS Code Build, Run and Run in FS-UAE actions over the saved entry file and its
   imported sources, machine-scoped tool settings and Linux desktop guidance.
   WSL2/Remote-WSL and Windows access are outside v1.2.0.

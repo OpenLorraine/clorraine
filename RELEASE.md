@@ -2,8 +2,14 @@
 
 > **Superseded 2026-11-24.** This Python-installer/support-pipeline design was
 > replaced by the Linux CLI v1.2.0 plan in `plans/linux-cli-v1.2.0`. No v1.2.0
-> asset was published. Keep this document as historical design and evidence;
-> do not run its commands or use it for a release.
+> asset was published. Keep the rest of this document as historical design and
+> evidence; do not run its commands.
+>
+> **Current candidate path:** `make dist` builds the local archive,
+> `install.sh`, VSIX, and `SHA256SUMS` under `build/dist`; `make dist-verify`
+> checks them, and `make dist-check` runs the hermetic installer/producer tests.
+> The user-facing install and toolchain instructions are in
+> `docs/linux-cli.md`. Publication still needs separate explicit approval.
 
 This document owns the v1.2.0 candidate, its evidence and the publication gate.
 It records what may be built locally, what the two manual workflows may upload

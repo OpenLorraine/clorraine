@@ -25,7 +25,7 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga` profile | <StatusBadge state="ready" label="Usable" /> | m68k GCC builds, `vamos` runs, FS-UAE gates |
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
-| Linux x86_64 CLI | <StatusBadge state="progress" label="Not published" /> | Toolchain setup, native builds, and the verified FS-UAE runner implemented; installer and VSIX are later phases |
+| Linux x86_64 CLI | <StatusBadge state="progress" label="Not published" /> | Toolchain setup, native builds, verified FS-UAE runner, local installer/archive, and local VSIX implemented; no publication |
 | Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
 | VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
 | WSL2/Remote-WSL and Windows/macOS | <StatusBadge state="progress" label="Not in v1.2.0" /> | Linux x86_64 is the only release target |

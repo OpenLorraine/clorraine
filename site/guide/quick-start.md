@@ -6,8 +6,8 @@ description: "Build Clorraine from source, select an upstream Amiga toolchain, o
 # Quick start
 
 > **No prebuilt release is currently published.** The Linux CLI candidate now
-> includes toolchain setup, native builds, and the verified FS-UAE runner. The
-> installer and VSIX publication are later phases.
+> includes toolchain setup, native builds, the verified FS-UAE runner, a local
+> installer/archive, and a locally built VSIX. Nothing is tagged or uploaded.
 
 Clorraine is a developer preview. v1.2.0 targets **Linux x86_64** only. WSL2,
 Remote-WSL, Windows, and macOS are outside this release.
@@ -65,7 +65,22 @@ Selection order is `--toolchain`, `CLORRAINE_TOOLCHAIN`, the stored config, then
 the marker-gated `PATH` fallback inside the pinned SDK container only.
 `--sdk-root` and `CLORRAINE_SDK` are removed.
 
-### 3. Build a program
+### 3. Build the local candidate (optional)
+
+`make dist` builds the release binaries and VSIX and writes the candidate
+archive, installer, and checksums under `build/dist`. Install the exact local
+bytes with:
+
+```sh
+build/dist/install.sh --archive build/dist/clorraine-1.2.0-x86_64-linux.tar.gz \
+  --checksums build/dist/SHA256SUMS
+```
+
+The default prefix is `~/.local`; add `--modify-path` to write the marked
+`PATH` block to `~/.profile`. `make dist-verify` checks the candidate, and
+`make dist-check` runs the hermetic installer tests.
+
+### 4. Build a program
 
 ```sh
 ./target/debug/clorraine build -p hosted-amiga examples/hello/hello.clo
@@ -79,7 +94,7 @@ The portable toolchain check is:
 make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
 ```
 
-### 4. FS-UAE
+### 5. FS-UAE
 
 With a native toolchain selected, `run --emulator` boots an A1200 with your
 licensed 512 KB Kickstart 3.1 A1200 ROM. A compiled wrapper records the guest

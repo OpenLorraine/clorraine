@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, "..");
 const staged = resolve(packageRoot, "../../build/vscode/extension");
 const toolNames = ["clorraine-lsp", "clorraine"] as const;
-const pathSettings = ["lsp.path", "driver.path", "sdk.path", "fsUae.path", "kickstart.path"];
+const pathSettings = ["lsp.path", "driver.path", "toolchain.path", "fsUae.path", "kickstart.path"];
 const profiles = ["hosted-amiga", "hosted-amiga-13", "host", "freestanding"];
 const workspaceLevels = ["workspaceValue", "workspaceFolderValue",
   "workspaceLanguageValue", "workspaceFolderLanguageValue"];
@@ -99,7 +99,7 @@ function run(scenario: Scenario = {}) {
     const home = join(scratch, "home");
     const workspace = join(scratch, "source workspace");
     const dirs: Record<Location, string> = {
-      installed: join(home, ".clorraine/bin"), debug: join(workspace, "target/debug"),
+      installed: join(home, ".local/bin"), debug: join(workspace, "target/debug"),
       release: join(workspace, "target/release"), path: join(scratch, "desktop-path"),
       custom: join(scratch, "custom root ; $ literal/bin"),
       environment: join(scratch, "environment/bin"), workspace: join(workspace, "workspace-tools"),
@@ -133,21 +133,21 @@ function run(scenario: Scenario = {}) {
       configuration[tool].globalValue = selected;
     }
     const optional = {
-      "sdk.path": join(scratch, "user SDK/amiga"),
+      "toolchain.path": join(scratch, "user toolchain"),
       "fsUae.path": join(scratch, "user emulator"),
       "kickstart.path": join(scratch, "user media.rom"),
     };
-    mkdirSync(optional["sdk.path"], { recursive: true });
+    mkdirSync(optional["toolchain.path"], { recursive: true });
     writeFileSync(optional["fsUae.path"], peer, { mode: 0o755 });
     writeFileSync(optional["kickstart.path"], "Not licensed media.\n");
     const hostile: Record<string, string> = {
       "lsp.path": executable("workspace", toolNames[0]),
       "driver.path": executable("workspace", toolNames[1]),
-      "sdk.path": join(dirs.workspace, "SDK/amiga"),
+      "toolchain.path": join(dirs.workspace, "toolchain"),
       "fsUae.path": join(dirs.workspace, "fs-uae"),
       "kickstart.path": join(dirs.workspace, "kickstart.rom"),
     };
-    mkdirSync(hostile["sdk.path"], { recursive: true });
+    mkdirSync(hostile["toolchain.path"], { recursive: true });
     writeFileSync(hostile["fsUae.path"], peer, { mode: 0o755 });
     writeFileSync(hostile["kickstart.path"], "Hostile test-only media bytes.\n");
     if (scenario.optionalUser) {
@@ -290,12 +290,12 @@ for (const workspaceLevel of workspaceLevels) {
 
 for (const workspaceLevel of workspaceLevels) {
   for (const optionalUser of [false, true]) {
-    test(`should ignore ${workspaceLevel} SDK emulator and ROM overrides with user paths ${optionalUser}`, () => {
+    test(`should ignore ${workspaceLevel} toolchain emulator and ROM overrides with user paths ${optionalUser}`, () => {
       const actual = run({ workspaceTool: "optional", workspaceLevel, optionalUser, command: "clorraine.runInFsUae" });
       selectedDriver(actual, "custom", "clorraine.runInFsUae");
       const args = actual.result.tasks[0].args;
       assert.ok(strings(args));
-      for (const [key, flag] of [["sdk.path", "--sdk-root"], ["fsUae.path", "--fs-uae"], ["kickstart.path", "--kickstart"]]) {
+      for (const [key, flag] of [["toolchain.path", "--toolchain"], ["fsUae.path", "--fs-uae"], ["kickstart.path", "--kickstart"]]) {
         assert.ok(!args.includes(actual.hostile[key]), "workspace path cannot silently supply a CLI override");
         assert.equal(args.includes(flag), optionalUser);
         if (optionalUser) assert.equal(args[args.indexOf(flag) + 1], actual.configuration[key].globalValue);

@@ -21,7 +21,7 @@ interface Scenario {
   /** Editor events delivered while the real selection reply is gated. */
   event?: "dependency" | "entry" | "save-only" | "alias" | "outside" | "nonclo";
   /** Boundary slot containing literal task-variable syntax. */
-  input?: "executable" | "entry" | "dependency" | "sdk" | "emulator" | "rom" | "cwd";
+  input?: "executable" | "entry" | "dependency" | "toolchain" | "emulator" | "rom" | "cwd";
   /** Literal bytes inserted into the selected input slot. */
   token?: string;
   /** The external peer returns a selection error after the barrier. */
@@ -68,15 +68,15 @@ function observe(scenario: Scenario = {}) {
     const driver = join(tools, literal("executable", "clorraine"));
     writeFileSync(driver, "#!/usr/bin/env node\nif (process.argv[2] === '--version') console.log('clorraine 1.1.2'); else process.exitCode = 97;\n");
     chmodSync(driver, 0o755);
-    const sdk = join(tools, literal("sdk", "sdk"));
+    const toolchain = join(tools, literal("toolchain", "toolchain"));
     const emulator = join(tools, literal("emulator", "fs-uae"));
     const rom = join(tools, literal("rom", "kickstart.rom"));
-    mkdirSync(sdk);
+    mkdirSync(toolchain);
     writeFileSync(emulator, "#!/bin/sh\nexit 97\n");
     chmodSync(emulator, 0o755);
     writeFileSync(rom, "Observation-only bytes; not licensed media.\n");
     const settings = {
-      "driver.path": driver, "sdk.path": sdk, "fsUae.path": emulator, "kickstart.path": rom,
+      "driver.path": driver, "toolchain.path": toolchain, "fsUae.path": emulator, "kickstart.path": rom,
     };
     const config = join(scratch, "scenario.json");
     writeFileSync(config, JSON.stringify({
@@ -151,7 +151,7 @@ for (const scenario of [{ failure: true }, { disposePending: true },
 }
 
 // ProcessExecution still interprets task variables; every final input slot is unsafe.
-for (const input of ["executable", "entry", "dependency", "sdk", "emulator", "rom", "cwd"] as const) {
+for (const input of ["executable", "entry", "dependency", "toolchain", "emulator", "rom", "cwd"] as const) {
   for (const token of ["${command:marker}", "${env:MARKER}", "${config:marker}", "${input:marker}", "${unfinished"]) {
     test(`should reject literal ${token} in task ${input} before submission`, () => {
       const { actual, tasks, message } = observe({ input, token, command: commands[2] });
@@ -170,7 +170,7 @@ test("should preserve ordinary spaces punctuation unicode and dollar literals in
   assert.equal(tasks[0].process, driver);
   assert.equal(tasks[0].cwd, root);
   assert.ok(Array.isArray(tasks[0].args));
-  assert.deepEqual(tasks[0].args, ["run", "--profile", "hosted-amiga", "--sdk-root", settings["sdk.path"],
+  assert.deepEqual(tasks[0].args, ["run", "--profile", "hosted-amiga", "--toolchain", settings["toolchain.path"],
     "--emulator", "--fs-uae", settings["fsUae.path"], "--kickstart", settings["kickstart.path"], entry, dependency]);
   cleaned(actual);
 });

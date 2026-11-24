@@ -28,6 +28,7 @@ interface Manifest {
   contributes: {
     languages: LanguageContribution[];
     grammars: GrammarContribution[];
+    configuration: { properties: Record<string, unknown> };
   };
 }
 
@@ -72,6 +73,17 @@ test("should keep the staged package version equal to the compiler version", () 
   const match = /^version = "([^"]+)"/m.exec(cargo);
   assert.ok(match, "compiler/Cargo.toml has a version");
   assert.equal(manifest.version, match[1]);
+});
+
+test("should expose toolchain.path and remove the legacy sdk.path setting", () => {
+  const manifest = readJson(join(stagedRoot, "package.json"));
+  const properties = manifest.contributes.configuration.properties;
+  assert.ok("clorraine.toolchain.path" in properties, "toolchain.path is contributed");
+  assert.ok(!("clorraine.sdk.path" in properties), "sdk.path is removed");
+  for (const key of ["clorraine.lsp.path", "clorraine.driver.path",
+    "clorraine.fsUae.path", "clorraine.kickstart.path"]) {
+    assert.ok(key in properties, `${key} remains`);
+  }
 });
 
 test("should use the canonical grammar bytes", () => {

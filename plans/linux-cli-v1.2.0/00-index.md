@@ -1,6 +1,6 @@
 # Linux CLI v1.2.0
 
-> **Status**: 🔄 Executing — Phase 2 complete (14/28); review findings fixed; Phase 3 next
+> **Status**: 🔄 Executing — Phase 3 complete (23/28); post-phase review running
 > **Version**: 1.2.0
 > **Scope**: Linux x86_64 only
 > **Evidence**: `spikes/07-linux-cli-fs-uae/README.md`

@@ -12,11 +12,17 @@ This package adds Clorraine language support:
 ## Install the extension
 
 The extension needs compatible Clorraine tools; it does not contain a compiler
-or install an SDK. After a native Linux installation, run the exact
-`code --install-extension ...` command printed by the installer. You can also
-use **Extensions: Install from VSIX...** and select that installation's
-`clorraine.vsix`. Installing or updating the extension is an explicit action:
-the installer does not change VS Code or your shell configuration.
+or install a toolchain. Build the local VSIX with `make vscode-package` and
+install `build/vscode/clorraine-1.2.0.vsix`:
+
+```sh
+code --install-extension build/vscode/clorraine-1.2.0.vsix
+```
+
+You can also use **Extensions: Install from VSIX...**. The CLI installer and
+candidate archive do not bundle or place the VSIX. Installing or updating the
+extension is an explicit action: the installer does not change VS Code or your
+shell configuration.
 
 Restart or reload the editor after installation. Grant workspace trust only
 for source folders you trust. In Restricted Mode, the extension does not start
@@ -28,13 +34,13 @@ The language server is selected in this order:
 
 1. the `clorraine.lsp.path` setting;
 2. the `CLORRAINE_LSP` environment variable;
-3. `~/.clorraine/bin/clorraine-lsp`;
+3. `~/.local/bin/clorraine-lsp`;
 4. `target/debug/clorraine-lsp`, then `target/release/clorraine-lsp`, in trusted
    workspace folders;
 5. executable files in absolute `PATH` directories.
 
 Driver discovery uses `clorraine.driver.path`, then
-`~/.clorraine/bin/clorraine`, trusted workspace development builds, and `PATH`.
+`~/.local/bin/clorraine`, trusted workspace development builds, and `PATH`.
 The default installation therefore works when VS Code starts from a desktop
 launcher without Clorraine in its inherited `PATH`.
 
@@ -45,7 +51,7 @@ Settings**, not workspace or language-specific settings:
 |---|---|
 | `clorraine.lsp.path` | Language server executable; empty uses discovery above |
 | `clorraine.driver.path` | Build/run driver executable; empty uses discovery above |
-| `clorraine.sdk.path` | Native SDK's `sdk/amiga` directory; empty lets the driver discover its SDK |
+| `clorraine.toolchain.path` | Upstream Amiga toolchain root containing `bin/m68k-amigaos-gcc`; empty uses `CLORRAINE_TOOLCHAIN` or the CLI config |
 | `clorraine.fsUae.path` | Native Linux FS-UAE executable |
 | `clorraine.kickstart.path` | Locally licensed Kickstart ROM for the native emulator action |
 
@@ -54,6 +60,11 @@ another installation. Correct or clear the setting. Workspace and
 language-specific path overrides are ignored. For a custom installation root,
 set both tool paths to the corresponding executables under that root's `bin`
 directory; you need not edit `PATH`.
+
+The removed `clorraine.sdk.path` is read once when `toolchain.path` is empty.
+The action passes it to the CLI as `--toolchain` and shows a warning that the
+old SDK layout is no longer used; a second action does not warn again. Select
+the upstream root in `clorraine.toolchain.path` to clear the warning path.
 Keep paths literal, without surrounding shell quotes or `~` expansion.
 
 Development builds remain available with
@@ -66,7 +77,7 @@ Open a saved `.clo` entry file, then use the Command Palette:
 | Command | Result |
 |---|---|
 | **Clorraine: Build** | Compile the active entry and its saved dependencies |
-| **Clorraine: Run** | Build and run on the host, or through vamos for an Amiga profile |
+| **Clorraine: Run** | Build and run on the host, or through `vamos` for an Amiga profile (`vamos` must be on `PATH`) |
 | **Clorraine: Run in FS-UAE** | Build an Amiga program and start native Linux FS-UAE |
 
 Select `host`, `hosted-amiga`, or `hosted-amiga-13` using `clorraine.profile`.
@@ -124,14 +135,17 @@ The extension does not silently compile only the entry.
 
 Install FS-UAE separately and supply your own licensed media. Configure
 `clorraine.fsUae.path` and `clorraine.kickstart.path` in User Settings.
-If setting the SDK explicitly, select its **`sdk/amiga`** directory, not `sdk`.
-These values are passed only to applicable actions.
+If setting the toolchain explicitly, select the upstream root containing
+`bin/m68k-amigaos-gcc`, not an old `sdk/amiga` directory. These values are
+passed only to applicable actions.
 
-The native action uses an isolated A1200 configuration with your licensed
-Kickstart 3.1 ROM for either Amiga compilation profile. It stages only the
-program and startup script in a private guest drive. Close FS-UAE normally
-to let the driver remove its private run directory. Emulator process success
-does **not** establish the guest program's exit status.
+The native action uses the verified runner: it boots an A1200 with your
+licensed 512 KB Kickstart 3.1 A1200 ROM, runs the program through a compiled
+wrapper, and accepts the run only for rc 0 plus status `ok`. A failed or
+timed-out guest prints its output and retains the private run; the driver
+prints the retained path. FS-UAE 3.2.0 or newer is required. The A500 profile
+binary also runs on this recipe, but that is not a Kickstart 1.3 proof; the
+A500/KS1.3 gates remain in the Docker SDK.
 
 ## Platform scope
 
