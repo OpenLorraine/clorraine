@@ -5,10 +5,9 @@ description: "Build Clorraine from source, select an upstream Amiga toolchain, o
 
 # Quick start
 
-> **No prebuilt release is currently published.** The Linux CLI candidate is
-> being completed in phases. The toolchain setup and native build path are
-> implemented; the installer, VSIX publication and verified FS-UAE runner are
-> later phases.
+> **No prebuilt release is currently published.** The Linux CLI candidate now
+> includes toolchain setup, native builds, and the verified FS-UAE runner. The
+> installer and VSIX publication are later phases.
 
 Clorraine is a developer preview. v1.2.0 targets **Linux x86_64** only. WSL2,
 Remote-WSL, Windows, and macOS are outside this release.
@@ -19,7 +18,7 @@ Remote-WSL, Windows, and macOS are outside this release.
 |---|---|---|
 | **Linux CLI candidate** | `clc`, `clorraine`, `clorraine-lsp`; toolchain setup and native builds | Linux x86_64, glibc 2.38+, Rust to build from source, the upstream rc24 toolchain |
 | **Docker SDK** | Full m68k toolchain, `vamos`, FS-UAE, NDK headers, Amiga gates | Docker; network; a 30–90 minute first image build |
-| **Verified FS-UAE runner** | A1200/KS3.1 guest run with rc/status evidence | Next phase; not yet part of the candidate |
+| **Verified FS-UAE runner** | A1200/KS3.1 guest run with rc/status evidence | Native toolchain, FS-UAE 3.2.0+, licensed Kickstart 3.1 A1200 ROM |
 | **VSIX** | The VS Code client | Built locally with `make vscode-package`; not published |
 
 No one-click installer or marketplace extension is published.
@@ -82,14 +81,22 @@ make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
 
 ### 4. FS-UAE
 
-The verified guest runner is the next phase. It will boot an A1200 with a
-licensed 512 KB Kickstart 3.1 A1200 ROM, run the program through a wrapper that
-records the return code, and write a status marker only for a zero exit. The
-native `--emulator` path reports that the verified runner is unavailable in this
-phase, while the marked SDK container keeps its legacy handoff. Neither proves
-guest success; do not use it as acceptance evidence. FS-UAE 3.2.0 or newer is required; Ubuntu 24.04's
-3.1.66 package is too old. AROS is manual-only and is not an acceptance path.
-The A500/Kickstart 1.3 gates remain in the Docker development environment.
+With a native toolchain selected, `run --emulator` boots an A1200 with your
+licensed 512 KB Kickstart 3.1 A1200 ROM. A compiled wrapper records the guest
+return code and writes a status marker only for zero; the CLI accepts the run
+only for rc 0 plus status `ok`, reads the output, and removes the private run.
+Failed or timed-out runs retain the directory and print its path.
+
+```sh
+./target/debug/clorraine run -p hosted-amiga --emulator \
+  --kickstart "$HOME/amiga/roms/amiga-os-310-a1200.rom" \
+  examples/hello/hello.clo
+```
+
+FS-UAE 3.2.0 or newer is required; Ubuntu 24.04's 3.1.66 package is too old.
+AROS is manual-only and is not an acceptance path. `make fs-uae-check` runs the
+real guest matrix locally; the A500/Kickstart 1.3 gates remain in the Docker
+development environment.
 
 ## Your first program
 

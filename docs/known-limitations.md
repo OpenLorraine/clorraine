@@ -263,11 +263,12 @@ be treated as a v1.2.0 publication.
 - **Guest media.** The tested format is a licensed 512 KB Kickstart 3.1 A1200
   ROM. KS3.0 is untested. FS-UAE's built-in AROS can boot manually, but it is
   not a supported or acceptance path and the CLI does not launch it silently.
-- **Guest result.** The verified FS-UAE runner is a later phase. A native
-  toolchain selection reports that the runner is unavailable, and the marked SDK
-  container keeps its legacy handoff. Neither path proves guest success; do not
-  use it as acceptance evidence. The A500/Kickstart 1.3 profile remains covered by the SDK
-  development gates, not by the Linux CLI emulator recipe.
+- **Guest result.** A native `run --emulator` uses the verified runner: a
+  compiled wrapper writes the return code and a status marker only for zero,
+  and the CLI reads both before cleanup. FS-UAE must be 3.2.0 or newer. The
+  marked SDK container keeps its legacy handoff. The A500/Kickstart 1.3 profile
+  remains covered by the SDK development gates, not by the A1200/KS3.1 Linux CLI
+  recipe. `make fs-uae-check` runs the real guest matrix locally.
 - **Editor.** The extension is a separate local artifact built with
   `make vscode-package`. The installer does not place it, and no marketplace
   release is published.

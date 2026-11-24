@@ -52,6 +52,29 @@ For a headless capture:
 make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1 CAPTURE=1
 ```
 
+## Linux CLI verified run
+
+The Linux CLI can run a built program as an A1200/KS3.1 guest without Docker:
+
+```sh
+clorraine run hello.clo -p hosted-amiga --emulator \
+  --kickstart ~/amiga/roms/amiga-os-310-a1200.rom
+```
+
+The CLI validates FS-UAE 3.2.0 or newer and a 512 KB Kickstart 3.1 A1200 ROM,
+stages a private directory drive, and runs the program through a compiled
+wrapper. The wrapper records the return code and writes `ok` only for zero; the
+host reads both markers before cleanup. `--capture` writes the guest output to
+`out.txt`. A failed or timed-out run keeps its private directory and prints the
+path.
+
+Run the whole local matrix with:
+
+```sh
+make fs-uae-check KICKSTART=~/amiga/roms/amiga-os-310-a1200.rom \
+  TOOLCHAIN=~/toolchains/m68k-amigaos-gcc-16.2
+```
+
 ## Media policy
 
 - **No ROM is required for `vamos`.**

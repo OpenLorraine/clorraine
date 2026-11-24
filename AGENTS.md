@@ -52,6 +52,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
+| `make fs-uae-check KICKSTART=… [TOOLCHAIN=…]` | Run hello, the four hosted-amiga corpus programs, one hosted-amiga-13 corpus program, and an rc-1 negative in a real A1200/KS3.1 FS-UAE; compare output and reject a surviving emulator/Xvfb process |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |

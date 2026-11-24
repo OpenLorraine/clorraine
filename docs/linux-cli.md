@@ -8,7 +8,7 @@ Clorraine programs without Docker. The v1.2.0 candidate is still in progress:
 | `clorraine setup --toolchain` and config | Implemented in the candidate |
 | `--toolchain` selection and builds | Implemented in the candidate |
 | Linux installer and VSIX publication | Not published; installer is a later phase |
-| Verified FS-UAE runner | Next phase; native emulator selection is currently unavailable |
+| Verified FS-UAE runner | Implemented; needs FS-UAE 3.2.0+, a licensed KS3.1 A1200 ROM, and a native toolchain |
 | macOS, Windows, WSL | Outside v1.2.0 |
 
 No release is published from the candidate branch. Build from source for now.
@@ -81,16 +81,36 @@ make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
 
 ## FS-UAE
 
-The verified guest runner is the next phase. It will boot an A1200 with a
-licensed KS3.1 A1200 ROM, run the program through a small wrapper that records
-the return code, and write a status marker only for a zero exit. The CLI reads
-that result before removing the private run.
+With a native toolchain selected, `run --emulator` boots an A1200 with your
+licensed Kickstart 3.1 A1200 ROM and runs the program through a small compiled
+wrapper. The wrapper records the return code in `clorraine-rc.txt` and writes
+`clorraine-status.txt` only for a zero exit. The CLI accepts the run only for
+rc 0 plus status `ok`, reads the guest output, then removes the private run. A
+failed, unreadable, or timed-out run retains the private directory and prints
+its path.
 
-Until that runner lands, a native toolchain selection reports that the verified
-runner is unavailable, and the marked SDK container keeps its legacy handoff.
-Neither path proves guest success; do not use it as acceptance evidence. The A500/Kickstart 1.3
-gates remain the SDK development gates; the Linux CLI's emulator recipe is
-A1200/KS3.1 and is not a Kickstart 1.3 proof.
+```sh
+./target/debug/clorraine run -p hosted-amiga --emulator \
+  --kickstart "$HOME/amiga/roms/amiga-os-310-a1200.rom" \
+  examples/hello/hello.clo
+```
+
+FS-UAE is selected by `--fs-uae`, `CLORRAINE_FS_UAE`, then `PATH`; the ROM by
+`--kickstart` then `CLORRAINE_KICKSTART`. The timeout defaults to 90 seconds and
+is set with `CLORRAINE_EMULATOR_TIMEOUT_SECONDS` (1–3600). `--capture` writes
+the guest output to `out.txt` and prints its path.
+
+The local guest check runs hello, the four corpus programs, one A500-profile
+corpus program, and a return-1 negative:
+
+```sh
+make fs-uae-check KICKSTART="$HOME/amiga/roms/amiga-os-310-a1200.rom" \
+  TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
+```
+
+`TOOLCHAIN` may be omitted when the CLI has a stored selection. The A500 profile
+binary runs on the A1200 recipe; this is not a Kickstart 1.3 proof. The
+A500/KS1.3 gates remain the SDK development gates.
 
 ## Editor
 

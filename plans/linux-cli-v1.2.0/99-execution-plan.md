@@ -2,7 +2,7 @@
 
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-24 21:14
-> **Progress**: 13/28 tasks (46%)
+> **Progress**: 14/28 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -115,7 +115,7 @@ product path.
 
 ### Step 2.3: Gate
 
-- [ ] 2.3.1 Phase gate: run `make check` and `make fs-uae-check KICKSTART=<KS3.1 A1200>`; run the four corpus programs as guests and compare expected output.
+- [x] 2.3.1 Phase gate: run `make check` and `make fs-uae-check KICKSTART=<KS3.1 A1200>`; run the four corpus programs as guests and compare expected output. ✅ (completed: 2026-11-24 21:23)
   - **Task verify**: all four corpus outputs match; one `hosted-amiga-13` corpus run matches; the rc-1 negative fails; no emulator run remains after the command.
 
 ### Phase 2 evidence
@@ -143,6 +143,9 @@ product path.
   file-copier, and the rc-1 negative on FS-UAE 3.2.35 with rc24 and the
   licensed 524,299-byte KS3.1 A1200 ROM (SHA-256 `541f7467…1bb0`). No FS-UAE
   or Xvfb process survived. The log is `build/tmp/fs-uae-check.log`.
+- **Phase gate:** `make check`, `make site-check`, and the real
+  `make fs-uae-check` pass after the docs update. The final logs are
+  `build/tmp/phase2-final-{check,site,fs-uae}.log`.
 
 **Deliverables**: verified FS-UAE runner, capture, real guest evidence.
 **Phase gate**: `make check` + `make fs-uae-check` + corpus guest diff.

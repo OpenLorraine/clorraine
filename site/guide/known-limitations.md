@@ -16,7 +16,7 @@ edge cases and their workarounds, is
 |---|---|---|
 | Developer preview | Interfaces, packaging, and platform support may change | Use it for experiments and feedback, not production work |
 | Linux x86_64 only | WSL2/Remote-WSL, native Windows and macOS are outside v1.2.0 and are not supported claims | Build from source on another platform at your own risk; no WSL/Windows acceptance is provided |
-| Linux CLI candidate | Installer, VSIX and the verified FS-UAE runner are later phases; no binary release is published | Build from source, download the rc24 toolchain, and run `clorraine setup --toolchain PATH` |
+| Linux CLI candidate | Installer and VSIX publication are later phases; the verified FS-UAE runner is implemented; no binary release is published | Build from source, download the rc24 toolchain, and run `clorraine setup --toolchain PATH` |
 | Host floor | glibc 2.38+; Ubuntu 24.04 is the minimum baseline | Ubuntu 22.04 cannot run the rc24 host tools |
 | Toolchain and emulator | rc24 only; FS-UAE 3.2.0+; licensed Kickstart 3.1 A1200 ROM for verified runs | KS3.0 is untested; AROS is manual-only and not an acceptance path |
 | Host-only CI | The GitHub Actions runner does not execute the Amiga legs | Run `make verify` locally for full acceptance |

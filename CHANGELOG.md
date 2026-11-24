@@ -15,6 +15,13 @@ No changes since v1.2.0.
   or the stored config. Host builds need no toolchain.
 - `make toolchain-check TOOLCHAIN=PATH` builds hello, the portable corpus, and
   the freestanding program with the selected upstream compiler.
+- Verified native FS-UAE runs: `run --emulator` validates FS-UAE 3.2.0+ and a
+  512 KB Kickstart 3.1 A1200 ROM, stages a private A1200 directory drive, and
+  proves success with the compiled wrapper's rc 0 plus status `ok`. Guest output
+  is printed or captured; failed runs are retained with their path.
+- `make fs-uae-check KICKSTART=PATH [TOOLCHAIN=PATH]` runs hello, the four
+  portable corpus programs, one A500-profile corpus program, and a return-1
+  negative, and rejects a surviving FS-UAE or Xvfb process.
 - VS Code Build, Run and Run in FS-UAE actions over the saved entry file and its
   imported sources, machine-scoped tool settings and Linux desktop guidance.
   WSL2/Remote-WSL and Windows access are outside v1.2.0.

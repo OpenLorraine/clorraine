@@ -34,7 +34,9 @@ Commands:
 | `--release` | Optimize with `-O2`; strip and section-GC on Linux/Amiga |
 | `--size` | Optimize for size with `-Os`; same release processing; cannot combine with `--release` |
 | `--emit-c` | Print the generated C after building |
-| `--emulator` | Amiga run: marked SDK container legacy handoff; native toolchains report the verified runner is unavailable until the next phase |
+| `--emulator` | Amiga run: verified FS-UAE guest run with a native toolchain; the marked SDK container keeps its legacy handoff |
+| `--fs-uae PATH` | FS-UAE executable for a native emulator run (`CLORRAINE_FS_UAE`, then `PATH`) |
+| `--kickstart PATH` | Kickstart 3.1 A1200 ROM for a native emulator run (`CLORRAINE_KICKSTART`) |
 | `--toolchain PATH` | Toolchain root for `setup`, non-host `build`, and non-host `run` |
 | `--capture` | Write program stdout to `out.txt` and print its path |
 | `-o FILE` | `emit` only: write C to `FILE` (default stdout) |
@@ -54,6 +56,12 @@ canonical path. `build` and `run` resolve a toolchain in this order:
 `PATH` fallback inside the pinned SDK container. `--sdk-root` and
 `CLORRAINE_SDK` are removed. Host builds do not need a toolchain.
 
+A native `run --emulator` requires FS-UAE 3.2.0 or newer and a 512 KB Kickstart
+3.1 A1200 ROM. The timeout defaults to 90 seconds
+(`CLORRAINE_EMULATOR_TIMEOUT_SECONDS`, 1–3600). The guest success oracle is the
+compiled wrapper: rc 0 plus status `ok`. `--capture` writes the guest output to
+`out.txt`; a failed run is retained with its path printed.
+
 ### Examples
 
 ```sh
@@ -61,6 +69,8 @@ clorraine run hello.clo
 clorraine setup --toolchain ~/toolchains/m68k-amigaos-gcc-16.2
 clorraine run hello.clo -p hosted-amiga
 clorraine build hello.clo -p hosted-amiga-13 --release
+clorraine run hello.clo -p hosted-amiga --emulator \
+  --kickstart ~/amiga/roms/amiga-os-310-a1200.rom
 clorraine emit hello.clo -p host -o build/hello.c
 clorraine --explain E10020
 clorraine --doc -o build/api examples/hello/hello.clo
@@ -70,9 +80,9 @@ clorraine --doc -o build/api examples/hello/hello.clo
 
 | Code | Meaning |
 |---|---|
-| `0` | Success, including help, version, and the legacy FS-UAE handoff |
-| `1` | Clorraine diagnostic, missing tool, failed toolchain probe, or C compiler failure |
-| `2` | Usage error, invalid toolchain selection, or no toolchain selected |
+| `0` | Success, including help, version, a verified guest run, and the legacy FS-UAE handoff |
+| `1` | Clorraine diagnostic, missing tool, failed toolchain probe, C compiler failure, or guest failure |
+| `2` | Usage error, invalid toolchain, or invalid emulator, ROM, or timeout selection |
 
 A `run` exits with the program's own code, so a program that exits 2 is
 indistinguishable from a usage or environment error.

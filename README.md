@@ -17,7 +17,7 @@
 |---|---|
 | Compiler, checker, ownership, C99 emission | Usable; guarded by the specification and test suites |
 | Amiga SDK and four profiles | Implemented for the tracked surface; tested on emulator and target legs |
-| Linux x86_64 native CLI | v1.2.0 candidate; toolchain setup and builds implemented; installer/VSIX publication pending |
+| Linux x86_64 native CLI | v1.2.0 candidate; toolchain setup, builds, and the verified FS-UAE runner implemented; installer/VSIX publication pending |
 | VS Code extension | Packages and passes its packaged-client test (`make vscode-check`) |
 | Windows/macOS/WSL support | Outside v1.2.0; Linux x86_64 is the release target |
 | Documentation site | Developer preview published at [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
@@ -26,8 +26,8 @@
 
 No prebuilt v1.2.0 release is published. The previous Python-installer/support
 pipeline was superseded by the Linux CLI v1.2.0 plan. The candidate now has
-`clorraine setup --toolchain PATH` and native builds; the installer, VSIX and
-verified FS-UAE runner are later phases. Until the installer ships, build the
+`clorraine setup --toolchain PATH`, native builds, and the verified FS-UAE
+runner; the installer and VSIX are later phases. Until the installer ships, build the
 CLI from source with `cargo build --workspace`, download the upstream rc24
 toolchain yourself, and select it with `clorraine setup --toolchain PATH`.
 

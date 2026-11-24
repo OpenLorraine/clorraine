@@ -1,9 +1,9 @@
 # Clorraine v1.2.0
 
 > **Candidate release record.** v1.2.0 is the current Linux x86_64 CLI
-> candidate. Its installer, VSIX and verified FS-UAE runner are later phases;
-> no release asset is published. v1.1.2 remains the latest published release
-> under its MIT terms.
+> candidate. Toolchain setup, native builds, and the verified FS-UAE runner are
+> implemented; the installer and VSIX are later phases. No release asset is
+> published. v1.1.2 remains the latest published release under its MIT terms.
 
 Clorraine is a compiler for the frozen v1.0 language with the approved v1.1
 language surfaces, plus a build/run driver for the `host`, `hosted-amiga`,
@@ -25,21 +25,31 @@ validates a user-supplied upstream toolchain and builds without Docker.
 - **Linux desktop editor candidate.** The VS Code extension remains a separate
   local VSIX. The installer does not place it and no marketplace release is
   published.
+- **Verified FS-UAE runner.** A native `run --emulator` validates FS-UAE 3.2.0+
+  and a licensed 512 KB Kickstart 3.1 A1200 ROM, stages a private A1200
+  directory drive, and runs the program through a compiled wrapper. Success is
+  rc 0 plus status `ok`; the guest output is printed or captured, and a failed
+  run is retained with its path. Both Amiga profiles run on the A1200 recipe.
+- **Real guest check.** `make fs-uae-check KICKSTART=PATH [TOOLCHAIN=PATH]` runs
+  hello, the four portable corpus programs, one A500-profile corpus program, and
+  a return-1 negative, and rejects a surviving FS-UAE or Xvfb process.
 - **Legacy SDK container.** The pinned Docker SDK keeps its marker-gated PATH
   lookup and FS-UAE host handoff for development. A user host with a compiler on
   PATH but no selection is told to run `setup`.
 
-The verified FS-UAE runner, crash-safe installer with separate VSIX, and the
-legacy-pipeline removal are the next phases. No tag, release, upload, or
-publication has occurred.
+The crash-safe installer with separate VSIX and the legacy-pipeline removal are
+the next phases. No tag, release, upload, or publication has occurred.
 
 ## Verification
 
-The Phase 1 candidate checks are `cargo test --workspace`,
-`make toolchain-check TOOLCHAIN=<rc24 root>`, `make check`, and `make site-check`.
-The full acceptance gate is `make verify`, which needs the pinned SDK image, an
-X display, and the licensed media. The installer and FS-UAE acceptance evidence
-are added in later phases.
+The candidate checks are `cargo test --workspace`, 19 FS-UAE runner spec cases,
+`make toolchain-check TOOLCHAIN=<rc24 root>`, `make fs-uae-check
+KICKSTART=<KS3.1 A1200> TOOLCHAIN=<rc24 root>`, `make check`, and
+`make site-check`. The real guest check passed hello, the four corpus programs,
+the A500-profile corpus program, and the rc-1 negative on FS-UAE 3.2.35 with the
+licensed 524,299-byte KS3.1 A1200 ROM. The full acceptance gate is `make verify`,
+which needs the pinned SDK image, an X display, and the licensed media. The
+installer and archive acceptance evidence are added in later phases.
 
 ## Known limitations
 
@@ -49,9 +59,10 @@ are added in later phases.
 - FS-UAE 3.2.0 or newer. Ubuntu 24.04's 3.1.66 package is below the requirement.
 - The tested guest media is a licensed 512 KB Kickstart 3.1 A1200 ROM. KS3.0 is
   untested; AROS is manual-only and not an acceptance path.
-- A native toolchain selection reports that the verified `--emulator` runner is
-  unavailable in this phase; the marked SDK container keeps its legacy handoff.
-  Neither proves guest success; the verified runner is the next phase.
+- The verified `--emulator` runner requires a native toolchain, FS-UAE 3.2.0+,
+  and a licensed 512 KB Kickstart 3.1 A1200 ROM. It is an A1200/KS3.1 recipe,
+  not a Kickstart 1.3 proof; the A500/KS1.3 gates remain in the SDK. A failed
+  guest leaves its private run on disk for inspection.
 - macOS, Windows, WSL, and ARM hosts are outside v1.2.0.
 - The accepted language and platform limitations remain in
   `docs/known-limitations.md`.
