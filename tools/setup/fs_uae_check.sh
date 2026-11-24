@@ -13,8 +13,9 @@
 #
 # The check requires a clean process start: close any FS-UAE or Xvfb process
 # before running it. Every invocation is followed by the no-survivor assertion,
-# including a failing guest or the negative. On failure the temporary evidence
-# directory is kept and its path is printed; a successful run removes it.
+# including a failing guest or the negative. A failed check keeps the temporary
+# evidence directory and prints its path; a dirty-start preflight prints the
+# live PIDs and removes the empty directory; a successful check removes it.
 set -euo pipefail
 
 rom="${1:-}"

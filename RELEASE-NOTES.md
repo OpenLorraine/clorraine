@@ -28,8 +28,9 @@ validates a user-supplied upstream toolchain and builds without Docker.
 - **Verified FS-UAE runner.** A native `run --emulator` validates FS-UAE 3.2.0+
   and a licensed 512 KB Kickstart 3.1 A1200 ROM, stages a private A1200
   directory drive, and runs the program through a compiled wrapper. Success is
-  rc 0 plus status `ok`; the guest output is printed or captured, and a failed
-  run is retained with its path. Both Amiga profiles run on the A1200 recipe.
+  rc 0 plus status `ok`; a successful guest's output is printed or captured, and
+  a failed guest prints its output and is retained with its path. Both Amiga
+  profiles run on the A1200 recipe.
 - **Real guest check.** `make fs-uae-check KICKSTART=PATH [TOOLCHAIN=PATH]` runs
   hello, the four portable corpus programs, one A500-profile corpus program, and
   a return-1 negative, and rejects a surviving FS-UAE or Xvfb process.

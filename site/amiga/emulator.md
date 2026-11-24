@@ -54,10 +54,12 @@ make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1 CAPTUR
 
 ## Linux CLI verified run
 
-The Linux CLI can run a built program as an A1200/KS3.1 guest without Docker:
+With a native toolchain selected (see `clorraine setup --toolchain PATH`), the
+Linux CLI can run a built program as an A1200/KS3.1 guest without Docker:
 
 ```sh
 clorraine run hello.clo -p hosted-amiga --emulator \
+  --toolchain ~/toolchains/m68k-amigaos-gcc-16.2 \
   --kickstart ~/amiga/roms/amiga-os-310-a1200.rom
 ```
 

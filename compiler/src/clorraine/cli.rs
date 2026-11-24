@@ -109,7 +109,7 @@ Options:
       --toolchain PATH                Toolchain root (setup/build/run; or CLORRAINE_TOOLCHAIN)
       --fs-uae PATH                   FS-UAE executable for a native emulator run (or CLORRAINE_FS_UAE, then PATH)
       --kickstart PATH                Kickstart 3.1 A1200 ROM for a native emulator run (or CLORRAINE_KICKSTART)
-      --capture                       Write successful program stdout to out.txt; print its path
+      --capture                       Write program stdout to out.txt; print its path (verified guest: success only)
   -o FILE                             emit only: write C to FILE (default: stdout)
       --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
       --explain CODE                  Print the registry entry for a diagnostic code
@@ -123,7 +123,9 @@ Exit codes:
   2  usage error, invalid/missing toolchain, or invalid emulator, ROM, or timeout selection
 
 A native emulator run uses FS-UAE 3.2.0 or newer with a 512 KB Kickstart 3.1
-A1200 ROM. The marked SDK container prints the FS-UAE host handoff instead.
+A1200 ROM. A verified guest writes out.txt only on success; a failed guest
+prints its output and retains the run. The marked SDK container prints the
+FS-UAE host handoff instead.
 
 Host, vamos, and freestanding runs exit with the program's own code. A verified
 guest failure exits 1 for every nonzero guest code.

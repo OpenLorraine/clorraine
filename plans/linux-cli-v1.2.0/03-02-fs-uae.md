@@ -184,8 +184,9 @@ A500 profile to accept `--emulator` stays valid.
   `pgrep`, starts only when no FS-UAE or Xvfb process is alive, and asserts the
   same empty set after every invocation, including a failing guest and the rc-1
   negative. It runs the CLI under `xvfb-run` when no display is set. A failed
-  check keeps its evidence directory and prints the path; a successful check
-  removes it.
+  check keeps its evidence directory and prints the path; a dirty-start
+  preflight removes the empty temporary directory; a successful check removes
+  it.
 
 ## Test seam
 

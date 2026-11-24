@@ -38,7 +38,7 @@ Commands:
 | `--fs-uae PATH` | FS-UAE executable for a native emulator run (`CLORRAINE_FS_UAE`, then `PATH`) |
 | `--kickstart PATH` | Kickstart 3.1 A1200 ROM for a native emulator run (`CLORRAINE_KICKSTART`) |
 | `--toolchain PATH` | Toolchain root for `setup`, non-host `build`, and non-host `run` |
-| `--capture` | Write a successful program stdout to `out.txt` and print its path; a failed guest prints its output and retains the run |
+| `--capture` | Write program stdout to `out.txt` and print its path (verified guest: success only) |
 | `-o FILE` | `emit` only: write C to `FILE` (default stdout) |
 | `--doc [-o DIR] FILE...` | Generate Markdown from `///` comments |
 | `--explain CODE` | Print the registry entry for a diagnostic code |
@@ -59,8 +59,10 @@ canonical path. `build` and `run` resolve a toolchain in this order:
 A native `run --emulator` requires FS-UAE 3.2.0 or newer and a 512 KB Kickstart
 3.1 A1200 ROM. The timeout defaults to 90 seconds
 (`CLORRAINE_EMULATOR_TIMEOUT_SECONDS`, 1–3600). The guest success oracle is the
-compiled wrapper: rc 0 plus status `ok`. `--capture` writes the guest output to
-`out.txt`; a failed run is retained with its path printed.
+compiled wrapper: rc 0 plus status `ok`. For a verified guest, `--capture`
+writes `out.txt` only on success; a failed guest prints its output and retains
+the run. Host, `vamos`, and freestanding runs capture stdout regardless of the
+exit code.
 
 ### Examples
 

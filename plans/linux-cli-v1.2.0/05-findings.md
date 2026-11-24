@@ -32,7 +32,7 @@ Re-review result: no CRITICAL or MAJOR findings. RV-017–RV-019 are fixed or ac
 | RV-021 | 2 | MINOR | Staging coverage | Fixed: the staging test asserts the A1200 config, literal argv options, isolated environment, 0700 mode, and that no ROM enters the guest drive. |
 | RV-022 | 2 | MINOR | Wrapper build failure | Fixed: `FAKE_COMPILER_FAIL` seam and a test assert exit 1, no emulator start, and no retained private run. |
 | RV-023 | 2 | MINOR | Selection coverage | Fixed: environment selection, both no-fallback directions, the 3.2.0 boundary (`3.1.99`/`3.2.0`/`3.2.35-2`), and pure timeout bounds (1/90/3600/0/3601/abc) are tested. |
-| RV-024 | 2 | OBS | Site selection wording | Fixed: the Amiga emulator page says "with a native toolchain selected". |
+| RV-024 | 2 | OBS | Site selection wording | Fixed after the re-review: the Amiga emulator page requires a native toolchain in the prose and example. |
 | SR-001 | 2 | MAJOR | Gate process leak | Fixed: `pgrep` is required, the check starts from a clean process set, and it asserts no FS-UAE/Xvfb survivor after every invocation, including failures and the negative. A dirty-start run exits 2; the real gate is green. |
 | SR-002 | 2 | MINOR | Guest exit codes | Fixed: help and the CLI reference state that a verified guest failure exits 1 for every nonzero guest code; host/`vamos`/freestanding keep their own code. |
 | SR-003 | 2 | MINOR | Capture wording | Fixed: help and docs say capture is success-only; a failed guest prints its output and retains the run. |
@@ -45,4 +45,14 @@ Open-question rulings:
   it needs a licensed ROM and a native toolchain, so it is not added to
   `make verify`.
 - Failure evidence retention is intentional and documented: a failed check
-  keeps its temporary run and prints the path; a successful check removes it.
+  keeps its temporary run and prints the path; a dirty-start preflight removes
+  the empty temporary directory; a successful check removes it.
+
+Fix-diff re-review (2026-11-24): no CRITICAL or MAJOR. SR-001 and RV-020–RV-023 are verified fixed. Three residuals were reported and fixed without a third review pass:
+
+| Finding | Phase | Severity | Area | Ruling |
+|---|---|---|---|---|
+| RV-025 | 2 | OBS | Native-selection wording | Fixed: `site/amiga/emulator.md` now states the native-toolchain requirement and the example passes `--toolchain`. |
+| RV-026 | 2 | MINOR | Capture scope | Fixed: the success-only rule is scoped to verified guests; host, `vamos`, and freestanding capture stdout regardless of exit code. |
+| RV-027 | 2 | OBS | Dirty-start evidence | Re-recorded with the committed script: exit 2, clean-start message, no retained temporary directory (`build/tmp/fs-uae-gate-dirty4.log`). |
+| SR-004 | 2 | MINOR | Gate retention wording | Fixed: the script header, design, and ledger now distinguish a failed check (evidence kept), a dirty-start preflight (empty temporary directory removed), and a successful check (removed). |
