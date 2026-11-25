@@ -1,13 +1,15 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 8/8 tasks (100%)
+> **Progress**: 11/12 tasks (92%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
 > `v1.2.0 developer preview`, with an interactive installer launched by **one
-> simple download-run command**. Docs, website, README, release notes,
-> changelog, and `RELEASE.md` stay unchanged until the user's test passes.
+> simple download-run command**. The first run detects or offers the pinned
+> upstream rc24 toolchain, configures it, and runs a host hello smoke test.
+> Docs, website, release notes, changelog, and `RELEASE.md` stay unchanged
+> until the user's test passes; the README is updated for the new installer.
 > GitHub keeps `v1.1.2` as Latest; no stable v1.2.0 release is created.
 
 ## Objective
@@ -136,6 +138,31 @@ release; deleting `v1.1.2`; public announcements.
   the host hello (`Hello, Amiga, from Clorraine!`). Log:
   `build/tmp/one-line-e2e.log`.
 - **Docs/site:** unchanged; no or website edits were made.
+
+## Revision 2 — full first run
+
+- [x] T-01.9 **Installer first-run tests.** Add failing cases for an existing
+  rc24 root (`--toolchain`), an interactive toolchain path, the pinned upstream
+  download/extract path, the host hello smoke test, `--no-toolchain`, and the
+  updated success summary. The existing CLI-install tests remain green.
+- [x] T-01.10 **Implement the first-run steps.** Detect an existing root or
+  `CLORRAINE_TOOLCHAIN`; otherwise prompt for an existing root or offer the
+  pinned AmigaPorts rc24 download (69,868,548 bytes, SHA-256 `b93b070a…c100`);
+  verify before extraction; install under
+  `$XDG_DATA_HOME/clorraine/toolchains/rc24` (or `~/.local/share`); run
+  `clorraine setup --toolchain`; create a temporary `hello.clo`, run it on the
+  host, and require `Hello, Amiga, from Clorraine!`. Add `--toolchain PATH` and
+  `--no-toolchain`; skip the toolchain/hello in non-interactive runs unless a
+  root is supplied.
+- [x] T-01.11 **Rebuild and re-accept.** `make dist`, `make acceptance`, and
+  `make acceptance-check` on the rebuilt candidate; update the release body and
+  hashes. Update the README toolchain wording (the installer now offers the
+  download) while leaving docs/site frozen.
+- [~] T-01.12 **Recreate the v1.2.0 prerelease.** After the new candidate
+  passes, delete the current `v1.2.0` prerelease and tag (0 downloads), then
+  recreate it with the rebuilt assets and body. Verify the one-line command end
+  to end: download, toolchain download/setup, host hello, version, and
+  `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49)
 
 ## Verify
 

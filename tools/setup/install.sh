@@ -22,6 +22,10 @@ ARCHIVE_URL='@ARCHIVE_URL@'
 ARCHIVE_BYTES='@ARCHIVE_BYTES@'
 ARCHIVE_SHA256='@ARCHIVE_SHA256@'
 
+TOOLCHAIN_URL='https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz'
+TOOLCHAIN_BYTES='69868548'
+TOOLCHAIN_SHA256='b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100'
+
 usage() {
     cat <<EOF
 Usage: install.sh [OPTIONS]
@@ -33,6 +37,8 @@ Options:
   --modify-path             add the bin directory to \$HOME/.profile
   --archive FILE            install an exact local archive
   --checksums FILE          SHA256SUMS for --archive
+  --toolchain PATH          use an existing rc24 toolchain root
+  --no-toolchain            skip toolchain setup and the hello check
   --uninstall               remove the active version and PATH block
   --purge                   also remove versions and the CLI config
   -h, --help                show this help
@@ -486,10 +492,6 @@ install_archive() {
         printf 'add this to your shell profile: export PATH=%s:$PATH\n' "$(single_quote "$PREFIX/bin")"
     fi
     printf 'installed Clorraine %s in %s\n' "$VERSION" "$PREFIX"
-    printf 'Next steps:\n'
-    printf '  %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
-    printf '  %s/bin/clorraine run hello.clo\n' "$PREFIX"
-    printf '  Install the VS Code extension from the same release: clorraine-%s.vsix\n' "$VERSION"
 }
 
 # Asks a yes/no question on the terminal; an empty answer uses the default.
@@ -505,6 +507,151 @@ confirm() {
             *) printf 'Please answer y or n.\n' ;;
         esac
     done
+}
+
+# Where downloaded toolchains are stored, following the XDG data rule.
+toolchain_data_dir() {
+    case "${XDG_DATA_HOME:-}" in
+        /*) printf '%s\n' "$XDG_DATA_HOME/clorraine/toolchains" ;;
+        *) printf '%s\n' "$HOME/.local/share/clorraine/toolchains" ;;
+    esac
+}
+
+# Downloads, verifies, and extracts the pinned rc24 toolchain.
+download_toolchain() {
+    local work archive root
+    [ -n "${TOOLCHAIN_DIR:-}" ] || TOOLCHAIN_DIR="$(toolchain_data_dir)/rc24"
+    if ! command -v xz >/dev/null 2>&1; then
+        printf 'clorraine: xz is required to extract the rc24 toolchain\n' >&2
+        return 1
+    fi
+    work=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-toolchain.XXXXXXXX") || {
+        printf 'clorraine: cannot create toolchain storage\n' >&2
+        return 1
+    }
+    archive="$work/toolchain.tar.xz"
+    printf 'Downloading the rc24 toolchain from AmigaPorts...\n' >&2
+    if ! curl --disable --fail --location --proto '=https' --proto-redir '=https' \
+        --connect-timeout 20 --max-time 1200 \
+        --max-filesize "$((TOOLCHAIN_BYTES + 1))" \
+        --output "$archive" "$TOOLCHAIN_URL"; then
+        printf 'clorraine: toolchain download failed; check HTTPS access and retry\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    if [ "$(wc -c <"$archive")" != "$TOOLCHAIN_BYTES" ]; then
+        printf 'clorraine: toolchain byte count mismatch\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    if [ "$(sha256sum "$archive" | awk '{print $1}')" != "$TOOLCHAIN_SHA256" ]; then
+        printf 'clorraine: toolchain SHA-256 mismatch\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    if ! tar -xJf "$archive" -C "$work"; then
+        printf 'clorraine: cannot extract the rc24 toolchain\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    root=$(find "$work" -maxdepth 3 -path '*/bin/m68k-amigaos-gcc' -print -quit)
+    if [ -z "$root" ]; then
+        printf 'clorraine: the extracted toolchain has no m68k-amigaos-gcc\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    root=${root%/bin/m68k-amigaos-gcc}
+    mkdir -p "$(dirname "$TOOLCHAIN_DIR")" || {
+        printf 'clorraine: cannot create the toolchain directory\n' >&2
+        rm -rf "$work"
+        return 1
+    }
+    rm -rf "$TOOLCHAIN_DIR"
+    if ! mv "$root" "$TOOLCHAIN_DIR"; then
+        printf 'clorraine: cannot move the toolchain into place\n' >&2
+        rm -rf "$work"
+        return 1
+    fi
+    rm -rf "$work"
+    printf '%s\n' "$TOOLCHAIN_DIR"
+}
+
+# Runs the installed CLI setup against a toolchain root.
+configure_toolchain() {
+    local root=$1
+    "$PREFIX/bin/clorraine" setup --toolchain "$root"
+}
+
+# Builds and runs a temporary host hello; requires the exact output.
+run_hello() {
+    local dir output status
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-hello.XXXXXXXX") || return 1
+    cat >"$dir/hello.clo" <<'EOF'
+module demo.Hello;
+import { println } from std.io;
+func main(): i32 {
+    let who: str = "Amiga";
+    println($"Hello, {who}, from Clorraine!");
+    return 0;
+}
+EOF
+    output=$(cd "$dir" && "$PREFIX/bin/clorraine" run hello.clo 2>&1)
+    status=$?
+    rm -rf "$dir"
+    printf '%s\n' "$output"
+    [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]
+}
+
+# Detects or installs the rc24 toolchain, then configures it.
+toolchain_first_run() {
+    local answer root
+    if [ -n "$TOOLCHAIN" ]; then
+        configure_toolchain "$TOOLCHAIN" || return 1
+        TOOLCHAIN_CONFIGURED=1
+        return 0
+    fi
+    if [ -n "${CLORRAINE_TOOLCHAIN:-}" ]; then
+        configure_toolchain "$CLORRAINE_TOOLCHAIN" || return 1
+        TOOLCHAIN_CONFIGURED=1
+        return 0
+    fi
+    if [ -d "$TOOLCHAIN_DIR" ]; then
+        if [ -t 0 ] && [ -t 1 ]; then
+            confirm "Use the rc24 toolchain at $TOOLCHAIN_DIR? [Y/n] " yes || return 0
+        fi
+        configure_toolchain "$TOOLCHAIN_DIR" || return 1
+        TOOLCHAIN_CONFIGURED=1
+        return 0
+    fi
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        printf 'no toolchain selected; run: %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
+        return 0
+    fi
+    printf 'Toolchain: path to an existing rc24 root (leave empty to download): '
+    read -r answer || answer=
+    if [ -n "$answer" ]; then
+        configure_toolchain "$answer" || return 1
+        TOOLCHAIN_CONFIGURED=1
+        return 0
+    fi
+    if confirm "Download rc24 from AmigaPorts (70 MB)? [Y/n] " yes; then
+        root=$(download_toolchain) || return 1
+        configure_toolchain "$root" || return 1
+        TOOLCHAIN_CONFIGURED=1
+        return 0
+    fi
+    printf 'skipped toolchain; run: %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
+    return 0
+}
+
+# Prints the remaining manual steps.
+print_next_steps() {
+    printf 'Next steps:\n'
+    if [ -z "${TOOLCHAIN_CONFIGURED:-}" ]; then
+        printf '  %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
+    fi
+    printf '  %s/bin/clorraine run hello.clo\n' "$PREFIX"
+    printf '  Install the VS Code extension from the same release: clorraine-%s.vsix\n' "$VERSION"
 }
 
 # Removes this prefix's links, current, and PATH block; keeps versions/config.
@@ -536,6 +683,10 @@ main() {
     PREFIX_SET=0
     MODIFY_PATH=0
     MODIFY_PATH_SET=0
+    TOOLCHAIN=
+    NO_TOOLCHAIN=0
+    TOOLCHAIN_CONFIGURED=
+    TOOLCHAIN_DIR="$(toolchain_data_dir)/rc24"
     UNINSTALL=0
     PURGE=0
     ARCHIVE=
@@ -574,6 +725,15 @@ main() {
                 CHECKSUMS=$2
                 shift 2
                 ;;
+            --toolchain)
+                [ "$#" -ge 2 ] || usage_error "--toolchain needs a value"
+                TOOLCHAIN=$2
+                shift 2
+                ;;
+            --no-toolchain)
+                NO_TOOLCHAIN=1
+                shift
+                ;;
             --uninstall)
                 UNINSTALL=1
                 shift
@@ -595,7 +755,7 @@ main() {
     if [ "$PURGE" = 1 ] && [ "$UNINSTALL" = 0 ]; then
         usage_error "--purge requires --uninstall"
     fi
-    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ]; }; then
+    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ] || [ -n "$TOOLCHAIN" ] || [ "$NO_TOOLCHAIN" = 1 ]; }; then
         usage_error "--uninstall cannot be combined with install options"
     fi
     if { [ -n "$ARCHIVE" ] && [ -z "$CHECKSUMS" ]; } || { [ -z "$ARCHIVE" ] && [ -n "$CHECKSUMS" ]; }; then
@@ -658,6 +818,23 @@ main() {
     acquire_lock
     trap 'rollback "$PREFIX/share/clorraine"; rm -rf "$PREFIX/share/clorraine/.tmp.$$"; release_lock; cleanup_temp' EXIT
     install_archive "$archive"
+    if [ "$NO_TOOLCHAIN" = 0 ]; then
+        if ! toolchain_first_run; then
+            print_next_steps
+            exit 1
+        fi
+        if [ -n "${TOOLCHAIN_CONFIGURED:-}" ]; then
+            if command -v cc >/dev/null 2>&1; then
+                if ! run_hello; then
+                    print_next_steps
+                    exit 1
+                fi
+            else
+                printf 'cc not found; skipping the host hello check\n'
+            fi
+        fi
+    fi
+    print_next_steps
     release_lock
     cleanup_temp
     trap - EXIT

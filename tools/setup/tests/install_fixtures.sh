@@ -131,11 +131,12 @@ make_stage() {
     mkdir -p "$stage/bin"
     cat >"$stage/bin/clorraine" <<EOF
 #!/bin/sh
-if [ "\${1:-}" = "--version" ]; then
-    printf '%s\\n' "clorraine $version"
-    exit 0
-fi
-exit 0
+case "\${1:-}" in
+    --version) printf '%s\\n' "clorraine $version" ;;
+    setup) printf 'configured toolchain\\n' ;;
+    run) printf 'Hello, Amiga, from Clorraine!\\n' ;;
+    *) exit 0 ;;
+esac
 EOF
     printf '#!/bin/sh\nexit 0\n' >"$stage/bin/clc"
     printf '#!/bin/sh\nexit 0\n' >"$stage/bin/clorraine-lsp"

@@ -25,10 +25,11 @@ fixture() {
 
 # Runs the installer under a pseudo-terminal and feeds the interactive answers.
 run_interactive() {
-    local root=$1 input=$2 status
+    local root=$1 input=$2 no_toolchain=${3:-0} status extra=
+    if [ "$no_toolchain" = 1 ]; then extra=--no-toolchain; fi
     cat >"$root/interactive.sh" <<EOF
 #!/bin/sh
-exec "$installer" --archive "$archive" --checksums "$checksums"
+exec "$installer" $extra --archive "$archive" --checksums "$checksums"
 EOF
     chmod +x "$root/interactive.sh"
     ( export HOME="$root/home" XDG_CONFIG_HOME="$root/config" PATH="$root/fake:$PATH"
@@ -354,7 +355,7 @@ foreign_symlinks_are_not_owned() {
 interactive_install_uses_the_prompts() {
     fixture
     local status
-    status="$(run_interactive "$root" '\ny\ny\n')"
+    status="$(run_interactive "$root" '\ny\ny\n' 1)"
     check_status 0 "$status" "interactive install"
     check_contains "$root/stdout" "Install prefix" "prefix prompt"
     check_contains "$root/stdout" "Add " "path prompt"
@@ -369,7 +370,7 @@ interactive_install_uses_the_prompts() {
 interactive_custom_prefix_is_used() {
     fixture
     local status
-    status="$(run_interactive "$root" "$root/custom prefix\nn\ny\n")"
+    status="$(run_interactive "$root" "$root/custom prefix\nn\ny\n" 1)"
     check_status 0 "$status" "interactive custom prefix"
     check_exists "$root/custom prefix/bin/clorraine" "custom prefix"
     check_absent "$root/home/.profile" "no PATH block after decline"
@@ -379,10 +380,47 @@ interactive_custom_prefix_is_used() {
 interactive_decline_cancels() {
     fixture
     local status
-    status="$(run_interactive "$root" '\ny\nn\n')"
+    status="$(run_interactive "$root" '\ny\nn\n' 1)"
     check_status 0 "$status" "interactive decline"
     check_contains "$root/stdout" "cancelled" "cancellation message"
     check_absent "$root/home/.local/bin/clorraine" "no install after decline"
+}
+
+# A supplied rc24 root is configured and the host hello runs.
+toolchain_root_is_configured_and_hello_runs() {
+    fixture
+    mkdir -p "$root/fake-toolchain"
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "toolchain root install"
+    check_contains "$root/stdout" "configured toolchain" "toolchain setup"
+    check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "host hello"
+    check_contains "$root/stdout" "installed Clorraine 1.2.0" "CLI install"
+}
+
+# The interactive path also accepts an existing toolchain root.
+interactive_toolchain_path_is_used() {
+    fixture
+    mkdir -p "$root/fake-toolchain"
+    local status
+    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n" 0)"
+    check_status 0 "$status" "interactive toolchain root"
+    check_contains "$root/stdout" "Toolchain" "toolchain prompt"
+    check_contains "$root/stdout" "configured toolchain" "interactive setup"
+    check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "interactive hello"
+}
+
+# --no-toolchain keeps the CLI-only behavior for scripts.
+no_toolchain_skips_the_first_run() {
+    fixture
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --no-toolchain \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "no-toolchain install"
+    check_contains "$root/stdout" "installed Clorraine 1.2.0" "CLI install"
+    check_not_contains "$root/stdout" "configured toolchain" "no toolchain"
+    check_not_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "no hello"
 }
 
 # A non-terminal run keeps the old defaults and never blocks on a prompt.
@@ -413,4 +451,7 @@ unsafe_archive_members_are_rejected
 a_wrong_installed_version_is_rejected
 locks_are_live_and_stale_safe
 path_block_is_quoted_replaced_and_removed
+toolchain_root_is_configured_and_hello_runs
+interactive_toolchain_path_is_used
+no_toolchain_skips_the_first_run
 finish

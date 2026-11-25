@@ -146,8 +146,35 @@ sanitize_removes_terminal_controls() {
     if [ "$actual" = "abc" ]; then pass; else fail "sanitize: $actual"; fi
 }
 
+# The pinned toolchain download verifies and installs the archive.
+download_toolchain_verifies_and_installs() {
+    local root source archive
+    root="$(new_root)"
+    source="$root/source/m68k-amigaos-gcc-16.2"
+    mkdir -p "$source/bin"
+    printf '#!/bin/sh\nexit 0\n' >"$source/bin/m68k-amigaos-gcc"
+    chmod +x "$source/bin/m68k-amigaos-gcc"
+    archive="$root/toolchain.tar.xz"
+    tar -cJf "$archive" -C "$root/source" m68k-amigaos-gcc-16.2
+    prepare_installer_fixture "$root"
+    PATH="$root/fake:$PATH"
+    export PATH
+    TOOLCHAIN_URL="https://example.invalid/toolchain.tar.xz"
+    TOOLCHAIN_BYTES="$(stat -c %s "$archive")"
+    TOOLCHAIN_SHA256="$(sha256sum "$archive" | awk '{print $1}')"
+    TOOLCHAIN_DIR="$root/installed-toolchain"
+    export FAKE_CURL_SOURCE="$archive"
+    local installed
+    installed="$(download_toolchain)"
+    check_status 0 "$?" "download toolchain"
+    if [ "$installed" = "$TOOLCHAIN_DIR" ]; then pass; else fail "toolchain dir: $installed"; fi
+    check_exists "$TOOLCHAIN_DIR/bin/m68k-amigaos-gcc" "installed toolchain"
+    rm -rf "$root"
+}
+
 single_quote_is_posix_safe
 sanitize_removes_terminal_controls
+download_toolchain_verifies_and_installs
 config_dir_uses_an_absolute_xdg_home_only
 lock_owner_liveness_is_checked
 path_block_is_stripped

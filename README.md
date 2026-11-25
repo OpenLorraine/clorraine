@@ -21,11 +21,12 @@ curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/in
 ```
 
 The installer asks where to install (default `~/.local`), offers to add it to
-your PATH, verifies the download, and installs `clc`, `clorraine`, and
-`clorraine-lsp`.
+your PATH, verifies the download, installs `clc`, `clorraine`, and
+`clorraine-lsp`, sets up the rc24 Amiga toolchain (downloaded or an existing
+copy), and runs a hello test.
 
-You supply the Amiga toolchain and a licensed Kickstart ROM; Clorraine does not
-bundle them. The [Linux CLI guide](docs/linux-cli.md) and the
+You supply a licensed Kickstart ROM; Clorraine does not bundle the toolchain or
+the ROM. The [Linux CLI guide](docs/linux-cli.md) and the
 [release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
 have the details, including checksum verification and the VS Code extension.
 
@@ -51,6 +52,7 @@ Everything below goes deeper than this page:
 - [Linux CLI guide](docs/linux-cli.md)
 - [Known limitations](docs/known-limitations.md)
 - [Language specification](spec/README.md)
+- [C to Clorraine guide](docs/c-to-clorraine.md)
 - [Examples](examples/)
 - [All releases](https://github.com/OpenLorraine/clorraine/releases)
 
