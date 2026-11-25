@@ -1,0 +1,21 @@
+# WS2-02. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+ spec/03 §3 (O3): assignment drops the live old value, then stores.
+profiles: host
+with: tok.clo
+expect: output
+contrast: a = tok(2); ==> a = tok(3);
+contrast-expect: output
+--- output
+before
+drop 1
+after
+use 2
+end
+drop 2
+--- contrast-output
+before
+drop 1
+after
+use 3
+end
+drop 3

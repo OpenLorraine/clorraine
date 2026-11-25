@@ -1,0 +1,16 @@
+# WS2-08. # Sources: spec/06-functions.md G-6 (monomorphized instances) and spec/03 §3/§5: a generic instance moves and drops exactly like the concrete code; an i32 instance copies.
+profiles: host
+with: tok.clo
+expect: output
+contrast: pass<i32>(5) ==> pass<i32>(6)
+contrast-expect: output
+--- output
+use 1
+5
+end
+drop 1
+--- contrast-output
+use 1
+6
+end
+drop 1

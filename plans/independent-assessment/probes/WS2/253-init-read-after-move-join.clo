@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func flag(): bool {
+    return false;
+}
+
+func consume(take t: Tok): void {
+    show(t);
+}
+
+func main(): i32 {
+    let a: Tok = tok(1);
+    if (flag()) {
+        consume(take a);
+    }
+    show(a);
+    println("end");
+    return 0;
+}

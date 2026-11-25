@@ -1,0 +1,56 @@
+# WS2-08. # Sources: spec/06-functions.md G-6 (monomorphized instances) and spec/03 §3/§5: a generic instance moves and drops exactly like the concrete code; an i32 instance copies.
+ spec/appendix-stdlib.md §3: set drops the replaced element (4); on
+# drop the elements drop first to last, then the storage. AddressSanitizer: no leak.
+profiles: host
+with: tok.clo
+expect: output
+contrast: xs.set(3, tok(99)); ==> xs.set(4, tok(99));
+contrast-expect: output
+--- output
+drop 4
+20
+7
+drop 1
+drop 2
+drop 3
+drop 99
+drop 5
+drop 6
+drop 7
+drop 8
+drop 9
+drop 10
+drop 11
+drop 12
+drop 13
+drop 14
+drop 15
+drop 16
+drop 17
+drop 18
+drop 19
+drop 20
+--- contrast-output
+drop 5
+20
+7
+drop 1
+drop 2
+drop 3
+drop 4
+drop 99
+drop 6
+drop 7
+drop 8
+drop 9
+drop 10
+drop 11
+drop 12
+drop 13
+drop 14
+drop 15
+drop 16
+drop 17
+drop 18
+drop 19
+drop 20

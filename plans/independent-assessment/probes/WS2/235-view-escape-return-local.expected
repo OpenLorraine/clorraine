@@ -1,0 +1,11 @@
+# WS2-07. spec/03 §7 and spec/16 BR-6/EL-2: a view returned from a function must
+# derive from a view-like lend parameter; one derived from a local array (through
+# head) is E10035.
+profiles: host
+with: tok.clo
+expect: reject E10035
+contrast: func bad(): i32[] {\n    let xs: i32[3] = [1, 2, 3];\n    return head(xs);\n} ==> func bad(): void {\n    let xs: i32[3] = [1, 2, 3];\n    let v: i32[] = head(xs);\n    println($"{v[1]}");\n}
+contrast-expect: output
+--- contrast-output
+2
+end

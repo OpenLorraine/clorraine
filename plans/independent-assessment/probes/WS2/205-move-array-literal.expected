@@ -1,0 +1,19 @@
+# WS2-01. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+# Array elements drop first to last.
+profiles: host
+with: tok.clo
+expect: output
+contrast: [tok(1), tok(2), tok(3)] ==> [tok(3), tok(2), tok(1)]
+contrast-expect: output
+--- output
+use 2
+end
+drop 1
+drop 2
+drop 3
+--- contrast-output
+use 2
+end
+drop 3
+drop 2
+drop 1

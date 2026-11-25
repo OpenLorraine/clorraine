@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    println($"{idOf(tok(7))}");
+    println("next");
+    println("end");
+    return 0;
+}

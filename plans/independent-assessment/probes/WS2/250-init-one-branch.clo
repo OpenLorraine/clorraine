@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func flag(): bool {
+    return true;
+}
+
+func main(): i32 {
+    let a: Tok;
+    if (flag()) {
+        a = tok(1);
+    }
+    show(a);
+    println("end");
+    return 0;
+}

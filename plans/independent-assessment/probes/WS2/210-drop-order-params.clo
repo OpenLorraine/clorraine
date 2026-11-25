@@ -1,0 +1,17 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func f(take p: Tok): void {
+    let x: Tok = tok(2);
+    let y: Tok = tok(3);
+    println("body");
+}
+
+func main(): i32 {
+    let a: Tok = tok(1);
+    f(take a);
+    println("end");
+    return 0;
+}

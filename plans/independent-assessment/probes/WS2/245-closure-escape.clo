@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func make(): func(): i32 {
+    let n: i32 = 3;
+    return () => n + 1;
+}
+
+func main(): i32 {
+    let f: func(): i32 = make();
+    println($"{f()}");
+    return 0;
+}

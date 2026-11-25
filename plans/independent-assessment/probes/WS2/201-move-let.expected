@@ -1,0 +1,11 @@
+# WS2-01. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+# let b = a moves; the moved-from a is not dropped; b drops once.
+profiles: host
+with: tok.clo
+expect: output
+contrast: let b: Tok = a;\n    show(b); ==> let b: Tok = a;\n    show(a);
+contrast-expect: reject E10020
+--- output
+use 1
+end
+drop 1

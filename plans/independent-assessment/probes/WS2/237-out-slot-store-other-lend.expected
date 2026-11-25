@@ -1,0 +1,7 @@
+# WS2-07. spec/03 §6 and §7 (E10034): a borrow T? slot may not store a different lend
+# parameter's value; that is E10034 (or a move out of a read-only lend). Expected E10034.
+profiles: host
+with: tok.clo
+expect: reject E10034
+contrast: slot = other; ==> slot = tok(idOf(other) + 1);
+contrast-expect: accept

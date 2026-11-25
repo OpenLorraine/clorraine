@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func make(id: u8): Tok {
+    let t: Tok = tok(id);
+    return t;
+}
+
+func main(): i32 {
+    let a: Tok = make(5);
+    show(a);
+    println("end");
+    return 0;
+}

@@ -1,0 +1,12 @@
+# WS2-04. spec/03 §5 ("the block is checked at its exit context", F5) and §3 (O1):
+# the defer reads a, which is moved before the scope exits, so E10020.
+profiles: host
+with: tok.clo
+expect: reject E10020
+contrast: consume(take a); ==> show(a);
+contrast-expect: output
+--- contrast-output
+use 1
+end
+use 1
+drop 1

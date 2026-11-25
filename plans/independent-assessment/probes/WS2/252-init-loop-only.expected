@@ -1,0 +1,7 @@
+# WS2-11. # Sources: spec/05-statements.md §16 and spec/11 (E10021: a read before assignment on every path) and spec/03 §3 (E10020: a read after a move).
+An assignment only inside a loop body is not definite after the loop.
+profiles: host
+with: tok.clo
+expect: reject E10021
+contrast: let a: Tok;\n ==> let a: Tok = tok(5);\n
+contrast-expect: accept

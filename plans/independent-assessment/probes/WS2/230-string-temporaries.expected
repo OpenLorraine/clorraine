@@ -1,0 +1,15 @@
+# WS2-05. Sources: spec/04 §3 and §12 (a template allocates one String; owned String
+# placeholders), spec/03 §3 (O3) and §5 (drops on break). Under AddressSanitizer with
+# leak detection, no leak, double free, or use after free. Lengths: for i in 0..40,
+# "#<i>" + "-" + "0x<hex>" + "-x"; computed: sum over i=0..40 of
+# (1+d10(i)) + 1 + (2+d16(i)) + 2 summed over i = 0..40 is 384; the contrast
+# breaks at i = 9: 80.
+profiles: host
+with: tok.clo
+expect: output
+contrast: if (i == 40) ==> if (i == 9)
+contrast-expect: output
+--- output
+384 #8
+--- contrast-output
+80 #8

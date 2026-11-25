@@ -1,0 +1,17 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let i: u8 = 0;
+    while (true) {
+        let t: Tok = tok(i);
+        if (idOf(tok(i + 50)) == 51) {
+            break;
+        }
+        i = i + 1;
+    }
+    println("end");
+    return 0;
+}

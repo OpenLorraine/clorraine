@@ -1,0 +1,27 @@
+# WS2-02. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+ An early return drops the live locals (2, 1); the normal exit drops
+# 3, 2, 1.
+profiles: host
+with: tok.clo
+expect: output
+contrast: f(true);\n ==> f(false);\n
+contrast-expect: output
+--- output
+ret
+drop 2
+drop 1
+use 3
+drop 3
+drop 2
+drop 1
+end
+--- contrast-output
+use 3
+drop 3
+drop 2
+drop 1
+use 3
+drop 3
+drop 2
+drop 1
+end

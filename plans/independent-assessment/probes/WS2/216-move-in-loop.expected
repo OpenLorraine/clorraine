@@ -1,0 +1,15 @@
+# WS2-03. spec/03 §3 (O1, O6): a move inside a loop body moves a value that the
+# next iteration reads again, so the second iteration's use is a use after move
+# (E10020).
+profiles: host
+with: tok.clo
+expect: reject E10020
+contrast: consume(take a);\n        i = i + 1; ==> consume(take a);\n        a = tok(2);\n        i = i + 1;
+contrast-expect: output
+--- contrast-output
+use 1
+drop 1
+use 2
+drop 2
+end
+drop 2

@@ -17,6 +17,7 @@ file is written and committed before the probe runs. Lines starting with
              build-fails: clc accepts and the debug C build must fail)
     companion: <file.c>          C program whose output the probe must match
     limit-ms: <N>                wall-time limit for ``nocrash``
+    with: <a.clo> [<b.clo> ...]  extra sources (in the probe folder) compiled with the probe
     contrast: <from> ==> <to>    literal source rewrite for the contrasting input
     contrast-expect: <kind>      what the contrasting input must do
     --- output                   expected stdout follows (for ``output``)
@@ -26,7 +27,11 @@ file is written and committed before the probe runs. Lines starting with
 emission with the profile's debug line (warnings as errors) and its shipped
 release line; ``output`` and ``fault`` run both builds (host natively, Amiga
 under ``vamos``). ``freestanding`` is compiled (``-c``) but not run.
-``reject`` requires the first ``error Exxxxx`` code to match. ``nocrash``
+``reject`` requires the first ``error Exxxxx`` code to match. With
+``--sanitize`` the host profile also builds and runs an AddressSanitizer line
+(``-fsanitize=address -no-pie``, ``ASAN_OPTIONS=detect_leaks=1``) and an
+UndefinedBehaviorSanitizer line (``-fsanitize=undefined
+-fno-sanitize-recover=all -no-pie``); any sanitizer report fails the check. ``nocrash``
 requires ``clc`` to end with exit 0 or 1 (no panic, signal, or timeout) within
 ``limit-ms``.
 
@@ -77,6 +82,13 @@ BUILDS = {
          ["-std=c99", "-ffreestanding", "-fno-builtin", "-nostdlib", "-m68000", "-fwrapv",
           "-O2", "-c"], [])],
 }
+SANITIZE = [
+    ("asan", "cc", ["-std=c99", "-O0", "-g", "-fsanitize=address", "-fno-omit-frame-pointer",
+                    "-no-pie"], []),
+    ("ubsan", "cc", ["-std=c99", "-O0", "-g", "-fsanitize=undefined",
+                     "-fno-sanitize-recover=all", "-no-pie"], []),
+]
+SAN_ENV = {"ASAN_OPTIONS": "detect_leaks=1", "UBSAN_OPTIONS": "print_stacktrace=1"}
 CODE_RE = re.compile(r"error (E\d{5})")
 
 
@@ -108,11 +120,17 @@ def parse_expected(path: Path) -> dict:
     return spec
 
 
-def run(argv: list[str], timeout: int, cwd: Path | None = None) -> tuple[int, str, str, float]:
+def run(argv: list[str], timeout: int, cwd: Path | None = None,
+        env: dict | None = None) -> tuple[int, str, str, float]:
     """Run a command; return (exit code, stdout, stderr, seconds). Timeout is code -9."""
     start = time.monotonic()
+    full_env = None
+    if env:
+        import os
+        full_env = dict(os.environ, **env)
     try:
-        done = subprocess.run(argv, capture_output=True, timeout=timeout, cwd=cwd or ROOT)
+        done = subprocess.run(argv, capture_output=True, timeout=timeout, cwd=cwd or ROOT,
+                              env=full_env)
         return (done.returncode, done.stdout.decode("utf-8", "replace"),
                 done.stderr.decode("utf-8", "replace"), time.monotonic() - start)
     except subprocess.TimeoutExpired:
@@ -125,7 +143,7 @@ def first_code(text: str) -> str | None:
 
 
 def check(clc: Path, pid: str, sources: list[Path], kind: str, spec: dict, expected_out: str,
-          profile: str, work: Path) -> list[tuple[bool, str, str]]:
+          profile: str, work: Path, sanitize: bool = False) -> list[tuple[bool, str, str]]:
     """Check one probe (or its contrast) on one profile; return (ok, mode, detail) rows."""
     work.mkdir(parents=True, exist_ok=True)
     c_file = work / "prog.c"
@@ -150,7 +168,8 @@ def check(clc: Path, pid: str, sources: list[Path], kind: str, spec: dict, expec
         first = next((ln for ln in berr.splitlines() if "error" in ln), "")
         return [(brc != 0, "debug", f"C build rc={brc} {first[:160]}")]
     rows = []
-    for mode, cc, flags, libs in BUILDS[profile]:
+    builds = BUILDS[profile] + (SANITIZE if sanitize and profile == "host" else [])
+    for mode, cc, flags, libs in builds:
         binary = work / f"prog-{mode}"
         brc, bout, berr, _ = run([cc, *flags, "-o", str(binary), str(c_file), *libs], 600)
         (work / f"build-{mode}.log").write_text(bout + berr, encoding="utf-8")
@@ -161,13 +180,16 @@ def check(clc: Path, pid: str, sources: list[Path], kind: str, spec: dict, expec
             rows.append((True, mode, "built"))
             continue
         runner = [str(binary)] if profile == "host" else ["vamos", str(binary)]
-        xrc, xout, xerr, _ = run(runner, 120)
+        xrc, xout, xerr, _ = run(runner, 120, env=SAN_ENV if mode in ("asan", "ubsan") else None)
         (work / f"run-{mode}.log").write_text(f"rc={xrc}\n--- stdout\n{xout}\n--- stderr\n{xerr}",
                                               encoding="utf-8")
         got = bench.normalize_output(xout.encode())
         if word == "output":
-            ok = xrc == 0 and got == expected_out
-            rows.append((ok, mode, f"rc={xrc}" + ("" if ok else f" got={got!r} want={expected_out!r}")))
+            report = next((ln for ln in xerr.splitlines()
+                           if "Sanitizer" in ln or "runtime error" in ln), "")
+            ok = xrc == 0 and got == expected_out and not report
+            rows.append((ok, mode, f"rc={xrc}" + ("" if ok else f" got={got!r} want={expected_out!r}")
+                         + (f" SANITIZER: {report[:160]}" if report else "")))
         elif word == "fault":
             text = xerr if profile == "host" else xout
             ok = xrc != 0 and f"error {arg}:" in text
@@ -198,6 +220,8 @@ def main() -> int:
     parser.add_argument("--only", nargs="+", default=None)
     parser.add_argument("--contrast", action="store_true")
     parser.add_argument("--jobs", type=int, default=6)
+    parser.add_argument("--sanitize", action="store_true",
+                        help="also build and run the host ASan and UBSan lines")
     args = parser.parse_args()
     pdir = (ROOT / args.probe_dir).resolve()
     out = (ROOT / (args.out or f"build/tmp/assessment/{pdir.name}/probes")).resolve()
@@ -213,6 +237,7 @@ def main() -> int:
             continue
         folder = pdir / pid
         sources = sorted(folder.glob("*.clo")) if folder.is_dir() else [pdir / f"{pid}.clo"]
+        sources += [pdir / extra for extra in spec.get("with", "").split()]
         if not all(s.is_file() for s in sources) or not sources:
             print(f"FAIL {pid} - setup: missing source")
             continue
@@ -225,6 +250,10 @@ def main() -> int:
             new_sources = []
             hits = 0
             for s in sources:
+                if s.parent == pdir and s.name in spec.get("with", "").split():
+                    shutil.copy(s, cdir / s.name)
+                    new_sources.append(cdir / s.name)
+                    continue
                 text = s.read_text(encoding="utf-8")
                 hits += text.count(src)
                 (cdir / s.name).write_text(text.replace(src, dst), encoding="utf-8")
@@ -248,7 +277,7 @@ def main() -> int:
                              out / pid / profile))
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = {pool.submit(check, clc, *job): job for job in jobs}
+        futures = {pool.submit(check, clc, *job, sanitize=args.sanitize): job for job in jobs}
         for future in concurrent.futures.as_completed(futures):
             pid, _, kind, _, _, profile, _ = futures[future]
             for ok, mode, detail in future.result():

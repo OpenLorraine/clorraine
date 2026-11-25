@@ -1,0 +1,28 @@
+# WS2-03. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+ A loop-carried value moved and re-initialized each iteration; the
+# last value is dropped once at scope end.
+profiles: host
+with: tok.clo
+expect: output
+contrast: a = tok(i + 2); ==> a = tok(i + 5);
+contrast-expect: output
+--- output
+use 1
+drop 1
+use 2
+drop 2
+use 3
+drop 3
+use 4
+end
+drop 4
+--- contrast-output
+use 1
+drop 1
+use 5
+drop 5
+use 6
+drop 6
+use 7
+end
+drop 7

@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func fill(borrow slot: Tok?, other: Tok): void {
+    slot = other;
+}
+
+func main(): i32 {
+    let s: Tok? = null;
+    let o: Tok = tok(1);
+    fill(borrow s, o);
+    return 0;
+}

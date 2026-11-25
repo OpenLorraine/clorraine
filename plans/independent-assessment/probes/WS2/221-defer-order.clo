@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let a: Tok = tok(1);
+    defer {
+        println("defer A");
+    }
+    let b: Tok = tok(2);
+    defer {
+        println("defer B");
+    }
+    println("body");
+    println("end");
+    return 0;
+}

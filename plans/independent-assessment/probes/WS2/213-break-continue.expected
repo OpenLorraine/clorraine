@@ -1,0 +1,22 @@
+# WS2-02/WS2-03. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+ The per-iteration local drops at continue, break, and the
+# normal end of each iteration.
+profiles: host
+with: tok.clo
+expect: output
+contrast: if (i == 4) ==> if (i == 3)
+contrast-expect: output
+--- output
+use 10
+drop 10
+drop 11
+use 12
+drop 12
+drop 13
+end
+--- contrast-output
+use 10
+drop 10
+drop 11
+drop 12
+end

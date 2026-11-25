@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Array, arrayNew } from std.mem;
+
+func run(c: bool): void {
+    let xs: Array<i32> = arrayNew<i32>();
+    xs.push(1);
+    let v: i32[] = xs.get(0);
+    if (c) {
+        println($"{v[0]}");
+    } else {
+        xs.push(5);
+        println($"{xs.len()}");
+    }
+}
+
+func main(): i32 {
+    run(true);
+    run(false);
+    return 0;
+}

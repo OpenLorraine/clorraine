@@ -1,0 +1,18 @@
+# WS2-10. # Sources: spec/03 §4 (partial moves only from owned locals and take parameters, E10026), spec/04 §3 (temporaries drop at statement end in reverse creation order; only the chosen ?: arm evaluates), spec/03 §5 (struct fields drop in declaration order).
+A field read of a call result: the temporary Pair drops whole (a, b) at
+# the end of the let statement.
+profiles: host
+with: tok.clo
+expect: output
+contrast: makePair(1, 2).b ==> makePair(1, 2).a
+contrast-expect: output
+--- output
+drop 1
+drop 2
+2
+end
+--- contrast-output
+drop 1
+drop 2
+1
+end

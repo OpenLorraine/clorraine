@@ -1,0 +1,26 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { String, stringOf } from std.text;
+import { toHex } from std.fmt;
+
+func label(n: u32): String {
+    return $"#{n}";
+}
+
+func main(): i32 {
+    let total: u32 = 0;
+    let i: u32 = 0;
+    while (i < 50) {
+        let s: String = $"{label(i)}-{toHex(i)}-{stringOf("x")}";
+        total = total + u32(len(s));
+        if (i == 40) {
+            break;
+        }
+        i = i + 1;
+    }
+    let keep: String = label(7);
+    keep = label(8);
+    println($"{total} {keep}");
+    return 0;
+}

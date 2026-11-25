@@ -1,0 +1,12 @@
+# WS2-10. spec/03 §4: nested-path moves are E10026 in v1.
+profiles: host
+with: tok.clo
+expect: reject E10026
+contrast: let t: Tok = o.inner.a;\n    show(t); ==> show(o.inner.a);
+contrast-expect: output
+--- contrast-output
+use 1
+end
+drop 1
+drop 2
+drop 3

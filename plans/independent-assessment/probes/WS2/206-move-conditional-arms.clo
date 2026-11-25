@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func pick(c: bool): void {
+    let t: Tok = c ? tok(1) : tok(2);
+    show(t);
+}
+
+func main(): i32 {
+    pick(true);
+    pick(false);
+    println("end");
+    return 0;
+}

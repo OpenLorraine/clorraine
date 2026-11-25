@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Pair {
+    a: Tok;
+    b: Tok;
+}
+
+struct Outer {
+    inner: Pair;
+    c: Tok;
+}
+
+func main(): i32 {
+    let o: Outer = Outer { inner: Pair { a: tok(1), b: tok(2) }, c: tok(3) };
+    let t: Tok = o.inner.a;
+    show(t);
+    println("end");
+    return 0;
+}

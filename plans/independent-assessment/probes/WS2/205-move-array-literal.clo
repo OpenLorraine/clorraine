@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let xs: Tok[3] = [tok(1), tok(2), tok(3)];
+    show(xs[1]);
+    println("end");
+    return 0;
+}

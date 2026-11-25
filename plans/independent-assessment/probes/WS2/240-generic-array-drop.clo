@@ -1,0 +1,20 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Array, arrayNew } from std.mem;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let xs: Array<Tok> = arrayNew<Tok>();
+    let i: u8 = 1;
+    while (i <= 20) {
+        xs.push(tok(i));
+        i = i + 1;
+    }
+    xs.set(3, tok(99));
+    println($"{xs.len()}");
+    let ys: Array<i32> = arrayNew<i32>();
+    ys.push(7);
+    println($"{ys.get(0)[0]}");
+    return 0;
+}

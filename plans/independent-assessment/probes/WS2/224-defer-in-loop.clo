@@ -1,0 +1,24 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let i: u8 = 0;
+    while (i < 3) {
+        let t: Tok = tok(i);
+        defer {
+            println("d");
+        }
+        i = i + 1;
+        if (i == 2) {
+            continue;
+        }
+        if (i == 3) {
+            break;
+        }
+        println("tail");
+    }
+    println("end");
+    return 0;
+}

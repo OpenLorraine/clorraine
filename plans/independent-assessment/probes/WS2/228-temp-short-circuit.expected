@@ -1,0 +1,18 @@
+# WS2-05. The condition is bound in a let so the temporary's drop point is the let
+# statement's end under every reading of spec/04 §3. # Sources: spec/04-expressions.md §3 (temporaries, including inside nested calls and aggregate literals, live until the end of the statement and drop there in reverse creation order; only the chosen ?: arm and the needed && / || operand evaluate) and spec/03 §5.
+The right operand (and its temporary) exists only when c is true.
+profiles: host
+with: tok.clo
+expect: output
+contrast: == 3) ==> == 4)
+contrast-expect: output
+--- output
+no
+drop 3
+yes
+end
+--- contrast-output
+no
+drop 3
+no
+end

@@ -1,0 +1,19 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Wrap<T> {
+    v: T;
+    n: i32;
+}
+
+func main(): i32 {
+    let w: Wrap<Tok> = Wrap<Tok> { v: tok(1), n: 1 };
+    let c: Wrap<i32> = Wrap<i32> { v: 5, n: 2 };
+    let d: Wrap<i32> = c;
+    show(w.v);
+    println($"{c.v} {d.v}");
+    println("end");
+    return 0;
+}

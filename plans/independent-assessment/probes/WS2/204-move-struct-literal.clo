@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Pair {
+    a: Tok;
+    b: Tok;
+}
+
+func main(): i32 {
+    let p: Pair = Pair { a: tok(1), b: tok(2) };
+    show(p.a);
+    println("end");
+    return 0;
+}

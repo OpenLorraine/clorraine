@@ -1,0 +1,15 @@
+# WS2-11. # Sources: spec/05-statements.md §16 and spec/11 (E10021: a read before assignment on every path) and spec/03 §3 (E10020: a read after a move).
+Every switch path, including default, assigns a: accepted.
+profiles: host
+with: tok.clo
+expect: output
+contrast: return 2; ==> return 7;
+contrast-expect: output
+--- output
+use 2
+end
+drop 2
+--- contrast-output
+use 9
+end
+drop 9

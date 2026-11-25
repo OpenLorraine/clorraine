@@ -1,0 +1,18 @@
+# WS2-07. spec/03 §6: assignment through the borrow T? slot drops the callee-owned
+# previous value (1) first, then stores the new one (2), which the caller owns.
+# Narrowing moves it into t, which drops at the end of the if block.
+profiles: host
+with: tok.clo
+expect: output
+contrast: slot = tok(2); ==> slot = tok(3);
+contrast-expect: output
+--- output
+drop 1
+use 2
+drop 2
+end
+--- contrast-output
+drop 1
+use 3
+drop 3
+end

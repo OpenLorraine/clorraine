@@ -1,0 +1,20 @@
+# WS2-01. # Sources: spec/03-ownership.md §3 (moves; a moved value is never dropped), §5 (drop order: locals in reverse declaration order, struct fields in declaration order, array elements first to last, parameters after the body locals; drops on every return/break/continue; exactly once), spec/04-expressions.md §3 (temporaries drop at statement end in reverse creation order).
+ spec/04 §3: only the chosen ?: arm evaluates. Each call drops exactly
+# the chosen handle.
+profiles: host
+with: tok.clo
+expect: output
+contrast: pick(false); ==> pick(true);
+contrast-expect: output
+--- output
+use 1
+drop 1
+use 2
+drop 2
+end
+--- contrast-output
+use 1
+drop 1
+use 1
+drop 1
+end

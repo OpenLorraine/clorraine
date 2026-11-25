@@ -1,0 +1,10 @@
+# WS2-11. # Sources: spec/05-statements.md §16 and spec/11 (E10021: a read before assignment on every path) and spec/03 §3 (E10020: a read after a move).
+ spec/03 §3 (O6): at a join, a value moved on any path counts as moved.
+profiles: host
+with: tok.clo
+expect: reject E10020
+contrast: show(a);\n    println("end"); ==> println("end");
+contrast-expect: output
+--- contrast-output
+end
+drop 1

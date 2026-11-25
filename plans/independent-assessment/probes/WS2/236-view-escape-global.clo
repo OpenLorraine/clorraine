@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+let table: i32[2] = [7, 8];
+
+func first(xs: i32[]): i32 {
+    return xs[0];
+}
+
+func main(): i32 {
+    let g: i32 = first(table);
+    println($"{g}");
+    return 0;
+}

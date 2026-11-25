@@ -1,0 +1,20 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func check(c: bool): void {
+    let ok: bool = c && idOf(tok(3)) == 3;
+    if (ok) {
+        println("yes");
+    } else {
+        println("no");
+    }
+}
+
+func main(): i32 {
+    check(false);
+    check(true);
+    println("end");
+    return 0;
+}

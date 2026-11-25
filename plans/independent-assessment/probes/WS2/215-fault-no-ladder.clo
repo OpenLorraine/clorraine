@@ -1,0 +1,17 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func idx(): usize {
+    return 5;
+}
+
+func main(): i32 {
+    let a: Tok = tok(1);
+    let xs: u8[2] = [1, 2];
+    let i: usize = idx();
+    println($"{xs[i]}");
+    println("end");
+    return 0;
+}

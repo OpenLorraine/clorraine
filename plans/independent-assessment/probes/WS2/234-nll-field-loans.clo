@@ -1,0 +1,26 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Pair {
+    a: Tok;
+    b: Tok;
+}
+
+func lendBoth(x: Tok, y: Tok): void {
+    println($"{idOf(x)} {idOf(y)}");
+}
+
+func touch(borrow t: Tok): void {
+    show(t);
+}
+
+func main(): i32 {
+    let p: Pair = Pair { a: tok(1), b: tok(2) };
+    lendBoth(p.a, p.b);
+    touch(borrow p.a);
+    show(p.a);
+    println("end");
+    return 0;
+}

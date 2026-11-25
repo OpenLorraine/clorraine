@@ -1,0 +1,9 @@
+# WS2-06. # Sources: spec/16-borrow-rules.md BR-2/BR-3/BR-4 (a live loan blocks mutation, a second writable loan, or a move of the owner) and spec/appendix-stdlib.md §3 ("While any element view is live, push, reserve, and set are E10031 or E10032"); a loan is live only until its last use (NLL v2, spec/16).
+The element view v is last used before push, so push is accepted.
+profiles: host
+with: tok.clo
+expect: output
+contrast: xs.push(2);\n    println($"{first} ==> xs.push(2);\n    println($"{v[0]}
+contrast-expect: reject E10031
+--- output
+1 2

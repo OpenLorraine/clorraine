@@ -1,0 +1,10 @@
+# WS2-11. # Sources: spec/05-statements.md §16 and spec/11 (E10021: a read before assignment on every path) and spec/03 §3 (E10020: a read after a move).
+profiles: host
+with: tok.clo
+expect: reject E10021
+contrast: if (flag()) {\n        a = tok(1);\n    } ==> if (flag()) {\n        a = tok(1);\n    } else {\n        a = tok(2);\n    }
+contrast-expect: output
+--- contrast-output
+use 1
+end
+drop 1

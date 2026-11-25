@@ -1,0 +1,10 @@
+# WS2-09. spec/06 §6.1 L-3: a lambda that moves a captured binding is E10401.
+profiles: host
+with: tok.clo
+expect: reject E10401
+contrast: consume(take t); ==> show(t);
+contrast-expect: output
+--- contrast-output
+use 1
+end
+drop 1

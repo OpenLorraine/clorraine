@@ -1,0 +1,19 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Job {
+    name: Tok;
+    other: Tok;
+}
+
+func main(): i32 {
+    let j: Job = Job { name: tok(1), other: tok(2) };
+    let n: Tok = j.name;
+    let k: Job = j;
+    show(n);
+    show(k.other);
+    println("end");
+    return 0;
+}

@@ -1,0 +1,9 @@
+# WS2-07. spec/03 §7 and spec/16 BR-9: a global may not be borrowed (E10038); lending
+# the global array as a view argument is a borrow of the global.
+profiles: host
+with: tok.clo
+expect: reject E10038
+contrast: let g: i32 = first(table); ==> let copy: i32[2] = table;\n    let g: i32 = first(copy);
+contrast-expect: output
+--- contrast-output
+7

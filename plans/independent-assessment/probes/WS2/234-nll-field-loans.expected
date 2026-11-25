@@ -1,0 +1,22 @@
+# WS2-06. spec/03 §7 and spec/16: field borrows are tracked conservatively as
+# whole-struct loans (O8); two read-only lends of fields in one call are shared and
+# allowed; a writable lend after they end is allowed.
+profiles: host
+with: tok.clo
+expect: output
+contrast: lendBoth(p.a, p.b); ==> lendBoth(p.a, p.a);
+contrast-expect: output
+--- output
+1 2
+use 1
+use 1
+end
+drop 1
+drop 2
+--- contrast-output
+1 1
+use 1
+use 1
+end
+drop 1
+drop 2

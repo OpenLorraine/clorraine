@@ -1,0 +1,17 @@
+# WS2-08. # Sources: spec/06-functions.md G-6 (monomorphized instances) and spec/03 §3/§5: a generic instance moves and drops exactly like the concrete code; an i32 instance copies.
+ Wrap<i32> is duplicable (copy); Wrap<Tok> is move-only and drops its field once.
+profiles: host
+with: tok.clo
+expect: output
+contrast: v: 5, n: 2 ==> v: 6, n: 2
+contrast-expect: output
+--- output
+use 1
+5 5
+end
+drop 1
+--- contrast-output
+use 1
+6 6
+end
+drop 1

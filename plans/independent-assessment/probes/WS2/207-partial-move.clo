@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Job {
+    name: Tok;
+    other: Tok;
+}
+
+func consume(take t: Tok): void {
+    show(t);
+}
+
+func main(): i32 {
+    let j: Job = Job { name: tok(1), other: tok(2) };
+    let n: Tok = j.name;
+    consume(take n);
+    show(j.other);
+    println("end");
+    return 0;
+}

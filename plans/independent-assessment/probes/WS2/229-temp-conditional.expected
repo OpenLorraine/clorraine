@@ -1,0 +1,19 @@
+# WS2-05. # Sources: spec/04-expressions.md §3 (temporaries, including inside nested calls and aggregate literals, live until the end of the statement and drop there in reverse creation order; only the chosen ?: arm and the needed && / || operand evaluate) and spec/03 §5.
+Only the chosen arm's temporary is created and dropped.
+profiles: host
+with: tok.clo
+expect: output
+contrast: pick(false); ==> pick(true);
+contrast-expect: output
+--- output
+drop 1
+1
+drop 2
+2
+end
+--- contrast-output
+drop 1
+1
+drop 1
+1
+end

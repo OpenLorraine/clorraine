@@ -1,0 +1,23 @@
+# WS2-10. # Sources: spec/03 §4 (partial moves only from owned locals and take parameters, E10026), spec/04 §3 (temporaries drop at statement end in reverse creation order; only the chosen ?: arm evaluates), spec/03 §5 (struct fields drop in declaration order).
+Only the chosen pair is built; it drops whole at statement end.
+profiles: host
+with: tok.clo
+expect: output
+contrast: pick(false); ==> pick(true);
+contrast-expect: output
+--- output
+drop 1
+drop 2
+1
+drop 3
+drop 4
+3
+end
+--- contrast-output
+drop 1
+drop 2
+1
+drop 1
+drop 2
+1
+end

@@ -1,0 +1,46 @@
+// Instrumentation for the WS2 probes: a move-only handle whose deleter prints
+// "drop <id>" and releases a one-byte heap block, so drop order, drop count,
+// leaks, and double frees are observable on the host (stdout, AddressSanitizer).
+// strdup and free come from the host C library; strict -std=c99 does not
+// declare strdup, so the ffi prototype is the only one in the unit.
+module Probe.Tok;
+
+import { println } from std.io;
+
+export handle Tok freedBy dropTok;
+
+ffi probetok {
+    func strdup(s: cstring): Tok;
+    func free(take t: Tok): void;
+}
+
+/// Creates a handle carrying `id` in its first byte.
+export func tok(id: u8): Tok {
+    let t: Tok = strdup("A");
+    unsafe {
+        let p: raw u8 = raw u8(t);
+        *p = id;
+    }
+    return t;
+}
+
+/// Reads the id of a handle without consuming it.
+export func idOf(t: Tok): u8 {
+    let v: u8 = 0;
+    unsafe {
+        let p: raw u8 = raw u8(t);
+        v = *p;
+    }
+    return v;
+}
+
+/// Prints "use <id>" through a read-only lend.
+export func show(t: Tok): void {
+    println($"use {idOf(t)}");
+}
+
+/// The deleter: prints the id, then releases the block.
+export func dropTok(take t: Tok): void {
+    println($"drop {idOf(t)}");
+    free(take t);
+}

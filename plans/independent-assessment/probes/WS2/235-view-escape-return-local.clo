@@ -1,0 +1,19 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { slice } from std.mem;
+
+func head(xs: i32[]): i32[] {
+    return slice(xs, 0, 2);
+}
+
+func bad(): i32[] {
+    let xs: i32[3] = [1, 2, 3];
+    return head(xs);
+}
+
+func main(): i32 {
+    bad();
+    println("end");
+    return 0;
+}

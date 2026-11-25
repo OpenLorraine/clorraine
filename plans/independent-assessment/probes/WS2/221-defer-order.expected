@@ -1,0 +1,20 @@
+# WS2-04. # Sources: spec/05-statements.md STMT-11/STMT-12 and spec/03-ownership.md §5: defer joins the cleanup ladder; drops and defers run in reverse registration order on every normal exit edge (return, break, continue, scope end), not on a fault.
+profiles: host
+with: tok.clo
+expect: output
+contrast: println("defer B"); ==> println("defer C");
+contrast-expect: output
+--- output
+body
+end
+defer B
+drop 2
+defer A
+drop 1
+--- contrast-output
+body
+end
+defer C
+drop 2
+defer A
+drop 1

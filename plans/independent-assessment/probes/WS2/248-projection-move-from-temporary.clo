@@ -1,0 +1,20 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Pair {
+    a: Tok;
+    b: Tok;
+}
+
+func makePair(x: u8, y: u8): Pair {
+    return Pair { a: tok(x), b: tok(y) };
+}
+
+func main(): i32 {
+    let t: Tok = makePair(1, 2).a;
+    show(t);
+    println("end");
+    return 0;
+}

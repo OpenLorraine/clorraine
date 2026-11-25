@@ -1,0 +1,20 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { boxNew, boxSet } from std.mem;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+struct Pair {
+    a: Tok;
+    b: Tok;
+}
+
+func main(): i32 {
+    let b: Box<Tok> = boxNew<Tok>(tok(1));
+    boxSet<Tok>(borrow b, tok(2));
+    let p: Box<Pair> = boxNew<Pair>(Pair { a: tok(3), b: tok(4) });
+    let o: Box<Tok>? = null;
+    o = boxNew<Tok>(tok(5));
+    println("end");
+    return 0;
+}

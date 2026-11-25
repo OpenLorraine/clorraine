@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:24
-> **Progress**: 18/95 tasks (18%)
+> **Last Updated**: 2026-11-25 20:32
+> **Progress**: 20/95 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -151,7 +151,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 2: WS2 Ownership, borrowing, drops
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 2f000c048f938ccf48c18365e06f7c1a40e2c00b
 > **Reasoning**: xhigh — the largest and riskiest component; false accepts are memory-unsafe (AR #19)
 
 ### Step 2.1: Probe specification
@@ -159,8 +159,8 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-02 §WS2 · spec chapters 03, 05, 06 §6.1, 11, 16 · 03-01 §Ground rules (Sanitizer builds) · AR #10, AR #14
 **Objective**: Accept/reject and sanitizer-clean expectations from the spec before running.
 
-- [ ] 2.1.1 Write probes and expectations for WS2-01..WS2-06 (WS2a) under `probes/WS2/`
-- [ ] 2.1.2 Write probes and expectations for WS2-07..WS2-12 (WS2b) under `probes/WS2/`; commit Step 2.1 probes and expectations, local only
+- [x] 2.1.1 Write probes and expectations for WS2-01..WS2-06 (WS2a) under `probes/WS2/` ✅ (completed: 2026-11-25 20:32)
+- [x] 2.1.2 Write probes and expectations for WS2-07..WS2-12 (WS2b) under `probes/WS2/`; commit Step 2.1 probes and expectations, local only ✅ (completed: 2026-11-25 20:32)
 - [ ] 2.1.3 Red check: the ASan/UBSan builds of 03-01 detect a seeded leak, double free, and signed overflow in a C control program, and each Clorraine probe discriminates; log in `findings/WS2-ownership.md`
 
 ### Step 2.2: Analysis

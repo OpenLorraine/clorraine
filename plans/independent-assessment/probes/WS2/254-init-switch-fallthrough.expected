@@ -1,0 +1,17 @@
+# WS2-11. # Sources: spec/05-statements.md §16 and spec/11 (E10021: a read before assignment on every path) and spec/03 §3 (E10020: a read after a move).
+ spec/05 STMT-9: switch falls through (W10002); case 1 falls into case 2,
+# so every path assigns a.
+profiles: host
+with: tok.clo
+expect: output
+contrast: let k: i32 = 1; ==> let k: i32 = 3;
+contrast-expect: output
+--- output
+one
+use 2
+end
+drop 2
+--- contrast-output
+use 9
+end
+drop 9

@@ -1,0 +1,27 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func kind(): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    let a: Tok;
+    let k: i32 = kind();
+    switch (k) {
+        case 1:
+            a = tok(1);
+            break;
+        case 2:
+            a = tok(2);
+            break;
+        default:
+            a = tok(9);
+            break;
+    }
+    show(a);
+    println("end");
+    return 0;
+}

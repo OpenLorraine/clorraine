@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func main(): i32 {
+    let t: Tok = tok(1);
+    let total: i32 = 0;
+    ([borrow total] (n: i32) => {
+        total = total + n + i32(idOf(t));
+    })(4);
+    println($"{total}");
+    show(t);
+    println("end");
+    return 0;
+}

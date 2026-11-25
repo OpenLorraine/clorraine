@@ -1,0 +1,13 @@
+# WS2-10. # Sources: spec/03 §4 (partial moves only from owned locals and take parameters, E10026), spec/04 §3 (temporaries drop at statement end in reverse creation order; only the chosen ?: arm evaluates), spec/03 §5 (struct fields drop in declaration order).
+Moving a field out of a call result is not a partial move of an owned
+# local or take parameter, so E10026.
+profiles: host
+with: tok.clo
+expect: reject E10026
+contrast: let t: Tok = makePair(1, 2).a;\n    show(t); ==> let p: Pair = makePair(1, 2);\n    let t: Tok = p.a;\n    show(t);
+contrast-expect: output
+--- contrast-output
+use 1
+end
+drop 1
+drop 2

@@ -1,0 +1,17 @@
+# WS2-05. # Sources: spec/04-expressions.md §3 (temporaries, including inside nested calls and aggregate literals, live until the end of the statement and drop there in reverse creation order; only the chosen ?: arm and the needed && / || operand evaluate) and spec/03 §5.
+Two argument temporaries drop in reverse creation order.
+profiles: host
+with: tok.clo
+expect: output
+contrast: sum2(tok(1), tok(2)) ==> sum2(tok(1), tok(5))
+contrast-expect: output
+--- output
+drop 2
+drop 1
+3
+end
+--- contrast-output
+drop 5
+drop 1
+6
+end

@@ -1,0 +1,16 @@
+# WS2-05. # Sources: spec/04-expressions.md §3 (temporaries, including inside nested calls and aggregate literals, live until the end of the statement and drop there in reverse creation order; only the chosen ?: arm and the needed && / || operand evaluate) and spec/03 §5.
+profiles: host
+with: tok.clo
+expect: output
+contrast: tok(7) ==> tok(8)
+contrast-expect: output
+--- output
+7
+drop 7
+next
+end
+--- contrast-output
+8
+drop 8
+next
+end

@@ -1,0 +1,24 @@
+# WS2-04. # Sources: spec/05-statements.md STMT-11/STMT-12 and spec/03-ownership.md §5: defer joins the cleanup ladder; drops and defers run in reverse registration order on every normal exit edge (return, break, continue, scope end), not on a fault.
+The inner block's ladder (inner defer, b) runs at the block end;
+# the outer ladder runs at main's end.
+profiles: host
+with: tok.clo
+expect: output
+contrast: println("block"); ==> println("blk");
+contrast-expect: output
+--- output
+block
+inner
+drop 2
+after
+end
+outer
+drop 1
+--- contrast-output
+blk
+inner
+drop 2
+after
+end
+outer
+drop 1

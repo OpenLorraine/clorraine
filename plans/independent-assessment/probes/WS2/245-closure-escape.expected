@@ -1,0 +1,8 @@
+# WS2-09. spec/06 §6.1 L-6: a capturing closure cannot be returned (E10404).
+profiles: host
+with: tok.clo
+expect: reject E10404
+contrast: return () => n + 1; ==> return () => 4;
+contrast-expect: output
+--- contrast-output
+4

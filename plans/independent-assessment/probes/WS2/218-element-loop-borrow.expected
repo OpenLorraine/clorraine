@@ -1,0 +1,15 @@
+# WS2-03. spec/03 §3 and spec/05 STMT-8: for (borrow e in xs) lends each element;
+# nothing drops in the loop; the array drops first to last at scope end.
+profiles: host
+with: tok.clo
+expect: output
+contrast: for (borrow e in xs) ==> for (e in xs)
+contrast-expect: reject E10040
+--- output
+use 1
+use 2
+use 3
+end
+drop 1
+drop 2
+drop 3

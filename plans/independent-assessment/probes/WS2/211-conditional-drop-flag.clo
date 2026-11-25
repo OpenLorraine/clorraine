@@ -1,0 +1,23 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func consume(take t: Tok): void {
+    show(t);
+}
+
+func run(c: bool): void {
+    let a: Tok = tok(1);
+    if (c) {
+        consume(take a);
+    }
+    println("join");
+}
+
+func main(): i32 {
+    run(false);
+    run(true);
+    println("end");
+    return 0;
+}

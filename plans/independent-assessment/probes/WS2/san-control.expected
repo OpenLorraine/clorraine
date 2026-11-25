@@ -1,0 +1,9 @@
+# WS2 red check: the sanitizer builds of 03-01 §Ground rules detect seeded defects.
+# Source: 03-01-method-and-evidence.md §Falsifiability (seeded defect) and the
+# documented behavior of the sanitizers (AddressSanitizer/LeakSanitizer report heap
+# misuse and leaks with detect_leaks=1; UBSan with -fno-sanitize-recover=all exits
+# non-zero on signed overflow, C99 6.5p5).
+# Expected lines of san-control.sh:
+# PASS asan clean: pass; PASS asan leak/double-free/use-after-free: detected;
+# PASS ubsan clean: pass; PASS ubsan overflow: detected.
+expect: script

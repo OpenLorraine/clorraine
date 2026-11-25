@@ -1,0 +1,11 @@
+# WS2-02. spec/05-statements.md §15 (runtime faults E11210-E11213 abort and do not
+# run the cleanup ladder) and spec/04 §9 (out-of-range index is E11211).
+profiles: host
+with: tok.clo
+expect: fault E11211
+contrast: return 5; ==> return 1;
+contrast-expect: output
+--- contrast-output
+2
+end
+drop 1

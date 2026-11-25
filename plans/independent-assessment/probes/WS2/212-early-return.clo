@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func f(c: bool): void {
+    let a: Tok = tok(1);
+    let b: Tok = tok(2);
+    if (c) {
+        println("ret");
+        return;
+    }
+    let d: Tok = tok(3);
+    show(d);
+}
+
+func main(): i32 {
+    f(true);
+    f(false);
+    println("end");
+    return 0;
+}

@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func pass<T>(take x: T): T {
+    return x;
+}
+
+func main(): i32 {
+    let a: Tok = tok(1);
+    let b: Tok = pass<Tok>(take a);
+    let n: i32 = pass<i32>(5);
+    show(b);
+    println($"{n}");
+    println("end");
+    return 0;
+}

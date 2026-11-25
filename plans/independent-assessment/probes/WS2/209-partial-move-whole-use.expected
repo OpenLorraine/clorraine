@@ -1,0 +1,13 @@
+# WS2-01. spec/03 §4 / spec/07 STR-10: whole-value use of a partially moved struct
+# is E10025.
+profiles: host
+with: tok.clo
+expect: reject E10025
+contrast: let k: Job = j;\n    show(n);\n    show(k.other); ==> let k: Tok = j.other;\n    show(n);\n    show(k);
+contrast-expect: output
+--- contrast-output
+use 1
+use 2
+end
+drop 2
+drop 1

@@ -1,0 +1,22 @@
+# WS2-08. spec/03 §5 and spec/appendix-stdlib.md §3.1: boxSet drops the old pointee;
+# a Box drops its pointee recursively (struct fields in declaration order); a
+# Box<T>? drops null-safely. Locals drop in reverse declaration order: o, p, b.
+profiles: host
+with: tok.clo
+expect: output
+contrast: tok(5) ==> tok(6)
+contrast-expect: output
+--- output
+drop 1
+end
+drop 5
+drop 3
+drop 4
+drop 2
+--- contrast-output
+drop 1
+end
+drop 6
+drop 3
+drop 4
+drop 2
