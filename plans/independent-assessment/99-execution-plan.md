@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 21:36
-> **Progress**: 35/95 tasks (36%)
+> **Last Updated**: 2026-11-25 21:40
+> **Progress**: 36/95 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -212,7 +212,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 4: WS4 Generated-code quality and optimizer
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 25d1a1da835a6fd1e0cca9ee9596066dccf4657a
 > **Reasoning**: high — measurement-driven analysis over the Phase 0 matrix (AR #19)
 
 ### Step 4.1: Probe specification
@@ -220,7 +220,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-02 §WS4 · 03-01 §Measurement rules · AR #5, AR #17
 **Objective**: Every Phase 4 probe states its expected output and the quantity it measures.
 
-- [ ] 4.1.1 Write every Phase 4 probe under `probes/WS4/`: patched-C specifications for WS4-03..WS4-06 (target shape, output identical after normalization, metric), the attribution scripts for WS4-02, and the size and flag-variant scripts for WS4-07 and WS4-08 (ST-14); commit them, local only
+- [x] 4.1.1 Write every Phase 4 probe under `probes/WS4/`: patched-C specifications for WS4-03..WS4-06 (target shape, output identical after normalization, metric), the attribution scripts for WS4-02, and the size and flag-variant scripts for WS4-07 and WS4-08 (ST-14); commit them, local only ✅ (completed: 2026-11-25 21:40)
 - [ ] 4.1.2 Red check: the output comparison rejects a deliberately wrong patch, and each attribution script maps a seeded known symbol correctly; log in `findings/WS4-code-quality.md`
 
 ### Step 4.2: Analysis

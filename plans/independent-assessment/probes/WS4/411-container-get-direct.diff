@@ -1,0 +1,14 @@
+--- prog.c
++++ prog.c
+@@ -6191,9 +6191,8 @@
+ #line 23 "/work/benchmarks/container/program.clo"
+     while ((i < ((*pts)).count)) {
+ #line 21 "/work/benchmarks/container/program.clo"
+-    __cl_tmp0 = cl_get__Point(&((*pts)), i);
+-    if ((usize)(0) >= (usize)((__cl_tmp0).len)) cl_trap("E11211", "index out of range");
+-    p = (__cl_tmp0).ptr[0];
++    if ((usize)(i) >= (usize)((*pts).count)) cl_trap("E11211", "index out of range");
++    p = ((ClPoint *)(cl_buffer_ptr((*pts).data)))[i];
+ #line 22 "/work/benchmarks/container/program.clo"
+     total = (i32)((u32)(i32)((u32)total + (u32)(i32)((u32)p.x * (u32)2)) + (u32)p.y);
+ #line 23 "/work/benchmarks/container/program.clo"

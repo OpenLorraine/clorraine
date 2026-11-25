@@ -1,0 +1,5 @@
+# WS4-04 patched-C estimate: static drop elaboration. At the loop head `s` is always
+# empty (released and zeroed at the end of every iteration), so the null-checked
+# release before the assignment is dead. Expected: output identical after
+# normalization. Metric: net instructions and .text, A500 lens.
+benchmark: strings

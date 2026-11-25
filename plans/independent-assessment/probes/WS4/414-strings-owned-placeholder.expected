@@ -1,0 +1,5 @@
+# WS4-05 patched-C estimate: an owned String placeholder (`toHex(total)`) moved into
+# the template part instead of copied (cl_string_copy) and released later. Target
+# shape: move-into-placeholder in the template lowering. Expected: output identical
+# after normalization. Metric: net instructions and .text, A500 lens.
+benchmark: strings

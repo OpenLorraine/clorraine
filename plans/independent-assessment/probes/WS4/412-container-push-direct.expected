@@ -1,0 +1,5 @@
+# WS4-05 patched-C estimate: `push` with the capacity test inlined and the element
+# stored directly; the slice and its two checks are provably in range after the
+# reserve. Target shape: inlining `push` plus a view-elision pass. Expected: output
+# identical after normalization. Metric: net instructions and .text, A500 lens.
+benchmark: container

@@ -1,0 +1,48 @@
+--- prog.c
++++ prog.c
+@@ -6087,22 +6087,7 @@
+ void cl_write(APTR, ULONG);
+ void cl_write_line(APTR, ULONG);
+ 
+-static i32 cl_bench_Lookup_table[4096] = {0};
+-static i32 cl_std_io_MODE_NEWFILE = 0;
+-static i32 cl_std_io_MODE_OLDFILE = 0;
+-
+-static void cl_init_std_io(void)
+-{
+-#line 22 "stdlib/std.io.clo"
+-    cl_std_io_MODE_OLDFILE = 1005;
+-#line 25 "stdlib/std.io.clo"
+-    cl_std_io_MODE_NEWFILE = 1006;
+-}
+-
+-static void cl_init_bench_Lookup(void)
+-{
+-#line 9 "/work/benchmarks/lookup/program.clo"
+-    static const i32 __cl_ctmpl_0[4096] = {
++static i32 cl_bench_Lookup_table[4096] = {
+         32768, 32818, 32869, 32919, 32969, 33019, 33070, 33120,
+         33170, 33220, 33271, 33321, 33371, 33421, 33472, 33522,
+         33572, 33622, 33673, 33723, 33773, 33823, 33874, 33924,
+@@ -6616,7 +6601,20 @@
+         31964, 32014, 32064, 32115, 32165, 32215, 32265, 32316,
+         32366, 32416, 32466, 32517, 32567, 32617, 32667, 32718,
+     };
+-    memcpy(cl_bench_Lookup_table, __cl_ctmpl_0, sizeof(cl_bench_Lookup_table));
++static i32 cl_std_io_MODE_NEWFILE = 0;
++static i32 cl_std_io_MODE_OLDFILE = 0;
++
++static void cl_init_std_io(void)
++{
++#line 22 "stdlib/std.io.clo"
++    cl_std_io_MODE_OLDFILE = 1005;
++#line 25 "stdlib/std.io.clo"
++    cl_std_io_MODE_NEWFILE = 1006;
++}
++
++static void cl_init_bench_Lookup(void)
++{
++#line 9 "/work/benchmarks/lookup/program.clo"
+ }
+ 
+ static i32 cl_bench_Lookup_main(void)

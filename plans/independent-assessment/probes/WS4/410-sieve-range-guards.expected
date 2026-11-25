@@ -1,0 +1,8 @@
+# WS4-03 patched-C estimate: guard cost a simple IR range fact removes.
+# Target shape: every E11211 check in sieveOnce is provably in range (each index is
+# bounded by its loop condition against N, or is a constant below N), so a range
+# pass would remove all of them. Expected: output identical after
+# bench.normalize_output to benchmarks/sieve/expected-output.txt (AR #17, ST-14).
+# Metric: net m68k instructions and .text on the A500 lens (hosted-amiga-13, nix13,
+# -m68000, shipped -O2) against the unpatched build with the same flags.
+benchmark: sieve

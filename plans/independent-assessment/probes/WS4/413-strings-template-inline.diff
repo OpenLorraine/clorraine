@@ -1,0 +1,23 @@
+--- prog.c
++++ prog.c
+@@ -6146,7 +6146,19 @@
+ #line 13 "/work/benchmarks/strings/program.clo"
+     if (s) { FreeString(s); }
+     s = 0;
+-    s = cl_string_concat((ClStrPart[]){ cl_str_part_bytes((const u8 *)"token-", 6u), cl_str_part_u32((u32)(i)), cl_str_part_bytes((const u8 *)"-", 1u), cl_str_part_u32((u32)((i * (u32)(3)))) }, 4u);
++    {
++        cl_string_block *tb = (cl_string_block *)cl_string_new(27u);
++        unsigned char *td = cl_string_bytes(tb);
++        ULONG tn = 6;
++        memcpy(td, "token-", 6);
++        tn += cl_format_u32(td + tn, (unsigned int)i);
++        td[tn++] = '-';
++        tn += cl_format_u32(td + tn, (unsigned int)(i * (u32)(3)));
++        tb->len = tn;
++        tb->cap = tn;
++        td[tn] = '\0';
++        s = tb;
++    }
+ #line 14 "/work/benchmarks/strings/program.clo"
+     v = cl_string_view(s);
+ #line 15 "/work/benchmarks/strings/program.clo"

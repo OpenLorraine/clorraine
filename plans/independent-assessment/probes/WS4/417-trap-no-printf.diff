@@ -1,0 +1,15 @@
+--- prog.c
++++ prog.c
+@@ -545,7 +545,11 @@
+  * leg reads it from the program's standard output. */
+ static inline void cl_trap(const char *code, const char *message)
+ {
+-    printf("error %s: %s\n", code, message);
++    fputs("error ", stdout);
++    fputs(code, stdout);
++    fputs(": ", stdout);
++    fputs(message, stdout);
++    fputc('\n', stdout);
+     fflush(stdout);
+     exit(20);
+ }

@@ -1,0 +1,8 @@
+# WS4-07 expectation for 425-size.sh. Source: 03-02 WS4-07 (report the fixed
+# per-program cost once: calibration .text on each side, runtime functions surviving
+# --gc-sections, string tables) and 03-01 §Measurement rules. Expected: the listing
+# names every retained function above 100 bytes on each side, so the Clorraine-only
+# fixed cost (calibration .text difference, 776 bytes on A500 -O2 in the Phase 0
+# matrix) and the cost a runtime check adds (sieve) are attributed to symbols.
+# This script measures and lists; it has no pass/fail condition of its own.
+expect: script

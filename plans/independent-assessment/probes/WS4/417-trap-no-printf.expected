@@ -1,0 +1,6 @@
+# WS4-07 patched-C estimate: the runtime fault writer without printf. Every program
+# with a runtime check links cl_trap, whose printf pulls libnix's formatted-output
+# code. Target shape: the same "error CODE: message" line written with fputs/fputc.
+# Expected: output identical after normalization (no fault occurs in sieve). Metric:
+# .text on the A500 lens (instructions unchanged).
+benchmark: sieve

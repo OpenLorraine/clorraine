@@ -1,0 +1,11 @@
+--- prog.c
++++ prog.c
+@@ -6144,8 +6144,6 @@
+ #line 16 "/work/benchmarks/strings/program.clo"
+     while ((i < 2000)) {
+ #line 13 "/work/benchmarks/strings/program.clo"
+-    if (s) { FreeString(s); }
+-    s = 0;
+     s = cl_string_concat((ClStrPart[]){ cl_str_part_bytes((const u8 *)"token-", 6u), cl_str_part_u32((u32)(i)), cl_str_part_bytes((const u8 *)"-", 1u), cl_str_part_u32((u32)((i * (u32)(3)))) }, 4u);
+ #line 14 "/work/benchmarks/strings/program.clo"
+     v = cl_string_view(s);

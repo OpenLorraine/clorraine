@@ -1,0 +1,6 @@
+# WS4-05 patched-C estimate: `xs.get(i)[0]` lowered to one bounds check and a direct
+# element read instead of a one-element view (two checks, a slice struct). Target
+# shape: what inlining `get` plus a view-elision pass yields; the spec-required check
+# (E11211) is kept. Expected: output identical after normalization. Metric: net
+# instructions and .text, A500 lens, shipped -O2.
+benchmark: container

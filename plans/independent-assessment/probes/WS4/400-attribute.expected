@@ -1,0 +1,10 @@
+# WS4-02 expectation for 400-attribute.py, written before the run. Source:
+# 03-02 WS4-02 (attribute each >=10% gap on a shipped 68000 lens to concrete emitted
+# shapes) and the documented vamos trace format (`-B` labels: hunk and offset).
+# Expected: for container and strings (the two benchmarks >=10% above the C reference
+# on the A500 -O2 lens, findings/WS0-baseline.md), the per-function counts name the
+# functions that account for the gap; the per-side totals equal the Phase 0 raw counts
+# for the same lens (an unstripped build only adds symbols, not code).
+# Red check: `--c-file 400-seeded.c` must attribute more than half of all executed
+# instructions to `_spin`.
+expect: script

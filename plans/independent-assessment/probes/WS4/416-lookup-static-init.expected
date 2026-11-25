@@ -1,0 +1,6 @@
+# WS4-06 patched-C estimate: a module-level `let` table with a constant initializer
+# emitted as an initialized static (as C does) instead of a zeroed static filled at
+# start-up by memcpy from a const template. Target shape: constant-initializer
+# lowering for module values. Expected: output identical after normalization.
+# Metric: net instructions, .text, and .data on the A500 lens.
+benchmark: lookup

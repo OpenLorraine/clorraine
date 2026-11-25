@@ -1,0 +1,12 @@
+--- prog.c
++++ prog.c
+@@ -6164,7 +6164,8 @@
+     __cl_owned0 = 0;
+     __cl_owned0 = cl_std_fmt_toHex(total);
+ #line 18 "/work/benchmarks/strings/program.clo"
+-    __cl_tmp0 = cl_string_copy(__cl_owned0);
++    __cl_tmp0 = __cl_owned0;
++    __cl_owned0 = 0;
+ #line 18 "/work/benchmarks/strings/program.clo"
+     if (__cl_owned1) { FreeString(__cl_owned1); }
+     __cl_owned1 = 0;

@@ -1,0 +1,10 @@
+# WS4-08 expectation for 420-flags.py, written before the run. Sources: 03-02 WS4-08
+# and 03-01 §Measurement rules (flag findings compare two flag sets and state both;
+# 68020 numbers are a 68020 probe build, never above Opportunity); GCC documentation
+# for -Os, -fomit-frame-pointer, -flto, -fwrapv, -O3. Expected: every variant builds
+# and prints the benchmark golden (a variant whose output differs is itself a finding:
+# it would mean the emitted C depends on a flag for its meaning). The numbers are
+# recorded for comparison against the shipped -O2 / -Os lines; no gain or loss is
+# assumed in advance. Red check: the output comparison is bench.normalize_output
+# equality, shown to reject a mutated expectation in Phase 0 (findings/WS0-baseline.md).
+expect: script

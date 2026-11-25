@@ -1,0 +1,26 @@
+--- prog.c
++++ prog.c
+@@ -6126,7 +6126,6 @@
+ #line 23 "/work/benchmarks/sieve/program.clo"
+     while (((i32)((u32)i * (u32)i) < 8192)) {
+ #line 16 "/work/benchmarks/sieve/program.clo"
+-    if ((i < 0) || ((usize)(i) >= (usize)(8192))) cl_trap("E11211", "index out of range");
+     if ((flags[i] == 1)) {
+ #line 17 "/work/benchmarks/sieve/program.clo"
+     j = (i32)((u32)i * (u32)i);
+@@ -6135,7 +6134,6 @@
+ #line 19 "/work/benchmarks/sieve/program.clo"
+     __cl_tmp0 = j;
+ #line 19 "/work/benchmarks/sieve/program.clo"
+-    if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(8192))) cl_trap("E11211", "index out of range");
+     *(&(flags[__cl_tmp0])) = 0u;
+ #line 20 "/work/benchmarks/sieve/program.clo"
+     j = (i32)((u32)j + (u32)i);
+@@ -6157,7 +6155,6 @@
+ #line 31 "/work/benchmarks/sieve/program.clo"
+     while ((k < 8192)) {
+ #line 28 "/work/benchmarks/sieve/program.clo"
+-    if ((k < 0) || ((usize)(k) >= (usize)(8192))) cl_trap("E11211", "index out of range");
+     if ((flags[k] == 1)) {
+ #line 29 "/work/benchmarks/sieve/program.clo"
+     count = (i32)((u32)count + (u32)1);

@@ -1,0 +1,6 @@
+# WS4-05 patched-C estimate: a template with a fixed shape built inline (reserve the
+# maximum, copy the literal bytes, format each scalar in place) instead of filling a
+# ClStrPart array and running the generic two-pass cl_string_concat. Target shape: a
+# template-specialization pass. Expected: output identical after normalization.
+# Metric: net instructions and .text, A500 lens.
+benchmark: strings
