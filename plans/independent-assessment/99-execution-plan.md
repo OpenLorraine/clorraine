@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 21:04
-> **Progress**: 29/95 tasks (30%)
+> **Last Updated**: 2026-11-25 21:36
+> **Progress**: 35/95 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -195,15 +195,15 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 3.2: Analysis
 
-- [ ] 3.2.1 WS3-01, WS3-02: strict host/m68k builds and vbcc builds of the Phase 0 emission; classify every warning class
-- [ ] 3.2.2 WS3-03, WS3-04: evaluation order, overflow paths outside `-fwrapv`, shifts, conversions, aliasing; UBSan probes on host
-- [ ] 3.2.3 WS3-05..WS3-07: 68000 odd-address access (`vamos`, and FS-UAE A500 where needed), `volatile`/MMIO lowering, name collisions
-- [ ] 3.2.4 WS3-08..WS3-11: guards and fault paths (cross-check WS2-02), determinism from the Phase 0 emissions, ABI at the C boundary, shape robustness
+- [x] 3.2.1 WS3-01, WS3-02: strict host/m68k builds and vbcc builds of the Phase 0 emission; classify every warning class ✅ (completed: 2026-11-25 21:36)
+- [x] 3.2.2 WS3-03, WS3-04: evaluation order, overflow paths outside `-fwrapv`, shifts, conversions, aliasing; UBSan probes on host ✅ (completed: 2026-11-25 21:36)
+- [x] 3.2.3 WS3-05..WS3-07: 68000 odd-address access (`vamos`, and FS-UAE A500 where needed), `volatile`/MMIO lowering, name collisions ✅ (completed: 2026-11-25 21:36)
+- [x] 3.2.4 WS3-08..WS3-11: guards and fault paths (cross-check WS2-02), determinism from the Phase 0 emissions, ABI at the C boundary, shape robustness ✅ (completed: 2026-11-25 21:36)
 
 ### Step 3.3: Hardening and gate
 
-- [ ] 3.3.1 Self-refutation; escalate any Critical
-- [ ] 3.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS3-codegen.md` and `probes/WS3/`; commit, local only
+- [x] 3.3.1 Self-refutation; escalate any Critical ✅ (completed: 2026-11-25 21:36)
+- [x] 3.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS3-codegen.md` and `probes/WS3/`; commit, local only ✅ (completed: 2026-11-25 21:36)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)

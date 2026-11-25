@@ -1,0 +1,59 @@
+spec/tests/corpus/string-parser/program.clo a2: identical
+spec/tests/corpus/string-parser/program.clo b: identical
+spec/tests/corpus/string-parser/program.clo c: differs (58 lines)
+spec/tests/corpus/string-parser/program.clo d: differs (58 lines)
+spec/tests/corpus/string-parser/program.clo absolute paths in (d): 58
+spec/tests/corpus/string-parser/program.clo date/time strings in (a): 0
+benchmarks/container/program.clo a2: identical
+benchmarks/container/program.clo b: identical
+benchmarks/container/program.clo c: differs (27 lines)
+benchmarks/container/program.clo d: differs (27 lines)
+benchmarks/container/program.clo absolute paths in (d): 27
+benchmarks/container/program.clo date/time strings in (a): 0
+examples/amiga/boing.clo a2: identical
+examples/amiga/boing.clo b: identical
+examples/amiga/boing.clo c: differs (224 lines)
+examples/amiga/boing.clo d: differs (224 lines)
+examples/amiga/boing.clo absolute paths in (d): 224
+examples/amiga/boing.clo date/time strings in (a): 0
+PASS parens-3000 host cc: rc=0 220ms (limit 2770ms from 832 lines/277ms) lines=845
+PASS parens-3000 hosted-amiga gcc: rc=0 3677ms (limit 40620ms from 10730 lines/4062ms) lines=10743
+PASS parens-3000 hosted-amiga vbcc: rc=0 965ms (limit 10060ms from 10730 lines/1006ms) lines=10743
+PASS addchain-1000 host cc: rc=0 230ms (limit 2770ms from 832 lines/277ms) lines=856
+PASS addchain-1000 hosted-amiga gcc: rc=0 3523ms (limit 40620ms from 10730 lines/4062ms) lines=10754
+PASS addchain-1000 hosted-amiga vbcc: rc=0 1493ms (limit 10060ms from 10730 lines/1006ms) lines=10754
+PASS switch-3000 host cc: rc=0 276ms (limit 3210ms from 1375 lines/321ms) lines=18868
+PASS switch-3000 hosted-amiga gcc: rc=0 3584ms (limit 46790ms from 14114 lines/4679ms) lines=28766
+Traceback (most recent call last):
+  File "/work/plans/independent-assessment/probes/WS3/380-shapes.py", line 99, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/work/plans/independent-assessment/probes/WS3/380-shapes.py", line 82, in main
+    run = subprocess.run([*argv, "-o", str(out / f"{name}.{comp}.o"), str(c_file)],
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 1207, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 2060, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/usr/lib/python3.11/subprocess.py", line 1251, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['vc', '+aos68k', '-c99', '-O2', '-cpu=68000', '-I/opt/amiga/m68k-amigaos/ndk-include', '-c', '-o', '/work/build/tmp/assessment/WS3/shapes/switch-3000.vbcc.o', '/work/build/tmp/assessment/WS3/shapes/switch-3000.hosted-amiga.c']' timed out after 1200 seconds
+PASS statements-20000 host cc: rc=0 562ms (limit 3210ms from 1375 lines/321ms) lines=40845
+PASS statements-20000 hosted-amiga gcc: rc=0 4002ms (limit 46790ms from 14114 lines/4679ms) lines=50743
+FAIL statements-20000 hosted-amiga vbcc: rc=0 14655ms (limit 12230ms from 14114 lines/1223ms) lines=50743
+PASS locals-8000 host cc: rc=0 324ms (limit 3210ms from 1375 lines/321ms) lines=32841
+PASS locals-8000 hosted-amiga gcc: rc=0 3605ms (limit 46790ms from 14114 lines/4679ms) lines=42739
+PASS locals-8000 hosted-amiga vbcc: rc=0 8177ms (limit 12230ms from 14114 lines/1223ms) lines=42739
+FAIL functions-3000 host clc rc=1 error E20005: 'f32' is a keyword and cannot be used as a name
+  --> /work/build/tmp/assessment/WS3/shapes2/functions-300
+FAIL functions-3000 hosted-amiga clc rc=1 error E20005: 'f32' is a keyword and cannot be used as a name
+  --> /work/build/tmp/assessment/WS3/shapes2/functions-300
+shapes: 3 failure(s)
+vbcc switch-250: rc=0 1831ms
+vbcc switch-500: rc=0 7995ms
+vbcc switch-1000: rc=0 57489ms
+vbcc-scan: 0 unit diagnostics

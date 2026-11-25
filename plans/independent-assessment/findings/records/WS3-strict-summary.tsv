@@ -1,0 +1,5 @@
+    230 hosted-amiga	clo	warning	-Wsign-conversion
+     92 hosted-amiga	c	warning	-Wstrict-prototypes
+     62 hosted-amiga-13	c	warning	-Wstrict-prototypes
+     46 hosted-amiga	c	warning	-Wpedantic
+     31 hosted-amiga-13	c	warning	-Wpedantic
