@@ -1,0 +1,479 @@
+[
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "host",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "610-fmt-boundaries",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\n-nan inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\n-nan inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "host",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\n-nan inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\n-nan inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\nNaN inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\nNaN inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\nNaN inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "611-float-format",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\\nNaN inf -inf\\n' want='0.1 2.5 1.23457e+08 1e+300 -0\\nnan inf -inf\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "612-cstring-of-slice",
+    "profile": "host",
+    "mode": "clc",
+    "kind": "output",
+    "ok": false,
+    "detail": "rejected rc=1 first=E10200",
+    "contrast": false
+  },
+  {
+    "probe": "612-cstring-of-slice",
+    "profile": "hosted-amiga",
+    "mode": "clc",
+    "kind": "output",
+    "ok": false,
+    "detail": "rejected rc=1 first=E10200",
+    "contrast": false
+  },
+  {
+    "probe": "612-cstring-of-slice",
+    "profile": "hosted-amiga-13",
+    "mode": "clc",
+    "kind": "output",
+    "ok": false,
+    "detail": "rejected rc=1 first=E10200",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=-6 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=-6 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "host",
+    "mode": "release",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=-6 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=-6 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=20 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=20 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=20 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "613-span-wrap",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "fault E11211",
+    "ok": true,
+    "detail": "rc=20 first=E11211 expected=E11211",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "host",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "614-math-edges",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "host",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "615-iff-malformed",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "host",
+    "mode": "asan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "host",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "host",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "host",
+    "mode": "ubsan",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "616-mem-boundaries",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "651-implicit-drops",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "651-implicit-drops",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  }
+]

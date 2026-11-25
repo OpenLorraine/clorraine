@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 00:17
-> **Progress**: 54/95 tasks (56%)
+> **Last Updated**: 2026-11-26 00:32
+> **Progress**: 60/95 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -283,18 +283,18 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: Expected API behavior from the appendices before probes run.
 
 - [x] 6.1.1 Write probes and expectations for WS6-01..WS6-07 under `probes/WS6/`; commit them, local only ✅ (completed: 2026-11-26 00:17)
-- [ ] 6.1.2 Red check: each probe discriminates; log in `findings/WS6-stdlib.md`
+- [x] 6.1.2 Red check: each probe discriminates; log in `findings/WS6-stdlib.md` ✅ (completed: 2026-11-26 00:23)
 
 ### Step 6.2: Analysis
 
-- [ ] 6.2.1 WS6-01..WS6-03: API conformance, core-module boundary cases under ASan/UBSan, hidden costs
-- [ ] 6.2.2 WS6-04, WS6-05: Kickstart requirements per Amiga module and handle ownership on drop and fault paths
-- [ ] 6.2.3 WS6-06, WS6-07: cross-module consistency and `stdlib.rs` embedding and gating
+- [x] 6.2.1 WS6-01..WS6-03: API conformance, core-module boundary cases under ASan/UBSan, hidden costs ✅ (completed: 2026-11-26 00:32)
+- [x] 6.2.2 WS6-04, WS6-05: Kickstart requirements per Amiga module and handle ownership on drop and fault paths ✅ (completed: 2026-11-26 00:32)
+- [x] 6.2.3 WS6-06, WS6-07: cross-module consistency and `stdlib.rs` embedding and gating ✅ (completed: 2026-11-26 00:32)
 
 ### Step 6.3: Hardening and gate
 
-- [ ] 6.3.1 Self-refutation; cross-check handle findings with WS5-02/WS5-03; escalate any Critical
-- [ ] 6.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every per-module coverage-table row complete); commit, local only
+- [x] 6.3.1 Self-refutation; cross-check handle findings with WS5-02/WS5-03; escalate any Critical ✅ (completed: 2026-11-26 00:32)
+- [x] 6.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every per-module coverage-table row complete); commit, local only ✅ (completed: 2026-11-26 00:32)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)

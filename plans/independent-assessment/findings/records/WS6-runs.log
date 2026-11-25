@@ -1,0 +1,323 @@
+# WS6 runs 2026-11-26 (run.sh seeded/contrast/main; contrast2 = the fixed 613/615/616; p617 = probe 617).
+=== seeded.log
+== 600 seeded
+returns	appendix-stdlib.md:40	bufferNew: documented Buffer, declared Buffer?
+mode	appendix-stdlib.md:42	bufferBytes param 0: documented take, declared borrow
+missing	appendix-stdlib.md:43	bufferLenX (section module std.mem)
+module	appendix-stdlib.md:391	bufferBytes documented under std.text, defined in std.mem
+== 640 seeded
+module	std.amiga.semaphore	1.3=yes	appendix=2.0	requests=[]
+module	std.amiga.workbench	1.3=yes	appendix=-	requests=[37]
+13-listed	std.amiga.semaphore	appendix minimum 2.0, allowed on 1.3
+13-too-new	std.amiga.workbench	requests V37 on the 1.3 profile
+== 650 seeded
+double-close	std.seeded	closeX(borrow x: X) -> cl_x_free(take)
+== 670 seeded
+no-shim	std.amiga.dos	cl_dos_seeded_missing not in hosted-amiga-13 shims
+== 620 seeded
+PASS seeded-quadratic: N=256,512,1024 instr=[267643, 1055679, 4205059] ratio=4.00 marginal=6151.1/element
+scaling: 0 failure(s)
+=== contrast.log
+PASS 610-fmt-boundaries host asan: [output] rc=0
+PASS 610-fmt-boundaries host debug: [output] rc=0
+PASS 610-fmt-boundaries host release: [output] rc=0
+PASS 610-fmt-boundaries host ubsan: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga debug: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga release: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga-13 debug: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga-13 release: [output] rc=0
+FAIL 611-float-format host asan: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host debug: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host release: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host ubsan: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga debug: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga release: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga-13 debug: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga-13 release: [output] rc=0 got='0.1 3.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 3.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 612-cstring-of-slice host clc: [output] rejected rc=1 first=E10200
+FAIL 612-cstring-of-slice hosted-amiga clc: [output] rejected rc=1 first=E10200
+FAIL 612-cstring-of-slice hosted-amiga-13 clc: [output] rejected rc=1 first=E10200
+FAIL 613-span-wrap host clc: [output] rejected rc=1 first=E10200
+FAIL 613-span-wrap hosted-amiga clc: [output] rejected rc=1 first=E10200
+FAIL 613-span-wrap hosted-amiga-13 clc: [output] rejected rc=1 first=E10200
+PASS 614-math-edges host asan: [output] rc=0
+PASS 614-math-edges host debug: [output] rc=0
+PASS 614-math-edges host release: [output] rc=0
+PASS 614-math-edges host ubsan: [output] rc=0
+PASS 614-math-edges hosted-amiga debug: [output] rc=0
+PASS 614-math-edges hosted-amiga release: [output] rc=0
+PASS 614-math-edges hosted-amiga-13 debug: [output] rc=0
+PASS 614-math-edges hosted-amiga-13 release: [output] rc=0
+FAIL 615-iff-malformed host clc: [output] rejected rc=1 first=E10219
+FAIL 615-iff-malformed hosted-amiga clc: [output] rejected rc=1 first=E10219
+FAIL 615-iff-malformed hosted-amiga-13 clc: [output] rejected rc=1 first=E10219
+PASS 616-mem-boundaries host asan: [output] rc=0
+PASS 616-mem-boundaries host debug: [output] rc=0
+PASS 616-mem-boundaries host release: [output] rc=0
+PASS 616-mem-boundaries host ubsan: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga release: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 release: [output] rc=0
+PASS 651-implicit-drops hosted-amiga debug: [output] rc=0
+PASS 651-implicit-drops hosted-amiga release: [output] rc=0
+probe: 26 pass, 17 fail; wrote /work/build/tmp/assessment/WS6/red/contrast/contrast.json
+
+make: *** [Makefile:74: exec] Error 1
+=== contrast2.log
+PASS 613-span-wrap host asan: [output] rc=0
+PASS 613-span-wrap host debug: [output] rc=0
+PASS 613-span-wrap host release: [output] rc=0
+PASS 613-span-wrap host ubsan: [output] rc=0
+PASS 613-span-wrap hosted-amiga debug: [output] rc=0
+PASS 613-span-wrap hosted-amiga release: [output] rc=0
+PASS 613-span-wrap hosted-amiga-13 debug: [output] rc=0
+PASS 613-span-wrap hosted-amiga-13 release: [output] rc=0
+PASS 615-iff-malformed host asan: [output] rc=0
+PASS 615-iff-malformed host debug: [output] rc=0
+PASS 615-iff-malformed host release: [output] rc=0
+PASS 615-iff-malformed host ubsan: [output] rc=0
+PASS 615-iff-malformed hosted-amiga debug: [output] rc=0
+PASS 615-iff-malformed hosted-amiga release: [output] rc=0
+PASS 615-iff-malformed hosted-amiga-13 debug: [output] rc=0
+PASS 615-iff-malformed hosted-amiga-13 release: [output] rc=0
+PASS 616-mem-boundaries host asan: [output] rc=0
+PASS 616-mem-boundaries host debug: [output] rc=0
+PASS 616-mem-boundaries host release: [output] rc=0
+PASS 616-mem-boundaries host ubsan: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga release: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 release: [output] rc=0
+probe: 24 pass, 0 fail; wrote /work/build/tmp/assessment/WS6/red/contrast2/contrast.json
+=== main.log
+PASS 610-fmt-boundaries host asan: [output] rc=0
+PASS 610-fmt-boundaries host debug: [output] rc=0
+PASS 610-fmt-boundaries host release: [output] rc=0
+PASS 610-fmt-boundaries host ubsan: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga debug: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga release: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga-13 debug: [output] rc=0
+PASS 610-fmt-boundaries hosted-amiga-13 release: [output] rc=0
+FAIL 611-float-format host asan: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host debug: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host release: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format host ubsan: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\n-nan inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga debug: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga release: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga-13 debug: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 611-float-format hosted-amiga-13 release: [output] rc=0 got='0.1 2.5 1.23457e+08 1e+300 -0\nNaN inf -inf\n' want='0.1 2.5 1.23457e+08 1e+300 -0\nnan inf -inf\n'
+FAIL 612-cstring-of-slice host clc: [output] rejected rc=1 first=E10200
+FAIL 612-cstring-of-slice hosted-amiga clc: [output] rejected rc=1 first=E10200
+FAIL 612-cstring-of-slice hosted-amiga-13 clc: [output] rejected rc=1 first=E10200
+PASS 613-span-wrap host asan: [fault E11211] rc=-6 first=E11211 expected=E11211
+PASS 613-span-wrap host debug: [fault E11211] rc=-6 first=E11211 expected=E11211
+PASS 613-span-wrap host release: [fault E11211] rc=-6 first=E11211 expected=E11211
+PASS 613-span-wrap host ubsan: [fault E11211] rc=-6 first=E11211 expected=E11211
+PASS 613-span-wrap hosted-amiga debug: [fault E11211] rc=20 first=E11211 expected=E11211
+PASS 613-span-wrap hosted-amiga release: [fault E11211] rc=20 first=E11211 expected=E11211
+PASS 613-span-wrap hosted-amiga-13 debug: [fault E11211] rc=20 first=E11211 expected=E11211
+PASS 613-span-wrap hosted-amiga-13 release: [fault E11211] rc=20 first=E11211 expected=E11211
+PASS 614-math-edges host asan: [output] rc=0
+PASS 614-math-edges host debug: [output] rc=0
+PASS 614-math-edges host release: [output] rc=0
+PASS 614-math-edges host ubsan: [output] rc=0
+PASS 614-math-edges hosted-amiga debug: [output] rc=0
+PASS 614-math-edges hosted-amiga release: [output] rc=0
+PASS 614-math-edges hosted-amiga-13 debug: [output] rc=0
+PASS 614-math-edges hosted-amiga-13 release: [output] rc=0
+PASS 615-iff-malformed host asan: [output] rc=0
+PASS 615-iff-malformed host debug: [output] rc=0
+PASS 615-iff-malformed host release: [output] rc=0
+PASS 615-iff-malformed host ubsan: [output] rc=0
+PASS 615-iff-malformed hosted-amiga debug: [output] rc=0
+PASS 615-iff-malformed hosted-amiga release: [output] rc=0
+PASS 615-iff-malformed hosted-amiga-13 debug: [output] rc=0
+PASS 615-iff-malformed hosted-amiga-13 release: [output] rc=0
+PASS 616-mem-boundaries host asan: [output] rc=0
+PASS 616-mem-boundaries host debug: [output] rc=0
+PASS 616-mem-boundaries host release: [output] rc=0
+PASS 616-mem-boundaries host ubsan: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga release: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 debug: [output] rc=0
+PASS 616-mem-boundaries hosted-amiga-13 release: [output] rc=0
+PASS 651-implicit-drops hosted-amiga debug: [output] rc=0
+PASS 651-implicit-drops hosted-amiga release: [output] rc=0
+probe: 42 pass, 11 fail; wrote /work/build/tmp/assessment/WS6/main/probes/results.json
+== 600-api-conformance
+returns	appendix-stdlib.md:44	slice: documented u8[], declared T[]
+type	appendix-stdlib.md:89	boxNew param 0: documented take T, declared T
+type	appendix-stdlib.md:90	boxSet param 0: documented borrow Box<T>, declared Box<T>
+type	appendix-stdlib.md:90	boxSet param 1: documented take T, declared T
+missing	appendix-stdlib.md:91	func (section module std.mem)
+type	appendix-stdlib.md:92	boxPtr param 0: documented borrow Box<T>, declared Box<T>
+missing	appendix-stdlib.md:120	text (section module std.fmt)
+missing	appendix-stdlib.md:160	func (section module std.amiga.interrupt)
+missing	appendix-stdlib.md:161	func (section module std.amiga.interrupt)
+missing	appendix-stdlib.md:387	text (section module std.text)
+module	appendix-stdlib.md:390	slice documented under std.text, defined in std.mem
+module	appendix-stdlib.md:391	bufferBytes documented under std.text, defined in std.mem
+missing	appendix-stdlib.md:431	func (section module std.amiga.exec)
+missing	appendix-stdlib.md:764	func (section module std.amiga.utility)
+arity	appendix-stdlib.md:918	newStringGadget: documented 4, declared 7
+mode	appendix-stdlib.md:1374	ilbmInfo param 0: documented const, declared None
+mode	appendix-stdlib.md:1375	ilbmDecode param 0: documented const, declared None
+mode	appendix-stdlib.md:1376	ilbmPalette param 0: documented const, declared None
+mode	appendix-stdlib.md:1377	ilbmPixelHash param 0: documented const, declared None
+missing	appendix-amiga.md:56	iff (section module None)
+missing	appendix-amiga.md:57	ilbm (section module None)
+missing	appendix-amiga.md:57	graphics (section module None)
+missing	appendix-amiga.md:58	intuition (section module None)
+missing	appendix-amiga.md:59	graphics (section module None)
+missing	appendix-amiga.md:60	graphics (section module None)
+missing	appendix-amiga.md:61	graphics (section module None)
+missing	appendix-amiga.md:63	layers (section module None)
+missing	appendix-amiga.md:490	vamos (section module None)
+conformance: 28 report(s); 57 undocumented public function(s)
+undocumented	std.amiga.arexx.deleteRexxMessage
+undocumented	std.amiga.audio.sampleCycles
+undocumented	std.amiga.audio.sampleLength
+undocumented	std.amiga.audio.samplePeriod
+undocumented	std.amiga.audio.sampleVolume
+undocumented	std.amiga.custom.setDma
+undocumented	std.amiga.datatypes.dtDepth
+undocumented	std.amiga.datatypes.dtHeight
+undocumented	std.amiga.datatypes.dtWidth
+undocumented	std.amiga.devices.serialRead
+undocumented	std.amiga.devices.serialWrite
+undocumented	std.amiga.dos.delayTicks
+undocumented	std.amiga.dos.ticks
+undocumented	std.amiga.exec.createTask
+undocumented	std.amiga.gadtools.addInteger
+undocumented	std.amiga.gadtools.addText
+undocumented	std.amiga.ilbm.loadIlbm
+undocumented	std.amiga.input.decodeJoystick
+undocumented	std.amiga.input.readJoystick
+undocumented	std.amiga.interrupt.addHandler
+undocumented	std.amiga.interrupt.addPortHandler
+undocumented	std.amiga.intuition.openScreenHires
+undocumented	std.amiga.intuition.openWorkbenchWindow
+undocumented	std.amiga.sprite.freeAnimation
+undocumented	std.amiga.sprite.spriteChannel
+undocumented	std.amiga.sprite.spriteHeight
+undocumented	std.amiga.sprite.spriteVisible
+undocumented	std.amiga.sprite.spriteX
+undocumented	std.amiga.sprite.spriteY
+undocumented	std.amiga.timer.freeTimer
+undocumented	std.amiga.timer.openTimer
+undocumented	std.amiga.timer.timerWait
+undocumented	std.amiga.utility.freeDateStamp
+undocumented	std.amiga.utility.freeHook
+undocumented	std.amiga.utility.freeTagList
+undocumented	std.amiga.utility.newHook
+undocumented	std.amiga.video.bitmapBytesPerRow
+undocumented	std.amiga.video.bitmapDepth
+undocumented	std.amiga.video.bitmapFromIndices
+undocumented	std.amiga.video.bitmapHeight
+undocumented	std.amiga.video.bitmapWidth
+undocumented	std.amiga.video.chipRead16
+undocumented	std.amiga.video.chipRead32
+undocumented	std.amiga.video.chipRead8
+undocumented	std.amiga.video.chipWrite16
+undocumented	std.amiga.video.chipWrite32
+undocumented	std.amiga.video.chipWrite8
+undocumented	std.amiga.video.freeCopper
+undocumented	std.amiga.video.freeDisplay
+undocumented	std.amiga.video.openDisplayAt
+undocumented	std.io.createFile
+undocumented	std.io.openFile
+undocumented	std.io.print
+undocumented	std.io.println
+undocumented	std.io.readFile
+undocumented	std.io.writeBytes
+undocumented	std.mem.boxWith
+rc=1
+== 640-kickstart-gating
+module	std.amiga.amigaguide	1.3=no	appendix=3.0	requests=[37]
+module	std.amiga.arexx	1.3=no	appendix=2.0	requests=[36]
+module	std.amiga.args	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.asl	1.3=no	appendix=2.0	requests=[37]
+module	std.amiga.audio	1.3=yes	appendix=-	requests=[]
+module	std.amiga.boopsi	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.bsdsocket	1.3=no	appendix=3.1	requests=[4]
+module	std.amiga.clipboard	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.commodities	1.3=no	appendix=2.0	requests=[37]
+module	std.amiga.custom	1.3=yes	appendix=-	requests=[]
+module	std.amiga.datatypes	1.3=no	appendix=3.1	requests=[40]
+module	std.amiga.devices	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.dos	1.3=yes	appendix=-	requests=[]
+module	std.amiga.eclock	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.exec	1.3=yes	appendix=-	requests=[]
+module	std.amiga.expansion	1.3=no	appendix=-	requests=[37]
+module	std.amiga.gadtools	1.3=no	appendix=2.0	requests=[37]
+module	std.amiga.graphics	1.3=yes	appendix=-	requests=[]
+module	std.amiga.icon	1.3=no	appendix=-	requests=[37]
+module	std.amiga.ilbm	1.3=yes	appendix=-	requests=[]
+module	std.amiga.input	1.3=yes	appendix=-	requests=[]
+module	std.amiga.interrupt	1.3=yes	appendix=-	requests=[]
+module	std.amiga.intuition	1.3=yes	appendix=-	requests=[33, 37]
+module	std.amiga.layers	1.3=yes	appendix=-	requests=[33]
+module	std.amiga.locale	1.3=no	appendix=2.1	requests=[38]
+module	std.amiga.lowlevel	1.3=no	appendix=3.1	requests=[40]
+module	std.amiga.nonvolatile	1.3=no	appendix=3.1	requests=[40]
+module	std.amiga.picasso96	1.3=no	appendix=3.0	requests=[2, 33]
+module	std.amiga.pool	1.3=no	appendix=3.0	requests=[39]
+module	std.amiga.regions	1.3=no	appendix=2.0	requests=[37]
+module	std.amiga.semaphore	1.3=no	appendix=2.0	requests=[]
+module	std.amiga.sprite	1.3=yes	appendix=-	requests=[33]
+module	std.amiga.text	1.3=yes	appendix=-	requests=[33]
+module	std.amiga.timer	1.3=yes	appendix=-	requests=[]
+module	std.amiga.utility	1.3=no	appendix=2.0	requests=[37]
+module	std.amiga.video	1.3=yes	appendix=-	requests=[33, 39]
+module	std.amiga.workbench	1.3=no	appendix=-	requests=[37]
+module	std.fmt	1.3=yes	appendix=-	requests=[]
+module	std.iff	1.3=yes	appendix=-	requests=[]
+module	std.io	1.3=yes	appendix=-	requests=[]
+module	std.math	1.3=yes	appendix=-	requests=[]
+module	std.mem	1.3=yes	appendix=-	requests=[]
+module	std.text	1.3=yes	appendix=-	requests=[]
+above-min	std.amiga.asl	requests V37, appendix minimum 2.0 (V36)
+below-min	std.amiga.bsdsocket	requests V4, appendix minimum 3.1 (V40)
+above-min	std.amiga.commodities	requests V37, appendix minimum 2.0 (V36)
+above-min	std.amiga.gadtools	requests V37, appendix minimum 2.0 (V36)
+13-too-new	std.amiga.intuition	requests V37 on the 1.3 profile
+below-min	std.amiga.picasso96	requests V33, appendix minimum 3.0 (V39)
+above-min	std.amiga.regions	requests V37, appendix minimum 2.0 (V36)
+above-min	std.amiga.utility	requests V37, appendix minimum 2.0 (V36)
+13-too-new	std.amiga.video	requests V39 on the 1.3 profile
+gating: 9 report(s)
+rc=1
+== 650-handle-ownership
+review	std.amiga.dos	volumeFreeBytes(const info: VolumeInfo) -> cl_dos_volume_free(const)
+review	std.amiga.semaphore	releaseSemaphore(borrow semaphore: Semaphore) -> cl_release_semaphore(borrow)
+handles: 55; 0 report(s); 2 for review
+rc=0
+== 670-embedding
+embedding: 43 embedded modules, 43 files, 20 on 1.3; 0 report(s); 9 unused shim function(s)
+unused-shim	shim_host.c:cl_alloc
+unused-shim	shim_host.c:cl_memcpy
+unused-shim	shim_host.c:cl_memcmp
+unused-shim	shim_hosted_amiga.c:cl_alloc
+unused-shim	shim_hosted_amiga.c:cl_memcpy
+unused-shim	shim_hosted_amiga.c:cl_memcmp
+unused-shim	shim_hosted_amiga.c:cl_window_release
+unused-shim	shim_hosted_amiga.c:cl_window_retain_ui
+unused-shim	shim_hosted_amiga.c:cl_window_release_ui
+rc=0
+== 620-scaling
+PASS array-push: N=256,512,1024 instr=[10626, 16505, 28148] ratio=1.98 marginal=22.7/element
+PASS pad-left: N=256,512,1024 instr=[6006, 8565, 13753] ratio=2.03 marginal=10.1/element
+PASS clone: N=256,512,1024 instr=[6145, 8704, 13892] ratio=2.03 marginal=10.1/element
+PASS template-loop: N=256,512,1024 instr=[168906, 349386, 713610] ratio=2.02 marginal=711.4/element
+PASS decimal-loop: N=256,512,1024 instr=[76475, 157183, 320095] ratio=2.02 marginal=318.2/element
+PASS buffer-from-hash: N=256,512,1024 instr=[9121, 13729, 23013] ratio=2.01 marginal=18.1/element
+PASS string-of: N=256,512,1024 instr=[6145, 8704, 13892] ratio=2.03 marginal=10.1/element
+PASS seeded-quadratic: N=256,512,1024 instr=[267643, 1055679, 4205059] ratio=4.00 marginal=6151.1/element
+scaling: 0 failure(s)
+rc=0
+=== p617 main
+FAIL 617-read-error host {asan,debug,release,ubsan}: [output] rc=0 got='true false' want='true true'
+probe: 0 pass, 4 fail
+=== p617 contrast
+probe: 4 pass, 0 fail
