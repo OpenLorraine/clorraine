@@ -1,0 +1,16 @@
+# WS6-02 (std.io failure reporting). Sources: spec/appendix-stdlib.md §4 ("partial IO:
+# return the count moved plus a Status; ok means the request completed"; detail-carrying
+# failures are reported, never hidden) and C99 7.19.8.1 (fread returns the count moved;
+# end-of-file and a read error are told apart only by feof/ferror). On the host, opening
+# a directory for reading succeeds and the read fails (EISDIR), so "build" is a failing
+# read and an empty file is a clean end of file.
+# Expected: "true true" — the failing read and the end of file report differently.
+# Contrast: both reads use the empty file, so they must report the same ("true false").
+profiles: host
+expect: output
+contrast: readOnce("build"); ==> readOnce("build/tmp/assessment/WS6/f617-empty");
+contrast-expect: output
+--- output
+true true
+--- contrast-output
+true false

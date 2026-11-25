@@ -1,0 +1,24 @@
+module Probe.Main;
+
+import { println, File, createFile, openFile, readFile, MODE_OLDFILE } from std.io;
+import { slice } from std.mem;
+
+func readOnce(path: cstring): i32 {
+    let f: File? = openFile(path, MODE_OLDFILE);
+    if (f == null) {
+        return -100;
+    }
+    let file: File = f;
+    let buf: u8[16] = [; 0];
+    return readFile(file, slice<u8>(buf, 0, 16));
+}
+
+func main(): i32 {
+    let made: File? = createFile("build/tmp/assessment/WS6/f617-empty");
+    let ok: bool = made != null;
+    let failing: i32 = readOnce("build");
+    let empty: i32 = readOnce("build/tmp/assessment/WS6/f617-empty");
+    let distinct: bool = failing != empty;
+    println($"{ok} {distinct}");
+    return 0;
+}
