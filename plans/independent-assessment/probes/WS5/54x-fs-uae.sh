@@ -10,7 +10,7 @@
 # Usage (repository root):
 #   54x-fs-uae.sh build <clc> <out>     # inside the SDK container
 #   54x-fs-uae.sh run <out> <case>...   # on the host (needs docker)
-# Cases: 540 540c 541 541c seeded; a trailing "f" (541f, 541cf) also runs
+# Cases: 540 540c 541 541c 542 542c seeded; a trailing "f" (541f, 541cf) also runs
 # 54x-filler.c after the second walker, which overwrites free memory with the
 # ILLEGAL opcode while VBlank interrupts run. "c" is the contrasting input; "seeded" runs
 # 54x-seeded.c, which leaves a VERTB server and the ClProbe541 port installed
@@ -34,7 +34,10 @@ if [ "$mode" = build ]; then
         "$here/540-card-resource.clo" > "$out/src/540c.clo"
     cp "$here/541-fault-handlers.clo" "$out/src/541.clo"
     sed 's/pick(5)/pick(1)/' "$here/541-fault-handlers.clo" > "$out/src/541c.clo"
-    for c in 540 540c 541 541c; do
+    cp "$here/542-null-intuition-base.clo" "$out/src/542.clo"
+    sed 's/    println("calling");/    let s: Screen? = openScreen(320, 200, 2, "probe542");\n    println("calling");/' \
+        "$here/542-null-intuition-base.clo" > "$out/src/542c.clo"
+    for c in 540 540c 541 541c 542 542c; do
         "$clc" --profile hosted-amiga -o "$out/src/$c.c" "$out/src/$c.clo" || exit 1
         amiga_build "$out/src/$c.c" "$out/$c" || exit 1
     done

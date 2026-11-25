@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Screen, openScreen } from std.amiga.intuition;
+import { savePublicScreen } from std.amiga.workbench;
+
+func main(): i32 {
+    println("calling");
+    let ok: bool = savePublicScreen("ClNoSuchScreen", "RAM:probe542");
+    println($"saved {ok}");
+    return 0;
+}

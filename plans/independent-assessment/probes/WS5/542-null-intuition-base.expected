@@ -1,0 +1,18 @@
+# WS5-02/04 (library lifecycle, failure paths), A1200/KS3.1 under FS-UAE
+# (54x-fs-uae.sh case 542). Sources: spec/appendix-stdlib.md and
+# stdlib/std.amiga.workbench.clo (savePublicScreen "Returns false for a null/unknown
+# screen or an unwritable path"); intuition.library autodocs (LockPubScreen returns
+# NULL for an unknown name); exec.library (a library call needs an opened base).
+# The shim defines IntuitionBase itself (NULL until a screen or window opens), so
+# libstubs' auto-open object is not linked (link map, sieve.clo.map in WS4).
+# Expected: "calling", "saved false", rc 0, END.
+# Contrast 542c (a screen is opened first): the same lines.
+# Detector: a crash leaves no END line within the timeout.
+expect: script
+--- output
+before vertb N port 0 card 1
+calling
+saved false
+rc 0
+after vertb N port 0 card 1
+END
