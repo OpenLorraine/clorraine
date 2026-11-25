@@ -1,7 +1,7 @@
 ## Ambiguity Register: Independent Assessment of Clorraine
 
-> **Status**: ✅ GATE PASSED — all 20 items resolved
-> **Last Updated**: 2026-11-25 13:17
+> **Status**: ✅ GATE PASSED — all 23 items resolved
+> **Last Updated**: 2026-11-25
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
 |---|----------|-----------------|-------------------|---------------|--------|
@@ -24,7 +24,10 @@
 | 17 | Technical | How optimizer and A1200 opportunities are measured | A) optimizer gains estimated by hand-patching emitted C in `build/tmp`, no compiler prototype; A1200 measured by rebuilding emitted C with `-m68020` under `vamos`, FS-UAE only where shim behavior differs / B) prototype IR passes on a scratch branch | ✅ Resolved — User accepted recommendation: option A | ✅ Resolved |
 | 18 | Scope | Workstream partition | A) WS1 semantic core, WS2 ownership/borrow/drop, WS3 IR and C codegen correctness, WS4 generated-code quality and optimizer, WS5 runtime shims, WS6 standard library, WS7 runtime and compile-time performance, WS8 test and verification integrity (limited to the confirmed scope) plus a defect-history root-cause analysis of the DEF ledger / B) drop WS8 and fold coverage gaps into each workstream | ✅ Resolved — User accepted recommendation: option A | ✅ Resolved |
 | 19 | Non-functional | Effort per phase within the AR #4 ceiling | A) baseline `medium`; WS1, WS4, WS6, WS7, WS8 `high`; WS2, WS3, WS5 `xhigh`; adversarial verification `xhigh`; synthesis `high` / B) uniform `high` | ✅ Resolved — User accepted recommendation: option A | ✅ Resolved |
-| 20 | Technical | The verify gate for each assessment phase | Derived from AR #3, #10, #14: the phase gate is the `07` deliverable checks (ST cases) plus "no change outside `plans/independent-assessment/` and `build/`"; `make check`/`make verify` are not run | ✅ Resolved — follows from the user's accepted AR #3, #10, #14 | ✅ Resolved |
+| 20 | Technical | The verify gate for each assessment phase | Derived from AR #3, #10, #14: the phase gate is the `07` deliverable checks (ST cases) plus "no change outside `plans/independent-assessment/` and `build/`"; `make check`/`make verify` are not run. (preflight) Refined by PF-003, PF-005, PF-006: a command-shaped `Task verify` (whitespace check, allowed-path check, drift check) plus the phase's ST row; this plan's own roadmap row may change in any phase | ✅ Resolved — follows from the user's accepted AR #3, #10, #14; refinement accepted with the preflight recommendations | ✅ Resolved |
+| 21 | Data & state (preflight) | What "verified critical/major" in AR #13 means | Clarification from PF-002: `verified` is the confidence label only; DEF rows go to every *surviving* Critical/Major (Phase 9 verdict confirmed, downgraded, or upgraded) of any confidence, the row noting its confidence | ✅ Resolved — User accepted recommendation (PF-002) | ✅ Resolved |
+| 22 | Technical (preflight) | Whether AR #16 exempts the plan from exec-plan's strict-profile post-phase quality loop | Clarification from PF-007: yes — Phase 9 replaces the post-phase quality step for Phases 0–9; the report still gets an independent `correctness-reviewer` review in Phase 10 | ✅ Resolved — User accepted recommendation (PF-007, "Accept all recommendations", 2026-11-25) | ✅ Resolved |
+| 23 | Technical (complexity check, preflight) | Whether the Phase 0 measurement script is a new harness | PF-008: one probe script calling only existing `tools/perf/bench.py` functions with explicit flag arrays, no new metric or comparison logic, output under `build/tmp`. Original goal: measure overhead on both lenses (AR #2, R4). Smallest alternative: the harness alone, which covers one lens cell. Extra cost: one script under `probes/WS0/`. Independent verdict: Simplify — a probe runner within the probe layout, not an escalation | ✅ Resolved — User accepted recommendation (PF-008) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -44,4 +47,5 @@
 
 **AR-1..AR-7:** recorded from the user's answers in the planning conversation on 2026-11-25.
 **AR-8..AR-19:** the user replied "accept all recommendations" on 2026-11-25; each row records the recommended option.
+**AR-21..AR-23:** recorded from the preflight (`00-preflight-report.md`); the user replied "Accept all recommendations" on 2026-11-25. AR-22 is the strict-profile exemption the preflight asked the user to confirm; that bulk acceptance is recorded as the confirmation.
 **AR-20:** not a new choice; it is the consequence of AR #3 (no gate reruns), AR #10 (ST cases are the deliverable contract), and AR #14 (allowed measurement runs).

@@ -1,7 +1,7 @@
 # Independent Assessment of Clorraine
 
 > **Feature**: A deep, strict, evidence-based assessment of the compiler, C codegen, optimizer question, runtime shims, standard library, and performance, delivered as one report that feeds later remediation plans
-> **Status**: Planning Complete — execution waits for a settled working tree (AR #7)
+> **Status**: Planning Complete — preflighted; execution starts with the user's confirmation of a settled tree (AR #7)
 > **Created**: 2026-11-25
 > **Implements**: — (standalone plan; no RD)
 > **CodeOps Artifact Schema**: 1
@@ -18,8 +18,8 @@ cheap, and where the measurable performance headroom is.
 
 The assessment changes no compiler, runtime, standard-library, or spec source (AR #12). Its
 outputs are evidence: committed probe sources, per-workstream findings, an adversarially
-verified findings ledger, and a final report with a ranked remediation roadmap. Verified
-critical and major findings enter the roadmap's DEF ledger at synthesis (AR #13). The user
+reviewed findings ledger, and a final report with a ranked remediation roadmap. Surviving
+critical and major findings enter the roadmap's DEF ledger at synthesis (AR #13, AR #21). The user
 then selects remediation plans, each of which goes through `make-plan` and `exec-plan`.
 
 The compiler has no optimizer of its own: the IR carries no optimization pass and constant
@@ -33,7 +33,8 @@ in the emitted C blocks GCC, and which IR-level passes would pay for themselves 
 optimizer question, shims, libraries, performance — delivered as a detailed, strict, full
 report that the user then uses to enhance and fix Clorraine.
 **Smallest viable design:** read the code against `spec/`, write small probe programs and
-hand-written C references, measure with the existing bench harness, sanitizers, `vamos`, and
+equivalent hand-written C references, measure with the existing bench harness (driven by one
+probe script, AR #23), sanitizers, `vamos`, and
 FS-UAE, record findings in Markdown, and verify each finding with an independent session. No
 new harness, tool, or compiler prototype.
 **Excluded machinery:** a host mock harness for the Amiga shims; a prototype IR optimizer on a
@@ -69,6 +70,7 @@ validators. Each may appear only as a recommendation in the report.
 | 03-04 | [Report and Handoff](03-04-report-and-handoff.md) | Report structure, DEF rows, remediation roadmap |
 | 07  | [Testing Strategy](07-testing-strategy.md) | ST cases: the acceptance contract for every deliverable |
 | 99  | [Execution Plan](99-execution-plan.md) | Phases, sessions, and task checklist |
+| PF  | [Preflight Report](00-preflight-report.md) | Post-creation audit and its resolutions |
 
 Deliverables created during execution (AR #8, AR #11):
 
@@ -76,8 +78,9 @@ Deliverables created during execution (AR #8, AR #11):
 |------|---------|
 | `findings/WS0-baseline.md` | Baseline SHA, inventory, measurements |
 | `findings/WS<n>-<slug>.md` | One findings file per workstream |
+| `probes/WS0/` | `drift-check.sh`, `measure.py`, the equivalent C references and `calibration.c` |
 | `probes/WS<n>/` | Committed probe sources (`.clo`, hand-written `.c`, small scripts) |
-| `05-findings.md` | Merged, verified findings ledger |
+| `05-findings.md` | Merged ledger with Phase 9 verdicts, clean sample, escalations, and the report review |
 | `10-assessment-report.md` | The final report |
 
 ## Quick Reference
@@ -91,20 +94,24 @@ Deliverables created during execution (AR #8, AR #11):
 | Gate reruns | None; measurement runs only (AR #3, AR #14) |
 | Source changes | None; criticals are escalated immediately (AR #12) |
 | Effort | up to `xhigh`, never `max` (AR #4, AR #19) |
-| Review | Adversarial verification phase is the independent review (AR #16) |
-| Roadmap | Verified critical/major findings become DEF rows at synthesis (AR #13) |
+| Review | Adversarial verification phase is the independent review; it replaces exec-plan's post-phase quality step (AR #16, AR #22) |
+| Order and commits | Sequential in document order; `--ask-commit`, local commits after Step N.1 and at each gate (PF-004, PF-006) |
+| Measurement | Phase 0 owns the matrix via `probes/WS0/measure.py`; equivalent C references with their own calibration (AR #23, PF-008, PF-009) |
+| Roadmap | Surviving Critical/Major findings become DEF rows after the report review (AR #13, AR #21) |
 
 ## Specialist Agents
 
 **None** — the capability-gap check found no gap a standing specialist would close.
 
-_Detection evidence: the project already carries `emission-integrity-auditor`,
-`memory-safety-auditor`, `amiga-platform-reviewer`, `performance-auditor`,
-`correctness-reviewer`, and `semantics-reviewer` under `.opencode/agents/`, and
-`codeops/specialists/amiga-platform-reviewer.md`. Every workstream maps to one of them
-(03-01 §Agent routing). A new role would only restate those briefs._
+_Detection evidence: the project's agents under `.opencode/agents/` are edit-denied phase-diff
+reviewers, so the executing session authors every probe and finding, and Phase 9 uses fresh
+read-only `general` sessions with the matching briefs (`semantics-reviewer`,
+`correctness-reviewer`, `memory-safety-auditor`, `emission-integrity-auditor`,
+`codeops/specialists/amiga-platform-reviewer.md`) as checklists (03-01 §Agent routing,
+PF-011). The briefs carry the domain knowledge; a new role would only restate them._
 
 ## Related Files
 
-Created: everything under `plans/independent-assessment/`. Modified at synthesis only:
-`plans/00-roadmap.md` (plan row and DEF rows, AR #13). No other file is modified.
+Created: everything under `plans/independent-assessment/`. Modified: `plans/00-roadmap.md` —
+this plan's row in any phase, finding-derived DEF rows in Phase 10 only (03-01 §Ground rules,
+AR #13). No other file is modified.
