@@ -4,7 +4,7 @@
 #
 # Each case boots a clean drive whose startup-sequence runs the system-state
 # walker (54x-walker.c), the probe program, the walker again, and writes END.
-# Output lands in <out>/<case>/out.txt. A case whose END line never appears
+# Output lands in <out>/run-<case>/out.txt. A case whose END line never appears
 # within the timeout is reported as "no END" (the machine hung or crashed).
 #
 # Usage (repository root):
@@ -53,7 +53,7 @@ docker run -d --rm --name "$xvfb" -v /tmp/.X11-unix:/tmp/.X11-unix "$image" \
 for _ in $(seq 1 100); do [ -S "/tmp/.X11-unix/X$num" ] && break; sleep 0.1; done
 
 for c in "$@"; do
-    d="$out/$c"; rm -rf "$d"; mkdir -p "$d/s"
+    d="$out/run-$c"; rm -rf "$d"; mkdir -p "$d/s"
     cp "$out/walker" "$d/walker"; cp "$out/$c" "$d/prog"
     cat > "$d/s/startup-sequence" <<EOF
 failat 100
