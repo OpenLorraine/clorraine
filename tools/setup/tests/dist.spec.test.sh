@@ -56,6 +56,8 @@ build_creates_the_expected_assets() {
     check_contains "$output/install.sh" "VERSION='1.2.0'" "installer version pin"
     check_contains "$output/install.sh" "ARCHIVE_BYTES='$(wc -c <"$archive")'" "installer size pin"
     check_contains "$output/install.sh" "ARCHIVE_SHA256='$(sha256sum "$archive" | awk '{print $1}')'" "installer hash pin"
+    check_contains "$output/install.sh" "VSIX_BYTES='$(wc -c <"$output/clorraine-1.2.0.vsix")'" "VSIX size pin"
+    check_contains "$output/install.sh" "VSIX_SHA256='$(sha256sum "$output/clorraine-1.2.0.vsix" | awk '{print $1}')'" "VSIX hash pin"
 
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 0 "$status" "verify"
@@ -111,6 +113,19 @@ a_stale_installer_pin_fails() {
     check_contains "$root/stderr" "pin" "stale-pin message"
 }
 
+# A stale VSIX pin fails verification after a successful build.
+a_stale_vsix_pin_fails() {
+    fixture
+    local status
+    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    check_status 0 "$status" "package before VSIX pin change"
+    sed -i "s/VSIX_SHA256='[0-9a-f]*'/VSIX_SHA256='0000000000000000000000000000000000000000000000000000000000000000'/" "$output/install.sh"
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh >SHA256SUMS )
+    status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
+    check_status 1 "$status" "stale VSIX pin"
+    check_contains "$root/stderr" "VSIX_SHA256" "stale-VSIX message"
+}
+
 # A missing VSIX is a producer error, not a silent partial candidate.
 a_missing_vsix_fails() {
     fixture
@@ -144,6 +159,7 @@ a_version_mismatch_fails
 an_extra_file_fails
 a_forbidden_file_fails
 a_stale_installer_pin_fails
+a_stale_vsix_pin_fails
 a_missing_vsix_fails
 release_readme_has_no_local_links
 finish

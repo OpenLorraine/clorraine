@@ -44,7 +44,7 @@ EOF
 run_without_curl() {
     local minimal="$root/minimal"
     mkdir -p "$minimal"
-    for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find wc \
+    for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find cat wc \
         basename dirname sort ln mv rm mkdir cp chmod readlink head tr sleep; do
         if [ -x "$root/fake/$tool" ]; then
             cp "$root/fake/$tool" "$minimal/$tool"
@@ -88,7 +88,7 @@ command_checks_are_enforced() {
 
     local bare="$root/bare"
     mkdir -p "$bare"
-    for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find wc \
+    for tool in uname getconf sha256sum tar gzip mktemp awk sed grep find cat wc \
         basename dirname sort ln mv rm mkdir cp chmod readlink head tr sleep; do
         if [ -x "$root/fake/$tool" ]; then
             cp "$root/fake/$tool" "$bare/$tool"
@@ -361,7 +361,7 @@ interactive_install_uses_the_prompts() {
     check_contains "$root/stdout" "Add " "path prompt"
     check_contains "$root/stdout" "Install Clorraine" "confirm prompt"
     check_contains "$root/stdout" "installed Clorraine 1.2.0" "interactive success"
-    check_contains "$root/stdout" "Next steps" "next-step output"
+    check_contains "$root/stdout" "First run complete" "success summary"
     check_exists "$root/home/.local/bin/clorraine" "default prefix"
     check_contains "$root/home/.profile" "# >>> clorraine >>>" "interactive PATH block"
 }
@@ -451,7 +451,124 @@ unsafe_archive_members_are_rejected
 a_wrong_installed_version_is_rejected
 locks_are_live_and_stale_safe
 path_block_is_quoted_replaced_and_removed
+# The hello sources stay on disk so the user can run them again.
+hello_examples_stay_available() {
+    fixture
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-vscode --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "example install"
+    check_exists "$prefix/share/clorraine/examples/hello.clo" "host hello source"
+    check_exists "$prefix/share/clorraine/examples/hello-guest.clo" "guest hello source"
+    check_contains "$prefix/share/clorraine/examples/hello.clo" \
+        "module demo.Hello" "host hello text"
+    check_contains "$prefix/share/clorraine/examples/hello-guest.clo" \
+        "timerWait" "guest hello wait"
+    check_contains "$root/stdout" "First run complete" "summary"
+    check_contains "$root/stdout" "hello.clo" "hello path"
+}
+
+# --vscode downloads, verifies, and installs the pinned extension.
+vscode_extension_is_installed_when_requested() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EDITOR_LOG="$root/editor.log" \
+        FAKE_CURL_SOURCE_VSIX="$root/clorraine-1.2.0.vsix" \
+        run_installer "$root" "$installer" --prefix "$prefix" --vscode \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "VS Code install"
+    check_contains "$root/editor.log" "--install-extension" "extension command"
+    check_contains "$root/editor.log" "clorraine-1.2.0.vsix" "extension asset"
+    check_contains "$root/stdout" "VS Code" "VS Code summary"
+    check_contains "$root/stdout" "installed" "VS Code installed"
+}
+
+# An installed extension is not downloaded or installed again.
+vscode_extension_is_not_reinstalled() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 \
+        run_installer "$root" "$installer" --prefix "$prefix" --vscode \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "VS Code already installed"
+    check_absent "$root/editor.log" "no second extension install"
+    check_contains "$root/stdout" "already installed" "already-installed summary"
+}
+
+# --vscode without an editor warns but leaves a working CLI.
+vscode_without_an_editor_is_not_fatal() {
+    fixture
+    local status
+    status="$(run_installer "$root" "$installer" --prefix "$prefix" --vscode \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "VS Code missing"
+    check_contains "$root/stderr" "VS Code was not found" "missing-editor message"
+    check_not_contains "$root/stdout" "installed the Clorraine extension" "no false install"
+}
+
+# A supplied FS-UAE and ROM run the persistent guest hello.
+fs_uae_guest_hello_runs() {
+    fixture
+    local rom status
+    rom="$(make_fake_rom "$root/kick31.rom")"
+    status="$(FAKE_FS_UAE_READY=1 FAKE_CLI_LOG="$root/cli.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-vscode \
+        --fs-uae "$root/fake/fs-uae" --kickstart "$rom" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "FS-UAE guest hello"
+    check_contains "$root/cli.log" "--emulator" "verified runner"
+    check_contains "$root/cli.log" "--kickstart" "selected ROM"
+    check_contains "$root/cli.log" "hello-guest.clo" "guest source"
+    check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "guest hello output"
+    check_contains "$root/stdout" "FS-UAE" "FS-UAE summary"
+}
+
+# Without FS-UAE the host hello still runs and the guest command is printed.
+guest_hello_falls_back_without_fs_uae() {
+    fixture
+    local status
+    status="$(FAKE_CLI_LOG="$root/cli.log" run_installer "$root" "$installer" \
+        --prefix "$prefix" --toolchain "$root/fake-toolchain" --no-vscode \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "host fallback"
+    check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "host hello"
+    check_contains "$root/stdout" "FS-UAE was not found" "FS-UAE fallback"
+    check_contains "$root/stdout" "--emulator" "prepared guest command"
+    check_not_contains "$root/cli.log" "--emulator" "no guest run"
+}
+
+# Interactive detection uses the common ROM path, then prompts for VS Code.
+interactive_detects_fs_uae_and_vscode() {
+    fixture
+    mkdir -p "$root/home/amiga/roms"
+    make_fake_rom "$root/home/amiga/roms/amiga-os-310-a1200.rom" >/dev/null
+    local status
+    export FAKE_EDITOR_READY=1 FAKE_FS_UAE_READY=1
+    export FAKE_EDITOR_LOG="$root/editor.log" FAKE_CLI_LOG="$root/cli.log"
+    export FAKE_CURL_SOURCE_VSIX="$root/clorraine-1.2.0.vsix"
+    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n\n\n" 0)"
+    unset FAKE_EDITOR_READY FAKE_FS_UAE_READY FAKE_EDITOR_LOG FAKE_CLI_LOG
+    unset FAKE_CURL_SOURCE_VSIX
+    check_status 0 "$status" "interactive detection"
+    check_contains "$root/stdout" "FS-UAE detected" "FS-UAE prompt"
+    check_contains "$root/stdout" "Kickstart" "ROM prompt"
+    check_contains "$root/cli.log" "--emulator" "interactive guest run"
+    check_contains "$root/editor.log" "--install-extension" "interactive VSIX"
+}
+
 toolchain_root_is_configured_and_hello_runs
 interactive_toolchain_path_is_used
 no_toolchain_skips_the_first_run
+hello_examples_stay_available
+vscode_extension_is_installed_when_requested
+vscode_extension_is_not_reinstalled
+vscode_without_an_editor_is_not_fatal
+fs_uae_guest_hello_runs
+guest_hello_falls_back_without_fs_uae
+interactive_detects_fs_uae_and_vscode
 finish

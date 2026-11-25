@@ -92,8 +92,10 @@ Install with the release installer:
 \`\`\`
 
 The installer checks Linux x86_64 and glibc 2.38 or newer, verifies the
-archive, and installs side by side with an atomic \`current\` switch. The
-Amiga toolchain and Kickstart ROM are user-supplied and are not included.
+archive, and installs side by side with an atomic \`current\` switch. It can
+download the pinned AmigaPorts rc24 toolchain and, when VS Code is detected,
+install the extension. A licensed Kickstart ROM is user-supplied and is not
+included.
 
 Source, documentation, and issues:
 https://github.com/OpenLorraine/clorraine
@@ -112,14 +114,20 @@ EOF
 
 # Replaces the installer template pins.
 assemble_installer() {
-    local archive=$1 target=$2 bytes digest
+    local archive=$1 vsix=$2 target=$3 bytes digest vsix_name vsix_bytes vsix_digest
     bytes="$(wc -c <"$archive")"
     digest="$(sha256sum "$archive" | awk '{print $1}')"
+    vsix_name="$(basename "$vsix")"
+    vsix_bytes="$(wc -c <"$vsix")"
+    vsix_digest="$(sha256sum "$vsix" | awk '{print $1}')"
     python3 - "$template" "$target" "$version" "$(basename "$archive")" \
         "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$(basename "$archive")" \
-        "$bytes" "$digest" <<'PY'
+        "$bytes" "$digest" "$vsix_name" \
+        "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$vsix_name" \
+        "$vsix_bytes" "$vsix_digest" <<'PY'
 import sys
-template, target, version, name, url, size, digest = sys.argv[1:]
+(template, target, version, name, url, size, digest,
+ vsix_name, vsix_url, vsix_size, vsix_digest) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 for token, value in {
     "@VERSION@": version,
@@ -127,6 +135,10 @@ for token, value in {
     "@ARCHIVE_URL@": url,
     "@ARCHIVE_BYTES@": size,
     "@ARCHIVE_SHA256@": digest,
+    "@VSIX_NAME@": vsix_name,
+    "@VSIX_URL@": vsix_url,
+    "@VSIX_BYTES@": vsix_size,
+    "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
 open(target, "w", encoding="utf-8").write(text)
@@ -146,7 +158,7 @@ build_candidate() {
     rm -f "$archive"
     tar -czf "$archive" -C "$(dirname "$stage")" "$(basename "$stage")"
     cp "$vsix" "$output/$vsix_name"
-    assemble_installer "$archive" "$output/$installer_name"
+    assemble_installer "$archive" "$output/$vsix_name" "$output/$installer_name"
     (
         cd "$output"
         sha256sum "$archive_name" "$vsix_name" "$installer_name" >SHA256SUMS
@@ -180,6 +192,10 @@ verify_candidate() {
     grep -Fq "VERSION='$version'" "$installer" || die "installer pin mismatch: VERSION"
     grep -Fq "ARCHIVE_BYTES='$bytes'" "$installer" || die "installer pin mismatch: ARCHIVE_BYTES"
     grep -Fq "ARCHIVE_SHA256='$digest'" "$installer" || die "installer pin mismatch: ARCHIVE_SHA256"
+    bytes="$(wc -c <"$target")"
+    digest="$(sha256sum "$target" | awk '{print $1}')"
+    grep -Fq "VSIX_BYTES='$bytes'" "$installer" || die "installer pin mismatch: VSIX_BYTES"
+    grep -Fq "VSIX_SHA256='$digest'" "$installer" || die "installer pin mismatch: VSIX_SHA256"
 
     top="$(tar -tzf "$archive" | awk -F/ 'NR == 1 { print $1 }')"
     [ "$top" = "clorraine-$version-x86_64-linux" ] || die "archive has the wrong top-level directory"

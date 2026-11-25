@@ -131,6 +131,9 @@ make_stage() {
     mkdir -p "$stage/bin"
     cat >"$stage/bin/clorraine" <<EOF
 #!/bin/sh
+if [ -n "\${FAKE_CLI_LOG:-}" ]; then
+    printf '%s\\n' "\$*" >>"\$FAKE_CLI_LOG"
+fi
 case "\${1:-}" in
     --version) printf '%s\\n' "clorraine $version" ;;
     setup) printf 'configured toolchain\\n' ;;
@@ -167,14 +170,23 @@ write_checksums() {
 
 # Replaces the installer template pins and writes an executable fixture.
 assemble_installer() {
-    local template="$1" output="$2" version="$3" archive="$4"
-    local base bytes digest
+    local template="$1" output="$2" version="$3" archive="$4" vsix="${5:-}"
+    local base bytes digest vsix_base vsix_bytes vsix_digest
     base="$(basename "$archive")"
     bytes="$(wc -c <"$archive")"
     digest="$(sha256sum "$archive" | awk '{print $1}')"
-    python3 - "$template" "$output" "$version" "$base" "https://example.invalid/$base" "$bytes" "$digest" <<'PY'
+    if [ -z "$vsix" ]; then
+        vsix="$(dirname "$output")/clorraine-$version.vsix"
+        printf 'fixture vsix for %s\n' "$version" >"$vsix"
+    fi
+    vsix_base="$(basename "$vsix")"
+    vsix_bytes="$(wc -c <"$vsix")"
+    vsix_digest="$(sha256sum "$vsix" | awk '{print $1}')"
+    python3 - "$template" "$output" "$version" "$base" "https://example.invalid/$base" "$bytes" "$digest" \
+        "$vsix_base" "https://example.invalid/$vsix_base" "$vsix_bytes" "$vsix_digest" <<'PY'
 import sys
-template, output, version, name, url, size, digest = sys.argv[1:]
+(template, output, version, name, url, size, digest,
+ vsix_name, vsix_url, vsix_size, vsix_digest) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 for token, value in {
     "@VERSION@": version,
@@ -182,6 +194,10 @@ for token, value in {
     "@ARCHIVE_URL@": url,
     "@ARCHIVE_BYTES@": size,
     "@ARCHIVE_SHA256@": digest,
+    "@VSIX_NAME@": vsix_name,
+    "@VSIX_URL@": vsix_url,
+    "@VSIX_BYTES@": vsix_size,
+    "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
 open(output, "w", encoding="utf-8").write(text)
@@ -212,21 +228,27 @@ if [ -n "${FAKE_CURL_LOG:-}" ]; then
     printf '%s\n' "$*" >>"$FAKE_CURL_LOG"
 fi
 out=
+url=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output) out="${2:-}"; shift 2 ;;
         --output=*) out="${1#--output=}"; shift ;;
-        *) shift ;;
+        --*) shift ;;
+        *) url="$1"; shift ;;
     esac
 done
 [ -n "$out" ] || exit 2
 if [ "${FAKE_CURL_STATUS:-0}" -ne 0 ]; then
     exit "${FAKE_CURL_STATUS}"
 fi
-[ -n "${FAKE_CURL_SOURCE:-}" ] || exit 0
-cp "$FAKE_CURL_SOURCE" "$out"
+source=${FAKE_CURL_SOURCE:-}
+case "$url" in
+    *.vsix) [ -n "${FAKE_CURL_SOURCE_VSIX:-}" ] && source=$FAKE_CURL_SOURCE_VSIX ;;
+esac
+[ -n "$source" ] || exit 0
+cp "$source" "$out"
 if [ "${FAKE_CURL_TRUNCATE:-0}" = 1 ]; then
-    head -c 10 "$FAKE_CURL_SOURCE" >"$out"
+    head -c 10 "$source" >"$out"
 fi
 EOF
     cat >"$fake/sha256sum" <<'EOF'
@@ -237,7 +259,35 @@ if [ "${FAKE_SHA256_MODE:-real}" = zeros ]; then
 fi
 exec /usr/bin/sha256sum "$@"
 EOF
+    cat >"$fake/code" <<'EOF'
+#!/bin/sh
+[ "${FAKE_EDITOR_READY:-0}" = 1 ] || exit 1
+case "${1:-}" in
+    --version) printf '1.90.0\n' ;;
+    --list-extensions) [ "${FAKE_EXTENSION_INSTALLED:-0}" = 1 ] && printf 'openlorraine.clorraine\n' ;;
+    --install-extension)
+        [ -n "${FAKE_EDITOR_LOG:-}" ] && printf '%s\n' "$*" >>"$FAKE_EDITOR_LOG"
+        [ "${FAKE_EDITOR_FAIL:-0}" = 1 ] && exit 1
+        ;;
+esac
+exit 0
+EOF
+    cat >"$fake/fs-uae" <<'EOF'
+#!/bin/sh
+[ "${FAKE_FS_UAE_READY:-0}" = 1 ] || exit 1
+case "${1:-}" in
+    --version) printf 'fs-uae 3.2.35\n' ;;
+esac
+exit 0
+EOF
     chmod +x "$fake"/*
+}
+
+# Creates a 512 KB Kickstart-sized fixture file and prints its path.
+make_fake_rom() {
+    local path="$1"
+    dd if=/dev/zero of="$path" bs=1024 count=512 status=none
+    printf '%s\n' "$path"
 }
 
 # Runs one installer invocation with the fixture HOME/config and fake PATH.

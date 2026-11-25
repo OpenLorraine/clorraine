@@ -172,9 +172,48 @@ download_toolchain_verifies_and_installs() {
     rm -rf "$root"
 }
 
+# The pinned VSIX download verifies and returns a private path.
+download_vsix_verifies_and_returns_a_path() {
+    local root source installed
+    root="$(new_root)"
+    prepare_installer_fixture "$root"
+    PATH="$root/fake:$PATH"
+    export PATH
+    source="$root/clorraine-1.2.0.vsix"
+    printf 'fixture vsix\n' >"$source"
+    VSIX_NAME=clorraine-1.2.0.vsix
+    VSIX_URL=https://example.invalid/clorraine-1.2.0.vsix
+    VSIX_BYTES="$(wc -c <"$source")"
+    VSIX_SHA256="$(sha256sum "$source" | awk '{print $1}')"
+    download_dir=
+    FAKE_CURL_SOURCE_VSIX="$source"
+    export FAKE_CURL_SOURCE_VSIX
+    installed="$(download_vsix)"
+    check_status 0 "$?" "download VSIX"
+    check_exists "$installed" "verified VSIX"
+    rm -rf "$root"
+}
+
+# Editor detection ignores a broken launcher and accepts a working one.
+editor_detection_checks_the_launcher() {
+    local root editor
+    root="$(new_root)"
+    prepare_installer_fixture "$root"
+    PATH="$root/fake:$PATH"
+    export PATH
+    if editor=$(detect_editor); then fail "broken editor detected: $editor"; else pass; fi
+    FAKE_EDITOR_READY=1
+    export FAKE_EDITOR_READY
+    editor="$(detect_editor)"
+    if [ "$editor" = "$root/fake/code" ]; then pass; else fail "editor path: $editor"; fi
+    rm -rf "$root"
+}
+
 single_quote_is_posix_safe
 sanitize_removes_terminal_controls
 download_toolchain_verifies_and_installs
+download_vsix_verifies_and_returns_a_path
+editor_detection_checks_the_launcher
 config_dir_uses_an_absolute_xdg_home_only
 lock_owner_liveness_is_checked
 path_block_is_stripped

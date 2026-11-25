@@ -2,17 +2,19 @@
 # Clorraine Linux installer.
 #
 # The released script is assembled by `tools/setup/package.sh`, which replaces
-# the five pins below. The checked-in copy is a template: its network path
-# refuses to run until assembled, while `--archive/--checksums` works for a
+# the nine pins below. The checked-in copy is a template: its network paths
+# refuse to run until assembled, while `--archive/--checksums` works for a
 # local candidate.
 #
 # Usage:
 #   install.sh [--prefix DIR] [--modify-path]
 #              [--archive FILE --checksums FILE] [--uninstall [--purge]]
 #
-# The installer never invokes Docker, a toolchain, a ROM, or FS-UAE. The
-# archive is verified before extraction, and the active version is switched
-# only after the extracted tree passes its version check.
+# The installer never invokes Docker. It verifies the CLI archive before
+# extraction, optionally installs the pinned rc24 toolchain from AmigaPorts,
+# runs a host hello, and runs the guest hello when FS-UAE and a licensed ROM
+# are available. The active version is switched only after the extracted tree
+# passes its version check.
 set -eu
 umask 022
 
@@ -21,6 +23,10 @@ ARCHIVE_NAME='@ARCHIVE_NAME@'
 ARCHIVE_URL='@ARCHIVE_URL@'
 ARCHIVE_BYTES='@ARCHIVE_BYTES@'
 ARCHIVE_SHA256='@ARCHIVE_SHA256@'
+VSIX_NAME='@VSIX_NAME@'
+VSIX_URL='@VSIX_URL@'
+VSIX_BYTES='@VSIX_BYTES@'
+VSIX_SHA256='@VSIX_SHA256@'
 
 TOOLCHAIN_URL='https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz'
 TOOLCHAIN_BYTES='69868548'
@@ -38,13 +44,20 @@ Options:
   --archive FILE            install an exact local archive
   --checksums FILE          SHA256SUMS for --archive
   --toolchain PATH          use an existing rc24 toolchain root
-  --no-toolchain            skip toolchain setup and the hello check
+  --no-toolchain            skip toolchain setup and the hello checks
+  --fs-uae PATH             FS-UAE executable for the guest hello
+  --kickstart PATH          licensed KS3.1 A1200 ROM for the guest hello
+  --no-emulator             skip the guest hello
+  --vscode                  install the VS Code extension when detected
+  --no-vscode               skip VS Code detection and install
   --uninstall               remove the active version and PATH block
   --purge                   also remove versions and the CLI config
   -h, --help                show this help
 
 When stdin and stdout are terminals, an install asks for the prefix, the PATH
-choice, and confirmation. Non-terminal runs keep the flag/default behavior.
+choice, confirmation, and any detected toolchain, ROM, or VS Code install.
+Non-terminal runs keep the flag/default behavior. The host hello source stays
+under $PREFIX/share/clorraine/examples for later use.
 EOF
 }
 
@@ -582,24 +595,357 @@ configure_toolchain() {
     "$PREFIX/bin/clorraine" setup --toolchain "$root"
 }
 
-# Builds and runs a temporary host hello; requires the exact output.
-run_hello() {
-    local dir output status
-    dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-hello.XXXXXXXX") || return 1
-    cat >"$dir/hello.clo" <<'EOF'
+# Writes the portable host hello source to one path.
+write_hello_source() {
+    cat >"$1" <<'EOF'
+// The smallest Clorraine program: print one templated line.
 module demo.Hello;
+
 import { println } from std.io;
+
 func main(): i32 {
     let who: str = "Amiga";
     println($"Hello, {who}, from Clorraine!");
     return 0;
 }
 EOF
-    output=$(cd "$dir" && "$PREFIX/bin/clorraine" run hello.clo 2>&1)
-    status=$?
+}
+
+# Writes the Amiga hello source; the short wait keeps the FS-UAE window visible.
+write_guest_hello_source() {
+    cat >"$1" <<'EOF'
+// The Amiga hello waits five seconds so the FS-UAE screen is easy to see.
+module demo.HelloGuest;
+
+import { println } from std.io;
+import { Timer, openTimer, freeTimer, timerWait } from std.amiga.timer;
+
+func main(): i32 {
+    println("Hello, Amiga, from Clorraine!");
+    let timer: Timer? = openTimer();
+    if (timer != null) {
+        timerWait(timer, 250);
+        freeTimer(timer);
+    }
+    return 0;
+}
+EOF
+}
+
+# Leaves the hello sources under the prefix without overwriting a user edit.
+install_examples() {
+    local examples="$PREFIX/share/clorraine/examples"
+    HELLO_FILE="$examples/hello.clo"
+    HELLO_GUEST_FILE="$examples/hello-guest.clo"
+    mkdir -p "$examples" || {
+        printf 'clorraine: cannot create %s\n' "$examples" >&2
+        return 1
+    }
+    if [ ! -e "$HELLO_FILE" ] && [ ! -L "$HELLO_FILE" ]; then
+        write_hello_source "$HELLO_FILE" || return 1
+    fi
+    if [ ! -e "$HELLO_GUEST_FILE" ] && [ ! -L "$HELLO_GUEST_FILE" ]; then
+        write_guest_hello_source "$HELLO_GUEST_FILE" || return 1
+    fi
+    chmod 644 "$HELLO_FILE" "$HELLO_GUEST_FILE" 2>/dev/null || true
+    printf 'hello example: %s\n' "$HELLO_FILE"
+}
+
+# Builds and runs the persistent host hello; requires the exact output.
+run_hello() {
+    local dir output status
+    [ -f "${HELLO_FILE:-}" ] || return 1
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-hello.XXXXXXXX") || return 1
+    status=0
+    output=$(cd "$dir" && "$PREFIX/bin/clorraine" run "$HELLO_FILE" 2>&1) || status=$?
     rm -rf "$dir"
     printf '%s\n' "$output"
     [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]
+}
+
+# Downloads, verifies, and returns the pinned VS Code extension.
+download_vsix() {
+    local target actual_bytes actual_sha
+    case "$VSIX_BYTES" in
+        ''|*[!0-9]*)
+            printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
+            return 1
+            ;;
+    esac
+    case "$VSIX_SHA256" in
+        ''|*[!0-9a-fA-F]*)
+            printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
+            return 1
+            ;;
+    esac
+    if [ "$VSIX_BYTES" -le 0 ] || [ "${#VSIX_SHA256}" -ne 64 ]; then
+        printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
+        return 1
+    fi
+    require_commands curl
+    if [ -z "${download_dir:-}" ]; then
+        download_dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-install.XXXXXXXX") || return 1
+    fi
+    target="$download_dir/$VSIX_NAME"
+    if ! curl --disable --fail --location --proto '=https' --proto-redir '=https' \
+        --connect-timeout 20 --max-time 120 \
+        --max-filesize "$((VSIX_BYTES + 1))" \
+        --output "$target" "$VSIX_URL"; then
+        printf 'clorraine: cannot download the VS Code extension\n' >&2
+        return 1
+    fi
+    actual_bytes=$(wc -c <"$target")
+    if [ "$actual_bytes" -ne "$VSIX_BYTES" ]; then
+        printf 'clorraine: VS Code extension byte count mismatch\n' >&2
+        return 1
+    fi
+    actual_sha=$(sha256sum "$target" | awk '{print $1}')
+    if [ "$actual_sha" != "$VSIX_SHA256" ]; then
+        printf 'clorraine: VS Code extension SHA-256 mismatch\n' >&2
+        return 1
+    fi
+    printf '%s\n' "$target"
+}
+
+# Finds a working VS Code-family launcher.
+detect_editor() {
+    local name path
+    for name in code codium code-insiders; do
+        path=$(command -v "$name" 2>/dev/null) || continue
+        if "$path" --version >/dev/null 2>&1; then
+            printf '%s\n' "$path"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# True when the editor already lists the Clorraine extension.
+vscode_extension_installed() {
+    "$1" --list-extensions 2>/dev/null | grep -Fxiq 'openlorraine.clorraine'
+}
+
+# Detects and optionally installs the pinned VS Code extension.
+install_vscode() {
+    local editor vsix
+    VSCODE_STATE=${VSCODE_STATE:-unavailable}
+    if [ "$NO_VSCODE" = 1 ]; then
+        VSCODE_STATE=skipped
+        return 0
+    fi
+    if ! editor=$(detect_editor); then
+        if [ "$VSCODE" = 1 ]; then
+            printf 'VS Code was not found; install VS Code, then run: code --install-extension %s\n' "$VSIX_NAME" >&2
+        fi
+        VSCODE_STATE=unavailable
+        return 0
+    fi
+    if vscode_extension_installed "$editor"; then
+        printf 'the Clorraine extension is already installed in VS Code\n'
+        VSCODE_STATE=already-installed
+        return 0
+    fi
+    if [ "$VSCODE_SET" = 0 ]; then
+        if [ -t 0 ] && [ -t 1 ]; then
+            if ! confirm "Install the Clorraine extension in VS Code? [Y/n] " yes; then
+                VSCODE_STATE=skipped
+                return 0
+            fi
+        else
+            printf 'VS Code detected; run with --vscode to install the extension\n'
+            VSCODE_STATE=available
+            return 0
+        fi
+    fi
+    if ! vsix=$(download_vsix); then
+        printf 'could not download the VS Code extension; install it from the release\n' >&2
+        VSCODE_STATE=failed
+        return 0
+    fi
+    if "$editor" --install-extension "$vsix" >/dev/null 2>&1; then
+        printf 'installed the Clorraine extension in VS Code\n'
+        VSCODE_STATE=installed
+    else
+        printf 'could not install the VS Code extension; run: %s --install-extension %s\n' "$editor" "$vsix" >&2
+        VSCODE_STATE=failed
+    fi
+    return 0
+}
+
+# Finds a working FS-UAE executable from flags, environment, or PATH.
+detect_fs_uae() {
+    local candidate
+    if [ -n "${FS_UAE:-}" ]; then
+        candidate=$FS_UAE
+        if [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+        printf 'clorraine: FS-UAE is not executable: %s\n' "$candidate" >&2
+        return 1
+    fi
+    if [ -n "${CLORRAINE_FS_UAE:-}" ]; then
+        candidate=$CLORRAINE_FS_UAE
+        if [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+        printf 'clorraine: FS-UAE is not executable: %s\n' "$candidate" >&2
+        return 1
+    fi
+    candidate=$(command -v fs-uae 2>/dev/null) || return 1
+    if [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    return 1
+}
+
+# Finds a 512 KB KS3.1 A1200 ROM from flags, environment, or common paths.
+detect_kickstart() {
+    local path size dir
+    for path in "${KICKSTART:-}" "${CLORRAINE_KICKSTART:-}"; do
+        [ -n "$path" ] || continue
+        if [ -f "$path" ]; then
+            printf '%s\n' "$path"
+            return 0
+        fi
+        printf 'clorraine: Kickstart ROM is not a file: %s\n' "$path" >&2
+        return 1
+    done
+    for path in \
+        "$HOME/amiga/roms/amiga-os-310-a1200.rom" \
+        "$HOME/amiga/roms/kick31a1200.rom" \
+        "$HOME/Documents/FS-UAE/Kickstarts/kick31a1200.rom" \
+        "$HOME/Documents/FS-UAE/Kickstarts/kick31.rom" \
+        "$HOME/.local/share/fs-uae/Kickstarts/kick31a1200.rom" \
+        "$HOME/.config/fs-uae/Kickstarts/kick31a1200.rom" \
+        "$HOME/Desktop/kick31a1200.rom"
+    do
+        [ -f "$path" ] || continue
+        size=$(wc -c <"$path")
+        case "$size" in
+            524288|524299) printf '%s\n' "$path"; return 0 ;;
+        esac
+    done
+    for dir in \
+        "$HOME/amiga/roms" \
+        "$HOME/Documents/FS-UAE/Kickstarts" \
+        "$HOME/.local/share/fs-uae/Kickstarts" \
+        "$HOME/.config/fs-uae/Kickstarts"
+    do
+        [ -d "$dir" ] || continue
+        for path in "$dir"/*a1200*.rom "$dir"/*A1200*.rom "$dir"/kick31*.rom "$dir"/Kick31*.rom; do
+            [ -f "$path" ] || continue
+            size=$(wc -c <"$path")
+            case "$size" in
+                524288|524299) printf '%s\n' "$path"; return 0 ;;
+            esac
+        done
+    done
+    return 1
+}
+
+# Runs the persistent guest hello when FS-UAE and a ROM are available.
+guest_first_run() {
+    local emulator rom answer output status work
+    GUEST_STATE=${GUEST_STATE:-skipped}
+    if [ "$NO_EMULATOR" = 1 ]; then
+        return 0
+    fi
+    if ! emulator=$(detect_fs_uae); then
+        printf 'FS-UAE was not found; the host hello is ready and the Amiga command is below\n'
+        return 0
+    fi
+    FS_UAE_SELECTED=$emulator
+    rom=$(detect_kickstart || true)
+    if [ -t 0 ] && [ -t 1 ]; then
+        printf 'FS-UAE detected: %s\n' "$emulator"
+        if [ -n "$rom" ]; then
+            printf 'Kickstart 3.1 A1200 ROM [%s] (Enter to use, - to skip): ' "$rom"
+            read -r answer || answer=
+            case "$answer" in
+                '') ;;
+                -) rom= ;;
+                *) rom=$answer ;;
+            esac
+        else
+            printf 'Kickstart 3.1 A1200 ROM path (leave empty to skip the Amiga hello): '
+            read -r rom || rom=
+        fi
+    elif [ -z "${FS_UAE:-}${CLORRAINE_FS_UAE:-}" ] || [ -z "${KICKSTART:-}${CLORRAINE_KICKSTART:-}" ]; then
+        printf 'FS-UAE detected; pass --fs-uae and --kickstart to run the Amiga hello\n'
+        return 0
+    fi
+    if [ -z "$rom" ]; then
+        printf 'Amiga hello: skipped (no Kickstart ROM)\n'
+        return 0
+    fi
+    KICKSTART_SELECTED=$rom
+    printf 'Running the Amiga hello in FS-UAE; a window opens for about five seconds...\n'
+    work=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-guest.XXXXXXXX") || return 0
+    status=0
+    output=$(cd "$work" && CLORRAINE_EMULATOR_TIMEOUT_SECONDS="${CLORRAINE_EMULATOR_TIMEOUT_SECONDS:-45}" \
+        "$PREFIX/bin/clorraine" run -p hosted-amiga --emulator \
+        --fs-uae "$emulator" --kickstart "$rom" "$HELLO_GUEST_FILE" \
+        </dev/null 2>"$work/stderr") || status=$?
+    if [ -n "$output" ]; then
+        printf '%s\n' "$output"
+    fi
+    if [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]; then
+        GUEST_STATE=passed
+    else
+        printf 'Amiga hello did not complete (status %s)\n' "$status" >&2
+        if [ -s "$work/stderr" ]; then
+            sed 's/^/  /' "$work/stderr" >&2
+        fi
+        GUEST_STATE=failed
+    fi
+    rm -rf "$work"
+    return 0
+}
+
+# Prints the successful first-run summary and the commands to repeat it.
+print_summary() {
+    printf '\nFirst run complete.\n'
+    printf '  CLI           %s\n' "$PREFIX/bin/clorraine"
+    printf '  Hello source  %s\n' "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
+    if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+        printf '  Toolchain     %s\n' "$TOOLCHAIN_ROOT"
+    else
+        printf '  Toolchain     not configured\n'
+    fi
+    case "${HOST_STATE:-skipped}" in
+        passed) printf '  Host hello    passed\n' ;;
+        failed) printf '  Host hello    failed\n' ;;
+        *) printf '  Host hello    skipped\n' ;;
+    esac
+    case "${GUEST_STATE:-skipped}" in
+        passed) printf '  Amiga hello   ran in FS-UAE\n' ;;
+        failed) printf '  Amiga hello   failed in FS-UAE\n' ;;
+        *) printf '  Amiga hello   not run; the command is below\n' ;;
+    esac
+    case "${VSCODE_STATE:-unavailable}" in
+        installed) printf '  VS Code       extension installed\n' ;;
+        already-installed) printf '  VS Code       extension already installed\n' ;;
+        failed) printf '  VS Code       extension not installed\n' ;;
+        available) printf '  VS Code       detected; rerun with --vscode\n' ;;
+        skipped) printf '  VS Code       skipped\n' ;;
+        *) printf '  VS Code       not found\n' ;;
+    esac
+    printf '\nRun the host hello again:\n  %s run %s\n' \
+        "$PREFIX/bin/clorraine" "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
+    if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+        printf 'Run the Amiga hello again:\n  %s run -p hosted-amiga --emulator --fs-uae %s --kickstart %s %s\n' \
+            "$PREFIX/bin/clorraine" "${FS_UAE_SELECTED:-fs-uae}" \
+            "${KICKSTART_SELECTED:-<ks31-a1200.rom>}" \
+            "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-guest.clo}"
+    else
+        printf 'Set up the Amiga toolchain, then run the guest hello:\n  %s setup --toolchain <rc24 root>\n' "$PREFIX/bin/clorraine"
+    fi
+    if [ "${VSCODE_STATE:-}" = available ]; then
+        printf 'Install the VS Code extension with: %s --vscode (rerun the installer)\n' "$0"
+    fi
 }
 
 # Detects or installs the rc24 toolchain, then configures it.
@@ -608,11 +954,13 @@ toolchain_first_run() {
     if [ -n "$TOOLCHAIN" ]; then
         configure_toolchain "$TOOLCHAIN" || return 1
         TOOLCHAIN_CONFIGURED=1
+        TOOLCHAIN_ROOT=$TOOLCHAIN
         return 0
     fi
     if [ -n "${CLORRAINE_TOOLCHAIN:-}" ]; then
         configure_toolchain "$CLORRAINE_TOOLCHAIN" || return 1
         TOOLCHAIN_CONFIGURED=1
+        TOOLCHAIN_ROOT=$CLORRAINE_TOOLCHAIN
         return 0
     fi
     if [ -d "$TOOLCHAIN_DIR" ]; then
@@ -621,6 +969,7 @@ toolchain_first_run() {
         fi
         configure_toolchain "$TOOLCHAIN_DIR" || return 1
         TOOLCHAIN_CONFIGURED=1
+        TOOLCHAIN_ROOT=$TOOLCHAIN_DIR
         return 0
     fi
     if [ ! -t 0 ] || [ ! -t 1 ]; then
@@ -632,26 +981,31 @@ toolchain_first_run() {
     if [ -n "$answer" ]; then
         configure_toolchain "$answer" || return 1
         TOOLCHAIN_CONFIGURED=1
+        TOOLCHAIN_ROOT=$answer
         return 0
     fi
     if confirm "Download rc24 from AmigaPorts (70 MB)? [Y/n] " yes; then
         root=$(download_toolchain) || return 1
         configure_toolchain "$root" || return 1
         TOOLCHAIN_CONFIGURED=1
+        TOOLCHAIN_ROOT=$root
         return 0
     fi
     printf 'skipped toolchain; run: %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
     return 0
 }
 
-# Prints the remaining manual steps.
+# Prints the remaining manual steps after a failed first-run step.
 print_next_steps() {
     printf 'Next steps:\n'
     if [ -z "${TOOLCHAIN_CONFIGURED:-}" ]; then
         printf '  %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
     fi
-    printf '  %s/bin/clorraine run hello.clo\n' "$PREFIX"
-    printf '  Install the VS Code extension from the same release: clorraine-%s.vsix\n' "$VERSION"
+    printf '  Host hello: %s/bin/clorraine run %s\n' "$PREFIX" \
+        "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
+    printf '  Amiga hello: %s/bin/clorraine run -p hosted-amiga --emulator --fs-uae fs-uae --kickstart <ks31-a1200.rom> %s\n' \
+        "$PREFIX" "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-guest.clo}"
+    printf '  VS Code extension: install %s from the release\n' "$VSIX_NAME"
 }
 
 # Removes this prefix's links, current, and PATH block; keeps versions/config.
@@ -686,7 +1040,21 @@ main() {
     TOOLCHAIN=
     NO_TOOLCHAIN=0
     TOOLCHAIN_CONFIGURED=
+    TOOLCHAIN_ROOT=
     TOOLCHAIN_DIR="$(toolchain_data_dir)/rc24"
+    FS_UAE=
+    KICKSTART=
+    NO_EMULATOR=0
+    VSCODE=0
+    VSCODE_SET=0
+    NO_VSCODE=0
+    VSCODE_STATE=
+    HOST_STATE=skipped
+    GUEST_STATE=skipped
+    HELLO_FILE=
+    HELLO_GUEST_FILE=
+    FS_UAE_SELECTED=
+    KICKSTART_SELECTED=
     UNINSTALL=0
     PURGE=0
     ARCHIVE=
@@ -734,6 +1102,30 @@ main() {
                 NO_TOOLCHAIN=1
                 shift
                 ;;
+            --fs-uae)
+                [ "$#" -ge 2 ] || usage_error "--fs-uae needs a value"
+                FS_UAE=$2
+                shift 2
+                ;;
+            --kickstart)
+                [ "$#" -ge 2 ] || usage_error "--kickstart needs a value"
+                KICKSTART=$2
+                shift 2
+                ;;
+            --no-emulator)
+                NO_EMULATOR=1
+                shift
+                ;;
+            --vscode)
+                VSCODE=1
+                VSCODE_SET=1
+                shift
+                ;;
+            --no-vscode)
+                NO_VSCODE=1
+                VSCODE_SET=1
+                shift
+                ;;
             --uninstall)
                 UNINSTALL=1
                 shift
@@ -755,14 +1147,20 @@ main() {
     if [ "$PURGE" = 1 ] && [ "$UNINSTALL" = 0 ]; then
         usage_error "--purge requires --uninstall"
     fi
-    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ] || [ -n "$TOOLCHAIN" ] || [ "$NO_TOOLCHAIN" = 1 ]; }; then
+    if [ "$VSCODE" = 1 ] && [ "$NO_VSCODE" = 1 ]; then
+        usage_error "--vscode and --no-vscode cannot be combined"
+    fi
+    if [ "$NO_TOOLCHAIN" = 1 ] && { [ -n "$FS_UAE" ] || [ -n "$KICKSTART" ]; }; then
+        usage_error "--fs-uae and --kickstart require the toolchain"
+    fi
+    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ] || [ -n "$TOOLCHAIN" ] || [ "$NO_TOOLCHAIN" = 1 ] || [ -n "$FS_UAE" ] || [ -n "$KICKSTART" ] || [ "$NO_EMULATOR" = 1 ] || [ "$VSCODE_SET" = 1 ]; }; then
         usage_error "--uninstall cannot be combined with install options"
     fi
     if { [ -n "$ARCHIVE" ] && [ -z "$CHECKSUMS" ]; } || { [ -z "$ARCHIVE" ] && [ -n "$CHECKSUMS" ]; }; then
         usage_error "--archive and --checksums must be used together"
     fi
 
-    require_commands uname tar gzip sha256sum getconf mktemp awk sed grep find \
+    require_commands uname tar gzip sha256sum getconf mktemp awk sed grep find cat \
         wc basename dirname sort ln mv rm mkdir cp chmod readlink sleep tr
     check_host
 
@@ -818,6 +1216,7 @@ main() {
     acquire_lock
     trap 'rollback "$PREFIX/share/clorraine"; rm -rf "$PREFIX/share/clorraine/.tmp.$$"; release_lock; cleanup_temp' EXIT
     install_archive "$archive"
+    install_examples || die "cannot write the hello examples"
     if [ "$NO_TOOLCHAIN" = 0 ]; then
         if ! toolchain_first_run; then
             print_next_steps
@@ -826,15 +1225,20 @@ main() {
         if [ -n "${TOOLCHAIN_CONFIGURED:-}" ]; then
             if command -v cc >/dev/null 2>&1; then
                 if ! run_hello; then
+                    HOST_STATE=failed
                     print_next_steps
                     exit 1
                 fi
+                HOST_STATE=passed
             else
                 printf 'cc not found; skipping the host hello check\n'
+                HOST_STATE=skipped
             fi
+            guest_first_run
         fi
     fi
-    print_next_steps
+    install_vscode
+    print_summary
     release_lock
     cleanup_temp
     trap - EXIT

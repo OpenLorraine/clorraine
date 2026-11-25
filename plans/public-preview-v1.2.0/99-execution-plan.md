@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 12/12 tasks (100%)
+> **Progress**: 17/18 tasks (94%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -170,6 +170,45 @@ release; deleting `v1.1.2`; public announcements.
   recreate it with the rebuilt assets and body. Verify the one-line command end
   to end: download, toolchain download/setup, host hello, version, and
   `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:50)
+
+## Revision 3 — first-run polish
+
+- [x] T-01.13 **First-run polish tests.** Add failing cases for VS Code
+  detection and extension install, the persistent host and Amiga hello files,
+  FS-UAE and Kickstart detection, an automatic guest hello, and the fallback
+  next-step commands. Keep the existing installer tests green.
+- [x] T-01.14 **Install the VS Code extension.** Detect `code`, `codium`, or
+  `code-insiders`; offer the pinned VSIX from the same release; verify its bytes
+  and SHA-256 before `--install-extension`. Add `--vscode` and `--no-vscode`;
+  non-interactive runs skip it unless `--vscode` is supplied.
+- [x] T-01.15 **Leave runnable examples.** Write `hello.clo` and
+  `hello-guest.clo` under `$PREFIX/share/clorraine/examples` without overwriting
+  an existing file. The guest example prints the hello line and waits five
+  seconds so the FS-UAE window is visible.
+- [x] T-01.16 **Run the guest hello when possible.** Detect FS-UAE and a
+  licensed 512 KB KS3.1 A1200 ROM from `--fs-uae`/`--kickstart`, the
+  `CLORRAINE_*` environment, or common paths. If both are present and a display
+  is available, run `hello-guest.clo` on FS-UAE and show the output. Otherwise
+  keep the host hello and print the exact guest command. Add `--no-emulator`.
+- [x] T-01.17 **Rebuild and re-accept.** `make dist`, `make acceptance`, and
+  `make acceptance-check`; update the release body, asset hashes, and README.
+- [ ] T-01.18 **Recreate the prerelease.** Delete and recreate `v1.2.0` with the
+  rebuilt assets, then verify the one-line install with VS Code, FS-UAE, the
+  persistent examples, and `v1.1.2` still Latest.
+
+### Revision 3 evidence
+
+- **Installer suites:** 147 public checks, 28 internal checks, and 41 producer
+  checks pass; `make dist-check` passes.
+- **Candidate:** archive 6,530,816 bytes `547d1bdd…fdbb`, VSIX 26,435 bytes
+  `3918ca3f…e180`, installer 42,958 bytes `2239e244…3e05`; `make dist-verify`
+  passes.
+- **Acceptance:** `build/acceptance/20261125T112110Z/evidence.json`;
+  `make acceptance-check` reports `ok`.
+- **Real host checks:** the non-interactive installer ran the guest hello on
+  FS-UAE with the licensed ROM; the interactive path auto-detected FS-UAE and
+  the ROM and ran the five-second guest hello; the VSIX installed into a
+  temporary extensions directory and listed `openlorraine.clorraine`.
 
 ## Verify
 

@@ -23,10 +23,13 @@ curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/in
 The installer asks where to install (default `~/.local`), offers to add it to
 your PATH, verifies the download, installs `clc`, `clorraine`, and
 `clorraine-lsp`, sets up the rc24 Amiga toolchain (downloaded or an existing
-copy), and runs a hello test.
+copy), and runs a hello test. If VS Code is detected it offers the extension;
+if FS-UAE and a licensed Kickstart ROM are detected it also runs the hello on
+a real Amiga screen.
 
-You supply a licensed Kickstart ROM; Clorraine does not bundle the toolchain or
-the ROM. The [Linux CLI guide](docs/linux-cli.md) and the
+The host hello stays at `~/.local/share/clorraine/examples/hello.clo`, with an
+Amiga version beside it. You supply the licensed Kickstart ROM; Clorraine never
+bundles or mirrors it. The [Linux CLI guide](docs/linux-cli.md) and the
 [release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
 have the details, including checksum verification and the VS Code extension.
 

@@ -632,7 +632,7 @@
 | ↳ DEF-561 | Native-object format and lock-order ruling | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-18 | user approved AR-34; accurate Amiga-object records/tests and 91-task producer-first order; implementation remains PLAN-45 |
 | ↳ DEF-560 | libamiga legal review — user-owned | — | [Evidence](../tools/distribution/inputs/licence-review.md) | Deferred | ⏸️ | 2026-11-17 | user owns legalities; nonblocking local implementation; no licence-clearance claim or public promotion |
 
-| T-01 | Publish the v1.2.0 developer preview | — | [public-preview-v1.2.0](public-preview-v1.2.0/99-execution-plan.md) | Done | ✅ | 2026-11-25 | Full first-run installer (toolchain + hello); v1.2.0 prerelease recreated; docs/site frozen |
+| T-01 | Publish the v1.2.0 developer preview | — | [public-preview-v1.2.0](public-preview-v1.2.0/99-execution-plan.md) | Executing | 🔄 | 2026-11-25 | First-run polish: VS Code, persistent hello, FS-UAE guest hello |
 
 ## Batch N accounting (2026-10-19)
 
