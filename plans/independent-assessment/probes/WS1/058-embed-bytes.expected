@@ -1,0 +1,13 @@
+# WS1-08. Source: spec/13-data-inclusion.md §1 DI-1/DI-3/DI-5 (embed yields the
+# file's bytes, path relative to the source file), §2 (len is a compile-time
+# constant; a local const infers the array type). The file holds "Clorraine\n":
+# 10 bytes, first 'C'=67, last '\n'=10, byte sum 937, second byte 'l'=108.
+# Also checked by hand from the clc log: DI-7 asks for a build-time size report
+# listing every embedded blob and the total.
+expect: output
+contrast: DATA[9] ==> DATA[8]
+contrast-expect: output
+--- output
+10 67 10 937 10 108
+--- contrast-output
+10 67 101 937 10 108

@@ -1,0 +1,8 @@
+module Probe.Main;
+
+import { newFileRequester as m00 } from std.amiga.asl;
+
+func main(): i32 {
+    std.io.println("all modules");
+    return 0;
+}

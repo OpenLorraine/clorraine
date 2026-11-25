@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let static: i32 = 1;
+    println($"{static}");
+    return 0;
+}

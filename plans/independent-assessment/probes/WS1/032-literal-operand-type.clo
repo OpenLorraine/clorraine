@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let x: u8 = 200;
+    let y = x + 100;
+    let z: u16 = 65535;
+    let s: i8 = 127;
+    println($"{y} {z + 1} {s + 1}");
+    return 0;
+}

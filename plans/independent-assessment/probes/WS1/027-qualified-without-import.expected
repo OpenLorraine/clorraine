@@ -1,0 +1,9 @@
+# WS1-03. Source: spec/10-modules.md MOD-13: qualified access A.B.f() is always
+# available, with or without an import.
+expect: output
+contrast: "q" ==> "r"
+contrast-expect: output
+--- output
+q
+--- contrast-output
+r

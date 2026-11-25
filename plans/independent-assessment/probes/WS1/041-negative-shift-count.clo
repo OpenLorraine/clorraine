@@ -1,0 +1,13 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const A: i32 = i32(1) << i32(-1);
+
+func shlI32(a: i32, n: i32): i32 { return a << n; }
+
+func main(): i32 {
+    let b = shlI32(1, -1);
+    println($"{A} {b}");
+    return 0;
+}

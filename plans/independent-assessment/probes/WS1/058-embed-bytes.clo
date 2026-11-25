@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const DATA: u8[10] = embed("058-embed-bytes.bin");
+const DATA_LEN: usize = len(DATA);
+
+func main(): i32 {
+    let sum: u32 = 0;
+    for (b in DATA) {
+        sum = sum + b;
+    }
+    const local = embed("058-embed-bytes.bin");
+    println($"{DATA_LEN} {DATA[0]} {DATA[9]} {sum} {len(local)} {local[1]}");
+    return 0;
+}

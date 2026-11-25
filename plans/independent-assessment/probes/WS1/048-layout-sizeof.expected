@@ -1,0 +1,13 @@
+# WS1-06. Source: spec/11-memory.md §7 (layout: declaration order, natural
+# alignment, "the target ABI supplies the rest"), spec/07-structs.md STR-2, and
+# spec/17-codegen.md §"Unaligned access" (no packed structs). Expectation: every
+# sizeof/offsetof, including the folded constants used as array extents, equals
+# what the target C compiler computes for the same layout, as printed by the
+# companion 048-layout-sizeof.c built with the same lens flags (C99 6.5.3.4,
+# 7.17). The contrast adds a field to the Clorraine struct C only, so its output
+# must then differ from the unchanged companion (seeded mismatch). Enum Dir has backing u8, so it is laid out as a uint8_t.
+profiles: host hosted-amiga hosted-amiga-13
+expect: companion
+companion: 048-layout-sizeof.c
+contrast: struct C { a: u8; } ==> struct C { a: u8; b: u32; }
+contrast-expect: companion-differs

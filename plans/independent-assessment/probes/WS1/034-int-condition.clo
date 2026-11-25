@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let n: u32 = 3;
+    if (n) {
+        println("yes");
+    }
+    return 0;
+}

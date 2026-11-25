@@ -1,0 +1,50 @@
+module Probe.Main;
+
+import { openAmigaGuide as m00 } from std.amiga.amigaguide;
+import { createRexxMessage as m01 } from std.amiga.arexx;
+import { readArgs as m02 } from std.amiga.args;
+import { newFileRequester as m03 } from std.amiga.asl;
+import { openAudio as m04 } from std.amiga.audio;
+import { newStringGadget as m05 } from std.amiga.boopsi;
+import { openSocket as m06 } from std.amiga.bsdsocket;
+import { openClipboard as m07 } from std.amiga.clipboard;
+import { openCommodity as m08 } from std.amiga.commodities;
+import { setDma as m09 } from std.amiga.custom;
+import { openPicture as m10 } from std.amiga.datatypes;
+import { openSerial as m11 } from std.amiga.devices;
+import { delayTicks as m12 } from std.amiga.dos;
+import { openEClock as m13 } from std.amiga.eclock;
+import { createMsgPort as m14 } from std.amiga.exec;
+import { expansionBoardCount as m15 } from std.amiga.expansion;
+import { newGadgetList as m16 } from std.amiga.gadtools;
+import { setColor as m17 } from std.amiga.graphics;
+import { getDiskObject as m18 } from std.amiga.icon;
+import { loadIlbm as m19 } from std.amiga.ilbm;
+import { decodeJoystick as m20 } from std.amiga.input;
+import { addHandler as m21 } from std.amiga.interrupt;
+import { openScreen as m22 } from std.amiga.intuition;
+import { newLayer as m23 } from std.amiga.layers;
+import { openLocale as m24 } from std.amiga.locale;
+import { readJoyPort as m25 } from std.amiga.lowlevel;
+import { getNonvolatile as m26 } from std.amiga.nonvolatile;
+import { rtgBoards as m27 } from std.amiga.picasso96;
+import { createUtilityPool as m28 } from std.amiga.pool;
+import { newRegion as m29 } from std.amiga.regions;
+import { createSemaphore as m30 } from std.amiga.semaphore;
+import { newSprite as m31 } from std.amiga.sprite;
+import { openFont as m32 } from std.amiga.text;
+import { openTimer as m33 } from std.amiga.timer;
+import { newTagList as m34 } from std.amiga.utility;
+import { allocChip as m35 } from std.amiga.video;
+import { addAppIcon as m36 } from std.amiga.workbench;
+import { toHex as m37 } from std.fmt;
+import { ilbmInfo as m38 } from std.iff;
+import { openFile as m39 } from std.io;
+import { sin as m40 } from std.math;
+import { bufferNew as m41 } from std.mem;
+import { stringOf as m42 } from std.text;
+
+func main(): i32 {
+    std.io.println("all modules");
+    return 0;
+}

@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let x = 1u8;
+    println($"{x}");
+    return 0;
+}

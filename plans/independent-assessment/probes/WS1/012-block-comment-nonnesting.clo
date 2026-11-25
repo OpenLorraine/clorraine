@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let x: i32 = 1 /* a /* b */ + 2;
+    println($"{x}");
+    return 0;
+}

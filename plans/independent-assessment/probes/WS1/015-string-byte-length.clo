@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let e: str = "€";
+    let z: str = "";
+    let t = $"{{x}}";
+    println($"{len(e)} {len(z)} {len(t)}");
+    println(t);
+    return 0;
+}

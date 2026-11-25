@@ -1,0 +1,13 @@
+module Probe.Main;
+
+import { toHex as m00 } from std.fmt;
+import { ilbmInfo as m01 } from std.iff;
+import { openFile as m02 } from std.io;
+import { sin as m03 } from std.math;
+import { bufferNew as m04 } from std.mem;
+import { stringOf as m05 } from std.text;
+
+func main(): i32 {
+    std.io.println("all modules");
+    return 0;
+}

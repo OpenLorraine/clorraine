@@ -1,0 +1,7 @@
+# WS1-03. Source: spec/10-modules.md MOD-4/MOD-5/MOD-11: an imported name must be
+# declared and exported by the target module (E11102).
+expect: reject E11102
+contrast: func helper ==> export func helper
+contrast-expect: output
+--- contrast-output
+7

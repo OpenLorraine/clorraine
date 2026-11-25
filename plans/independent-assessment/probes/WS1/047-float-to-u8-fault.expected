@@ -1,0 +1,7 @@
+# WS1-05. Source: spec/04-expressions.md §14 and EX-6: a float-to-integer
+# conversion out of the target range faults E11212 (u8 range 0..255).
+expect: fault E11212
+contrast: toU8(256.0) ==> toU8(255.0)
+contrast-expect: output
+--- contrast-output
+255

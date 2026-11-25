@@ -1,0 +1,6 @@
+# WS1-08. Source: spec/13-data-inclusion.md DI-5 and §7: an absolute path is E10214.
+expect: reject E10214
+contrast: /etc/hostname ==> 059-embed-absolute.bin
+contrast-expect: output
+--- contrast-output
+4

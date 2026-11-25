@@ -1,0 +1,7 @@
+# WS1-04. Source: spec/02-types.md §9 TY-11 / spec/04-expressions.md §5: a
+# mixed-sign operand pair is E10200.
+expect: reject E10200
+contrast: a + b; ==> a + i32(b);
+contrast-expect: output
+--- contrast-output
+3

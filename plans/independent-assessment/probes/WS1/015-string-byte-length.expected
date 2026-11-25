@@ -1,0 +1,11 @@
+# WS1-01. Source: spec/01-lexical.md §1 (string length counts bytes; € is three
+# UTF-8 bytes), §10 LEX-23/LEX-26 ("" is legal; {{ and }} are literal braces).
+expect: output
+contrast: "€" ==> "e"
+contrast-expect: output
+--- output
+3 0 3
+{x}
+--- contrast-output
+1 0 3
+{x}

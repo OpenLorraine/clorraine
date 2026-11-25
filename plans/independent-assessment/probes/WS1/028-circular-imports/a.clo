@@ -1,0 +1,10 @@
+module Probe.A;
+
+import { bee } from Probe.B;
+
+export func ay(n: i32): i32 {
+    if (n <= 0) {
+        return 1;
+    }
+    return bee(n - 1) + 1;
+}

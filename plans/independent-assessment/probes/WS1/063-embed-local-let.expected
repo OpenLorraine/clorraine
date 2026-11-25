@@ -1,0 +1,8 @@
+# WS1-08. Source: spec/13-data-inclusion.md DI-4 and spec/04-expressions.md §16:
+# embed outside a constant context (a local let) is E10213; a local const is
+# allowed (spec/13 §1 example).
+expect: reject E10213
+contrast: let d ==> const d
+contrast-expect: output
+--- contrast-output
+4

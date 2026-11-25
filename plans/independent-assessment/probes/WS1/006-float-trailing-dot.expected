@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §8 LEX-17: a float literal always has
+# digits on both sides of the dot (E20004); "1. and .5 are not float literals".
+expect: reject E20004
+contrast: 1.; ==> 1.5;
+contrast-expect: output
+--- contrast-output
+1.5

@@ -1,0 +1,42 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const A: i32 = 2147483647 + 1;
+const B: u8 = u8(250) + u8(10);
+const C: i16 = i16(32767) + i16(1);
+const D: u16 = u16(65535) * u16(65535);
+const E: i16 = i16(-32768) * i16(-1);
+const F: i8 = -i8(-128);
+const G: i32 = -7 / 2;
+const H: i32 = -7 % 2;
+const I: i32 = 7 % -2;
+const J: i32 = 65536 * 65536;
+const K: i32 = (-2147483647 - 1) * -1;
+
+func addI32(a: i32, b: i32): i32 { return a + b; }
+func addU8(a: u8, b: u8): u8 { return a + b; }
+func addI16(a: i16, b: i16): i16 { return a + b; }
+func mulU16(a: u16, b: u16): u16 { return a * b; }
+func mulI16(a: i16, b: i16): i16 { return a * b; }
+func negI8(a: i8): i8 { return -a; }
+func divI32(a: i32, b: i32): i32 { return a / b; }
+func modI32(a: i32, b: i32): i32 { return a % b; }
+func mulI32(a: i32, b: i32): i32 { return a * b; }
+
+func main(): i32 {
+    println($"{A} {B} {C} {D} {E} {F} {G} {H} {I} {J} {K}");
+    let a = addI32(2147483647, 1);
+    let b = addU8(250, 10);
+    let c = addI16(32767, 1);
+    let d = mulU16(65535, 65535);
+    let e = mulI16(-32768, -1);
+    let f = negI8(-128);
+    let g = divI32(-7, 2);
+    let h = modI32(-7, 2);
+    let i = modI32(7, -2);
+    let j = mulI32(65536, 65536);
+    let k = mulI32(-2147483647 - 1, -1);
+    println($"{a} {b} {c} {d} {e} {f} {g} {h} {i} {j} {k}");
+    return 0;
+}

@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const F: i32 = i32(3.0e9);
+
+func main(): i32 {
+    println($"{F}");
+    return 0;
+}

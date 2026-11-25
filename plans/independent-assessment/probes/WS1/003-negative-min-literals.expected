@@ -1,0 +1,10 @@
+# WS1-01. Source: spec/02-types.md §2 (i8/i16/i32 are two's-complement, widths
+# 8/16/32, so -128, -32768, -2147483648 are values of the type) and §9 TY-15 (a
+# literal must fit its context type). The minimum of each type fits.
+expect: output
+contrast: -128; ==> -127;
+contrast-expect: output
+--- output
+-128 -32768 -2147483648
+--- contrast-output
+-127 -32768 -2147483648

@@ -1,0 +1,65 @@
+# WS1-09 expectation for 057-gating-matrix.py, written before the run.
+# Columns: module, host, hosted-amiga, hosted-amiga-13, freestanding.
+# A = accepted, R = rejected with E11200, - = the spec does not say.
+# Sources:
+# - host: spec/appendix-amiga.md intro ("The host profile has no AmigaOS
+#   Intuition and rejects the module with E11200") and appendix-stdlib.md §13,
+#   §14 ("the host and freestanding profiles reject it with E11200") for
+#   std.amiga.*; the core modules are the host test surface (spec/15 §2).
+# - hosted-amiga: v1 ships every module (spec/appendix-amiga.md §1, §1.6).
+# - hosted-amiga-13: the KS1.3 subset of spec/appendix-amiga.md (classic
+#   Intuition, graphics, DOS delay, VBlank interrupts, custom registers, the
+#   classic Exec surface, video/ILBM/sprite/audio/input/timer/text/layers);
+#   §1.6 modules and workbench/icon/expansion are 2.0+ and rejected ("Nothing in
+#   this appendix makes them part of the 1.3 profile"; "the KS1.3 profile rejects
+#   the modules with E11200").
+# - freestanding: spec/15-profiles.md §2 (no heap: String/Box rejected; "the
+#   embedded std.mem allocator surface is not available"), so std.mem is R and
+#   std.amiga.* is R; std.io is the console (A); std.fmt, std.iff, std.math,
+#   std.text are not specified (-).
+# Unknown profile name: E11201 (spec/15-profiles.md PR-5).
+
+std.amiga.amigaguide R A R R
+std.amiga.arexx R A R R
+std.amiga.args R A R R
+std.amiga.asl R A R R
+std.amiga.audio R A A R
+std.amiga.boopsi R A R R
+std.amiga.bsdsocket R A R R
+std.amiga.clipboard R A R R
+std.amiga.commodities R A R R
+std.amiga.custom R A A R
+std.amiga.datatypes R A R R
+std.amiga.devices R A R R
+std.amiga.dos R A A R
+std.amiga.eclock R A R R
+std.amiga.exec R A A R
+std.amiga.expansion R A R R
+std.amiga.gadtools R A R R
+std.amiga.graphics R A A R
+std.amiga.icon R A R R
+std.amiga.ilbm R A A R
+std.amiga.input R A A R
+std.amiga.interrupt R A A R
+std.amiga.intuition R A A R
+std.amiga.layers R A A R
+std.amiga.locale R A R R
+std.amiga.lowlevel R A R R
+std.amiga.nonvolatile R A R R
+std.amiga.picasso96 R A R R
+std.amiga.pool R A R R
+std.amiga.regions R A R R
+std.amiga.semaphore R A R R
+std.amiga.sprite R A A R
+std.amiga.text R A A R
+std.amiga.timer R A A R
+std.amiga.utility R A R R
+std.amiga.video R A A R
+std.amiga.workbench R A R R
+std.fmt A A A -
+std.iff A A A -
+std.io A A A A
+std.math A A A -
+std.mem A A A R
+std.text A A A -
+expect: script

@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+enum Dir : u8 { UP, DOWN }
+
+func main(): i32 {
+    let a: Dir = Dir.UP;
+    if (a < Dir.DOWN) {
+        println("lt");
+    }
+    println("end");
+    return 0;
+}

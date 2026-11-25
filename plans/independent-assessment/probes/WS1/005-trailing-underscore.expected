@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §7 ("it may not lead or trail") and the
+# grammar hex_literal (spec/grammar.ebnf.md §10.5); malformed literal is E20004.
+expect: reject E20004
+contrast: 0xFF_ ==> 0xFF
+contrast-expect: output
+--- contrast-output
+255

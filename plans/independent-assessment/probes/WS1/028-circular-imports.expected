@@ -1,0 +1,9 @@
+# WS1-03. Source: spec/10-modules.md MOD-14: circular imports are allowed;
+# declarations resolve globally. ay(3) = bee(2)+1 = ay(1)*2+1 = (bee(0)+1)*2+1 = 203.
+expect: output
+contrast: return 100; ==> return 10;
+contrast-expect: output
+--- output
+203
+--- contrast-output
+23

@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    println("x");
+    return 0;
+}
+/* never closed

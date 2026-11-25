@@ -1,0 +1,7 @@
+# WS1-05. Source: spec/04-expressions.md §16 EX-16: a constant float-to-integer
+# conversion that overflows is E10202, not E10223.
+expect: reject E10202
+contrast: 3.0e9 ==> 3.0e8
+contrast-expect: output
+--- contrast-output
+300000000

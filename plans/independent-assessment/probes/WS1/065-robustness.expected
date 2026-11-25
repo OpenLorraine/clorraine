@@ -1,0 +1,14 @@
+# WS1-10 expectation for 065-robustness.py, written before the run.
+# Source: 03-01-method-and-evidence.md §Severity (a clc crash or hang on any input
+# is Critical; compile time or peak RSS above 10x the Phase 0 bench-compile value
+# for the same input size is Major) and spec/14-diagnostics.md (a rejected program
+# ends with a coded diagnostic). For every generated case, clc --profile host:
+# - exits 0 (accepted) or 1 (coded diagnostic); never a panic, signal, or timeout;
+# - wall time <= 10 x median ms and peak RSS <= 10 x max RSS of the Phase 0
+#   compile-time workload nearest in source bytes
+#   (findings/records/assessment-baseline-compile.json), scaled linearly by size
+#   when the case is larger than the largest baseline input.
+# Expected diagnostics where the input is invalid: literal-10k-digits is E20004 or
+# E10202 (spec/01 §7); generic-recursion is accepted (bounded depth 3) or E10305
+# (spec/07 STR-24) — either passes, a hang or crash does not.
+expect: script

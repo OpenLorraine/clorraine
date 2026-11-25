@@ -1,0 +1,7 @@
+# WS1-05. Source: spec/04-expressions.md §16 EX-16: a constant minimum signed value
+# divided by -1 is E10223.
+expect: reject E10223
+contrast: / -1; ==> / 1;
+contrast-expect: output
+--- contrast-output
+-2147483648

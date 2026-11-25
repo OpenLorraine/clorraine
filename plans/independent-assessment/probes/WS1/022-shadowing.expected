@@ -1,0 +1,17 @@
+# WS1-03. Source: spec/10-modules.md MOD-15 (innermost enclosing scope wins) and
+# MOD-16 (a local may shadow an outer local or a module name).
+expect: output
+contrast: let a: i32 = 6; ==> let a: i32 = 7;
+contrast-expect: output
+--- output
+1
+2
+1
+6
+5
+--- contrast-output
+1
+2
+1
+7
+5

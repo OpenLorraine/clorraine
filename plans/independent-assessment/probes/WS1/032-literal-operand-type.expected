@@ -1,0 +1,10 @@
+# WS1-04. Source: spec/02-types.md §9 (a literal operand takes the other
+# operand's type when it fits) and §10 (wrapping two's-complement): u8 200+100=44,
+# u16 65535+1=0, i8 127+1=-128.
+expect: output
+contrast: x + 100; ==> x + 50;
+contrast-expect: output
+--- output
+44 0 -128
+--- contrast-output
+250 0 -128

@@ -1,0 +1,6 @@
+# WS1-09. Source: spec/appendix-amiga.md (the host profile has no AmigaOS surface)
+# and spec/15-profiles.md PR-3 (E11200).
+profiles: host
+expect: reject E11200
+contrast: import { delayTicks as m00 } from std.amiga.dos; ==> import { stringOf as m00 } from std.text;
+contrast-expect: accept

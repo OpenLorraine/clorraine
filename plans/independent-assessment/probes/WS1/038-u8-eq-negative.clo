@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let b: u8 = 255;
+    if (b == -1) {
+        println("eq");
+    }
+    println("end");
+    return 0;
+}

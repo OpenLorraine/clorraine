@@ -1,0 +1,27 @@
+module Probe.Main;
+
+import { openAudio as m00 } from std.amiga.audio;
+import { setDma as m01 } from std.amiga.custom;
+import { delayTicks as m02 } from std.amiga.dos;
+import { createMsgPort as m03 } from std.amiga.exec;
+import { setColor as m04 } from std.amiga.graphics;
+import { loadIlbm as m05 } from std.amiga.ilbm;
+import { decodeJoystick as m06 } from std.amiga.input;
+import { addHandler as m07 } from std.amiga.interrupt;
+import { openScreen as m08 } from std.amiga.intuition;
+import { newLayer as m09 } from std.amiga.layers;
+import { newSprite as m10 } from std.amiga.sprite;
+import { openFont as m11 } from std.amiga.text;
+import { openTimer as m12 } from std.amiga.timer;
+import { allocChip as m13 } from std.amiga.video;
+import { toHex as m14 } from std.fmt;
+import { ilbmInfo as m15 } from std.iff;
+import { openFile as m16 } from std.io;
+import { sin as m17 } from std.math;
+import { bufferNew as m18 } from std.mem;
+import { stringOf as m19 } from std.text;
+
+func main(): i32 {
+    std.io.println("all modules");
+    return 0;
+}

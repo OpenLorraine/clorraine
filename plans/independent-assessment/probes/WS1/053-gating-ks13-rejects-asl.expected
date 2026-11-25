@@ -1,0 +1,7 @@
+# WS1-09. Source: spec/appendix-amiga.md §1.6 (std.amiga.asl needs OS 2.0; "Nothing
+# in this appendix makes them part of the 1.3 profile") and spec/15-profiles.md
+# PR-3 (a construct the profile cannot lower is E11200).
+profiles: hosted-amiga-13
+expect: reject E11200
+contrast: import { newFileRequester as m00 } from std.amiga.asl; ==> import { delayTicks as m00 } from std.amiga.dos;
+contrast-expect: accept

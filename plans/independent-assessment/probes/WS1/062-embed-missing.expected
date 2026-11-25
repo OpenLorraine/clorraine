@@ -1,0 +1,7 @@
+# WS1-08. Source: spec/13-data-inclusion.md DI-5 and §7: a file that cannot be
+# read at build time is E10214.
+expect: reject E10214
+contrast: no-such-file.bin ==> 059-embed-absolute.bin
+contrast-expect: output
+--- contrast-output
+4

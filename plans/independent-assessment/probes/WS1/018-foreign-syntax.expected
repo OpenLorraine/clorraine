@@ -1,0 +1,6 @@
+# WS1-01. Source: spec/01-lexical.md §11: ?? is not syntax (E20008).
+expect: reject E20008
+contrast: b ?? 1 ==> b + 1
+contrast-expect: output
+--- contrast-output
+3

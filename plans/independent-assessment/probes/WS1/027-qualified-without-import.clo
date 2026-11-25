@@ -1,0 +1,6 @@
+module Probe.Main;
+
+func main(): i32 {
+    std.io.println("q");
+    return 0;
+}

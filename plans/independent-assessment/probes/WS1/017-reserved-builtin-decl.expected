@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §4 LEX-9: an ordinary declaration of a
+# reserved built-in name is E20006.
+expect: reject E20006
+contrast: func len( ==> func size2(
+contrast-expect: output
+--- contrast-output
+ok

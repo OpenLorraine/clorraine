@@ -1,0 +1,6 @@
+# WS1-04. Source: spec/04-expressions.md §6 EX-7: a non-bool condition is E10218.
+expect: reject E10218
+contrast: if (n) ==> if (n != 0)
+contrast-expect: output
+--- contrast-output
+yes

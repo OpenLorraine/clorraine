@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let n: i32 = 3;
+    let s = $"n={n}";
+    println(s);
+    return 0;
+}

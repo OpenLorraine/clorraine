@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    const d = embed("no-such-file.bin");
+    println($"{len(d)}");
+    return 0;
+}

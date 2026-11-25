@@ -1,0 +1,10 @@
+# WS1-01. Source: spec/grammar.ebnf.md §10.6 escape_seq (n r t 0 \ " ' and \x
+# with two hex digits) and spec/01-lexical.md §9 LEX-20 (a char literal is a u8
+# byte); byte values from ASCII.
+expect: output
+contrast: '\x41' ==> '\x42'
+contrast-expect: output
+--- output
+10 13 9 0 92 39 34 65 127 255
+--- contrast-output
+10 13 9 0 92 39 34 66 127 255

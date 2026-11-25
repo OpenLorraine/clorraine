@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func toU8(x: f64): u8 { return u8(x); }
+
+func main(): i32 {
+    let v = toU8(256.0);
+    println($"{v}");
+    return 0;
+}

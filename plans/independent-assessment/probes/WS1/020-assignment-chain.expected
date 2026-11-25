@@ -1,0 +1,7 @@
+# WS1-02. Source: spec/04-expressions.md §4 EX-2: the assignment result is void;
+# chaining is E10217.
+expect: reject E10217
+contrast: x = y = 1; ==> x = 1;
+contrast-expect: output
+--- contrast-output
+1 0

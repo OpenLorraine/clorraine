@@ -1,0 +1,7 @@
+# WS1-04. Source: spec/02-types.md §9 implicit-widening table: u8 widens only to
+# u16 and u32; any other implicit conversion is E10200 (TY-13).
+expect: reject E10200
+contrast: let w: i16 = a; ==> let w: i16 = i16(a);
+contrast-expect: output
+--- contrast-output
+1

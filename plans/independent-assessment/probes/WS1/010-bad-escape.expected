@@ -1,0 +1,6 @@
+# WS1-01. Source: spec/01-lexical.md §9 LEX-22: an invalid escape is E20003.
+expect: reject E20003
+contrast: '\q' ==> '\t'
+contrast-expect: output
+--- contrast-output
+9

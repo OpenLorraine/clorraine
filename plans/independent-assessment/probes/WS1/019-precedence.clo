@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let t: bool = true;
+    let f: bool = false;
+    println($"{1 + 2 * 3}");
+    println($"{20 - 5 - 3}");
+    println($"{100 / 10 / 5}");
+    println($"{1 << 2 + 1}");
+    println($"{1 | 6 ^ 3 & 5}");
+    println($"{-2 * 3}");
+    println($"{~0 >> 28}");
+    println($"{u32(~0) >> 28}");
+    let c: i32 = f ? 1 : t ? 2 : 3;
+    println($"{c}");
+    println($"{10 - 2 - 3 * 2 % 4}");
+    println($"{(6 & 3) == 2}");
+    println($"{1 < 2 == t}");
+    return 0;
+}

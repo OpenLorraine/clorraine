@@ -1,0 +1,37 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+struct A { a: u8; b: i32; }
+struct B { a: u8; b: u16; c: u8; }
+struct C { a: u8; }
+struct D { a: i32; b: u8; }
+struct E { a: u8; x: A; }
+struct F { a: u8[3]; b: u16; }
+enum Dir : u8 { UP, DOWN }
+struct G { d: Dir; v: u32; }
+struct H { f: bool; g: u8; }
+struct I { a: u8; d: f64; }
+struct J { a: u16; b: u8; }
+struct K { a: u8; b: u8; c: u32; d: u8; }
+
+const SA: usize = sizeof(A);
+const SK: usize = sizeof(K) + offsetof(K, d);
+
+func main(): i32 {
+    println($"A {sizeof(A)} {offsetof(A, b)}");
+    println($"B {sizeof(B)} {offsetof(B, b)} {offsetof(B, c)}");
+    println($"C {sizeof(C)}");
+    println($"D {sizeof(D)} {offsetof(D, b)}");
+    println($"E {sizeof(E)} {offsetof(E, x)}");
+    println($"F {sizeof(F)} {offsetof(F, b)}");
+    println($"G {sizeof(G)} {offsetof(G, v)}");
+    println($"H {sizeof(H)} {offsetof(H, g)}");
+    println($"I {sizeof(I)} {offsetof(I, d)}");
+    println($"J {sizeof(J)} {offsetof(J, b)}");
+    println($"K {sizeof(K)} {offsetof(K, c)} {offsetof(K, d)}");
+    let buf: u8[SA] = [; 0];
+    let kbuf: u8[SK] = [; 0];
+    println($"const {len(buf)} {len(kbuf)}");
+    return 0;
+}

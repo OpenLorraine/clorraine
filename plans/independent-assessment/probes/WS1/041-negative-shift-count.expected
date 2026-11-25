@@ -1,0 +1,10 @@
+# WS1-05. Source: spec/02-types.md §10: every shift is defined, with the count
+# masked to the operand width; -1 & 31 = 31, so 1 << -1 is -2147483648 for i32,
+# folded and at run time.
+expect: output
+contrast: shlI32(1, -1) ==> shlI32(1, 30)
+contrast-expect: output
+--- output
+-2147483648 -2147483648
+--- contrast-output
+-2147483648 1073741824

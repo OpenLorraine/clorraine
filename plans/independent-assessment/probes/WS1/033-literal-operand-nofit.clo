@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let x: u8 = 200;
+    let y = x + 300;
+    println($"{y}");
+    return 0;
+}

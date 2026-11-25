@@ -1,0 +1,8 @@
+# WS1-04. Source: spec/09-enums-unions.md EN-6 and spec/04-expressions.md §5:
+# ordering an enum is E10222.
+expect: reject E10222
+contrast: a < Dir.DOWN ==> a != Dir.DOWN
+contrast-expect: output
+--- contrast-output
+lt
+end

@@ -1,0 +1,3 @@
+Empty folder marker for 061-embed-dotdot-inside: the probe embeds
+"data061/../061-embed-dotdot-inside.bin", a path that uses ".." but stays inside
+the project root.

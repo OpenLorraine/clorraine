@@ -1,0 +1,21 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const X: i32 = 1;
+
+func main(): i32 {
+    println($"{X}");
+    {
+        let X: i32 = 2;
+        println($"{X}");
+    }
+    println($"{X}");
+    let a: i32 = 5;
+    {
+        let a: i32 = 6;
+        println($"{a}");
+    }
+    println($"{a}");
+    return 0;
+}

@@ -1,0 +1,6 @@
+# WS1-04. Source: spec/02-types.md §5 TY-4: T? on a scalar is E10011.
+expect: reject E10011
+contrast: let x: i32? = null; ==> let x: i32 = 0;
+contrast-expect: output
+--- contrast-output
+ok

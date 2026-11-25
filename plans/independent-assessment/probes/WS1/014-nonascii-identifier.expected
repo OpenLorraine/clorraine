@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §2 LEX-7: non-ASCII characters are not
+# allowed in identifiers (E20000).
+expect: reject E20000
+contrast: café ==> cafe
+contrast-expect: output
+--- contrast-output
+1

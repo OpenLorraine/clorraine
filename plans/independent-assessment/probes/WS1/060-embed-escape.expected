@@ -1,0 +1,7 @@
+# WS1-08. Source: spec/13-data-inclusion.md DI-5 and §1 ("the project root is the
+# directory of the root module"): a path that escapes it is E10214.
+expect: reject E10214
+contrast: ../WS0/ref/calibration.expected ==> 060-embed-escape.bin
+contrast-expect: output
+--- contrast-output
+3

@@ -1,0 +1,15 @@
+# WS1-05/WS3-03. Source: spec/02-types.md §10 ("count masked to the operand
+# width", so u32(1) << 32 is 1; signed >> is arithmetic, unsigned >> logical) and
+# spec/04-expressions.md §5 and §16 (folding uses runtime semantics). Masks: u32
+# count & 31, i8/u8 count & 7, u16/i16 count & 15. Values: 1<<0=1, 1<<1=2,
+# -8>>1=-4, 0x80000000>>31=1, i8 1<<7=-128, i8 1<<(8&7=0)=1, u16 1<<(16&15=0)=1,
+# u8 0x80>>(9&7=1)=64, i16 -32768>>(17&15=1)=-16384. Line 1 folded, line 2 runtime.
+expect: output
+contrast: shlU32(1, 33) ==> shlU32(1, 34)
+contrast-expect: output
+--- output
+1 2 -4 1 -128 1 1 64 -16384
+1 2 -4 1 -128 1 1 64 -16384
+--- contrast-output
+1 2 -4 1 -128 1 1 64 -16384
+1 4 -4 1 -128 1 1 64 -16384

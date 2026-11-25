@@ -1,0 +1,8 @@
+# WS1-05/WS3-03. Source: spec/04-expressions.md §5 EX-5: the minimum signed value
+# modulo -1 is the runtime fault E11210 (for i16 the minimum is -32768).
+# Contrast: -32768 % 3 truncates toward zero: -2.
+expect: fault E11210
+contrast: modI16(-32768, -1) ==> modI16(-32768, 3)
+contrast-expect: output
+--- contrast-output
+-2

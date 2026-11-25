@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §1 LEX-4 and §9 LEX-21: a character
+# literal must encode exactly one byte (E20007).
+expect: reject E20007
+contrast: '€' ==> 'e'
+contrast-expect: output
+--- contrast-output
+101

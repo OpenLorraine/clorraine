@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let a = 2147483648;
+    println($"{a}");
+    return 0;
+}

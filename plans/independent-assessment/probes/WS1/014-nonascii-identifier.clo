@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let café: i32 = 1;
+    println($"{café}");
+    return 0;
+}

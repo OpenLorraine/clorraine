@@ -1,0 +1,18 @@
+# WS1-02/WS3-03. Source: spec/04-expressions.md §3 (strictly left-to-right:
+# call arguments left to right, binary left operand first; struct/array/
+# template pieces in source order) and §5 (x++ yields the old value, ++x the new).
+expect: output
+contrast: pair(next(), next()); ==> pair(next() * 10, next());
+contrast-expect: output
+--- output
+10 1
+2 2
+1 2
+-1
+1 2 3
+--- contrast-output
+10 1
+2 2
+10 2
+-1
+1 2 3

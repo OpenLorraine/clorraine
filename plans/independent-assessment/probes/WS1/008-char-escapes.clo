@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let a: u8 = '\n';
+    let b: u8 = '\r';
+    let c: u8 = '\t';
+    let d: u8 = '\0';
+    let e: u8 = '\\';
+    let f: u8 = '\'';
+    let g: u8 = '\"';
+    let h: u8 = '\x41';
+    let i: u8 = '\x7F';
+    let j: u8 = '\xFF';
+    println($"{a} {b} {c} {d} {e} {f} {g} {h} {i} {j}");
+    return 0;
+}

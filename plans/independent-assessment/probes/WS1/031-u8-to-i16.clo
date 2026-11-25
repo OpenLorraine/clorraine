@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let a: u8 = 1;
+    let w: i16 = a;
+    println($"{w}");
+    return 0;
+}

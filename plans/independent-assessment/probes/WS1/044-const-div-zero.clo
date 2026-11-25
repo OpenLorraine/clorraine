@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const Z: i32 = 1 / 0;
+
+func main(): i32 {
+    println($"{Z}");
+    return 0;
+}

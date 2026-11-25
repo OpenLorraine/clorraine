@@ -1,0 +1,7 @@
+# WS1-04. Source: spec/09-enums-unions.md EN-1 / spec/02-types.md §4: an enum
+# backing type that is not an integer type is E10211.
+expect: reject E10211
+contrast: E : f32 ==> E : u8
+contrast-expect: output
+--- contrast-output
+ok

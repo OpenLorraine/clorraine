@@ -1,0 +1,9 @@
+# WS1-01. Source: spec/01-lexical.md §5: block comments do not nest; the first
+# */ closes the comment, so the expression is 1 + 2.
+expect: output
+contrast: + 2; ==> + 5;
+contrast-expect: output
+--- output
+3
+--- contrast-output
+6

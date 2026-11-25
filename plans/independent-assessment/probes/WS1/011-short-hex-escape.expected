@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/grammar.ebnf.md §10.6 (\x takes exactly two hex digits)
+# and spec/01-lexical.md §9 LEX-22 (invalid escape, E20003).
+expect: reject E20003
+contrast: '\x4' ==> '\x41'
+contrast-expect: output
+--- contrast-output
+65

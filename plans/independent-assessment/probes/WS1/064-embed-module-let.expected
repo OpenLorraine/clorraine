@@ -1,0 +1,12 @@
+# WS1-08. Source: spec/13-data-inclusion.md §1 ("A module-level initializer is
+# also a constant context (E10213), so an embedded asset can back a module-level
+# let") and §2 ("bound with a module-level let, it stays writable"). File "abcd":
+# after PAL[0] = 'z' the bytes are 122, 98. Note: spec/04-expressions.md §16
+# says a module-level let initializer is runtime and not a constant context.
+expect: output
+contrast: PAL[0] = 'z'; ==> PAL[0] = 'y';
+contrast-expect: output
+--- output
+122 98 4
+--- contrast-output
+121 98 4

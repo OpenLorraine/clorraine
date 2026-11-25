@@ -1,0 +1,8 @@
+# WS1-05/WS3-03. Source: spec/02-types.md §10 and spec/04-expressions.md §5 EX-5:
+# the minimum signed value divided by -1 is the runtime fault E11210 (for i8 the
+# minimum is -128).
+expect: fault E11210
+contrast: divI8(-128, -1) ==> divI8(-128, 1)
+contrast-expect: output
+--- contrast-output
+-128

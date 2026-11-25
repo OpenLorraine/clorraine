@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const M: i32 = (-2147483647 - 1) / -1;
+
+func main(): i32 {
+    println($"{M}");
+    return 0;
+}

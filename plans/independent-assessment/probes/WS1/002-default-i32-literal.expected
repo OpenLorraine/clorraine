@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §7 LEX-14/LEX-15: a decimal literal defaults
+# to i32; 2147483648 does not fit i32, so E10202.
+expect: reject E10202
+contrast: 2147483648 ==> 2147483647
+contrast-expect: output
+--- contrast-output
+2147483647

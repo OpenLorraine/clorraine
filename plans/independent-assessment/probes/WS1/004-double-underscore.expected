@@ -1,0 +1,7 @@
+# WS1-01. Source: spec/01-lexical.md §7: "A single _ may separate digits"; a
+# malformed numeric literal is E20004 (§12).
+expect: reject E20004
+contrast: 1__000 ==> 1_000
+contrast-expect: output
+--- contrast-output
+1000

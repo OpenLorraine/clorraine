@@ -1,0 +1,31 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+let counter: i32 = 0;
+
+func next(): i32 {
+    counter = counter + 1;
+    return counter;
+}
+
+func pair(a: i32, b: i32): void {
+    println($"{a} {b}");
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let xs: i32[4] = [10, 20, 30, 40];
+    let v: i32 = xs[i++];
+    println($"{v} {i}");
+    let w: i32 = ++i;
+    println($"{w} {i}");
+    pair(next(), next());
+    counter = 0;
+    let d: i32 = next() - next();
+    println($"{d}");
+    counter = 0;
+    let s = $"{next()} {next()} {next()}";
+    println(s);
+    return 0;
+}

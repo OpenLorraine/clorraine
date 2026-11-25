@@ -1,0 +1,11 @@
+# WS1-08. Source: spec/13-data-inclusion.md DI-5 ("relative to the source file and
+# inside the project root") and §1 ("must stay inside the project root"): a ".."
+# component that stays inside the root is not an escape, so the file is embedded.
+# If this is rejected, the rule "a .. escape" is ambiguous: record a spec question.
+expect: output
+contrast: data061/../061-embed-dotdot-inside.bin ==> 061-embed-dotdot-inside.bin
+contrast-expect: output
+--- output
+5
+--- contrast-output
+5

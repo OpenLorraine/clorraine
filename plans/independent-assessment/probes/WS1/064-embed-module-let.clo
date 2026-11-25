@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+let PAL: u8[4] = embed("059-embed-absolute.bin");
+
+func main(): i32 {
+    PAL[0] = 'z';
+    println($"{PAL[0]} {PAL[1]} {len(PAL)}");
+    return 0;
+}

@@ -1,0 +1,7 @@
+# WS1-09. Source: spec/15-profiles.md PR-3 and spec/11-memory.md (the freestanding
+# profile has no allocator): a template with a placeholder is an owned String and
+# cannot be lowered there (E11200).
+profiles: freestanding
+expect: reject E11200
+contrast: $"n={n}" ==> "n=3"
+contrast-expect: accept

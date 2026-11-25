@@ -1,0 +1,5 @@
+module Probe.A;
+
+import { bv } from Probe.B;
+
+export let av: i32 = bv + 1;

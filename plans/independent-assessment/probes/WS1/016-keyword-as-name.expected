@@ -1,0 +1,6 @@
+# WS1-01. Source: spec/01-lexical.md §3: a keyword used as a declared name is E20005.
+expect: reject E20005
+contrast: static ==> statik
+contrast-expect: output
+--- contrast-output
+1

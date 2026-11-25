@@ -1,0 +1,11 @@
+# WS1-07/WS1-09. Source: as 050; the hosted-amiga-13 profile provides the 20
+# modules of spec/appendix-amiga.md §1 (core plus the Kickstart 1.3 surface). All
+# must build and run on that profile with the debug and release lines.
+profiles: hosted-amiga-13
+# Seeded defect (contrast): a user ffi block redeclares a shim function with a
+# different return type; the C build must then fail.
+expect: output
+contrast: func main(): i32 { ==> ffi probe {\n    func cl_dos_ticks(): u16;\n}\n\nfunc main(): i32 {
+contrast-expect: build-fails
+--- output
+all modules

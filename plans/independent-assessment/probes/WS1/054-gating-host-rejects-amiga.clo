@@ -1,0 +1,8 @@
+module Probe.Main;
+
+import { delayTicks as m00 } from std.amiga.dos;
+
+func main(): i32 {
+    std.io.println("all modules");
+    return 0;
+}

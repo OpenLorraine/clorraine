@@ -1,0 +1,37 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+const A: u32 = u32(1) << u32(32);
+const B: u32 = u32(1) << u32(33);
+const C: i32 = i32(-8) >> i32(1);
+const D0: u32 = 0x80000000;
+const D: u32 = D0 >> u32(31);
+const E: i8 = i8(1) << i8(7);
+const F: i8 = i8(1) << i8(8);
+const G: u16 = u16(1) << u16(16);
+const H: u8 = u8(0x80) >> u8(9);
+const I: i16 = i16(-32768) >> i16(17);
+
+func shlU32(a: u32, n: u32): u32 { return a << n; }
+func sarI32(a: i32, n: i32): i32 { return a >> n; }
+func shrU32(a: u32, n: u32): u32 { return a >> n; }
+func shlI8(a: i8, n: i8): i8 { return a << n; }
+func shlU16(a: u16, n: u16): u16 { return a << n; }
+func shrU8(a: u8, n: u8): u8 { return a >> n; }
+func sarI16(a: i16, n: i16): i16 { return a >> n; }
+
+func main(): i32 {
+    println($"{A} {B} {C} {D} {E} {F} {G} {H} {I}");
+    let a = shlU32(1, 32);
+    let b = shlU32(1, 33);
+    let c = sarI32(-8, 1);
+    let d = shrU32(0x80000000, 31);
+    let e = shlI8(1, 7);
+    let f = shlI8(1, 8);
+    let g = shlU16(1, 16);
+    let h = shrU8(0x80, 9);
+    let i = sarI16(-32768, 17);
+    println($"{a} {b} {c} {d} {e} {f} {g} {h} {i}");
+    return 0;
+}

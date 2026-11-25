@@ -1,0 +1,6 @@
+# WS1-01. Source: spec/01-lexical.md §5: an unterminated block comment is E20001.
+expect: reject E20001
+contrast: /* never closed ==> /* closed */
+contrast-expect: output
+--- contrast-output
+x

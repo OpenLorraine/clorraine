@@ -1,0 +1,11 @@
+# WS1-07/WS1-09. Source: spec/15-profiles.md PR-2/PR-3 and spec/appendix-amiga.md
+# (the host profile has no AmigaOS surface): the six core modules build and run on
+# host with the debug and release lines.
+profiles: host
+# Seeded defect (contrast): a user ffi block redeclares a shim function with a
+# different return type; the C build must then fail.
+expect: output
+contrast: func main(): i32 { ==> ffi probe {\n    func cl_write(): u16;\n}\n\nfunc main(): i32 {
+contrast-expect: build-fails
+--- output
+all modules

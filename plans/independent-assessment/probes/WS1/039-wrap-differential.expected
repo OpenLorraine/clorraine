@@ -1,0 +1,16 @@
+# WS1-05/WS3-03. Source: spec/02-types.md §10 and spec/04-expressions.md §5
+# (integer + - * wrap in two's complement at the operand width; / and % truncate
+# toward zero) and §16 EX-16 (constant folding uses the runtime semantics).
+# Line 1 is folded, line 2 is computed at run time; both must be equal:
+# i32 MAX+1=-2147483648; u8 250+10=4; i16 32767+1=-32768; u16 65535*65535 mod
+# 65536=1; i16 -32768*-1=-32768; i8 -(-128)=-128; -7/2=-3; -7%2=-1; 7%-2=1;
+# i32 65536*65536=0; i32 MIN*-1=MIN.
+expect: output
+contrast: addI32(2147483647, 1) ==> addI32(2147483646, 1)
+contrast-expect: output
+--- output
+-2147483648 4 -32768 1 -32768 -128 -3 -1 1 0 -2147483648
+-2147483648 4 -32768 1 -32768 -128 -3 -1 1 0 -2147483648
+--- contrast-output
+-2147483648 4 -32768 1 -32768 -128 -3 -1 1 0 -2147483648
+2147483647 4 -32768 1 -32768 -128 -3 -1 1 0 -2147483648

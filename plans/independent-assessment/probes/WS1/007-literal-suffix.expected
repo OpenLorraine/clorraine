@@ -1,0 +1,6 @@
+# WS1-01. Source: spec/01-lexical.md §7 LEX-13: there are no literal suffixes (E20004).
+expect: reject E20004
+contrast: 1u8 ==> 1
+contrast-expect: output
+--- contrast-output
+1

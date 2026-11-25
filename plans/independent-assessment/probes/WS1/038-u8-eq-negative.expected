@@ -1,0 +1,8 @@
+# WS1-04. Source: spec/02-types.md §9: a literal operand takes the other operand's
+# type when it fits, otherwise E10202; -1 does not fit u8.
+expect: reject E10202
+contrast: b == -1 ==> b == 255
+contrast-expect: output
+--- contrast-output
+eq
+end

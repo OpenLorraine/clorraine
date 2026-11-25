@@ -1,0 +1,9 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    const d = embed("../WS0/ref/calibration.expected");
+    println($"{len(d)}");
+    return 0;
+}

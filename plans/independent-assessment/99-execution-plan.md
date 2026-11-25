@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 19:49
-> **Progress**: 11/95 tasks (11%)
+> **Last Updated**: 2026-11-25 20:00
+> **Progress**: 12/95 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -122,7 +122,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 1: WS1 Semantic core
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 4f355e2f762bb54f2acb00700b9797134ee4e1fe
 > **Reasoning**: high — conformance review of mature front-end code against the spec (AR #19)
 
 ### Step 1.1: Probe specification
@@ -130,7 +130,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-02 §WS1 · 03-01 §Spec oracle, §Expectation sources · AR #10
 **Objective**: Expected outcomes from accepted sources before any probe runs.
 
-- [ ] 1.1.1 Write probes and expectations for WS1-01..WS1-10 under `probes/WS1/`, each citing its expectation source (ST-5); commit them, local only
+- [x] 1.1.1 Write probes and expectations for WS1-01..WS1-10 under `probes/WS1/`, each citing its expectation source (ST-5); commit them, local only ✅ (completed: 2026-11-25 20:00)
 - [ ] 1.1.2 Red check: each probe discriminates by contrasting input or seeded defect; log in `findings/WS1-semantic-core.md` §Falsifiability log
 
 ### Step 1.2: Analysis

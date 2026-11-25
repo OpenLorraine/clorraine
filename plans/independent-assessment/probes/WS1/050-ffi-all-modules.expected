@@ -1,0 +1,15 @@
+# WS1-07. Source: spec/12-ffi-contracts.md §1-§2 (an ffi block declares the C
+# signature the generated code calls) and spec/17-codegen.md (one C99 unit). Every
+# stdlib ffi function except std.io Open/Close/Read/Write and std.mem FreeBuffer is
+# a cl_* runtime-shim function defined in the same translation unit, and a loaded
+# module emits its whole ffi block. Importing one name from all 43 modules must
+# therefore build with the debug line (-Wall -Wextra -Werror) and the release line:
+# any emitted prototype that disagrees with its shim definition is a C error
+# (C99 6.7p4, 6.2.7p2). Seeded defect (contrast): a user ffi block redeclares a shim function
+# with a different return type; the C build must then fail.
+profiles: hosted-amiga
+expect: output
+contrast: func main(): i32 { ==> ffi probe {\n    func cl_dos_ticks(): u16;\n}\n\nfunc main(): i32 {
+contrast-expect: build-fails
+--- output
+all modules

@@ -1,0 +1,7 @@
+# WS1-04. Source: spec/02-types.md §9: a literal operand that does not fit the
+# other operand's type is E10202.
+expect: reject E10202
+contrast: x + 300 ==> x + 30
+contrast-expect: output
+--- contrast-output
+230
