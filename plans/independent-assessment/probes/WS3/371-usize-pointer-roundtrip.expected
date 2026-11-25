@@ -1,0 +1,12 @@
+# WS3-10. Sources: spec/02-types.md §2 ("usize/isize: pointer-sized integer"), §7 and
+# spec/04 §14 (raw-to-integer value cast `usize(p)` "reads the address as a number";
+# integer-to-raw cast `raw T(addr)`), spec/15 §2 (host pointer size: the host's). A
+# pointer converted to usize and back must still address x on every profile.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: *q = 5; ==> *q = 6;
+contrast-expect: output
+--- output
+5
+--- contrast-output
+6

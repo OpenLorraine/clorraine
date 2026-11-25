@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { makeA } from Probe.A;
+import { makeB } from Probe.B;
+
+func main(): i32 {
+    let a = makeA();
+    let b = makeB();
+    println("end");
+    return 0;
+}

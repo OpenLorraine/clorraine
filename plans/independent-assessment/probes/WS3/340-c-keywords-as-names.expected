@@ -1,0 +1,12 @@
+# WS3-07. Sources: spec/01-lexical.md §2-§3 (these spellings are not Clorraine
+# keywords, so they are legal identifiers) and spec/17-codegen.md §7 ("Local: source
+# name if it is a valid, unique C identifier; otherwise a stable suffix"): the
+# emitted C must stay valid. Sum 1..15 = 120, plus 1.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: let int: i32 = 1; ==> let int: i32 = 2;
+contrast-expect: output
+--- output
+121
+--- contrast-output
+122

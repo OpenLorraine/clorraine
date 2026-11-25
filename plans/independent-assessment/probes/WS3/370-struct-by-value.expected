@@ -1,0 +1,11 @@
+# WS3-10. Sources: spec/17-codegen.md §3 (structs map to C structs passed and returned
+# by value) and spec/03 §1 (duplicable aggregates copy). twice(make(3)): a=6, b=3,
+# c=3..10 (sum 52), d=6, e=0.75 -> 6+3+6+52 = 67; make(10): 10+10+20+108 = 148.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: make(3) ==> make(4)
+contrast-expect: output
+--- output
+67 0.75 148
+--- contrast-output
+80 1 148

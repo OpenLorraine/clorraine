@@ -1,0 +1,23 @@
+module Probe.Main;
+
+struct Regs {
+    vhposr: volatile u16;
+}
+
+const VHPOS: raw Regs = raw Regs(0x00DFF006);
+
+func poke(): u32 {
+    unsafe {
+        writeVolatile16(raw u16(0x00DFF096), 0x8200);
+        writeVolatile32(raw u32(0x00DFF080), 0x00012340);
+        let c: u8 = readVolatile8(raw u8(0x00BFE001));
+        writeVolatile8(raw u8(0x00BFE001), c | 2);
+        let v: u16 = VHPOS.vhposr;
+        let w: u16 = VHPOS.vhposr;
+        return u32(v) + u32(w);
+    }
+}
+
+func main(): i32 {
+    return 0;
+}

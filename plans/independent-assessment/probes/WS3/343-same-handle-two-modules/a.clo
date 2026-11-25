@@ -1,0 +1,19 @@
+module Probe.A;
+
+import { println } from std.io;
+
+export handle Res freedBy releaseA;
+
+ffi probea {
+    func strdup(s: cstring): Res;
+    func free(take r: Res): void;
+}
+
+export func makeA(): Res {
+    return strdup("A");
+}
+
+export func releaseA(take r: Res): void {
+    println("drop A");
+    free(take r);
+}

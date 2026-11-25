@@ -1,0 +1,12 @@
+# WS3-07. Sources: spec/01-lexical.md §2 (no identifier length limit) and
+# spec/17-codegen.md §1 (one valid C99 unit; C99 5.2.4.1 requires only 63
+# significant initial characters for internal identifiers and 31 for external ones,
+# so a long name must not collide or be rejected by the m68k toolchains).
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: (41) ==> (42)
+contrast-expect: output
+--- output
+42
+--- contrast-output
+43

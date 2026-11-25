@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/04 §11 and EX-15: a false assert is the runtime fault E11213.
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11213
+contrast: pick(1) ==> pick(2)
+contrast-expect: output
+--- contrast-output
+2

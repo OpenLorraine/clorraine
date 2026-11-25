@@ -1,0 +1,37 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+struct Big {
+    a: i32;
+    b: u8;
+    c: i32[8];
+    d: u16;
+    e: f64;
+}
+
+func make(n: i32): Big {
+    return Big { a: n, b: u8(n), c: [n, n + 1, n + 2, n + 3, n + 4, n + 5, n + 6, n + 7], d: u16(n * 2), e: f64(n) / 4.0 };
+}
+
+func sum(b: Big): i32 {
+    let t: i32 = b.a + i32(b.b) + i32(b.d);
+    let i: usize = 0;
+    while (i < 8) {
+        t = t + b.c[i];
+        i = i + 1;
+    }
+    return t;
+}
+
+func twice(b: Big): Big {
+    let c: Big = b;
+    c.a = c.a * 2;
+    return c;
+}
+
+func main(): i32 {
+    let b: Big = twice(make(3));
+    println($"{sum(b)} {b.e} {sum(make(10))}");
+    return 0;
+}

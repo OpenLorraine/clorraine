@@ -1,0 +1,16 @@
+# WS3-07. Sources: spec/10-modules.md MOD-4/MOD-8 (each module has its own names; a
+# private name in two modules does not clash) and spec/17-codegen.md §1/§7 (one valid
+# C99 unit; user names must not collide). Two modules each declare `handle Res`; the
+# program must build and drop b then a. Host only (strdup instrument, as in WS2).
+profiles: host
+expect: output
+contrast: let b = makeB(); ==> let b = makeA();
+contrast-expect: output
+--- output
+end
+drop B
+drop A
+--- contrast-output
+end
+drop A
+drop A

@@ -1,0 +1,28 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func register(auto: i32): i32 {
+    return auto + 1;
+}
+
+func main(): i32 {
+    let int: i32 = 1;
+    let char: i32 = 2;
+    let signed: i32 = 3;
+    let unsigned: i32 = 4;
+    let long: i32 = 5;
+    let short: i32 = 6;
+    let double: i32 = 7;
+    let float: i32 = 8;
+    let extern: i32 = 9;
+    let typedef: i32 = 10;
+    let goto: i32 = 11;
+    let restrict: i32 = 12;
+    let inline: i32 = 13;
+    let union: i32 = 14;
+    let _Bool: i32 = 15;
+    let total: i32 = int + char + signed + unsigned + long + short + double + float + extern + typedef + goto + restrict + inline + union + _Bool;
+    println($"{register(total)}");
+    return 0;
+}

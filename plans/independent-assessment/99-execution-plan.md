@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:37
-> **Progress**: 27/95 tasks (28%)
+> **Last Updated**: 2026-11-25 20:42
+> **Progress**: 28/95 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -182,7 +182,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 3: WS3 IR and C codegen correctness
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: a8e74bda08f8608d630d755090a04c75d5cef88c
 > **Reasoning**: xhigh — undefined behavior and 68000 faults hide in valid-looking C (AR #19)
 
 ### Step 3.1: Probe specification
@@ -190,7 +190,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-02 §WS3 · spec chapters 07 §7, 11, 15, 17 · AR #9, AR #10
 **Objective**: Expected emission properties written before builds run.
 
-- [ ] 3.1.1 Write probes and expectations for WS3-01..WS3-11 under `probes/WS3/` (strict-flag build scripts, UB probes, odd-address probes, MMIO probes, collision probes); commit them, local only
+- [x] 3.1.1 Write probes and expectations for WS3-01..WS3-11 under `probes/WS3/` (strict-flag build scripts, UB probes, odd-address probes, MMIO probes, collision probes); commit them, local only ✅ (completed: 2026-11-25 20:42)
 - [ ] 3.1.2 Red check: each strict-flag script fails on a seeded bad C file; each UB and odd-address probe fires on a seeded violation or its item is marked `limit`; log in `findings/WS3-codegen.md`
 
 ### Step 3.2: Analysis

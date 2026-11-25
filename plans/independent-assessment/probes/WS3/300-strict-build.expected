@@ -1,0 +1,13 @@
+# WS3-01 expectation for 300-strict-build.sh, written before the run.
+# Sources: spec/17-codegen.md §1 and §13 (one valid C99 translation unit for every
+# compile-matrix leg), C99 (the -pedantic diagnostics), and the GCC warning
+# documentation for -Wconversion, -Wsign-conversion, -Wcast-align, -Wshadow,
+# -Wstrict-prototypes.
+# - Every accepted Phase 0 cell compiles (errors.tsv empty): a C error is a Critical
+#   ("emits invalid C").
+# - Warnings are recorded, not expected to be zero; each class is classified in task
+#   3.2.1 as a real defect (a value change, a UB hazard, a declaration the C99 standard
+#   rejects) or noise (a defined implicit conversion the language rules already make
+#   explicit).
+# Red check: 300-seeded.c must produce at least one warning (seeded defects).
+expect: script

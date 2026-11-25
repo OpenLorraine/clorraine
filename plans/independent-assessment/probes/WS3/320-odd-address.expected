@@ -1,0 +1,8 @@
+# WS3-05 detector expectation (seeded violation). Source: the MC68000 User's Manual
+# (a word or long-word access at an odd address raises an address error, exception
+# vector 3; the 68020 handles misaligned operands). Expected: under the 68000 the
+# program does not print "odd read ..." (an exception or a vamos error); under
+# -C 68020 it prints "odd read 515" (0x0203 big-endian). If the 68000 run prints the
+# line, vamos cannot detect odd-address accesses and the WS3-05 runtime check is a
+# limit (03-01 §Falsifiability); the item then rests on code reading.
+expect: script

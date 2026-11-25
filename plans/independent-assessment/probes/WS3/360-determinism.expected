@@ -1,0 +1,10 @@
+# WS3-09 expectation for 360-determinism.sh, written before the run. Sources:
+# spec/17-codegen.md §11 ("Same source, same profile, same flags produce
+# byte-identical C: stable symbol names, stable temporary numbering, stable drop
+# order, no timestamps and no absolute paths (only the logical source path, in
+# #line)") and spec/13-data-inclusion.md §3.
+# Expected: a2 and b identical to a (repeat and debug clc); no date/time string; c
+# may differ only in the #line path spelling if the logical path is the path as
+# given; d contains no absolute path. If d embeds the absolute path, the meaning of
+# "logical source path" is a spec question unless the driver passes absolute paths.
+expect: script

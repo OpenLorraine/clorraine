@@ -1,0 +1,14 @@
+# WS3-03. Sources: spec/02-types.md §10 and spec/04-expressions.md §5 (integer + - *,
+# ++/--, compound assignment, and unary - wrap in two's complement; "Every operator is
+# defined"), spec/17-codegen.md §14 ("Signed overflow of +, -, *, unary - — wrapped
+# through unsigned-based forms or -fwrapv"). The host profile and the vbcc leg build
+# without -fwrapv, so the emitted C must itself avoid signed overflow; the host UBSan
+# line (probe.py --sanitize) reports any.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: incr(2147483647) ==> incr(5)
+contrast-expect: output
+--- output
+-2147483648 2147483647 -2147483648 -2147483648 -2147483648 -2147483648
+--- contrast-output
+6 2147483647 -2147483648 -2147483648 -2147483648 -2147483648

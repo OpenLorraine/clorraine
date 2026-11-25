@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/appendix-stdlib.md and spec/02 §6: slice(v, lo, hi) of a one-element view with hi = 2 is out of range (E11211).
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11211
+contrast: pick(2) ==> pick(1)
+contrast-expect: output
+--- contrast-output
+1

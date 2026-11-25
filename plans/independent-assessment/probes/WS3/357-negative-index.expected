@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/04 §9: a negative signed index is out of range, E11211.
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11211
+contrast: pick(-1) ==> pick(0)
+contrast-expect: output
+--- contrast-output
+1

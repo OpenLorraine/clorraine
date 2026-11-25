@@ -1,0 +1,12 @@
+# WS3-07. Sources: spec/17-codegen.md §7: an exported function of module `get` is
+# `cl_get__Point`, and the instance get<Point> is `cl_<name>__<typekey>` =
+# `cl_get__Point`; the scheme promises "a user identifier cannot collide with a
+# generated key". The program must build and print "1 102" on every profile.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: _Point(2) ==> _Point(3)
+contrast-expect: output
+--- output
+1 102
+--- contrast-output
+1 103

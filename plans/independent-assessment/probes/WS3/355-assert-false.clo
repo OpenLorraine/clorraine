@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: i32): i32 {
+    return n;
+}
+
+func main(): i32 {
+    let n: i32 = pick(1);
+    assert(n == 2, "n must be 2");
+    println($"{n}");
+    return 0;
+}

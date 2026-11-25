@@ -1,0 +1,13 @@
+# WS3-07. Sources: spec/01-lexical.md §2 (legal identifiers) and spec/17-codegen.md §7
+# (a local keeps its source name only when it is a valid, unique C identifier) and §1
+# (the emitted unit must be valid C99 on every leg). These names are macros, typedefs,
+# or globals in the C library, the NDK headers, or the shim; the program must build
+# and print 120 on every profile.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: let TRUE: i32 = 1; ==> let TRUE: i32 = 2;
+contrast-expect: output
+--- output
+120
+--- contrast-output
+121

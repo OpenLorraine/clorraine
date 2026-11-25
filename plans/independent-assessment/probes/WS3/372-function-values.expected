@@ -1,0 +1,12 @@
+# WS3-10. Sources: spec/04 §10 and spec/06 (function values are exact-signature C
+# function pointers; a capture-less lambda matches func(...); a capturing closure
+# fills a generic callable-bound parameter, spec/06 §6.1). twice(+3, 1) = 7,
+# twice(*10, 2) = 200, apply(+3, 4) = 7, apply(+k, 5) = 7.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: twice(g, 1) ==> twice(g, 2)
+contrast-expect: output
+--- output
+7 200 7 7
+--- contrast-output
+8 200 7 7

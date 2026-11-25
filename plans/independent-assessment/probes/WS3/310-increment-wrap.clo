@@ -1,0 +1,42 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func incr(x: i32): i32 {
+    let y: i32 = x;
+    y++;
+    return y;
+}
+
+func decr(x: i32): i32 {
+    let y: i32 = x;
+    y--;
+    return y;
+}
+
+func pre(x: i32): i32 {
+    let y: i32 = x;
+    return ++y;
+}
+
+func addAssign(x: i32): i32 {
+    let y: i32 = x;
+    y += 1;
+    return y;
+}
+
+func mulAssign(x: i32): i32 {
+    let y: i32 = x;
+    y *= 2;
+    return y;
+}
+
+func negate(x: i32): i32 {
+    return -x;
+}
+
+func main(): i32 {
+    let m: i32 = -2147483647 - 1;
+    println($"{incr(2147483647)} {decr(m)} {pre(2147483647)} {addAssign(2147483647)} {mulAssign(1073741824)} {negate(m)}");
+    return 0;
+}

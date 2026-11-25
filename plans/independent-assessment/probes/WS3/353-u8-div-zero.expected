@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/02 §10 and spec/04 §5 EX-5: integer division by zero is E11210 at every width (u8 here).
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11210
+contrast: pick(0) ==> pick(7)
+contrast-expect: output
+--- contrast-output
+28

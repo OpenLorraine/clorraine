@@ -1,0 +1,23 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func twice(f: func(i32): i32, x: i32): i32 {
+    return f(f(x));
+}
+
+func addThree(x: i32): i32 {
+    return x + 3;
+}
+
+func apply<F: func(i32): i32>(f: F, x: i32): i32 {
+    return f(x);
+}
+
+func main(): i32 {
+    let g: func(i32): i32 = addThree;
+    let h: func(i32): i32 = (x: i32) => x * 10;
+    let k: i32 = 2;
+    println($"{twice(g, 1)} {twice(h, 2)} {apply(addThree, 4)} {apply([k] (x: i32) => x + k, 5)}");
+    return 0;
+}

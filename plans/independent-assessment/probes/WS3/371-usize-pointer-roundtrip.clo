@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let x: i32 = 1;
+    unsafe {
+        let p: raw i32 = &x;
+        let a: usize = usize(p);
+        let q: raw i32 = raw i32(a);
+        *q = 5;
+    }
+    println($"{x}");
+    return 0;
+}

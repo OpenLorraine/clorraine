@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/04 §5 EX-5: integer modulo by zero is E11210 (i16 here).
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11210
+contrast: pick(0) ==> pick(4)
+contrast-expect: output
+--- contrast-output
+-3

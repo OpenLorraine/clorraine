@@ -1,0 +1,17 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Array, arrayNew, slice } from std.mem;
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let xs: Array<i32> = arrayNew<i32>();
+    xs.push(1);
+    xs.push(2);
+    let v: i32[] = xs.get(0);
+    let w: i32[] = slice(v, 0, pick(2));
+    println($"{w[0]}");
+    return 0;
+}

@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/appendix-stdlib.md §3 (`get` is bounds-checked, E11211).
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11211
+contrast: pick(3) ==> pick(2)
+contrast-expect: output
+--- contrast-output
+3

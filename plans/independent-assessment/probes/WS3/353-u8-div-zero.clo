@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: u8): u8 {
+    return n;
+}
+
+func main(): i32 {
+    let a: u8 = 200;
+    let b: u8 = pick(0);
+    println($"{a / b}");
+    return 0;
+}

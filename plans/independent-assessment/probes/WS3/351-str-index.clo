@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let i: usize = len(s) + pick(0);
+    println($"{s[i]}");
+    return 0;
+}

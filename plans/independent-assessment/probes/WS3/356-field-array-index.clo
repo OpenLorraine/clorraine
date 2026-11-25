@@ -1,0 +1,19 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+struct Box8 {
+    values: i32[8];
+    tag: i32;
+}
+
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let b: Box8 = Box8 { values: [; 1], tag: 0 };
+    let i: usize = pick(8);
+    println($"{b.values[i]}");
+    return 0;
+}

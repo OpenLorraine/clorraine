@@ -1,0 +1,7 @@
+# WS3-08. Source: spec/04-expressions.md §9 and spec/08 IX-1: every index (here the inner extent 4 of a[1][j]) is checked; j = 5 is E11211.
+profiles: host hosted-amiga hosted-amiga-13
+expect: fault E11211
+contrast: pick(5) ==> pick(3)
+contrast-expect: output
+--- contrast-output
+7

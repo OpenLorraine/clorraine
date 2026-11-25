@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: i32): i32 {
+    return n;
+}
+
+func main(): i32 {
+    let xs: i32[4] = [1, 2, 3, 4];
+    let i: i32 = pick(-1);
+    println($"{xs[i]}");
+    return 0;
+}

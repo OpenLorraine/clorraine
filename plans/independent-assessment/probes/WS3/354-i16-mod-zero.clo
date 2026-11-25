@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: i16): i16 {
+    return n;
+}
+
+func main(): i32 {
+    let a: i16 = -7;
+    let b: i16 = pick(0);
+    println($"{a % b}");
+    return 0;
+}

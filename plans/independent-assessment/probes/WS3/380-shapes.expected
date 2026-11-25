@@ -1,0 +1,11 @@
+# WS3-11 expectation for 380-shapes.py, written before the run. Sources:
+# 03-01-method-and-evidence.md §Severity (a C-compiler crash on valid emitted C, or a C
+# compile time above 10x the Phase 0 C compile time of the nearest-size emitted
+# program, is Major) and spec/17-codegen.md §13 (every compile-matrix leg builds the
+# unit). Expected: every case is accepted by clc; host cc, m68k-amigaos-gcc, and vbcc
+# compile each emitted unit with exit 0 within 10x the nearest-size Phase 0 time
+# (findings/WS0-emission-record.tsv). The red check runs the script on the same
+# inputs with a seeded limit (the comparison must report a FAIL when a limit is set
+# below the measured time): run with the record of a 1 ms baseline,
+# 380-seeded-record.tsv.
+expect: script

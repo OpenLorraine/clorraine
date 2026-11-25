@@ -1,0 +1,14 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func pick(n: i32): i32 {
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[3][4] = [; [; 7]];
+    let j: i32 = pick(5);
+    println($"{a[1][j]}");
+    return 0;
+}

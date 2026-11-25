@@ -1,0 +1,7 @@
+# WS3-02 expectation for 301-vbcc-scan.sh. Source: spec/15-profiles.md §2 and
+# spec/17-codegen.md §13 (vbcc `vc +aos68k` is a hosted-amiga compiler of the compile
+# matrix; the corpus gate requires the vbcc leg to be warning-free in the emitted C).
+# Expected: no vbcc warning or error names the emitted unit or a .clo source in any
+# Phase 0 hosted-amiga / hosted-amiga-13 cell (77 cells). Red check: 301-seeded.c makes
+# vbcc report at least one diagnostic.
+expect: script
