@@ -10,10 +10,10 @@ clc=$1; plan=$2; out=$3; mkdir -p "$out"
 flags=(-std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections)
 for b in calibration sieve; do
   "$clc" --profile hosted-amiga-13 -o "$out/$b.clo.c" "benchmarks/$b/program.clo"
-  m68k-amigaos-gcc "${flags[@]}" -o "$out/$b.clo" "$out/$b.clo.c" -lamiga -lm
+  m68k-amigaos-gcc "${flags[@]}" -Wl,-Map="$out/$b.clo.map" -o "$out/$b.clo" "$out/$b.clo.c" -lamiga -lm
   m68k-amigaos-gcc "${flags[@]}" -o "$out/$b.c" "$plan/probes/WS0/ref/$b.c" -lamiga -lm
   for side in clo c; do
     echo "== $b $side: $(m68k-amigaos-size "$out/$b.$side" | tail -1)"
-    m68k-amigaos-nm --size-sort -S "$out/$b.$side" | awk '$3 ~ /[tT]/ {printf "%d %s\n", strtonum("0x"$2), $4}' | sort -rn | head -15
+    m68k-amigaos-nm --size-sort -S "$out/$b.$side" | while read -r a s t n; do case "$t" in t|T) echo "$((16#$s)) $n";; esac; done | sort -rn | head -15
   done
 done

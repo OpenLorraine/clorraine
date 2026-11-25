@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 21:40
-> **Progress**: 36/95 tasks (37%)
+> **Last Updated**: 2026-11-25 21:43
+> **Progress**: 37/95 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -221,7 +221,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: Every Phase 4 probe states its expected output and the quantity it measures.
 
 - [x] 4.1.1 Write every Phase 4 probe under `probes/WS4/`: patched-C specifications for WS4-03..WS4-06 (target shape, output identical after normalization, metric), the attribution scripts for WS4-02, and the size and flag-variant scripts for WS4-07 and WS4-08 (ST-14); commit them, local only ✅ (completed: 2026-11-25 21:40)
-- [ ] 4.1.2 Red check: the output comparison rejects a deliberately wrong patch, and each attribution script maps a seeded known symbol correctly; log in `findings/WS4-code-quality.md`
+- [x] 4.1.2 Red check: the output comparison rejects a deliberately wrong patch, and each attribution script maps a seeded known symbol correctly; log in `findings/WS4-code-quality.md` ✅ (completed: 2026-11-25 21:43)
 
 ### Step 4.2: Analysis
 
