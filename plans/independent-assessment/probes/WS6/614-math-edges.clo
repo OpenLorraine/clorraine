@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { sin, cos, sqrt } from std.math;
+
+func main(): i32 {
+    println($"{sin(0)} {sin(64)} {sin(128)} {sin(192)} {sin(256)} {sin(-64)} {sin(-2147483648)}");
+    let big: i32 = 2147483647;
+    let r1: bool = sin(big) == sin(255);
+    let r2: bool = cos(0) == 256;
+    let r3: bool = cos(big) == sin(big + 64);
+    println($"{r1} {r2} {r3}");
+    println($"{sqrt(-5)} {sqrt(0)} {sqrt(1)} {sqrt(15)} {sqrt(16)} {sqrt(2147483647)}");
+    return 0;
+}

@@ -1,0 +1,28 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Buffer, bufferNew, bufferFrom, bufferLen, slice } from std.mem;
+
+func main(): i32 {
+    let a: Buffer? = bufferNew(0);
+    let src: u8[3] = [7, 8, 9];
+    let b: Buffer? = bufferFrom(slice<u8>(src, 3, 3));
+    let c: Buffer? = bufferFrom(src);
+    if (a == null) {
+        println("a null");
+        return 1;
+    }
+    let a1: Buffer = a;
+    if (b == null) {
+        println("b null");
+        return 1;
+    }
+    let b1: Buffer = b;
+    if (c == null) {
+        println("c null");
+        return 1;
+    }
+    let c1: Buffer = c;
+    println($"true {bufferLen(a1)} true {bufferLen(b1)} true {bufferLen(c1)}");
+    return 0;
+}

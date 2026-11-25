@@ -1,0 +1,18 @@
+# WS6-01/02 (toCString of a sub-view). Sources: spec/appendix-stdlib.md §11 (toCString:
+# `String` or `str` -> `cstring`, no allocation; the result is a loan of the argument)
+# and spec/12-ffi-contracts.md / spec/appendix-stdlib.md ("`cstring` is a raw
+# zero-terminated pointer"): the cstring of a `str` denotes exactly that str's bytes.
+# The probe creates a file through toCString of the first 36 bytes of a longer path.
+# Expected: the 36-byte name exists and the longer name does not. The runner removes
+# build/tmp/assessment/WS6/f612-* before each run (54x-style clean start; see the
+# falsifiability log), so a file from an earlier run cannot satisfy it.
+# A rejection at compile time (slice of a `str` not accepted) is a spec-conformance
+# finding against spec/appendix-stdlib.md §11 instead.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: slice(full, 0, 36) ==> slice(full, 0, 41)
+contrast-expect: output
+--- output
+created true prefix true full false
+--- contrast-output
+created true prefix false full true

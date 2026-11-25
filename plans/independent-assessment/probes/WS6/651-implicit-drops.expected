@@ -1,0 +1,18 @@
+# WS6-05 (handle release on drop, no double close after an explicit close). Sources:
+# spec/03-ownership.md (an owned handle drops exactly once at scope end through its
+# `freedBy` deleter; a `take` call moves it, so the scope end does not drop it again)
+# and the dos/exec/utility/timer autodocs (each acquire has one matching release).
+# Expected: "9 2" (every acquire succeeded) and, under `--vamos-leaks`, no orphan
+# memory, no library left open, and no vamos error (a second release of a lock or a
+# FreeMem of a freed block fails the run).
+# Detector: the vamos leak detector fired on the seeded program (WS5 red check); the
+# contrast changes the count after the explicit timer free (output discriminates);
+# the release check itself rests on the detector.
+profiles: hosted-amiga
+expect: output
+contrast: count = count + 1;\n    }\n    let l: Lock? ==> count = count + 2;\n    }\n    let l: Lock?
+contrast-expect: output
+--- output
+9 2
+--- contrast-output
+9 3

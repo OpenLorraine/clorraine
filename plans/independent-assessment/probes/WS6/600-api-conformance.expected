@@ -1,0 +1,13 @@
+# WS6-01 (API conformance). Sources: spec/appendix-stdlib.md and spec/appendix-amiga.md
+# (the API tables are the normative surface: name, parameters with modes, result type);
+# spec/10-modules.md (an import names a public function of the module).
+# Expected: no missing, module, arity, mode, type, or returns report. Every public
+# function is mentioned in an appendix (an undocumented export is a WS6-06 consistency
+# item, not a conformance failure).
+# Each report is reviewed by hand before it becomes a finding: an appendix shorthand
+# (a row that lists only modes, a combined row) is a script limit, not a finding.
+# Detector: run with --appendix on a copy of appendix-stdlib.md with one name renamed,
+# one return type changed, and one mode flipped; all three must be reported.
+expect: script
+--- output
+conformance: 0 report(s); 0 undocumented public function(s)

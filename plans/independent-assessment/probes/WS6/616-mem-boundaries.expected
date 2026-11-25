@@ -1,0 +1,13 @@
+# WS6-02 (std.mem empty buffers). Sources: spec/appendix-stdlib.md §2 (bufferNew(size):
+# allocates, `null` only on failure; bufferFrom(src): allocates and copies `src`;
+# bufferLen: byte count) and C99 7.21.1p2 (no library call with an invalid pointer, even
+# for zero length; checked by UBSan on the host line).
+# Expected: "true 0 true 0 true 3", no sanitizer report.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: bufferFrom(src); ==> bufferFrom(slice<u8>(src, 1, 3));
+contrast-expect: output
+--- output
+true 0 true 0 true 3
+--- contrast-output
+true 0 true 0 true 2

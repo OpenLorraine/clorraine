@@ -1,0 +1,12 @@
+# WS6-03 (hidden costs). Sources: spec/appendix-stdlib.md §2-§5, §11, §24 (bufferFrom
+# "allocates and copies"; padLeft/clone/stringOf allocate once; push appends; the
+# allocation column of §11 names one allocation per helper and none for `bytes`), and
+# the general expectation that a single append, pad, copy, or hash pass is linear in
+# its size. Lens: A500 (hosted-amiga-13, m68k GCC -O2 with the shipped release flags),
+# 68000 instruction counts under `vamos`.
+# Expected: every workload except `seeded-quadratic` has ratio <= 2.5 (linear); the
+# seeded quadratic workload has ratio >= 3.5 (the detector fires). The per-element
+# marginal cost is reported for WS7 and the report.
+expect: script
+--- output
+PASS for every workload; scaling: 0 failure(s)

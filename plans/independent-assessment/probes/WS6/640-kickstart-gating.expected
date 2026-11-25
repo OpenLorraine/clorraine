@@ -1,0 +1,14 @@
+# WS6-04 (Kickstart requirement declared and enforced). Sources:
+# spec/appendix-amiga.md §1 (the 1.3 profile provides the pre-2.0 subset; the 2.0+
+# module table gives each module's minimum Kickstart; "Nothing in this appendix makes
+# them part of the 1.3 profile"); spec/15-profiles.md PR-3 (a construct the profile
+# cannot lower is rejected, E11200); exec OpenLibrary autodoc (the version argument is
+# the minimum the caller needs; V34 = 1.3, V36/37 = 2.0/2.04, V38 = 2.1, V39 = 3.0,
+# V40 = 3.1).
+# Expected: no 13-too-new, 13-listed, below-min, or above-min report; every report is
+# reviewed by hand (a version test that guards an optional fast path is not a defect).
+# Detector: --seed (std.amiga.workbench allowed on 1.3) must report 13-listed and
+# 13-too-new.
+expect: script
+--- output
+gating: 0 report(s)

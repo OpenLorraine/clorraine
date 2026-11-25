@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 22:56
-> **Progress**: 53/95 tasks (55%)
+> **Last Updated**: 2026-11-26 00:17
+> **Progress**: 54/95 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -274,7 +274,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 6: WS6 Standard library
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 7594cc14b6f9db1b98301b97db0e481e02978c75
 > **Reasoning**: high — API conformance and resource ownership across 43 modules (AR #19)
 
 ### Step 6.1: Probe specification
@@ -282,7 +282,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-03 §WS6 · `spec/appendix-stdlib.md`, `spec/appendix-amiga.md` · AR #10
 **Objective**: Expected API behavior from the appendices before probes run.
 
-- [ ] 6.1.1 Write probes and expectations for WS6-01..WS6-07 under `probes/WS6/`; commit them, local only
+- [x] 6.1.1 Write probes and expectations for WS6-01..WS6-07 under `probes/WS6/`; commit them, local only ✅ (completed: 2026-11-26 00:17)
 - [ ] 6.1.2 Red check: each probe discriminates; log in `findings/WS6-stdlib.md`
 
 ### Step 6.2: Analysis

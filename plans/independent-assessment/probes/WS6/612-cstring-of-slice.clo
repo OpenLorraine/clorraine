@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println, File, createFile, openFile, MODE_OLDFILE } from std.io;
+import { toCString } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let full: str = "build/tmp/assessment/WS6/f612-prefix-TAIL";
+    let part: str = slice(full, 0, 36);
+    let made: File? = createFile(toCString(part));
+    let created: bool = made != null;
+    let prefix: File? = openFile("build/tmp/assessment/WS6/f612-prefix", MODE_OLDFILE);
+    let whole: File? = openFile("build/tmp/assessment/WS6/f612-prefix-TAIL", MODE_OLDFILE);
+    let p: bool = prefix != null;
+    let w: bool = whole != null;
+    println($"created {created} prefix {p} full {w}");
+    return 0;
+}

@@ -1,0 +1,13 @@
+# WS6-07 (embedding, gating, skew). Sources: AGENTS.md / compiler/src/stdlib.rs module
+# docs (the standard library is embedded with include_str!, no filesystem lookup);
+# spec/10-modules.md (a module's name is its declaration); spec/15-profiles.md PR-2/PR-3
+# (each profile names its API surface; an unlowerable module is E11200);
+# spec/appendix-amiga.md §1 (the 1.3 profile uses the base shim only; 2.0+ code lives in
+# the `_20` and optional suffixes).
+# Expected: no not-embedded, no-file, gate-unknown, or no-shim report. unused-shim lines
+# are reviewed by hand (WS6-06 consistency; dead runtime code is maintenance cost).
+# Detector: --seed adds an ffi function with no C definition to std.amiga.dos; it must
+# be reported as no-shim.
+expect: script
+--- output
+embedding: 43 embedded modules, 43 files, 20 on 1.3; 0 report(s)

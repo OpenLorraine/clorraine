@@ -1,0 +1,12 @@
+# WS6-05 static check (handle release discipline). Sources: spec/03-ownership.md (a
+# handle is released exactly once by its `freedBy` deleter when its owner drops; a
+# `take` parameter moves ownership into the callee, so the caller's drop does not run;
+# OW-16: a borrowed parameter must not be released by the callee, E10034) and
+# spec/12-ffi-contracts.md §2 (`handle T freedBy F;`; the deleter takes the handle).
+# Expected: no no-deleter, deleter-mode, or double-close report. `review` lines (a
+# release-named shim call on a borrowed handle, for example a detach) are read by hand.
+# Detector: --seed adds `closeX(borrow x: X)` calling the deleter; it must be reported
+# as double-close.
+expect: script
+--- output
+handles: <count>; 0 report(s)

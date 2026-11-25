@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { toHex, toDecimal, padLeft, padRight } from std.fmt;
+import { bytes } from std.text;
+
+func main(): i32 {
+    println(toHex(0));
+    println(toHex(0xFFFFFFFF));
+    println(toDecimal(-2147483648));
+    println(toDecimal(2147483647));
+    println(padLeft("abc", 2, '*'));
+    println(padLeft("", 3, '-'));
+    println(padRight("ab", 5, '.'));
+    let wide: String = padLeft("x", 300, ' ');
+    println($"{len(bytes(wide))}");
+    return 0;
+}

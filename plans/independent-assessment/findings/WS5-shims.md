@@ -23,6 +23,15 @@ Limits:
   string lives in the unloaded program, so the seeded leftover port was not found
   (`limit`; removed by counting `SysBase->PortList` nodes instead).
 
+Carried to Phase 9 (recommended in-session 2026-11-26; not yet confirmed by the user):
+- Rerun probes 541 and 542 on FS-UAE A500/KS1.3 (ROM decryption as in the `sdk-a500-*`
+  gates) to move the A500 lens of ASM-WS5-001 and ASM-WS5-002 from code reading to
+  reproduction.
+- Replace the walker's `FindPort` check with a `SysBase->PortList` node count and rerun
+  541/541c, to remove the public-port `limit` of ASM-WS5-001.
+- Optionally retry the dangling-server crash (a filler that also covers the reserved
+  16 KB) so the crash itself can move from `probable` to `verified`.
+
 ## Dispatch record
 
 | Role | Effort | Date |

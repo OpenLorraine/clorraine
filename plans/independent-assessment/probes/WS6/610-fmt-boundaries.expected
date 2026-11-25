@@ -1,0 +1,28 @@
+# WS6-02 (std.fmt boundaries). Sources: spec/appendix-stdlib.md §5 (toHex: "unsigned
+# value to 0x-prefixed hex"; toDecimal: signed decimal; padLeft/padRight: pad to
+# `width`, so a width below the length leaves the text unchanged and an empty input
+# becomes `width` fill bytes). The case of the hex digits and the form of zero are not
+# specified: a mismatch only in those is a spec question, not a finding.
+# Expected: the lines below on every profile and build line, no sanitizer report.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: padLeft("abc", 2, '*') ==> padLeft("abc", 5, '*')
+contrast-expect: output
+--- output
+0x0
+0xFFFFFFFF
+-2147483648
+2147483647
+abc
+---
+ab...
+300
+--- contrast-output
+0x0
+0xFFFFFFFF
+-2147483648
+2147483647
+**abc
+---
+ab...
+300

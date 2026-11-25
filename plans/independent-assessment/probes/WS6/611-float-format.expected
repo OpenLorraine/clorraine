@@ -1,0 +1,17 @@
+# WS6-02 / WS5-11 (float formatting and host/Amiga parity). Sources: spec/decisions.md
+# S2a and spec/04-expressions.md §12 (template float placeholders use six significant
+# digits — the C99 %g default precision, C99 7.19.6.1); spec/02 §2 (f64 is IEEE double);
+# spec/17 §11 (determinism) and the corpus rule that one program prints the same text on
+# every profile. NaN and infinity spellings are not specified; the expectation uses the
+# C99 %g spellings, and a divergence between profiles is the finding either way.
+# Expected: the two lines below on host, hosted-amiga, and hosted-amiga-13.
+profiles: host hosted-amiga hosted-amiga-13
+expect: output
+contrast: let b: f64 = 2.5; ==> let b: f64 = 3.5;
+contrast-expect: output
+--- output
+0.1 2.5 1.23457e+08 1e+300 -0
+nan inf -inf
+--- contrast-output
+0.1 3.5 1.23457e+08 1e+300 -0
+nan inf -inf

@@ -1,0 +1,19 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let z: f64 = 0.0;
+    let a: f64 = 0.1;
+    let b: f64 = 2.5;
+    let c: f64 = 123456789.0;
+    let d: f64 = 1e300;
+    let e: f64 = 0.0 - z;
+    let negzero: f64 = -e;
+    let nan: f64 = z / z;
+    let inf: f64 = 1.0 / z;
+    let ninf: f64 = -inf;
+    println($"{a} {b} {c} {d} {negzero}");
+    println($"{nan} {inf} {ninf}");
+    return 0;
+}

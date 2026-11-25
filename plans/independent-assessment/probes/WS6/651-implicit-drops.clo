@@ -1,0 +1,57 @@
+module Probe.Main;
+
+import { println, File, createFile } from std.io;
+import { Buffer, bufferNew } from std.mem;
+import { stringOf, bytes } from std.text;
+import { Lock, PathInfo, lockPath, pathInfo, unlockPath } from std.amiga.dos;
+import { MsgPort, createMsgPort } from std.amiga.exec;
+import { Timer, openTimer, freeTimer } from std.amiga.timer;
+import { TagList, newTagList } from std.amiga.utility;
+import { Semaphore, createSemaphore } from std.amiga.semaphore;
+
+func scoped(): i32 {
+    let count: i32 = 0;
+    let f: File? = createFile("build/tmp/assessment/WS6/f651");
+    if (f != null) { count = count + 1; }
+    let b: Buffer? = bufferNew(64);
+    if (b != null) { count = count + 1; }
+    let s: String = stringOf("drop me");
+    if (len(bytes(s)) > 0) { count = count + 1; }
+    let l: Lock? = lockPath("build");
+    if (l != null) { count = count + 1; }
+    let p: PathInfo? = pathInfo("build");
+    if (p != null) { count = count + 1; }
+    let m: MsgPort? = createMsgPort();
+    if (m != null) { count = count + 1; }
+    let t: Timer? = openTimer();
+    if (t != null) { count = count + 1; }
+    let g: TagList? = newTagList(4);
+    if (g != null) { count = count + 1; }
+    let q: Semaphore? = createSemaphore();
+    if (q != null) { count = count + 1; }
+    return count;
+}
+
+func explicit(): i32 {
+    let count: i32 = 0;
+    let t: Timer? = openTimer();
+    if (t != null) {
+        let t1: Timer = t;
+        freeTimer(t1);
+        count = count + 1;
+    }
+    let l: Lock? = lockPath("build");
+    if (l != null) {
+        let l1: Lock = l;
+        unlockPath(l1);
+        count = count + 1;
+    }
+    return count;
+}
+
+func main(): i32 {
+    let a: i32 = scoped();
+    let b: i32 = explicit();
+    println($"{a} {b}");
+    return 0;
+}
