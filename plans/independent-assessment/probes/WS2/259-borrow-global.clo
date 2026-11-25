@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+let counter: i32 = 1;
+
+func bump(borrow x: i32): void {
+    x = x + 1;
+}
+
+func main(): i32 {
+    bump(borrow counter);
+    println($"{counter}");
+    return 0;
+}

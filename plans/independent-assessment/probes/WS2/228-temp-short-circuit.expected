@@ -4,7 +4,9 @@ The right operand (and its temporary) exists only when c is true.
 profiles: host
 with: tok.clo
 expect: output
-contrast: == 3) ==> == 4)
+# Amended contrast (task 2.1.3): the original "contrast: == 3) ==> == 4)" no longer
+# matched after the condition moved into a let before the first run.
+contrast: == 3; ==> == 4;
 contrast-expect: output
 --- output
 no

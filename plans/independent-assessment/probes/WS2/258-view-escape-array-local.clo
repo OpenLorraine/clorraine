@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Array, arrayNew } from std.mem;
+
+func bad(): i32[] {
+    let xs: Array<i32> = arrayNew<i32>();
+    xs.push(1);
+    return xs.get(0);
+}
+
+func main(): i32 {
+    bad();
+    println("end");
+    return 0;
+}

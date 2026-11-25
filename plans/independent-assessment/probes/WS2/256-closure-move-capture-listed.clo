@@ -1,0 +1,17 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Tok, tok, idOf, show } from Probe.Tok;
+
+func consume(take x: Tok): void {
+    show(x);
+}
+
+func main(): i32 {
+    let t: Tok = tok(1);
+    ([t] () => {
+        consume(take t);
+    })();
+    println("end");
+    return 0;
+}

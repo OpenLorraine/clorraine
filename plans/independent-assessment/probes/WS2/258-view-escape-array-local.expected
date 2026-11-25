@@ -1,0 +1,11 @@
+# Corrected version (added in task 2.1.3, committed before it runs) of 235, whose
+# source passed a fixed array where a view is expected (E10200; spec/08 AR-2: a fixed array never becomes a view); the original stays with its observed outcome.
+# WS2-07. spec/03 §7 and spec/16 BR-6: a view derived from a local Array and returned
+# is E10035.
+profiles: host
+with: tok.clo
+expect: reject E10035
+contrast: func bad(): i32[] {\n    let xs: Array<i32> = arrayNew<i32>();\n    xs.push(1);\n    return xs.get(0);\n} ==> func bad(): i32 {\n    let xs: Array<i32> = arrayNew<i32>();\n    xs.push(1);\n    return xs.get(0)[0];\n}
+contrast-expect: output
+--- contrast-output
+end

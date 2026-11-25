@@ -1,0 +1,10 @@
+# Corrected version (added in task 2.1.3, committed before it runs) of 236, whose
+# source lent a fixed array as a view (E10200); the original stays with its observed outcome.
+# WS2-07. spec/03 §7 and spec/16 BR-9: a global may not be borrowed (E10038).
+profiles: host
+with: tok.clo
+expect: reject E10038
+contrast: bump(borrow counter);\n    println($"{counter}"); ==> let local: i32 = counter;\n    bump(borrow local);\n    println($"{local}");
+contrast-expect: output
+--- contrast-output
+2
