@@ -3,6 +3,14 @@
 > **Status**: Draft for preflight
 > **Scope**: Linux x86_64, Clorraine 1.2.0
 > **Evidence**: `spikes/07-linux-cli-fs-uae/README.md`
+>
+> **Revision 2 (2026-11-25)**: the public `v1.2.0` prerelease extended the
+> installer to offer the pinned AmigaPorts rc24 download, verify and install it,
+> run `setup --toolchain`, and require the exact host hello. This supersedes the
+> product statement's "downloads ... themselves", Q4's "or downloaded by
+> Clorraine", and the toolchain-download non-goal. The toolchain is still never
+> mirrored, bundled, or redistributed. See
+> `plans/public-preview-v1.2.0/99-execution-plan.md`.
 
 ## Product statement
 

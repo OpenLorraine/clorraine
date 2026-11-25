@@ -1,12 +1,25 @@
 # Publication handoff
 
-> **Status**: Local candidate complete; no publication approved or performed.
-> **Candidate**: `build/dist`
-> **Evidence**: `build/acceptance/20261124T225355Z/evidence.json`
-> **Approval**: a publication tag/release/upload needs explicit user approval
-> bound to the hashes below and a separate release plan.
+> **Status (2026-11-25)**: public prerelease `v1.2.0` published; `v1.1.2`
+> remains Latest. No stable v1.2.0 exists.
+> **Candidate**: `build/dist` (rebuilt first-run candidate)
+> **Evidence**: `build/acceptance/20261125T104249Z/evidence.json`
+> **Release**: `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`
 
-## Candidate identity
+## Revision 2 candidate identity (published)
+
+| Asset | Bytes | SHA-256 |
+|---|---:|---|
+| `clorraine-1.2.0-x86_64-linux.tar.gz` | 6,530,214 | `a23706d258b3091342d1e651356bb688cc0a8e018b8582b589f04f9df7356485` |
+| `clorraine-1.2.0.vsix` | 26,435 | `9fa9e826ffa2e64b623fb55aa3c6e2e44c0f86ec4c5c5ec1a39d44fb3bb56ffa` |
+| `install.sh` | 28,026 | `8cb95c348602360ff46028bffa5f2d0973a05f63612eeb0c1cf8baf7839dd72a` |
+
+The archive contains only `bin/{clc,clorraine,clorraine-lsp}` and the five
+release documents. The installer verifies and installs the pinned rc24
+toolchain from AmigaPorts, then runs the host hello; it never mirrors or bundles
+the toolchain. FS-UAE and licensed media are not included.
+
+## Revision 1 candidate identity (historical, not published)
 
 | Asset | Bytes | SHA-256 |
 |---|---:|---|
@@ -40,10 +53,12 @@ treat publication as a separate approval.
 
 ## Publication boundary
 
-- No `v1.2.0` tag, release, upload, or publication exists. Existing tags stop
-  at `v1.1.2`.
-- `make dist` and `make acceptance` are local; the network installer path is
-  assembled for a future release and must not be exercised before approval.
-- After approval: tag/release, upload the archive, VSIX, installer, and
-  `SHA256SUMS`, verify the public bytes and links, and run an anonymous install
-  check. Any byte change requires a new candidate and fresh approval.
+- The public `v1.2.0` prerelease exists (`isPrerelease=true`,
+  `isDraft=false`); `v1.1.2` remains Latest. No stable v1.2.0 exists.
+- Docs and website remain frozen until the user's test. The README and release
+  body describe the first-run installer.
+- If the user's test fails, do not delete or rewrite automatically. Choose to
+  delete the prerelease and tag (a public history change) or publish a fixed
+  prerelease under a new tag.
+- Any byte change requires a new candidate, fresh acceptance evidence, and a
+  recreated prerelease.

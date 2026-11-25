@@ -2,6 +2,13 @@
 
 > **Requirements**: R1–R3, R12–R14, Q4–Q7
 > **Evidence**: glibc and toolchain pins in `spikes/07-linux-cli-fs-uae/README.md`
+>
+> **Revision 2 (2026-11-25)**: the installer now also detects an existing rc24
+> root or offers the pinned AmigaPorts download, verifies and extracts it under
+> the XDG data directory, runs `clorraine setup --toolchain`, and requires a
+> temporary host hello. The archive still contains no toolchain or licensed
+> media, and the download is never mirrored. See
+> `plans/public-preview-v1.2.0/99-execution-plan.md`.
 
 ## Candidate assets
 

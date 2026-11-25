@@ -3,6 +3,13 @@
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-25 00:01
 > **Progress**: 28/28 tasks (100%)
+>
+> **Revision 2 (2026-11-25)**: the follow-up
+> `plans/public-preview-v1.2.0/99-execution-plan.md` published the public
+> `v1.2.0` prerelease and extended the installer to offer, verify, and install
+> the pinned AmigaPorts rc24 toolchain, then run the host hello. The
+> local-candidate boundary below records the earlier stage and is superseded by
+> that plan.
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
