@@ -119,32 +119,32 @@ release; deleting `v1.1.2`; public announcements.
 
 ## Execution evidence
 
-- **Installer tests red:** 7 failures in `build/tmp/interactive-installer-red.log`
-  (missing prefix/PATH/confirm prompts, custom prefix, cancel, and PATH block).
-- **Installer tests green:** 101 public checks and 21 internal checks; the
-  non-interactive defaults test passes.
-- **Candidate:** `make dist` produced the new archive (6,530,165 bytes,
-  `8ea293eb…d288`), VSIX (26,435 bytes, `a1fb7cab…ee12`), and installer
-  (21,925 bytes, `903849fe…de6f`). `make dist-verify` passes.
+- **Installer tests red:** the Revision 2 cases failed before the change (spec
+  and internal suites), proving the first-run behavior was missing.
+- **Installer tests green:** 113 public checks and 24 internal checks, including
+  `--toolchain`, the interactive toolchain path, the pinned download with
+  verification, `--no-toolchain`, and the exact host hello.
+- **Candidate:** `make dist` produced the archive (6,530,214 bytes,
+  `a23706d2…6485`), VSIX (26,435 bytes, `9fa9e826…6ffa`), and installer
+  (28,026 bytes, `8cb95c34…d72a`). `make dist-verify` passes.
 - **Acceptance:** `make acceptance` passed the seven-guest matrix on the rebuilt
-  candidate; evidence `build/acceptance/20261125T101025Z/evidence.json`;
+  candidate; evidence `build/acceptance/20261125T104249Z/evidence.json`;
   `make acceptance-check` reports `ok`. `make check` passes.
 - **Release:** the rebuilt public prerelease `v1.2.0` is at
   `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`; title
   `v1.2.0 developer preview`; `isPrerelease=true`, `isDraft=false`; `v1.1.2`
-  remains Latest. Assets: archive 6,530,214 bytes `a23706d2…6485`, VSIX 26,435
-  `9fa9e826…6ffa`, installer 28,026 `8cb95c34…d72a`. The four public assets
-  returned HTTP 200 and `SHA256SUMS` verifies.
+  remains Latest. The four public assets returned HTTP 200 and `SHA256SUMS`
+  verifies.
 - **Full first run:** the one-line command downloaded the installer, offered
   and downloaded the pinned rc24 toolchain from AmigaPorts, configured it,
   ran the host hello, and printed the next steps. The installed CLI reports
   `clorraine 1.2.0`; the toolchain is under
-  `~/.local/share/clorraine/toolchains/rc24`; the hello output is exact. Log:
-  `build/tmp/full-first-run-e2e.log`.
+  `~/.local/share/clorraine/toolchains/rc24`; the hello output is exact. The
+  run was repeated in a fresh HOME with the same result. Log:
+  `build/tmp/first-run-verified.log`.
 - **README:** the install section now says the installer sets up the rc24
   toolchain (download or existing copy) and runs the hello test.
 - **Docs/site:** unchanged; still pending the user's test.
-- **Docs/site:** unchanged; no or website edits were made.
 
 ## Revision 2 — full first run
 
@@ -169,7 +169,7 @@ release; deleting `v1.1.2`; public announcements.
   passes, delete the current `v1.2.0` prerelease and tag (0 downloads), then
   recreate it with the rebuilt assets and body. Verify the one-line command end
   to end: download, toolchain download/setup, host hello, version, and
-  `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:50)
+  `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:50)
 
 ## Verify
 
@@ -191,16 +191,24 @@ The installer asks:
 
 1. Where to install (default `~/.local`);
 2. Whether to add the bin directory to `~/.profile` (default yes);
-3. Whether to install now (default yes).
+3. Whether to install now (default yes);
+4. For an existing rc24 root, or whether to download the pinned AmigaPorts
+   archive (default yes; about 70 MB).
 
-Then run:
+It then verifies the archive, installs it under
+`$XDG_DATA_HOME/clorraine/toolchains/rc24` (or `~/.local/share`), runs
+`clorraine setup --toolchain`, and builds and runs a temporary host `hello.clo`.
+It requires the exact output `Hello, Amiga, from Clorraine!`. A host `cc` is
+needed for that check; non-interactive runs skip it unless `--toolchain PATH`
+is supplied.
+
+Confirm the install:
 
 ```sh
 "$HOME/.local/bin/clorraine" --version
-"$HOME/.local/bin/clorraine" setup --toolchain "$HOME/toolchains/m68k-amigaos-gcc-16.2"
 ```
 
-Create `hello.clo`:
+For the guest run, create `hello.clo`:
 
 ```clorraine
 module demo.Hello;
