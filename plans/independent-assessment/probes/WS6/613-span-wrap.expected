@@ -4,7 +4,7 @@
 # Expected: runtime fault E11211 on every profile and build line.
 profiles: host hosted-amiga hosted-amiga-13
 expect: fault E11211
-contrast: spanOf(src, 0xFFFFFFFF, 2) ==> spanOf(src, 1, 2)
+contrast: spanOf(slice<u8>(src, 0, 4), 0xFFFFFFFF, 2) ==> spanOf(slice<u8>(src, 0, 4), 1, 2)
 contrast-expect: output
 --- contrast-output
 1 2

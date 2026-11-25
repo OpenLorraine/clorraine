@@ -14,7 +14,7 @@
 # report.
 profiles: host hosted-amiga hosted-amiga-13
 expect: output
-contrast: report("A-valid", a); ==> report("A-valid", c);
+contrast: report("A-valid", slice<u8>(a, 0, 66)); ==> report("A-valid", slice<u8>(a, 0, 20));
 contrast-expect: output
 --- output
 A-valid true true 2 2124478297

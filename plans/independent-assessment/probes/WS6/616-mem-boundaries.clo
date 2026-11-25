@@ -7,7 +7,7 @@ func main(): i32 {
     let a: Buffer? = bufferNew(0);
     let src: u8[3] = [7, 8, 9];
     let b: Buffer? = bufferFrom(slice<u8>(src, 3, 3));
-    let c: Buffer? = bufferFrom(src);
+    let c: Buffer? = bufferFrom(slice<u8>(src, 0, 3));
     if (a == null) {
         println("a null");
         return 1;

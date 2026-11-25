@@ -1,11 +1,11 @@
 module Probe.Main;
 
 import { println } from std.io;
-import { Span, spanOf } from std.mem;
+import { Span, spanOf, slice } from std.mem;
 
 func main(): i32 {
     let src: u8[4] = [1, 2, 3, 4];
-    let s: Span = spanOf(src, 0xFFFFFFFF, 2);
+    let s: Span = spanOf(slice<u8>(src, 0, 4), 0xFFFFFFFF, 2);
     println($"{s.start} {s.len}");
     return 0;
 }

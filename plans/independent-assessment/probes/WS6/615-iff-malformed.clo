@@ -7,32 +7,32 @@ import { IlbmInfo, ilbmInfo, ilbmDecode, ilbmPalette, ilbmPixelHash } from std.i
 func report(tag: str, data: u8[]): void {
     let info: IlbmInfo = ilbmInfo(data);
     let pixels: u8[64] = [; 0];
-    let decoded: bool = ilbmDecode(data, info, pixels);
+    let decoded: bool = ilbmDecode(data, info, slice<u8>(pixels, 0, 64));
     let palette: u8[12] = [; 0];
-    let colors: u16 = ilbmPalette(data, info, palette);
-    let hash: u32 = ilbmPixelHash(pixels);
+    let colors: u16 = ilbmPalette(data, info, slice<u8>(palette, 0, 12));
+    let hash: u32 = ilbmPixelHash(slice<u8>(pixels, 0, 64));
     println($"{tag} {info.ok} {decoded} {colors} {hash}");
 }
 
 func main(): i32 {
     let a: u8[66] = [70, 79, 82, 77, 0, 0, 0, 58, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 67, 77, 65, 80, 0, 0, 0, 6, 0, 0, 0, 255, 255, 255, 66, 79, 68, 89, 0, 0, 0, 4, 170, 0, 15, 0];
-    report("A-valid", a);
+    report("A-valid", slice<u8>(a, 0, 66));
     let b: u8[52] = [70, 79, 82, 77, 0, 0, 0, 44, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 255, 255, 255, 0, 170, 0, 15, 0];
-    report("B-huge-body", b);
+    report("B-huge-body", slice<u8>(b, 0, 52));
     let c: u8[52] = [70, 79, 82, 77, 0, 0, 1, 244, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 4, 1, 2, 3, 4];
-    report("C-form-too-long", c);
+    report("C-form-too-long", slice<u8>(c, 0, 52));
     let d: u8[51] = [70, 79, 82, 77, 0, 0, 0, 43, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 4, 170, 0, 15];
-    report("D-truncated", d);
+    report("D-truncated", slice<u8>(d, 0, 51));
     let e: u8[58] = [70, 79, 82, 77, 0, 0, 0, 50, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 9, 5, 1, 2, 3, 4, 5, 6, 0, 0, 0];
-    report("E-rle-literal-overrun", e);
+    report("E-rle-literal-overrun", slice<u8>(e, 0, 58));
     let f: u8[52] = [70, 79, 82, 77, 0, 0, 0, 44, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 4, 129, 255, 0, 0];
-    report("F-rle-repeat-overrun", f);
+    report("F-rle-repeat-overrun", slice<u8>(f, 0, 52));
     let g: u8[66] = [70, 79, 82, 77, 0, 0, 0, 58, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 67, 77, 65, 80, 0, 0, 0, 5, 1, 2, 3, 4, 5, 0, 66, 79, 68, 89, 0, 0, 0, 4, 170, 0, 15, 0];
-    report("G-odd-cmap", g);
+    report("G-odd-cmap", slice<u8>(g, 0, 66));
     let h: u8[52] = [70, 79, 82, 77, 0, 0, 0, 44, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 4, 170, 0, 15, 0];
-    report("H-depth-9", h);
+    report("H-depth-9", slice<u8>(h, 0, 52));
     let i: u8[56] = [70, 79, 82, 77, 0, 0, 0, 48, 73, 76, 66, 77, 66, 77, 72, 68, 0, 0, 0, 20, 0, 8, 0, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 10, 11, 0, 8, 0, 2, 66, 79, 68, 89, 0, 0, 0, 7, 128, 1, 170, 0, 1, 15, 0, 0];
-    report("I-rle-noop", i);
+    report("I-rle-noop", slice<u8>(i, 0, 56));
     let j: u8[1] = [0];
     report("J-empty", slice<u8>(j, 0, 0));
     return 0;
